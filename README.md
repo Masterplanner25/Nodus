@@ -78,6 +78,7 @@ Backward compatible invocations are still supported:
 - `nodus run script.nd --trace-json --trace-file trace.json` (machine-readable events)
 - `nodus run script.nd --trace-scheduler --scheduler-stats` (scheduler tracing)
 - `nodus run script.nd --no-opt` (disable bytecode optimization)
+- `nodus run script.nd --step-limit 100000 --time-limit 5 --output-limit 20000` (sandbox limits)
 - `nodus debug script.nd` (interactive debugger)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
@@ -123,6 +124,9 @@ Runtime service commands:
 - REPL
 - line/column errors + stack traces
 - bytecode dump and trace mode for debugging
+- bytecode version headers for forward compatibility
+- embeddable Python runtime with host function registration
+- sandbox limits for steps, time, and stdout output
 
 ## Imports
 
@@ -183,6 +187,49 @@ Core: `clock`, `type`, `str`, `len`, `print`, `input`, `keys`, `values`
 File utilities: `read_file`, `write_file`, `append_file`, `exists`, `mkdir`
 
 AI/runtime adapters: `tool_call`, `tool_available`, `tool_describe`, `memory_get`, `memory_put`, `memory_delete`, `memory_keys`, `agent_call`, `agent_available`, `agent_describe`, `emit`, `run_goal`, `plan_goal`, `resume_goal`
+
+## Bytecode Versioning
+
+Compiled bytecode includes a version header:
+
+```json
+{
+  "bytecode_version": 1,
+  "instructions": [...],
+  "constants": [],
+  "metadata": {}
+}
+```
+
+The VM validates the version when loading and raises `BytecodeVersionError` for unsupported versions.
+
+## Embedding In Python
+
+Nodus can be embedded in Python applications:
+
+```python
+from nodus.runtime.embedding import NodusRuntime
+
+rt = NodusRuntime()
+
+def send_email(addr, body):
+    return True
+
+rt.register_function("send_email", send_email, arity=2)
+rt.run_file("workflow.nd")
+```
+
+Host functions are callable from Nodus scripts and runtime errors propagate back to the host.
+
+## Sandbox Runtime Limits
+
+Runtime execution can be constrained by:
+
+- step limit (instruction count)
+- time limit (seconds via CLI, milliseconds in the API)
+- output limit (stdout character cap)
+
+When a limit is exceeded, the runtime raises `RuntimeLimitExceeded` (surfaced as a sandbox error in CLI results).
 
 ## Standard Library
 

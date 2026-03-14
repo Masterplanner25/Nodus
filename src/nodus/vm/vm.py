@@ -11,8 +11,8 @@ from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state, get_registered_graph
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
-from nodus.compiler.compiler import FunctionInfo
-from nodus.runtime.diagnostics import LangRuntimeError
+from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
+from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded
 from nodus.services.agent_runtime import available_agents, call_agent, describe_agent
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
@@ -81,9 +81,11 @@ class VM:
         scheduler_output=print,
         event_bus: RuntimeEventBus | None = None,
     ):
-        self.code = code
+        version, instructions = normalize_bytecode(code)
+        self.bytecode_version = version
+        self.code = instructions
         self.functions = functions
-        self.code_locs = code_locs or [(None, None, None)] * len(code)
+        self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.stack: list = []
         self.frames: list[Frame] = []
         self.globals: dict[str, object] = dict(initial_globals or {})
@@ -657,14 +659,16 @@ class VM:
 
     def reset_program(
         self,
-        code: list[tuple],
+        code: list[tuple] | dict,
         functions: dict[str, FunctionInfo],
         code_locs: list[tuple[str | None, int | None, int | None]] | None = None,
         source_path: str | None = None,
     ) -> None:
-        self.code = code
+        version, instructions = normalize_bytecode(code)
+        self.bytecode_version = version
+        self.code = instructions
         self.functions = functions
-        self.code_locs = code_locs or [(None, None, None)] * len(code)
+        self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.source_path = source_path
         self.ip = 0
         self.stack = []
@@ -1686,9 +1690,13 @@ class VM:
     def record_instruction(self) -> None:
         self.instructions_executed += 1
         if self.deadline is not None and time.monotonic() >= self.deadline:
-            self.runtime_error("sandbox", "Execution timed out")
+            err = RuntimeLimitExceeded("Execution timed out")
+            self.emit_runtime_error(err)
+            raise err
         if self.max_steps is not None and self.instructions_executed > self.max_steps:
-            self.runtime_error("sandbox", "Execution step limit exceeded")
+            err = RuntimeLimitExceeded("Execution step limit exceeded")
+            self.emit_runtime_error(err)
+            raise err
         if self.instructions_executed - self._last_batch_emit >= self._instruction_batch_size:
             count = self.instructions_executed - self._last_batch_emit
             self._last_batch_emit = self.instructions_executed

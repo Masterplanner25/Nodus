@@ -33,7 +33,8 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.frontend.lexer import Tok, tokenize
 from nodus.compiler.optimizer import optimize_bytecode
 from nodus.frontend.parser import Parser
-from nodus.compiler.compiler import Compiler
+from nodus.compiler.compiler import Compiler, wrap_bytecode
+from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 from nodus.tooling.project import find_project_root
 from nodus.vm.vm import VM
 
@@ -491,6 +492,7 @@ def compile_source(
     import_state: dict | None = None,
     analyze: bool = False,
     optimize: bool = True,
+    extra_builtins: set[str] | None = None,
 ):
     import_state = import_state if import_state is not None else {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None}
     if "modules" not in import_state:
@@ -518,11 +520,15 @@ def compile_source(
     for info in module_infos.values():
         for name in info.defs:
             defs_index.setdefault(name, set()).add(info.path)
-    compiler = Compiler(module_infos=module_infos, module_defs_index=defs_index)
+    builtin_names = set(BUILTIN_NAMES)
+    if extra_builtins:
+        builtin_names.update(extra_builtins)
+    compiler = Compiler(module_infos=module_infos, module_defs_index=defs_index, builtin_names=builtin_names)
     code, functions, code_locs = compiler.compile_program(ast)
     if optimize:
         code, functions, code_locs = optimize_bytecode(code, functions, code_locs)
-    return ast, code, functions, code_locs
+    bytecode = wrap_bytecode(code)
+    return ast, bytecode, functions, code_locs
 
 
 def run_source(

@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS
-from nodus.runtime.diagnostics import LangRuntimeError
+from nodus.runtime.diagnostics import RuntimeLimitExceeded
 
 
 class LimitedBuffer(io.StringIO):
@@ -18,7 +18,7 @@ class LimitedBuffer(io.StringIO):
 
     def write(self, s: str) -> int:
         if self.max_chars is not None and self._count + len(s) > self.max_chars:
-            raise LangRuntimeError("sandbox", "stdout limit exceeded")
+            raise RuntimeLimitExceeded("stdout limit exceeded")
         self._count += len(s)
         return super().write(s)
 

@@ -50,7 +50,7 @@ class WorkerManager:
         self._workers: dict[str, set[str]] = {}
         self._worker_last_seen: dict[str, float] = {}
         self._worker_seen: dict[str, bool] = {}
-        self._startup_grace_ms = 100.0
+        self._startup_grace_ms = 250.0
         self._jobs_by_capability: dict[str, list[dict]] = {}
         self._any_jobs: list[dict] = []
         self._inflight: dict[str, dict] = {}

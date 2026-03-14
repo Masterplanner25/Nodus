@@ -27,6 +27,18 @@ class LangRuntimeError(RuntimeError):
         self.stack = stack or []
 
 
+class RuntimeLimitExceeded(LangRuntimeError):
+    def __init__(
+        self,
+        message: str,
+        line: int | None = None,
+        col: int | None = None,
+        path: str | None = None,
+        stack: list[str] | None = None,
+    ):
+        super().__init__("sandbox", message, line=line, col=col, path=path, stack=stack)
+
+
 def format_error(err: Exception, path: str | None = None) -> str:
     err_path = getattr(err, "path", None) or path
     line = getattr(err, "line", None)

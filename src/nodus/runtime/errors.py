@@ -65,6 +65,10 @@ class NodusSandboxError(NodusError):
     error_type = "SandboxError"
 
 
+class BytecodeVersionError(RuntimeError):
+    pass
+
+
 def coerce_error(err: Exception, *, stage: str | None = None, filename: str | None = None) -> NodusError:
     if isinstance(err, NodusError):
         if err.filename is None and filename is not None:

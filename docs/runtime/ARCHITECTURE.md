@@ -198,6 +198,38 @@ Exceptions
 SETUP_TRY
 POP_TRY
 THROW
+
+4. Bytecode Versioning
+
+Compiled bytecode is packaged with a version header:
+
+{
+  "bytecode_version": 1,
+  "instructions": [...],
+  "constants": [],
+  "metadata": {}
+}
+
+The VM validates the bytecode version on load and raises BytecodeVersionError if the version is unsupported. This keeps the runtime forward-compatible as opcodes evolve.
+
+5. Embedding API
+
+The runtime can be embedded in external Python applications via nodus.runtime.embedding.NodusRuntime. Embedding supports:
+
+initializing an isolated runtime
+registering host functions callable from Nodus scripts
+running source strings or script files
+propagating runtime errors back to the host
+
+6. Sandbox Limits
+
+The runtime enforces optional execution limits:
+
+step limit (instruction count)
+time limit (wall-clock deadline)
+output limit (stdout character cap)
+
+When a limit is exceeded, the runtime raises RuntimeLimitExceeded (surfaced as a sandbox error in tooling outputs).
 Functions and Closures
 CALL
 CALL_VALUE

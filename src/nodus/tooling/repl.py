@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import os
 
-from nodus.compiler.compiler import Compiler
+from nodus.compiler.compiler import Compiler, wrap_bytecode
 from nodus.runtime.diagnostics import format_error
 from nodus.frontend.lexer import tokenize
 from nodus.frontend.parser import Parser
@@ -81,7 +81,7 @@ def run_repl(version: str):
                     defs_index.setdefault(name, set()).add(info.path)
             compiler = Compiler(module_infos=module_infos, module_defs_index=defs_index)
             code, functions, code_locs = compiler.compile_program(program)
-            vm = VM(code, functions, code_locs=code_locs, initial_globals=dict(state.globals))
+            vm = VM(wrap_bytecode(code), functions, code_locs=code_locs, initial_globals=dict(state.globals))
             vm.run()
 
             state.globals = vm.globals

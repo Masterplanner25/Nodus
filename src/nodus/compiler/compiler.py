@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from nodus.runtime.errors import BytecodeVersionError
+
 from nodus.frontend.ast.ast_nodes import (
     Assign,
     Attr,
@@ -54,6 +56,37 @@ from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
 from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_workflow_ast
 
 
+BYTECODE_VERSION = 1
+
+
+def wrap_bytecode(
+    instructions: list[tuple],
+    *,
+    constants: list[object] | None = None,
+    metadata: dict[str, object] | None = None,
+) -> dict:
+    return {
+        "bytecode_version": BYTECODE_VERSION,
+        "instructions": instructions,
+        "constants": constants or [],
+        "metadata": metadata or {},
+    }
+
+
+def normalize_bytecode(bytecode: object) -> tuple[int, list[tuple]]:
+    if isinstance(bytecode, dict):
+        version = bytecode.get("bytecode_version")
+        if version != BYTECODE_VERSION:
+            raise BytecodeVersionError(f"Unsupported bytecode version: {version}")
+        instructions = bytecode.get("instructions")
+        if not isinstance(instructions, list):
+            raise BytecodeVersionError("Invalid bytecode format: missing instructions list")
+        return version, instructions
+    if isinstance(bytecode, list):
+        return BYTECODE_VERSION, bytecode
+    raise BytecodeVersionError("Invalid bytecode format: expected list or dict")
+
+
 @dataclass
 class FunctionInfo:
     name: str
@@ -64,7 +97,12 @@ class FunctionInfo:
 
 
 class Compiler:
-    def __init__(self, module_infos: dict[str, ModuleInfo] | None = None, module_defs_index: dict[str, set[str]] | None = None):
+    def __init__(
+        self,
+        module_infos: dict[str, ModuleInfo] | None = None,
+        module_defs_index: dict[str, set[str]] | None = None,
+        builtin_names: set[str] | None = None,
+    ):
         self.code: list[tuple] = []
         self.code_locs: list[tuple[str | None, int | None, int | None]] = []
         self.functions: dict[str, FunctionInfo] = {}
@@ -72,6 +110,7 @@ class Compiler:
         self.module_aliases: dict[str, dict[str, dict[str, str]]] = {}
         self.module_infos = module_infos or {}
         self.module_defs_index = module_defs_index or {}
+        self.builtin_names = set(builtin_names or BUILTIN_NAMES)
         self.current_module: str | None = None
         self.symbol_tables: dict[str, SymbolTable] = {}
         self.symbols: SymbolTable | None = None
@@ -140,7 +179,7 @@ class Compiler:
                 return
         if name in module_info.imports:
             return
-        if name in BUILTIN_NAMES:
+        if name in self.builtin_names:
             return
         if name in self.module_defs_index:
             owners = sorted(self.module_defs_index[name])
@@ -748,20 +787,22 @@ def format_loc(loc: tuple[str | None, int | None, int | None]) -> str | None:
 
 
 def format_bytecode(
-    code: list[tuple],
+    code: list[tuple] | dict,
     code_locs: list[tuple[str | None, int | None, int | None]],
     functions: dict[str, FunctionInfo],
 ) -> str:
-    lines, _structured = _format_bytecode_ranges(code, code_locs, functions, structured=False)
+    _version, instructions = normalize_bytecode(code)
+    lines, _structured = _format_bytecode_ranges(instructions, code_locs, functions, structured=False)
     return "\n".join(lines)
 
 
 def build_disassembly(
-    code: list[tuple],
+    code: list[tuple] | dict,
     code_locs: list[tuple[str | None, int | None, int | None]],
     functions: dict[str, FunctionInfo],
 ) -> tuple[str, list[str], list[dict]]:
-    lines, structured = _format_bytecode_ranges(code, code_locs, functions, structured=True)
+    _version, instructions = normalize_bytecode(code)
+    lines, structured = _format_bytecode_ranges(instructions, code_locs, functions, structured=True)
     return "\n".join(lines), lines, structured
 
 

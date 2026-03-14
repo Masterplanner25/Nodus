@@ -36,7 +36,7 @@ from nodus.tooling.runner import (
     workflow_checkpoints,
 )
 from nodus.services.server import serve, snapshot_session, restore_snapshot, list_snapshots
-from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS
+from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
 
@@ -104,7 +104,7 @@ def _render_help() -> str:
             "Usage: nodus <command> [options] [file]",
             "",
             "Commands:",
-            "  nodus run <file> [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH]",
+            "  nodus run <file> [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
             "  nodus check <file> [--project-root PATH]",
             "  nodus fmt <file> [--check] [--keep-trailing]",
             "  nodus ast <file> [--compact]",
@@ -180,6 +180,9 @@ def run_file(
     optimize: bool = True,
     dump_bytecode: bool = False,
     project_root: str | None = None,
+    max_steps: int | None = None,
+    timeout_ms: int | None = None,
+    max_stdout_chars: int | None = None,
 ) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
@@ -201,6 +204,9 @@ def run_file(
         optimize=optimize,
         dump_bytecode=dump_bytecode,
         project_root=project_root,
+        max_steps=MAX_STEPS if max_steps is None else max_steps,
+        timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else timeout_ms,
+        max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
     )
     if dump_bytecode and result.get("disassembly"):
         print(result["disassembly"])
@@ -679,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     if command == "run":
-        flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root"}
+        flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit"}
         flags_no_values = {
             "--trace",
             "--trace-no-loc",
@@ -701,6 +707,27 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as err:
                 _print_stderr(str(err))
                 return 1
+        step_limit = None
+        if "--step-limit" in flags:
+            try:
+                step_limit = _parse_int(str(flags["--step-limit"]), "--step-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
+        time_limit = None
+        if "--time-limit" in flags:
+            try:
+                time_limit = _parse_int(str(flags["--time-limit"]), "--time-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
+        output_limit = None
+        if "--output-limit" in flags:
+            try:
+                output_limit = _parse_int(str(flags["--output-limit"]), "--output-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
         project_root, err = _resolve_project_root(flags.get("--project-root"))
         if err:
             _print_stderr(err)
@@ -718,6 +745,9 @@ def main(argv: list[str] | None = None) -> int:
             optimize="--no-opt" not in flags,
             dump_bytecode="--dump-bytecode" in flags,
             project_root=project_root,
+            max_steps=step_limit,
+            timeout_ms=None if time_limit is None else time_limit * 1000,
+            max_stdout_chars=output_limit,
         )
 
     if command == "check":
