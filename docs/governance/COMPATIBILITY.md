@@ -8,8 +8,8 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - `language.py` / `language.bat` legacy launchers (CLI emits warnings on use).
 
 ## Planned Timeline
-- 0.3.x (current `0.3.0`): continue support with warnings.
-- 0.4.x: re-evaluate removal readiness and publish a migration window.
+- 0.4.x (current `0.4.0`): continue support with warnings.
+- 0.5.x: re-evaluate removal readiness and publish a migration window.
 - 0.5.x (tentative): consider removal if migration is complete.
 
 ## Migration Path

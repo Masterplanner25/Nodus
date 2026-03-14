@@ -31,12 +31,14 @@ None.
 - Debugging UX improvements: trace filters/limits, scheduler tracing, trace events/JSON, and `nodus debug`.
 - Orchestration runtime: workflows/goals, task graph planning/resume, runtime event bus, server mode, and snapshots.
 
-### 0.3.x — Runtime Architecture Improvements
+### 0.4.0 — Runtime Architecture & Packaging
 - Bytecode version headers and validation.
 - Sandbox execution limits (steps/time/stdout).
 - Embedding API for host integration.
 - Runtime module system with per-module bytecode units and module caching.
 - Project manifests (`nodus.toml`) and lockfiles (`nodus.lock`) with dependency resolution.
+- Tooling-side package resolution/installation and `.nodus/modules/` dependency layout.
+- Debugger MVP (breakpoints, step/next/continue, locals/stack).
 
 ### 0.2.0 — Stdlib Maturity and Project Ergonomics
 - Coherent stdlib modules (`std:strings`, `std:collections`, `std:fs`, `std:path`).
