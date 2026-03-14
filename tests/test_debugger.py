@@ -32,13 +32,13 @@ class DebuggerTests(unittest.TestCase):
             with redirect_stdout(stdout):
                 exit_code = debug_file(
                     path,
-                    debugger_input=make_input(["break 2", "continue", "continue"]),
+                    debugger_input=make_input([f"break {path}:2", "run", "continue"]),
                     debugger_output=output.append,
                 )
 
             self.assertEqual(exit_code, 0)
-            self.assertTrue(any("Breakpoint set at line 2" in line for line in output))
-            self.assertTrue(any("breakpoint line 2" in line for line in output))
+            self.assertTrue(any("Breakpoint set at" in line for line in output))
+            self.assertTrue(any("paused (breakpoint)" in line for line in output))
             self.assertEqual(stdout.getvalue().splitlines(), ["2.0"])
 
     def test_stack_inspection_shows_nested_calls(self):
@@ -61,7 +61,7 @@ class DebuggerTests(unittest.TestCase):
             with redirect_stdout(stdout):
                 exit_code = debug_file(
                     path,
-                    debugger_input=make_input(["break 5", "continue", "stack", "continue"]),
+                    debugger_input=make_input([f"break {path}:5", "run", "stack", "continue"]),
                     debugger_output=output.append,
                 )
 
@@ -82,7 +82,7 @@ class DebuggerTests(unittest.TestCase):
         _ast, code, functions, code_locs = lang.compile_source(src, source_path="main.nd")
         output: list[str] = []
         debugger = Debugger(
-            input_fn=make_input(["break 3", "continue", "locals", "continue"]),
+            input_fn=make_input(["break main.nd:3", "run", "locals", "print a", "continue"]),
             output_fn=output.append,
             start_paused=True,
         )
@@ -93,7 +93,27 @@ class DebuggerTests(unittest.TestCase):
 
         self.assertTrue(any('a = 4.0' in line for line in output))
         self.assertTrue(any('x = 5.0' in line for line in output))
+        self.assertTrue(any('4.0' == line for line in output))
         self.assertEqual(stdout.getvalue().splitlines(), ["5.0"])
+
+    def test_step_execution_pauses_after_instruction(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "step.nd")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("let x = 1\nx = x + 1\nprint(x)\n")
+
+            output: list[str] = []
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = debug_file(
+                    path,
+                    debugger_input=make_input(["step", "continue"]),
+                    debugger_output=output.append,
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(any("paused (step)" in line for line in output))
+            self.assertEqual(stdout.getvalue().splitlines(), ["2.0"])
 
 
 if __name__ == "__main__":

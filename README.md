@@ -109,6 +109,15 @@ Orchestration commands:
 - `nodus goal-plan <script.nd> [--goal <name>]`
 - `nodus goal-resume <graph_id> [--checkpoint <label>]`
 
+Debug example:
+```
+$ nodus debug workflow.nd
+(nodusdb) break workflow.nd:12
+(nodusdb) run
+(nodusdb) step
+(nodusdb) print user_id
+```
+
 Runtime service commands:
 - `nodus tool-call <tool> --json <payload>`
 - `nodus agent-call <agent> --json <payload>`

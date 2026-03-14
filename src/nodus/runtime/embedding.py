@@ -49,6 +49,7 @@ class NodusRuntime:
         timeout_ms: int | None = None,
         max_stdout_chars: int | None = None,
         optimize: bool = True,
+        debugger=None,
     ) -> dict:
         with open(path, "r", encoding="utf-8") as handle:
             source = handle.read()
@@ -59,6 +60,7 @@ class NodusRuntime:
             timeout_ms=timeout_ms,
             max_stdout_chars=max_stdout_chars,
             optimize=optimize,
+            debugger=debugger,
         )
 
     def run_source(
@@ -71,6 +73,7 @@ class NodusRuntime:
         max_stdout_chars: int | None = None,
         optimize: bool = True,
         import_state: dict | None = None,
+        debugger=None,
     ) -> dict:
         normalized = normalize_filename(filename)
         if import_state is None and self.project_root is not None:
@@ -91,6 +94,9 @@ class NodusRuntime:
             code_locs=[],
             source_path=filename,
         )
+        if debugger is not None:
+            vm.debugger = debugger
+            vm.debug = True
         self.last_vm = vm
         host_builtins = {
             name: BuiltinInfo(
@@ -113,6 +119,7 @@ class NodusRuntime:
                     vm=vm,
                     host_builtins=host_builtins,
                     extra_builtins=set(self._host_functions.keys()),
+                    debugger=debugger,
                 )
                 if filename and os.path.isfile(filename):
                     loader.load_module_from_path(filename)

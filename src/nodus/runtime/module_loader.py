@@ -36,8 +36,7 @@ from nodus.frontend.ast.ast_nodes import (
 )
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.runtime.module import NodusModule, ModuleFunction
-from nodus.runtime.project import ProjectConfig, DependencySpec, ResolvedDependency, load_project_from, read_lockfile
-from nodus.tooling.project import find_project_root
+from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
 
 
@@ -84,6 +83,7 @@ class ModuleLoader:
         host_builtins: dict[str, BuiltinInfo] | None = None,
         extra_builtins: set[str] | None = None,
         vm: VM | None = None,
+        debugger=None,
     ) -> None:
         self.project_root = project_root
         self.host_globals = host_globals or {}
@@ -93,14 +93,6 @@ class ModuleLoader:
         self._metadata: dict[str, ModuleMetadata] = {}
         self._parsed: dict[str, ParsedModule] = {}
         self._loading: set[str] = set()
-        self.project: ProjectConfig | None = None
-        if project_root is not None:
-            self.project = load_project_from(project_root) or load_project_from(os.getcwd())
-        else:
-            self.project = load_project_from(os.getcwd())
-        if self.project is not None:
-            self.project_root = self.project.root
-        self._lock = read_lockfile(self.project.lock_path) if self.project is not None else {}
         self._import_state: dict = {
             "loaded": set(),
             "loading": set(),
@@ -110,6 +102,7 @@ class ModuleLoader:
             "project_root": project_root,
         }
         self._vm = vm
+        self._debugger = debugger
 
     def resolve_import(self, import_path: str, base_dir: str, tok: Tok | None, module_id: str) -> str:
         if "project_root" not in self._import_state:
@@ -120,8 +113,6 @@ class ModuleLoader:
             self._import_state,
             tok,
             module_id,
-            project=self.project,
-            lock=self._lock,
         )
 
     def load_module_from_path(self, path: str, *, initial_globals: dict | None = None) -> NodusModule:
@@ -219,6 +210,9 @@ class ModuleLoader:
             )
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
+        if self._debugger is not None:
+            vm.debugger = self._debugger
+            vm.debug = True
         vm.run()
 
     def _build_metadata(
@@ -485,20 +479,18 @@ def resolve_import_path(
     import_state: dict,
     tok: Tok | None,
     module_id: str,
-    *,
-    project: ProjectConfig | None = None,
-    lock: dict[str, "ResolvedDependency"] | None = None,
 ) -> str:
+    project_root = os.path.abspath(import_state.get("project_root") or base_dir)
+    modules_dir = os.path.join(project_root, NODUS_DIRNAME, MODULES_DIRNAME)
+
     if ":" in import_path and not import_path.startswith("std:"):
         package_name, package_path = import_path.split(":", 1)
         if not package_name or not package_path:
             import_error("Invalid package import: use package:module", tok, module_id)
         if package_name.startswith(".") or package_name.startswith(("/", "\\")):
             import_error("Invalid package import: package name is invalid", tok, module_id)
-        project_root = import_state.get("project_root") or base_dir
-        deps_dir = os.path.join(project_root, "deps")
-        package_base = os.path.normpath(os.path.join(deps_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
-        package_root = os.path.normpath(os.path.join(deps_dir, package_name))
+        package_base = os.path.normpath(os.path.join(modules_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
+        package_root = os.path.normpath(os.path.join(modules_dir, package_name))
         if not package_base.startswith(package_root):
             import_error("Invalid package import: path escapes dependency directory", tok, module_id)
         return resolve_with_extensions(package_base, import_path, tok, module_id)
@@ -517,19 +509,11 @@ def resolve_import_path(
             import_error("Invalid std import: path escapes std directory", tok, module_id)
         return resolve_with_extensions(base, import_path, tok, module_id)
 
-    if project is not None and import_path in project.dependencies:
-        dep = project.dependencies[import_path]
-        resolved = _resolve_dependency_location(project, dep, lock or {})
-        if resolved is not None:
-            return resolve_with_extensions(resolved, import_path, tok, module_id)
-        import_error(f"Dependency not installed: {import_path}", tok, module_id)
-
     if os.path.isabs(import_path):
         base = import_path
     elif import_path.startswith("."):
         base = os.path.join(base_dir, import_path)
     else:
-        project_root = import_state.get("project_root") or base_dir
         base = os.path.join(project_root, import_path)
 
     base = os.path.normpath(base)
@@ -537,8 +521,13 @@ def resolve_import_path(
     if resolved is not None:
         return resolved
 
-    deps_base = os.path.normpath(os.path.join(import_state.get("project_root") or base_dir, "deps", import_path))
-    resolved = try_resolve_with_extensions(deps_base)
+    modules_base = os.path.normpath(os.path.join(modules_dir, import_path))
+    resolved = try_resolve_with_extensions(modules_base)
+    if resolved is not None:
+        return resolved
+
+    std_base = _resolve_std_base(import_path, tok, module_id)
+    resolved = try_resolve_with_extensions(std_base)
     if resolved is not None:
         return resolved
 
@@ -690,22 +679,12 @@ def collect_module_info(stmts: list, module_id: str, prefix: str) -> ModuleInfo:
     )
 
 
-def _resolve_dependency_location(
-    project: ProjectConfig,
-    spec: DependencySpec,
-    lock: dict[str, ResolvedDependency],
-) -> str | None:
-    locked = lock.get(spec.name)
-    if locked is not None and locked.path and os.path.isdir(locked.path):
-        return locked.path
-    deps_path = os.path.join(project.deps_dir, spec.name)
-    if os.path.isdir(deps_path):
-        return deps_path
-    if spec.kind == "path":
-        path = spec.value
-        if not os.path.isabs(path):
-            path = os.path.join(project.root, path)
-        path = os.path.abspath(path)
-        if os.path.isdir(path):
-            return path
-    return None
+def _resolve_std_base(import_path: str, tok: Tok | None, module_id: str) -> str:
+    if import_path.startswith(("/", "\\")):
+        import_error("Invalid std import: std modules cannot start with '/'", tok, module_id)
+    std_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "stdlib"))
+    name = import_path.replace("/", os.sep).replace("\\", os.sep)
+    base = os.path.normpath(os.path.join(std_dir, name))
+    if not base.startswith(os.path.normpath(std_dir)):
+        import_error("Invalid std import: path escapes std directory", tok, module_id)
+    return base

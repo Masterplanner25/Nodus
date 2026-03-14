@@ -1,16 +1,24 @@
 Nodus Architecture
 
-Nodus is a bytecode-compiled scripting runtime implemented in Python designed for automation and orchestration workloads.
+Nodus is a bytecode-compiled scripting runtime implemented in Python for automation and orchestration workloads.
 
-The system combines:
+The architecture is split into two layers:
 
-a traditional compiler + VM pipeline
+runtime
 
-a task/workflow orchestration runtime
+- execution engine
+- module namespaces
+- per-module bytecode loading
+- VM execution
 
-developer tooling for inspection and debugging
+tooling
 
-Nodus sits between a simple interpreter and a full programming ecosystem. It provides a compact runtime capable of executing structured scripts while supporting higher-level automation primitives.
+- project manifest parsing
+- dependency resolution
+- installation into `.nodus/modules/`
+- lockfile generation
+
+This split keeps the runtime small, embeddable, and deterministic. Runtime code never performs dependency resolution, manifest parsing, registry access, or network activity.
 
 1. System Overview
 
@@ -99,18 +107,21 @@ Import Resolution
 Files:
 
 runtime/module_loader.py
-runtime/project.py
-runtime/semver.py
+runtime/module.py
 
-The resolver:
+The runtime module loader:
 
-loads project manifests and lockfiles
+- resolves local project modules from the project root
+- resolves installed packages from `.nodus/modules/`
+- resolves standard library modules
+- compiles modules into bytecode units
+- executes modules once and caches module objects
 
-resolves dependencies before local modules
+Import order is:
 
-compiles modules into bytecode units
-
-executes modules once and caches module objects
+1. local project modules
+2. `.nodus/modules/`
+3. standard library
 
 Compilation
 
@@ -166,6 +177,17 @@ builtin function registry
 
 The VM executes bytecode instructions emitted by the compiler.
 
+Debugger Architecture
+
+The debugger is an optional runtime component that hooks into the VM execution loop.
+
+Core mechanics:
+
+- The VM invokes debugger hooks before and after each instruction when debugging is enabled.
+- Breakpoints are stored by module name and line number, using code location metadata from the compiler.
+- Step modes include STEP_IN, STEP_OVER, and CONTINUE.
+- When a pause is triggered, the debugger exposes current module, line, function, and locals, along with stack helpers.
+
 Runtime Subsystems
 
 Core runtime subsystems are:
@@ -174,6 +196,7 @@ VM (vm.py)
 module loader (runtime/module_loader.py)
 module objects (runtime/module.py)
 scheduler (runtime/scheduler.py)
+debugger (runtime/debugger.py)
 runtime services (tools/agents/memory/event bus)
 
 3. Bytecode Model
@@ -268,28 +291,35 @@ These units can be cached independently and linked at runtime.
 
 The module loader is responsible for:
 
-resolving module paths
-compiling modules to bytecode units
-executing modules once
-caching module objects
-linking import bindings into module globals
+- resolving module paths
+- compiling modules to bytecode units
+- executing modules once
+- caching module objects
+- linking import bindings into module globals
 
-Import order:
+The loader only works with filesystem paths. It never reads `nodus.toml`, never reads `nodus.lock`, and never performs package resolution.
 
-project dependencies (nodus.toml/nodus.lock and deps/)
-local modules
-standard library
+10. Project Tooling
 
-10. Nodus Project System
+Project and package management live under `src/nodus/tooling/`:
 
-Projects are defined by a nodus.toml manifest at the project root. The runtime uses the manifest to resolve dependencies, manage a deps directory, and generate a nodus.lock file for deterministic installs.
+- `project.py` locates the project root, parses `nodus.toml`, and reads or writes `nodus.lock`
+- `semver.py` evaluates version ranges
+- `resolver.py` constructs dependency graphs from manifests and registry metadata
+- `installer.py` installs resolved packages into `.nodus/modules/`
+- `registry.py` exposes registry metadata to the resolver
 
-Key elements:
+`nodus.lock` uses deterministic `[[package]]` entries:
 
-nodus.toml manifest parsing
-semver range handling for dependency requirements
-dependency resolution for local path and git sources (registry placeholders are reserved for future support)
-nodus.lock generation with resolved versions and hashes
+```toml
+[[package]]
+name = "json"
+version = "1.2.0"
+source = "registry"
+hash = "sha256:abc123..."
+```
+
+Tooling runs during `nodus install` and `nodus update`. Script execution does not invoke the resolver or installer.
 Functions and Closures
 CALL
 CALL_VALUE
