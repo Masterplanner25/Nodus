@@ -19,6 +19,32 @@
 - Minimal runtime module objects and debugger MVP.
 - Semver parsing and lockfile format groundwork.
 
+## [0.4.0] - 2026-03-14 — Runtime Architecture & Packaging
+
+### Added
+- Bytecode version headers in compiled modules.
+- Runtime sandbox limits (steps/time/stdout).
+- Embedding API for host execution and host function registration.
+- Runtime module system with module objects and caching.
+- Per-module bytecode units and per-module global namespaces.
+- Project manifest parsing (`nodus.toml`) and dependency resolution.
+- `nodus.lock` lockfile generation with resolved metadata.
+
+### Changed
+- Imports now resolve through the runtime module loader with dependency-first resolution.
+- Module execution is isolated per module with cached module objects.
+- Tooling execution flows updated for module-based runtime execution.
+- CLI includes `nodus update` for dependency refresh.
+
+### Internal
+- Module loader integrates project manifests, lockfile resolution, and dependency paths.
+- VM supports module-bound function wrappers for module exports.
+- Package manager routes through the runtime project system and lockfile format.
+
+### Tests
+- Added coverage for manifest parsing, semver ranges, and dependency resolution.
+- Updated package tests for the new lockfile format and module execution behavior.
+
 ## [0.3.0] - 2026-03-13
 
 ### Added
