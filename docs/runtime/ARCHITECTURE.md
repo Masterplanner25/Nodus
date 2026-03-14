@@ -265,6 +265,17 @@ compiling modules to bytecode units
 executing modules once
 caching module objects
 linking import bindings into module globals
+
+10. Nodus Project System
+
+Projects are defined by a nodus.toml manifest at the project root. The runtime uses the manifest to resolve dependencies, manage a deps directory, and generate a nodus.lock file for deterministic installs.
+
+Key elements:
+
+nodus.toml manifest parsing
+semver range handling for dependency requirements
+dependency resolution for local path and git sources (registry placeholders are reserved for future support)
+nodus.lock generation with resolved versions and hashes
 Functions and Closures
 CALL
 CALL_VALUE

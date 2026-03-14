@@ -12,7 +12,7 @@ from typing import Callable
 
 from nodus.runtime.errors import format_error_payload
 from nodus.tooling.formatter import format_source
-import package_manager as _package_manager
+from nodus.tooling import package_manager as _package_manager
 from nodus.tooling.runner import (
     agent_call_result,
     build_ast,
@@ -132,6 +132,7 @@ def _render_help() -> str:
             "  nodus memory-keys",
             "  nodus package-init [--path PATH]",
             "  nodus package-install [--path PATH]",
+            "  nodus package-update [--path PATH]",
             "  nodus package-list [--path PATH]",
             "",
             "Global options:",
@@ -596,7 +597,17 @@ def _package_init(path: str | None) -> int:
 def _package_install(path: str | None) -> int:
     root = path or os.getcwd()
     try:
-        _package_manager.install_dependencies(root)
+        _package_manager.install_dependencies_for_project(root, update=False)
+    except Exception as err:
+        _print_stderr(str(err))
+        return 1
+    return 0
+
+
+def _package_update(path: str | None) -> int:
+    root = path or os.getcwd()
+    try:
+        _package_manager.install_dependencies_for_project(root, update=True)
     except Exception as err:
         _print_stderr(str(err))
         return 1
@@ -665,9 +676,11 @@ def main(argv: list[str] | None = None) -> int:
         "memory-keys",
         "package-init",
         "package-install",
+        "package-update",
         "package-list",
         "init",
         "install",
+        "update",
         "deps",
     }
 
@@ -1010,6 +1023,11 @@ def main(argv: list[str] | None = None) -> int:
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
         path = flags.get("--project-root") or flags.get("--path")
         return _package_install(path)
+
+    if command in {"package-update", "update"}:
+        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        path = flags.get("--project-root") or flags.get("--path")
+        return _package_update(path)
 
     if command in {"package-list", "deps"}:
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())

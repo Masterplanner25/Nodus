@@ -35,7 +35,8 @@ from nodus.frontend.ast.ast_nodes import (
     For,
 )
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
-from nodus.runtime.module import NodusModule
+from nodus.runtime.module import NodusModule, ModuleFunction
+from nodus.runtime.project import ProjectConfig, DependencySpec, ResolvedDependency, load_project_from, read_lockfile
 from nodus.tooling.project import find_project_root
 from nodus.vm.vm import VM
 
@@ -92,6 +93,14 @@ class ModuleLoader:
         self._metadata: dict[str, ModuleMetadata] = {}
         self._parsed: dict[str, ParsedModule] = {}
         self._loading: set[str] = set()
+        self.project: ProjectConfig | None = None
+        if project_root is not None:
+            self.project = load_project_from(project_root) or load_project_from(os.getcwd())
+        else:
+            self.project = load_project_from(os.getcwd())
+        if self.project is not None:
+            self.project_root = self.project.root
+        self._lock = read_lockfile(self.project.lock_path) if self.project is not None else {}
         self._import_state: dict = {
             "loaded": set(),
             "loading": set(),
@@ -105,7 +114,15 @@ class ModuleLoader:
     def resolve_import(self, import_path: str, base_dir: str, tok: Tok | None, module_id: str) -> str:
         if "project_root" not in self._import_state:
             self._import_state["project_root"] = self.project_root
-        return resolve_import_path(import_path, base_dir, self._import_state, tok, module_id)
+        return resolve_import_path(
+            import_path,
+            base_dir,
+            self._import_state,
+            tok,
+            module_id,
+            project=self.project,
+            lock=self._lock,
+        )
 
     def load_module_from_path(self, path: str, *, initial_globals: dict | None = None) -> NodusModule:
         module_id = os.path.abspath(path)
@@ -162,6 +179,8 @@ class ModuleLoader:
                 code_locs=code_locs,
                 globals={},
                 exports={},
+                host_globals=self.host_globals,
+                host_builtins=self.host_builtins,
                 initialized=False,
             )
             self._modules[module_id] = module
@@ -354,6 +373,9 @@ class ModuleLoader:
             if name in module.globals:
                 exports[name] = module.globals[name]
                 continue
+            if name in module.functions:
+                exports[name] = ModuleFunction(module, name)
+                continue
             resolved = None
             for spec in metadata.export_from_specs:
                 if name in spec.stmt.names:
@@ -457,7 +479,16 @@ def resolve_with_extensions(base_path: str, import_path: str, tok: Tok | None, m
     )
 
 
-def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok: Tok | None, module_id: str) -> str:
+def resolve_import_path(
+    import_path: str,
+    base_dir: str,
+    import_state: dict,
+    tok: Tok | None,
+    module_id: str,
+    *,
+    project: ProjectConfig | None = None,
+    lock: dict[str, "ResolvedDependency"] | None = None,
+) -> str:
     if ":" in import_path and not import_path.startswith("std:"):
         package_name, package_path = import_path.split(":", 1)
         if not package_name or not package_path:
@@ -485,6 +516,13 @@ def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok
         if not base.startswith(std_dir_norm):
             import_error("Invalid std import: path escapes std directory", tok, module_id)
         return resolve_with_extensions(base, import_path, tok, module_id)
+
+    if project is not None and import_path in project.dependencies:
+        dep = project.dependencies[import_path]
+        resolved = _resolve_dependency_location(project, dep, lock or {})
+        if resolved is not None:
+            return resolve_with_extensions(resolved, import_path, tok, module_id)
+        import_error(f"Dependency not installed: {import_path}", tok, module_id)
 
     if os.path.isabs(import_path):
         base = import_path
@@ -650,3 +688,24 @@ def collect_module_info(stmts: list, module_id: str, prefix: str) -> ModuleInfo:
         explicit_exports=explicit_exports,
         qualified=qualified,
     )
+
+
+def _resolve_dependency_location(
+    project: ProjectConfig,
+    spec: DependencySpec,
+    lock: dict[str, ResolvedDependency],
+) -> str | None:
+    locked = lock.get(spec.name)
+    if locked is not None and locked.path and os.path.isdir(locked.path):
+        return locked.path
+    deps_path = os.path.join(project.deps_dir, spec.name)
+    if os.path.isdir(deps_path):
+        return deps_path
+    if spec.kind == "path":
+        path = spec.value
+        if not os.path.isabs(path):
+            path = os.path.join(project.root, path)
+        path = os.path.abspath(path)
+        if os.path.isdir(path):
+            return path
+    return None

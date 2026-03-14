@@ -19,6 +19,7 @@ from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_s
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
+from nodus.runtime.module import ModuleFunction
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
@@ -2119,6 +2120,11 @@ class VM:
                     callee = self.pop()
                     call_name = callee.function.display_name if isinstance(callee, Closure) else None
                     self.record_vm_call(call_name, "call_value")
+                    if isinstance(callee, ModuleFunction):
+                        self.stack.append(callee(*args))
+                        self.ip += 1
+                        pending_after = instr
+                        continue
                     for arg in args:
                         self.stack.append(arg)
                     self.call_closure(callee, arg_count)
@@ -2157,10 +2163,20 @@ class VM:
                         self.runtime_error("key", f"Missing record field: {name}")
                     method = obj.fields[name]
                     self.record_vm_call(name, "call_method")
-                    self.stack.append(obj)
-                    for arg in args:
-                        self.stack.append(arg)
-                    self.call_closure(method, arg_count + 1)
+                    if isinstance(method, ModuleFunction):
+                        self.stack.append(method(*args))
+                        self.ip += 1
+                        pending_after = instr
+                        continue
+                    if obj.kind != "module":
+                        self.stack.append(obj)
+                        for arg in args:
+                            self.stack.append(arg)
+                        self.call_closure(method, arg_count + 1)
+                    else:
+                        for arg in args:
+                            self.stack.append(arg)
+                        self.call_closure(method, arg_count)
                     pending_after = instr
                     continue
 

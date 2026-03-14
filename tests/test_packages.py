@@ -6,19 +6,12 @@ from contextlib import redirect_stdout, redirect_stderr
 from unittest.mock import patch
 
 import nodus as lang
+from nodus.tooling.runner import run_source
 
 
 def run_program(src: str, source_path: str | None = None) -> list[str]:
-    _ast, code, functions, code_locs = lang.compile_source(
-        src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-    )
-    vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        vm.run()
-    return buf.getvalue().splitlines()
+    result, _vm = run_source(src, filename=source_path)
+    return result.get("stdout", "").splitlines()
 
 
 class PackageTests(unittest.TestCase):
@@ -40,7 +33,7 @@ class PackageTests(unittest.TestCase):
                 f.write("[dependencies]\n")
                 f.write('utils = "git+https://example.com/utils.git"\n')
 
-            def fake_run_git(args, cwd=None):
+            def fake_run_git(args):
                 if args[0] == "clone":
                     dest = args[2]
                     os.makedirs(dest, exist_ok=True)
@@ -52,7 +45,7 @@ class PackageTests(unittest.TestCase):
                 raise AssertionError(f"Unexpected git args: {args}")
 
             buf = io.StringIO()
-            with patch("package_manager.run_git", side_effect=fake_run_git):
+            with patch("nodus.runtime.project._run_git", side_effect=fake_run_git):
                 with redirect_stdout(buf):
                     exit_code = lang.main(["nodus", "install", "--project-root", td])
 
@@ -61,7 +54,9 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(td, "nodus.lock")))
             with open(os.path.join(td, "nodus.lock"), "r", encoding="utf-8") as f:
                 lock_text = f.read()
-            self.assertIn('utils = "git+https://example.com/utils.git@abc123"', lock_text)
+            self.assertIn('[dependencies.utils]', lock_text)
+            self.assertIn('source = "git:https://example.com/utils.git"', lock_text)
+            self.assertIn('hash = "abc123"', lock_text)
 
     def test_dependency_import_resolution(self):
         with tempfile.TemporaryDirectory() as td:
@@ -90,7 +85,11 @@ class PackageTests(unittest.TestCase):
                 f.write("[dependencies]\n")
                 f.write('utils = "git+https://example.com/utils.git"\n')
             with open(os.path.join(td, "nodus.lock"), "w", encoding="utf-8") as f:
-                f.write('utils = "git+https://example.com/utils.git@abc123"\n')
+                f.write("[dependencies]\n")
+                f.write("[dependencies.utils]\n")
+                f.write('version = "0.0.0"\n')
+                f.write('source = "git:https://example.com/utils.git"\n')
+                f.write('hash = "abc123"\n')
 
             buf = io.StringIO()
             err = io.StringIO()
@@ -98,7 +97,7 @@ class PackageTests(unittest.TestCase):
                 exit_code = lang.main(["nodus", "deps", "--project-root", td])
             self.assertEqual(exit_code, 0)
             self.assertEqual(err.getvalue(), "")
-            self.assertIn("utils: git+https://example.com/utils.git@abc123", buf.getvalue())
+            self.assertIn("utils: git:https://example.com/utils.git", buf.getvalue())
 
 
 if __name__ == "__main__":
