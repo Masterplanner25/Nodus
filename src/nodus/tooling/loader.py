@@ -37,6 +37,7 @@ from nodus.compiler.compiler import Compiler, wrap_bytecode
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 from nodus.tooling.project import find_project_root
 from nodus.vm.vm import VM
+from nodus.runtime.module_loader import ModuleLoader
 
 
 def set_module_on_tree(node, module_id: str):
@@ -494,17 +495,6 @@ def compile_source(
     optimize: bool = True,
     extra_builtins: set[str] | None = None,
 ):
-    import_state = import_state if import_state is not None else {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None}
-    if "modules" not in import_state:
-        import_state["modules"] = {}
-    if "module_ids" not in import_state:
-        import_state["module_ids"] = {}
-    if "project_root" not in import_state:
-        import_state["project_root"] = None
-
-    base_dir = os.path.dirname(os.path.abspath(source_path)) if source_path else os.getcwd()
-    ensure_project_root(import_state, base_dir, source_path)
-    module_id = os.path.abspath(source_path) if source_path else "<memory>"
     try:
         toks = tokenize(src)
         ast = Parser(toks).parse()
@@ -512,22 +502,25 @@ def compile_source(
         if isinstance(err, LangSyntaxError) and err.path is None:
             err.path = source_path
         raise
-    ast = resolve_imports(ast, base_dir, import_state, module_id)
+    module_id = os.path.abspath(source_path) if source_path else "<memory>"
+    set_module_on_tree(ast, module_id)
     if analyze:
         analyze_program(ast)
-    module_infos = import_state.get("modules", {})
-    defs_index: dict[str, set[str]] = {}
-    for info in module_infos.values():
-        for name in info.defs:
-            defs_index.setdefault(name, set()).add(info.path)
-    builtin_names = set(BUILTIN_NAMES)
-    if extra_builtins:
-        builtin_names.update(extra_builtins)
-    compiler = Compiler(module_infos=module_infos, module_defs_index=defs_index, builtin_names=builtin_names)
-    code, functions, code_locs = compiler.compile_program(ast)
+    base_dir = os.path.dirname(os.path.abspath(source_path)) if source_path else os.getcwd()
+    project_root = None
+    if import_state is not None:
+        project_root = import_state.get("project_root")
+    loader = ModuleLoader(project_root=project_root, extra_builtins=extra_builtins or set())
+    bytecode, functions, code_locs = loader.compile_only(src, module_name=module_id, base_dir=base_dir)
     if optimize:
-        code, functions, code_locs = optimize_bytecode(code, functions, code_locs)
-    bytecode = wrap_bytecode(code)
+        code, functions, code_locs = optimize_bytecode(bytecode.get("instructions", []), functions, code_locs)
+        bytecode = wrap_bytecode(
+            code,
+            module_name=bytecode.get("module_name"),
+            exports=bytecode.get("exports", []),
+            constants=bytecode.get("constants", []),
+            metadata=bytecode.get("metadata", {}),
+        )
     return ast, bytecode, functions, code_locs
 
 
@@ -538,7 +531,13 @@ def run_source(
     source_path: str | None = None,
     import_state: dict | None = None,
 ):
-    _ast, code, functions, code_locs = compile_source(src, source_path=source_path, import_state=import_state)
-    vm = VM(code, functions, code_locs=code_locs, initial_globals=initial_globals, input_fn=input_fn, source_path=source_path)
-    vm.run()
+    project_root = None
+    if import_state is not None:
+        project_root = import_state.get("project_root")
+    vm = VM([], {}, code_locs=[], initial_globals=initial_globals, input_fn=input_fn, source_path=source_path)
+    loader = ModuleLoader(project_root=project_root, vm=vm)
+    if source_path:
+        loader.load_module_from_path(source_path, initial_globals=initial_globals)
+    else:
+        loader.load_module_from_source(src, initial_globals=initial_globals)
     return vm

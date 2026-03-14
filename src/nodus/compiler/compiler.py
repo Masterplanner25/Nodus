@@ -62,13 +62,17 @@ BYTECODE_VERSION = 1
 def wrap_bytecode(
     instructions: list[tuple],
     *,
+    module_name: str | None = None,
+    exports: list[str] | None = None,
     constants: list[object] | None = None,
     metadata: dict[str, object] | None = None,
 ) -> dict:
     return {
         "bytecode_version": BYTECODE_VERSION,
+        "module_name": module_name,
         "instructions": instructions,
         "constants": constants or [],
+        "exports": exports or [],
         "metadata": metadata or {},
     }
 

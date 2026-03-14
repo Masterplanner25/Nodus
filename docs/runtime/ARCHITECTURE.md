@@ -230,6 +230,41 @@ time limit (wall-clock deadline)
 output limit (stdout character cap)
 
 When a limit is exceeded, the runtime raises RuntimeLimitExceeded (surfaced as a sandbox error in tooling outputs).
+
+7. Runtime Module System
+
+Nodus now executes modules as isolated runtime units. Each module has its own global namespace and is executed once per process. Imports resolve through the module loader, which caches module objects and reuses them for repeated imports.
+
+Modules are represented at runtime by a NodusModule object that stores:
+
+module bytecode
+module globals
+exported symbols
+
+8. Module Bytecode Units
+
+Each compiled module produces a standalone bytecode unit:
+
+{
+  "bytecode_version": 1,
+  "module_name": "<module>",
+  "constants": [...],
+  "instructions": [...],
+  "exports": [...],
+  "metadata": {...}
+}
+
+These units can be cached independently and linked at runtime.
+
+9. Module Loader
+
+The module loader is responsible for:
+
+resolving module paths
+compiling modules to bytecode units
+executing modules once
+caching module objects
+linking import bindings into module globals
 Functions and Closures
 CALL
 CALL_VALUE
@@ -247,7 +282,7 @@ INDEX_SET
 LOAD_FIELD
 STORE_FIELD
 
-Imports are currently compile-time operations and do not appear as runtime opcodes.
+Imports are resolved by the runtime module loader rather than being flattened at compile time.
 
 4. Runtime Orchestration Layer
 

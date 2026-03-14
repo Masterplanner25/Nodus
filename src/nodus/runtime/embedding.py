@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import inspect
+import os
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
-from nodus.tooling.loader import compile_source
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.vm.vm import VM, Record
 
@@ -84,20 +85,21 @@ class NodusRuntime:
         elif import_state is not None and self.project_root is not None:
             import_state["project_root"] = self.project_root
 
-        try:
-            _ast, bytecode, functions, code_locs = compile_source(
-                source,
-                source_path=filename,
-                import_state=import_state,
-                optimize=optimize,
-                extra_builtins=set(self._host_functions.keys()),
-            )
-        except Exception as err:
-            raise coerce_error(err, stage="compile", filename=normalized) from err
-
-        vm = VM(bytecode, functions, code_locs=code_locs, source_path=filename)
-        self._install_host_functions(vm)
+        vm = VM(
+            [],
+            {},
+            code_locs=[],
+            source_path=filename,
+        )
         self.last_vm = vm
+        host_builtins = {
+            name: BuiltinInfo(
+                info.name,
+                info.arity,
+                lambda *args, _fn=info.fn, _vm=vm: self._invoke_host_function(_vm, _fn, *args),
+            )
+            for name, info in self._host_functions.items()
+        }
 
         resolved_steps = self.max_steps if max_steps is None else max_steps
         resolved_timeout = self.timeout_ms if timeout_ms is None else timeout_ms
@@ -106,7 +108,16 @@ class NodusRuntime:
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
             try:
-                vm.run()
+                loader = ModuleLoader(
+                    project_root=self.project_root,
+                    vm=vm,
+                    host_builtins=host_builtins,
+                    extra_builtins=set(self._host_functions.keys()),
+                )
+                if filename and os.path.isfile(filename):
+                    loader.load_module_from_path(filename)
+                else:
+                    loader.load_module_from_source(source, module_name=filename or "<memory>")
             except Exception as err:
                 raise coerce_error(err, stage="execute", filename=normalized) from err
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from nodus.frontend.ast.ast_printer import format_ast
 from nodus.frontend.ast.ast_serializer import ast_to_dict
 from nodus.compiler.compiler import format_bytecode, build_disassembly
@@ -16,6 +18,7 @@ from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHA
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.result import Result, normalize_filename
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, goal_name_candidates, workflow_name_candidates
 from nodus.orchestration.workflow_state import checkpoints_public
@@ -188,9 +191,9 @@ def run_source(
         )
 
     vm = VM(
-        bytecode,
-        functions,
-        code_locs=code_locs,
+        [],
+        {},
+        code_locs=[],
         source_path=filename,
         trace=trace,
         trace_no_loc=trace_no_loc,
@@ -200,7 +203,6 @@ def run_source(
         scheduler_output=scheduler_output,
         event_bus=event_bus,
     )
-    vm.source_code = code
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     extras = {}
     if disassembly is not None:
@@ -210,7 +212,11 @@ def run_source(
     try:
         with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
             try:
-                vm.run()
+                loader = ModuleLoader(project_root=import_state.get("project_root") if import_state else None, vm=vm)
+                if filename and os.path.isfile(filename):
+                    loader.load_module_from_path(filename)
+                else:
+                    loader.load_module_from_source(code, module_name=filename or "<memory>")
             except Exception as err:
                 return (
                     _error_result(
@@ -282,8 +288,6 @@ def run_in_vm(
             vm,
         )
 
-    vm.reset_program(bytecode, functions, code_locs=code_locs, source_path=filename)
-    vm.source_code = code
     if worker_dispatcher is not None:
         vm.worker_dispatcher = worker_dispatcher
     if event_bus is not None:
@@ -297,7 +301,11 @@ def run_in_vm(
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
-            vm.run()
+            loader = ModuleLoader(project_root=import_state.get("project_root") if import_state else None, vm=vm)
+            if filename and os.path.isfile(filename):
+                loader.load_module_from_path(filename)
+            else:
+                loader.load_module_from_source(code, module_name=filename or "<memory>")
         except Exception as err:
             return (
                 _error_result(

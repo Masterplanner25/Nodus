@@ -7,9 +7,11 @@ from nodus.compiler.compiler import Compiler, wrap_bytecode
 from nodus.runtime.diagnostics import format_error
 from nodus.frontend.lexer import tokenize
 from nodus.frontend.parser import Parser
-from nodus.tooling.loader import resolve_imports
+from nodus.tooling.loader import set_module_on_tree
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.vm.vm import VM
 from nodus.frontend.ast.ast_nodes import FnDef
+from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 
 
 @dataclass
@@ -40,6 +42,7 @@ def is_complete_chunk(lines: list[str]) -> bool:
 
 def run_repl(version: str):
     state = ReplState(globals={}, fn_defs={}, import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None})
+    loader = ModuleLoader(project_root=os.getcwd())
     print(f"{version} REPL (type 'exit' to quit)")
 
     while True:
@@ -67,24 +70,31 @@ def run_repl(version: str):
 
         try:
             stmts = Parser(tokenize(src)).parse()
-            stmts = resolve_imports(stmts, os.getcwd(), state.import_state, "<repl>")
+            set_module_on_tree(stmts, "<repl>")
+            metadata = loader._build_metadata("<repl>", base_dir=os.getcwd(), source=src, source_path=None)
+            bindings, _deps = loader._resolve_import_bindings(metadata)
+            state.globals.update(bindings)
             new_defs, non_fn = split_fn_defs(stmts)
 
             merged_defs = dict(state.fn_defs)
             merged_defs.update(new_defs)
             program = list(merged_defs.values()) + non_fn
 
-            module_infos = state.import_state.get("modules", {})
-            defs_index: dict[str, set[str]] = {}
-            for info in module_infos.values():
-                for name in info.defs:
-                    defs_index.setdefault(name, set()).add(info.path)
-            compiler = Compiler(module_infos=module_infos, module_defs_index=defs_index)
+            module_info = metadata.module_info
+            module_info.imports = {name: name for name in metadata.import_names}
+            module_info.qualified = {name: name for name in module_info.defs}
+            compiler = Compiler(module_infos={"<repl>": module_info}, module_defs_index={}, builtin_names=BUILTIN_NAMES)
             code, functions, code_locs = compiler.compile_program(program)
-            vm = VM(wrap_bytecode(code), functions, code_locs=code_locs, initial_globals=dict(state.globals))
+            vm = VM(
+                wrap_bytecode(code, module_name="<repl>"),
+                functions,
+                code_locs=code_locs,
+                module_globals=state.globals,
+                source_path="<repl>",
+            )
             vm.run()
 
-            state.globals = vm.globals
+            state.globals = vm.module_globals
             state.fn_defs = merged_defs
         except Exception as err:
             print(format_error(err))

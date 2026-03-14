@@ -69,6 +69,8 @@ class VM:
         functions: dict[str, FunctionInfo],
         code_locs: list[tuple[str | None, int | None, int | None]] | None = None,
         initial_globals: dict | None = None,
+        module_globals: dict | None = None,
+        host_globals: dict | None = None,
         input_fn=None,
         source_path: str | None = None,
         trace: bool = False,
@@ -88,7 +90,9 @@ class VM:
         self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.stack: list = []
         self.frames: list[Frame] = []
-        self.globals: dict[str, object] = dict(initial_globals or {})
+        self.module_globals: dict[str, object] = module_globals if module_globals is not None else dict(initial_globals or {})
+        self.host_globals: dict[str, object] = host_globals if host_globals is not None else {}
+        self.globals: dict[str, object] = self.module_globals
         self.ip = 0
         self.input_fn = input_fn if input_fn is not None else input
         self.source_path = source_path
@@ -311,13 +315,18 @@ class VM:
             if isinstance(value, Cell):
                 return value.value
             return value
-        if name in self.globals:
-            value = self.globals[name]
+        if name in self.module_globals:
+            value = self.module_globals[name]
             if isinstance(value, Cell):
                 return value.value
             return value
         if name in self.functions:
             return Closure(self.functions[name], [])
+        if name in self.host_globals:
+            value = self.host_globals[name]
+            if isinstance(value, Cell):
+                return value.value
+            return value
         self.runtime_error("name", f"Undefined variable: {name}")
 
     def store_name(self, name: str, value):
@@ -328,7 +337,7 @@ class VM:
             else:
                 locals_[name] = value
         else:
-            self.globals[name] = value
+            self.module_globals[name] = value
         return value
 
     def load_upvalue(self, index: int):
@@ -663,6 +672,8 @@ class VM:
         functions: dict[str, FunctionInfo],
         code_locs: list[tuple[str | None, int | None, int | None]] | None = None,
         source_path: str | None = None,
+        module_globals: dict | None = None,
+        host_globals: dict | None = None,
     ) -> None:
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -670,6 +681,11 @@ class VM:
         self.functions = functions
         self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.source_path = source_path
+        if module_globals is not None:
+            self.module_globals = module_globals
+            self.globals = module_globals
+        if host_globals is not None:
+            self.host_globals = host_globals
         self.ip = 0
         self.stack = []
         self.frames = []
