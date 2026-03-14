@@ -36,6 +36,8 @@ The runtime executes bytecode instructions on a stack-based virtual machine.
 
 In addition to core execution, the runtime includes orchestration components such as:
 
+module loader and module objects
+
 coroutines
 
 channels
@@ -54,7 +56,7 @@ The current pipeline is implemented as:
 
 tokenize
   → Parser.parse
-  → resolve_imports
+  → ModuleLoader.resolve_import
   → Compiler.compile_program
   → optimize
   → VM.run
@@ -94,25 +96,21 @@ AST definitions live in:
 ast_nodes.py
 Import Resolution
 
-File:
+Files:
 
-project.py
-package_manager.py
-symbol_table.py
+runtime/module_loader.py
+runtime/project.py
+runtime/semver.py
 
 The resolver:
 
-loads imported modules
+loads project manifests and lockfiles
 
-enforces explicit exports
+resolves dependencies before local modules
 
-constructs module alias mappings
+compiles modules into bytecode units
 
-rewrites identifiers to module-qualified names
-
-Currently, imports are flattened into a single compilation unit.
-
-This simplifies compilation but creates scaling limitations.
+executes modules once and caches module objects
 
 Compilation
 
@@ -167,6 +165,16 @@ closures and upvalues
 builtin function registry
 
 The VM executes bytecode instructions emitted by the compiler.
+
+Runtime Subsystems
+
+Core runtime subsystems are:
+
+VM (vm.py)
+module loader (runtime/module_loader.py)
+module objects (runtime/module.py)
+scheduler (runtime/scheduler.py)
+runtime services (tools/agents/memory/event bus)
 
 3. Bytecode Model
 
@@ -265,6 +273,12 @@ compiling modules to bytecode units
 executing modules once
 caching module objects
 linking import bindings into module globals
+
+Import order:
+
+project dependencies (nodus.toml/nodus.lock and deps/)
+local modules
+standard library
 
 10. Nodus Project System
 
@@ -374,35 +388,11 @@ The stdlib provides common utilities while avoiding large external dependencies.
 
 7. Current Module Model
 
-Imports currently operate as compile-time transformations.
-
-Process:
-
-source.nd
-  → parse AST
-  → resolve_imports
-     → build ModuleInfo
-     → flatten imported AST
-  → rewrite identifiers
-  → compile
-
-Modules are represented as snapshot records rather than runtime objects.
-
-This simplifies compilation but introduces limitations.
+Imports are runtime operations executed through the module loader. Each module is compiled into its own bytecode unit, executed once, and cached for subsequent imports. Module exports are surfaced as module records, while module functions are invoked through module-bound call wrappers.
 
 8. Architectural Risks
 
 The current architecture has several constraints.
-
-Module Flattening
-
-Flattening modules into a single compile unit:
-
-limits isolation
-
-prevents incremental compilation
-
-complicates large projects
 
 Runtime Coupling
 
@@ -420,21 +410,19 @@ CPU-heavy workloads may be constrained
 
 Embedding Boundary
 
-Current embedding points (runner, server) are practical but informal.
-
-A stable API for embedding Nodus into other systems is not yet defined.
+The embedding API is available, but host integrations remain sensitive to VM performance characteristics.
 
 9. Recommended Architectural Evolution
 
-The highest-impact improvement is a runtime module system.
+The next high-impact improvements are incremental compilation and bytecode caching.
 
-Future architecture:
+Planned architecture:
 
 Module Source
    ↓
 Compile per module
    ↓
-Bytecode Unit
+Bytecode Unit (cached by hash)
    ↓
 Runtime Module Object
    ↓
@@ -442,35 +430,33 @@ VM Loader
 
 Benefits:
 
-module isolation
+faster rebuilds
 
-incremental compilation
+repeatable builds with caching
 
-better tooling
+better tooling integration
 
-improved embedding support
-
-Additional improvements:
+Additional improvements completed:
 
 Bytecode Versioning
 
-Introduce a bytecode version identifier to ensure compatibility across releases.
+Bytecode headers are versioned and validated at load time.
 
 Embedding APIs
 
-Formal APIs for:
+The NodusRuntime embedding API supports:
 
 executing code
 
 loading modules
 
-registering builtins
+registering host functions
 
-handling runtime events
+propagating runtime errors
 
 Runtime Service Interfaces
 
-Define structured interfaces for:
+Service interfaces remain an evolution area for:
 
 agents
 

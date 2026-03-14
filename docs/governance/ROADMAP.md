@@ -31,6 +31,13 @@ None.
 - Debugging UX improvements: trace filters/limits, scheduler tracing, trace events/JSON, and `nodus debug`.
 - Orchestration runtime: workflows/goals, task graph planning/resume, runtime event bus, server mode, and snapshots.
 
+### 0.3.x — Runtime Architecture Improvements
+- Bytecode version headers and validation.
+- Sandbox execution limits (steps/time/stdout).
+- Embedding API for host integration.
+- Runtime module system with per-module bytecode units and module caching.
+- Project manifests (`nodus.toml`) and lockfiles (`nodus.lock`) with dependency resolution.
+
 ### 0.2.0 — Stdlib Maturity and Project Ergonomics
 - Coherent stdlib modules (`std:strings`, `std:collections`, `std:fs`, `std:path`).
 - Expanded examples for real-world scripts.
@@ -41,9 +48,10 @@ None.
 
 ## Future Targets
 
-### 0.4.x — Packaging and Sandboxing (Planned)
-- Package manager evolution: registry/semver resolution and reproducible lockfiles beyond git-only installs.
-- Sandboxed execution mode for untrusted scripts (partial today: step/time/stdout limits).
+### 0.4.x — Packaging and Tooling (Planned)
+- Registry-backed package resolution and publishing.
+- Bytecode caching across builds and CI.
+- Debugger improvements and profiler MVP.
 
 ## Compatibility / Deprecations
 - `.tl` legacy extension (primary is `.nd`).
@@ -60,15 +68,11 @@ These are the most important structural improvements planned for the runtime.
 
 Current model:
 
-compile-time module flattening
+runtime module loader with per-module bytecode units
 
 Future model:
 
-per-module bytecode units
-
-runtime module objects
-
-live bindings
+incremental compilation and bytecode caching
 
 Benefits:
 
@@ -135,9 +139,7 @@ Introduce:
 
 registry specification
 
-deterministic dependency resolution
-
-lockfile support
+registry-backed dependency resolution
 
 This enables reproducible automation deployments.
 
@@ -147,9 +149,7 @@ Key runtime improvements.
 
 Module Isolation
 
-Implement per-module globals and module objects.
-
-Each module will compile into its own bytecode unit and link at runtime.
+Per-module globals and module objects are now implemented. Next steps focus on bytecode caching and incremental compilation.
 
 Runtime Namespaces
 
@@ -426,25 +426,17 @@ Version 0.4
 
 Focus:
 
-module bytecode unit format
-
-bytecode version header
-
-minimal runtime module objects
+bytecode caching
 
 debugger MVP
 
-semver parsing
-
-lockfile format
+registry package resolution
 
 Version 0.5
 
 Focus:
 
-replace compile-time module flattening
-
-runtime namespace isolation
+incremental compilation
 
 improved module error reporting
 

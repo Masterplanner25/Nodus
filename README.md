@@ -3,22 +3,22 @@
 Nodus is a lightweight, practical scripting language implemented in Python. It targets small scripts and automation tasks with a clean module system, a compact standard library, and predictable tooling.
 
 Architecture:
-`tokenizer -> parser/AST -> compiler -> bytecode -> stack VM`
+`source -> lexer -> parser -> AST -> compiler -> bytecode -> VM -> runtime services`
 
 Quick links:
-- `GETTING_STARTED.md`
-- `FORMAT.md`
-- `EDITOR_SUPPORT.md`
-- `STABILITY.md`
-- `TESTING.md`
-- `TASK_GRAPHS.md`
-- `WORKFLOWS.md`
-- `RUNTIME_EVENTS.md`
-- `DEBUGGER.md`
-- `PACKAGE_MANAGER.md`
-- `SERVER_MODE.md`
-- `VERSIONING.md`
-- `RELEASE_NOTES_0.2.0.md`
+- `docs/onboarding/GETTING_STARTED.md`
+- `docs/language/FORMAT.md`
+- `docs/tooling/EDITOR_SUPPORT.md`
+- `docs/governance/STABILITY.md`
+- `docs/tooling/TESTING.md`
+- `docs/runtime/TASK_GRAPHS.md`
+- `docs/runtime/WORKFLOWS.md`
+- `docs/runtime/RUNTIME_EVENTS.md`
+- `docs/tooling/DEBUGGER.md`
+- `docs/tooling/PACKAGE_MANAGER.md`
+- `docs/runtime/SERVER_MODE.md`
+- `docs/governance/VERSIONING.md`
+- `docs/governance/RELEASE_NOTES_0.2.0.md`
 
 ## Example
 
@@ -44,6 +44,8 @@ nodus run examples/hello.nd
 
 ## Getting Started
 
+- Install (editable):
+  - `pip install -e .`
 - REPL: `python nodus.py` or `nodus repl`
 - Run script: `nodus run script.nd`
 - Check script (no execution): `nodus check script.nd`
@@ -56,7 +58,12 @@ nodus run examples/hello.nd
 Project setup and dependencies:
 - Initialize project: `nodus init`
 - Install dependencies: `nodus install`
+- Update dependencies: `nodus update`
 - List deps: `nodus deps`
+
+Project manifests:
+- `nodus.toml` defines project metadata and dependencies.
+- `nodus.lock` pins resolved dependency sources and hashes.
 
 Backward compatible invocations are still supported:
 - `python language.py script.nd`
@@ -73,6 +80,7 @@ Backward compatible invocations are still supported:
 - `nodus dis script.nd` (print compiled bytecode without running)
 - `nodus dis script.nd --loc` (include source locations in bytecode)
 - `nodus run script.nd` (execute)
+- `nodus repl` (interactive REPL)
 - `nodus run script.nd --trace --trace-limit 50` (short trace)
 - `nodus run script.nd --trace-events` (runtime event stream)
 - `nodus run script.nd --trace-json --trace-file trace.json` (machine-readable events)
@@ -80,12 +88,16 @@ Backward compatible invocations are still supported:
 - `nodus run script.nd --no-opt` (disable bytecode optimization)
 - `nodus run script.nd --step-limit 100000 --time-limit 5 --output-limit 20000` (sandbox limits)
 - `nodus debug script.nd` (interactive debugger)
+- `nodus install` (install project dependencies)
+- `nodus update` (refresh dependencies and lockfile)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
 - `nodus snapshot <session>` (save session snapshot)
 - `nodus snapshots` (list snapshots)
 - `nodus restore <snapshot>` (restore snapshot to new session)
 - `nodus worker --host <host> --port <n>` (register a worker with a server)
+- `nodus install` (install project dependencies to `deps/`)
+- `nodus update` (refresh dependencies and lockfile)
 
 Orchestration commands:
 - `nodus graph <script.nd>` (plan a task graph from a script)
@@ -127,6 +139,9 @@ Runtime service commands:
 - bytecode version headers for forward compatibility
 - embeddable Python runtime with host function registration
 - sandbox limits for steps, time, and stdout output
+- runtime module loader with per-module bytecode units
+- per-module global namespace isolation
+- project manifests (`nodus.toml`) with dependency resolution and `nodus.lock`
 
 ## Imports
 
@@ -138,6 +153,7 @@ Runtime service commands:
 - `export { add } from "./math.nd"`
 
 Import resolution rules:
+- Project dependencies resolve first (entries in `nodus.toml` / `nodus.lock` and the `deps/` directory).
 - `std:` prefix resolves to the built-in `std/` directory (e.g. `std:strings`).
 - Relative paths start with `./` or `../` and resolve from the importing file.
 - Non-relative paths resolve from the project root (the entry script directory by default).
@@ -195,8 +211,10 @@ Compiled bytecode includes a version header:
 ```json
 {
   "bytecode_version": 1,
+  "module_name": "<module>",
   "instructions": [...],
   "constants": [],
+  "exports": [],
   "metadata": {}
 }
 ```

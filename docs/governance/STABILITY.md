@@ -17,12 +17,15 @@ This document summarizes which parts of the language are considered stable, most
 - Operators: arithmetic, comparisons, `&&`, `||`, `!`, unary `-`
 - Lists and maps (literals, indexing, assignment)
 - Basic import/export syntax
+- VM execution model
 
 ## Mostly Stable
 
 - `for name in iterable` iteration protocol
 - Record value model (field access and methods)
 - Module visibility rules (exports vs legacy behavior)
+- Runtime module system (module loader, module objects, per-module bytecode units)
+- Package manager behavior and lockfile semantics
 
 ## Experimental
 
@@ -32,9 +35,8 @@ This document summarizes which parts of the language are considered stable, most
 - Coroutines, scheduler, and channels
 - Runtime service APIs (tools/agents/memory/events)
 - Optional type annotations and static analysis
-- Package manager behavior and lockfile semantics
 
 ## Notes
 
-- The current module system uses compile-time flattening and alias rewriting. The syntax is stable, but the runtime model is expected to change before 1.0.
+- The module system uses runtime module loading and per-module bytecode units. Import syntax remains stable.
 - Records vs maps may be clarified or retyped in the type system before a syntax freeze.
