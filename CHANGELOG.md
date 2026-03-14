@@ -3,21 +3,16 @@
 ## [Unreleased]
 
 ### Added
-- Tooling-side package management modules for project parsing, semver, dependency resolution, installation, and registry metadata.
-- Deterministic `[[package]]` lockfile entries with `name`, `version`, `source`, and `hash`.
-- Test coverage for installer behavior, lockfile generation, runtime loading from `.nodus/modules`, and manifest/resolution flows.
+- None.
 
 ### Changed
-- Refactored package management so runtime execution no longer performs manifest parsing, dependency resolution, registry access, or network operations.
-- Installed dependencies now live under `.nodus/modules/` instead of `deps/`.
-- Runtime module loading now resolves imports in the order: local project modules, `.nodus/modules/`, then standard library.
-- `nodus install` and `nodus update` now route through tooling-side resolution and installation.
+- None.
 
 ### Fixed
 - None.
 
 ### Removed
-- Package-management responsibilities from the runtime project/loading path.
+- None.
 
 ## [0.4.x Tracking]
 - Module bytecode unit format and bytecode version headers.
@@ -34,12 +29,20 @@
 - Per-module bytecode units and per-module global namespaces.
 - Project manifest parsing (`nodus.toml`) and dependency resolution.
 - `nodus.lock` lockfile generation with resolved metadata.
+- Debugger MVP with breakpoints, stepping, stack inspection, and variable inspection.
+- Tooling-side package management modules for project parsing, semver, dependency resolution, installation, and registry metadata.
+- Deterministic `[[package]]` lockfile entries with `name`, `version`, `source`, and `hash`.
+- Test coverage for installer behavior, lockfile generation, runtime loading from `.nodus/modules`, and manifest/resolution flows.
 
 ### Changed
 - Imports now resolve through the runtime module loader with dependency-first resolution.
 - Module execution is isolated per module with cached module objects.
 - Tooling execution flows updated for module-based runtime execution.
 - CLI includes `nodus update` for dependency refresh.
+- Refactored package management so runtime execution no longer performs manifest parsing, dependency resolution, registry access, or network operations.
+- Installed dependencies now live under `.nodus/modules/` instead of `deps/`.
+- Runtime module loading now resolves imports in the order: local project modules, `.nodus/modules/`, then standard library.
+- `nodus install` and `nodus update` now route through tooling-side resolution and installation.
 
 ### Internal
 - Module loader integrates project manifests, lockfile resolution, and dependency paths.
@@ -49,6 +52,12 @@
 ### Tests
 - Added coverage for manifest parsing, semver ranges, and dependency resolution.
 - Updated package tests for the new lockfile format and module execution behavior.
+
+### Fixed
+- Worker-required tasks always dispatch through the worker manager.
+
+### Removed
+- Package-management responsibilities from the runtime project/loading path.
 
 ## [0.3.0] - 2026-03-13
 
