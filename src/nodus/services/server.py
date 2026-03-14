@@ -107,7 +107,7 @@ class WorkerManager:
         requirement_timeout_ms: float | None = None,
     ):
         with self._cond:
-            if not self.force_dispatch:
+            if not self.force_dispatch and requirement is None:
                 return execute_fn()
             self._expire_workers(time.monotonic())
             if requirement:
