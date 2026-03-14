@@ -1,0 +1,6 @@
+let a = -5
+let b = -1.0
+let c = -2.50
+let list = [-1, -2.0, -3.75]
+let map = {"x": -4, "y": -5.0}
+print(a + b + c + list[0] + map["x"])

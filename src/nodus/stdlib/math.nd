@@ -1,0 +1,27 @@
+fn abs(value) {
+    return math_abs(value)
+}
+
+fn min(a, b) {
+    return math_min(a, b)
+}
+
+fn max(a, b) {
+    return math_max(a, b)
+}
+
+fn floor(value) {
+    return math_floor(value)
+}
+
+fn ceil(value) {
+    return math_ceil(value)
+}
+
+fn sqrt(value) {
+    return math_sqrt(value)
+}
+
+fn random() {
+    return math_random()
+}

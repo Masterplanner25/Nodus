@@ -1,0 +1,27 @@
+// Editor support demo for syntax highlighting.
+# Imports and exports
+import "std:strings" as s
+import { join, repeat } from "std:strings"
+import { list_sum } from "std:collections"
+export let pi = 3.14159
+
+export fn shout(name) {
+    let greeting = "hello " + name
+    return s.repeat(greeting, 2)
+}
+
+fn demo(x) {
+    let nums = [1, 2, 3]
+    let m = {"a": 1, "b": 2}
+    if (x > 0 && true) {
+        print(repeat("ha", 2))
+        print(join(nums, ","))
+        print(list_sum(nums))
+        print(m["a"])
+    } else {
+        while (x < 0 || false) {
+            x = x + 1
+        }
+    }
+    return nil
+}

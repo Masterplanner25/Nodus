@@ -1,0 +1,7 @@
+fn parse(text) {
+    return json_parse(text)
+}
+
+fn stringify(value) {
+    return json_stringify(value)
+}

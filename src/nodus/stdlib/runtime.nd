@@ -1,0 +1,59 @@
+fn fn_name(value) {
+    return runtime_fn_name(value)
+}
+
+fn fn_arity(value) {
+    return runtime_fn_arity(value)
+}
+
+fn fn_module(value) {
+    return runtime_fn_module(value)
+}
+
+fn fields(value) {
+    return runtime_fields(value)
+}
+
+fn has(value, name) {
+    return runtime_has(value, name)
+}
+
+fn module_fields(module) {
+    return runtime_module_fields(module)
+}
+
+fn stack_depth() {
+    return runtime_stack_depth()
+}
+
+fn stack_frame(index) {
+    return runtime_stack_frame(index)
+}
+
+fn typeof(value) {
+    return runtime_typeof(value)
+}
+
+fn tasks() {
+    return runtime_tasks()
+}
+
+fn task(id) {
+    return runtime_task(id)
+}
+
+fn scheduler() {
+    return runtime_scheduler_stats()
+}
+
+fn time_ms() {
+    return runtime_time()
+}
+
+fn events() {
+    return runtime_events()
+}
+
+fn clear_events() {
+    return runtime_clear_events()
+}

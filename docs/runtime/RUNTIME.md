@@ -1,0 +1,378 @@
+Nodus Runtime Specification
+
+This document describes the internal runtime model of Nodus.
+
+While other documents describe language design and architecture, this file defines the execution behavior of the virtual machine, including:
+
+memory model
+
+stack layout
+
+calling conventions
+
+object representations
+
+runtime value handling
+
+This information is particularly important for:
+
+debugging the VM
+
+implementing new opcodes
+
+extending the runtime
+
+future FFI integrations
+
+1. Runtime Overview
+
+The Nodus runtime is a stack-based virtual machine implemented in Python.
+
+Programs are compiled into bytecode and executed by the VM.
+
+Execution state includes:
+
+value stack
+call frames
+globals table
+closure environments
+builtin registry
+
+The runtime executes instructions sequentially unless control-flow instructions modify the instruction pointer.
+
+2. Memory Model
+
+Nodus currently relies on Python’s memory management for object allocation and garbage collection.
+
+All runtime values are Python objects wrapped by Nodus runtime abstractions.
+
+Examples include:
+
+numbers
+
+strings
+
+lists
+
+maps
+
+records
+
+function objects
+
+module records
+
+Because Python manages memory automatically, Nodus does not implement a custom garbage collector.
+
+However, runtime structures are designed so that a future custom memory system could replace Python-managed objects if necessary.
+
+3. Runtime Values
+
+Runtime values are defined in:
+
+runtime_values.py
+
+The value system provides representations for:
+
+numbers
+booleans
+strings
+lists
+maps
+records
+functions
+modules
+iterators
+
+Values are dynamically typed.
+
+The VM performs runtime checks when executing instructions that require specific value types.
+
+4. Value Stack
+
+The value stack is the central execution structure of the VM.
+
+The stack stores intermediate values produced by instructions.
+
+Example operations:
+
+PUSH_CONST
+POP
+CALL
+RETURN
+ADD
+
+Example stack evolution:
+
+Initial stack: []
+
+PUSH_CONST 2
+Stack: [2]
+
+PUSH_CONST 3
+Stack: [2, 3]
+
+ADD
+Stack: [5]
+
+The stack grows and shrinks as instructions execute.
+
+5. Call Frames
+
+Function execution is tracked using call frames.
+
+Each frame contains:
+
+instruction pointer
+local variable storage
+closure references
+return address
+
+When a function is called:
+
+a new frame is created
+
+arguments are assigned to local slots
+
+execution begins at the function’s entry instruction
+
+When a function returns:
+
+the frame is removed
+
+the return value is pushed onto the previous stack
+
+6. Calling Convention
+
+Nodus uses a stack-based calling convention.
+
+Example:
+
+push argument1
+push argument2
+CALL function
+
+The VM then:
+
+pops the arguments
+
+creates a new frame
+
+assigns arguments to parameter slots
+
+executes the function
+
+The return value is pushed back onto the caller’s stack.
+
+7. Closures and Upvalues
+
+Closures allow functions to capture variables from outer scopes.
+
+Captured variables are stored as upvalues.
+
+Upvalues allow nested functions to reference values defined outside their local scope.
+
+Example structure:
+
+outer function
+   variable x
+       ↓
+inner function captures x
+
+The VM supports this behavior through instructions such as:
+
+LOAD_UPVALUE
+STORE_UPVALUE
+MAKE_CLOSURE
+
+This mechanism ensures that captured variables remain accessible even after the outer function returns.
+
+8. Object Model
+
+Nodus uses a dynamic object model.
+
+Runtime values represent different object types.
+
+Examples include:
+
+string
+list
+map
+record
+module
+function
+
+Records represent structured objects with named fields.
+
+Example:
+
+user = {name: "Alice", age: 30}
+
+Field access is implemented using:
+
+LOAD_FIELD
+STORE_FIELD
+
+This model keeps object semantics simple while supporting structured data.
+
+9. String Representation
+
+Strings are immutable runtime values.
+
+They are represented internally as Python strings.
+
+Operations such as concatenation and slicing create new string values.
+
+This design simplifies memory management and avoids mutation-related bugs.
+
+10. Lists and Arrays
+
+Lists are ordered collections.
+
+Internally they map to Python list objects.
+
+Example list operations:
+
+BUILD_LIST
+INDEX
+INDEX_SET
+
+Lists support:
+
+indexing
+
+iteration
+
+mutation
+
+Because they rely on Python lists, resizing and memory allocation are handled automatically.
+
+11. Maps and Records
+
+Maps are key-value dictionaries.
+
+Internally they map to Python dictionary objects.
+
+Example instructions:
+
+BUILD_MAP
+INDEX
+INDEX_SET
+
+Records are structured objects implemented as dictionaries with field-style access.
+
+Example:
+
+record = {x: 10, y: 20}
+
+Records support:
+
+named fields
+
+field lookup
+
+field mutation
+
+12. Iterators
+
+Iteration is supported through the iterator protocol.
+
+Relevant instructions:
+
+GET_ITER
+ITER_NEXT
+
+Collections such as lists and maps provide iterator objects.
+
+The VM manages iteration state internally.
+
+13. Exception Handling
+
+Exception support is implemented through runtime stack markers.
+
+Instructions include:
+
+SETUP_TRY
+POP_TRY
+THROW
+
+When an exception occurs:
+
+the VM searches for the nearest try block
+
+control jumps to the associated handler
+
+the stack is restored to the handler state
+
+14. Module Objects
+
+Modules currently exist as compile-time constructs.
+
+During compilation:
+
+imported modules are flattened
+
+exported names are mapped into global scope
+
+The VM does not currently load modules dynamically.
+
+Future versions may introduce runtime module objects.
+
+15. Scheduler and Coroutines
+
+Nodus includes runtime support for asynchronous execution.
+
+Relevant modules:
+
+coroutine.py
+scheduler.py
+channel.py
+
+These components support:
+
+cooperative scheduling
+
+message passing
+
+asynchronous workflows
+
+Coroutines may yield control using the YIELD instruction.
+
+The scheduler resumes suspended coroutines when work becomes available.
+
+16. Event System
+
+Runtime execution events are emitted through:
+
+runtime_events.py
+
+Events may include:
+
+function call
+task execution
+workflow transition
+error
+
+Host systems may subscribe to these events for monitoring or debugging.
+
+17. Future Runtime Evolution
+
+Potential runtime improvements include:
+
+runtime module objects
+
+bytecode versioning
+
+optional custom memory manager
+
+improved scheduler isolation
+
+optimized bytecode execution
+
+These changes should preserve the existing runtime semantics wherever possible.
+
+Final Principle
+
+The Nodus runtime is designed to remain predictable and inspectable.
+
+While performance improvements may occur over time, the system should remain easy to reason about for contributors and users.

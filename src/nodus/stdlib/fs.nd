@@ -1,0 +1,28 @@
+fn read(path) {
+    return read_file(path)
+}
+
+fn write(path, content) {
+    return write_file(path, content)
+}
+
+fn exists(path) {
+    return path_exists(path)
+}
+
+fn listdir(path) {
+    return list_dir(path)
+}
+
+fn append(path, content) {
+    return append_file(path, content)
+}
+
+fn ensure_dir(path) {
+    mkdir(path)
+    return path
+}
+
+fn exists_path(path) {
+    return path_exists(path)
+}

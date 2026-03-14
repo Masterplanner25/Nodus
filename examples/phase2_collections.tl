@@ -1,0 +1,13 @@
+﻿# comments
+let nums = [1, 2, 3]
+nums[1] = 42 // update list
+
+let user = {
+    "name": "alice",
+    "age": 30,
+}
+
+print(nums)
+print(user["name"])
+print(keys(user))
+print(values(user))

@@ -1,0 +1,18 @@
+﻿fn clamp(x, lo, hi) {
+    if (x < lo) {
+        return lo
+    } else {
+        if (x > hi) {
+            return hi
+        } else {
+            return x
+        }
+    }
+}
+
+fn coalesce(a, b) {
+    if (a == nil) {
+        return b
+    }
+    return a
+}

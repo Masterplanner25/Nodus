@@ -1,0 +1,11 @@
+fn call(name, payload) {
+    return agent_call(name, payload)
+}
+
+fn available() {
+    return agent_available()
+}
+
+fn describe(name) {
+    return agent_describe(name)
+}

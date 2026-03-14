@@ -1,0 +1,2 @@
+import { repeat } from "std:strings"
+print(repeat("ha", 3))

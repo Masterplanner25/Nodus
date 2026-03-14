@@ -1,0 +1,34 @@
+{
+    "name": "nodus-language-support",
+    "displayName": "Nodus Language Support",
+    "description": "Basic syntax highlighting for Nodus (.nd) files.",
+    "version": "0.1.0",
+    "publisher": "nodus",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": ["Programming Languages"],
+    "contributes": {
+        "languages": [
+            {
+                "id": "nodus",
+                "aliases": ["Nodus", "nodus"],
+                "extensions": [".nd"],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "nodus",
+                "scopeName": "source.nodus",
+                "path": "./syntaxes/nodus.tmLanguage.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "nodus",
+                "path": "./snippets/nodus.json"
+            }
+        ]
+    }
+}

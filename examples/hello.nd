@@ -1,0 +1,11 @@
+import { repeat } from "std:strings"
+import "std:collections" as c
+
+fn greet(name) {
+    return "hello " + name
+}
+
+let nums = [1, 2, 3]
+print(greet("Nodus"))
+print(repeat("ha", 2))
+print(c.list_sum(nums))

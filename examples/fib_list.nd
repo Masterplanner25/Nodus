@@ -1,0 +1,10 @@
+﻿fn fib(n) {
+    if (n <= 1) {
+        return n
+    } else {
+        return fib(n - 1) + fib(n - 2)
+    }
+}
+
+let values = [fib(0), fib(1), fib(2), fib(3), fib(4), fib(5)]
+print(values)

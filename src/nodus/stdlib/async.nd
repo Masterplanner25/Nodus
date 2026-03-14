@@ -1,0 +1,76 @@
+fn sleep(ms) {
+    return __sleep(ms)
+}
+
+fn _spawn_task(task) {
+    if (type(task) == "coroutine") {
+        spawn(task)
+        return
+    }
+    spawn(coroutine(task))
+}
+
+fn parallel(tasks) {
+    let i = 0
+    while (i < len(tasks)) {
+        _spawn_task(tasks[i])
+        i = i + 1
+    }
+    run_loop()
+}
+
+fn series(tasks) {
+    let i = 0
+    while (i < len(tasks)) {
+        _spawn_task(tasks[i])
+        run_loop()
+        i = i + 1
+    }
+}
+
+fn graph_run(tasks) {
+    return run_graph(graph(tasks))
+}
+
+fn queue() {
+    return channel()
+}
+
+fn worker_pool(worker, count) {
+    let jobs = channel()
+    let i = 0
+    while (i < count) {
+        spawn(coroutine(fn() {
+            let item = recv(jobs)
+            while (item != nil) {
+                worker(item)
+                item = recv(jobs)
+            }
+        }))
+        i = i + 1
+    }
+    return jobs
+}
+
+fn pipeline(stages) {
+    let input = channel()
+    let current = input
+    let i = 0
+    while (i < len(stages)) {
+        let stage = stages[i]
+        let output = channel()
+        let source = current
+        spawn(coroutine(fn() {
+            let item = recv(source)
+            while (item != nil) {
+                let result = stage(item)
+                send(output, result)
+                item = recv(source)
+            }
+            close(output)
+        }))
+        current = output
+        i = i + 1
+    }
+    return record { input: input, output: current }
+}

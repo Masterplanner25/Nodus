@@ -1,0 +1,2 @@
+import "modules/greetings.nd"
+print(greeting_prefix) // should fail: greeting_prefix is not exported

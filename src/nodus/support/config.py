@@ -1,0 +1,14 @@
+"""Runtime configuration defaults for service mode."""
+
+import os
+
+MAX_STEPS = 10_000_000
+MAX_STDOUT_CHARS = 20_000
+EXECUTION_TIMEOUT_MS = 200
+SESSION_TIMEOUT_MS = 300_000
+MAX_SESSIONS = 100
+SNAPSHOT_DIR = os.environ.get("NODUS_SNAPSHOT_DIR", ".nodus/snapshots")
+MAX_SNAPSHOTS = 200
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 7331
+WORKER_SWEEP_INTERVAL_MS = 500

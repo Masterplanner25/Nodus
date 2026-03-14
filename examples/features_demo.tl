@@ -1,0 +1,11 @@
+﻿let who = "world"
+let greeting = "hello, " + who
+print(greeting)
+
+print(type(greeting))
+print(str(nil))
+print(clock())
+
+if (true && !false) {
+    print(["ok", 1, nil, true])
+}

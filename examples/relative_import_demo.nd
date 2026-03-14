@@ -1,0 +1,2 @@
+import { greet } from "./modules/greetings.nd"
+print(greet("Relative"))

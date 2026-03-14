@@ -1,0 +1,131 @@
+{
+    "name": "Nodus",
+    "scopeName": "source.nodus",
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#keywords" },
+        { "include": "#literals" },
+        { "include": "#operators" },
+        { "include": "#punctuation" },
+        { "include": "#memberAccess" },
+        { "include": "#identifiers" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.nodus",
+                    "match": "#.*$"
+                },
+                {
+                    "name": "comment.line.double-slash.nodus",
+                    "match": "//.*$"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.nodus",
+                    "begin": "\"",
+                    "end": "\"",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.string.begin.nodus" }
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.definition.string.end.nodus" }
+                    },
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.nodus",
+                            "match": "\\\\(\\\\|\"|n|t)"
+                        },
+                        {
+                            "name": "string.other.link.nodus",
+                            "match": "std:[^\"\\\\]+"
+                        }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.float.nodus",
+                    "match": "\\b\\d+\\.\\d+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.nodus",
+                    "match": "\\b\\d+\\b"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.nodus",
+                    "match": "\\b(let|fn|return|if|else|while|for|import|export|from|as)\\b"
+                }
+            ]
+        },
+        "literals": {
+            "patterns": [
+                {
+                    "name": "constant.language.nodus",
+                    "match": "\\b(true|false|nil)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.nodus",
+                    "match": "==|!=|<=|>=|&&|\\|\\||[+\\-*/<>=!]"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.separator.nodus",
+                    "match": "[,;]"
+                },
+                {
+                    "name": "punctuation.accessor.nodus",
+                    "match": "\\."
+                },
+                {
+                    "name": "punctuation.definition.brackets.nodus",
+                    "match": "[\\[\\]\\(\\){}]"
+                },
+                {
+                    "name": "punctuation.separator.key-value.nodus",
+                    "match": ":"
+                }
+            ]
+        },
+        "memberAccess": {
+            "patterns": [
+                {
+                    "name": "meta.member.access.nodus",
+                    "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "captures": {
+                        "1": { "name": "variable.other.object.nodus" },
+                        "2": { "name": "punctuation.accessor.nodus" },
+                        "3": { "name": "variable.other.property.nodus" }
+                    }
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "variable.other.nodus",
+                    "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+                }
+            ]
+        }
+    }
+}

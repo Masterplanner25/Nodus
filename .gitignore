@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Test cache
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Nodus runtime data
+.nodus/
+
+# Virtual environment 
+.venv/

@@ -1,0 +1,52 @@
+{
+    "Import Module": {
+        "prefix": "import",
+        "body": ["import \"${1:path}\""],
+        "description": "Import a module by path"
+    },
+    "Import Module As": {
+        "prefix": "importas",
+        "body": ["import \"${1:path}\" as ${2:alias}"],
+        "description": "Import a module with an alias"
+    },
+    "Import Named": {
+        "prefix": "importfrom",
+        "body": ["import { ${1:name} } from \"${2:path}\""],
+        "description": "Import named exports from a module"
+    },
+    "Export Let": {
+        "prefix": "exportlet",
+        "body": ["export let ${1:name} = ${2:value}"],
+        "description": "Export a variable"
+    },
+    "Export Fn": {
+        "prefix": "exportfn",
+        "body": ["export fn ${1:name}(${2:params}) {", "    ${3:// body}", "}"],
+        "description": "Export a function"
+    },
+    "Function": {
+        "prefix": "fn",
+        "body": ["fn ${1:name}(${2:params}) {", "    ${3:// body}", "}"],
+        "description": "Function declaration"
+    },
+    "If Else": {
+        "prefix": "ifelse",
+        "body": ["if (${1:condition}) {", "    ${2:// then}", "} else {", "    ${3:// else}", "}"],
+        "description": "If/else block"
+    },
+    "While Loop": {
+        "prefix": "while",
+        "body": ["while (${1:condition}) {", "    ${2:// body}", "}"],
+        "description": "While loop"
+    },
+    "For Loop": {
+        "prefix": "for",
+        "body": ["for (${1:init}; ${2:cond}; ${3:inc}) {", "    ${4:// body}", "}"],
+        "description": "For loop"
+    },
+    "Return": {
+        "prefix": "return",
+        "body": ["return ${1:value}"],
+        "description": "Return statement"
+    }
+}

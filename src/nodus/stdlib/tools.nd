@@ -1,0 +1,11 @@
+fn execute(name, args) {
+    return tool_call(name, args)
+}
+
+fn available() {
+    return tool_available()
+}
+
+fn describe(name) {
+    return tool_describe(name)
+}

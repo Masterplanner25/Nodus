@@ -1,0 +1,20 @@
+fn get(key) {
+    return memory_get(key)
+}
+
+fn put(key, value) {
+    return memory_put(key, value)
+}
+
+fn delete(key) {
+    return memory_delete(key)
+}
+
+fn keys() {
+    return memory_keys()
+}
+
+fn has(key) {
+    let value = memory_get(key)
+    return value != nil
+}

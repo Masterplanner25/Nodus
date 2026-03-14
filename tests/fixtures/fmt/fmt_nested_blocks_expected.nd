@@ -1,0 +1,21 @@
+# inline
+// neg
+fn outer() {
+    if (true) {
+        fn inner() {
+            if (false) {
+                print(-1)
+            } else {
+                let x = -(2 + 3)
+                while (x > 0) {
+                    x = x - 1
+                }
+            }
+        }
+        inner()
+    } else {
+        for (let i = 0; i < 2; i = i + 1) {
+            print(i)
+        }
+    }
+}

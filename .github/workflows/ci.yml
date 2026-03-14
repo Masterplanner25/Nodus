@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Formatter check
+        run: |
+          python - <<'PY'
+          import os, subprocess, sys
+          files = []
+          for root, _, names in os.walk('.'):
+            if root.startswith('./.git'):
+              continue
+            for name in names:
+              if name.endswith(('.nd', '.tl')):
+                files.append(os.path.join(root, name))
+          files.sort()
+          if not files:
+            sys.exit(0)
+          for path in files:
+            result = subprocess.run([sys.executable, 'nodus.py', 'fmt', path, '--check'])
+            if result.returncode != 0:
+              sys.exit(result.returncode)
+          PY
+
+      - name: Static checks
+        run: |
+          python nodus.py check examples/import_demo.nd
+          python nodus.py check examples/stdlib_demo.nd
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Example suite
+        run: python nodus.py test-examples

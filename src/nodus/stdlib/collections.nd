@@ -1,0 +1,74 @@
+fn len(items) {
+    return collection_len(items)
+}
+
+fn list_sum(nums) {
+    let total = 0
+    for (let i = 0; i < collection_len(nums); i = i + 1) {
+        total = total + nums[i]
+    }
+    return total
+}
+
+fn list_last(nums) {
+    return nums[collection_len(nums) - 1]
+}
+
+fn first(items) {
+    return items[0]
+}
+
+fn last(items) {
+    return items[collection_len(items) - 1]
+}
+
+fn push(items, value) {
+    return list_push(items, value)
+}
+
+fn pop(items) {
+    return list_pop(items)
+}
+
+fn has_key(map, key) {
+    let ks = keys(map)
+    for (let i = 0; i < collection_len(ks); i = i + 1) {
+        if (ks[i] == key) {
+            return true
+        }
+    }
+    return false
+}
+
+fn map(items, fn_value) {
+    let out = []
+    let i = 0
+    while (i < collection_len(items)) {
+        list_push(out, fn_value(items[i]))
+        i = i + 1
+    }
+    return out
+}
+
+fn filter(items, fn_value) {
+    let out = []
+    let i = 0
+    while (i < collection_len(items)) {
+        let value = items[i]
+        if (fn_value(value)) {
+            list_push(out, value)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fn reduce(items, fn_value, initial) {
+    let acc = initial
+    let i = 0
+    while (i < collection_len(items)) {
+        acc = fn_value(acc, items[i])
+        i = i + 1
+    }
+    return acc
+}
