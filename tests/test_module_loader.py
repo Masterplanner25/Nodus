@@ -59,3 +59,19 @@ def test_export_visibility(tmp_path):
     assert result["ok"] is False
     assert result["error"]["type"] == "runtime"
     assert result["error"]["kind"] == "import"
+
+
+def test_module_loader_resolves_installed_modules_before_stdlib(tmp_path):
+    (tmp_path / "nodus.toml").write_text('name = "demo"\nversion = "0.1.0"\n', encoding="utf-8")
+    dep_dir = tmp_path / ".nodus" / "modules" / "utils"
+    dep_dir.mkdir(parents=True)
+    (dep_dir / "strings.nd").write_text('export fn upper(value) { return "dep:" + value }\n', encoding="utf-8")
+    main_path = _write(
+        tmp_path,
+        "main.nd",
+        'import "utils:strings" as strings\nprint(strings.upper("ok"))\n',
+    )
+    code = open(main_path, "r", encoding="utf-8").read()
+    result, _vm = run_source(code, filename=main_path)
+    assert result["ok"] is True
+    assert result["stdout"].strip() == "dep:ok"

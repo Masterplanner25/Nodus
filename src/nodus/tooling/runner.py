@@ -18,7 +18,6 @@ from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHA
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
-from nodus.runtime.module_loader import ModuleLoader
 from nodus.result import Result, normalize_filename
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, goal_name_candidates, workflow_name_candidates
 from nodus.orchestration.workflow_state import checkpoints_public
@@ -212,11 +211,15 @@ def run_source(
     try:
         with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
             try:
-                loader = ModuleLoader(project_root=import_state.get("project_root") if import_state else None, vm=vm)
-                if filename and os.path.isfile(filename):
-                    loader.load_module_from_path(filename)
-                else:
-                    loader.load_module_from_source(code, module_name=filename or "<memory>")
+                vm.reset_program(
+                    bytecode,
+                    functions,
+                    code_locs=code_locs,
+                    source_path=filename,
+                    module_globals={},
+                )
+                vm.source_code = code
+                vm.run()
             except Exception as err:
                 return (
                     _error_result(
@@ -301,11 +304,16 @@ def run_in_vm(
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
-            loader = ModuleLoader(project_root=import_state.get("project_root") if import_state else None, vm=vm)
-            if filename and os.path.isfile(filename):
-                loader.load_module_from_path(filename)
-            else:
-                loader.load_module_from_source(code, module_name=filename or "<memory>")
+            module_globals = vm.globals if isinstance(getattr(vm, "globals", None), dict) else {}
+            vm.reset_program(
+                bytecode,
+                functions,
+                code_locs=code_locs,
+                source_path=filename,
+                module_globals=module_globals,
+            )
+            vm.source_code = code
+            vm.run()
         except Exception as err:
             return (
                 _error_result(

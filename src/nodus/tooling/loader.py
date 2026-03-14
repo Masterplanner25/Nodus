@@ -35,7 +35,7 @@ from nodus.compiler.optimizer import optimize_bytecode
 from nodus.frontend.parser import Parser
 from nodus.compiler.compiler import Compiler, wrap_bytecode
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
-from nodus.tooling.project import find_project_root
+from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
 from nodus.runtime.module_loader import ModuleLoader
 
@@ -122,16 +122,17 @@ def resolve_with_extensions(base_path: str, import_path: str, tok: Tok | None, m
 
 
 def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok: Tok | None, module_id: str) -> str:
+    project_root = os.path.abspath(import_state.get("project_root") or base_dir)
+    modules_dir = os.path.join(project_root, NODUS_DIRNAME, MODULES_DIRNAME)
+
     if ":" in import_path and not import_path.startswith("std:"):
         package_name, package_path = import_path.split(":", 1)
         if not package_name or not package_path:
             import_error("Invalid package import: use package:module", tok, module_id)
         if package_name.startswith(".") or package_name.startswith(("/", "\\")):
             import_error("Invalid package import: package name is invalid", tok, module_id)
-        project_root = import_state.get("project_root") or base_dir
-        deps_dir = os.path.join(project_root, "deps")
-        package_base = os.path.normpath(os.path.join(deps_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
-        package_root = os.path.normpath(os.path.join(deps_dir, package_name))
+        package_base = os.path.normpath(os.path.join(modules_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
+        package_root = os.path.normpath(os.path.join(modules_dir, package_name))
         if not package_base.startswith(package_root):
             import_error("Invalid package import: path escapes dependency directory", tok, module_id)
         return resolve_with_extensions(package_base, import_path, tok, module_id)
@@ -155,7 +156,6 @@ def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok
     elif import_path.startswith("."):
         base = os.path.join(base_dir, import_path)
     else:
-        project_root = import_state.get("project_root") or base_dir
         base = os.path.join(project_root, import_path)
 
     base = os.path.normpath(base)
@@ -163,8 +163,8 @@ def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok
     if resolved is not None:
         return resolved
 
-    deps_base = os.path.normpath(os.path.join(import_state.get("project_root") or base_dir, "deps", import_path))
-    resolved = try_resolve_with_extensions(deps_base)
+    modules_base = os.path.normpath(os.path.join(modules_dir, import_path))
+    resolved = try_resolve_with_extensions(modules_base)
     if resolved is not None:
         return resolved
 
@@ -507,11 +507,40 @@ def compile_source(
     if analyze:
         analyze_program(ast)
     base_dir = os.path.dirname(os.path.abspath(source_path)) if source_path else os.getcwd()
-    project_root = None
-    if import_state is not None:
-        project_root = import_state.get("project_root")
-    loader = ModuleLoader(project_root=project_root, extra_builtins=extra_builtins or set())
-    bytecode, functions, code_locs = loader.compile_only(src, module_name=module_id, base_dir=base_dir)
+    if import_state is None:
+        import_state = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}}
+    import_state.setdefault("loaded", set())
+    import_state.setdefault("loading", set())
+    import_state.setdefault("exports", {})
+    import_state.setdefault("modules", {})
+    import_state.setdefault("module_ids", {})
+    ensure_project_root(import_state, base_dir, source_path)
+
+    resolved_ast = resolve_imports(ast, base_dir, import_state, module_id)
+    if module_id not in import_state["modules"]:
+        prefix = get_module_prefix(import_state, module_id)
+        import_state["modules"][module_id] = collect_module_info(resolved_ast, module_id, prefix)
+
+    module_defs_index: dict[str, set[str]] = {}
+    for path, module_info in import_state["modules"].items():
+        for name in module_info.defs:
+            module_defs_index.setdefault(name, set()).add(path)
+
+    builtin_names = set(BUILTIN_NAMES)
+    if extra_builtins:
+        builtin_names.update(extra_builtins)
+    compiler = Compiler(
+        module_infos=import_state["modules"],
+        module_defs_index=module_defs_index,
+        builtin_names=builtin_names,
+    )
+    code, functions, code_locs = compiler.compile_program(resolved_ast)
+    module_info = import_state["modules"][module_id]
+    bytecode = wrap_bytecode(
+        code,
+        module_name=module_id,
+        exports=sorted(module_info.exports),
+    )
     if optimize:
         code, functions, code_locs = optimize_bytecode(bytecode.get("instructions", []), functions, code_locs)
         bytecode = wrap_bytecode(

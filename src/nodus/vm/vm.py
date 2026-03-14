@@ -1104,8 +1104,8 @@ class VM:
             return None
         worker_dispatcher = getattr(self, "worker_dispatcher", None)
         event_bus = self.event_bus
-        self.reset_program(code, functions, code_locs=code_locs, source_path=rebuild_path)
-        self.globals = {}
+        rebuilt_globals: dict[str, object] = {}
+        self.reset_program(code, functions, code_locs=code_locs, source_path=rebuild_path, module_globals=rebuilt_globals)
         self.event_bus = event_bus
         self.source_code = source_code
         if worker_dispatcher is not None:

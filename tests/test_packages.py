@@ -3,7 +3,6 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
-from unittest.mock import patch
 
 import nodus as lang
 from nodus.tooling.runner import run_source
@@ -15,57 +14,52 @@ def run_program(src: str, source_path: str | None = None) -> list[str]:
 
 
 class PackageTests(unittest.TestCase):
-    def test_init_creates_manifest_and_deps_dir(self):
+    def test_init_creates_manifest_and_modules_dir(self):
         with tempfile.TemporaryDirectory() as td:
             buf = io.StringIO()
             with redirect_stdout(buf):
                 exit_code = lang.main(["nodus", "init", "--project-root", td])
             self.assertEqual(exit_code, 0)
             self.assertTrue(os.path.isfile(os.path.join(td, "nodus.toml")))
-            self.assertTrue(os.path.isdir(os.path.join(td, "deps")))
+            self.assertTrue(os.path.isdir(os.path.join(td, ".nodus", "modules")))
 
     def test_install_creates_dependency_and_lockfile(self):
         with tempfile.TemporaryDirectory() as td:
+            utils_dir = os.path.join(td, "utils")
+            os.makedirs(utils_dir, exist_ok=True)
+            with open(os.path.join(utils_dir, "nodus.toml"), "w", encoding="utf-8") as f:
+                f.write('name = "utils"\n')
+                f.write('version = "1.2.3"\n')
+            with open(os.path.join(utils_dir, "strings.nd"), "w", encoding="utf-8") as f:
+                f.write('export fn upper(x) { return x }\n')
+
             manifest_path = os.path.join(td, "nodus.toml")
             with open(manifest_path, "w", encoding="utf-8") as f:
                 f.write('name = "demo"\n')
                 f.write('version = "0.1.0"\n\n')
                 f.write("[dependencies]\n")
-                f.write('utils = "git+https://example.com/utils.git"\n')
-
-            def fake_run_git(args):
-                if args[0] == "clone":
-                    dest = args[2]
-                    os.makedirs(dest, exist_ok=True)
-                    with open(os.path.join(dest, "strings.nd"), "w", encoding="utf-8") as f:
-                        f.write('export fn upper(x) { return x }\n')
-                    return ""
-                if args[0] == "-C" and args[2] == "rev-parse":
-                    return "abc123"
-                raise AssertionError(f"Unexpected git args: {args}")
+                f.write('utils = { path = "./utils" }\n')
 
             buf = io.StringIO()
-            with patch("nodus.runtime.project._run_git", side_effect=fake_run_git):
-                with redirect_stdout(buf):
-                    exit_code = lang.main(["nodus", "install", "--project-root", td])
+            with redirect_stdout(buf):
+                exit_code = lang.main(["nodus", "install", "--project-root", td])
 
             self.assertEqual(exit_code, 0)
-            self.assertTrue(os.path.isdir(os.path.join(td, "deps", "utils")))
+            self.assertTrue(os.path.isdir(os.path.join(td, ".nodus", "modules", "utils")))
             self.assertTrue(os.path.isfile(os.path.join(td, "nodus.lock")))
             with open(os.path.join(td, "nodus.lock"), "r", encoding="utf-8") as f:
                 lock_text = f.read()
-            self.assertIn('[dependencies.utils]', lock_text)
-            self.assertIn('source = "git:https://example.com/utils.git"', lock_text)
-            self.assertIn('hash = "abc123"', lock_text)
+            self.assertIn('[[package]]', lock_text)
+            self.assertIn('name = "utils"', lock_text)
+            self.assertIn('source = "path:utils"', lock_text)
+            self.assertIn('hash = "sha256:', lock_text)
 
     def test_dependency_import_resolution(self):
         with tempfile.TemporaryDirectory() as td:
             with open(os.path.join(td, "nodus.toml"), "w", encoding="utf-8") as f:
                 f.write('name = "demo"\n')
                 f.write('version = "0.1.0"\n\n')
-                f.write("[dependencies]\n")
-                f.write('utils = "git+https://example.com/utils.git"\n')
-            dep_dir = os.path.join(td, "deps", "utils")
+            dep_dir = os.path.join(td, ".nodus", "modules", "utils")
             os.makedirs(dep_dir, exist_ok=True)
             with open(os.path.join(dep_dir, "strings.nd"), "w", encoding="utf-8") as f:
                 f.write('export fn upper(value) { return "FROM_DEP:" + value }\n')
@@ -83,13 +77,13 @@ class PackageTests(unittest.TestCase):
                 f.write('name = "demo"\n')
                 f.write('version = "0.1.0"\n\n')
                 f.write("[dependencies]\n")
-                f.write('utils = "git+https://example.com/utils.git"\n')
+                f.write('utils = { path = "./utils" }\n')
             with open(os.path.join(td, "nodus.lock"), "w", encoding="utf-8") as f:
-                f.write("[dependencies]\n")
-                f.write("[dependencies.utils]\n")
+                f.write("[[package]]\n")
+                f.write('name = "utils"\n')
                 f.write('version = "0.0.0"\n')
-                f.write('source = "git:https://example.com/utils.git"\n')
-                f.write('hash = "abc123"\n')
+                f.write('source = "path:./utils"\n')
+                f.write('hash = "sha256:abc123"\n')
 
             buf = io.StringIO()
             err = io.StringIO()
@@ -97,7 +91,7 @@ class PackageTests(unittest.TestCase):
                 exit_code = lang.main(["nodus", "deps", "--project-root", td])
             self.assertEqual(exit_code, 0)
             self.assertEqual(err.getvalue(), "")
-            self.assertIn("utils: git:https://example.com/utils.git", buf.getvalue())
+            self.assertIn("utils: path:./utils", buf.getvalue())
 
 
 if __name__ == "__main__":

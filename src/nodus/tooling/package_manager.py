@@ -1,8 +1,11 @@
-"""Minimal local-first package management for Nodus."""
+"""Package management entrypoints for Nodus tooling."""
 
 import os
 
-from nodus.runtime.project import ProjectConfig, create_project, load_project, read_lockfile, install_dependencies
+from nodus.tooling.installer import install_project
+from nodus.tooling.project import ProjectConfig, create_project, load_project, read_lockfile
+from nodus.tooling.registry import Registry
+from nodus.tooling.resolver import resolve_project_dependencies
 
 
 def ensure_project(root: str) -> ProjectConfig:
@@ -18,7 +21,8 @@ def init_project(root: str) -> ProjectConfig:
 
 def install_dependencies_for_project(root: str, *, update: bool = False) -> dict[str, str]:
     project = ensure_project(root)
-    resolved = install_dependencies(project, update=update)
+    resolution = resolve_project_dependencies(project, update=update, registry=Registry.from_project_root(project.root))
+    resolved = install_project(project, resolution)
     out: dict[str, str] = {}
     for name, dep in resolved.items():
         out[name] = dep.source

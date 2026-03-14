@@ -3,16 +3,21 @@
 ## [Unreleased]
 
 ### Added
-- None.
+- Tooling-side package management modules for project parsing, semver, dependency resolution, installation, and registry metadata.
+- Deterministic `[[package]]` lockfile entries with `name`, `version`, `source`, and `hash`.
+- Test coverage for installer behavior, lockfile generation, runtime loading from `.nodus/modules`, and manifest/resolution flows.
 
 ### Changed
-- None.
+- Refactored package management so runtime execution no longer performs manifest parsing, dependency resolution, registry access, or network operations.
+- Installed dependencies now live under `.nodus/modules/` instead of `deps/`.
+- Runtime module loading now resolves imports in the order: local project modules, `.nodus/modules/`, then standard library.
+- `nodus install` and `nodus update` now route through tooling-side resolution and installation.
 
 ### Fixed
 - None.
 
 ### Removed
-- None.
+- Package-management responsibilities from the runtime project/loading path.
 
 ## [0.4.x Tracking]
 - Module bytecode unit format and bytecode version headers.

@@ -1,6 +1,6 @@
 import os
 
-from nodus.runtime.project import load_project
+from nodus.tooling.project import load_project
 
 
 def test_manifest_parsing(tmp_path):

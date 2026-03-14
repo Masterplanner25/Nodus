@@ -1,4 +1,4 @@
-from nodus.runtime.semver import Version, VersionRange
+from nodus.tooling.semver import Version, VersionRange
 
 
 def test_version_parse_and_compare():
