@@ -51,7 +51,8 @@ class PackageTests(unittest.TestCase):
                 lock_text = f.read()
             self.assertIn('[[package]]', lock_text)
             self.assertIn('name = "utils"', lock_text)
-            self.assertIn('source = "path:utils"', lock_text)
+            self.assertIn('source = "path"', lock_text)
+            self.assertIn('path = "utils"', lock_text)
             self.assertIn('hash = "sha256:', lock_text)
 
     def test_dependency_import_resolution(self):
@@ -82,7 +83,8 @@ class PackageTests(unittest.TestCase):
                 f.write("[[package]]\n")
                 f.write('name = "utils"\n')
                 f.write('version = "0.0.0"\n')
-                f.write('source = "path:./utils"\n')
+                f.write('source = "path"\n')
+                f.write('path = "./utils"\n')
                 f.write('hash = "sha256:abc123"\n')
 
             buf = io.StringIO()

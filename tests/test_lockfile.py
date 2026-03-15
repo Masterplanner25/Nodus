@@ -4,7 +4,7 @@ from nodus.tooling.project import LockedPackage, read_lockfile, write_lockfile
 def test_lockfile_generation_is_deterministic(tmp_path):
     lock_path = tmp_path / "nodus.lock"
     packages = {
-        "utils": LockedPackage(name="utils", version="1.2.3", source="path:../utils", hash="sha256:bbb"),
+        "utils": LockedPackage(name="utils", version="1.2.3", source="path", hash="sha256:bbb", path="../utils"),
         "json": LockedPackage(name="json", version="1.2.0", source="registry", hash="sha256:aaa"),
     }
 
@@ -17,4 +17,5 @@ def test_lockfile_generation_is_deterministic(tmp_path):
     assert first == second
     assert first.startswith("[[package]]\nname = \"json\"")
     assert loaded["json"].source == "registry"
+    assert loaded["utils"].path == "../utils"
     assert loaded["utils"].hash == "sha256:bbb"

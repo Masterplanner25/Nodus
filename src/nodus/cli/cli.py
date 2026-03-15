@@ -14,6 +14,7 @@ from nodus.runtime.errors import format_error_payload
 from nodus.runtime.profiler import Profiler
 from nodus.tooling.formatter import format_source
 from nodus.tooling import package_manager as _package_manager
+from nodus.tooling.project import load_project, load_project_from, project_entry_path
 from nodus.tooling.runner import (
     agent_call_result,
     build_ast,
@@ -103,6 +104,26 @@ def _resolve_project_root(path: object | None) -> tuple[str | None, str | None]:
     return root, None
 
 
+def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str | None, str | None, str | None]:
+    if path is None:
+        project = load_project_from(os.getcwd())
+        if project is None:
+            return None, project_root, "Usage: nodus run <script.nd | project-dir>"
+        return project_entry_path(project), project_root or project.root, None
+    if os.path.isdir(path):
+        try:
+            project = load_project(path)
+        except Exception as err:
+            return None, project_root, str(err)
+        return project_entry_path(project), project_root or project.root, None
+    resolved_root = project_root
+    if resolved_root is None:
+        project = load_project_from(os.path.dirname(os.path.abspath(path)) or os.getcwd())
+        if project is not None:
+            resolved_root = project.root
+    return path, resolved_root, None
+
+
 def _parse_flags(args: list[str], flags_with_values: set[str], flags_no_values: set[str]) -> tuple[list[str], dict]:
     positional: list[str] = []
     parsed: dict[str, object] = {}
@@ -137,7 +158,7 @@ def _render_help() -> str:
             "Usage: nodus <command> [options] [file]",
             "",
             "Commands:",
-            "  nodus run <file> [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
+            "  nodus run [<file|project-dir>] [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
             "  nodus check <file> [--project-root PATH]",
             "  nodus fmt <file> [--check] [--keep-trailing]",
             "  nodus ast <file> [--compact]",
@@ -167,6 +188,8 @@ def _render_help() -> str:
             "  nodus package-init [--path PATH]",
             "  nodus install [--path PATH]",
             "  nodus update [--path PATH]",
+            "  nodus add <package> [--path PATH]",
+            "  nodus remove <package> [--path PATH]",
             "  nodus package-list [--path PATH]",
             "",
             "Global options:",
@@ -202,7 +225,7 @@ def _print_error(result: dict, *, path: str | None = None) -> None:
 
 
 def run_file(
-    path: str,
+    path: str | None,
     *,
     trace: bool = False,
     trace_no_loc: bool = False,
@@ -220,9 +243,14 @@ def run_file(
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
 ) -> int:
-    if not os.path.isfile(path):
-        _print_stderr(f"File not found: {path}")
+    resolved_path, project_root, err = _resolve_run_target(path, project_root)
+    if err:
+        _print_stderr(err)
         return 1
+    if resolved_path is None or not os.path.isfile(resolved_path):
+        _print_stderr(f"File not found: {resolved_path or path}")
+        return 1
+    path = resolved_path
     code = _read_file(path)
     if path.endswith(".tl"):
         _print_stderr("Warning: legacy .tl file detected. Consider using .nd.")
@@ -307,9 +335,14 @@ def profile_file(
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
 ) -> int:
-    if not os.path.isfile(path):
-        _print_stderr(f"File not found: {path}")
+    resolved_path, project_root, err = _resolve_run_target(path, project_root)
+    if err:
+        _print_stderr(err)
         return 1
+    if resolved_path is None or not os.path.isfile(resolved_path):
+        _print_stderr(f"File not found: {resolved_path or path}")
+        return 1
+    path = resolved_path
     code = _read_file(path)
     profiler = Profiler()
     profiler.start()
@@ -781,6 +814,26 @@ def _package_list(path: str | None) -> int:
     return 0
 
 
+def _package_add(package_name: str, path: str | None) -> int:
+    root = path or os.getcwd()
+    try:
+        _package_manager.add_dependency(root, package_name)
+    except Exception as err:
+        _print_stderr(str(err))
+        return 1
+    return 0
+
+
+def _package_remove(package_name: str, path: str | None) -> int:
+    root = path or os.getcwd()
+    try:
+        _package_manager.remove_dependency(root, package_name)
+    except Exception as err:
+        _print_stderr(str(err))
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv
     prog = os.path.basename(argv[0]) if argv else "nodus"
@@ -834,6 +887,8 @@ def main(argv: list[str] | None = None) -> int:
         "package-install",
         "package-update",
         "package-list",
+        "add",
+        "remove",
         "init",
         "install",
         "update",
@@ -865,10 +920,7 @@ def main(argv: list[str] | None = None) -> int:
             "--dump-bytecode",
         }
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
-        if not positional:
-            _print_stderr("Usage: nodus run <script.nd>")
-            return 1
-        script = positional[0]
+        script = positional[0] if positional else None
         trace_limit = None
         if "--trace-limit" in flags:
             try:
@@ -1251,6 +1303,22 @@ def main(argv: list[str] | None = None) -> int:
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
         path = flags.get("--project-root") or flags.get("--path")
         return _package_list(path)
+
+    if command == "add":
+        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        if not positional:
+            _print_stderr("Usage: nodus add <package>")
+            return 1
+        path = flags.get("--project-root") or flags.get("--path")
+        return _package_add(positional[0], path)
+
+    if command == "remove":
+        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        if not positional:
+            _print_stderr("Usage: nodus remove <package>")
+            return 1
+        path = flags.get("--project-root") or flags.get("--path")
+        return _package_remove(positional[0], path)
 
     _print_stderr(f"Unknown command: {command}")
     return 1

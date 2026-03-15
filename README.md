@@ -17,6 +17,7 @@ Quick links:
 - `docs/runtime/PROFILER.md`
 - `docs/tooling/DEBUGGER.md`
 - `docs/tooling/REPL.md`
+- `docs/tooling/PROJECTS.md`
 - `docs/tooling/PACKAGE_MANAGER.md`
 - `docs/runtime/SERVER_MODE.md`
 - `docs/governance/VERSIONING.md`
@@ -68,6 +69,7 @@ Project setup and dependencies:
 
 Project manifests:
 - `nodus.toml` defines project metadata and dependencies.
+- `src/main.nd` is the default project entrypoint created by `nodus init`.
 - `nodus.lock` pins resolved dependency sources and hashes.
 
 Backward compatible invocations are still supported:

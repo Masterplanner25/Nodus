@@ -12,6 +12,13 @@ from nodus.tooling.resolver import ResolutionResult
 
 def install_resolved_dependencies(project: ProjectConfig, resolution: ResolutionResult) -> dict[str, LockedPackage]:
     os.makedirs(project.modules_dir, exist_ok=True)
+    expected = set(resolution.packages)
+    for entry in sorted(os.listdir(project.modules_dir)):
+        target = os.path.join(project.modules_dir, entry)
+        if entry in expected:
+            continue
+        if os.path.isdir(target):
+            shutil.rmtree(target)
     installed: dict[str, LockedPackage] = {}
     for name in resolution.install_order:
         package = resolution.packages[name]
@@ -24,6 +31,7 @@ def install_resolved_dependencies(project: ProjectConfig, resolution: Resolution
             version=package.version,
             source=package.source,
             hash=_hash_tree(destination),
+            path=package.source_path,
         )
     write_lockfile(project.lock_path, installed)
     return installed

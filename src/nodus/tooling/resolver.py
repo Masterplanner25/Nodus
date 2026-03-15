@@ -16,6 +16,7 @@ class ResolvedPackage:
     version: str
     source: str
     path: str
+    source_path: str | None
     dependencies: tuple[str, ...]
 
 
@@ -63,6 +64,7 @@ def resolve_project_dependencies(
                 version=package.version,
                 source=package.source,
                 path=package.path,
+                source_path=package.source_path,
                 dependencies=tuple(sorted(child_names)),
             )
             packages[resolved.name] = resolved
@@ -99,8 +101,9 @@ def _resolve_single_dependency(
         return ResolvedPackage(
             name=spec.name,
             version=dependency_project.version,
-            source=f"path:{_normalize_source_value(owner_root, path)}",
+            source="path",
             path=dependency_project.root,
+            source_path=_normalize_source_value(owner_root, path),
             dependencies=tuple(),
         )
 
@@ -114,6 +117,7 @@ def _resolve_single_dependency(
         version=selected.version,
         source=selected.source,
         path=selected.path,
+        source_path=None,
         dependencies=tuple(),
     )
 

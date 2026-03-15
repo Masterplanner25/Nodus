@@ -11,6 +11,8 @@ MANIFEST_NAME = "nodus.toml"
 LOCKFILE_NAME = "nodus.lock"
 NODUS_DIRNAME = ".nodus"
 MODULES_DIRNAME = "modules"
+SOURCE_DIRNAME = "src"
+ENTRYPOINT_NAME = "main.nd"
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,7 @@ class LockedPackage:
     version: str
     source: str
     hash: str
+    path: str | None = None
 
 
 @dataclass
@@ -56,6 +59,20 @@ def load_manifest(path: str) -> dict:
         return tomllib.load(handle)
 
 
+def parse_package(data: dict, *, root: str) -> tuple[str, str]:
+    raw_package = data.get("package")
+    if raw_package is not None:
+        if not isinstance(raw_package, dict):
+            raise ValueError("Manifest [package] must be a table")
+        name = str(raw_package.get("name", os.path.basename(root)))
+        version = str(raw_package.get("version", "0.1.0"))
+        return name, version
+    return (
+        str(data.get("name", os.path.basename(root))),
+        str(data.get("version", "0.1.0")),
+    )
+
+
 def parse_dependencies(raw: dict) -> dict[str, DependencySpec]:
     if not isinstance(raw, dict):
         raise ValueError("Manifest [dependencies] must be a table")
@@ -72,10 +89,39 @@ def parse_dependencies(raw: dict) -> dict[str, DependencySpec]:
     return dependencies
 
 
+def write_project_manifest(
+    path: str,
+    *,
+    name: str,
+    version: str,
+    dependencies: dict[str, DependencySpec],
+) -> None:
+    lines = [
+        "[package]",
+        f'name = "{_escape(name)}"',
+        f'version = "{_escape(version)}"',
+        "",
+        "[dependencies]",
+    ]
+    for dep_name in sorted(dependencies):
+        spec = dependencies[dep_name]
+        if spec.kind == "version":
+            lines.append(f'{dep_name} = "{_escape(spec.value)}"')
+            continue
+        if spec.kind == "path":
+            lines.append(f'{dep_name} = {{ path = "{_escape(spec.value)}" }}')
+            continue
+        raise ValueError(f"Unsupported dependency spec for {dep_name}")
+    text = "\n".join(lines) + "\n"
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def load_project(root: str) -> ProjectConfig:
     root = os.path.abspath(root)
     manifest_path = os.path.join(root, MANIFEST_NAME)
     data = load_manifest(manifest_path)
+    name, version = parse_package(data, root=root)
     dependencies = parse_dependencies(data.get("dependencies", {}))
     nodus_dir = os.path.join(root, NODUS_DIRNAME)
     return ProjectConfig(
@@ -84,8 +130,8 @@ def load_project(root: str) -> ProjectConfig:
         lock_path=os.path.join(root, LOCKFILE_NAME),
         nodus_dir=nodus_dir,
         modules_dir=os.path.join(nodus_dir, MODULES_DIRNAME),
-        name=str(data.get("name", os.path.basename(root))),
-        version=str(data.get("version", "0.1.0")),
+        name=name,
+        version=version,
         dependencies=dependencies,
     )
 
@@ -100,14 +146,26 @@ def load_project_from(start_dir: str) -> ProjectConfig | None:
 def create_project(root: str, name: str | None = None, version: str = "0.1.0") -> ProjectConfig:
     root = os.path.abspath(root)
     os.makedirs(os.path.join(root, NODUS_DIRNAME, MODULES_DIRNAME), exist_ok=True)
+    src_dir = os.path.join(root, SOURCE_DIRNAME)
+    os.makedirs(src_dir, exist_ok=True)
     manifest_path = os.path.join(root, MANIFEST_NAME)
     if not os.path.exists(manifest_path):
         project_name = name or os.path.basename(root)
-        with open(manifest_path, "w", encoding="utf-8") as handle:
-            handle.write(f'name = "{project_name}"\n')
-            handle.write(f'version = "{version}"\n\n')
-            handle.write("[dependencies]\n")
+        write_project_manifest(
+            manifest_path,
+            name=project_name,
+            version=version,
+            dependencies={},
+        )
+    entry_path = os.path.join(src_dir, ENTRYPOINT_NAME)
+    if not os.path.exists(entry_path):
+        with open(entry_path, "w", encoding="utf-8") as handle:
+            handle.write('print("hello from nodus")\n')
     return load_project(root)
+
+
+def project_entry_path(project: ProjectConfig) -> str:
+    return os.path.join(project.root, SOURCE_DIRNAME, ENTRYPOINT_NAME)
 
 
 def read_lockfile(path: str) -> dict[str, LockedPackage]:
@@ -129,6 +187,7 @@ def read_lockfile(path: str) -> dict[str, LockedPackage]:
             version=str(entry.get("version", "0.0.0")),
             source=str(entry.get("source", "")),
             hash=str(entry.get("hash", "")),
+            path=str(entry["path"]) if "path" in entry else None,
         )
     return locked
 
@@ -141,6 +200,8 @@ def write_lockfile(path: str, packages: dict[str, LockedPackage]) -> None:
         lines.append(f'name = "{_escape(package.name)}"')
         lines.append(f'version = "{_escape(package.version)}"')
         lines.append(f'source = "{_escape(package.source)}"')
+        if package.path is not None:
+            lines.append(f'path = "{_escape(package.path)}"')
         lines.append(f'hash = "{_escape(package.hash)}"')
         lines.append("")
     text = "\n".join(lines).rstrip()

@@ -102,7 +102,7 @@ Stability: Syntax stable; module semantics experimental (current compile-time fl
 
 Import resolution:
 - `std:` prefix resolves to built-in `std/` modules (e.g. `std:strings`).
-- `package:module` resolves under `deps/<package>/...` (e.g. `utils:strings` -> `deps/utils/strings.nd`).
+- `package:module` resolves under `.nodus/modules/<package>/...` (e.g. `utils:strings` -> `.nodus/modules/utils/strings.nd`).
 - Relative paths (`./` or `../`) resolve from the importing file.
 - Non-relative paths resolve from the project root, then fall back to `deps/`.
 - If no extension is provided, `.nd` is preferred, then `.tl` as legacy fallback.
@@ -111,20 +111,21 @@ Import resolution:
 Stability: Experimental (git-only, may change).
 - Manifest file: `nodus.toml`
 - Lock file: `nodus.lock`
-- Installed dependencies live under `deps/`
+- Installed dependencies live under `.nodus/modules/`
 - Minimal manifest example:
-
-```
-name = "example"
-version = "0.1.0"
-
-[dependencies]
-utils = "git+https://github.com/user/utils.nodus"
-```
-
+  
+  ```
+  [package]
+  name = "example"
+  version = "0.1.0"
+  
+  [dependencies]
+  utils = "1.0.0"
+  ```
+  
 - CLI:
-  - `nodus init` creates `nodus.toml` and `deps/`
-  - `nodus install` installs manifest dependencies into `deps/` and writes `nodus.lock`
+  - `nodus init` creates `nodus.toml`, `src/main.nd`, and `.nodus/modules/`
+  - `nodus install` installs manifest dependencies into `.nodus/modules/` and writes `nodus.lock`
   - `nodus deps` lists declared dependencies and resolved lock entries
 
 ### Re-exports
