@@ -1,4 +1,4 @@
-"""List .nd/.tl files for formatter checks."""
+"""List .nd files for formatter checks."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def iter_targets(root: str) -> list[str]:
         # Skip VCS and caches
         dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", "tmp_demo"}]
         for name in filenames:
-            if name.endswith((".nd", ".tl")):
+            if name.endswith(".nd"):
                 out.append(os.path.join(dirpath, name))
     out.sort()
     return out

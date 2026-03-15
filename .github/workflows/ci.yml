@@ -41,7 +41,7 @@ jobs:
             if root.startswith('./.git'):
               continue
             for name in names:
-              if name.endswith(('.nd', '.tl')):
+              if name.endswith('.nd'):
                 files.append(os.path.join(root, name))
           files.sort()
           if not files:

@@ -17,6 +17,7 @@ Use this checklist to cut a clean, repeatable release.
 - Bump package metadata version in `pyproject.toml`
 - Verify CLI output: `nodus --version`
 - Spot-check a few examples manually
+- Verify `examples/` contains only `.nd` files: `find examples/ -name "*.tl"` should return empty
 
 ## Release
 - Tag the release (e.g. `v0.1.1`)
