@@ -112,7 +112,7 @@ Import resolution:
 - `std:` prefix resolves to built-in `std/` modules (e.g. `std:strings`).
 - `package:module` resolves under `.nodus/modules/<package>/...` (e.g. `utils:strings` -> `.nodus/modules/utils/strings.nd`).
 - Relative paths (`./` or `../`) resolve from the importing file.
-- Non-relative paths resolve from the project root, then fall back to `deps/`.
+- Non-relative paths resolve from the project root.
 - If no extension is provided, `.nd` is preferred, then `.tl` as legacy fallback.
 
 ## Projects And Packages
@@ -566,7 +566,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 ## Files and CLI
 - Primary source extension: `.nd`
 - Legacy `.tl` is still supported for compatibility.
-- CLI: `nodus run script.nd`, `nodus repl`, `nodus check script.nd`
+- CLI: `nodus run script.nd`, `python -m nodus.tooling.repl`, `nodus check script.nd`
 - Dependency graph inspection: `nodus deps`
 - Cache maintenance: `nodus cache clear`
 - Bytecode optimization runs automatically during compilation.
@@ -596,11 +596,12 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Workflow CLI: `nodus workflow-run script.nd`, `nodus workflow-plan script.nd`, `nodus workflow-resume <graph_id> [--checkpoint <label>]`, `nodus workflow-checkpoints <graph_id>`
 - Goal CLI: `nodus goal-run script.nd [--goal <name>]`, `nodus goal-plan script.nd [--goal <name>]`, `nodus goal-resume <graph_id> [--checkpoint <label>]`
 - Agent/tool/memory CLI:
-  - `nodus tool-call <tool> --json <payload>`
-  - `nodus agent-call <agent> --json <payload>`
-  - `nodus memory-get <key>`
-  - `nodus memory-put <key> --json <value>`
-  - `nodus memory-keys`
+- `nodus tool-call <tool> --json <payload>`
+- `nodus agent-call <agent> --json <payload>`
+- `nodus memory-get <key>`
+- `nodus memory-put <key> --json <value>`
+- `nodus memory-delete <key>`
+- `nodus memory-keys`
 - Debugger: `nodus debug script.nd`
   - Commands: `break <line>`, `step`, `next`, `continue`, `locals`, `stack`, `quit`
   - Breakpoints pause on source lines using compiler-provided location metadata
@@ -615,7 +616,6 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Debug flags: `--dump-bytecode`, `--trace`
 - Trace controls: `--trace-no-loc`, `--trace-filter <text>`, `--trace-limit <n>`
 - Scheduler tracing: `--trace-scheduler`
-- Scheduler summary: `--scheduler-stats`
 - Runtime event tracing: `--trace-events`, `--trace-json`, `--trace-file <path>`
 - Formatting: `nodus fmt script.nd` (see `FORMAT.md` for rules)
 

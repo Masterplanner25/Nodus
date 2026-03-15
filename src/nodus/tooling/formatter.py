@@ -14,6 +14,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExprStmt,
     FnDef,
     For,
+    ForEach,
     GoalDef,
     GoalStep,
     If,
@@ -201,6 +202,11 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         header = f"{prefix}for ({init}; {cond}; {inc}) {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+    
+    if isinstance(stmt, ForEach):
+    header = f"{prefix}for {stmt.name} in {format_expr(stmt.iterable)} {{"
+    body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
+    return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, Block):
         return lines + [f"{prefix}{{"] + format_block(stmt, indent + 1, keep_trailing_comments=keep_trailing_comments) + [f"{prefix}}}"]

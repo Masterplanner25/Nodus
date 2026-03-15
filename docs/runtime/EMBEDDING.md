@@ -1,4 +1,4 @@
-Embedding Nodus
+# Embedding Nodus
 
 Nodus is designed to function both as a standalone scripting language and as an embedded automation runtime inside larger systems.
 
@@ -23,13 +23,13 @@ This makes Nodus suitable as a scripting layer for automation platforms and orch
 At a high level, embedding Nodus involves four steps:
 
 Host System
-   ↓
+   ->
 Create Runtime
-   ↓
+   ->
 Register Builtins / Services
-   ↓
+   ->
 Load Script
-   ↓
+   ->
 Execute
 
 The host environment provides capabilities while the Nodus runtime executes script logic.
@@ -40,18 +40,18 @@ The runtime is typically created through the execution helpers provided by the p
 
 Example flow:
 
-from nodus.runner import run_source
+from nodus.tooling.runner import run_source
 
 run_source(source_code)
 
 This function handles:
 
 tokenize
-→ parse
-→ resolve imports
-→ compile
-→ optimize
-→ execute
+-> parse
+-> resolve imports
+-> compile
+-> optimize
+-> execute
 
 For embedded environments, the host system may manage these stages explicitly.
 
@@ -101,11 +101,11 @@ orchestration infrastructure
 Typical architecture:
 
 Host System
-  ├ tools
-  ├ memory
-  ├ services
-  └ runtime environment
-        ↓
+  |- tools
+  |- memory
+  |- services
+  - runtime environment
+        ->
      Nodus Runtime
 
 Scripts act as orchestration logic while the host system performs the actual work.
@@ -125,7 +125,7 @@ REPL Execution
 
 Interactive execution through the runtime REPL.
 
-nodus repl
+python -m nodus.tooling.repl
 
 The REPL supports multiline brace-delimited input, persistent history via `~/.nodus_history` when `readline` is available, and shell inspection commands such as `:ast <expr>`, `:dis <expr>`, and `:type <expr>`.
 Server Mode
@@ -157,9 +157,9 @@ errors
 Example architecture:
 
 VM Execution
-   ↓
+   ->
 Runtime Events
-   ↓
+   ->
 Host Event Sink
 
 This allows external systems to observe and monitor script execution.
@@ -181,13 +181,13 @@ Host systems may provide execution environments for tasks.
 Example model:
 
 Nodus Script
-   ↓
+   ->
 Workflow
-   ↓
+   ->
 Task Graph
-   ↓
+   ->
 Scheduler
-   ↓
+   ->
 Host Worker Execution
 
 This design allows scripts to describe coordination logic while host systems execute the underlying tasks.
@@ -256,13 +256,13 @@ These improvements will allow Nodus to integrate more cleanly with larger system
 A typical embedded environment might look like:
 
 Application Platform
-  ├ API services
-  ├ task workers
-  ├ memory systems
-  └ AI agents
-        ↓
+  |- API services
+  |- task workers
+  |- memory systems
+  - AI agents
+        ->
      Nodus Runtime
-        ↓
+        ->
      Automation Scripts
 
 In this model:

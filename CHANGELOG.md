@@ -11,7 +11,52 @@
 ### Fixed
 - None.
 
-### Removed
+### Improved
+- None.
+
+### Documentation
+- Documentation synchronization pass for runtime architecture, workflows, tooling, and CLI references.
+- Updated REPL invocation to `python -m nodus.tooling.repl` across docs.
+- Roadmap status refreshed for completed milestones.
+
+### Tests
+- None.
+
+### Refactoring
+- None.
+
+## [0.7.0] - 2026-03-14 — Runtime Orchestration, Diagnostics, and Debugging
+
+### Added
+- Incremental module compilation backed by a persistent dependency graph (`.nodus/deps.json`).
+- Disk bytecode cache for compiled modules (`.nodus/cache/*.nbc`).
+- DAP debug adapter over stdio with `nodus dap`.
+- LSP server with completion, hover, go-to-definition, and diagnostics.
+- Workflow persistence snapshots and checkpoint files under `.nodus/graphs/`.
+- Workflow management CLI commands: `nodus workflow list`, `nodus workflow resume`, `nodus workflow cleanup`.
+
+### Changed
+- Runtime module loader now skips recompilation when dependency mtimes are unchanged.
+- Workflow resume logic rehydrates persisted task state and scheduler order.
+- `nodus deps` now reports the incremental compilation dependency graph.
+
+### Fixed
+- None.
+
+### Improved
+- Scheduler fairness via round-robin execution and `TASK_STEP_BUDGET` enforcement.
+- LSP diagnostics are dependency-aware with cross-module publishing and incremental refresh.
+- Debugger integration reused by both interactive debugger and DAP server.
+- Workflow checkpoint handling preserves upstream task outputs while rolling back downstream steps.
+
+### Documentation
+- Added/updated docs for LSP, DAP, debugging entrypoints, workflow persistence, and scheduler fairness.
+
+### Tests
+- Added coverage for bytecode cache, incremental compilation, scheduler fairness, workflow persistence, LSP diagnostics, and DAP server behavior.
+- Added/expanded tests for module isolation and runtime module objects.
+
+### Refactoring
 - None.
 
 ## [0.5.0] - 2026-03-14 — Interactive Shell and Inspection

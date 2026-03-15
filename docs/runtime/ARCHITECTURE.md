@@ -1,621 +1,131 @@
-Nodus Architecture
+# Nodus Architecture
 
 Nodus is a bytecode-compiled scripting runtime implemented in Python for automation and orchestration workloads.
 
 The architecture is split into two layers:
 
 runtime
-
-- execution engine
-- module namespaces
-- per-module bytecode loading
-- VM execution
+- execution engine and VM
+- module loader and module objects
+- scheduler and coroutines/channels
+- orchestration (task graphs, workflows, goals)
+- runtime services (tools, agents, memory, event bus)
 
 tooling
-
 - project manifest parsing
-- dependency resolution
-- installation into `.nodus/modules/`
-- lockfile generation
+- dependency resolution and installation
+- formatter, AST tooling, disassembler
+- LSP and DAP servers
 
-This split keeps the runtime small, embeddable, and deterministic. Runtime code never performs dependency resolution, manifest parsing, registry access, or network activity.
+The runtime never performs manifest parsing, registry access, or package resolution. Those actions live in tooling.
 
-1. System Overview
-
-Nodus follows a structured compilation and execution pipeline:
+## Execution Pipeline
 
 Source
-  ↓
-Lexer (tokenize)
-  ↓
-Parser
-  ↓
-AST
-  ↓
-Import Resolution
-  ↓
-Bytecode Compiler
-  ↓
-Optimizer
-  ↓
-Virtual Machine
+  -> Lexer (`frontend/lexer.py`)
+  -> Parser (`frontend/parser.py`)
+  -> AST (`frontend/ast/ast_nodes.py`)
+  -> Module Loader + Import Resolution (`runtime/module_loader.py`)
+  -> Bytecode Compiler (`compiler/compiler.py`)
+  -> Optimizer (`compiler/optimizer.py`)
+  -> VM (`vm/vm.py`)
+  -> Scheduler (`runtime/scheduler.py`)
+  -> Orchestration (task graphs + workflows/goals)
+  -> Tooling / Services / Adapters (formatter, AST printer, disassembler, LSP, DAP)
 
-The runtime executes bytecode instructions on a stack-based virtual machine.
+The runtime executes bytecode instructions on a stack-based VM. Workflows and goals lower to task graphs that are executed by the scheduler.
 
-In addition to core execution, the runtime includes orchestration components such as:
+## Module System
 
-module loader and module objects
+Each module is compiled into its own bytecode unit and executed once per process. Imports resolve through the runtime module loader, which:
 
-coroutines
-
-channels
-
-task graphs
-
-workflows/goals
-
-runtime event tracing
-
-These components enable Nodus scripts to coordinate asynchronous or multi-step automation tasks.
-
-2. Execution Pipeline
-
-The current pipeline is implemented as:
-
-tokenize
-  → Parser.parse
-  → ModuleLoader.resolve_import
-  → Compiler.compile_program
-  → optimize
-  → VM.run
-Stage Breakdown
-Tokenization
-
-File:
-
-lexer.py
-
-Responsibilities:
-
-Convert source text into tokens
-
-Track token location for diagnostics
-
-Identify keywords, literals, operators, identifiers
-
-Parsing
-
-File:
-
-parser.py
-
-The parser is a recursive-descent implementation.
-
-Responsibilities:
-
-Build AST dataclasses
-
-Enforce grammar rules
-
-Produce a structured representation of the program
-
-AST definitions live in:
-
-ast_nodes.py
-Import Resolution
-
-Files:
-
-runtime/module_loader.py
-runtime/module.py
-
-The runtime module loader:
-
-- resolves local project modules from the project root
-- resolves installed packages from `.nodus/modules/`
-- resolves standard library modules
-- compiles modules into bytecode units
+- resolves module paths (project root, `.nodus/modules/`, stdlib)
+- compiles or reuses cached bytecode units
 - executes modules once and caches module objects
+- links imports via live bindings or module objects
 
-Import order is:
+Modules have isolated globals, and named imports bind to live export bindings so updates are shared across importers.
 
-1. local project modules
-2. `.nodus/modules/`
-3. standard library
+## Bytecode Cache
 
-Compilation
+Compiled module bytecode is cached under `.nodus/cache/` in the active project root.
 
-File:
-
-compiler.py
-
-Responsibilities:
-
-convert AST nodes into bytecode instructions
-
-construct constant tables
-
-generate function objects and closures
-
-maintain source location mappings for diagnostics
-
-Optimization
-
-File:
-
-optimizer.py
-
-Current optimizations include:
-
-constant folding
-
-dead code elimination
-
-jump simplification
-
-These optimizations are intentionally lightweight.
-
-Virtual Machine Execution
-
-File:
-
-vm.py
-
-The Nodus VM is a stack-based interpreter.
-
-Runtime components include:
-
-value stack
-
-call frames
-
-global scope
-
-closures and upvalues
-
-builtin function registry
-
-The VM executes bytecode instructions emitted by the compiler.
-
-Debugger Architecture
-
-The debugger is an optional runtime component that hooks into the VM execution loop.
-
-Core mechanics:
-
-- The VM invokes debugger hooks before and after each instruction when debugging is enabled.
-- Breakpoints are stored by module name and line number, using code location metadata from the compiler.
-- Step modes include STEP_IN, STEP_OVER, and CONTINUE.
-- When a pause is triggered, the debugger exposes current module, line, function, and locals, along with stack helpers.
-
-Runtime Subsystems
-
-Core runtime subsystems are:
-
-VM (vm.py)
-module loader (runtime/module_loader.py)
-module objects (runtime/module.py)
-scheduler (runtime/scheduler.py)
-debugger (runtime/debugger.py)
-runtime services (tools/agents/memory/event bus)
-
-3. Bytecode Model
-
-The instruction set is organized into several opcode families.
-
-Stack Operations
-PUSH_CONST
-POP
-Variable Access
-LOAD
-STORE
-STORE_ARG
-LOAD_UPVALUE
-STORE_UPVALUE
-Arithmetic / Logic
-ADD SUB MUL DIV
-EQ NE LT GT LE GE
-NOT NEG
-TO_BOOL
-Control Flow
-JUMP
-JUMP_IF_FALSE
-JUMP_IF_TRUE
-HALT
-Iteration
-GET_ITER
-ITER_NEXT
-Exceptions
-SETUP_TRY
-POP_TRY
-THROW
-
-4. Bytecode Versioning
-
-Compiled bytecode is packaged with a version header:
-
-{
-  "bytecode_version": 1,
-  "instructions": [...],
-  "constants": [],
-  "metadata": {}
-}
-
-The VM validates the bytecode version on load and raises BytecodeVersionError if the version is unsupported. This keeps the runtime forward-compatible as opcodes evolve.
-
-5. Embedding API
-
-The runtime can be embedded in external Python applications via nodus.runtime.embedding.NodusRuntime. Embedding supports:
-
-initializing an isolated runtime
-registering host functions callable from Nodus scripts
-running source strings or script files
-propagating runtime errors back to the host
-
-6. Sandbox Limits
-
-The runtime enforces optional execution limits:
-
-step limit (instruction count)
-time limit (wall-clock deadline)
-output limit (stdout character cap)
-call stack depth (maximum number of frames)
-
-When a limit is exceeded, the runtime raises RuntimeLimitExceeded (surfaced as a sandbox error in tooling outputs).
-
-7. Runtime Module System
-
-Nodus now executes modules as isolated runtime units. Each module has its own global namespace and is executed once per process. Imports resolve through the module loader, which caches module objects and reuses them for repeated imports.
-
-Module Qualification
-
-To avoid name collisions across modules, the loader assigns each module a unique prefix (`__modN__`). The compiler qualifies imported symbols with this prefix while preserving display names for diagnostics. The VM strips module prefixes when presenting user-facing names.
-
-Modules are represented at runtime by a NodusModule object that stores:
-
-module bytecode
-module globals
-exported symbols
-module path
-
-Exports are linked at runtime instead of copied into importers. Namespace imports hold runtime module objects, and named imports hold live export bindings. Reads and writes therefore observe shared module state across importers.
-
-8. Module Bytecode Units
-
-Each compiled module produces a standalone bytecode unit:
-
-{
-  "bytecode_version": 1,
-  "module_name": "<module>",
-  "constants": [...],
-  "instructions": [...],
-  "exports": [...],
-  "metadata": {...}
-}
-
-These units can be cached independently and linked at runtime.
-
-9. Module Loader
-
-The module loader is responsible for:
-
-- resolving module paths
-- consulting the dependency graph for incremental compilation
-- loading cached bytecode units when available
-- compiling modules to bytecode units
-- executing modules once
-- caching module objects
-- linking import bindings into module globals
-
-Runtime execution paths use the module loader rather than flattening imported ASTs into the parent module. Tooling can still perform independent analysis passes, but script execution resolves and initializes modules at runtime.
-
-The loader only works with filesystem paths. It never reads `nodus.toml`, never reads `nodus.lock`, and never performs package resolution.
-
-11. Bytecode Cache
-
-Compiled modules are cached on disk under `.nodus/cache/` in the active project root.
-
-Cache entries are keyed by a deterministic hash of:
-
+Cache entries are keyed by:
 - absolute module path
-- source file modification timestamp
+- source file modification time (ns)
 
-Each `.nbc` entry stores:
+Cache invalidation happens when the source mtime changes or the bytecode version changes.
 
-- module path
-- source mtime
-- cache version (`NODUS_BYTECODE_VERSION`)
-- compiled bytecode
-- function metadata
-- constants
-- code locations used by runtime diagnostics
+## Incremental Compilation
 
-Invalidation rules are intentionally simple:
-
-- source file timestamp changes
-- `NODUS_BYTECODE_VERSION` changes
-
-The runtime still executes modules once per process and caches runtime module objects in memory. The disk cache only skips recompilation; it never stores runtime state. This keeps repeated executions faster while preserving module semantics and prepares the loader for future incremental compilation.
-
-12. Incremental Compilation
-
-The runtime tracks module dependencies in `.nodus/deps.json`.
+The runtime maintains a dependency graph in `.nodus/deps.json` to skip reprocessing unchanged modules.
 
 Each node stores:
-
 - module path
 - imported module paths
-- the source mtime recorded when the module was last compiled
+- last compiled source mtime
 
-Incremental compilation works with the bytecode cache rather than replacing it:
+During module loading, the loader:
+1. resolves the module path
+2. consults the dependency graph
+3. compares module and dependency mtimes
+4. reuses cached bytecode and cached loader metadata if unchanged
+5. recompiles and updates `.nodus/cache/` and `.nodus/deps.json` if changed
 
-1. resolve the module path
-2. consult the dependency graph
-3. compare the module mtime and dependency mtimes against the last compiled graph snapshot
-4. if unchanged, load cached bytecode plus cached loader metadata
-5. if changed, parse and compile again, then update `.nodus/cache/` and `.nodus/deps.json`
+## Scheduler Fairness
 
-This lets unchanged modules skip reparsing, import/export metadata rebuilding, and bytecode compilation. A module is recompiled when:
+The scheduler is round-robin and enforces a per-task instruction budget:
 
-- its own source mtime changes
-- any dependency source mtime changes
-- any dependency was recompiled earlier in the current load session
+- `TASK_STEP_BUDGET = 1000` (`runtime/scheduler.py`)
+- each coroutine runs until it yields, suspends, or consumes its budget
+- when the budget is exhausted, the VM suspends and re-enqueues the task
 
-The dependency graph remains runtime-local. It records filesystem relationships between already-resolved module files and does not perform manifest parsing, package resolution, or registry access.
+This prevents CPU-heavy tasks from starving other coroutines or workflow steps.
 
-13. Fair Task Scheduling
+## Workflow Orchestration
 
-The scheduler now enforces a round-robin execution model with a task step budget (`TASK_STEP_BUDGET = 1000`). Each coroutine, workflow step, or goal task runs until it yields, suspends, or exhausts its instruction budget. When the budget is consumed, the VM automatically suspends the task, records its current state, and returns control to the scheduler, which re-enqueues the task at the end of the runnable queue.
+Workflows and goals are lowered to task graphs (`orchestration/workflow_lowering.py`) and executed by the runtime scheduler.
 
-This prevents long-running, CPU-bound tasks from dominating execution, allows short-lived tasks to complete, and keeps workflow/goal nodes progressing even when steps loop without explicit yields. The scheduler also tracks optional metadata such as task age so future priority support can reuse the same queue structure without changing the public API.
+Graph persistence:
+- `.nodus/graphs/<graph_id>.json` stores task status, outputs, pending queue, scheduler order, workflow/goal metadata, checkpoints, and `updated_at`
+- `.nodus/graphs/<graph_id>.checkpoint.json` stores the latest checkpoint snapshot
 
-10. Project Tooling
+Snapshots are written atomically (temp file -> fsync -> rename) and are used by `resume_workflow` / `resume_goal`.
 
-Project and package management live under `src/nodus/tooling/`:
+## Tooling + Developer Interfaces
 
-- `project.py` locates the project root, parses `nodus.toml`, and reads or writes `nodus.lock`
-- `semver.py` evaluates version ranges
-- `resolver.py` constructs dependency graphs from manifests and registry metadata
-- `installer.py` installs resolved packages into `.nodus/modules/`
-- `registry.py` exposes registry metadata to the resolver
+Tooling modules in `src/nodus/tooling/` provide:
 
-`nodus.lock` uses deterministic `[[package]]` entries:
+- formatter (`tooling/formatter.py`)
+- AST printer/serializer (`frontend/ast/`)
+- bytecode disassembler (`compiler/compiler.py`)
+- REPL (`tooling/repl.py`)
+- diagnostics engine (`tooling/diagnostics.py`)
 
-```toml
-[[package]]
-name = "json"
-version = "1.2.0"
-source = "registry"
-hash = "sha256:abc123..."
-```
+## LSP
 
-Tooling runs during `nodus install` and `nodus update`. Script execution does not invoke the resolver or installer.
-Functions and Closures
-CALL
-CALL_VALUE
-CALL_METHOD
-MAKE_CLOSURE
-RETURN
-YIELD
-Collections / Records
-BUILD_LIST
-BUILD_MAP
-BUILD_RECORD
-BUILD_MODULE
-INDEX
-INDEX_SET
-LOAD_FIELD
-STORE_FIELD
+The LSP server (`lsp/server.py`) provides:
 
-Imports are resolved by the runtime module loader rather than being flattened at compile time.
+- diagnostics (syntax, import/export, and semantic warnings)
+- completion, hover, and go-to-definition
+- dependency-aware incremental refresh based on `.nodus/deps.json`
 
-4. Runtime Orchestration Layer
+## DAP
 
-Beyond traditional scripting, Nodus includes orchestration capabilities.
+The DAP server (`dap/server.py`) reuses the runtime debugger and provides:
 
-Key modules:
+- breakpoints and stepping
+- stack traces
+- variable inspection
+- stdout/stderr forwarding
 
-coroutine.py
-scheduler.py
-channel.py
-task_graph.py
-workflow_lowering.py
-workflow_state.py
-runtime_events.py
+## Runtime Services
 
-These components support:
+The runtime exposes builtins and adapters for:
 
-asynchronous execution
+- tools (`tool_call`, `tool_available`, `tool_describe`)
+- agents (`agent_call`, `agent_available`, `agent_describe`)
+- memory (`memory_get`, `memory_put`, `memory_delete`, `memory_keys`)
+- events (`emit`, runtime event bus)
 
-message passing
-
-workflow definitions
-
-goal-driven task execution
-
-event tracing
-
-Workflow syntax is lowered into task graph execution plans during compilation.
-
-Workflow persistence extends these orchestration components. The runtime now writes `.nodus/graphs/<graph_id>.json` snapshots that record the full workflow state (task metadata, outputs, pending queue, scheduler-ready work, workflow/goal metadata, checkpoint history, and an `updated_at` timestamp) using atomic temp-file writes followed by fsync+rename to protect against crashes. Checkpoints recorded inside steps emit `.nodus/graphs/<graph_id>.checkpoint.json`, which stores completed tasks, intermediate outputs, remaining tasks, scheduler order, and workflow state so a resumed workflow can continue from the exact point of interruption. CLI tooling (`nodus workflow list/resume/cleanup`) and the `NODUS_WORKFLOW_RETENTION_SECONDS` setting help operators inspect, resume, and prune persisted workflows without losing scheduler fairness.
-
-5. Tooling and Developer Interfaces
-
-Nodus includes extensive developer tooling.
-
-Key components:
-
-cli.py
-repl.py
-formatter.py
-debugger.py
-runner.py
-server.py
-
-Capabilities include:
-
-interactive REPL
-
-- multiline brace-aware input
-- persistent command history via `~/.nodus_history` when `readline` is available
-- shell commands `:ast`, `:dis`, `:type`, `:help`, and `:quit`
-
-deterministic formatting
-
-AST inspection
-
-bytecode disassembly
-
-runtime tracing
-
-server-mode execution
-
-These tools support both script development and runtime debugging.
-
-6. Standard Library
-
-The Nodus standard library is organized under the std: namespace.
-
-Examples include:
-
-std:strings
-std:collections
-std:fs
-std:path
-std:json
-std:math
-std:runtime
-std:async
-std:tools
-std:memory
-std:agent
-
-The stdlib provides common utilities while avoiding large external dependencies.
-
-7. Current Module Model
-
-Imports are runtime operations executed through the module loader. Each module is compiled into its own bytecode unit, executed once, and cached for subsequent imports. Module exports are surfaced as module records, while module functions are invoked through module-bound call wrappers.
-
-8. Architectural Risks
-
-The current architecture has several constraints.
-
-Runtime Coupling
-
-Orchestration components share runtime state with the VM.
-
-Without a clear boundary, this may complicate future extensions.
-
-Python Runtime Constraints
-
-Because the VM is implemented in Python:
-
-performance ceilings exist
-
-CPU-heavy workloads may be constrained
-
-Embedding Boundary
-
-The embedding API is available, but host integrations remain sensitive to VM performance characteristics.
-
-9. Recommended Architectural Evolution
-
-The next high-impact improvements are incremental compilation and bytecode caching.
-
-Planned architecture:
-
-Module Source
-   ↓
-Compile per module
-   ↓
-Bytecode Unit (cached by hash)
-   ↓
-Runtime Module Object
-   ↓
-VM Loader
-
-Benefits:
-
-faster rebuilds
-
-repeatable builds with caching
-
-better tooling integration
-
-Additional improvements completed:
-
-Bytecode Versioning
-
-Bytecode headers are versioned and validated at load time.
-
-Embedding APIs
-
-The NodusRuntime embedding API supports:
-
-executing code
-
-loading modules
-
-registering host functions
-
-propagating runtime errors
-
-Runtime Service Interfaces
-
-Service interfaces remain an evolution area for:
-
-agents
-
-tools
-
-memory
-
-orchestration services
-
-10. Lifecycle Stage
-
-Nodus currently sits in the early practical runtime stage.
-
-Evidence:
-
-functioning compiler and VM
-
-module system
-
-CLI and REPL
-
-standard library
-
-workflow orchestration runtime
-
-debugging and formatting tools
-
-However, ecosystem-level infrastructure such as:
-
-module isolation
-
-stable embedding APIs
-
-package distribution
-
-is still evolving.
-
-11. Design Philosophy
-
-Nodus prioritizes:
-
-clarity of implementation
-
-inspectable runtime behavior
-
-deterministic tooling
-
-disciplined language evolution
-
-The goal is to build a scripting runtime that remains understandable while supporting complex automation workflows.
-
-Final Note
-
-The most important architectural principle of Nodus is maintainable clarity.
-
-If a subsystem becomes difficult to explain, the design should be reconsidered.
+These services are explicit, JSON-safe, and kept separate from the core VM.

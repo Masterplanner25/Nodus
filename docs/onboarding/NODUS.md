@@ -7,7 +7,7 @@ A lightweight scripting language built around a bytecode compiler and stack-base
 Nodus is designed for readable logic, modular scripting, and runtime orchestration with task graphs, workflows, and event tracing.
 
 ## Architecture
-`tokenizer -> parser/AST -> compiler -> bytecode -> stack VM`
+`lexer -> parser/AST -> module loader -> compiler -> bytecode -> stack VM -> scheduler`
 
 ## Design Philosophy
 - clarity over cleverness
@@ -36,7 +36,7 @@ Primary extension: `.nd`
 
 ## CLI
 - `nodus run script.nd`
-- `nodus repl`
+- `python -m nodus.tooling.repl`
 - REPL commands: `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>`
 - `nodus fmt script.nd`
 - `nodus check script.nd`

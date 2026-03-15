@@ -61,7 +61,7 @@ None.
 
 ### 0.4.x — Packaging and Tooling (Planned)
 - Registry-backed package resolution and publishing.
-- Debugger improvements and profiler MVP.
+- ✅ Debugger improvements and profiler MVP.
 
 ## Compatibility / Deprecations
 - `.tl` legacy extension (primary is `.nd`).
@@ -94,6 +94,9 @@ better tooling compatibility
 
 cleaner import semantics
 
+Status:
+✅ Completed (per-module bytecode units, bytecode caching, incremental compilation, live bindings).
+
 2. Bytecode Stability and Versioning
 
 Introduce:
@@ -112,6 +115,9 @@ bytecode caching
 
 forward-compatible loaders
 
+Status:
+✅ Completed (bytecode version headers validated at load time).
+
 3. Runtime Architecture Split
 
 Formalize runtime subsystems:
@@ -129,6 +135,9 @@ easier embedding
 
 safer experimentation
 
+Status:
+✅ Implemented in code layout (`runtime/`, `tooling/`, `services/`), boundaries still evolving.
+
 4. Embedding API
 
 Define a stable host API for:
@@ -142,6 +151,9 @@ exposing host functions
 hooking runtime events
 
 Embedding support is necessary for integrating Nodus into automation systems.
+
+Status:
+✅ Implemented (`nodus.runtime.embedding.NodusRuntime`).
 
 5. Package Management 1.0
 
@@ -334,11 +346,11 @@ Tooling Roadmap
 
 Order of implementation:
 
-Debugger with breakpoints and step control
+✅ Debugger with breakpoints and step control
 
-Profiler with opcode counts and function timing
+✅ Profiler with opcode counts and function timing
 
-Runtime metrics for scheduler and task execution
+✅ Runtime metrics for scheduler and task execution
 
 REPL improvements:
 - completed in 0.5.0:
@@ -349,6 +361,8 @@ REPL improvements:
 - :type
 
 Language Server Protocol (LSP)
+
+✅ LSP server with diagnostics, completion, hover, and go-to-definition
 
 IDE integration via VS Code extension
 
@@ -432,9 +446,9 @@ Version 0.4
 
 Focus:
 
-bytecode caching
+✅ bytecode caching
 
-debugger MVP
+✅ debugger MVP
 
 registry package resolution
 

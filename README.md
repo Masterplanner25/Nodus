@@ -3,7 +3,7 @@
 Nodus is a lightweight, practical scripting language implemented in Python. It targets small scripts and automation tasks with a clean module system, a compact standard library, and predictable tooling.
 
 Architecture:
-`source -> lexer -> parser -> AST -> compiler -> bytecode -> VM -> runtime services`
+`source -> lexer -> parser -> AST -> module loader -> bytecode compiler -> optimizer -> VM -> scheduler -> orchestration/runtime services`
 
 Quick links:
 - `docs/onboarding/GETTING_STARTED.md`
@@ -52,7 +52,7 @@ nodus run examples/hello.nd
 
 - Install (editable):
   - `pip install -e .`
-- REPL: `python nodus.py` or `nodus repl`
+- REPL: `python -m nodus.tooling.repl`
 - Run script: `nodus run script.nd`
 - Profile script: `nodus profile examples/demo.nd`
 - Check script (no execution): `nodus check script.nd`
@@ -91,19 +91,19 @@ Backward compatible invocations are still supported:
 - `nodus dis script.nd` (print compiled bytecode without running)
 - `nodus dis script.nd --loc` (include source locations in bytecode)
 - `nodus run script.nd` (execute)
-- `nodus repl` (interactive REPL)
+- `python -m nodus.tooling.repl` (interactive REPL)
 - `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>` (inside the REPL)
 - `nodus run script.nd --trace --trace-limit 50` (short trace)
 - `nodus run script.nd --trace-events` (runtime event stream)
 - `nodus run script.nd --trace-json --trace-file trace.json` (machine-readable events)
-- `nodus run script.nd --trace-scheduler --scheduler-stats` (scheduler tracing)
+- `nodus run script.nd --trace-scheduler` (scheduler tracing)
 - `nodus run script.nd --no-opt` (disable bytecode optimization)
 - `nodus run script.nd --step-limit 100000 --time-limit 5 --output-limit 20000` (sandbox limits)
 - `nodus run script.nd --allow-paths <paths>` (filesystem allowlist)
 - `nodus profile examples/demo.nd` (runtime profiler report)
 - `nodus debug script.nd` (interactive debugger)
 - `nodus dap` (Debug Adapter Protocol over stdio)
-- `nodus install` (install project dependencies)
+- `nodus install` (install project dependencies to `.nodus/modules/`)
 - `nodus update` (refresh dependencies and lockfile)
 - `nodus deps` (print the incremental compilation dependency graph)
 - `nodus package-list` (list package manifest/lockfile dependencies)
@@ -117,15 +117,15 @@ Backward compatible invocations are still supported:
 - `nodus snapshots` (list snapshots)
 - `nodus restore <snapshot>` (restore snapshot to new session)
 - `nodus worker --host <host> --port <n>` (register a worker with a server)
-- `nodus install` (install project dependencies to `deps/`)
-- `nodus update` (refresh dependencies and lockfile)
-
 Orchestration commands:
 - `nodus graph <script.nd>` (plan a task graph from a script)
 - `nodus workflow-run <script.nd> [--workflow <name>]`
 - `nodus workflow-plan <script.nd> [--workflow <name>]`
 - `nodus workflow-resume <graph_id> [--checkpoint <label>]`
 - `nodus workflow-checkpoints <graph_id>`
+- `nodus workflow list [--project-root <path>]`
+- `nodus workflow resume <graph_id> [--checkpoint <label>] [--project-root <path>]`
+- `nodus workflow cleanup [--project-root <path> --retention-seconds N --force]`
 - `nodus goal-run <script.nd> [--goal <name>]`
 - `nodus goal-plan <script.nd> [--goal <name>]`
 - `nodus goal-resume <graph_id> [--checkpoint <label>]`
@@ -144,6 +144,7 @@ Runtime service commands:
 - `nodus agent-call <agent> --json <payload>`
 - `nodus memory-get <key>`
 - `nodus memory-put <key> --json <value>`
+- `nodus memory-delete <key>`
 - `nodus memory-keys`
 
 ## Language Files
@@ -178,7 +179,7 @@ The DAP adapter reuses the existing runtime debugger, supports source-line break
 - if / else, while, for
 - imports and namespaced imports
 - explicit exports and selective imports
-- stdlib scripts in `std/`
+- built-in stdlib modules (imported via `std:`)
 - builtins including file I/O
 - coroutines and channels
 - workflow/goal syntax and task graphs
@@ -196,6 +197,8 @@ The DAP adapter reuses the existing runtime debugger, supports source-line break
 - project manifests (`nodus.toml`) with dependency resolution and `nodus.lock`
 
 ## REPL
+
+Start the REPL with `python -m nodus.tooling.repl`.
 
 The REPL now supports multiline editing for brace-delimited blocks, persistent history via `~/.nodus_history`, and interactive inspection commands.
 
@@ -228,7 +231,7 @@ List<number>
 - `export { add } from "./math.nd"`
 
 Import resolution rules:
-- Project dependencies resolve first (entries in `nodus.toml` / `nodus.lock` and the `deps/` directory).
+- Project dependencies resolve from `.nodus/modules/` (installed by `nodus install` / `nodus update`).
 - `std:` prefix resolves to the built-in `std/` directory (e.g. `std:strings`).
 - Relative paths start with `./` or `../` and resolve from the importing file.
 - Non-relative paths resolve from the project root (the entry script directory by default).

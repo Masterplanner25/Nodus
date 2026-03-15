@@ -17,7 +17,7 @@ nodus run examples/hello.nd
 Use the REPL:
 
 ```bash
-nodus repl
+python -m nodus.tooling.repl
 ```
 
 Inside the REPL:
@@ -129,7 +129,7 @@ Notes:
 - `TASK_GRAPHS.md`
 - `WORKFLOWS.md`
 - `RUNTIME_EVENTS.md`
-- `DEBUGGER.md`
+- `DEBUGGING.md`
 - `REPL.md`
 - `PACKAGE_MANAGER.md`
 - `SERVER_MODE.md`

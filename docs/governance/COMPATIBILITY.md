@@ -14,5 +14,5 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 
 ## Migration Path
 - Use `.nd` files for new code.
-- Use the `nodus` CLI (`nodus run`, `nodus check`, `nodus fmt`, `nodus repl`).
+- Use the `nodus` CLI (`nodus run`, `nodus check`, `nodus fmt`) and the REPL via `python -m nodus.tooling.repl`.
 - Keep legacy `.tl` only for compatibility; the stdlib still ships `.tl` mirrors for now.
