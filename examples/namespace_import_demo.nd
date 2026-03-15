@@ -3,4 +3,3 @@ import "std:strings" as s
 
 print(g.greet("Namespace"))
 print(s.repeat("ha", 3))
-

@@ -8,7 +8,6 @@ print(s.join(items, ","))
 print(c.first(items))
 let more = c.push(items, "d")
 print(s.join(more, "-"))
-
 let dir = "tmp_demo"
 fs.ensure_dir(dir)
 let file_path = p.join(dir, "hello.txt")

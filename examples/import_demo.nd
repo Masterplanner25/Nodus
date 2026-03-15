@@ -4,4 +4,3 @@ import { list_sum } from "std:collections"
 let nums = [1, 2, 3, 4]
 print(greet("Coder"))
 print(list_sum(nums))
-
