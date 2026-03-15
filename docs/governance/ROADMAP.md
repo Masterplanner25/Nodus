@@ -81,6 +81,9 @@ v0.7.0 shipped 2026-03-15. Active work is v0.8 planning; see the v0.8 milestone 
 ### 0.4.x — Packaging and Tooling (Planned)
 - Registry-backed package resolution and publishing.
 - ✅ Debugger improvements and profiler MVP.
+- ✅ Module bytecode unit format and bytecode version headers — Shipped in v0.7.0 — marshal format with NDSC magic bytes (b'NDSC'), version byte, and SHA-256 source integrity header. See src/nodus/runtime/bytecode_cache.py and test_bytecode_version_mismatch.
+- ✅ Minimal runtime module objects and debugger MVP — Shipped in v0.4.x as planned. DAP stdio server, breakpoints, stepping, stack traces, and variable scopes are all implemented and tested. See docs/tooling/DAP.md and test_dap_server.
+- ⚠️ Semver parsing and lockfile format groundwork — Groundwork shipped — semver parsing, lockfile format, and local package resolution are implemented and tested (test_packages). Registry-backed remote resolution and publishing remain open. Tracked as primary v0.8 blocker in the v0.8 milestone section.
 
 ## Compatibility / Deprecations
 - `.tl` legacy extension (primary is `.nd`).
