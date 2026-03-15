@@ -9,6 +9,7 @@ from nodus.runtime.diagnostics import LangRuntimeError
 
 STEP_IN = "step_in"
 STEP_OVER = "step_over"
+STEP_OUT = "step_out"
 CONTINUE = "continue"
 
 
@@ -88,6 +89,8 @@ class Debugger:
         self.skip_ip: int | None = None
         self.breakpoint_latch: tuple[str | None, int] | None = None
         self.last_pause: PauseState | None = None
+        self.pause_requested = False
+        self.terminate_requested = False
 
     def set_breakpoint(self, module: str | None, line: int) -> None:
         self.breakpoints.add((module, line))
@@ -95,7 +98,46 @@ class Debugger:
     def clear_breakpoint(self, module: str | None, line: int) -> None:
         self.breakpoints.discard((module, line))
 
+    def resume_continue(self, vm) -> None:
+        self.mode = CONTINUE
+        self.next_depth = None
+        self.next_steps = 0
+        self.skip_ip = vm.ip
+        self.pause_requested = False
+
+    def resume_step_in(self, vm) -> None:
+        self.mode = STEP_IN
+        self.next_depth = None
+        self.next_steps = 0
+        self.skip_ip = vm.ip
+        self.pause_requested = False
+
+    def resume_step_over(self, vm) -> None:
+        self.mode = STEP_OVER
+        self.next_depth = len(vm.frames)
+        self.next_steps = 0
+        self.skip_ip = vm.ip
+        self.pause_requested = False
+
+    def resume_step_out(self, vm) -> None:
+        if not vm.frames:
+            self.resume_continue(vm)
+            return
+        self.mode = STEP_OUT
+        self.next_depth = max(len(vm.frames) - 1, 0)
+        self.next_steps = 0
+        self.skip_ip = vm.ip
+        self.pause_requested = False
+
+    def request_pause(self) -> None:
+        self.pause_requested = True
+
+    def request_terminate(self) -> None:
+        self.terminate_requested = True
+
     def before_instruction(self, vm, instr: tuple) -> None:
+        if self.terminate_requested:
+            raise DebuggerQuit()
         if self.skip_ip is not None and vm.ip != self.skip_ip:
             self.skip_ip = None
 
@@ -115,14 +157,25 @@ class Debugger:
             return
 
         frame = self._build_frame(vm, module, line, col, event="before")
+        if self.pause_requested:
+            self.pause_requested = False
+            self._pause(vm, frame, "pause")
+            return
         if self.should_pause(frame):
             self._pause(vm, frame, "breakpoint")
 
     def after_instruction(self, vm, instr: tuple) -> None:
+        if self.terminate_requested:
+            raise DebuggerQuit()
         module, line, col = vm.current_loc()
         frame = self._build_frame(vm, module, line, col, event="after")
         if self.should_pause(frame):
-            reason = "step" if self.mode == STEP_IN else "next"
+            if self.mode == STEP_IN:
+                reason = "step"
+            elif self.mode == STEP_OUT:
+                reason = "stepOut"
+            else:
+                reason = "next"
             self._pause(vm, frame, reason)
 
     def should_pause(self, frame: DebuggerFrame) -> bool:
@@ -137,6 +190,10 @@ class Debugger:
             return True
 
         if self.mode == STEP_OVER:
+            self.next_steps += 1
+            if self.next_depth is not None and self.next_steps >= 1 and frame.depth <= self.next_depth:
+                return True
+        if self.mode == STEP_OUT:
             self.next_steps += 1
             if self.next_depth is not None and self.next_steps >= 1 and frame.depth <= self.next_depth:
                 return True
@@ -176,22 +233,16 @@ class Debugger:
             if not cmd:
                 continue
             if cmd == "step":
-                self.mode = STEP_IN
-                self.next_depth = None
-                self.next_steps = 0
-                self.skip_ip = vm.ip
+                self.resume_step_in(vm)
                 return
             if cmd == "next":
-                self.mode = STEP_OVER
-                self.next_depth = len(vm.frames)
-                self.next_steps = 0
-                self.skip_ip = vm.ip
+                self.resume_step_over(vm)
+                return
+            if cmd in {"out", "stepout"}:
+                self.resume_step_out(vm)
                 return
             if cmd in {"continue", "run"}:
-                self.mode = CONTINUE
-                self.next_depth = None
-                self.next_steps = 0
-                self.skip_ip = vm.ip
+                self.resume_continue(vm)
                 return
             if cmd == "stack":
                 for line_text in self.format_stack(vm):

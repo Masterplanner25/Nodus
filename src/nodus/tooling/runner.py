@@ -9,6 +9,7 @@ from nodus.frontend.ast.ast_serializer import ast_to_dict
 from nodus.compiler.compiler import format_bytecode, build_disassembly
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.runtime.errors import coerce_error, legacy_error_dict, NodusRuntimeError
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.debugger import Debugger, DebuggerQuit
 from nodus.tooling.loader import compile_source
 from nodus.frontend.parser import Parser
@@ -163,35 +164,6 @@ def run_source(
     import_state = _resolve_import_state(import_state, project_root)
     disassembly = None
     disassembly_lines = None
-    try:
-        _ast, bytecode, functions, code_locs = compile_source(
-            code,
-            source_path=filename,
-            import_state=import_state,
-            optimize=optimize,
-        )
-        if dump_bytecode:
-            _ast_raw, raw_code, raw_functions, raw_locs = compile_source(
-                code,
-                source_path=filename,
-                import_state=import_state,
-                optimize=False,
-            )
-            disassembly = format_bytecode(raw_code, raw_locs, raw_functions)
-            disassembly_lines = disassembly.splitlines()
-    except Exception as err:
-        stage = _compile_stage(err)
-        return (
-            _error_result(
-                stage=stage,
-                filename=filename,
-                stdout="",
-                stderr="",
-                err=err,
-            ),
-            None,
-        )
-
     vm = VM(
         [],
         {},
@@ -209,6 +181,28 @@ def run_source(
         input_fn=input_fn,
     )
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
+    loader = ModuleLoader(project_root=project_root, vm=vm)
+
+    try:
+        if dump_bytecode:
+            module_name = os.path.abspath(filename) if filename else "<memory>"
+            base_dir = os.path.dirname(module_name) if filename else os.getcwd()
+            raw_code, raw_functions, raw_locs = loader.compile_only(code, module_name=module_name, base_dir=base_dir)
+            disassembly = format_bytecode(raw_code, raw_locs, raw_functions)
+            disassembly_lines = disassembly.splitlines()
+    except Exception as err:
+        stage = _compile_stage(err)
+        return (
+            _error_result(
+                stage=stage,
+                filename=filename,
+                stdout="",
+                stderr="",
+                err=err,
+            ),
+            None,
+        )
+
     extras = {}
     if disassembly is not None:
         extras["disassembly"] = disassembly
@@ -217,19 +211,17 @@ def run_source(
     try:
         with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
             try:
-                vm.reset_program(
-                    bytecode,
-                    functions,
-                    code_locs=code_locs,
-                    source_path=filename,
-                    module_globals={},
-                )
                 vm.source_code = code
-                vm.run()
+                module_name = os.path.abspath(filename) if filename is not None else "<memory>"
+                base_dir = os.path.dirname(module_name) if filename is not None else os.getcwd()
+                loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir)
             except Exception as err:
+                stage = _compile_stage(err)
+                if stage not in {"parse", "compile"}:
+                    stage = "execute"
                 return (
                     _error_result(
-                        stage="execute",
+                        stage=stage,
                         filename=filename,
                         stdout=stdout.getvalue(),
                         stderr=stderr.getvalue(),
@@ -354,30 +346,22 @@ def debug_source(
     timeout_ms: int = EXECUTION_TIMEOUT_MS,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
 ):
-    import_state = _resolve_import_state(None, project_root)
-    try:
-        _ast, bytecode, functions, code_locs = compile_source(
-            code,
-            source_path=filename,
-            import_state=import_state,
-        )
-    except Exception as err:
-        stage = _compile_stage(err)
-        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err), None
-
     debugger = Debugger(input_fn=debugger_input, output_fn=debugger_output, start_paused=True)
     vm = VM(
-        bytecode,
-        functions,
-        code_locs=code_locs,
+        [],
+        {},
+        code_locs=[],
         source_path=filename,
         debug=True,
         debugger=debugger,
     )
+    loader = ModuleLoader(project_root=project_root, vm=vm, debugger=debugger)
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
-            vm.run()
+            module_name = os.path.abspath(filename) if filename is not None else "<memory>"
+            base_dir = os.path.dirname(module_name) if filename is not None else os.getcwd()
+            loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir)
         except DebuggerQuit:
             return (
                 _success_result(
@@ -390,9 +374,12 @@ def debug_source(
                 vm,
             )
         except Exception as err:
+            stage = _compile_stage(err)
+            if stage not in {"parse", "compile"}:
+                stage = "execute"
             return (
                 _error_result(
-                    stage="execute",
+                    stage=stage,
                     filename=filename,
                     stdout=stdout.getvalue(),
                     stderr=stderr.getvalue(),

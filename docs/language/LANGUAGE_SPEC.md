@@ -90,15 +90,23 @@ Stability: Mostly stable (protocol details may evolve).
   - `__next__` returns the next value or `nil` to signal completion.
 
 ## Imports
-Stability: Syntax stable; module semantics experimental (current compile-time flattening).
+Stability: Syntax stable; runtime module semantics mostly stable.
 - `import "path/file.nd"`
 - `import { name, add } from "path/file.nd"`
 - `import "path/file.nd" as mod`
 - `import "std:strings"`
 - `import "utils:strings"`
 - Namespaced member access: `mod.name`, `mod.fn(...)`
-- Namespace imports also produce a runtime module value, so aliases can be passed to reflection helpers.
-- Imported module executes once per run.
+- Namespace imports produce runtime module objects, so aliases can be passed to reflection helpers and retain live exported state.
+- Named imports are live bindings to the exporting module rather than copied values.
+- Imported modules execute once per run and are cached by resolved module path.
+- Each module maintains its own isolated global namespace.
+
+Import behavior:
+- `import "mod.nd" as mod` binds `mod` to a runtime module object.
+- `mod.name` reads the current exported value from the module.
+- `mod.name = expr` writes back to the exported binding when `name` is exported.
+- `import { name } from "mod.nd"` binds `name` as a live import. Reassigning `name` updates the exported binding in the source module.
 
 Import resolution:
 - `std:` prefix resolves to built-in `std/` modules (e.g. `std:strings`).
@@ -150,6 +158,7 @@ Module visibility rules:
 - If a module uses any `export` declaration, **only** explicitly exported names are visible to importers.
 - Modules without any `export` declarations export all top-level `let`/`fn`/assignment names (legacy compatibility).
 - Accessing a non-exported name from another module is an error.
+- Exported bindings remain live after import, so later writes are visible through namespace aliases and named imports.
 
 ## Built-ins
 Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experimental.
@@ -557,6 +566,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Primary source extension: `.nd`
 - Legacy `.tl` is still supported for compatibility.
 - CLI: `nodus run script.nd`, `nodus repl`, `nodus check script.nd`
+- Cache maintenance: `nodus cache clear`
 - Bytecode optimization runs automatically during compilation.
 - `nodus run --no-opt script.nd` disables the optimizer for debugging or comparison.
 - Service mode: `nodus serve [--port <n>] [--trace]` exposes HTTP endpoints for executing code.

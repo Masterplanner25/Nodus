@@ -276,6 +276,9 @@ Modules are represented at runtime by a NodusModule object that stores:
 module bytecode
 module globals
 exported symbols
+module path
+
+Exports are linked at runtime instead of copied into importers. Namespace imports hold runtime module objects, and named imports hold live export bindings. Reads and writes therefore observe shared module state across importers.
 
 8. Module Bytecode Units
 
@@ -297,12 +300,41 @@ These units can be cached independently and linked at runtime.
 The module loader is responsible for:
 
 - resolving module paths
+- loading cached bytecode units when available
 - compiling modules to bytecode units
 - executing modules once
 - caching module objects
 - linking import bindings into module globals
 
+Runtime execution paths use the module loader rather than flattening imported ASTs into the parent module. Tooling can still perform independent analysis passes, but script execution resolves and initializes modules at runtime.
+
 The loader only works with filesystem paths. It never reads `nodus.toml`, never reads `nodus.lock`, and never performs package resolution.
+
+11. Bytecode Cache
+
+Compiled modules are cached on disk under `.nodus/cache/` in the active project root.
+
+Cache entries are keyed by a deterministic hash of:
+
+- absolute module path
+- source file modification timestamp
+
+Each `.nbc` entry stores:
+
+- module path
+- source mtime
+- cache version (`NODUS_BYTECODE_VERSION`)
+- compiled bytecode
+- function metadata
+- constants
+- code locations used by runtime diagnostics
+
+Invalidation rules are intentionally simple:
+
+- source file timestamp changes
+- `NODUS_BYTECODE_VERSION` changes
+
+The runtime still executes modules once per process and caches runtime module objects in memory. The disk cache only skips recompilation; it never stores runtime state. This keeps repeated executions faster while preserving module semantics and prepares the loader for future incremental compilation.
 
 10. Project Tooling
 

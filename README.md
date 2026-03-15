@@ -10,6 +10,7 @@ Quick links:
 - `docs/language/FORMAT.md`
 - `docs/tooling/EDITOR_SUPPORT.md`
 - `docs/tooling/LSP.md`
+- `docs/tooling/DAP.md`
 - `docs/governance/STABILITY.md`
 - `docs/tooling/TESTING.md`
 - `docs/runtime/TASK_GRAPHS.md`
@@ -60,6 +61,7 @@ nodus run examples/hello.nd
 - Run examples: `nodus test-examples`
 - Service mode: `nodus serve` (HTTP runtime server)
 - Language server: `nodus lsp`
+- Debug adapter: `nodus dap`
 - Session snapshots: `nodus snapshot <session>`, `nodus snapshots`, `nodus restore <snapshot>`
 - Version: `nodus --version`
 
@@ -100,8 +102,10 @@ Backward compatible invocations are still supported:
 - `nodus run script.nd --allow-paths <paths>` (filesystem allowlist)
 - `nodus profile examples/demo.nd` (runtime profiler report)
 - `nodus debug script.nd` (interactive debugger)
+- `nodus dap` (Debug Adapter Protocol over stdio)
 - `nodus install` (install project dependencies)
 - `nodus update` (refresh dependencies and lockfile)
+- `nodus cache clear` (remove cached compiled modules from `.nodus/cache/`)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
 - `nodus lsp` (Language Server Protocol over stdio)
@@ -151,7 +155,18 @@ Nodus ships baseline editor support for syntax highlighting and snippets, plus a
 
 - Syntax highlighting and snippets: `docs/tooling/EDITOR_SUPPORT.md`
 - Language server documentation: `docs/tooling/LSP.md`
+- Debug adapter documentation: `docs/tooling/DAP.md`
 - Start the language server with `nodus lsp`
+- Start the debug adapter with `nodus dap`
+
+## Debugging
+
+Nodus exposes two debugger entrypoints:
+
+- `nodus debug script.nd` for the built-in interactive debugger
+- `nodus dap` for IDE clients that speak the Debug Adapter Protocol
+
+The DAP adapter reuses the existing runtime debugger, supports source-line breakpoints, continue/pause/step controls, stack traces, and variable inspection for arguments and locals.
 
 ## Core Features
 
@@ -172,6 +187,7 @@ Nodus ships baseline editor support for syntax highlighting and snippets, plus a
 - embeddable Python runtime with host function registration
 - sandbox limits for steps, time, and stdout output
 - runtime module loader with per-module bytecode units
+- on-disk bytecode cache for compiled modules in `.nodus/cache/`
 - per-module global namespace isolation
 - project manifests (`nodus.toml`) with dependency resolution and `nodus.lock`
 

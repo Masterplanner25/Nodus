@@ -14,6 +14,7 @@ The debugger starts paused before the first instruction.
 
 - `step`       Execute the next instruction and pause.
 - `next`       Step over calls; pause after the current line completes.
+- `out` / `stepout` Step out of the current call frame.
 - `continue`   Run until a breakpoint is hit.
 - `run`        Alias for `continue`.
 - `break <file>:<line>`  Set a module-aware line breakpoint.

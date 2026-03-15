@@ -20,7 +20,7 @@ from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
-from nodus.runtime.module import ModuleFunction
+from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
@@ -362,11 +362,15 @@ class VM:
             value = locals_[name]
             if isinstance(value, Cell):
                 return value.value
+            if isinstance(value, LiveBinding):
+                return value.get()
             return value
         if name in self.module_globals:
             value = self.module_globals[name]
             if isinstance(value, Cell):
                 return value.value
+            if isinstance(value, LiveBinding):
+                return value.get()
             return value
         if name in self.functions:
             return Closure(self.functions[name], [])
@@ -374,6 +378,8 @@ class VM:
             value = self.host_globals[name]
             if isinstance(value, Cell):
                 return value.value
+            if isinstance(value, LiveBinding):
+                return value.get()
             return value
         self.runtime_error("name", f"Undefined variable: {name}")
 
@@ -382,10 +388,15 @@ class VM:
         if locals_ is not None:
             if name in locals_ and isinstance(locals_[name], Cell):
                 locals_[name].value = value
+            elif name in locals_ and isinstance(locals_[name], LiveBinding):
+                locals_[name].set(value)
             else:
                 locals_[name] = value
         else:
-            self.module_globals[name] = value
+            if name in self.module_globals and isinstance(self.module_globals[name], LiveBinding):
+                self.module_globals[name].set(value)
+            else:
+                self.module_globals[name] = value
         return value
 
     def load_upvalue(self, index: int):
@@ -464,6 +475,8 @@ class VM:
             return "string"
         if isinstance(value, list):
             return "list"
+        if isinstance(value, NodusModule):
+            return "module"
         if isinstance(value, Record):
             return value.kind
         if isinstance(value, Closure):
@@ -532,11 +545,15 @@ class VM:
         return value
 
     def ensure_record(self, value, name: str) -> Record:
+        if isinstance(value, NodusModule):
+            self.runtime_error("type", f"{name} expects a record")
         if not isinstance(value, Record):
             self.runtime_error("type", f"{name} expects a record")
         return value
 
-    def ensure_module(self, value, name: str) -> Record:
+    def ensure_module(self, value, name: str):
+        if isinstance(value, NodusModule):
+            return value
         record = self.ensure_record(value, name)
         if record.kind != "module":
             self.runtime_error("type", f"{name} expects a module")
@@ -587,12 +604,15 @@ class VM:
 
     def builtin_runtime_has(self, value, name):
         self.ensure_string(name, "runtime.has(value, name)")
+        module = self.ensure_module(value, "runtime.has(value, name)") if isinstance(value, NodusModule) else None
+        if module is not None:
+            return module.has_export(name)
         record = self.ensure_record(value, "runtime.has(value, name)")
         return name in record.fields
 
     def builtin_runtime_module_fields(self, value):
         module = self.ensure_module(value, "runtime.module_fields(module)")
-        return list(module.fields.keys())
+        return list(module.export_names()) if isinstance(module, NodusModule) else list(module.fields.keys())
 
     def reflection_frames(self) -> list[Frame]:
         if not self.frames:
@@ -1650,6 +1670,8 @@ class VM:
                 val_s = self.value_to_string(v, quote_strings=True)
                 parts.append(f"{key_s}: {val_s}")
             return "record {" + ", ".join(parts) + "}"
+        if isinstance(value, NodusModule):
+            return f"<module {value.path}>"
         if isinstance(value, Coroutine):
             return f"<coroutine {value.state}>"
         if isinstance(value, Channel):
@@ -2184,6 +2206,13 @@ class VM:
                 elif op == "LOAD_FIELD":
                     name = instr[1]
                     obj = self.pop()
+                    if isinstance(obj, NodusModule):
+                        if not obj.has_export(name):
+                            self.runtime_error("key", f"Missing module export: {name}")
+                        self.stack.append(obj.get_export(name))
+                        self.ip += 1
+                        pending_after = instr
+                        continue
                     if not isinstance(obj, Record):
                         self.runtime_error("type", "Field access is only supported on records")
                     if name not in obj.fields:
@@ -2196,6 +2225,13 @@ class VM:
                     name = instr[1]
                     value = self.pop()
                     obj = self.pop()
+                    if isinstance(obj, NodusModule):
+                        if not obj.has_export(name):
+                            self.runtime_error("key", f"Missing module export: {name}")
+                        self.stack.append(obj.set_export(name, value))
+                        self.ip += 1
+                        pending_after = instr
+                        continue
                     if not isinstance(obj, Record):
                         self.runtime_error("type", "Field assignment is only supported on records")
                     obj.fields[name] = value
@@ -2243,10 +2279,18 @@ class VM:
                         continue
 
                     locals_ = self.current_locals()
-                    if locals_ is not None and fn_name in locals_:
-                        self.runtime_error("call", f"Cannot call non-function: {self.display_name(fn_name)}")
-                    if fn_name in self.globals:
-                        self.runtime_error("call", f"Cannot call non-function: {self.display_name(fn_name)}")
+                    if (locals_ is not None and fn_name in locals_) or fn_name in self.globals:
+                        callee = self.load_name(fn_name)
+                        if isinstance(callee, ModuleFunction):
+                            args = [self.pop() for _ in range(arg_count)]
+                            args.reverse()
+                            self.stack.append(callee(*args))
+                            self.ip += 1
+                            pending_after = instr
+                            continue
+                        self.call_closure(callee, arg_count)
+                        pending_after = instr
+                        continue
                     self.runtime_error("name", f"Undefined function: {fn_name}")
 
                 elif op == "CALL_VALUE":
@@ -2293,6 +2337,21 @@ class VM:
                     args = [self.pop() for _ in range(arg_count)]
                     args.reverse()
                     obj = self.pop()
+                    if isinstance(obj, NodusModule):
+                        if not obj.has_export(name):
+                            self.runtime_error("key", f"Missing module export: {name}")
+                        method = obj.get_export(name)
+                        self.record_vm_call(name, "call_method")
+                        if isinstance(method, ModuleFunction):
+                            self.stack.append(method(*args))
+                            self.ip += 1
+                            pending_after = instr
+                            continue
+                        for arg in args:
+                            self.stack.append(arg)
+                        self.call_closure(method, arg_count)
+                        pending_after = instr
+                        continue
                     if not isinstance(obj, Record):
                         self.runtime_error("type", "Method calls are only supported on records")
                     if name not in obj.fields:

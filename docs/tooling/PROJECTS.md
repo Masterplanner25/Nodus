@@ -29,6 +29,7 @@ my-project/
   src/
     main.nd
   .nodus/
+    cache/
     modules/
 ```
 
@@ -46,6 +47,7 @@ This creates:
 
 - `nodus.toml`
 - `src/main.nd`
+- `.nodus/cache/`
 - `.nodus/modules/`
 
 Install declared dependencies:

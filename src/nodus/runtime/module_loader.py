@@ -35,7 +35,8 @@ from nodus.frontend.ast.ast_nodes import (
     For,
 )
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
-from nodus.runtime.module import NodusModule, ModuleFunction
+from nodus.runtime.bytecode_cache import load_cached_bytecode, write_cached_bytecode
+from nodus.runtime.module import LiveBinding, ModuleBytecode, NodusModule
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
 
@@ -130,11 +131,14 @@ class ModuleLoader:
     ) -> NodusModule:
         module_id = module_name
         base_dir = base_dir or os.getcwd()
+        source_path = None
+        if module_name not in {"<memory>"} and os.path.isfile(module_name):
+            source_path = os.path.abspath(module_name)
         return self._load_module(
             module_id,
             base_dir=base_dir,
             source=source,
-            source_path=None,
+            source_path=source_path,
             initial_globals=initial_globals,
         )
 
@@ -162,12 +166,14 @@ class ModuleLoader:
         self._loading.add(module_id)
         try:
             metadata = self._build_metadata(module_id, base_dir=base_dir, source=source, source_path=source_path)
-            bytecode, functions, code_locs = self._compile_module(metadata)
+            bytecode_unit = self._load_or_compile_module_bytecode(metadata, source_path=source_path)
             module = NodusModule(
-                name=module_id,
-                bytecode=bytecode,
-                functions=functions,
-                code_locs=code_locs,
+                name=os.path.basename(module_id) if module_id not in {"<memory>"} else module_id,
+                path=module_id,
+                bytecode=bytecode_unit.code,
+                functions=bytecode_unit.functions,
+                code_locs=bytecode_unit.code_locs,
+                bytecode_unit=bytecode_unit,
                 globals={},
                 exports={},
                 host_globals=self.host_globals,
@@ -186,6 +192,32 @@ class ModuleLoader:
             return module
         finally:
             self._loading.discard(module_id)
+
+    def _load_or_compile_module_bytecode(
+        self,
+        metadata: ModuleMetadata,
+        *,
+        source_path: str | None,
+    ) -> ModuleBytecode:
+        if source_path is not None:
+            cached = load_cached_bytecode(self.project_root, source_path)
+            if cached is not None:
+                return cached
+        bytecode, functions, code_locs = self._compile_module(metadata)
+        bytecode_unit = ModuleBytecode(
+            code=bytecode,
+            functions=functions,
+            constants=list(bytecode.get("constants", [])),
+            code_locs=code_locs,
+            symbol_table={
+                "defs": sorted(metadata.module_info.defs),
+                "exports": sorted(metadata.exports),
+                "imports": sorted(metadata.import_names),
+            },
+        )
+        if source_path is not None:
+            write_cached_bytecode(self.project_root, source_path, bytecode_unit)
+        return bytecode_unit
 
     def _execute_module(self, module: NodusModule, *, source_path: str | None) -> None:
         vm = self._vm
@@ -348,12 +380,12 @@ class ModuleLoader:
             modules[spec.resolved_path] = module
             if spec.stmt.names:
                 for name in spec.stmt.names:
-                    bindings[name] = module.exports[name]
+                    bindings[name] = module.export_binding(name)
             elif spec.stmt.alias:
-                bindings[spec.stmt.alias] = module.to_record()
+                bindings[spec.stmt.alias] = module
             else:
-                for name, value in module.exports.items():
-                    bindings[name] = value
+                for name in module.exports:
+                    bindings[name] = module.export_binding(name)
         return bindings, modules
 
     def _build_exports(
@@ -364,11 +396,8 @@ class ModuleLoader:
     ) -> dict[str, object]:
         exports: dict[str, object] = {}
         for name in metadata.exports:
-            if name in module.globals:
-                exports[name] = module.globals[name]
-                continue
-            if name in module.functions:
-                exports[name] = ModuleFunction(module, name)
+            if name in module.globals or name in metadata.module_info.defs:
+                exports[name] = LiveBinding(module, name)
                 continue
             resolved = None
             for spec in metadata.export_from_specs:
@@ -376,7 +405,7 @@ class ModuleLoader:
                     dep = dep_modules.get(spec.resolved_path)
                     if dep is None:
                         dep = self._load_module(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-                    resolved = dep.exports.get(name)
+                    resolved = dep.export_binding(name)
                     break
             if resolved is not None:
                 exports[name] = resolved

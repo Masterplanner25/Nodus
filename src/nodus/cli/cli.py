@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Callable
 
 from nodus.runtime.errors import format_error_payload
+from nodus.runtime.bytecode_cache import clear_bytecode_cache
 from nodus.runtime.profiler import Profiler
+from nodus.dap.server import run_stdio_server as run_dap_stdio_server
 from nodus.lsp.server import run_stdio_server
 from nodus.tooling.formatter import format_source
 from nodus.tooling import package_manager as _package_manager
@@ -170,6 +172,7 @@ def _render_help() -> str:
             "  nodus graph <file> [--project-root PATH]",
             "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N --allow-paths PATHS --auth-token TOKEN --allow-input]",
             "  nodus lsp",
+            "  nodus dap",
             "  nodus snapshot <session> [--host HOST --port PORT --auth-token TOKEN]",
             "  nodus snapshots [--host HOST --port PORT --auth-token TOKEN]",
             "  nodus restore <snapshot> [--host HOST --port PORT --auth-token TOKEN]",
@@ -193,6 +196,7 @@ def _render_help() -> str:
             "  nodus add <package> [--path PATH]",
             "  nodus remove <package> [--path PATH]",
             "  nodus package-list [--path PATH]",
+            "  nodus cache clear [--path PATH]",
             "",
             "Global options:",
             "  --version",
@@ -836,6 +840,16 @@ def _package_remove(package_name: str, path: str | None) -> int:
     return 0
 
 
+def _cache_clear(path: str | None) -> int:
+    root = path
+    if root is None:
+        project = load_project_from(os.getcwd())
+        root = project.root if project is not None else os.getcwd()
+    removed = clear_bytecode_cache(root)
+    print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'} from {os.path.join(root, '.nodus', 'cache')}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv
     prog = os.path.basename(argv[0]) if argv else "nodus"
@@ -869,6 +883,7 @@ def main(argv: list[str] | None = None) -> int:
         "graph",
         "serve",
         "lsp",
+        "dap",
         "snapshot",
         "snapshots",
         "restore",
@@ -890,6 +905,7 @@ def main(argv: list[str] | None = None) -> int:
         "package-install",
         "package-update",
         "package-list",
+        "cache",
         "add",
         "remove",
         "init",
@@ -1132,6 +1148,9 @@ def main(argv: list[str] | None = None) -> int:
     if command == "lsp":
         return run_stdio_server()
 
+    if command == "dap":
+        return run_dap_stdio_server()
+
     if command == "snapshot":
         flags_with_values = {"--host", "--port", "--auth-token"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
@@ -1325,6 +1344,14 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         path = flags.get("--project-root") or flags.get("--path")
         return _package_remove(positional[0], path)
+
+    if command == "cache":
+        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        if not positional or positional[0] != "clear":
+            _print_stderr("Usage: nodus cache clear [--path <path>]")
+            return 1
+        path = flags.get("--project-root") or flags.get("--path")
+        return _cache_clear(path)
 
     _print_stderr(f"Unknown command: {command}")
     return 1

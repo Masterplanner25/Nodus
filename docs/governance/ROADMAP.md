@@ -33,9 +33,10 @@ None.
 
 ### 0.4.0 — Runtime Architecture & Packaging
 - Bytecode version headers and validation.
+- Disk bytecode caching for compiled modules with timestamp/version invalidation and `nodus cache clear`.
 - Sandbox execution limits (steps/time/stdout).
 - Embedding API for host integration.
-- Runtime module system with per-module bytecode units and module caching.
+- Runtime module system with per-module bytecode units, runtime module objects, isolated globals, live import bindings, and module caching.
 - Project manifests (`nodus.toml`) and lockfiles (`nodus.lock`) with dependency resolution.
 - Tooling-side package resolution/installation and `.nodus/modules/` dependency layout.
 - Debugger MVP (breakpoints, step/next/continue, locals/stack).
@@ -59,7 +60,6 @@ None.
 
 ### 0.4.x — Packaging and Tooling (Planned)
 - Registry-backed package resolution and publishing.
-- Bytecode caching across builds and CI.
 - Debugger improvements and profiler MVP.
 
 ## Compatibility / Deprecations
@@ -77,11 +77,11 @@ These are the most important structural improvements planned for the runtime.
 
 Current model:
 
-runtime module loader with per-module bytecode units
+runtime module loader with per-module bytecode units, runtime module objects, and live import bindings
 
 Future model:
 
-incremental compilation and bytecode caching
+incremental compilation
 
 Benefits:
 
@@ -158,7 +158,7 @@ Key runtime improvements.
 
 Module Isolation
 
-Per-module globals and module objects are now implemented. Next steps focus on bytecode caching and incremental compilation.
+Per-module globals, runtime module objects, live import bindings, execute-once module caching, and disk bytecode caching are now implemented. Next steps focus on incremental compilation.
 
 Runtime Namespaces
 
