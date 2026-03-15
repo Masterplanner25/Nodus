@@ -1,6 +1,11 @@
-import{b,a}from "mod.nd"
-import "mod.nd"as m
-export{z,y}
+import { b, a } from "mod.nd"
+import "mod.nd" as m
+
+export { z, y }
 export { x } from "other.nd"
-export fn add(a,b){return a+b}
-export let value=1
+
+export fn add(a, b) {
+    return a + b
+}
+
+export let value = 1

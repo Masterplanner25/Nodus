@@ -134,23 +134,26 @@ steps run in this order:
 1. **Checkout** — fetch the repository.
 2. **Setup Python** — install the required Python version.
 3. **Install dependencies** — install package and test dependencies.
-4. **Auto-format examples** — runs `python nodus.py fmt` on every `.nd` file under `examples/`
-   (in-place, no `--check` flag).
+4. **Auto-format all .nd files** — runs `python nodus.py fmt` on every `.nd` file in the repo
+   (in-place, no `--check` flag), excluding `.git/`, `.venv/`, `tmp_demo/`, and
+   `tests/fixtures/fmt/` (formatter test fixtures that are intentionally non-canonical).
 5. **Commit formatted files** — if any file was changed by the formatter, CI commits it back
-   with the message `style: auto-format examples/ [skip ci]`. The `[skip ci]` tag prevents the
+   with the message `style: auto-format .nd files [skip ci]`. The `[skip ci]` tag prevents the
    commit from re-triggering the workflow. The commit step is a no-op when files are already
    correctly formatted — `git diff --quiet` exits 0 and nothing is committed.
 6. **Format check** — runs `python nodus.py fmt --check` across all `.nd` files in the repo.
 7. **Run tests** — runs the full pytest suite.
 
-The auto-format commit only appears when a contributor adds or edits an example without
-running the formatter locally first. To avoid these auto-commits, format examples before
-pushing:
+The auto-format commit only appears when a contributor adds or edits a `.nd` file without
+running the formatter locally first. To avoid these auto-commits, format before pushing:
 
 ```bash
-find examples/ -name "*.nd" | sort | while read -r f; do
-  python nodus.py fmt "$f"
-done
+find . -name "*.nd" \
+  -not -path "./.git/*" \
+  -not -path "./.venv/*" \
+  -not -path "./tmp_demo/*" \
+  -not -path "./tests/fixtures/fmt/*" \
+  | xargs -I {} python nodus.py fmt {}
 ```
 
 If the format check fails locally, fix the file and re-check:
@@ -160,13 +163,20 @@ python nodus.py fmt <file>          # rewrite in-place
 python nodus.py fmt --check <file>  # confirm it now passes
 ```
 
-Or check all examples at once:
+Or check all .nd files at once (matching CI scope):
 
 ```bash
-find examples/ -name "*.nd" | xargs -I {} python nodus.py fmt --check {}
+find . -name "*.nd" \
+  -not -path "./.git/*" \
+  -not -path "./.venv/*" \
+  -not -path "./tmp_demo/*" \
+  -not -path "./tests/fixtures/fmt/*" \
+  | xargs -I {} python nodus.py fmt --check {}
 ```
 
-Note: only `.nd` files are checked. There are no `.tl` files in `examples/`.
+Note: only `.nd` files are checked. `tests/fixtures/fmt/` is excluded because it contains
+formatter test fixtures that are intentionally non-canonical (e.g. `--keep-trailing` mode
+inputs and outputs).
 
 ## Formatter Test Files
 

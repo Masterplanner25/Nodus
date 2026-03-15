@@ -7,4 +7,5 @@ fn compute() {
     }
     return sum
 }
+
 print(compute())

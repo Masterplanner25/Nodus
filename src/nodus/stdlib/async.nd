@@ -41,12 +41,12 @@ fn worker_pool(worker, count) {
     let i = 0
     while (i < count) {
         spawn(coroutine(fn() {
-            let item = recv(jobs)
-            while (item != nil) {
-                worker(item)
-                item = recv(jobs)
-            }
-        }))
+    let item = recv(jobs)
+    while (item != nil) {
+        worker(item)
+        item = recv(jobs)
+    }
+}))
         i = i + 1
     }
     return jobs
@@ -61,16 +61,16 @@ fn pipeline(stages) {
         let output = channel()
         let source = current
         spawn(coroutine(fn() {
-            let item = recv(source)
-            while (item != nil) {
-                let result = stage(item)
-                send(output, result)
-                item = recv(source)
-            }
-            close(output)
-        }))
+    let item = recv(source)
+    while (item != nil) {
+        let result = stage(item)
+        send(output, result)
+        item = recv(source)
+    }
+    close(output)
+}))
         current = output
         i = i + 1
     }
-    return record { input: input, output: current }
+    return record {input: input, output: current}
 }

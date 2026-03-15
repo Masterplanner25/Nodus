@@ -1,15 +1,18 @@
 # header
-import{b,a}from "mod.nd"
+import { b, a } from "mod.nd"
+
 // trailing import
 // mid
-export{z,y}
+export { z, y }
 # trailing export list
 export { x } from "other.nd"
+
 // reexport
-export fn add(a,b){
-    # before body
-    return a+b
-    // sum
+# before body
+// sum
+export fn add(a, b) {
+    return a + b
 }
-export let value=1
+
+export let value = 1
 // trailing let

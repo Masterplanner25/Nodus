@@ -3,11 +3,17 @@
 Use this checklist to cut a clean, repeatable release.
 
 ## Pre-release checks
-- Run formatter check on examples:
+- [ ] Verify no unformatted .nd files exist:
   ```bash
-  find examples/ -name "*.nd" | xargs -I {} python nodus.py fmt --check {}
+  find . -name "*.nd" \
+    -not -path "./.git/*" \
+    -not -path "./.venv/*" \
+    -not -path "./tmp_demo/*" \
+    -not -path "./tests/fixtures/fmt/*" \
+    | xargs -I {} python nodus.py fmt --check {}
   ```
-  (CI auto-formats `examples/` before the check runs and commits any changes back with `[skip ci]`,
+  (CI auto-formats all `.nd` files in the repo (excluding `.git`, `.venv`, `tmp_demo`, and
+  `tests/fixtures/fmt`) before the check runs and commits any changes back with `[skip ci]`,
   so manual pre-formatting is not required — but running it locally catches issues before push.)
 - Run validation on key examples: `nodus check examples/import_demo.nd` (and other representative examples)
 - Run unit tests: `python -m unittest discover -s tests -v`

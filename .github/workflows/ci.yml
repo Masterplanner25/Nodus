@@ -17,40 +17,32 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Auto-format examples
+      - name: Auto-format all .nd files
         run: |
-          find examples/ -name "*.nd" | sort | while read -r f; do
-            python nodus.py fmt "$f"
-          done
+          find . -name "*.nd" \
+            -not -path "./.git/*" \
+            -not -path "./.venv/*" \
+            -not -path "./tmp_demo/*" \
+            -not -path "./tests/fixtures/fmt/*" \
+            | xargs -I {} python nodus.py fmt {}
 
       - name: Commit formatted files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet examples/ || (
-            git add examples/*.nd &&
-            git commit -m "style: auto-format examples/ [skip ci]"
+          git diff --quiet || (
+            git add $(find . -name "*.nd" -not -path "./.git/*" -not -path "./.venv/*") &&
+            git commit -m "style: auto-format .nd files [skip ci]"
           )
 
-      - name: Formatter check
+      - name: Check .nd formatting
         run: |
-          python - <<'PY'
-          import os, subprocess, sys
-          files = []
-          for root, _, names in os.walk('.'):
-            if root.startswith('./.git'):
-              continue
-            for name in names:
-              if name.endswith('.nd'):
-                files.append(os.path.join(root, name))
-          files.sort()
-          if not files:
-            sys.exit(0)
-          for path in files:
-            result = subprocess.run([sys.executable, 'nodus.py', 'fmt', path, '--check'])
-            if result.returncode != 0:
-              sys.exit(result.returncode)
-          PY
+          find . -name "*.nd" \
+            -not -path "./.git/*" \
+            -not -path "./.venv/*" \
+            -not -path "./tmp_demo/*" \
+            -not -path "./tests/fixtures/fmt/*" \
+            | xargs -I {} python nodus.py fmt --check {}
 
       - name: Static checks
         run: |

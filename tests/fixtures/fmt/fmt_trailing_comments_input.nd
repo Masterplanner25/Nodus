@@ -1,2 +1,4 @@
-let x=-5 // trailing unary
-let y=-(x+1) # grouped unary
+let x = -5
+// trailing unary
+let y = -(x + 1)
+# grouped unary

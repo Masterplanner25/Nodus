@@ -1,4 +1,4 @@
-﻿fn clamp(x, lo, hi) {
+fn clamp(x, lo, hi) {
     if (x < lo) {
         return lo
     } else {
