@@ -136,7 +136,7 @@ class Compiler:
         return exports[name]
 
     def set_current_module(self, node) -> None:
-        mod = getattr(node, "_module", None)
+        mod = node._module
         if mod is not None:
             self.current_module = mod
             if mod not in self.symbol_tables:
@@ -228,7 +228,7 @@ class Compiler:
         return module_info.qualified.get(name, name)
 
     def set_current_loc(self, node) -> None:
-        tok = getattr(node, "_tok", None)
+        tok = node._tok
         if tok is not None:
             self.current_loc = (self.current_module, tok.line, tok.col)
 
@@ -337,6 +337,10 @@ class Compiler:
         if isinstance(stmt, WorkflowDef):
             if self.symbols is not None:
                 self.symbols.define(stmt.name)
+            # lower_workflow_ast rewrites the WorkflowDef AST into a MapLit
+            # (via _StateRewriter) at compile time, so that state variable
+            # access compiles to ordinary map-index bytecode — no special VM
+            # opcodes are needed for workflow state.
             self.compile_expr(lower_workflow_ast(stmt))
             self.emit("STORE", self.resolve_store_name(stmt.name))
             return
@@ -344,6 +348,8 @@ class Compiler:
         if isinstance(stmt, GoalDef):
             if self.symbols is not None:
                 self.symbols.define(stmt.name)
+            # Same as WorkflowDef above: goal steps are lowered to a MapLit
+            # via _StateRewriter before bytecode compilation.
             self.compile_expr(lower_goal_ast(stmt))
             self.emit("STORE", self.resolve_store_name(stmt.name))
             return
@@ -542,8 +548,8 @@ class Compiler:
             if symbol is not None and symbol.scope == "upvalue":
                 self.emit("LOAD_UPVALUE", symbol.index)
                 return
-            if symbol is not None and symbol.scope == "local":
-                self.emit("LOAD", expr.name)
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope():
+                self.emit("LOAD_LOCAL", expr.name)
                 return
             self.ensure_name_access(expr.name, node=expr)
             self.emit("LOAD", self.resolve_name(expr.name))
@@ -573,7 +579,10 @@ class Compiler:
                 return
             store_name = self.resolve_store_name(expr.name)
             self.emit("STORE", store_name)
-            self.emit("LOAD", store_name)
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope():
+                self.emit("LOAD_LOCAL", store_name)
+            else:
+                self.emit("LOAD", store_name)
             return
 
         if isinstance(expr, Unary):
@@ -679,8 +688,8 @@ class Compiler:
                     if symbol.scope in {"local", "upvalue"} or (symbol.scope == "global" and not symbol.is_function):
                         if symbol.scope == "upvalue":
                             self.emit("LOAD_UPVALUE", symbol.index)
-                        elif symbol.scope == "local":
-                            self.emit("LOAD", expr.callee.name)
+                        elif symbol.scope == "local" and self.in_function_scope():
+                            self.emit("LOAD_LOCAL", expr.callee.name)
                         else:
                             self.emit("LOAD", self.resolve_name(expr.callee.name))
                         for arg in expr.args:

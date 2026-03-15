@@ -4,7 +4,10 @@
 Stability: Mostly stable (record vs map semantics may evolve).
 - number (float-based)
 - bool (`true`, `false`)
-- string (double-quoted with escapes: `\\`, `\"`, `\n`, `\t`)
+- string (double-quoted with escapes: `\\`, `\"`, `\n`, `\t`, `\r`, `\0`, `\xHH`, `\uXXXX`)
+  - `\xHH` — hex byte (two hex digits, e.g. `\x41` → `A`)
+  - `\uXXXX` — Unicode code point (four hex digits, e.g. `\u03B1` → `α`)
+  - All escape errors (unterminated, unsupported, or malformed `\x`/`\u`) are reported as `LangSyntaxError` with source line and column.
 - nil (`nil`)
 - list (`[...]`)
 - map (`{key: value, ...}`)
@@ -64,7 +67,7 @@ Stability: Experimental.
 - Create: `let ch = channel()`
 - Send: `send(ch, value)` enqueues a value or wakes a waiting receiver.
 - Receive: `recv(ch)` returns the next value, or blocks if none are available.
-- Close: `close(ch)` stops future sends. `recv(ch)` on a closed empty channel returns `nil`.
+- Close: `close(ch)` stops future sends. `recv(ch)` on a closed empty channel returns `nil`. Any coroutines blocked in `recv(ch)` at the time of the close are woken and receive `nil`; only coroutines in `suspended` state are eligible to be woken.
 
 ## Static Types
 Stability: Experimental (tooling-only, likely to evolve).
@@ -114,6 +117,8 @@ Import resolution:
 - Relative paths (`./` or `../`) resolve from the importing file.
 - Non-relative paths resolve from the project root.
 - If no extension is provided, `.nd` is preferred, then `.tl` as legacy fallback.
+- Cyclic imports are detected and reported as `LangSyntaxError`.
+- The import chain depth is limited to 100 levels by default (override with the `NODUS_MAX_IMPORT_DEPTH` environment variable). Exceeding the limit raises a `LangSyntaxError` with a clear message rather than a Python `RecursionError`.
 
 ## Projects And Packages
 Stability: Experimental (git-only, may change).
@@ -620,6 +625,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Formatting: `nodus fmt script.nd` (see `FORMAT.md` for rules)
 
 ## Errors
+- Lex errors (unexpected characters, malformed string escapes): `LangSyntaxError` with line/col, raised directly from the lexer.
 - Parse errors: `LangSyntaxError` with line/col.
 - Runtime errors: `LangRuntimeError` with kind + line/col + stack trace.
 - `try/catch` can intercept runtime errors and bind the message to a variable.

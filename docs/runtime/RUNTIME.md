@@ -338,6 +338,8 @@ asynchronous workflows
 
 Coroutines may yield control using the YIELD instruction.
 
+Channel waiting queues (`waiting_receivers`, `waiting_senders`) use `collections.deque` for O(1) enqueue and dequeue. Prior list-based `pop(0)` was O(n).
+
 The scheduler resumes suspended coroutines when work becomes available.
 
 16. Event System
@@ -354,6 +356,26 @@ workflow transition
 error
 
 Host systems may subscribe to these events for monitoring or debugging.
+
+16a. Optimizer Constant Folding Semantics
+
+The optimizer folds constant arithmetic expressions (PUSH_CONST + PUSH_CONST + ADD etc.)
+at compile time.
+
+Boolean normalization: because Python's bool subclasses int, expressions such as
+`true + 1` would fold to a Python bool-arithmetic result.  To keep optimizer output
+consistent with VM numeric semantics, the optimizer converts bool operands to int
+before applying arithmetic folds (ADD, SUB, MUL, DIV, NEG).  Comparison and logical
+operations (EQ, NE, LT, GT, LE, GE, NOT, TO_BOOL) retain their Python bool results
+unchanged, since those are the correct Nodus boolean values.
+
+Optimizer fixed-point loop: `collect_jump_targets()` is called once per outer
+fixed-point iteration and the result is passed to both `fold_constants()` and
+`remove_useless_stack_ops()` rather than being recomputed inside each function.
+If `fold_constants` compacts code (changes addresses), `jump_targets` is recomputed
+before `remove_useless_stack_ops` runs to ensure correctness. The dirty flag is a
+boolean set to True whenever any instruction is transformed; the former O(n) list
+equality fallback check has been removed.
 
 17. Future Runtime Evolution
 

@@ -1,10 +1,21 @@
-"""Disk cache for compiled Nodus module bytecode."""
+"""Disk cache for compiled Nodus module bytecode.
+
+Cache file format (binary):
+  [0:4]   Magic: b"NDSC"
+  [4]     Format version: 0x01
+  [5:37]  SHA-256 of the marshal payload (32 bytes)
+  [37:]   marshal.dumps() of the payload dict
+
+This format avoids pickle's arbitrary-code-execution risk and is faster to
+serialize/deserialize for the primitive types that bytecode payloads contain.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import marshal
 import os
-import pickle
+import struct
 
 from nodus.runtime.module import ModuleBytecode, NODUS_BYTECODE_VERSION
 from nodus.tooling.project import NODUS_DIRNAME
@@ -12,6 +23,10 @@ from nodus.tooling.project import NODUS_DIRNAME
 
 CACHE_DIRNAME = "cache"
 CACHE_EXTENSION = ".nbc"
+
+_MAGIC = b"NDSC"
+_FORMAT_VERSION = 0x01
+_HEADER_SIZE = 4 + 1 + 32  # magic + version byte + SHA-256
 
 
 def cache_dir(project_root: str) -> str:
@@ -48,8 +63,11 @@ def load_cached_bytecode(project_root: str | None, module_path: str) -> ModuleBy
         return None
     try:
         with open(path, "rb") as handle:
-            payload = pickle.load(handle)
+            data = handle.read()
+        payload = _decode_cache_file(data)
     except Exception:
+        return None
+    if payload is None:
         return None
     if not _is_valid_cache_payload(payload, module_path, mtime_ns):
         return None
@@ -73,7 +91,7 @@ def write_cached_bytecode(project_root: str | None, module_path: str, module_byt
     }
     temp_path = final_path + ".tmp"
     with open(temp_path, "wb") as handle:
-        pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        handle.write(_encode_cache_file(payload))
     os.replace(temp_path, final_path)
     return final_path
 
@@ -89,6 +107,32 @@ def clear_bytecode_cache(project_root: str) -> int:
         os.remove(entry.path)
         removed += 1
     return removed
+
+
+def _encode_cache_file(payload: dict) -> bytes:
+    """Serialize payload to: magic (4) + version (1) + SHA-256 (32) + marshal body."""
+    body = marshal.dumps(payload)
+    checksum = hashlib.sha256(body).digest()
+    return _MAGIC + struct.pack("B", _FORMAT_VERSION) + checksum + body
+
+
+def _decode_cache_file(data: bytes) -> dict | None:
+    """Deserialize and validate cache file bytes. Returns None on any format error."""
+    if len(data) < _HEADER_SIZE:
+        return None
+    if data[:4] != _MAGIC:
+        return None
+    (version,) = struct.unpack("B", data[4:5])
+    if version != _FORMAT_VERSION:
+        return None
+    stored_checksum = data[5:37]
+    body = data[37:]
+    if hashlib.sha256(body).digest() != stored_checksum:
+        return None
+    payload = marshal.loads(body)
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def _is_valid_cache_payload(payload: object, module_path: str, mtime_ns: int) -> bool:

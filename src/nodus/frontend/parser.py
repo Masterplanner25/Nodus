@@ -71,7 +71,7 @@ class Parser:
         raise LangSyntaxError(message, line=t.line, col=t.col)
 
     def mark(self, node, tok: Tok):
-        setattr(node, "_tok", tok)
+        node._tok = tok
         return node
 
     def peek(self) -> Tok:
@@ -418,7 +418,7 @@ class Parser:
         for step in steps:
             for dep in step.deps:
                 if dep not in name_set:
-                    self.error(f"Unknown {label} dependency: {dep}", getattr(step, "_tok", start))
+                    self.error(f"Unknown {label} dependency: {dep}", step._tok if step._tok is not None else start)
         return self.mark(def_type(name, states, steps), start)
 
     def flow_state_decl(self, label: str):

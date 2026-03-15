@@ -29,6 +29,11 @@ Constant Table
 
 Each instruction may modify one or more of these components.
 
+Note: Opcode dispatch uses a dict-based table (_dispatch) built at VM
+construction time by _build_dispatch_table(). This is O(1) per instruction
+rather than O(n) for the previous if/elif chain. Each opcode is handled by
+a dedicated _op_XXX method on the VM class.
+
 2. Stack Notation
 
 Instruction semantics are described using stack transition notation.
@@ -75,6 +80,22 @@ Operation:
 
 value = resolve_variable(name)
 stack.push(value)
+
+Probes four sources in order: frame locals, module globals, functions dict, host globals.
+
+LOAD_LOCAL
+
+Fast-path local variable read inside a function. Bypasses the 4-dict probe performed by LOAD.
+
+[] → [value]
+
+Operation:
+
+value = frame.locals[name]  // direct dict lookup, no fallback probes
+stack.push(value)
+
+Only emitted by the compiler when the symbol is confirmed local and the access is inside a function scope. Cell and LiveBinding values are unwrapped before pushing.
+
 STORE
 
 Stores the top stack value into a variable.

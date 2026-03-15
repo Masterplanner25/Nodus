@@ -372,6 +372,60 @@ def _lower_action_expr(expr: ActionStmt):
 
 
 class _StateRewriter:
+    """Rewrites workflow/goal step bodies to reference shared state via a map variable.
+
+    **What it does:**
+    Transforms AST nodes inside workflow and goal step bodies so that any
+    reference to a workflow state variable (e.g. ``version`` declared with
+    ``state version = "0.1.0"``) is replaced with an index expression into
+    a shared state map (e.g. ``__state["version"]``).  Assignments to state
+    variables similarly become index-assign expressions on the state map.
+
+    **Why at compile time (workflow lowering), not at runtime:**
+    Workflows and goals are lowered from their AST representation to
+    ``MapLit`` nodes by ``lower_workflow_ast`` / ``lower_goal_ast`` before
+    bytecode compilation.  This lowering phase runs inside the compiler's
+    ``compile_stmt`` for ``WorkflowDef`` / ``GoalDef`` nodes.  Doing the
+    rewrite at compile time means the bytecode emitted for each step function
+    is already in the flat, state-map form — no runtime introspection or
+    special VM opcodes are needed for state access.
+
+    **Inputs:**
+    - ``state_names`` — the set of state variable names declared in the
+      workflow/goal (from ``WorkflowStateDecl`` nodes).
+    - ``state_var`` — the name of the hidden local variable holding the
+      state map (e.g. ``"__state"``).
+    - ``initial_locals`` — names already in scope at the entry of the step
+      body (used to avoid incorrectly rewriting shadowing locals).
+
+    **Outputs:**
+    A rewritten AST subtree where state variable references have been
+    replaced with ``Index(Var(state_var), Str(name))`` expressions and
+    state variable assignments have been replaced with
+    ``IndexAssign(Var(state_var), Str(name), value)`` expressions.
+
+    **Transformation rules (before → after):**
+
+    Read access::
+
+        version                    →  __state["version"]
+
+    Write access (let / assign)::
+
+        let version = "1.0"        →  let version = "1.0"  (first definition
+                                       also writes to __state["version"])
+        version = expr             →  __state["version"] = expr
+
+    Scope shadowing::
+
+        let version = ...          shadows version — further refs in that
+                                   scope use the local, not the state map.
+
+    Nested function bodies are treated as separate scopes; state references
+    inside them are NOT rewritten (they would need an explicit capture of
+    the state map to access it, which is not currently supported).
+    """
+
     def __init__(self, state_names: set[str], state_var: str, initial_locals: set[str] | None = None):
         self.state_names = set(state_names)
         self.state_var = state_var

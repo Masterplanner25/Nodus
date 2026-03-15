@@ -58,15 +58,40 @@ KEYWORDS = {
     "action",
 }
 
+# Simple single-character escape sequences.
+# \x and \u are handled separately in decode_string_literal because they
+# consume additional hex-digit characters from the source text.
 ESCAPE_MAP = {
     "n": "\n",
     "t": "\t",
+    "r": "\r",
+    "0": "\0",
     '"': '"',
     "\\": "\\",
 }
 
 
-def decode_string_literal(token_text: str) -> str:
+def decode_string_literal(
+    token_text: str,
+    *,
+    line: int | None = None,
+    col: int | None = None,
+) -> str:
+    """Decode a quoted string token into its runtime string value.
+
+    Raises LangSyntaxError (with source location when provided) for any
+    malformed escape sequence so that callers do not need a try/except.
+
+    Supported escape sequences:
+        \\\\  backslash
+        \\"   double quote
+        \\n   newline (U+000A)
+        \\t   horizontal tab (U+0009)
+        \\r   carriage return (U+000D)
+        \\0   null byte (U+0000)
+        \\xHH two-digit hex byte  (e.g. \\x41 -> 'A')
+        \\uXXXX four-digit Unicode code point (e.g. \\u03B1 -> 'α')
+    """
     s = token_text[1:-1]
     out = []
     i = 0
@@ -80,11 +105,60 @@ def decode_string_literal(token_text: str) -> str:
 
         i += 1
         if i >= len(s):
-            raise SyntaxError("Unterminated escape sequence in string literal")
+            raise LangSyntaxError(
+                "Unterminated escape sequence in string literal",
+                line=line,
+                col=col,
+            )
 
         esc = s[i]
+
+        # \xHH — two-digit hex byte
+        if esc == "x":
+            hex_digits = s[i + 1 : i + 3]
+            if len(hex_digits) < 2:
+                raise LangSyntaxError(
+                    r"Incomplete \x escape: expected 2 hex digits",
+                    line=line,
+                    col=col,
+                )
+            try:
+                out.append(chr(int(hex_digits, 16)))
+            except ValueError:
+                raise LangSyntaxError(
+                    rf"Invalid \x escape: \x{hex_digits}",
+                    line=line,
+                    col=col,
+                )
+            i += 3
+            continue
+
+        # \uXXXX — four-digit Unicode code point
+        if esc == "u":
+            hex_digits = s[i + 1 : i + 5]
+            if len(hex_digits) < 4:
+                raise LangSyntaxError(
+                    r"Incomplete \u escape: expected 4 hex digits",
+                    line=line,
+                    col=col,
+                )
+            try:
+                out.append(chr(int(hex_digits, 16)))
+            except ValueError:
+                raise LangSyntaxError(
+                    rf"Invalid \u escape: \u{hex_digits}",
+                    line=line,
+                    col=col,
+                )
+            i += 5
+            continue
+
         if esc not in ESCAPE_MAP:
-            raise SyntaxError(f"Unsupported escape sequence: \\{esc}")
+            raise LangSyntaxError(
+                f"Unsupported escape sequence: \\{esc}",
+                line=line,
+                col=col,
+            )
 
         out.append(ESCAPE_MAP[esc])
         i += 1
@@ -130,12 +204,18 @@ def tokenize(src: str) -> list[Tok]:
             col += len(text)
             continue
         if kind == "STR":
-            try:
-                val = decode_string_literal(text)
-            except SyntaxError as err:
-                raise LangSyntaxError(str(err), line=start_line, col=start_col)
+            # decode_string_literal raises LangSyntaxError directly; no try/except needed.
+            val = decode_string_literal(text, line=start_line, col=start_col)
             out.append(Tok("STR", val, start_line, start_col))
-            col += len(text)
+            # A string token may span multiple lines if it contains a literal
+            # newline character (matched by [^"\\] in the regex).  Update line
+            # and col correctly so subsequent tokens have accurate positions.
+            newlines_in_str = text.count("\n")
+            if newlines_in_str > 0:
+                line += newlines_in_str
+                col = len(text) - text.rfind("\n")
+            else:
+                col += len(text)
             continue
         if kind == "ID":
             if text in KEYWORDS:

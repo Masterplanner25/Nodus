@@ -278,9 +278,18 @@ Instructions such as PUSH_CONST reference this table by index.
 
 12. Bytecode Versioning
 
-Bytecode format is not yet versioned.
+The bytecode format is versioned via `NODUS_BYTECODE_VERSION` in `src/nodus/runtime/module.py` (currently `1`). The version is checked on cache load; a mismatch silently invalidates the cache entry.
 
-Future versions of Nodus may introduce bytecode version identifiers to ensure compatibility between:
+Disk cache file format (`src/nodus/runtime/bytecode_cache.py`):
+
+  Bytes 0–3   Magic: NDSC
+  Byte  4     Format version: 0x01
+  Bytes 5–36  SHA-256 of the marshal payload (integrity check)
+  Bytes 37+   marshal.dumps() of the payload dict
+
+The payload uses Python `marshal` (not `pickle`) for serialization: faster for primitive types and avoids arbitrary-code-execution risk. Cache files are invalidated automatically on source mtime change or version mismatch.
+
+Tooling compatibility: compiler, VM, and cache share the same `NODUS_BYTECODE_VERSION` constant to ensure compatibility between:
 
 compiler
 

@@ -39,6 +39,7 @@ from nodus.frontend.ast.ast_nodes import (
     While,
 )
 from nodus.frontend.type_system import ANY, BOOL, FLOAT, FUNCTION, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types, is_assignable, parse_type_name
+from nodus.frontend.visitor import NodeVisitor
 
 
 class TypeAnalysisError(TypeError):
@@ -49,7 +50,7 @@ class TypeAnalysisError(TypeError):
         self.path = path
 
 
-class Analyzer:
+class Analyzer(NodeVisitor):
     def __init__(self):
         self.scopes: list[dict[str, object]] = [{}]
         self.current_return: object = ANY
@@ -68,7 +69,7 @@ class Analyzer:
                 self.scopes[0][stmt.name] = FunctionType(param_types, return_type)
 
     def analyze_stmt(self, stmt) -> None:
-        self.current_module = getattr(stmt, "_module", self.current_module)
+        self.current_module = stmt._module if stmt._module is not None else self.current_module
         if isinstance(stmt, (Comment, Import, ModuleAlias)):
             return
         if isinstance(stmt, Let):
@@ -262,11 +263,18 @@ class Analyzer:
         return ANY
 
     def type_error(self, message: str, node) -> None:
-        tok = getattr(node, "_tok", None)
-        path = getattr(node, "_module", self.current_module)
+        tok = node._tok
+        path = node._module if node._module is not None else self.current_module
         line = tok.line if tok is not None else None
         col = tok.col if tok is not None else None
         raise TypeAnalysisError(message, line=line, col=col, path=path)
+
+    def visit_default(self, node):
+        raise NotImplementedError(
+            f"Analyzer has no visitor method for {type(node).__name__}. "
+            f"Add visit_{type(node).__name__} or extend the isinstance chains "
+            f"in analyze_stmt / infer_expr."
+        )
 
 
 def analyze_program(stmts: list) -> None:

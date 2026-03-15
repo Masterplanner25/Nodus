@@ -3,11 +3,22 @@
 from nodus.compiler.compiler import FunctionInfo
 
 
+# bool subclasses int in Python, so expressions like `True + 1` fold to `2`
+# via Python arithmetic rather than raising a type error.  To keep optimizer
+# output consistent with what the VM would produce if it ever adds an explicit
+# boolean-operand check on arithmetic opcodes, we strip bool to int before
+# applying arithmetic operations.  Comparison and logical ops intentionally
+# keep their Python bool results unchanged.
+def _to_num(v: object) -> object:
+    """Convert bool to int so arithmetic folds match VM numeric semantics."""
+    return int(v) if isinstance(v, bool) else v
+
+
 PURE_BINARY_OPS = {
-    "ADD": lambda a, b: a + b,
-    "SUB": lambda a, b: a - b,
-    "MUL": lambda a, b: a * b,
-    "DIV": lambda a, b: a / b,
+    "ADD": lambda a, b: _to_num(a) + _to_num(b),
+    "SUB": lambda a, b: _to_num(a) - _to_num(b),
+    "MUL": lambda a, b: _to_num(a) * _to_num(b),
+    "DIV": lambda a, b: _to_num(a) / _to_num(b),
     "EQ": lambda a, b: a == b,
     "NE": lambda a, b: a != b,
     "LT": lambda a, b: a < b,
@@ -17,7 +28,8 @@ PURE_BINARY_OPS = {
 }
 
 PURE_UNARY_OPS = {
-    "NEG": lambda value: -value,
+    # NEG: strip bool for the same reason as arithmetic ops above.
+    "NEG": lambda value: -_to_num(value),
     "NOT": lambda value: not value,
     "TO_BOOL": lambda value: bool(value),
 }
@@ -38,20 +50,25 @@ def optimize_bytecode(
 
     while changed:
         changed = False
+        # Hoist collect_jump_targets() to once per fixed-point iteration instead of
+        # calling it separately inside fold_constants and remove_useless_stack_ops.
+        jump_targets = collect_jump_targets(current_code)
 
         canonicalized, did_change = canonicalize_constants(current_code)
         if did_change:
             current_code = canonicalized
             changed = True
 
-        folded_code, folded_functions, folded_locs, did_change = fold_constants(current_code, current_functions, current_locs)
+        folded_code, folded_functions, folded_locs, did_change = fold_constants(current_code, current_functions, current_locs, jump_targets)
         if did_change:
             current_code = folded_code
             current_functions = folded_functions
             current_locs = folded_locs
             changed = True
+            # Recompute after compaction so remove_useless_stack_ops sees current addresses.
+            jump_targets = collect_jump_targets(current_code)
 
-        stack_code, stack_functions, stack_locs, did_change = remove_useless_stack_ops(current_code, current_functions, current_locs)
+        stack_code, stack_functions, stack_locs, did_change = remove_useless_stack_ops(current_code, current_functions, current_locs, jump_targets)
         if did_change:
             current_code = stack_code
             current_functions = stack_functions
@@ -97,8 +114,11 @@ def fold_constants(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: list[tuple[str | None, int | None, int | None]],
+    jump_targets: set[int] | None = None,
 ) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]], bool]:
-    targets = collect_jump_targets(code)
+    # jump_targets may be pre-computed by the caller (optimize_bytecode) to avoid
+    # redundant O(n) scans per fixed-point iteration.
+    targets = jump_targets if jump_targets is not None else collect_jump_targets(code)
     out_code: list[tuple] = []
     out_locs: list[tuple[str | None, int | None, int | None]] = []
     mapping: dict[int, int] = {}
@@ -146,9 +166,9 @@ def fold_constants(
         i += 1
 
     remapped_code, remapped_functions, remapped_locs = remap_compacted(out_code, functions, out_locs, mapping)
-    if not changed:
-        if remapped_code != code or remapped_locs != code_locs or function_addrs(remapped_functions) != function_addrs(functions):
-            changed = True
+    # changed is already set whenever any instruction was folded; the remap is a
+    # no-op when mapping is the identity (nothing was compacted), so no list
+    # equality fallback is needed.
     return remapped_code, remapped_functions, remapped_locs, changed
 
 
@@ -156,8 +176,9 @@ def remove_useless_stack_ops(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: list[tuple[str | None, int | None, int | None]],
+    jump_targets: set[int] | None = None,
 ) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]], bool]:
-    targets = collect_jump_targets(code)
+    targets = jump_targets if jump_targets is not None else collect_jump_targets(code)
     out_code: list[tuple] = []
     out_locs: list[tuple[str | None, int | None, int | None]] = []
     mapping: dict[int, int] = {}
@@ -173,9 +194,8 @@ def remove_useless_stack_ops(
         out_locs.append(code_locs[i])
         i += 1
     remapped_code, remapped_functions, remapped_locs = remap_compacted(out_code, functions, out_locs, mapping)
-    if not changed:
-        if remapped_code != code or remapped_locs != code_locs or function_addrs(remapped_functions) != function_addrs(functions):
-            changed = True
+    # changed is already set when any PUSH_CONST/POP pair was removed; no list
+    # equality fallback is needed (mapping is identity when nothing was removed).
     return remapped_code, remapped_functions, remapped_locs, changed
 
 

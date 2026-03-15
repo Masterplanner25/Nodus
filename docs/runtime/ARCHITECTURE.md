@@ -129,3 +129,57 @@ The runtime exposes builtins and adapters for:
 - events (`emit`, runtime event bus)
 
 These services are explicit, JSON-safe, and kept separate from the core VM.
+
+## Builtin Registry
+
+Builtin functions are organised into category modules under `src/nodus/builtins/`:
+
+| Module          | Contents                                               |
+|-----------------|--------------------------------------------------------|
+| `io.py`         | `print`, `input`, filesystem ops, path helpers         |
+| `math.py`       | `math_abs/min/max/floor/ceil/sqrt/random`               |
+| `coroutine.py`  | `coroutine`, `resume`, `spawn`, `channel`, `send`, `recv`, `close`, `sleep` |
+| `collections.py`| `len`, string ops, `keys`/`values`, `list_push/pop`, `json_parse/stringify` |
+
+`BuiltinRegistry` (in `src/nodus/builtins/__init__.py`) is the aggregation point.
+
+`VM.__init__` creates a `BuiltinRegistry`, calls `registry.register_all(self)`, then merges
+the result into `self.builtins`.
+
+**To add a new builtin:**
+1. Implement it in the appropriate category module as a closure over `vm`.
+2. Call `registry.add(name, arity, fn)` in that module's `register(vm, registry)` function.
+3. Add the name to `BUILTIN_NAMES` in `nodus_builtins.py`.
+4. If creating a new category, call `module.register(vm, self)` inside `BuiltinRegistry.register_all`.
+
+## Compilation Pipelines
+
+Two compilation pipelines exist in `src/nodus/tooling/loader.py`:
+
+### `ModuleLoader` — Canonical (preferred)
+- Located in `src/nodus/runtime/module_loader.py`
+- Used by `nodus run` and all new code
+- Entry point: `ModuleLoader(...).load_source(src)` or `.load_module_from_path(path)`
+
+### `compile_source()` — Legacy (deprecated since v0.5, removal target v1.0)
+- Used internally by `nodus check`, `nodus ast`, `nodus dis`
+- Emits `DeprecationWarning` at runtime
+- Migration: replace `compile_source(src)` with `ModuleLoader(...).load_source(src)`
+
+## NodeVisitor Pattern
+
+`NodeVisitor` (`src/nodus/frontend/visitor.py`) is the base class for all AST
+walkers.  It provides a `visit(node)` method that dispatches to
+`visit_<ClassName>` based on the node's runtime type.  If no specific method
+exists, `visit_default()` is called, which raises `NotImplementedError` by
+default.
+
+**Requirement for new AST nodes:** Any new node type added to `ast_nodes.py`
+must have a corresponding `visit_<ClassName>` method added to every
+`NodeVisitor` subclass that needs to handle it.  Failing to do so raises
+`NotImplementedError` at runtime, surfacing the gap early.
+
+Current NodeVisitor subclasses:
+- `ModuleStamper` (loader.py) — recursively stamps `_module` on all nodes
+- `InfoCollector` (loader.py) — collects module definition/export info
+- `Analyzer` (tooling/analyzer.py) — optional static type inference

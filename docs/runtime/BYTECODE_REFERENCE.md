@@ -54,6 +54,17 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - Raises runtime name error if undefined.
   - Names may be module-qualified (e.g., `__mod0__name`) after compile-time resolution.
 
+### LOAD_LOCAL
+- Category: variable access (fast path)
+- Stack behavior: pushes local variable value
+- Operands: variable name (string)
+- Emitted by compiler: yes
+- Purpose: fast local variable read inside functions, bypassing the 4-dict probe in `load_name()`
+- Notes / edge cases:
+  - Only emitted when the compiler has confirmed the symbol is `scope == "local"` and the access is inside a function scope (`in_function_scope()`).
+  - Reads directly from `frame.locals[name]`, unwrapping `Cell` / `LiveBinding` as needed.
+  - Must not be emitted for block-level locals at module scope (those still use `LOAD`).
+
 ### LOAD_UPVALUE
 - Category: closure / upvalue access
 - Stack behavior: pushes captured variable value
@@ -607,7 +618,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **41**.
+- Estimated opcode count (exact from VM dispatch): **42**.
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 
@@ -616,6 +627,7 @@ High-level construct to opcode shape (actual lowering patterns):
 |---|---|---|---|
 | PUSH_CONST | constants | `... -> ..., v` | yes |
 | LOAD | variable access | `... -> ..., value` | yes |
+| LOAD_LOCAL | variable access (fast path) | `... -> ..., value` | yes |
 | LOAD_UPVALUE | closure access | `... -> ..., value` | yes |
 | STORE | variable access | `..., v -> ...` | yes |
 | STORE_UPVALUE | closure access | `..., v -> ...` | yes |

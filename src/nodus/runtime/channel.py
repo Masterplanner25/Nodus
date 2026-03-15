@@ -8,8 +8,8 @@ from collections import deque
 class Channel:
     def __init__(self):
         self.queue = deque()
-        self.waiting_receivers: list[object] = []
-        self.waiting_senders: list[tuple[object, object]] = []
+        self.waiting_receivers: deque[object] = deque()  # O(1) popleft
+        self.waiting_senders: deque[tuple[object, object]] = deque()  # O(1) popleft
         self.closed: bool = False
 
 

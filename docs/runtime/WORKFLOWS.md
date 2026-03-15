@@ -111,3 +111,27 @@ Workflow/goal runs return a task-graph-style payload with `steps`, `tasks`, `tim
 - `workflow` and/or `goal` names
 - `state` (workflow state map)
 - `checkpoints` (checkpoint metadata)
+
+## Compilation Pipeline: _StateRewriter
+
+Workflows and goals go through an AST-level rewrite before bytecode compilation.
+
+```
+WorkflowDef / GoalDef AST node
+    ↓  compiler.compile_stmt  (compiler/compiler.py:340)
+    ↓  lower_workflow_ast / lower_goal_ast  (orchestration/workflow_lowering.py)
+    ↓  _StateRewriter  (orchestration/workflow_lowering.py)
+    ↓  MapLit AST node
+    ↓  Bytecode compiler (compile_expr)
+    ↓  Bytecode instructions
+```
+
+`_StateRewriter` walks each step body and replaces references to `state`
+variables (declared with `state name = expr`) with index expressions on a
+hidden `__state` map variable.  This rewrite happens entirely at compile time,
+so the emitted bytecode for step functions uses ordinary map-index opcodes —
+the VM has no special awareness of workflow state.
+
+The resulting `MapLit` node encodes the entire workflow structure
+(step functions, dependency lists, state initializers) as a plain map literal
+that the VM evaluates to produce a workflow record at runtime.
