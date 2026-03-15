@@ -40,17 +40,18 @@ def register(vm, registry) -> None:
                 fn = coroutine.closure.function
                 if vm.max_frames is not None and len(vm.frames) + 1 > vm.max_frames:
                     vm.runtime_error("sandbox", "Call stack overflow")
-                vm.frames.append(
-                    Frame(
-                        return_ip=None,
-                        locals={},
-                        fn_name=fn.name,
-                        call_line=call_line,
-                        call_col=call_col,
-                        call_path=call_path,
-                        closure=coroutine.closure,
-                    )
+                coro_frame = Frame(
+                    return_ip=None,
+                    locals={},
+                    fn_name=fn.name,
+                    call_line=call_line,
+                    call_col=call_col,
+                    call_path=call_path,
+                    closure=coroutine.closure,
                 )
+                if fn.local_slots:
+                    coro_frame.locals_name_to_slot = fn.local_slots
+                vm.frames.append(coro_frame)
                 if vm.profiler is not None and vm.profiler.enabled:
                     vm.profiler.enter_function(vm.display_name(fn.name))
                 vm.ip = fn.addr

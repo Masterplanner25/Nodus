@@ -63,12 +63,57 @@ The following AST expression node types are handled by `format_expr()`:
 `Index`, `IndexAssign`, `ListLit`, `MapLit`, `FnExpr`, `FieldAssign`,
 `RecordLiteral`, `ActionStmt`.
 
-The following node types are intentionally **not** handled in `format_expr()`
-because they are statement-level constructs, not expression values:
-- `Yield`, `TryCatch`, `Throw` — parsed by `stmt()`, never appear as sub-expressions.
-- `DestructureLet` — a destructuring `let` binding, statement-level only.
-- `VarPattern`, `ListPattern`, `RecordPattern` — pattern nodes used inside
-  `DestructureLet`; not standalone expressions.
+The following statement-level node types are handled by `format_stmt()`:
+`Import`, `ExportFrom`, `ExportList`, `Let`, `Print`, `ExprStmt`, `Return`,
+`FnDef`, `WorkflowDef`, `GoalDef`, `WorkflowStateDecl`, `WorkflowStep`,
+`GoalStep`, `If`, `While`, `For`, `ForEach`, `Block`, `Comment`,
+`CheckpointStmt`, `Yield`, `Throw`, `TryCatch`, `DestructureLet`.
+
+Pattern nodes (`VarPattern`, `ListPattern`, `RecordPattern`) are handled by the
+`format_pattern()` helper, called from `format_stmt()` when formatting
+`DestructureLet` nodes.
+
+### Yield
+
+```
+yield
+yield <expr>
+```
+
+Used inside generator functions. The expression is optional.
+
+### Throw
+
+```
+throw <expr>
+```
+
+Raises an exception with the given expression as the error value.
+
+### TryCatch
+
+```
+try {
+    <body>
+} catch <var> {
+    <handler>
+}
+```
+
+The `catch` clause binds the caught error to `<var>` for use in the handler
+block. There is no `finally` clause.
+
+### DestructureLet (pattern bindings)
+
+```
+let <pattern> = <expr>
+```
+
+Patterns may be:
+- A variable name: `let a = expr`
+- A list pattern: `let [a, b] = expr`
+- A record pattern: `let {key: varname, ...} = expr`
+- Nested: `let [a, [b, c]] = expr`
 
 ## Scope and Limitations
 

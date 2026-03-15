@@ -17,7 +17,7 @@ Items below were raised in a third-party review and are now validated with concr
 ## Phase 2 Fixes Applied (architecture)
 
 - ✅ Builtin registry extracted from VM: `BuiltinRegistry` class in `src/nodus/builtins/__init__.py`; category modules (`io`, `math`, `coroutine`, `collections`) each expose a `register(vm, registry)` function called at VM construction time.
-- ✅ `compile_source()` deprecated: marked `@deprecated` since v0.5; canonical path is `ModuleLoader(...).load_source(src)`. Removal target: v1.0. ~220 deprecation warnings remain in the test suite — tests not yet migrated.
+- ✅ `compile_source()` deprecated: marked `@deprecated` since v0.5; canonical path is `ModuleLoader(...).load_source(src)`. Removal target: v1.0. Internal src/ callers migrated in v0.8; public stub retained in nodus.__init__ until v1.0.
 - ✅ AST `Base` dataclass: all AST node classes inherit from `Base` (`src/nodus/frontend/ast/ast_nodes.py`), which carries `_tok` (source token for error location) and `_module` (module path set by loader), both excluded from `__repr__` and `__eq__`.
 - ✅ `NodeVisitor` base class: `src/nodus/frontend/visitor.py` provides automatic `visit_<ClassName>` dispatch. Missing visitor methods raise `NotImplementedError` at runtime to surface coverage gaps early.
 - ✅ `_StateRewriter` documented: workflow lowering pass documented in `src/nodus/runtime/workflow_lowering.py`; rewrites workflow/goal ASTs into scheduler-compatible coroutine form.
@@ -51,12 +51,42 @@ Items below were raised in a third-party review and are now validated with concr
 - ✅ Fix 14 — Bytecode cache migrated from `pickle` to `marshal`: `src/nodus/runtime/bytecode_cache.py` now writes `NDSC` magic (4 bytes) + format version byte + SHA-256 checksum (32 bytes) + `marshal.dumps()` payload. Eliminates pickle's arbitrary-code-execution risk and is faster for primitive-type payloads. Checksum verified on load; any mismatch silently invalidates the cache.
 - ✅ Fix 15 — Optimizer `collect_jump_targets()` hoisted: previously called once inside `fold_constants()` and once inside `remove_useless_stack_ops()` per outer fixed-point iteration (2× O(n) scans). Now computed once per outer iteration and passed as a parameter; recomputed only if `fold_constants` changes code (address compaction). Also removed the O(n) list equality dirty-detection fallback from both functions — the boolean `changed` flag is sufficient.
 
+## GET_ITER pending_get_iter cleanup
+
+The `pending_get_iter` VM flag is a workaround for calling user-defined `__iter__` closures.
+When `GET_ITER` is executed against an object that exposes `__iter__` as a Nodus closure,
+the VM sets `pending_get_iter = True` and arranges a callback call on the next cycle rather
+than resolving the iterator inline. This makes `GET_ITER` and `ITER_NEXT` behave differently
+depending on whether the iterable is a builtin or a user closure, which is an observable
+architectural inconsistency.
+
+Cleanup target: v0.9. Resolution options:
+
+1. Push all iterator construction through a unified `make_iterator()` helper that handles
+   both builtin and closure `__iter__` transparently.
+2. Introduce a first-class iterator protocol value that wraps the closure so `GET_ITER`
+   always returns an iterator object and `ITER_NEXT` always calls `.next()` on it.
+
+Until this is resolved, `GET_ITER` and `ITER_NEXT` remain **provisional** and cannot be
+classified stable. See `FREEZE_PROPOSAL.md` freeze prerequisites.
+
+## Exception model finalization
+
+`SETUP_TRY` / `POP_TRY` / `THROW` are provisional pending a decision on `finally` blocks
+and typed catches. If either feature is added before v1.0, these opcodes need new operands
+or companion opcodes. Decision target: v0.9. See `FREEZE_PROPOSAL.md` freeze prerequisites.
+
 ## Open Items (not yet complete)
 
-- `compile_source()` removal: target v1.0. ~220 deprecation warnings across the test suite — test files still use the deprecated API. Migration guide: replace `compile_source(src, ...)` with `ModuleLoader(...).load_source(src)`.
-- `LOAD_LOCAL_IDX` slot-indexed fast path: Phase 3 Fix 12 added name-keyed `LOAD_LOCAL`; the next step is `LOAD_LOCAL_IDX slot` accessing `frame.locals_[slot]` (list) instead of `frame.locals[name]` (dict). Requires Frame refactoring to fixed-size locals array.
+- ✅ compile_source() internal callers migrated to ModuleLoader in v0.8. Public stub retained in nodus.__init__ until v1.0. 0 DeprecationWarnings from internal src/ callers in test suite.
+- ✅ `LOAD_LOCAL_IDX` slot-indexed fast path: Implemented in v0.8. Compiler now emits `FRAME_SIZE n`, `STORE_LOCAL_IDX slot`, and `LOAD_LOCAL_IDX slot` for all function-scope locals. Frame carries a pre-allocated `locals_array` (list) and `locals_name_to_slot` mapping. `capture_local` updated for Cell boxing via array. Cache serialization updated (`local_slots` in FunctionInfo). Bytecode version bumped to 2.
+- `compile_source()` public stub: retained in `nodus.__init__` until v1.0 with `DeprecationWarning`. Remove at v1.0 — no source changes needed beyond deleting the export and `# TODO(v1.0)` comment.
+- `LOAD_LOCAL` deprecated opcode: superseded by `LOAD_LOCAL_IDX` in v0.8; retained as fallback for bytecode compiled before version 2. Remove at v1.0 once all caches have been invalidated by the version bump. Also remove `_op_load_local` handler from VM dispatch table.
+- Registry publish and auth: `nodus publish` command and token management deferred to v0.9. `RegistryClient` has no auth layer; all endpoints are unauthenticated. See v0.9 milestone in ROADMAP.md.
+- Provisional opcode resolution: 7 opcodes remain provisional before v1.0 freeze (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`). GET_ITER/ITER_NEXT blocked on `pending_get_iter` cleanup (see section above). Exception model (SETUP_TRY/POP_TRY/THROW) blocked on finally/typed-catch decision. BUILD_MODULE and YIELD need stabilization review. All must be resolved before the v1.0 opcode freeze.
 - `vm.py` line count: ~2,052 lines after Phase 2 extraction. Further extraction of workflow/goal builtins and scheduler helpers is possible.
-- Formatter AST node coverage audit: Three expression nodes (`FnExpr`, `FieldAssign`, `RecordLiteral`) were silently missing from `format_expr()` and would crash the formatter on valid source. A systematic audit of all AST node types against `format_expr()` and `format_stmt()` should be completed before v1.0 to ensure no other nodes have missing handlers.
+- ✅ Formatter AST coverage audit complete: all 48 AST node types handled in format_stmt()/format_expr(). Added Yield, Throw, TryCatch, DestructureLet, VarPattern, ListPattern, RecordPattern handlers. See tests/test_formatter_coverage.py.
+- ✅ Opcode set stabilization plan: formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md. 47 opcodes classified (39 stable, 7 provisional, 1 deprecated). Freeze prerequisites, post-freeze extension process, and version history documented. See GET_ITER/Exception model sections above for provisional opcode cleanup items.
 
 ## Phase 4 Fixes Applied (documentation completeness)
 

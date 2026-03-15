@@ -3,13 +3,14 @@ import unittest
 from contextlib import redirect_stdout
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 
 
 def run_program(src: str, source_path: str | None = None) -> list[str]:
-    _ast, code, functions, code_locs = lang.compile_source(
+    _loader = ModuleLoader(project_root=None)
+    code, functions, code_locs = _loader.compile_only(
         src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}},
+        module_name=source_path or "<memory>",
     )
     vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
     buf = io.StringIO()
@@ -73,7 +74,6 @@ try {
         self.assertIn("Cannot subtract", out[1])
 
     def test_anonymous_function_names_unique(self):
-        import_state = {"loaded": set(), "loading": set(), "exports": {}}
         code = """
 fn a() {
     let f = fn() { return 1 }
@@ -83,7 +83,8 @@ fn b() {
     let f = fn() { return 2 }
 }
 """
-        _ast, bytecode, functions, _code_locs = lang.compile_source(code, source_path="main.nd", import_state=import_state)
+        _loader = ModuleLoader(project_root=None)
+        bytecode, functions, _code_locs = _loader.compile_only(code, module_name="main.nd")
         display_names = sorted(
             info.display_name for info in functions.values() if info.display_name and info.display_name.startswith("__anon_")
         )

@@ -9,15 +9,16 @@ from contextlib import redirect_stderr, redirect_stdout
 import http.client
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.services.server import run_in_thread
 from nodus.orchestration.workflow_lowering import find_workflow_value
 
 
 def run_program(src: str, source_path: str = "workflow.nd"):
-    _ast, code, functions, code_locs = lang.compile_source(
+    _loader = ModuleLoader(project_root=None)
+    code, functions, code_locs = _loader.compile_only(
         src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
+        module_name=source_path,
     )
     vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
     out_buf = io.StringIO()
@@ -148,11 +149,8 @@ workflow demo {
     }
 }
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="rollback.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="rollback.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="rollback.nd")
         vm.run()
         workflow = find_workflow_value(vm.globals, "demo")
@@ -227,11 +225,8 @@ workflow demo {
     step b after a { return x }
 }
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="resume.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="resume.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="resume.nd")
         vm.run()
         workflow = find_workflow_value(vm.globals, "demo")
@@ -283,14 +278,11 @@ let result = run_workflow(demo)
             path = os.path.join(td, "rebuild.nd")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(src)
-            _ast, code, functions, code_locs = lang.compile_source(
-                src,
-                source_path=path,
-                import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-            )
+            _loader = ModuleLoader(project_root=None)
+            code, functions, code_locs = _loader.compile_only(src, module_name=path)
             vm = lang.VM(code, functions, code_locs=code_locs, source_path=path)
             vm.run()
-            result = vm.globals["__mod0__result"]
+            result = vm.globals["result"]
             if hasattr(result, "value"):
                 result = result.value
             graph_id = result["graph_id"]

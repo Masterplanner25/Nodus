@@ -9,6 +9,7 @@ from nodus.frontend.ast.ast_nodes import (
     Bool,
     Call,
     Comment,
+    DestructureLet,
     ExportFrom,
     ExportList,
     ExprStmt,
@@ -25,21 +26,27 @@ from nodus.frontend.ast.ast_nodes import (
     IndexAssign,
     Let,
     ListLit,
+    ListPattern,
     MapLit,
     Nil,
     Num,
     Param,
     Print,
     RecordLiteral,
+    RecordPattern,
     Return,
     Str,
+    Throw,
+    TryCatch,
     Unary,
     Var,
+    VarPattern,
     WorkflowDef,
     WorkflowStep,
     WorkflowStateDecl,
     CheckpointStmt,
     While,
+    Yield,
 )
 from nodus.frontend.lexer import tokenize
 from nodus.frontend.parser import Parser
@@ -221,6 +228,30 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         lines.append(f"{prefix}checkpoint {format_expr(stmt.label)}")
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
 
+    if isinstance(stmt, Yield):
+        if stmt.expr is None:
+            lines.append(f"{prefix}yield")
+            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        lines.append(f"{prefix}yield {format_expr(stmt.expr)}")
+        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+
+    if isinstance(stmt, Throw):
+        lines.append(f"{prefix}throw {format_expr(stmt.expr)}")
+        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+
+    if isinstance(stmt, TryCatch):
+        try_header = f"{prefix}try {{"
+        try_lines = format_block(stmt.try_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
+        catch_header = f"{prefix}}} catch {stmt.catch_var} {{"
+        catch_lines = format_block(stmt.catch_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
+        out = [try_header] + try_lines + [catch_header] + catch_lines + [f"{prefix}}}"]
+        return lines + out + trailing_lines(prefix, trailing)
+
+    if isinstance(stmt, DestructureLet):
+        pat = format_pattern(stmt.pattern)
+        lines.append(f"{prefix}let {pat} = {format_expr(stmt.expr)}")
+        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+
     raise TypeError(f"Unknown stmt node: {stmt!r}")
 
 
@@ -253,6 +284,18 @@ def format_for_part(part) -> str:
     if isinstance(part, ExprStmt):
         return format_expr(part.expr)
     return format_expr(part)
+
+
+def format_pattern(pattern) -> str:
+    if isinstance(pattern, VarPattern):
+        return pattern.name
+    if isinstance(pattern, ListPattern):
+        items = ", ".join(format_pattern(e) for e in pattern.elements)
+        return f"[{items}]"
+    if isinstance(pattern, RecordPattern):
+        pairs = ", ".join(f"{k}: {format_pattern(v)}" for k, v in pattern.fields)
+        return f"{{{pairs}}}"
+    raise TypeError(f"Unknown pattern node: {pattern!r}")
 
 
 def format_expr(expr, parent_prec: int = 0) -> str:
@@ -334,11 +377,8 @@ def format_expr(expr, parent_prec: int = 0) -> str:
     if isinstance(expr, RecordLiteral):
         pairs = ", ".join(f"{k}: {format_expr(v)}" for k, v in expr.fields)
         return f"record {{{pairs}}}"
-    # Nodes intentionally excluded from format_expr (statement-level only):
-    #   Yield, TryCatch, Throw  — parsed by stmt(), never appear as sub-expressions.
-    #   DestructureLet          — parsed by stmt() as a destructuring let binding.
-    #   VarPattern, ListPattern, RecordPattern — pattern nodes, only valid inside
-    #                             DestructureLet; not standalone expressions.
+    # Nodes below are statement-level only and are handled by format_stmt(),
+    # not format_expr().  They should never appear as sub-expressions.
     raise TypeError(f"Unknown expr node: {expr!r}")
 
 

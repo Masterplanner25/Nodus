@@ -1,7 +1,9 @@
 ﻿# Nodus Bytecode Reference
 
 ## 1. Executive Summary
-Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The current instruction set is **small-to-medium and maturing**: still compact, but now broad enough to support control flow, functions, short-circuit logic, mutable collections, and runtime services through builtins.
+Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The current instruction set is **small-to-medium and maturing**: still compact, but now broad enough to support control flow, functions, short-circuit logic, mutable collections, and runtime services through builtins. The opcode set currently contains **47 opcodes**.
+
+**Opcode stability classifications** (stable / provisional / deprecated) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v0.8.0: 39 stable, 7 provisional, 1 deprecated.
 
 ## 2. VM Model Overview
 - Stack model:
@@ -60,20 +62,52 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - Raises runtime name error if undefined.
   - Names may be module-qualified (e.g., `__mod0__name`) after compile-time resolution.
 
+### FRAME_SIZE
+- Category: frame setup
+- Stack behavior: none (stack effect: 0)
+- Operands: n (integer) — number of local variable slots required by the function
+- Emitted by compiler: yes (first instruction of every compiled function body)
+- Purpose: pre-allocates the frame's slot-indexed locals array (`frame.locals_array = [None] * n`)
+- Notes / edge cases:
+  - Emitted before any `STORE_ARG` instructions in the function prologue.
+  - The operand is patched at the end of function compilation once the total slot count is known.
+  - Slot count includes parameters and all locals from nested block scopes within the function.
+  - No-op at module top-level (never emitted outside function bodies).
+
 ### LOAD_LOCAL
-- Category: variable access (fast path)
+- Category: variable access (fast path, name-keyed)
 - Stack behavior: pushes local variable value
 - Operands: variable name (string)
-- Emitted by compiler: yes
+- Emitted by compiler: yes (fallback only — emitted when slot index is unavailable)
 - Purpose: fast local variable read inside functions, bypassing the 4-dict probe in `load_name()`
 - Notes / edge cases:
   - Only emitted when the compiler has confirmed the symbol is `scope == "local"` and the access is inside a function scope (`in_function_scope()`).
   - Reads directly from `frame.locals[name]`, unwrapping `Cell` / `LiveBinding` as needed.
   - Must not be emitted for block-level locals at module scope (those still use `LOAD`).
-  - **Planned follow-on — LOAD_LOCAL_IDX**: A slot-indexed variant (`LOAD_LOCAL_IDX slot`)
-    that accesses `frame.locals_[slot]` (a list) instead of `frame.locals[name]` (a dict)
-    would eliminate the dict lookup entirely. Not yet implemented; requires Frame refactoring
-    to use a fixed-size locals array. Tracked in TECH_DEBT.md.
+  - **Legacy name-keyed path retained as fallback.** Use `LOAD_LOCAL_IDX` for new bytecode. New compilation always assigns slot indices, so this path is only reached for edge cases where `symbol.index is None`.
+
+### LOAD_LOCAL_IDX
+- Category: variable access (fast path, slot-indexed)
+- Stack behavior: pushes local variable value (`→ value`)
+- Operands: slot (integer) — index into `frame.locals_array`
+- Emitted by compiler: yes (primary path for all function-local variable reads)
+- Purpose: slot-indexed fast path for confirmed function-local variables. Reads `frame.locals_array[slot]`, bypassing both the 4-dict probe in `load_name()` and the hash computation in the dict-keyed `LOAD_LOCAL`. Supersedes `LOAD_LOCAL`.
+- Notes / edge cases:
+  - Requires `FRAME_SIZE` to have been executed first (initializes `frame.locals_array`).
+  - Unwraps `Cell` (captured upvalue boxing) and `LiveBinding` values transparently.
+  - Parameters synced to `locals_array` by `STORE_ARG`; block-scope locals written by `STORE_LOCAL_IDX`.
+  - Slot assignments are stable within a single compilation — not preserved across cache invalidation.
+
+### STORE_LOCAL_IDX
+- Category: variable access (fast path, slot-indexed)
+- Stack behavior: pops value, writes to `frame.locals_array[slot]` (`value →`)
+- Operands: slot (integer) — index into `frame.locals_array`
+- Emitted by compiler: yes (for all local `let` bindings, assignments, destructuring, `for`/`foreach` loop vars, and `try`/`catch` vars in function scope)
+- Purpose: slot-indexed local variable store. Eliminates the dict hash computation of the `STORE` opcode for known function-local variables. Handles Cell boxing on write for captured variables.
+- Notes / edge cases:
+  - If the existing array entry is a `Cell` (captured upvalue), updates `cell.value` in-place to preserve shared-mutable closure semantics.
+  - The `STORE_ARG` opcode syncs parameters to both `frame.locals` (dict) and `frame.locals_array` so parameters are accessible via both paths.
+  - Does not write to `frame.locals` (dict); the dict is only updated by `STORE_ARG` and by `capture_local` when a Cell is first created.
 
 ### LOAD_UPVALUE
 - Category: closure / upvalue access

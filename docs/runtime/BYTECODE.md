@@ -62,19 +62,48 @@ POP
 
 These instructions load and store variables.
 
+FRAME_SIZE
+
+Pre-allocates the slot-indexed locals array for the current frame.
+Emitted as the first instruction of every function body.
+
+FRAME_SIZE <n>
+
+where n is the total number of local variable slots. Sets frame.locals_array = [None] * n.
+
 LOAD
 
-Loads a variable value and pushes it onto the stack.
+Loads a variable value and pushes it onto the stack (global/module scope).
 
 LOAD <name>
+LOAD_LOCAL_IDX
+
+Fast-path slot-indexed local variable read. Emitted by the compiler for all
+confirmed function-local variables (Symbol.index is set). Bypasses all dict lookups.
+
+LOAD_LOCAL_IDX <slot>
+
+LOAD_LOCAL
+
+⚠️ Deprecated since v0.8.0. The compiler no longer emits this instruction;
+LOAD_LOCAL_IDX is used for all new bytecode. Retained as a fallback only.
+Removal target: v1.0. See DEPRECATIONS.md.
+
+LOAD_LOCAL <name>
 STORE
 
 Stores the top stack value into a variable.
 
 STORE <name>
+STORE_LOCAL_IDX
+
+Slot-indexed local variable write. Complement of LOAD_LOCAL_IDX.
+
+STORE_LOCAL_IDX <slot>
+
 STORE_ARG
 
-Stores function arguments in local variable slots.
+Stores function arguments into local slots. Also syncs to locals_array via locals_name_to_slot.
 
 STORE_ARG <slot>
 LOAD_UPVALUE
@@ -278,18 +307,27 @@ Instructions such as PUSH_CONST reference this table by index.
 
 12. Bytecode Versioning
 
-The bytecode format is versioned via `NODUS_BYTECODE_VERSION` in `src/nodus/runtime/module.py` (currently `1`). The version is checked on cache load; a mismatch silently invalidates the cache entry.
+The bytecode format is versioned. `BYTECODE_VERSION` in `src/nodus/compiler/compiler.py` is the
+authoritative constant (currently `2`). The version is embedded in every compiled bytecode dict
+and checked on cache load; a mismatch silently invalidates the cache entry and triggers recompilation.
 
 Disk cache file format (`src/nodus/runtime/bytecode_cache.py`):
 
   Bytes 0–3   Magic: NDSC
-  Byte  4     Format version: 0x01
+  Byte  4     Format version: 0x02  ← bumped from 0x01 in v0.8.0
   Bytes 5–36  SHA-256 of the marshal payload (integrity check)
   Bytes 37+   marshal.dumps() of the payload dict
 
-The payload uses Python `marshal` (not `pickle`) for serialization: faster for primitive types and avoids arbitrary-code-execution risk. Cache files are invalidated automatically on source mtime change or version mismatch.
+The payload uses Python `marshal` (not `pickle`) for serialization: faster for primitive types and avoids arbitrary-code-execution risk. Cache files are invalidated automatically on source mtime change or version mismatch. No user action is needed after an upgrade — stale caches are silently recompiled on next load.
 
-Tooling compatibility: compiler, VM, and cache share the same `NODUS_BYTECODE_VERSION` constant to ensure compatibility between:
+Version history:
+
+  0x01 — v0.7.0: initial marshal + NDSC magic format (replaced pickle)
+  0x02 — v0.8.0: FRAME_SIZE / LOAD_LOCAL_IDX / STORE_LOCAL_IDX opcodes added;
+                  FunctionInfo.local_slots field added to payload;
+                  bytecode compiled with version 0x01 is incompatible and is recompiled automatically
+
+Tooling compatibility: compiler, VM, and cache share the same `BYTECODE_VERSION` constant to ensure compatibility between:
 
 compiler
 
@@ -315,15 +353,16 @@ Maintaining a stable instruction set helps ensure these tools remain compatible.
 
 Possible future improvements include:
 
-bytecode version headers
-
-improved instruction encoding
+improved instruction encoding (compact binary format)
 
 register-based optimization passes
 
-specialized opcodes for common operations
+specialized opcodes for common operations (e.g. ADD_NUM, ADD_STR)
 
 These changes should preserve compatibility where possible.
+
+(Note: bytecode version headers are already implemented as of v0.7.0; slot-indexed locals
+are implemented as of v0.8.0. See the versioning section above.)
 
 Final Principle
 

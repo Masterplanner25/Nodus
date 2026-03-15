@@ -19,10 +19,18 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## In Progress / Release Pending
 
-v0.7.0 shipped 2026-03-15. Active work is v0.8 planning; see the v0.8 milestone section below.
+v0.8.0 shipped 2026-03-15. Active work is v0.9 planning; see the v0.9 milestone section below.
 [Unreleased] documentation updates are tracked in CHANGELOG.md.
 
 ## Released Versions
+
+### 0.8.0 — Stability & Package Ecosystem (2026-03-15)
+- Registry-backed package resolution: `RegistryClient` with semver, SHA-256 verification, archive extraction.
+- `compile_source()` internal callers migrated to `ModuleLoader`; 0 DeprecationWarnings from `src/`.
+- `LOAD_LOCAL_IDX` / `STORE_LOCAL_IDX` / `FRAME_SIZE` opcodes: slot-indexed local variable access.
+- All 48 AST node types covered in the formatter; `format_pattern()` helper added.
+- Opcode freeze proposal published: `docs/governance/FREEZE_PROPOSAL.md` (39 stable / 7 provisional / 1 deprecated).
+- Bytecode cache version bumped to 0x02. LSP version field updated to 0.8.0.
 
 ### 0.7.0 — Runtime Orchestration, Diagnostics, Debugging, and Sprint Fixes (2026-03-15)
 - Incremental module compilation with persistent dependency graph (`.nodus/deps.json`).
@@ -188,11 +196,10 @@ registry-backed dependency resolution
 This enables reproducible automation deployments.
 
 Status:
-Partial. Package manager CLI exists (`package_manager.py`): `nodus.toml` / `nodus.lock`,
-semver resolution, local dependency layout under `.nodus/modules/`, and `nodus install` /
-`nodus update` commands are implemented.
-Registry-backed package resolution and publishing: NOT YET STARTED.
-Registry resolution is the primary blocker for this milestone.
+Substantially complete. Package manager CLI exists (`package_manager.py`): `nodus.toml` /
+`nodus.lock`, semver resolution, local and HTTP-registry dependency resolution, archive
+download with SHA-256 verification, and `nodus install` / `nodus update` commands are
+implemented. Registry publishing and authentication remain open (planned v0.9).
 
 Runtime Evolution
 
@@ -501,47 +508,69 @@ Focus:
 - ✅ LSP diagnostics (cross-module publishing, dependency-aware incremental refresh, richer locations, warnings)
 - ✅ debug adapter (DAP stdio server, runtime-debugger-backed breakpoints/stepping, stack traces, variable scopes, CLI entrypoint)
 
-Version 0.8 — Stability & Package Ecosystem
+Version 0.8 ✅ Released 2026-03-15 — Stability & Package Ecosystem
 
 Theme: Close the gap between working language and distributable ecosystem.
 
 Goals:
 
-- [ ] Registry-backed package resolution
-      The single most overdue item. Package manager CLI exists but cannot
-      resolve or publish from a registry. This is required before v1.0.
-      Owner: package_manager.py + new registry client module.
+- ✅ Registry-backed package resolution
+      HTTP registry client (`registry_client.py`) implemented. `RegistryClient`
+      fetches package index, resolves semver constraints, downloads archives with
+      SHA-256 verification, and extracts to `.nodus/_staging/` before the
+      installer copies to `.nodus/modules/`. Registry URL resolved from
+      `--registry` flag, `NODUS_REGISTRY_URL` env var, or `registry_url` in
+      `[package]` nodus.toml; falls back to local registry when none set.
+      Lockfile records `source = "registry"`. 12 new tests in
+      `tests/test_registry_client.py`. Note: publish and auth deferred to v0.9.
 
-- [ ] compile_source() removal
-      Deprecated since v0.5.0. Tracked in TECH_DEBT.md.
-      All internal callers must migrate to ModuleLoader before removal.
-      Removal unblocks a cleaner public API surface for v1.0.
-      ~220 deprecation warnings remain in the test suite.
+- ✅ compile_source() internal callers removed
+      Deprecated since v0.5.0. All internal callers (runner.py, vm.py,
+      dap/server.py) migrated to ModuleLoader in v0.8. Public stub
+      retained in nodus.__init__ until v1.0. 0 DeprecationWarnings from
+      internal src/ callers. Full removal at v1.0.
 
-- [ ] Opcode set stabilization plan
-      The opcode set must be frozen before v1.0 can be declared.
-      v0.8 deliverable: produce a formal opcode freeze proposal —
-      a documented list of all 44 current opcodes with a stability
-      classification (stable / provisional / deprecated) and a process
-      for adding new opcodes post-freeze.
-      Actual freeze happens at v1.0.
+- ✅ Opcode set stabilization plan
+      Formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md.
+      47 opcodes classified: 39 stable, 7 provisional, 1 deprecated (LOAD_LOCAL).
+      Freeze prerequisites, post-freeze extension process, and version history
+      documented. Actual opcode freeze happens at v1.0.
 
-- [ ] LOAD_LOCAL_IDX full VM slot-indexed path
-      Compiler emits LOAD_LOCAL (name-keyed, shipped in v0.7). The next
-      step is LOAD_LOCAL_IDX (slot-indexed list access), bypassing the
-      dict lookup entirely. Requires Frame refactoring to fixed-size
-      locals array. Tracked in TECH_DEBT.md.
+- ✅ LOAD_LOCAL_IDX full VM slot-indexed path
+      Compiler now emits FRAME_SIZE (pre-allocates locals array),
+      STORE_LOCAL_IDX (slot-indexed store for let/assign/loop/catch vars),
+      and LOAD_LOCAL_IDX (slot-indexed load) for all function-scope locals.
+      Frame carries locals_array (list) + locals_name_to_slot (name→slot map
+      set at call time from FunctionInfo.local_slots). capture_local updated
+      to box Cells via array path for correct closure semantics. Cache
+      serialization updated (local_slots field). Bytecode version bumped to 2.
+      NODUS_BYTECODE_VERSION = 2, BYTECODE_VERSION = 2.
 
-- [ ] Formatter AST coverage audit
+- ✅ Formatter AST coverage audit
       FnExpr, FieldAssign, and RecordLiteral were missing from the
       formatter and would crash on valid source (fixed in v0.7). Audit
-      all remaining AST nodes against format_expr() and format_stmt()
-      before v1.0 to ensure no other nodes are missing handlers.
+      complete in v0.8: Yield, Throw, TryCatch, DestructureLet,
+      VarPattern, ListPattern, RecordPattern handlers added. All 48 AST
+      node types are now covered. See tests/test_formatter_coverage.py.
 
-Not in v0.8 (deferred to v1.0 or later):
+Not in v0.8 (deferred to v0.9 or later):
+- Registry publish (`nodus publish`) and auth — v0.9 goal
+- `compile_source()` public stub removal — v1.0 goal
+- `LOAD_LOCAL` deprecated opcode removal — v1.0 goal
+- Provisional opcode finalization (GET_ITER, ITER_NEXT, exception model) — v0.9 decision target
 - Type System Evolution — no version target assigned yet
 - Stable embedding API freeze — v1.0 goal
 - Production hardened sandboxing — v1.0 goal
+
+Version 0.9 — Registry Publishing & Auth
+
+Theme: Complete the package ecosystem.
+
+Goals:
+- [ ] Registry publish (`nodus publish` command)
+- [ ] Registry authentication and token management
+- [ ] `compile_source()` public stub removal (deprecated since v0.5, internal callers removed v0.8)
+- [ ] Provisional opcode finalization: GET_ITER/ITER_NEXT (`pending_get_iter` cleanup) and exception model (finally/typed catches decision)
 
 Version 1.0
 
@@ -549,7 +578,7 @@ Goals:
 
 stable module system
 
-frozen opcode set
+frozen opcode set (freeze proposal published in v0.8 at docs/governance/FREEZE_PROPOSAL.md; prerequisites tracked in TECH_DEBT.md)
 
 stable embedding API
 

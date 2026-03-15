@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from nodus.compiler.compiler import FunctionInfo
 
 
-NODUS_BYTECODE_VERSION = 1
+NODUS_BYTECODE_VERSION = 2
 
 
 @dataclass
@@ -38,6 +38,7 @@ class ModuleBytecode:
                         for upvalue in fn.upvalues
                     ],
                     "display_name": fn.display_name,
+                    "local_slots": dict(fn.local_slots) if fn.local_slots else {},
                 }
                 for name, fn in self.functions.items()
             },
@@ -71,12 +72,19 @@ class ModuleBytecode:
                                 index=item.get("index"),
                             )
                         )
+                raw_local_slots = raw.get("local_slots", {})
+                local_slots: dict[str, int] = {}
+                if isinstance(raw_local_slots, dict):
+                    for sname, sidx in raw_local_slots.items():
+                        if isinstance(sname, str) and isinstance(sidx, int):
+                            local_slots[sname] = sidx
                 functions[key] = FunctionInfo(
                     name=str(raw.get("name", key)),
                     params=[str(param) for param in raw.get("params", []) if isinstance(param, str)],
                     addr=int(raw.get("addr", 0)),
                     upvalues=upvalues,
                     display_name=str(raw.get("display_name", key)),
+                    local_slots=local_slots,
                 )
 
         raw_code_locs = payload.get("code_locs", [])
@@ -167,10 +175,10 @@ class NodusModule:
         self.exports[name] = value
         return value
 
-    def invoke_function(self, name: str, args: list[object]) -> object:
+    def invoke_function(self, name: str, args: list[object], caller_vm=None) -> object:
         if name not in self.functions:
             raise ValueError(f"Unknown module function: {name}")
-        from nodus.vm.vm import Closure, VM
+        from nodus.vm.vm import Closure, _ClosureProxy, VM
 
         vm = VM(
             self.bytecode,
@@ -182,6 +190,19 @@ class NodusModule:
         )
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
+
+        # When a caller VM is provided:
+        # 1. Replace any Closure arguments with _ClosureProxy objects so that
+        #    CALL_VALUE dispatches them back through the caller's bytecode context.
+        # 2. Store a reference to the caller VM so that reflection builtins
+        #    (stack_frame, fn_module, etc.) can access the caller's context.
+        if caller_vm is not None:
+            vm._caller_vm = caller_vm
+            args = [
+                _ClosureProxy(arg, caller_vm) if isinstance(arg, Closure) and not isinstance(arg, _ClosureProxy) else arg
+                for arg in args
+            ]
+
         closure = Closure(self.functions[name], [])
         return vm.run_closure(closure, args)
 

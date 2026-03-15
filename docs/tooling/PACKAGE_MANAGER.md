@@ -21,16 +21,41 @@ utils = "1.0.0"
 ```
 
 Supported sources:
-- version requirements resolved from the local registry
+- version requirements resolved from a registry (local or remote HTTP)
 - `{ path = "./relative/path" }` for local dependencies
 
-Resolution is tooling-only and offline-only. Runtime execution never contacts the network.
+### Semver constraint syntax
+
+| Constraint | Meaning |
+|---|---|
+| `"^1.0.0"` | Compatible: `>=1.0.0, <2.0.0` |
+| `"~1.0.0"` | Patch-level: `>=1.0.0, <1.1.0` |
+| `"1.0.0"` | Exact version only |
+| `">=1.0.0"` | Minimum version (no upper bound) |
+
+Example manifest with constraints:
+
+```toml
+[package]
+name = "myapp"
+version = "0.1.0"
+
+[dependencies]
+mypackage = "^1.0.0"
+otherlib  = "~2.1.0"
+exactpkg  = "1.0.0"
+locallib  = { path = "../locallib" }
+```
+
+Resolution is tooling-only. Runtime execution never contacts the network.
 
 ## Commands
 
 - `nodus init` initializes `nodus.toml`, `src/main.nd`, and `.nodus/modules/`
 - `nodus install` installs dependencies from the manifest
-- `nodus add <package>` adds the latest locally available registry version to `nodus.toml`, installs it, and updates `nodus.lock`
+- `nodus install --registry <url>` installs using the specified HTTP registry URL
+- `nodus add <package> "<constraint>"` adds a registry dependency to `nodus.toml` (e.g. `nodus add mypackage "^1.0.0"`), installs it, and updates `nodus.lock`
+- `nodus add <package> --path <rel-path>` adds a local path dependency
 - `nodus remove <package>` removes a dependency from `nodus.toml`, prunes the local install, and updates `nodus.lock`
 - `nodus package-list` lists resolved dependencies and lockfile status
 
@@ -86,6 +111,70 @@ import "utils:strings"
 ```
 
 This resolves to `.nodus/modules/utils/strings.nd`.
+
+## Registry Installation
+
+Version dependencies (e.g. `utils = "^1.0.0"`) can be resolved and installed from an HTTP registry.
+
+### Configuration priority
+
+1. `--registry <url>` CLI flag (not yet wired to CLI arg parsing; pass via `install_dependencies_for_project(registry_url=...)`)
+2. `NODUS_REGISTRY_URL` environment variable
+3. `registry_url` field in `[package]` section of `nodus.toml`
+4. If none set: falls back to the local `.nodus/registry.toml`
+
+### nodus.toml with registry URL
+
+```toml
+[package]
+name = "myapp"
+version = "0.1.0"
+registry_url = "https://registry.example.com"
+
+[dependencies]
+utils = "^1.0.0"
+```
+
+### Registry protocol
+
+The registry must serve JSON at `GET {registry_url}/packages/{name}`:
+
+```json
+{
+  "name": "utils",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "url": "https://registry.example.com/dist/utils-1.0.0.tar.gz",
+      "sha256": "abcdef..."
+    }
+  ]
+}
+```
+
+Archives may be `.tar.gz`, `.tgz`, or `.zip`. A leading top-level directory inside the archive is automatically stripped.
+
+SHA-256 of the downloaded archive is verified before extraction. The lockfile records `source = "registry"`.
+
+### Lockfile output for registry deps
+
+```toml
+[[package]]
+name = "utils"
+version = "1.0.0"
+source = "registry"
+url = "https://registry.example.com/dist/utils-1.0.0.tar.gz"
+hash = "sha256:..."
+path = ".nodus/modules/utils"
+```
+
+### Error handling
+
+- `RegistryError` is raised on network failures, HTTP errors, or checksum mismatches.
+- On version constraint mismatch, the error message lists all available versions returned by the registry.
+- Checksum verification happens before extraction; a mismatch aborts install and raises `RegistryError`.
+
+Note: v0.9 will add `nodus publish` and registry authentication.
 
 ## Notes
 - The package manager is local-first and keeps runtime execution separate from manifest parsing and dependency resolution.

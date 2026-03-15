@@ -11,7 +11,6 @@ from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.runtime.errors import coerce_error, legacy_error_dict, NodusRuntimeError
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.debugger import Debugger, DebuggerQuit
-from nodus.tooling.loader import compile_source
 from nodus.frontend.parser import Parser
 from nodus.frontend.lexer import tokenize
 from nodus.vm.vm import VM
@@ -269,26 +268,6 @@ def run_in_vm(
     worker_dispatcher = getattr(vm, "worker_dispatcher", None)
     if worker_dispatcher is not None:
         set_default_dispatcher(worker_dispatcher)
-    import_state = _resolve_import_state(import_state, project_root)
-    try:
-        _ast, bytecode, functions, code_locs = compile_source(
-            code,
-            source_path=filename,
-            import_state=import_state,
-        )
-    except Exception as err:
-        stage = _compile_stage(err)
-        return (
-            _error_result(
-                stage=stage,
-                filename=filename,
-                stdout="",
-                stderr="",
-                err=err,
-            ),
-            vm,
-        )
-
     if worker_dispatcher is not None:
         vm.worker_dispatcher = worker_dispatcher
     if event_bus is not None:
@@ -300,22 +279,21 @@ def run_in_vm(
     vm.trace_scheduler = trace_scheduler
     vm.scheduler_output = scheduler_output
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
+    existing_globals = dict(vm.globals) if isinstance(getattr(vm, "globals", None), dict) else {}
+    vm.source_code = code
+    loader = ModuleLoader(project_root=project_root, vm=vm)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
-            module_globals = vm.globals if isinstance(getattr(vm, "globals", None), dict) else {}
-            vm.reset_program(
-                bytecode,
-                functions,
-                code_locs=code_locs,
-                source_path=filename,
-                module_globals=module_globals,
-            )
-            vm.source_code = code
-            vm.run()
+            module_name = os.path.abspath(filename) if filename is not None else "<memory>"
+            base_dir = os.path.dirname(module_name) if filename is not None else os.getcwd()
+            loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir, initial_globals=existing_globals)
         except Exception as err:
+            stage = _compile_stage(err)
+            if stage not in {"parse", "compile"}:
+                stage = "execute"
             return (
                 _error_result(
-                    stage="execute",
+                    stage=stage,
                     filename=filename,
                     stdout=stdout.getvalue(),
                     stderr=stderr.getvalue(),
@@ -405,9 +383,36 @@ def check_source(
     import_state: dict | None = None,
     project_root: str | None = None,
 ):
-    import_state = _resolve_import_state(import_state, project_root)
+    from nodus.tooling.analyzer import analyze_program
+    from nodus.runtime.module_loader import set_module_on_tree
+    from nodus.compiler.compiler import Compiler, wrap_bytecode
+    from nodus.builtins.nodus_builtins import BUILTIN_NAMES
+    project_root_val = import_state.get("project_root") if import_state else None
     try:
-        compile_source(code, source_path=filename, analyze=True, import_state=import_state)
+        tokens = tokenize(code)
+        ast = Parser(tokens).parse()
+        module_id = os.path.abspath(filename) if filename else "<memory>"
+        set_module_on_tree(ast, module_id)
+        analyze_program(ast)
+        base_dir = os.path.dirname(os.path.abspath(filename)) if filename else os.getcwd()
+        loader = ModuleLoader(project_root=project_root or project_root_val)
+        # Build metadata for root module and all dependencies (validates imports)
+        metadata = loader._build_metadata(module_id, base_dir=base_dir, source=code, source_path=filename or None)
+        # Build module_defs_index from all resolved metadata to enable private-symbol checks
+        module_defs_index: dict[str, set[str]] = {}
+        for path, meta in loader._metadata.items():
+            for name in meta.module_info.defs:
+                module_defs_index.setdefault(name, set()).add(path)
+        # Compile with full cross-module visibility
+        module_info = metadata.module_info
+        module_info.imports = {name: name for name in metadata.import_names}
+        module_info.qualified = {name: name for name in module_info.defs}
+        compiler = Compiler(
+            module_infos={module_id: module_info},
+            module_defs_index=module_defs_index,
+            builtin_names=set(BUILTIN_NAMES),
+        )
+        compiler.compile_program(ast)
         return _success_result(stage="check", filename=filename, stdout="", stderr="")
     except Exception as err:
         stage = _compile_stage(err)
@@ -433,13 +438,13 @@ def disassemble_source(
     import_state: dict | None = None,
     project_root: str | None = None,
 ):
-    import_state = _resolve_import_state(import_state, project_root)
+    project_root_val = import_state.get("project_root") if import_state else None
     try:
-        _ast, bytecode, functions, code_locs = compile_source(
+        loader = ModuleLoader(project_root=project_root or project_root_val)
+        bytecode, functions, code_locs = loader.compile_only(
             code,
-            source_path=filename,
-            import_state=import_state,
-            optimize=False,
+            module_name=filename or "<memory>",
+            base_dir=os.path.dirname(os.path.abspath(filename)) if filename else os.getcwd(),
         )
         disassembly, dis_lines, dis_struct = build_disassembly(bytecode, code_locs, functions)
         extras = {

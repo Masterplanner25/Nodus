@@ -3,6 +3,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.runner import run_in_vm
 import json
 import os
@@ -15,10 +16,10 @@ from nodus.runtime.runtime_events import RuntimeEventBus
 
 
 def run_program(src: str, source_path: str | None = None):
-    _ast, code, functions, code_locs = lang.compile_source(
+    _loader = ModuleLoader(project_root=None)
+    code, functions, code_locs = _loader.compile_only(
         src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
+        module_name=source_path or "<memory>",
     )
     vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
     out_buf = io.StringIO()
@@ -214,11 +215,8 @@ let A = task(fn() { state["count"] = state["count"] + 1 return 2 }, nil)
 let B = task(fn(x) { return x + 1 }, A)
 let plan = plan_graph([A, B])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.run()
         graph_id = None
@@ -263,11 +261,8 @@ let A = task(fn() { return 5 }, nil)
 let result = run_graph([A])
 print(result["tasks"]["task_1"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
 
@@ -305,11 +300,8 @@ let result = run_graph([A, B])
 print(result["tasks"]["task_1"])
 print(result["tasks"]["task_2"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
 
@@ -343,11 +335,8 @@ let A = task(fn() { return 3 }, { "worker": "cpu" })
 let result = run_graph([A])
 print(result["tasks"]["task_1"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
 
@@ -371,11 +360,8 @@ let A = task(fn() { return 4 }, nil)
 let result = run_graph([A])
 print(result["tasks"]["task_1"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
 
@@ -400,11 +386,8 @@ let result = run_graph([A])
 print(result["failed"])
 print(result["error"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
         out_buf = io.StringIO()
@@ -461,11 +444,8 @@ let A = task(fn() { return 10 }, { "worker": "cpu", "worker_timeout_ms": 100 })
 let result = run_graph([A])
 print(result["tasks"]["task_1"])
 """
-        _ast, code, functions, code_locs = lang.compile_source(
-            src,
-            source_path="main.nd",
-            import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-        )
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="main.nd")
         vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd")
         vm.worker_dispatcher = worker_manager
 

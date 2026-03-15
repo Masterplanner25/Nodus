@@ -58,6 +58,8 @@ class Scope:
         self.kind = kind
         self.symbols: dict[str, Symbol] = {}
         self.upvalues: list[Upvalue] = []
+        self.local_slot_counter: int = 0  # counts local variable slots in this function scope
+        self.all_local_slots: dict[str, int] = {}  # name → slot for ALL locals (any depth) in this function
 
     def define(self, name: str, scope: str, is_function: bool = False) -> Symbol:
         symbol = Symbol(name=name, scope=scope, is_function=is_function)
@@ -81,6 +83,13 @@ class SymbolTable:
         scope_kind = "global" if self.current.kind == "module" else "local"
         symbol = self.current.define(name, scope_kind, is_function=is_function)
         self.all_symbols.add(name)
+        # Assign a slot index to local variables inside function scopes
+        if scope_kind == "local":
+            func_scope = self._current_function_scope()
+            if func_scope is not None:
+                symbol.index = func_scope.local_slot_counter
+                func_scope.all_local_slots[name] = symbol.index
+                func_scope.local_slot_counter += 1
         return symbol
 
     def define_function(self, name: str) -> Symbol:
@@ -150,6 +159,14 @@ class SymbolTable:
             return None
         return self._resolve_upvalue_in(func_scope, name)
 
+    @property
+    def frame_size(self) -> int:
+        """Number of local variable slots needed for the current function."""
+        func_scope = self._current_function_scope()
+        if func_scope is None:
+            return 0
+        return func_scope.local_slot_counter
+
     def current_function_upvalues(self) -> list[Upvalue]:
         """Return the ordered list of upvalues captured by the current function scope.
 
@@ -183,7 +200,7 @@ class SymbolTable:
         if symbol.name in func_scope.symbols and func_scope.symbols[symbol.name].scope == "upvalue":
             return func_scope.symbols[symbol.name]
 
-        source_index = None if is_local else symbol.index
+        source_index = symbol.index  # local slot when is_local=True; outer upvalue idx when is_local=False
         upvalue = Upvalue(name=symbol.name, is_local=is_local, index=source_index)
         func_scope.upvalues.append(upvalue)
         up_index = len(func_scope.upvalues) - 1

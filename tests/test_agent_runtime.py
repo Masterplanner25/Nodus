@@ -6,33 +6,19 @@ import unittest
 from contextlib import redirect_stdout
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 
 from nodus.services.agent_runtime import AGENT_REGISTRY, register_agent, unregister_agent
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE
 from nodus.services.server import run_in_thread
 
 
-def import_state():
-    return {
-        "loaded": set(),
-        "loading": set(),
-        "exports": {},
-        "modules": {},
-        "module_ids": {},
-        "project_root": None,
-    }
-
-
 def run_program(src: str, *, source_path: str = "main.nd"):
-    _ast, code, functions, code_locs = lang.compile_source(
-        src,
-        source_path=source_path,
-        import_state=import_state(),
-    )
-    vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
+    vm = lang.VM([], {}, code_locs=[], source_path=source_path)
+    _loader = ModuleLoader(project_root=None, vm=vm)
     buf = io.StringIO()
     with redirect_stdout(buf):
-        vm.run()
+        _loader.load_module_from_source(src, module_name=source_path)
     return vm, buf.getvalue().splitlines()
 
 

@@ -66,13 +66,20 @@ def get_stack(vm) -> list[StackFrameInfo]:
 def get_locals(vm) -> dict:
     locals_ = vm.current_locals()
     values = locals_ if locals_ is not None else vm.globals
-    if not values:
-        return {}
     out: dict = {}
-    for name, value in values.items():
+    for name, value in (values or {}).items():
         if hasattr(value, "value"):
             value = value.value
         out[name] = value
+    # Also read slot-indexed locals from locals_array (LOAD_LOCAL_IDX path)
+    if vm.frames:
+        frame = vm.frames[-1]
+        if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+            for name, slot in frame.locals_name_to_slot.items():
+                arr_value = frame.locals_array[slot]
+                if hasattr(arr_value, "value"):
+                    arr_value = arr_value.value
+                out[name] = arr_value
     return out
 
 
@@ -369,6 +376,16 @@ class Debugger:
             if hasattr(value, "value"):
                 return value.value
             return value
+        # Check slot-indexed locals_array
+        if vm.frames:
+            frame = vm.frames[-1]
+            if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+                slot = frame.locals_name_to_slot.get(name)
+                if slot is not None:
+                    arr_value = frame.locals_array[slot]
+                    if hasattr(arr_value, "value"):
+                        return arr_value.value
+                    return arr_value
         if name in vm.globals:
             value = vm.globals[name]
             if hasattr(value, "value"):

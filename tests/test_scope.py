@@ -1,6 +1,7 @@
 import unittest
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 
 
 class ScopeTests(unittest.TestCase):
@@ -12,11 +13,8 @@ if (true) {
 print(x)
 """
         with self.assertRaises(lang.LangSyntaxError) as cm:
-            lang.compile_source(
-                src,
-                source_path="main.nd",
-                import_state={"loaded": set(), "loading": set(), "exports": {}},
-            )
+            _loader = ModuleLoader(project_root=None)
+            _loader.compile_only(src, module_name="main.nd")
         self.assertIn("Undefined variable: x", str(cm.exception))
 
 

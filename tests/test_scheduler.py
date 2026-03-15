@@ -3,19 +3,16 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 
 
 def run_program(src: str, source_path: str | None = None) -> tuple[list[str], str]:
-    _ast, code, functions, code_locs = lang.compile_source(
-        src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-    )
-    vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
+    vm = lang.VM([], {}, code_locs=[], source_path=source_path)
+    _loader = ModuleLoader(project_root=None, vm=vm)
     out_buf = io.StringIO()
     err_buf = io.StringIO()
     with redirect_stdout(out_buf), redirect_stderr(err_buf):
-        vm.run()
+        _loader.load_module_from_source(src, module_name=source_path or "<memory>")
     return out_buf.getvalue().splitlines(), err_buf.getvalue()
 
 

@@ -26,9 +26,36 @@ def init_project(root: str) -> ProjectConfig:
     return create_project(root)
 
 
-def install_dependencies_for_project(root: str, *, update: bool = False) -> dict[str, str]:
+def install_dependencies_for_project(
+    root: str,
+    *,
+    update: bool = False,
+    registry_url: str | None = None,
+) -> dict[str, str]:
+    from nodus.tooling.registry_client import RegistryClient
+
     project = ensure_project(root)
-    resolution = resolve_project_dependencies(project, update=update, registry=Registry.from_project_root(project.root))
+
+    # Resolve registry URL: parameter > env var > project config
+    resolved_url = (
+        registry_url
+        or os.environ.get("NODUS_REGISTRY_URL", "").strip() or None
+        or project.registry_url
+    )
+
+    if resolved_url:
+        registry_client: RegistryClient | None = RegistryClient(resolved_url)
+        registry = None
+    else:
+        registry_client = None
+        registry = Registry.from_project_root(project.root)
+
+    resolution = resolve_project_dependencies(
+        project,
+        update=update,
+        registry=registry,
+        registry_client=registry_client,
+    )
     resolved = install_project(project, resolution)
     out: dict[str, str] = {}
     for name, dep in resolved.items():

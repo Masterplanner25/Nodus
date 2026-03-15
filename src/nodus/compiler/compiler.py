@@ -1,6 +1,6 @@
 """Bytecode compiler for Nodus."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from nodus.runtime.errors import BytecodeVersionError
 
@@ -56,7 +56,7 @@ from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
 from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_workflow_ast
 
 
-BYTECODE_VERSION = 1
+BYTECODE_VERSION = 2
 
 
 def wrap_bytecode(
@@ -98,6 +98,7 @@ class FunctionInfo:
     addr: int
     upvalues: list[Upvalue]
     display_name: str
+    local_slots: dict[str, int] = field(default_factory=dict)  # name → slot index
 
 
 class Compiler:
@@ -314,11 +315,19 @@ class Compiler:
         self.symbols.enter_scope("function")
         for param in param_names:
             self.symbols.define(param)
+        # Emit FRAME_SIZE placeholder; will be patched with final slot count after body compile
+        frame_size_idx = self.emit("FRAME_SIZE", 0)
         for param in reversed(param_names):
             self.emit("STORE_ARG", param)
 
         self.compile_stmt(stmt.body)
         fn_info.upvalues = self.symbols.current_function_upvalues()
+        # Collect local slot assignments and patch FRAME_SIZE with final count
+        func_scope = self.symbols._current_function_scope()
+        if func_scope is not None:
+            # Use all_local_slots which includes vars from nested block scopes
+            fn_info.local_slots = dict(func_scope.all_local_slots)
+            self.patch(frame_size_idx, "FRAME_SIZE", func_scope.local_slot_counter)
         self.symbols.exit_scope()
         self.emit("PUSH_CONST", None)
         self.emit("RETURN")
@@ -331,7 +340,11 @@ class Compiler:
             if self.symbols is not None:
                 self.symbols.define(stmt.name)
             self.compile_expr(stmt.expr)
-            self.emit("STORE", self.resolve_store_name(stmt.name))
+            symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", symbol.index)
+            else:
+                self.emit("STORE", self.resolve_store_name(stmt.name))
             return
 
         if isinstance(stmt, WorkflowDef):
@@ -362,7 +375,11 @@ class Compiler:
             if self.symbols is not None:
                 self.symbols.define(temp)
             self.compile_expr(stmt.expr)
-            self.emit("STORE", temp)
+            destruct_temp_symbol = self.resolve_symbol(temp) if self.symbols is not None else None
+            if destruct_temp_symbol is not None and destruct_temp_symbol.scope == "local" and self.in_function_scope() and destruct_temp_symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", destruct_temp_symbol.index)
+            else:
+                self.emit("STORE", temp)
             self.destructure_from_name(stmt.pattern, temp)
             return
 
@@ -442,7 +459,11 @@ class Compiler:
             self.emit("GET_ITER")
             loop_start = len(self.code)
             iter_next = self.emit("ITER_NEXT", None)
-            self.emit("STORE", stmt.name)
+            loop_var_symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
+            if loop_var_symbol is not None and loop_var_symbol.scope == "local" and self.in_function_scope() and loop_var_symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", loop_var_symbol.index)
+            else:
+                self.emit("STORE", stmt.name)
             self.compile_stmt(stmt.body)
             self.emit("JUMP", loop_start)
             self.patch(iter_next, "ITER_NEXT", len(self.code))
@@ -478,7 +499,11 @@ class Compiler:
             if self.symbols is not None:
                 self.symbols.enter_scope("block")
                 self.symbols.define(stmt.catch_var)
-            self.emit("STORE", stmt.catch_var)
+            catch_var_symbol = self.resolve_symbol(stmt.catch_var) if self.symbols is not None else None
+            if catch_var_symbol is not None and catch_var_symbol.scope == "local" and self.in_function_scope() and catch_var_symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", catch_var_symbol.index)
+            else:
+                self.emit("STORE", stmt.catch_var)
             self.compile_stmt(stmt.catch_block)
             if self.symbols is not None:
                 self.symbols.exit_scope()
@@ -514,7 +539,11 @@ class Compiler:
             self.patch(jump_over, "JUMP", len(self.code))
             self.set_current_loc(stmt)
             self.emit("MAKE_CLOSURE", internal_name)
-            self.emit("STORE", stmt.name)
+            fndef_symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
+            if fndef_symbol is not None and fndef_symbol.scope == "local" and self.in_function_scope() and fndef_symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", fndef_symbol.index)
+            else:
+                self.emit("STORE", stmt.name)
             return
 
         if isinstance(stmt, ExportList):
@@ -549,7 +578,10 @@ class Compiler:
                 self.emit("LOAD_UPVALUE", symbol.index)
                 return
             if symbol is not None and symbol.scope == "local" and self.in_function_scope():
-                self.emit("LOAD_LOCAL", expr.name)
+                if symbol.index is not None:
+                    self.emit("LOAD_LOCAL_IDX", symbol.index)
+                else:
+                    self.emit("LOAD_LOCAL", expr.name)  # fallback: no slot assigned
                 return
             self.ensure_name_access(expr.name, node=expr)
             self.emit("LOAD", self.resolve_name(expr.name))
@@ -578,11 +610,15 @@ class Compiler:
                 self.emit("LOAD_UPVALUE", symbol.index)
                 return
             store_name = self.resolve_store_name(expr.name)
-            self.emit("STORE", store_name)
-            if symbol is not None and symbol.scope == "local" and self.in_function_scope():
-                self.emit("LOAD_LOCAL", store_name)
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", symbol.index)
+                self.emit("LOAD_LOCAL_IDX", symbol.index)
             else:
-                self.emit("LOAD", store_name)
+                self.emit("STORE", store_name)
+                if symbol is not None and symbol.scope == "local" and self.in_function_scope():
+                    self.emit("LOAD_LOCAL", store_name)
+                else:
+                    self.emit("LOAD", store_name)
             return
 
         if isinstance(expr, Unary):
@@ -689,7 +725,10 @@ class Compiler:
                         if symbol.scope == "upvalue":
                             self.emit("LOAD_UPVALUE", symbol.index)
                         elif symbol.scope == "local" and self.in_function_scope():
-                            self.emit("LOAD_LOCAL", expr.callee.name)
+                            if symbol.index is not None:
+                                self.emit("LOAD_LOCAL_IDX", symbol.index)
+                            else:
+                                self.emit("LOAD_LOCAL", expr.callee.name)
                         else:
                             self.emit("LOAD", self.resolve_name(expr.callee.name))
                         for arg in expr.args:
@@ -746,27 +785,45 @@ class Compiler:
         return names
 
     def destructure_from_name(self, pattern, temp_name: str) -> None:
-        self.emit("LOAD", temp_name)
+        temp_symbol = self.resolve_symbol(temp_name) if self.symbols is not None else None
+        if temp_symbol is not None and temp_symbol.scope == "local" and self.in_function_scope() and temp_symbol.index is not None:
+            self.emit("LOAD_LOCAL_IDX", temp_symbol.index)
+        else:
+            self.emit("LOAD", temp_name)
         self.destructure_from_stack(pattern)
 
     def destructure_from_stack(self, pattern) -> None:
         if isinstance(pattern, VarPattern):
-            self.emit("STORE", pattern.name)
+            symbol = self.resolve_symbol(pattern.name) if self.symbols is not None else None
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
+                self.emit("STORE_LOCAL_IDX", symbol.index)
+            else:
+                self.emit("STORE", pattern.name)
             return
         temp = self.new_temp()
         if self.symbols is not None:
             self.symbols.define(temp)
-        self.emit("STORE", temp)
+        temp_symbol = self.resolve_symbol(temp) if self.symbols is not None else None
+        if temp_symbol is not None and temp_symbol.scope == "local" and self.in_function_scope() and temp_symbol.index is not None:
+            self.emit("STORE_LOCAL_IDX", temp_symbol.index)
+        else:
+            self.emit("STORE", temp)
         if isinstance(pattern, ListPattern):
             for idx, item in enumerate(pattern.elements):
-                self.emit("LOAD", temp)
+                if temp_symbol is not None and temp_symbol.scope == "local" and self.in_function_scope() and temp_symbol.index is not None:
+                    self.emit("LOAD_LOCAL_IDX", temp_symbol.index)
+                else:
+                    self.emit("LOAD", temp)
                 self.emit("PUSH_CONST", float(idx))
                 self.emit("INDEX")
                 self.destructure_from_stack(item)
             return
         if isinstance(pattern, RecordPattern):
             for key, value in pattern.fields:
-                self.emit("LOAD", temp)
+                if temp_symbol is not None and temp_symbol.scope == "local" and self.in_function_scope() and temp_symbol.index is not None:
+                    self.emit("LOAD_LOCAL_IDX", temp_symbol.index)
+                else:
+                    self.emit("LOAD", temp)
                 self.emit("LOAD_FIELD", key)
                 self.destructure_from_stack(value)
             return

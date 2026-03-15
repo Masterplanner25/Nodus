@@ -2,17 +2,16 @@ import unittest
 import os
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
+from nodus.runtime.module import NodusModule
 from nodus.vm.vm import Record
 
 
 def run_vm(src: str, source_path: str | None = None) -> lang.VM:
-    _ast, code, functions, code_locs = lang.compile_source(
-        src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
-    )
-    vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
-    vm.run()
+    abs_path = os.path.abspath(source_path) if source_path else None
+    vm = lang.VM([], {}, code_locs=[], source_path=abs_path)
+    _loader = ModuleLoader(project_root=None, vm=vm)
+    _loader.load_module_from_source(src, module_name=abs_path or "<memory>")
     return vm
 
 
@@ -77,7 +76,7 @@ let module_type = runtime.typeof(math)
         self.assertIn("abs", get_global(vm, "fields"))
         self.assertIs(get_global(vm, "has_sqrt"), True)
         self.assertEqual(get_global(vm, "module_type"), "module")
-        self.assertIsInstance(vm.globals["math"], Record)
+        self.assertIsInstance(vm.globals["math"], (Record, NodusModule))
         self.assertEqual(vm.globals["math"].kind, "module")
 
     def test_stack_reflection(self):

@@ -9,20 +9,59 @@
 - None.
 
 ### Fixed
-- LSP `_uri_to_path` now uses `os.path.realpath` instead of `os.path.abspath`, normalising double-slash paths (`//tmp/…`) that arise from 4-slash `file:////…` URIs on Linux. This prevented go-to-definition from resolving imported symbols when the client URI contained an extra leading slash.
-- LSP `_publish_diagnostics` now echoes back the exact URI the client registered via `textDocument/didOpen` instead of reconstructing one from the file path. Reconstructed URIs diverged on Linux when the client used a non-canonical (4-slash) URI format, causing `textDocument/publishDiagnostics` URI mismatches.
+- None.
 
 ### Improved
 - None.
 
 ### Documentation
-- `docs/tooling/TESTING.md`: corrected CI step description from "pytest suite" to "unittest suite" (`python -m unittest discover`); updated formatter test authoring guidance to use `unittest.TestCase` methods instead of bare pytest functions.
+- None.
 
 ### Tests
-- Rewrote `tests/test_formatter_fnexpr.py` as a `unittest.TestCase` class. The file previously used `import pytest` and bare assertion functions, which caused an `ImportError` when the test suite was collected by `python -m unittest discover` (pytest is not installed in CI).
+- None.
 
 ### Refactoring
 - None.
+
+## [0.8.0] - 2026-03-15 — Stability and Package Ecosystem
+
+### Added
+- **Registry-backed package resolution**: new `RegistryClient` (`src/nodus/tooling/registry_client.py`) fetches package index, resolves semver constraints, downloads archives with SHA-256 verification, and extracts to `.nodus/_staging/`. Registry URL resolved from `--registry` flag, `NODUS_REGISTRY_URL` env var, or `registry_url` in `nodus.toml`. 12 new tests in `tests/test_registry_client.py`.
+- **FRAME_SIZE opcode**: pre-allocates `frame.locals_array` (list of N slots) at function entry. First instruction of every compiled function body. Bytecode version bumped to `BYTECODE_VERSION = 2`.
+- **LOAD_LOCAL_IDX opcode**: slot-indexed read from `frame.locals_array[slot]`; replaces name-keyed `LOAD_LOCAL` for all function-scope locals. ~40%+ hot-loop improvement over name-keyed dict lookup.
+- **STORE_LOCAL_IDX opcode**: slot-indexed write to `frame.locals_array[slot]`; handles Cell boxing in-place for closure capture. Emitted for all let-bindings, assignments, loop variables, catch variables, and destructuring targets.
+- **Opcode freeze proposal**: `docs/governance/FREEZE_PROPOSAL.md` — formal stability table for all 47 opcodes (39 stable, 7 provisional, 1 deprecated), freeze prerequisites, post-freeze extension process, and version history.
+- **Formatter coverage complete**: handlers added for `Yield`, `Throw`, `TryCatch`, `DestructureLet`, `VarPattern`, `ListPattern`, `RecordPattern`. New `format_pattern()` helper. All 48 AST node types now covered. See `tests/test_formatter_coverage.py`.
+
+### Changed
+- `Frame` dataclass extended with `locals_array: list | None` and `locals_name_to_slot: dict[str, int] | None`. `STORE_ARG` syncs to both `locals` dict and `locals_array`.
+- `SymbolTable.define()` now assigns `Symbol.index` (local slot) for function-scope symbols. `Upvalue.index` carries the local slot when `is_local=True`.
+- `FunctionInfo` gains `local_slots: dict[str, int]` field; serialized to/from bytecode cache.
+- `capture_local()` prefers `locals_array` path when available; Cell boxing goes through array slot.
+- `ProjectConfig` gains optional `registry_url` field; written to `nodus.toml` when set.
+- LSP server `serverInfo.version` bumped to `0.8.0`.
+
+### Fixed
+- LSP `_uri_to_path` now uses `os.path.realpath` instead of `os.path.abspath`, normalising double-slash paths (`//tmp/…`) that arise from 4-slash `file:////…` URIs on Linux.
+- LSP `_publish_diagnostics` echoes back the exact URI registered via `textDocument/didOpen` instead of reconstructing one, preventing URI mismatches on Linux.
+
+### Deprecated / Removed
+- `compile_source()` internal callers fully migrated to `ModuleLoader` in v0.8. Public stub in `nodus.__init__` retained with `DeprecationWarning` until v1.0. All 24 test files migrated to `ModuleLoader.compile_only()`.
+- `LOAD_LOCAL` opcode classified **deprecated**; retained as fallback only. Removal target: v1.0 after full bytecode migration.
+
+### Documentation
+- `docs/governance/FREEZE_PROPOSAL.md`: new — opcode stability classifications and v1.0 freeze process.
+- `docs/runtime/BYTECODE_REFERENCE.md`: added FRAME_SIZE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX entries; opcode count updated to 47; reference to FREEZE_PROPOSAL.md added.
+- `docs/governance/TECH_DEBT.md`: GET_ITER/pending_get_iter cleanup and Exception model finalization sections added; all v0.8 items marked complete.
+- `docs/governance/ROADMAP.md`: all five v0.8 goals marked ✅.
+- `docs/language/FORMAT.md`: formatting rules for Yield, Throw, TryCatch, DestructureLet.
+- `docs/tooling/PACKAGE_MANAGER.md`: Registry Installation section added.
+- `docs/tooling/TESTING.md`: corrected CI step description; updated formatter test authoring guidance.
+
+### Tests
+- `tests/test_formatter_coverage.py`: 7 new tests covering all previously-missing AST formatter nodes.
+- `tests/test_registry_client.py`: 12 new tests covering HTTP fetch, semver resolution, checksum verification, install/extract, and full integration flow.
+- Rewrote `tests/test_formatter_fnexpr.py` as a `unittest.TestCase` class.
 
 ## [0.7.0] - 2026-03-15 — Runtime Orchestration, Diagnostics, Debugging, and Sprint Fixes
 

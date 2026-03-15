@@ -42,6 +42,7 @@ class ProjectConfig:
     name: str
     version: str
     dependencies: dict[str, DependencySpec]
+    registry_url: str | None = None
 
 
 def find_project_root(start_dir: str) -> str | None:
@@ -60,17 +61,19 @@ def load_manifest(path: str) -> dict:
         return tomllib.load(handle)
 
 
-def parse_package(data: dict, *, root: str) -> tuple[str, str]:
+def parse_package(data: dict, *, root: str) -> tuple[str, str, str | None]:
     raw_package = data.get("package")
     if raw_package is not None:
         if not isinstance(raw_package, dict):
             raise ValueError("Manifest [package] must be a table")
         name = str(raw_package.get("name", os.path.basename(root)))
         version = str(raw_package.get("version", "0.1.0"))
-        return name, version
+        registry_url = str(raw_package.get("registry_url", "") or "") or None
+        return name, version, registry_url
     return (
         str(data.get("name", os.path.basename(root))),
         str(data.get("version", "0.1.0")),
+        None,
     )
 
 
@@ -96,11 +99,16 @@ def write_project_manifest(
     name: str,
     version: str,
     dependencies: dict[str, DependencySpec],
+    registry_url: str | None = None,
 ) -> None:
     lines = [
         "[package]",
         f'name = "{_escape(name)}"',
         f'version = "{_escape(version)}"',
+    ]
+    if registry_url:
+        lines.append(f'registry_url = "{_escape(registry_url)}"')
+    lines += [
         "",
         "[dependencies]",
     ]
@@ -122,7 +130,7 @@ def load_project(root: str) -> ProjectConfig:
     root = os.path.abspath(root)
     manifest_path = os.path.join(root, MANIFEST_NAME)
     data = load_manifest(manifest_path)
-    name, version = parse_package(data, root=root)
+    name, version, registry_url = parse_package(data, root=root)
     dependencies = parse_dependencies(data.get("dependencies", {}))
     nodus_dir = os.path.join(root, NODUS_DIRNAME)
     return ProjectConfig(
@@ -134,6 +142,7 @@ def load_project(root: str) -> ProjectConfig:
         name=name,
         version=version,
         dependencies=dependencies,
+        registry_url=registry_url,
     )
 
 

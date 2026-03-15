@@ -70,9 +70,59 @@ Operation:
 
 stack.pop()
 4. Variable Access
+FRAME_SIZE
+
+Pre-allocates the frame's slot-indexed locals array. Emitted as the first
+instruction of every compiled function body. Must appear before any
+LOAD_LOCAL_IDX or STORE_LOCAL_IDX in the same function.
+
+[] → []  (no stack change)
+
+Operand: n (int) — total number of local variable slots in this frame.
+
+Operation:
+
+frame.locals_array = [None] * n
+
+LOAD_LOCAL_IDX
+
+Fast-path slot-indexed local variable read. Emitted for all function-scope
+locals where Symbol.index is set (the normal case since v0.8.0).
+
+[] → [value]
+
+Operand: slot (int) — index into frame.locals_array.
+
+Operation:
+
+value = frame.locals_array[slot]
+if isinstance(value, Cell): value = value.value
+if isinstance(value, LiveBinding): value = value.get()
+stack.push(value)
+
+STORE_LOCAL_IDX
+
+Slot-indexed local variable write. Handles Cell boxing in-place for correct
+closure capture semantics.
+
+[value] → []
+
+Operand: slot (int) — index into frame.locals_array.
+
+Operation:
+
+value = stack.pop()
+existing = frame.locals_array[slot]
+if isinstance(existing, Cell):
+    existing.value = value  // update in-place (captured closures see the new value)
+else:
+    frame.locals_array[slot] = value
+
 LOAD
 
-Loads a variable from the current scope.
+Loads a variable from the current scope (global or module-level lookup).
+Probes four sources in order: frame locals, module globals, functions dict, host globals.
+Use LOAD_LOCAL_IDX inside functions — LOAD is reserved for global/outer scope access.
 
 [] → [value]
 
@@ -81,11 +131,11 @@ Operation:
 value = resolve_variable(name)
 stack.push(value)
 
-Probes four sources in order: frame locals, module globals, functions dict, host globals.
-
 LOAD_LOCAL
 
-Fast-path local variable read inside a function. Bypasses the 4-dict probe performed by LOAD.
+⚠️ Deprecated since v0.8.0. The compiler now emits LOAD_LOCAL_IDX for all
+local variable accesses inside functions. LOAD_LOCAL is retained as a
+compatibility fallback only and will be removed at v1.0. See DEPRECATIONS.md.
 
 [] → [value]
 
@@ -93,8 +143,6 @@ Operation:
 
 value = frame.locals[name]  // direct dict lookup, no fallback probes
 stack.push(value)
-
-Only emitted by the compiler when the symbol is confirmed local and the access is inside a function scope. Cell and LiveBinding values are unwrapped before pushing.
 
 STORE
 
@@ -108,13 +156,17 @@ value = stack.pop()
 set_variable(name, value)
 STORE_ARG
 
-Stores a function argument into a local slot.
+Stores a function argument into a local slot. Also syncs to locals_array
+via locals_name_to_slot when the frame has a slot-indexed array.
 
 [arg] → []
 
 Operation:
 
+slot = pop()
 frame.locals[slot] = stack.pop()
+if frame.locals_name_to_slot:
+    frame.locals_array[frame.locals_name_to_slot[slot]] = frame.locals[slot]
 5. Arithmetic Instructions
 
 All arithmetic operations follow the same pattern.

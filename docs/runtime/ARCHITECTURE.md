@@ -222,13 +222,37 @@ Two compilation pipelines exist in `src/nodus/tooling/loader.py`:
 
 ### `ModuleLoader` — Canonical (preferred)
 - Located in `src/nodus/runtime/module_loader.py`
-- Used by `nodus run` and all new code
-- Entry point: `ModuleLoader(...).load_source(src)` or `.load_module_from_path(path)`
+- Used by `nodus run` and all new code; also used by `nodus check`, `nodus ast`, `nodus dis` since v0.8.0
+- Entry point: `ModuleLoader(...).load_module_from_source(src)` or `.load_module_from_path(path)`
+- For tooling commands that only need AST/bytecode: `ModuleLoader(...).compile_only(src, module_name=name)`
 
 ### `compile_source()` — Legacy (deprecated since v0.5, removal target v1.0)
-- Used internally by `nodus check`, `nodus ast`, `nodus dis`
-- Emits `DeprecationWarning` at runtime
-- Migration: replace `compile_source(src)` with `ModuleLoader(...).load_source(src)`
+- **All internal callers migrated to `ModuleLoader` in v0.8.0** (runner.py, vm.py, dap/server.py, all test files).
+- Public stub retained in `nodus.__init__` with `DeprecationWarning` until v1.0.
+- Migration: replace `compile_source(src)` with `ModuleLoader(...).load_module_from_source(src)`
+
+## Local Variable Access (v0.8.0+)
+
+As of v0.8.0, local variable access inside functions uses slot-indexed list lookup
+rather than name-keyed dict lookup.
+
+**Compiler side:**
+- `SymbolTable.define()` assigns `Symbol.index` (an integer slot) to every local variable.
+- `FunctionInfo.local_slots: dict[str, int]` maps each local name to its slot.
+- Compiler emits `FRAME_SIZE <n>` as the first instruction of every function.
+- Local variable loads emit `LOAD_LOCAL_IDX <slot>`; stores emit `STORE_LOCAL_IDX <slot>`.
+- Applies to: let-bindings, assignments, parameters, loop variables, catch variables, destructuring targets, nested function definitions.
+
+**VM side:**
+- `FRAME_SIZE n` pre-allocates `frame.locals_array = [None] * n` at function entry.
+- `LOAD_LOCAL_IDX slot` reads `locals_array[slot]` directly (no dict lookup; O(1), no hashing).
+- `STORE_LOCAL_IDX slot` writes `locals_array[slot]`; if the slot holds a `Cell` (captured by a closure), updates `Cell.value` in-place so the closure sees the new value.
+- `frame.locals_name_to_slot: dict[str, int]` is set from `FunctionInfo.local_slots` at call time; used by `STORE_ARG` to sync parameters and by the debugger/DAP for variable inspection.
+- `frame.locals: dict` is still written for compatibility; DAP and debugger merge both views.
+
+**Performance note:**
+- Before v0.8.0: every local access was a dict lookup (hash + collision probe).
+- After v0.8.0: every local access is a list index — significantly lower overhead in tight loops.
 
 ## NodeVisitor Pattern
 

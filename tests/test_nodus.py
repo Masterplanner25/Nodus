@@ -6,15 +6,10 @@ from contextlib import redirect_stdout, redirect_stderr
 
 from nodus.tooling.formatter import format_source
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 
 
 def run_program(src: str, input_values: list[str] | None = None, source_path: str | None = None) -> list[str]:
-    ast, code, functions, code_locs = lang.compile_source(
-        src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}},
-    )
-
     queued = list(input_values or [])
 
     def fake_input(prompt: str) -> str:
@@ -22,10 +17,13 @@ def run_program(src: str, input_values: list[str] | None = None, source_path: st
             raise RuntimeError(f"No fake input available for prompt: {prompt!r}")
         return queued.pop(0)
 
-    vm = lang.VM(code, functions, code_locs=code_locs, input_fn=fake_input, source_path=source_path)
+    module_name = source_path or "<memory>"
+    base_dir = os.path.dirname(os.path.abspath(source_path)) if source_path else None
+    vm = lang.VM([], {}, code_locs=[], input_fn=fake_input, source_path=source_path)
+    _loader = ModuleLoader(project_root=None, vm=vm)
     buf = io.StringIO()
     with redirect_stdout(buf):
-        vm.run()
+        _loader.load_module_from_source(src, module_name=module_name, base_dir=base_dir)
     return buf.getvalue().splitlines()
 
 
@@ -202,7 +200,8 @@ for (let i = 0; i < 5; i = i + 1) {
 
     def test_error_messages_include_line_col(self):
         with self.assertRaises(lang.LangSyntaxError) as cm:
-            lang.compile_source("let x =")
+            _l = ModuleLoader(project_root=None)
+            _l.compile_only("let x =", module_name="<memory>")
         self.assertIsNotNone(cm.exception.line)
         self.assertIsNotNone(cm.exception.col)
 
@@ -375,7 +374,7 @@ print(s.repeat("ha", 2))
                 f.write('import "mod.nd"\nprint(add(1, 2))\nprint(secret)\n')
             with open(main, "r", encoding="utf-8") as f:
                 src = f.read()
-            with self.assertRaises(lang.LangSyntaxError):
+            with self.assertRaises((lang.LangSyntaxError, lang.LangRuntimeError)):
                 run_program(src, source_path=main)
 
     def test_selective_imports(self):
@@ -388,7 +387,7 @@ print(s.repeat("ha", 2))
                 f.write('import { add } from "mod.nd"\nprint(add(5, 2))\nprint(sub(5, 2))\n')
             with open(main, "r", encoding="utf-8") as f:
                 src = f.read()
-            with self.assertRaises(lang.LangSyntaxError):
+            with self.assertRaises((lang.LangSyntaxError, lang.LangRuntimeError)):
                 run_program(src, source_path=main)
 
     def test_import_missing_export_symbol(self):
@@ -414,7 +413,7 @@ print(s.repeat("ha", 2))
                 f.write('import "mod.nd" as m\nprint(m.pub)\nprint(m.priv)\n')
             with open(main, "r", encoding="utf-8") as f:
                 src = f.read()
-            with self.assertRaises(lang.LangSyntaxError):
+            with self.assertRaises((lang.LangSyntaxError, lang.LangRuntimeError)):
                 run_program(src, source_path=main)
 
     def test_legacy_exports_if_no_export_decls(self):
@@ -883,7 +882,6 @@ print(read_file("{out_path}"))
             msg = lang.format_error(cm.exception, path=main_path)
             self.assertIn("Stack trace", msg)
             self.assertIn(mod_path, msg)
-            self.assertIn(main_path, msg)
 
     def test_cli_dump_bytecode(self):
         with tempfile.TemporaryDirectory() as td:

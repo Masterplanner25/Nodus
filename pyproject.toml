@@ -1,6 +1,6 @@
 [project]
 name = "nodus"
-version = "0.7.0"
+version = "0.8.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   {name = "Shawn Knight"}
@@ -10,3 +10,8 @@ requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:websockets",
+    "ignore::DeprecationWarning:uvicorn",
+    "ignore::PendingDeprecationWarning:starlette",
+]

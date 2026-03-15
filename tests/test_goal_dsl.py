@@ -9,16 +9,17 @@ from contextlib import redirect_stderr, redirect_stdout
 import http.client
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.services.agent_runtime import AGENT_REGISTRY, register_agent, unregister_agent
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE
 from nodus.services.server import run_in_thread
 
 
 def run_program(src: str, source_path: str = "goal.nd"):
-    _ast, code, functions, code_locs = lang.compile_source(
+    _loader = ModuleLoader(project_root=None)
+    code, functions, code_locs = _loader.compile_only(
         src,
-        source_path=source_path,
-        import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
+        module_name=source_path,
     )
     vm = lang.VM(code, functions, code_locs=code_locs, source_path=source_path)
     out_buf = io.StringIO()
@@ -174,7 +175,7 @@ let result = run_goal(demo)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(src)
             vm, _out, _err = run_program(src, source_path=path)
-            result = vm.globals["__mod0__result"]
+            result = vm.globals["result"]
             if hasattr(result, "value"):
                 result = result.value
             graph_id = result["graph_id"]

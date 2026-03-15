@@ -13,7 +13,7 @@ from typing import BinaryIO
 
 from nodus.runtime.debugger import Debugger, DebuggerQuit, PauseState
 from nodus.runtime.errors import format_error_payload
-from nodus.tooling.loader import compile_source
+from nodus.runtime.module_loader import ModuleLoader
 from nodus.vm.vm import VM
 
 
@@ -205,23 +205,25 @@ class DebugSession:
         project_root = _resolve_project_root(params)
         with open(program, "r", encoding="utf-8") as handle:
             source = handle.read()
-        _ast, bytecode, functions, code_locs = compile_source(
-            source,
-            source_path=program,
-            import_state=_collect_import_state(project_root),
-        )
         debugger = ProgrammaticDebugger(self)
         for path, lines in self.breakpoint_lines.items():
             for line in lines:
                 debugger.set_breakpoint(path, line)
         vm = VM(
-            bytecode,
-            functions,
-            code_locs=code_locs,
+            [],
+            {},
+            code_locs=[],
             source_path=program,
             debug=True,
             debugger=debugger,
         )
+        loader = ModuleLoader(project_root=project_root, vm=vm, debugger=debugger)
+        bytecode, functions, code_locs = loader.compile_only(
+            source,
+            module_name=program,
+            base_dir=os.path.dirname(os.path.abspath(program)) if program else os.getcwd(),
+        )
+        vm.reset_program(bytecode, functions, code_locs=code_locs, source_path=program)
         vm.source_code = source
         self.program = program
         self.project_root = project_root
@@ -332,13 +334,21 @@ class DebugSession:
                 line = frame.call_line
                 col = frame.call_col
                 path = frame.call_path or module_path or self.program
+            # Merge dict-based locals and slot-indexed locals_array for full view
+            merged_locals: dict = dict(frame.locals)
+            if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+                for var_name, slot in frame.locals_name_to_slot.items():
+                    arr_val = frame.locals_array[slot]
+                    if hasattr(arr_val, "value"):
+                        arr_val = arr_val.value
+                    merged_locals[var_name] = arr_val
             out.append(
                 {
                     "name": self.vm.display_name(frame.fn_name),
                     "path": path or self.program,
                     "line": line or 1,
                     "col": col or 1,
-                    "locals": frame.locals,
+                    "locals": merged_locals,
                     "params": list(fn.params) if fn is not None else [],
                 }
             )

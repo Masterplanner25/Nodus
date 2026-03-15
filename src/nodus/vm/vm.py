@@ -39,6 +39,29 @@ class Closure:
         self.upvalues = upvalues
 
 
+class _ClosureProxy(Closure):
+    """Wraps a Closure so it can be called from a foreign-bytecode VM context.
+
+    When a module function receives a user-defined closure as an argument and
+    calls it via CALL_VALUE, the closure's ``fn.addr`` refers to an instruction
+    index in the *caller's* bytecode — not the module's.  Wrapping the closure
+    in a ``_ClosureProxy`` lets ``_op_call_value`` dispatch the call back
+    through ``caller_vm.run_closure`` instead of executing at the wrong
+    address in the module VM.
+
+    Inherits from ``Closure`` so that ``isinstance(proxy, Closure)`` checks
+    in the VM's reflection builtins behave transparently.
+    """
+
+    def __init__(self, closure: Closure, caller_vm: "VM"):
+        super().__init__(closure.function, closure.upvalues)
+        self._proxied_closure = closure
+        self.caller_vm = caller_vm
+
+    def __call__(self, *args):
+        return self.caller_vm.run_closure(self._proxied_closure, list(args))
+
+
 class Record:
     def __init__(self, fields: dict[str, object], kind: str = "record"):
         self.fields = fields
@@ -64,6 +87,8 @@ class Frame:
     call_col: int | None
     call_path: str | None
     closure: Closure | None = None
+    locals_array: list | None = None         # pre-allocated by FRAME_SIZE; slot-indexed locals
+    locals_name_to_slot: dict | None = None  # name → slot; set from fn.local_slots at call time
 
 
 class VM:
@@ -411,6 +436,19 @@ class VM:
         return value
 
     def capture_local(self, frame: Frame, name: str) -> Cell:
+        # Prefer locals_array when available (slot-indexed path)
+        if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+            slot = frame.locals_name_to_slot.get(name)
+            if slot is not None:
+                existing = frame.locals_array[slot]
+                if isinstance(existing, Cell):
+                    return existing
+                cell = Cell(existing if existing is not None else None)
+                frame.locals_array[slot] = cell
+                # Also sync to dict for any code still using the dict path
+                frame.locals[name] = cell
+                return cell
+        # Fallback: dict-based locals (old path)
         if name in frame.locals:
             value = frame.locals[name]
             if isinstance(value, Cell):
@@ -558,8 +596,16 @@ class VM:
 
     def builtin_runtime_fn_module(self, value):
         closure = self.ensure_function(value, "runtime.fn_module(fn)")
-        path, _line, _col = self.code_locs[closure.function.addr]
-        return path or self.source_path
+        # When the closure is a proxy from a foreign-bytecode context, use the
+        # caller VM's code_locs so the path reflects the closure's origin module.
+        if isinstance(value, _ClosureProxy):
+            code_locs = value.caller_vm.code_locs
+            source_path = value.caller_vm.source_path
+        else:
+            code_locs = self.code_locs
+            source_path = self.source_path
+        path, _line, _col = code_locs[closure.function.addr]
+        return path or source_path
 
     def builtin_runtime_fields(self, value):
         record = self.ensure_record(value, "runtime.fields(value)")
@@ -594,6 +640,11 @@ class VM:
         return self.frames
 
     def builtin_runtime_stack_depth(self):
+        # When running as an isolated module VM invoked from a caller, delegate
+        # to the caller's reflection context if this VM has no user frames.
+        caller = getattr(self, "_caller_vm", None)
+        if caller is not None and not self.reflection_frames():
+            return caller.builtin_runtime_stack_depth()
         return float(len(self.reflection_frames()))
 
     def frame_to_record(self, index: int) -> Record:
@@ -625,6 +676,11 @@ class VM:
 
     def builtin_runtime_stack_frame(self, value):
         index = self.to_list_index(value)
+        # When running as an isolated module VM invoked from a caller, delegate
+        # to the caller's reflection context if this VM has no user frames.
+        caller = getattr(self, "_caller_vm", None)
+        if caller is not None and not self.reflection_frames():
+            return caller.builtin_runtime_stack_frame(value)
         frames = self.reflection_frames()
         if index < 0 or index >= len(frames):
             self.runtime_error("index", f"Stack frame out of range: {index}")
@@ -962,12 +1018,11 @@ class VM:
                 source_code = f.read()
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
         try:
-            from nodus.tooling.loader import compile_source
-
-            _ast, code, functions, code_locs = compile_source(
+            from nodus.runtime.module_loader import ModuleLoader as _ModuleLoader
+            _loader = _ModuleLoader(project_root=None)
+            code, functions, code_locs = _loader.compile_only(
                 source_code,
-                source_path=rebuild_path,
-                import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
+                module_name=rebuild_path or "<memory>",
             )
         except Exception:
             return None
@@ -1433,6 +1488,8 @@ class VM:
             call_path=call_path,
             closure=callee,
         )
+        if fn.local_slots:
+            frame.locals_name_to_slot = fn.local_slots
         if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
             self.runtime_error("sandbox", "Call stack overflow")
         self.frames.append(frame)
@@ -1457,17 +1514,18 @@ class VM:
             for arg in args:
                 self.stack.append(arg)
             fn = closure.function
-            self.frames.append(
-                Frame(
-                    return_ip=None,
-                    locals={},
-                    fn_name=fn.name,
-                    call_line=None,
-                    call_col=None,
-                    call_path=None,
-                    closure=closure,
-                )
+            run_frame = Frame(
+                return_ip=None,
+                locals={},
+                fn_name=fn.name,
+                call_line=None,
+                call_col=None,
+                call_path=None,
+                closure=closure,
             )
+            if fn.local_slots:
+                run_frame.locals_name_to_slot = fn.local_slots
+            self.frames.append(run_frame)
             if self.profiler is not None and self.profiler.enabled:
                 self.profiler.enter_function(self.display_name(fn.name))
             self.ip = fn.addr
@@ -1543,6 +1601,17 @@ class VM:
         self.stack.append(self.load_name(instr[1]))
         self.ip += 1
 
+    def _op_frame_size(self, instr):
+        """Pre-allocate the frame's slot-indexed locals array.
+
+        Emitted as the first instruction of every compiled function body.
+        Operand: number of local variable slots needed for this function.
+        Stack effect: none.
+        """
+        n = instr[1]
+        self.frames[-1].locals_array = [None] * n
+        self.ip += 1
+
     def _op_load_local(self, instr):
         # Fast path for known-local variables: read directly from frame locals
         # dict, bypassing the 4-dict probe in load_name().
@@ -1554,6 +1623,38 @@ class VM:
         elif isinstance(value, LiveBinding):
             value = value.get()
         self.stack.append(value)
+        self.ip += 1
+
+    def _op_load_local_idx(self, instr):
+        """Slot-indexed fast path for local variable loads.
+
+        Uses frame.locals_array[slot] instead of frame.locals[name], eliminating
+        the hash computation from the dict-keyed LOAD_LOCAL path.
+        Supersedes LOAD_LOCAL for variables whose slot index is known at compile time.
+        """
+        slot = instr[1]
+        value = self.frames[-1].locals_array[slot]
+        if isinstance(value, Cell):
+            value = value.value
+        elif isinstance(value, LiveBinding):
+            value = value.get()
+        self.stack.append(value)
+        self.ip += 1
+
+    def _op_store_local_idx(self, instr):
+        """Slot-indexed fast path for local variable stores.
+
+        Writes value → frame.locals_array[slot]. Handles Cell boxing for
+        captured variables (upvalue capture via MAKE_CLOSURE).
+        """
+        slot = instr[1]
+        value = self.pop()
+        arr = self.frames[-1].locals_array
+        existing = arr[slot]
+        if isinstance(existing, Cell):
+            existing.value = value
+        else:
+            arr[slot] = value
         self.ip += 1
 
     def _op_load_upvalue(self, instr):
@@ -1578,6 +1679,12 @@ class VM:
             locals_[name].value = value
         else:
             locals_[name] = value
+        # Also sync parameter value into locals_array for LOAD_LOCAL_IDX access
+        frame = self.frames[-1]
+        if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+            slot = frame.locals_name_to_slot.get(name)
+            if slot is not None:
+                frame.locals_array[slot] = value
         self.ip += 1
 
     def _op_pop(self, instr):
@@ -1873,6 +1980,8 @@ class VM:
                 call_path=call_path,
                 closure=None,
             )
+            if fn.local_slots:
+                frame.locals_name_to_slot = fn.local_slots
             if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
                 self.runtime_error("sandbox", "Call stack overflow")
             self.frames.append(frame)
@@ -1894,7 +2003,7 @@ class VM:
             if isinstance(callee, ModuleFunction):
                 args = [self.pop() for _ in range(arg_count)]
                 args.reverse()
-                self.stack.append(callee(*args))
+                self.stack.append(callee.module.invoke_function(callee.name, args, caller_vm=self))
                 self.ip += 1
                 return None
             self.call_closure(callee, arg_count)
@@ -1909,6 +2018,10 @@ class VM:
         call_name = callee.function.display_name if isinstance(callee, Closure) else None
         self.record_vm_call(call_name, "call_value")
         if isinstance(callee, ModuleFunction):
+            self.stack.append(callee.module.invoke_function(callee.name, args, caller_vm=self))
+            self.ip += 1
+            return None
+        if isinstance(callee, _ClosureProxy):
             self.stack.append(callee(*args))
             self.ip += 1
             return None
@@ -1948,7 +2061,7 @@ class VM:
             method = obj.get_export(name)
             self.record_vm_call(name, "call_method")
             if isinstance(method, ModuleFunction):
-                self.stack.append(method(*args))
+                self.stack.append(method.module.invoke_function(method.name, args, caller_vm=self))
                 self.ip += 1
                 return None
             for arg in args:
@@ -2046,10 +2159,13 @@ class VM:
         """
         return {
             "PUSH_CONST":   self._op_push_const,
+            "FRAME_SIZE":   self._op_frame_size,
             "LOAD":         self._op_load,
-            "LOAD_LOCAL":   self._op_load_local,
-            "LOAD_UPVALUE": self._op_load_upvalue,
-            "STORE":        self._op_store,
+            "LOAD_LOCAL":     self._op_load_local,
+            "LOAD_LOCAL_IDX": self._op_load_local_idx,
+            "LOAD_UPVALUE":   self._op_load_upvalue,
+            "STORE":          self._op_store,
+            "STORE_LOCAL_IDX":self._op_store_local_idx,
             "STORE_UPVALUE":self._op_store_upvalue,
             "STORE_ARG":    self._op_store_arg,
             "POP":          self._op_pop,

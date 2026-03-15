@@ -117,6 +117,49 @@ Notes:
 - Importing `./utils` resolves to `./utils/index.nd` when there is no `utils.nd`.
 - Non-relative imports resolve from the project root.
 
+## Package Dependencies
+
+To set up a project with external packages, initialize a manifest first:
+
+```bash
+nodus init
+```
+
+This creates `nodus.toml` and `.nodus/modules/`.
+
+Add a registry dependency:
+
+```bash
+nodus add mypackage "^1.0.0"
+```
+
+Add a local dependency:
+
+```bash
+nodus add mylib --path ../mylib
+```
+
+Install all dependencies declared in `nodus.toml`:
+
+```bash
+nodus install
+```
+
+To use a specific registry:
+
+```bash
+nodus install --registry https://registry.example.com
+# or set NODUS_REGISTRY_URL in your environment
+```
+
+Installed packages are imported using the `package:module` syntax:
+
+```nd
+import "mypackage:utils"
+```
+
+See `PACKAGE_MANAGER.md` for the full manifest format and lockfile reference.
+
 ## Suggested Workflow
 
 1. Edit your `.nd` files.

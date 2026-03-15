@@ -5,6 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 
 import nodus as lang
+from nodus.runtime.module_loader import ModuleLoader
 from cli import debug_file
 from nodus.tooling.debugger import Debugger
 
@@ -79,14 +80,16 @@ class DebuggerTests(unittest.TestCase):
             "}\n"
             "foo(4)\n"
         )
-        _ast, code, functions, code_locs = lang.compile_source(src, source_path="main.nd")
+        abs_path = os.path.abspath("main.nd")
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name=abs_path)
         output: list[str] = []
         debugger = Debugger(
-            input_fn=make_input(["break main.nd:3", "run", "locals", "print a", "continue"]),
+            input_fn=make_input([f"break {abs_path}:3", "run", "locals", "print a", "continue"]),
             output_fn=output.append,
             start_paused=True,
         )
-        vm = lang.VM(code, functions, code_locs=code_locs, source_path="main.nd", debug=True, debugger=debugger)
+        vm = lang.VM(code, functions, code_locs=code_locs, source_path=abs_path, debug=True, debugger=debugger)
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             vm.run()

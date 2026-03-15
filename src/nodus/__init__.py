@@ -25,14 +25,23 @@ def compile_source(*args, **kwargs):
 
     .. deprecated:: 0.5
         Use ``ModuleLoader(...).load_source(src)`` instead.
-        ``compile_source`` emits ``DeprecationWarning`` and is scheduled for
-        removal in v1.0.
+        ``compile_source`` is scheduled for removal in v1.0.
 
-    Delegates to ``nodus.tooling.loader.compile_source``.
+    .. warning::
+        This function will be removed in v1.0. Use NodusRuntime or
+        ModuleLoader instead.
     """
+    import warnings
+    warnings.warn(
+        "compile_source() will be removed in v1.0. "
+        "Use NodusRuntime or ModuleLoader instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from nodus.tooling.loader import compile_source as _compile_source
-
     return _compile_source(*args, **kwargs)
+
+# TODO(v1.0): remove this export entirely
 
 
 def resolve_imports(*args, **kwargs):
