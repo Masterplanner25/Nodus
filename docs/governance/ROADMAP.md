@@ -457,7 +457,7 @@ Focus:
 - scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
 - ✅ task graph persistence improvements (resilient snapshots + checkpoint resume, workflow CLI)
 - ✅ LSP diagnostics (cross-module publishing, dependency-aware incremental refresh, richer locations, warnings)
-- debug adapter
+- ✅ debug adapter (DAP stdio server, runtime-debugger-backed breakpoints/stepping, stack traces, variable scopes, CLI entrypoint)
 
 Version 1.0
 

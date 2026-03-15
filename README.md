@@ -10,14 +10,13 @@ Quick links:
 - `docs/language/FORMAT.md`
 - `docs/tooling/EDITOR_SUPPORT.md`
 - `docs/tooling/LSP.md`
-- `docs/tooling/DAP.md`
+- `docs/tooling/DEBUGGING.md`
 - `docs/governance/STABILITY.md`
 - `docs/tooling/TESTING.md`
 - `docs/runtime/TASK_GRAPHS.md`
 - `docs/runtime/WORKFLOWS.md`
 - `docs/runtime/RUNTIME_EVENTS.md`
 - `docs/runtime/PROFILER.md`
-- `docs/tooling/DEBUGGER.md`
 - `docs/tooling/REPL.md`
 - `docs/tooling/PROJECTS.md`
 - `docs/tooling/PACKAGE_MANAGER.md`
@@ -158,7 +157,7 @@ Nodus ships baseline editor support for syntax highlighting and snippets, plus a
 
 - Syntax highlighting and snippets: `docs/tooling/EDITOR_SUPPORT.md`
 - Language server documentation: `docs/tooling/LSP.md`
-- Debug adapter documentation: `docs/tooling/DAP.md`
+- Debugging documentation: `docs/tooling/DEBUGGING.md`
 - Start the language server with `nodus lsp`
 - Start the debug adapter with `nodus dap`
 

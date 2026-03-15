@@ -61,6 +61,15 @@ Editor diagnostics now include:
 
 Diagnostics clear automatically after fixes when the server republishes an empty diagnostic list for the file.
 
+## IDE Debugging
+
+For IDE debugging support, use the Nodus debug adapter:
+
+- Start it with `nodus dap`
+- Documentation: `docs/tooling/DEBUGGING.md`
+
+The adapter reuses the existing runtime debugger for breakpoints, stepping, stack traces, and variable inspection.
+
 ## Limitations
 
 - VS Code only supports a single line-comment token in language configuration, so `//` is used there. The grammar still highlights `#` comments.
