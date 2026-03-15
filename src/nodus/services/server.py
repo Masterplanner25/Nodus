@@ -245,6 +245,36 @@ class WorkerManager:
                 return {"job_id": job["job_id"], "task_id": job["task_id"], "args": job["args"]}
             return {"job_id": None}
 
+    def wait_for_job(self, worker_id: str, timeout: float = 10.0) -> dict:
+        """Block until a job is available for worker_id, then return it.
+
+        Uses the condition variable that submit() already notifies, so there
+        is no polling delay and no race between enqueue and wakeup.
+        Mirrors poll() logic: checks _inflight for already-assigned jobs
+        first, then tries to dequeue a new job from the capability queues.
+        """
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while True:
+                now = time.monotonic()
+                if worker_id not in self._workers:
+                    return {"job_id": None}
+                self._worker_last_seen[worker_id] = now
+                self._worker_seen[worker_id] = True
+                for job in self._inflight.values():
+                    if job.get("assigned_worker") == worker_id:
+                        return {"job_id": job["job_id"], "task_id": job["task_id"], "args": job["args"]}
+                job = self._next_job(self._workers.get(worker_id, set()), now)
+                if job is not None:
+                    job["assigned_at"] = now
+                    job["assigned_worker"] = worker_id
+                    self._inflight[job["job_id"]] = job
+                    return {"job_id": job["job_id"], "task_id": job["task_id"], "args": job["args"]}
+                remaining = deadline - now
+                if remaining <= 0:
+                    return {"job_id": None}
+                self._cond.wait(timeout=min(0.1, remaining))
+
     def result(self, worker_id: str, job_id: str, status: str, result=None) -> dict:
         with self._cond:
             if worker_id in self._workers:

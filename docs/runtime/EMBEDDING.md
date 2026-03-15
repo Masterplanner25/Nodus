@@ -38,6 +38,11 @@ The host environment provides capabilities while the Nodus runtime executes scri
 
 For embedded use, create a ``NodusRuntime`` instance from ``nodus.runtime.embedding``.
 
+``NodusRuntime`` is available directly from the ``nodus`` package as of v1.0:
+
+  from nodus import NodusRuntime         # preferred — added to nodus.__all__ in v1.0
+  from nodus.runtime.embedding import NodusRuntime  # also works
+
 Example flow:
 
 from nodus.runtime.embedding import NodusRuntime
@@ -48,6 +53,25 @@ runtime = NodusRuntime(
     project_root="/my/project",
 )
 result = runtime.run_source(source_code)
+
+Constructor parameters:
+
+- ``max_steps`` (int | None, default MAX_STEPS): Maximum total VM instructions per
+  execution. Raises ``RuntimeLimitExceeded`` when exceeded. ``None`` means unlimited.
+- ``timeout_ms`` (int | None, default EXECUTION_TIMEOUT_MS): Wall-clock timeout in
+  milliseconds per execution. ``None`` means no timeout.
+- ``max_stdout_chars`` (int | None, default MAX_STDOUT_CHARS): Maximum captured stdout
+  characters per execution. Output beyond this limit is silently truncated.
+- ``project_root`` (str | None, default None): Absolute path to the project root.
+  Used by the module loader to resolve non-relative imports.
+- ``allowed_paths`` (list[str] | None, default None): Directory paths the script may
+  access via filesystem builtins. ``None`` means unrestricted.
+- ``allow_input`` (bool, default False): If ``False``, the ``input()`` builtin raises
+  a sandbox error.
+- ``max_frames`` (int | None, default None): Maximum call stack depth. Prevents runaway
+  recursion from exhausting memory. When exceeded, raises a sandbox error with
+  ``kind="sandbox"``. Set to ``None`` for no limit (not recommended for untrusted code;
+  the VM applies ``MAX_STACK_DEPTH`` as a hard backstop when this is ``None``).
 
 ``NodusRuntime`` handles the full pipeline internally:
 

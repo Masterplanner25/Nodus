@@ -596,29 +596,59 @@ Goals:
 
 Version 1.0
 
+**Critical path:** `finally` implementation (Large) → opcode freeze.
+All other goals can proceed in parallel and are expected to complete before `finally` is done.
+
 Goals:
 
-- Frozen opcode set — all 7 provisional opcodes resolved (`GET_ITER`, `ITER_NEXT`,
-  `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`). Freeze proposal
-  published in v0.8 at `docs/governance/FREEZE_PROPOSAL.md`; prerequisites tracked
-  in `TECH_DEBT.md`.
-- Stable module system — `BUILD_MODULE` stability declaration; module live bindings
-  and re-export semantics frozen.
-- Stable embedding API freeze — `NodusRuntime` public API locked.
-- `compile_source()` loader body removal — remove function body from
-  `nodus.tooling.loader`; update `test_import_containment.py` which uses loader
-  directly.
+- Frozen opcode set — all provisional opcodes resolved. YIELD and BUILD_MODULE already
+  decided (stable). 5 opcodes remain provisional: `GET_ITER`, `ITER_NEXT`, `SETUP_TRY`,
+  `POP_TRY`, `THROW`. Freeze proposal at `docs/governance/FREEZE_PROPOSAL.md`.
+  **Status:** ⏳ Blocked by finally implementation, iterator cleanup, and `_op_throw` fix.
+
+- ✅ Stable module system — `BUILD_MODULE` promoted to stable in `FREEZE_PROPOSAL.md`.
+  Module system (live bindings, re-exports, circular detection) is feature-complete and frozen.
+  **Status:** ✅ Declared stable at v1.0 planning.
+
+- ✅ Stable embedding API freeze — `NodusRuntime` added to `nodus.__all__`. `max_frames`
+  documented in `EMBEDDING.md` constructor parameters section. API declared frozen.
+  **Status:** ✅ Complete.
+
+- ✅ `compile_source()` loader body removal — function body removed from
+  `nodus.tooling.loader`. Last test caller (`test_import_containment.py`) migrated to
+  `ModuleLoader`. Tombstone comment left in `loader.py`. See `DEPRECATIONS.md`.
+  **Status:** ✅ Complete.
+
 - Iterator protocol cleanup — replace `pending_get_iter` / `pending_iter_next` flags
   with a first-class Iterator protocol object. VM-only change; no compiler or `.nd`
-  source impact.
-- `finally` block implementation — new opcode or extended `SETUP_TRY` operand.
-- `handle_exception` structured error objects — fix string-flattening at `vm.py:288`.
-- `YIELD_VALUE` / `SEND` opcode evaluation — assess whether coroutines need a formal
-  send-value opcode before freeze.
-- Production hardened sandboxing — standardize execution limits for embedded environments.
-- Stable package manager — post-v0.9 registry ecosystem stabilization.
+  source impact. 14 pending-flag sites identified in `vm.py`.
+  **Status:** ⏳ Not started. Medium scope (VM-only).
+
+- `finally` block implementation — new opcode or extended `SETUP_TRY` operand. Requires
+  lexer, AST, parser, compiler, and VM changes. `BYTECODE_VERSION` bump to 3 required.
+  **Status:** ⏳ Not started. Critical path item — longest chain to v1.0.
+
+- `_op_throw` structured value preservation — fix `_op_throw` (vm.py:~2092) which
+  stringifies non-string thrown values. `handle_exception` is already correct.
+  **Status:** ⏳ Small fix. See TECH_DEBT.md.
+
+- ✅ `YIELD_VALUE` / `SEND` opcode evaluation — decision made. YIELD frozen as-is.
+  No new opcode needed. No user-facing send-value use cases exist in `.nd` source.
+  **Status:** ✅ Decision recorded in `FREEZE_PROPOSAL.md`.
+
+- Production hardened sandboxing — 6 limit types implemented (steps, timeout, stdout,
+  file paths, input, call stack). Memory limits are the only gap — deferred post-v1.0.
+  **Status:** ✅ Sufficient for v1.0. Memory limits post-v1.0.
+
+- ✅ Stable package manager — package manager feature-complete as of v0.9.0.
+  `.ndignore` deferred to v1.0.x.
+  **Status:** ✅ Declared stable.
+
 - `LOAD_LOCAL` deprecated opcode removal — remove `_op_load_local` handler from VM
-  dispatch table after bytecode cache invalidation window closes.
+  dispatch table. Prerequisite: audit and fix three compiler fallback paths
+  (`compiler.py` lines 584, 619, 731) that still emit name-keyed `LOAD_LOCAL`.
+  **Status:** ⚠️ Compiler still emits `LOAD_LOCAL` at 3 fallback paths.
+  `DEPRECATIONS.md` claim was inaccurate — corrected. Audit required before removal.
 
 Long-Term Vision (3–5 Years)
 

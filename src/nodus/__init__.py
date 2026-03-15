@@ -18,6 +18,9 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, format_
 from nodus.frontend.lexer import Tok, tokenize
 from nodus.frontend.parser import Parser
 from nodus.result import Result
+# NodusRuntime is the primary public embedding API.
+# Added to __all__ in v1.0 for discoverability.
+from nodus.runtime.embedding import NodusRuntime
 
 
 
@@ -75,6 +78,7 @@ __all__ = [
     "Parser",
     "VM",
     "Result",
+    "NodusRuntime",
 ]
 
 

@@ -1,11 +1,9 @@
 import os
 import tempfile
 import unittest
-import warnings
 
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.tooling.loader import compile_source
 
 
 class ImportContainmentTests(unittest.TestCase):
@@ -21,20 +19,9 @@ class ImportContainmentTests(unittest.TestCase):
             with open(main_path, "w", encoding="utf-8") as handle:
                 handle.write('import "../../secret.nd"\n')
 
-            code = 'import "../../secret.nd"\n'
-            import_state = {
-                "loaded": set(),
-                "loading": set(),
-                "exports": {},
-                "modules": {},
-                "module_ids": {},
-                "project_root": root,
-            }
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                with self.assertRaises(LangRuntimeError) as ctx:
-                    compile_source(code, source_path=main_path, import_state=import_state)
+            loader = ModuleLoader(project_root=root)
+            with self.assertRaises(LangRuntimeError) as ctx:
+                loader.load_module_from_path(main_path)
             self.assertEqual(ctx.exception.kind, "import")
 
     def test_runtime_loader_blocks_escape(self):

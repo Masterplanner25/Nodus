@@ -239,12 +239,12 @@ class VM:
             return f"{line}:{col}"
         return "<unknown>"
 
-    def runtime_error(self, kind: str, message: str):
-        err = self.build_runtime_error(kind, message)
+    def runtime_error(self, kind: str, message: str, payload: object = None):
+        err = self.build_runtime_error(kind, message, payload=payload)
         self.emit_runtime_error(err)
         raise err
 
-    def build_runtime_error(self, kind: str, message: str) -> LangRuntimeError:
+    def build_runtime_error(self, kind: str, message: str, payload: object = None) -> LangRuntimeError:
         path, line, col = self.current_loc()
         current_fn = self.frames[-1].fn_name if self.frames else "<main>"
         stack = [f"at {self.display_name(current_fn)} ({self.format_loc((path, line, col))})"]
@@ -258,7 +258,7 @@ class VM:
                     f"called from {self.display_name(caller)} ({self.format_loc((call_path, frame.call_line, frame.call_col))})"
                 )
 
-        return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack)
+        return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload)
 
     def emit_runtime_error(self, err: LangRuntimeError) -> None:
         if getattr(err, "_event_emitted", False):
@@ -289,17 +289,17 @@ class VM:
             self.handler_stack.pop()
         if len(self.stack) > stack_depth:
             self.stack = self.stack[:stack_depth]
-        err_record = Record(
-            {
-                "kind": err.kind,
-                "message": str(err),
-                "path": err.path,
-                "line": err.line,
-                "column": err.col,
-                "stack": list(err.stack) if err.stack else [],
-            },
-            kind="error",
-        )
+        err_fields = {
+            "kind": err.kind,
+            "message": str(err),
+            "path": err.path,
+            "line": err.line,
+            "column": err.col,
+            "stack": list(err.stack) if err.stack else [],
+        }
+        if getattr(err, "payload", None) is not None:
+            err_fields["payload"] = err.payload
+        err_record = Record(err_fields, kind="error")
         self.stack.append(err_record)
         self.ip = handler_ip
         return True
@@ -2090,9 +2090,24 @@ class VM:
         return None
 
     def _op_throw(self, instr):
+        # _op_throw: preserve structured values (records, lists) as payload
+        # rather than stringifying. Strings become message directly.
+        # Primitives (int/float/bool) are converted to string message.
+        # Structured values are stored in err.payload in the catch block.
+        # See TECH_DEBT.md — was previously always stringifying.
         value = self.pop()
-        message = self.value_to_string(value, quote_strings=False)
-        self.runtime_error("runtime", message)
+        if isinstance(value, str):
+            # String throw: use as message directly
+            self.runtime_error("runtime", value)
+        elif isinstance(value, (int, float, bool)):
+            # Primitive throw: convert to string message
+            self.runtime_error("runtime", self.value_to_string(value))
+        else:
+            # Structured throw (Record, list, etc.): preserve as payload.
+            # The catch block receives err where err.kind == "thrown",
+            # err.message is the string form, and err.payload is the original value.
+            message = self.value_to_string(value, quote_strings=False)
+            self.runtime_error("thrown", message, payload=value)
 
     def _op_yield(self, instr):
         value = self.pop()

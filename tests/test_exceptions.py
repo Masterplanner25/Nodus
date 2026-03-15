@@ -73,6 +73,43 @@ try {
         self.assertEqual(out[0], "type")
         self.assertIn("Cannot subtract", out[1])
 
+    def test_throw_record_preserves_structure(self):
+        src = """
+try {
+    throw record { code: 404, msg: "not found" }
+} catch err {
+    print(err.kind)
+    print(err.payload.code)
+}
+"""
+        out = run_program(src)
+        self.assertEqual(out[0], "thrown")
+        self.assertEqual(out[1], "404.0")
+
+    def test_throw_string_still_works(self):
+        src = """
+try {
+    throw "bad input"
+} catch err {
+    print(err.kind)
+    print(err.message)
+}
+"""
+        out = run_program(src)
+        self.assertEqual(out[0], "runtime")
+        self.assertEqual(out[1], "bad input")
+
+    def test_throw_number(self):
+        src = """
+try {
+    throw 42
+} catch err {
+    print(err.message)
+}
+"""
+        out = run_program(src)
+        self.assertEqual(out[0], "42.0")
+
     def test_anonymous_function_names_unique(self):
         code = """
 fn a() {

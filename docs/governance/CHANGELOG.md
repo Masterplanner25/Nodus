@@ -2,6 +2,17 @@
 
 All notable changes to Nodus are documented here.
 
+## [0.9.1] — 2026-03-15
+
+### Fixed
+- `test_task_reassignment_after_worker_failure` timing sensitivity: replaced
+  the 2-second polling loop (`poll()` every 10ms) with a new
+  `WorkerManager.wait_for_job()` method that blocks on the existing `_cond`
+  condition variable. `submit()` already calls `_cond.notify_all()` on
+  enqueue, so the wakeup is immediate with no race window. Test runtime
+  reduced from up to 2s to ~20ms. Passes consistently under full-suite
+  concurrency.
+
 ## [0.9.0] — 2026-03-15
 
 ### Removed

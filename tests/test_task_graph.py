@@ -30,14 +30,8 @@ def run_program(src: str, source_path: str | None = None):
 
 
 class TaskGraphTests(unittest.TestCase):
-    def _poll_job(self, worker_manager, worker_id: str, timeout: float = 2.0):
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            job = worker_manager.poll(worker_id)
-            if job.get("job_id"):
-                return job
-            time.sleep(0.01)
-        return {"job_id": None}
+    def _poll_job(self, worker_manager, worker_id: str, timeout: float = 10.0):
+        return worker_manager.wait_for_job(worker_id, timeout=timeout)
 
     def test_dependency_ordering(self):
         src = """

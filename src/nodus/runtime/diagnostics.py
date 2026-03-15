@@ -100,6 +100,7 @@ class LangRuntimeError(RuntimeError):
         col: int | None = None,
         path: str | None = None,
         stack: list[str] | None = None,
+        payload: object = None,
     ):
         super().__init__(message)
         self.kind = kind
@@ -107,6 +108,7 @@ class LangRuntimeError(RuntimeError):
         self.col = col
         self.path = path
         self.stack = stack or []
+        self.payload = payload
 
 
 class RuntimeLimitExceeded(LangRuntimeError):

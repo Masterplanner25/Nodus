@@ -164,13 +164,13 @@ Items marked ✅ were completed in v0.8.
 
 | Opcode | Stack effect | Classification | Notes |
 |---|---|---|---|
-| `BUILD_MODULE` | `k v… → module` | **provisional** | Constructs a NodusModule from key/value pairs on the stack. Module semantics (live bindings, re-exports) are still evolving. |
+| `BUILD_MODULE` | `k v… → module` | **stable** | Constructs a `Record(fields, kind="module")` from key/value pairs on the stack. Module system (live bindings, re-exports, circular detection) is feature-complete and frozen. Promoted to stable at v1.0. |
 
 ### Coroutines / Lifecycle
 
 | Opcode | Stack effect | Classification | Notes |
 |---|---|---|---|
-| `YIELD` | `val →` (suspend) | **provisional** | Suspends the current coroutine and returns a value to the scheduler. Coroutine resume semantics may be refined before v1.0. |
+| `YIELD` | `val →` (suspend) | **stable** | Suspends the current coroutine and returns a value to the scheduler. No YIELD_VALUE/SEND opcode needed — send-value path is implicit via `builtin_coroutine_resume()`. Promoted to stable at v1.0. |
 | `HALT` | none | **stable** | Terminates the VM execution loop. Emitted once at end of module top-level code. |
 
 ---
@@ -179,8 +179,8 @@ Items marked ✅ were completed in v0.8.
 
 | Classification | Count |
 |---|---|
-| stable | 35 |
-| provisional | 7 (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`) |
+| stable | 41 |
+| provisional | 5 (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`) |
 | deprecated | 1 (`LOAD_LOCAL`) |
 | **Total** | **47** |
 
@@ -188,9 +188,10 @@ Items marked ✅ were completed in v0.8.
 LOAD_UPVALUE, STORE_UPVALUE, STORE_ARG, POP, ADD, SUB, MUL, DIV, EQ, NE, LT, GT, LE, GE,
 NOT, NEG, TO_BOOL, JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VALUE, CALL_METHOD,
 MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
-LOAD_FIELD, STORE_FIELD, HALT = **39 stable**, 7 provisional, 1 deprecated.)
+LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD = **41 stable**, 5 provisional, 1 deprecated.)
 
-Corrected totals: **39 stable**, **7 provisional**, **1 deprecated** = 47.
+Totals: **41 stable**, **5 provisional**, **1 deprecated** = 47.
+(v1.0 update: YIELD and BUILD_MODULE promoted from provisional to stable.)
 
 ---
 
@@ -249,8 +250,8 @@ structure. The implementation cost is Large and is not justified for v0.9.
 
 **v1.0 scope for exception model:**
 - `finally` blocks (new opcode or extended `SETUP_TRY`)
-- Structured error objects in `catch` (fix `handle_exception` string-flattening
-  at `vm.py:288` — see `TECH_DEBT.md`)
+- Structured value preservation in `throw` (fix `_op_throw` stringifying non-string
+  values at `vm.py:~2092` — `handle_exception` is already correct; see `TECH_DEBT.md`)
 - Typed/pattern-matched catches: post-v1.0
 
 ### YIELD — remains provisional
@@ -265,6 +266,18 @@ via the stack, but there is no dedicated user-facing opcode for receiving the se
 coroutine model. If the send-value use case is required before v1.0, a new opcode will
 be added via the Post-Freeze Extension Process defined in this document.
 
+**v1.0 Decision:** YIELD frozen as-is. No `YIELD_VALUE` or `SEND` opcode needed.
+
+The send-value mechanism is not user-accessible from `.nd` source. No `.nd` files,
+examples, or tests use a `let result = yield expr` pattern. `LANGUAGE_SPEC.md` describes
+`yield` only as a suspend mechanism. `builtin_coroutine_resume()` can pass values via the
+Python embedding API, but this does not require a new opcode.
+
+Send-value coroutines are deferred post-v1.0. If needed in a future version, a
+`YIELD_VALUE` or `SEND` opcode will be added via the Post-Freeze Extension Process.
+
+**Classification:** → promoted to **stable** at v1.0.
+
 ### BUILD_MODULE — remains provisional
 
 **v0.9 decision:** Stability classification deferred to v1.0 module system freeze.
@@ -278,6 +291,34 @@ been deterministic and stable since v0.7.
 declaration — specifically, whether live bindings, re-exports, or aliasing semantics
 will change the Record structure before v1.0. Once the module system is declared
 frozen at v1.0, `BUILD_MODULE` will be promoted to stable.
+
+**v1.0 Decision:** BUILD_MODULE promoted to stable. Module system frozen.
+
+The module system is feature-complete:
+- ✅ Named exports (`ExportList`, `let x = ... export`)
+- ✅ Re-exports (`ExportFrom`)
+- ✅ Namespace imports (`import "mod" as ns`)
+- ✅ Live bindings (named imports are live references)
+- ✅ Circular import detection (`import_state` loading cycle check)
+- ✅ `std:` stdlib imports
+
+`BUILD_MODULE` behavior (pop count key-value pairs, construct `Record(fields, kind="module")`)
+has been deterministic since v0.7.0. No planned module semantics changes for v1.0 or beyond.
+The `Record` structure produced by `BUILD_MODULE` is frozen.
+
+**Classification:** → promoted to **stable** at v1.0.
+
+## Remaining Provisional Opcodes (as of v1.0 planning)
+
+| Opcode | Unblocked by |
+|---|---|
+| `GET_ITER`, `ITER_NEXT` | Iterator protocol cleanup (Goal: replace `pending_get_iter`/`pending_iter_next` with a first-class Iterator protocol object) |
+| `SETUP_TRY`, `POP_TRY` | `finally` block implementation (new opcode or extended `SETUP_TRY` operand) |
+| `THROW` | `_op_throw` structured value preservation fix (vm.py:~2092) |
+
+All five are targeted for stable classification at v1.0 release.
+
+---
 
 ## Post-Freeze Extension Process
 

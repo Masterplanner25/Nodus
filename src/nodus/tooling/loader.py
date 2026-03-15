@@ -616,88 +616,11 @@ def apply_reexport_to_module(
         module_info.exports.add(name)
 
 
-# NOTE: Public re-export (from nodus import compile_source) removed in v0.9.
-# This function body is retained for internal tooling use only.
-# Scheduled for removal at v1.0. See docs/governance/DEPRECATIONS.md.
-def compile_source(
-    src: str,
-    source_path: str | None = None,
-    import_state: dict | None = None,
-    analyze: bool = False,
-    optimize: bool = True,
-    extra_builtins: set[str] | None = None,
-):
-    """Legacy compilation pipeline.
-
-    .. deprecated:: v0.5
-        Use ``ModuleLoader(...).load_source(src)`` instead.
-        ``compile_source`` is used internally by ``nodus check``, ``nodus ast``,
-        and ``nodus dis`` commands and will be removed in v1.0.
-
-    See docs/runtime/ARCHITECTURE.md "Compilation Pipelines" for migration details.
-    """
-    warnings.warn(
-        "compile_source() is deprecated since v0.5 and will be removed in v1.0. "
-        "Use ModuleLoader(...).load_source(src) instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        toks = tokenize(src)
-        ast = Parser(toks).parse()
-    except Exception as err:
-        if isinstance(err, LangSyntaxError) and err.path is None:
-            err.path = source_path
-        raise
-    module_id = os.path.abspath(source_path) if source_path else "<memory>"
-    set_module_on_tree(ast, module_id)
-    if analyze:
-        analyze_program(ast)
-    base_dir = os.path.dirname(os.path.abspath(source_path)) if source_path else os.getcwd()
-    if import_state is None:
-        import_state = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}}
-    import_state.setdefault("loaded", set())
-    import_state.setdefault("loading", set())
-    import_state.setdefault("exports", {})
-    import_state.setdefault("modules", {})
-    import_state.setdefault("module_ids", {})
-    ensure_project_root(import_state, base_dir, source_path)
-
-    resolved_ast = resolve_imports(ast, base_dir, import_state, module_id)
-    if module_id not in import_state["modules"]:
-        prefix = get_module_prefix(import_state, module_id)
-        import_state["modules"][module_id] = collect_module_info(resolved_ast, module_id, prefix)
-
-    module_defs_index: dict[str, set[str]] = {}
-    for path, module_info in import_state["modules"].items():
-        for name in module_info.defs:
-            module_defs_index.setdefault(name, set()).add(path)
-
-    builtin_names = set(BUILTIN_NAMES)
-    if extra_builtins:
-        builtin_names.update(extra_builtins)
-    compiler = Compiler(
-        module_infos=import_state["modules"],
-        module_defs_index=module_defs_index,
-        builtin_names=builtin_names,
-    )
-    code, functions, code_locs = compiler.compile_program(resolved_ast)
-    module_info = import_state["modules"][module_id]
-    bytecode = wrap_bytecode(
-        code,
-        module_name=module_id,
-        exports=sorted(module_info.exports),
-    )
-    if optimize:
-        code, functions, code_locs = optimize_bytecode(bytecode.get("instructions", []), functions, code_locs)
-        bytecode = wrap_bytecode(
-            code,
-            module_name=bytecode.get("module_name"),
-            exports=bytecode.get("exports", []),
-            constants=bytecode.get("constants", []),
-            metadata=bytecode.get("metadata", {}),
-        )
-    return ast, bytecode, functions, code_locs
+# compile_source() was removed in v1.0.
+# Internal callers were migrated to ModuleLoader in v0.8.0.
+# The public re-export was removed from nodus.__init__ in v0.9.0.
+# The last test caller (test_import_containment.py) was migrated in v1.0.
+# See docs/governance/DEPRECATIONS.md for full history.
 
 
 def run_source(
