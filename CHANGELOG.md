@@ -23,6 +23,32 @@
 ### Refactoring
 - None.
 
+## [0.9.0] - 2026-03-15 — Registry Auth, Publish & Ecosystem Completeness
+
+### Added
+- **Registry authentication**: Bearer token support via `--registry-token` flag, `NODUS_REGISTRY_TOKEN` env var, and `~/.nodus/config.toml` user config file. Three-tier resolution: flag > env > config.
+- **`nodus login` / `nodus logout`** commands: write and clear the registry token in `~/.nodus/config.toml`.
+- **`nodus publish`**: uploads a package archive to the registry via POST with SHA-256 digest sent as `X-SHA256` header. 409 Conflict returns a clear error. Implemented via `create_package_archive()` and `publish_package()`.
+
+### Changed
+- `compile_source()` public re-export removed from `nodus.__init__`; loader body retained in `nodus.tooling.loader` for internal use until v1.0.
+
+### Fixed
+- CI: `tests/test_formatter_coverage.py` was using `import pytest`, causing `ModuleNotFoundError` in the unittest-based CI runner. Converted to `unittest.TestCase`.
+
+### Documentation
+- `CONTRIBUTING.md`: replaced stale `pytest` commands in the Running Tests section with `python -m unittest` equivalents.
+- `docs/tooling/TESTING.md`: added `test_formatter_coverage.py` entry to the Formatter Test Files section; updated Known Flaky Tests run command from `python -m pytest` to `python -m unittest`; removed stale `pytest` alternative from Running Tests.
+
+### Tests
+- 11 new tests covering registry authentication: token resolution priority (flag > env > config), `nodus login`/`nodus logout`, and Bearer token header injection.
+- 9 new tests covering publish: archive creation, POST upload, `X-SHA256` header, and 409 Conflict handling.
+- Converted `tests/test_formatter_coverage.py` from pytest to `unittest.TestCase` (CI fix).
+
+### Provisional Opcodes
+- `GET_ITER`/`ITER_NEXT` `pending_get_iter` cleanup deferred to v1.0 by design; behavior documented in `INSTRUCTION_SEMANTICS.md`.
+- Exception model: `finally` blocks and typed catches deferred to v1.0. `SETUP_TRY`, `POP_TRY`, and `THROW` remain provisional.
+
 ## [0.8.0] - 2026-03-15 — Stability and Package Ecosystem
 
 ### Added

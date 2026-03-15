@@ -17,12 +17,6 @@ Run the full suite:
 python -m unittest discover -s tests -v
 ```
 
-Or with pytest:
-
-```bash
-pytest
-```
-
 Run a single test module:
 
 ```bash
@@ -195,6 +189,9 @@ Formatter behaviour is covered by several test modules:
 - `tests/test_formatter_fnexpr.py` — tests for anonymous function expression (`FnExpr`)
   formatting, including empty bodies, single-statement inline bodies, return-type annotations,
   multi-statement block bodies, and use as call arguments (`spawn(fn() { … })`).
+- `tests/test_formatter_coverage.py` — regression tests for AST node handlers that previously
+  lacked formatter coverage: `yield` (with and without expression), `throw`, `try`/`catch`,
+  and list/record/nested destructuring patterns.
 
 To add a formatter regression test, either add a new fixture pair to `tests/fixtures/fmt/`
 and reference it in `test_formatter_fixtures.py`, or add a `unittest.TestCase` test method in the relevant
@@ -213,7 +210,7 @@ causing the poll to return `{"job_id": None}`.
 The test passes consistently when run in isolation:
 
 ```bash
-python -m pytest tests/test_task_graph.py::TaskGraphTests::test_task_reassignment_after_worker_failure -v
+python -m unittest tests.test_task_graph.TaskGraphTests.test_task_reassignment_after_worker_failure -v
 ```
 
 **Root cause:** Pre-existing timing sensitivity. Not caused by v0.9 changes. Tracked

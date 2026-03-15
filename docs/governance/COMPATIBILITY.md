@@ -8,9 +8,10 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - `language.py` / `language.bat` legacy launchers (CLI emits warnings on use).
 
 ## Planned Timeline
-- 0.4.x (current `0.4.0`): continue support with warnings.
-- 0.5.x: re-evaluate removal readiness and publish a migration window.
-- 0.5.x (tentative): consider removal if migration is complete.
+- 0.9.x (current `0.9.0`): continue support with warnings.
+- 1.0.0: re-evaluate removal readiness. If migration is complete, legacy launchers
+  and `.tl` extension support will be removed. `compile_source()` loader body removal
+  also targeted for v1.0 (public stub already removed in v0.9.0).
 
 ## Migration Path
 - Use `.nd` files for new code.

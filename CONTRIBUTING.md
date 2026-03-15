@@ -75,19 +75,19 @@ Install development dependencies:
 pip install -r requirements-dev.txt
 Running Tests
 
-Nodus uses pytest for testing.
+Nodus uses the standard `unittest` runner for testing.
 
 Run the full test suite:
 
-pytest
+python -m unittest discover -s tests -v
 
-Run with verbose output:
+Run a single test module:
 
-pytest -v
+python -m unittest tests.test_vm -v
 
-Run a single test file:
+Run a single test case:
 
-pytest tests/test_vm.py
+python -m unittest tests.test_vm.VMTests.test_name -v
 
 All contributions must pass the full test suite.
 
