@@ -17,7 +17,7 @@ Items below were raised in a third-party review and are now validated with concr
 ## Phase 2 Fixes Applied (architecture)
 
 - ✅ Builtin registry extracted from VM: `BuiltinRegistry` class in `src/nodus/builtins/__init__.py`; category modules (`io`, `math`, `coroutine`, `collections`) each expose a `register(vm, registry)` function called at VM construction time.
-- ✅ `compile_source()` deprecated: marked `@deprecated` since v0.5; canonical path is `ModuleLoader(...).load_source(src)`. Removal target: v1.0. Internal src/ callers migrated in v0.8; public stub retained in nodus.__init__ until v1.0.
+- ✅ `compile_source()` deprecated: marked `@deprecated` since v0.5; canonical path is `ModuleLoader(...).load_source(src)`. Internal src/ callers migrated in v0.8; public stub removed from `nodus.__init__` in v0.9.0. Loader body retained for internal use; removal target v1.0.
 - ✅ AST `Base` dataclass: all AST node classes inherit from `Base` (`src/nodus/frontend/ast/ast_nodes.py`), which carries `_tok` (source token for error location) and `_module` (module path set by loader), both excluded from `__repr__` and `__eq__`.
 - ✅ `NodeVisitor` base class: `src/nodus/frontend/visitor.py` provides automatic `visit_<ClassName>` dispatch. Missing visitor methods raise `NotImplementedError` at runtime to surface coverage gaps early.
 - ✅ `_StateRewriter` documented: workflow lowering pass documented in `src/nodus/runtime/workflow_lowering.py`; rewrites workflow/goal ASTs into scheduler-compatible coroutine form.
@@ -60,12 +60,9 @@ than resolving the iterator inline. This makes `GET_ITER` and `ITER_NEXT` behave
 depending on whether the iterable is a builtin or a user closure, which is an observable
 architectural inconsistency.
 
-Cleanup target: v0.9. Resolution options:
-
-1. Push all iterator construction through a unified `make_iterator()` helper that handles
-   both builtin and closure `__iter__` transparently.
-2. Introduce a first-class iterator protocol value that wraps the closure so `GET_ITER`
-   always returns an iterator object and `ITER_NEXT` always calls `.next()` on it.
+**v0.9 decision:** Cleanup deferred to v1.0. Behavior fully documented in
+`INSTRUCTION_SEMANTICS.md` (GET_ITER and ITER_NEXT sections). See `FREEZE_PROPOSAL.md §
+"v0.9 Opcode Decisions"` for rationale.
 
 Until this is resolved, `GET_ITER` and `ITER_NEXT` remain **provisional** and cannot be
 classified stable. See `FREEZE_PROPOSAL.md` freeze prerequisites.
@@ -74,17 +71,42 @@ classified stable. See `FREEZE_PROPOSAL.md` freeze prerequisites.
 
 `SETUP_TRY` / `POP_TRY` / `THROW` are provisional pending a decision on `finally` blocks
 and typed catches. If either feature is added before v1.0, these opcodes need new operands
-or companion opcodes. Decision target: v0.9. See `FREEZE_PROPOSAL.md` freeze prerequisites.
+or companion opcodes.
+
+**v0.9 decision:** `finally` blocks deferred to v1.0. Exception opcodes remain provisional.
+See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 
 ## Open Items (not yet complete)
 
-- ✅ compile_source() internal callers migrated to ModuleLoader in v0.8. Public stub retained in nodus.__init__ until v1.0. 0 DeprecationWarnings from internal src/ callers in test suite.
+- ✅ compile_source() internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body retained for internal use; removal target v1.0. 0 DeprecationWarnings from internal src/ callers in test suite.
 - ✅ `LOAD_LOCAL_IDX` slot-indexed fast path: Implemented in v0.8. Compiler now emits `FRAME_SIZE n`, `STORE_LOCAL_IDX slot`, and `LOAD_LOCAL_IDX slot` for all function-scope locals. Frame carries a pre-allocated `locals_array` (list) and `locals_name_to_slot` mapping. `capture_local` updated for Cell boxing via array. Cache serialization updated (`local_slots` in FunctionInfo). Bytecode version bumped to 2.
-- `compile_source()` public stub: retained in `nodus.__init__` until v1.0 with `DeprecationWarning`. Remove at v1.0 — no source changes needed beyond deleting the export and `# TODO(v1.0)` comment.
+- ✅ compile_source() public stub removed in v0.9 from nodus.__init__. Loader body retained for internal use; removal target v1.0. test_import_containment.py uses loader directly and will need updating at v1.0.
 - `LOAD_LOCAL` deprecated opcode: superseded by `LOAD_LOCAL_IDX` in v0.8; retained as fallback for bytecode compiled before version 2. Remove at v1.0 once all caches have been invalidated by the version bump. Also remove `_op_load_local` handler from VM dispatch table.
-- Registry publish and auth: `nodus publish` command and token management deferred to v0.9. `RegistryClient` has no auth layer; all endpoints are unauthenticated. See v0.9 milestone in ROADMAP.md.
+- ✅ Registry publish and auth: `nodus publish` command and token management implemented in v0.9. `RegistryClient` now supports Bearer token auth. `get_registry_token()` in `package_manager.py` resolves tokens via CLI flag, `NODUS_REGISTRY_TOKEN` env var, or `~/.nodus/config.toml`. `nodus login`/`nodus logout` CLI commands added. See `docs/tooling/PACKAGE_MANAGER.md` Authentication section.
 - Provisional opcode resolution: 7 opcodes remain provisional before v1.0 freeze (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`). GET_ITER/ITER_NEXT blocked on `pending_get_iter` cleanup (see section above). Exception model (SETUP_TRY/POP_TRY/THROW) blocked on finally/typed-catch decision. BUILD_MODULE and YIELD need stabilization review. All must be resolved before the v1.0 opcode freeze.
+- `GET_ITER`/`ITER_NEXT` Iterator protocol cleanup: replace `pending_get_iter`/`pending_iter_next` flags with a first-class Iterator protocol object. VM-only change; no compiler or `.nd` source impact. See FREEZE_PROPOSAL.md v0.9 decisions.
+- `finally` block implementation: requires new opcode or extended `SETUP_TRY` operand. See FREEZE_PROPOSAL.md v0.9 decisions.
+- `handle_exception` (vm.py:288) flattens error payload to string, preventing structured error inspection in catch blocks. Fix required before exception model can be frozen. Target: v1.0.
+- `YIELD_VALUE`/`SEND` opcode evaluation: assess whether coroutines need a formal send-value opcode before v1.0 freeze. See FREEZE_PROPOSAL.md v0.9 decisions.
+- `BUILD_MODULE` stability declaration: promote to stable as part of v1.0 module system freeze declaration.
 - `vm.py` line count: ~2,052 lines after Phase 2 extraction. Further extraction of workflow/goal builtins and scheduler helpers is possible.
+
+- `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
+
+## Untracked Items (surfaced in v0.9 assessment, 2026-03-15)
+
+- ✅ `compile_source()` removal-target doc contradiction: resolved in v0.9.0. Public stub removed from `nodus.__init__` at v0.9 (one version earlier than the `DeprecationWarning` message indicated). ROADMAP.md, DEPRECATIONS.md, TECH_DEBT.md, and CHANGELOG.md all updated to reflect v0.9.0 removal. The warning message discrepancy is noted in DEPRECATIONS.md and CHANGELOG.md.
+
+- ✅ Stale `loader.py` header comment: resolved. The header comment in `src/nodus/tooling/loader.py` no longer claims `compile_source()` is used by `nodus check`, `nodus ast`, or `nodus dis` commands. Those commands use `ModuleLoader`. The comment now correctly notes that the function body is retained for internal tooling use only until v1.0.
+
+- ✅ `INSTRUCTION_SEMANTICS.md` missing `pending_get_iter` / `pending_iter_next` documentation: resolved. GET_ITER and ITER_NEXT entries now fully document the closure-callback mechanism, the pending flags, and the RETURN handler post-processing. See `docs/runtime/INSTRUCTION_SEMANTICS.md` §14.
+
+- ✅ `NODUS_SERVER_TOKEN` vs. `NODUS_REGISTRY_TOKEN` naming split: now documented in `docs/tooling/PACKAGE_MANAGER.md` (Authentication section, "NODUS_SERVER_TOKEN vs NODUS_REGISTRY_TOKEN" subsection). The two tokens are independent: `NODUS_SERVER_TOKEN` authenticates requests to a running Nodus server process; `NODUS_REGISTRY_TOKEN` authenticates package registry requests.
+
+- ✅ `--registry` CLI flag wired: `nodus install` now accepts `--registry <url>` and `--registry-token <token>` flags. Both are parsed and passed to `install_dependencies_for_project()`. Closed as part of v0.9 registry auth work.
+
+- `test_task_reassignment_after_worker_failure` flaky test: `tests/test_task_graph.py`. The test starts a Nodus VM in a background thread and polls a `WorkerManager` within a 2-second window. Under full-suite concurrency the background thread occasionally does not dispatch the job within the window. Passes consistently when run in isolation. Pre-existing timing sensitivity; not caused by v0.9 changes. Target: fix in v0.9.x.
+
 - ✅ Formatter AST coverage audit complete: all 48 AST node types handled in format_stmt()/format_expr(). Added Yield, Throw, TryCatch, DestructureLet, VarPattern, ListPattern, RecordPattern handlers. See tests/test_formatter_coverage.py.
 - ✅ Opcode set stabilization plan: formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md. 47 opcodes classified (39 stable, 7 provisional, 1 deprecated). Freeze prerequisites, post-freeze extension process, and version history documented. See GET_ITER/Exception model sections above for provisional opcode cleanup items.
 

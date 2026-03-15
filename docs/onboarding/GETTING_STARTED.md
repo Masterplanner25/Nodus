@@ -158,6 +158,32 @@ Installed packages are imported using the `package:module` syntax:
 import "mypackage:utils"
 ```
 
+### Publishing a package
+
+To publish your package to a registry:
+
+1. Ensure `nodus.toml` has `[package]` with `name` and `version`
+2. Authenticate: `nodus login --registry https://your-registry.example.com`
+3. Publish: `nodus publish --registry https://your-registry.example.com`
+
+Or set the registry in `nodus.toml`:
+
+```toml
+[package]
+name = "mypackage"
+version = "1.0.0"
+registry_url = "https://your-registry.example.com"
+```
+
+Then just run:
+
+```bash
+nodus login
+nodus publish
+```
+
+Published versions are immutable.
+
 See `PACKAGE_MANAGER.md` for the full manifest format and lockfile reference.
 
 ## Suggested Workflow

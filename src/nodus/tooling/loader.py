@@ -5,13 +5,6 @@
 # =============================================================================
 # Two compilation pipelines exist in this module:
 #
-#   compile_source(src, ...)  — LEGACY pipeline (DEPRECATED since v0.5)
-#       Used by: nodus check, nodus ast, nodus dis commands
-#       Emits: DeprecationWarning
-#       Removal target: v1.0
-#       Migration: replace compile_source(src) with
-#                  ModuleLoader(...).load_source(src)
-#
 #   ModuleLoader (runtime/module_loader.py) — CANONICAL pipeline
 #       Used by: nodus run (via run_source in this module)
 #       Preferred for all new code and embeddings.
@@ -623,6 +616,9 @@ def apply_reexport_to_module(
         module_info.exports.add(name)
 
 
+# NOTE: Public re-export (from nodus import compile_source) removed in v0.9.
+# This function body is retained for internal tooling use only.
+# Scheduled for removal at v1.0. See docs/governance/DEPRECATIONS.md.
 def compile_source(
     src: str,
     source_path: str | None = None,

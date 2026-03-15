@@ -19,13 +19,23 @@ This document tracks known deprecation warnings and suggested remediation steps.
 ## API Deprecations
 
 ### `compile_source()` in `src/nodus/tooling/loader.py`
-- **Deprecated since:** v0.5
-- **Internal callers removed:** v0.8 (runner.py, vm.py, dap/server.py all migrated to ModuleLoader)
-- **Removal target:** v1.0
-- **Status:** Public stub retained in `nodus.__init__` until v1.0; emits `DeprecationWarning`.
-- **Replacement:** `ModuleLoader(...).load_module_from_source(src)` or `ModuleLoader(...).load_module_from_path(path)`
-- **Migration:** Replace `compile_source(src, source_path=p)` with `ModuleLoader(project_root=root, vm=vm).load_module_from_source(src)`. For tooling commands that need the AST/bytecode directly, construct a `ModuleLoader` and call `compile_only(src, module_name=name)`.
-- **Reason:** `compile_source` predates the `ModuleLoader` pipeline; keeping two pipelines creates divergence risk.
+- **Deprecated since:** v0.5.0
+- **Internal callers removed:** v0.8.0 (runner.py, vm.py, dap/server.py all migrated to ModuleLoader)
+- **Public stub (`nodus.__init__`) removed:** v0.9.0
+- **Function body (`nodus.tooling.loader`) removal target:** v1.0
+- **Status:** Public re-export no longer available. Function body retained for internal
+  tooling use only. Will be fully removed at v1.0.
+- **Replacement:** `ModuleLoader(...).load_module_from_source(src)` or
+  `NodusRuntime(...).run_source(src)` for embedding use cases.
+- **Migration:** Replace `compile_source(src, source_path=p)` with
+  `ModuleLoader(project_root=root, vm=vm).load_module_from_source(src)`. For tooling
+  commands that need the AST/bytecode directly, use `ModuleLoader.compile_only(src, module_name=name)`.
+- **Reason:** `compile_source` predates the `ModuleLoader` pipeline; keeping two
+  pipelines creates divergence risk.
+- **Warning discrepancy:** The `DeprecationWarning` emitted in v0.8.0 stated
+  "will be removed in v1.0" but the public stub was removed one version early at v0.9.0.
+  External users who received this warning should migrate to `NodusRuntime` or
+  `ModuleLoader` immediately.
 
 ### `LOAD_LOCAL` opcode
 - **Deprecated since:** v0.8.0 (superseded by `LOAD_LOCAL_IDX`)

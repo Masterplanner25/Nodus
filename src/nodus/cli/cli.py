@@ -210,13 +210,16 @@ def _render_help() -> str:
             "  nodus memory-delete <key>",
             "  nodus memory-keys",
             "  nodus package-init [--path PATH]",
-            "  nodus install [--path PATH]",
+            "  nodus install [--path PATH] [--registry <url>] [--registry-token <token>]",
             "  nodus update [--path PATH]",
             "  nodus add <package> [--path PATH]",
             "  nodus remove <package> [--path PATH]",
             "  nodus package-list [--path PATH]",
             "  nodus deps [--path PATH]",
             "  nodus cache clear [--path PATH]",
+            "  nodus login [--registry <url>]",
+            "  nodus logout [--registry <url>]",
+            "  nodus publish [--registry <url>] [--registry-token <token>]",
             "",
             "Global options:",
             "  --version",
@@ -862,10 +865,10 @@ def _package_init(path: str | None) -> int:
     return 0
 
 
-def _package_install(path: str | None) -> int:
+def _package_install(path: str | None, *, registry_url: str | None = None, registry_token: str | None = None) -> int:
     root = path or os.getcwd()
     try:
-        _package_manager.install_dependencies_for_project(root, update=False)
+        _package_manager.install_dependencies_for_project(root, update=False, registry_url=registry_url, cli_token=registry_token)
     except Exception as err:
         _print_stderr(str(err))
         return 1
@@ -911,6 +914,31 @@ def _package_remove(package_name: str, path: str | None) -> int:
     except Exception as err:
         _print_stderr(str(err))
         return 1
+    return 0
+
+
+def _run_login(registry_url: str | None = None) -> int:
+    import getpass
+    from nodus.tooling.user_config import UserConfig
+    try:
+        token = getpass.getpass("Registry token: ")
+    except (KeyboardInterrupt, EOFError):
+        print("\nLogin cancelled.")
+        return 1
+    if not token.strip():
+        print("Error: token cannot be empty.")
+        return 1
+    UserConfig().set_registry_token(token.strip(), registry_url=registry_url)
+    config_path = str(Path.home() / ".nodus" / "config.toml")
+    print(f"Token saved to {config_path}")
+    return 0
+
+
+def _run_logout(registry_url: str | None = None) -> int:
+    from nodus.tooling.user_config import UserConfig
+    UserConfig().clear_registry_token(registry_url=registry_url)
+    config_path = str(Path.home() / ".nodus" / "config.toml")
+    print(f"Token removed from {config_path}")
     return 0
 
 
@@ -1443,9 +1471,11 @@ def main(argv: list[str] | None = None) -> int:
         return _package_init(path)
 
     if command in {"package-install", "install"}:
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root", "--registry", "--registry-token"}, set())
         path = flags.get("--project-root") or flags.get("--path")
-        return _package_install(path)
+        registry_url = flags.get("--registry") or None
+        registry_token = flags.get("--registry-token") or None
+        return _package_install(path, registry_url=registry_url, registry_token=registry_token)
 
     if command in {"package-update", "update"}:
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
@@ -1485,6 +1515,31 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         path = flags.get("--project-root") or flags.get("--path")
         return _cache_clear(path)
+
+    if command == "login":
+        flags_with_values = {"--registry"}
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        registry_url = flags.get("--registry") or None
+        return _run_login(registry_url=registry_url)
+
+    if command == "logout":
+        flags_with_values = {"--registry"}
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        registry_url = flags.get("--registry") or None
+        return _run_logout(registry_url=registry_url)
+
+    if command == "publish":
+        flags_with_values = {"--registry", "--registry-token"}
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        registry_url = flags.get("--registry") or None
+        registry_token = flags.get("--registry-token") or None
+        project_root = flags.get("--project-root") or os.getcwd()
+        from nodus.tooling.package_manager import publish_package_to_registry
+        return publish_package_to_registry(
+            project_root,
+            registry_url=registry_url,
+            cli_token=registry_token,
+        )
 
     _print_stderr(f"Unknown command: {command}")
     return 1

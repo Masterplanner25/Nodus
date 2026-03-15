@@ -77,16 +77,22 @@ Recommended pattern:
 Example:
 
 ```python
-from loader import compile_source  # deprecated since v0.5; prefer ModuleLoader
-
-src = "let x = 1 + 2"
-_ast, code, functions, code_locs = compile_source(src)
+# Preferred: use ModuleLoader directly
+from nodus.runtime.module_loader import ModuleLoader
+loader = ModuleLoader(project_root=None)
+code, functions, code_locs = loader.compile_only(src, module_name="<memory>")
 assert code[0][0] == "PUSH_CONST"
+
+# For embedding use cases: use NodusRuntime
+from nodus.runtime.embedding import NodusRuntime
+runtime = NodusRuntime()
+result = runtime.run_source(src)
 ```
 
-Note: `compile_source()` is deprecated since v0.5 and will be removed in v1.0. New
-tests should use `ModuleLoader(...).load_source(src)` instead. See `DEPRECATIONS.md`
-for the migration guide.
+Note: `compile_source()` public re-export was removed in v0.9.0. The function body
+in `nodus.tooling.loader` is still accessible for internal use but is scheduled for
+removal at v1.0. New tests should use `ModuleLoader` or `NodusRuntime`. See
+`DEPRECATIONS.md` for the migration guide.
 
 Keep compiler tests focused on specific lowering behavior (e.g., short-circuiting, destructuring, closures).
 
@@ -193,3 +199,22 @@ Formatter behaviour is covered by several test modules:
 To add a formatter regression test, either add a new fixture pair to `tests/fixtures/fmt/`
 and reference it in `test_formatter_fixtures.py`, or add a `unittest.TestCase` test method in the relevant
 `test_formatter_*.py` module.
+
+## Known Flaky Tests
+
+### `test_task_reassignment_after_worker_failure`
+**File:** `tests/test_task_graph.py`
+
+This test starts a Nodus VM in a background thread and polls a `WorkerManager` for
+a dispatched job within a 2-second window. Under high concurrency (full test suite
+run), the background thread occasionally does not dispatch the job within the window,
+causing the poll to return `{"job_id": None}`.
+
+The test passes consistently when run in isolation:
+
+```bash
+python -m pytest tests/test_task_graph.py::TaskGraphTests::test_task_reassignment_after_worker_failure -v
+```
+
+**Root cause:** Pre-existing timing sensitivity. Not caused by v0.9 changes. Tracked
+in `TECH_DEBT.md` for fix in v0.9.x.

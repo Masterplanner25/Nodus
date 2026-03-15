@@ -19,10 +19,24 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## In Progress / Release Pending
 
-v0.8.0 shipped 2026-03-15. Active work is v0.9 planning; see the v0.9 milestone section below.
+v0.9.0 shipped 2026-03-15. See CHANGELOG.md for the full entry.
 [Unreleased] documentation updates are tracked in CHANGELOG.md.
 
 ## Released Versions
+
+### 0.9.0 — Registry Auth, Publish & Ecosystem Completeness (2026-03-15)
+- `compile_source()` public re-export removed from `nodus.__init__`; loader body
+  retained for internal use until v1.0.
+- Registry authentication: Bearer token support, `NODUS_REGISTRY_TOKEN` env var,
+  `~/.nodus/config.toml` user config, `nodus login` / `nodus logout` commands,
+  three-tier token resolution (flag > env > config).
+- Registry publish: `nodus publish` command, `create_package_archive()`,
+  `publish_package()` POST method, SHA-256 + `X-SHA256` header, 409 Conflict
+  handling, publish protocol documented.
+- Provisional opcode decisions documented in `FREEZE_PROPOSAL.md`: all 7 provisional
+  opcodes remain provisional; GET_ITER/ITER_NEXT cleanup, finally blocks, and
+  YIELD send-value formalization all deferred to v1.0.
+- 20 new tests (11 auth + 9 publish).
 
 ### 0.8.0 — Stability & Package Ecosystem (2026-03-15)
 - Registry-backed package resolution: `RegistryClient` with semver, SHA-256 verification, archive extraction.
@@ -196,10 +210,11 @@ registry-backed dependency resolution
 This enables reproducible automation deployments.
 
 Status:
-Substantially complete. Package manager CLI exists (`package_manager.py`): `nodus.toml` /
-`nodus.lock`, semver resolution, local and HTTP-registry dependency resolution, archive
-download with SHA-256 verification, and `nodus install` / `nodus update` commands are
-implemented. Registry publishing and authentication remain open (planned v0.9).
+✅ Complete as of v0.9.0. Package manager CLI: `nodus.toml` / `nodus.lock`, semver
+resolution, local and HTTP-registry dependency resolution, archive download with
+SHA-256 verification, `nodus install` / `nodus update`, registry authentication
+(Bearer token, `NODUS_REGISTRY_TOKEN`, `~/.nodus/config.toml`), `nodus login` /
+`nodus logout`, and `nodus publish` commands are all implemented.
 
 Runtime Evolution
 
@@ -527,8 +542,9 @@ Goals:
 - ✅ compile_source() internal callers removed
       Deprecated since v0.5.0. All internal callers (runner.py, vm.py,
       dap/server.py) migrated to ModuleLoader in v0.8. Public stub
-      retained in nodus.__init__ until v1.0. 0 DeprecationWarnings from
-      internal src/ callers. Full removal at v1.0.
+      subsequently removed in v0.9.0. Loader body retained for internal
+      tooling use until v1.0. 0 DeprecationWarnings from internal src/
+      callers.
 
 - ✅ Opcode set stabilization plan
       Formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md.
@@ -554,8 +570,8 @@ Goals:
       node types are now covered. See tests/test_formatter_coverage.py.
 
 Not in v0.8 (deferred to v0.9 or later):
-- Registry publish (`nodus publish`) and auth — v0.9 goal
-- `compile_source()` public stub removal — v1.0 goal
+- Registry publish (`nodus publish`) and auth — v0.9 goal ✅ completed in v0.9
+- `compile_source()` public stub removal — originally v1.0 goal; moved up and completed in v0.9
 - `LOAD_LOCAL` deprecated opcode removal — v1.0 goal
 - Provisional opcode finalization (GET_ITER, ITER_NEXT, exception model) — v0.9 decision target
 - Type System Evolution — no version target assigned yet
@@ -567,26 +583,42 @@ Version 0.9 — Registry Publishing & Auth
 Theme: Complete the package ecosystem.
 
 Goals:
-- [ ] Registry publish (`nodus publish` command)
-- [ ] Registry authentication and token management
-- [ ] `compile_source()` public stub removal (deprecated since v0.5, internal callers removed v0.8)
-- [ ] Provisional opcode finalization: GET_ITER/ITER_NEXT (`pending_get_iter` cleanup) and exception model (finally/typed catches decision)
+- [x] Registry publish (`nodus publish` command)
+- [x] Registry authentication and token management
+- [x] compile_source() public stub removal (deprecated since v0.5, internal callers removed v0.8)
+- [x] Provisional opcode finalization: GET_ITER/ITER_NEXT (`pending_get_iter` cleanup) and exception model (finally/typed catches decision)
+    - GET_ITER/ITER_NEXT: pending_get_iter cleanup deferred to v1.0 (by design — behavior documented in INSTRUCTION_SEMANTICS.md)
+    - Exception model: finally deferred to v1.0; SETUP_TRY/POP_TRY/THROW remain provisional
+
+## v0.9.x (patch — planned)
+- Fix pre-existing timing sensitivity in `test_task_reassignment_after_worker_failure`
+  (background thread polling window occasionally missed under full-suite concurrency).
 
 Version 1.0
 
 Goals:
 
-stable module system
-
-frozen opcode set (freeze proposal published in v0.8 at docs/governance/FREEZE_PROPOSAL.md; prerequisites tracked in TECH_DEBT.md)
-
-stable embedding API
-
-hardened sandboxing
-
-production debugger and profiler
-
-stable package manager
+- Frozen opcode set — all 7 provisional opcodes resolved (`GET_ITER`, `ITER_NEXT`,
+  `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`). Freeze proposal
+  published in v0.8 at `docs/governance/FREEZE_PROPOSAL.md`; prerequisites tracked
+  in `TECH_DEBT.md`.
+- Stable module system — `BUILD_MODULE` stability declaration; module live bindings
+  and re-export semantics frozen.
+- Stable embedding API freeze — `NodusRuntime` public API locked.
+- `compile_source()` loader body removal — remove function body from
+  `nodus.tooling.loader`; update `test_import_containment.py` which uses loader
+  directly.
+- Iterator protocol cleanup — replace `pending_get_iter` / `pending_iter_next` flags
+  with a first-class Iterator protocol object. VM-only change; no compiler or `.nd`
+  source impact.
+- `finally` block implementation — new opcode or extended `SETUP_TRY` operand.
+- `handle_exception` structured error objects — fix string-flattening at `vm.py:288`.
+- `YIELD_VALUE` / `SEND` opcode evaluation — assess whether coroutines need a formal
+  send-value opcode before freeze.
+- Production hardened sandboxing — standardize execution limits for embedded environments.
+- Stable package manager — post-v0.9 registry ecosystem stabilization.
+- `LOAD_LOCAL` deprecated opcode removal — remove `_op_load_local` handler from VM
+  dispatch table after bytecode cache invalidation window closes.
 
 Long-Term Vision (3–5 Years)
 

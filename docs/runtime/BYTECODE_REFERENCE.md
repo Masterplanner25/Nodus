@@ -675,7 +675,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **44**.
+- Estimated opcode count (exact from VM dispatch): **47** (updated from stale count of 44; three opcodes added in v0.8: `FRAME_SIZE`, `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`).
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 

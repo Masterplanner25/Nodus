@@ -1,7 +1,9 @@
 """HTTP registry client for Nodus package manager."""
 from __future__ import annotations
 
+import fnmatch
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -20,8 +22,14 @@ class RegistryError(Exception):
 class RegistryClient:
     """HTTP client for fetching and installing packages from a remote registry."""
 
-    def __init__(self, registry_url: str) -> None:
+    def __init__(self, registry_url: str, token: str | None = None) -> None:
         self.registry_url = registry_url.rstrip("/")
+        self._token = token
+
+    def _auth_headers(self) -> dict:
+        if self._token:
+            return {"Authorization": f"Bearer {self._token}"}
+        return {}
 
     def fetch_package_index(self, name: str) -> list[dict]:
         """
@@ -38,11 +46,22 @@ class RegistryClient:
         """
         url = f"{self.registry_url}/packages/{name}"
         try:
-            with urllib.request.urlopen(url, timeout=30) as response:
+            req = urllib.request.Request(url, headers=self._auth_headers())
+            with urllib.request.urlopen(req, timeout=30) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as err:
             if err.code == 404:
                 raise RegistryError(f"Package '{name}' not found in registry at {self.registry_url}")
+            if err.code == 401:
+                raise RegistryError(
+                    f"Registry authentication failed for {self.registry_url}. "
+                    "Run 'nodus login' or set NODUS_REGISTRY_TOKEN."
+                )
+            if err.code == 403:
+                raise RegistryError(
+                    f"Registry access forbidden for {self.registry_url}. "
+                    "Check token permissions."
+                )
             raise RegistryError(f"Registry request failed: HTTP {err.code} for {url}")
         except urllib.error.URLError as err:
             raise RegistryError(f"Registry connection failed: {err.reason}")
@@ -102,7 +121,8 @@ class RegistryClient:
         Raises RegistryError on network failure or checksum mismatch.
         """
         try:
-            with urllib.request.urlopen(url, timeout=60) as response:
+            req = urllib.request.Request(url, headers=self._auth_headers())
+            with urllib.request.urlopen(req, timeout=60) as response:
                 content = response.read()
         except urllib.error.URLError as err:
             raise RegistryError(f"Failed to download package from {url}: {err.reason}")
@@ -116,6 +136,59 @@ class RegistryClient:
 
         with open(dest_path, "wb") as f:
             f.write(content)
+
+    def publish_package(self, name: str, version: str, archive_path: Path, sha256: str) -> dict:
+        """
+        POST the archive to {registry_url}/packages/{name}/{version}.
+
+        Requires a token — raises RegistryError if none is set.
+        Returns the registry's 201 success response dict.
+        Raises RegistryError on 401, 403, 409, 422, or network/parse failure.
+        """
+        if not self._token:
+            raise RegistryError(
+                f"No token configured for {self.registry_url}. "
+                "Run 'nodus login' or set NODUS_REGISTRY_TOKEN."
+            )
+
+        url = f"{self.registry_url}/packages/{name}/{version}"
+        archive_bytes = Path(archive_path).read_bytes()
+        headers = {
+            **self._auth_headers(),
+            "Content-Type": "application/octet-stream",
+            "X-SHA256": sha256,
+        }
+        req = urllib.request.Request(url, data=archive_bytes, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            body = ""
+            try:
+                body = err.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            if err.code == 401:
+                raise RegistryError(
+                    f"Registry authentication failed for {self.registry_url}. "
+                    "Run 'nodus login' or set NODUS_REGISTRY_TOKEN."
+                )
+            if err.code == 403:
+                raise RegistryError(
+                    f"Registry access forbidden for {self.registry_url}. "
+                    "Check that your token has publish permission."
+                )
+            if err.code == 409:
+                raise RegistryError(
+                    f"Version {version} of '{name}' already exists in the registry. "
+                    "Published versions are immutable. Use a new version number."
+                )
+            raise RegistryError(
+                f"Publish failed: HTTP {err.code} from {self.registry_url}. "
+                f"Response: {body[:200]}"
+            )
+        except urllib.error.URLError as err:
+            raise RegistryError(f"Publish connection failed for {self.registry_url}: {err.reason}")
 
     def install_package(
         self,
@@ -204,3 +277,48 @@ def _hash_tree(path: str) -> str:
             with open(file_path, "rb") as handle:
                 digest.update(handle.read())
     return f"sha256:{digest.hexdigest()}"
+
+
+# Files/directories excluded from published archives
+_PUBLISH_EXCLUDE = frozenset([
+    ".nodus", "__pycache__", ".git", ".gitignore", ".github",
+    "*.pyc", "*.pyo", "nodus.lock",
+])
+
+
+def _should_exclude(name: str) -> bool:
+    """Return True if name matches a publish exclusion pattern."""
+    for pattern in _PUBLISH_EXCLUDE:
+        if fnmatch.fnmatch(name, pattern):
+            return True
+    return False
+
+
+def create_package_archive(source_dir: Path, output_path: Path, *, name: str, version: str) -> str:
+    """
+    Create a .tar.gz archive of source_dir at output_path.
+
+    The archive root is named {name}-{version}/.
+    Excludes: .nodus/, __pycache__/, .git/, *.pyc, nodus.lock, .gitignore.
+
+    Returns the SHA-256 hex digest of the created archive.
+    Raises RegistryError if source_dir does not contain nodus.toml.
+    """
+    source_dir = Path(source_dir)
+    if not (source_dir / "nodus.toml").exists():
+        raise RegistryError(f"No nodus.toml found in {source_dir}")
+
+    archive_root = f"{name}-{version}"
+
+    with tarfile.open(output_path, "w:gz") as tar:
+        for item in sorted(source_dir.rglob("*")):
+            # Check each path component for exclusion
+            rel = item.relative_to(source_dir)
+            parts = rel.parts
+            if any(_should_exclude(part) for part in parts):
+                continue
+            arcname = f"{archive_root}/{rel.as_posix()}"
+            tar.add(item, arcname=arcname, recursive=False)
+
+    digest = hashlib.sha256(Path(output_path).read_bytes()).hexdigest()
+    return digest

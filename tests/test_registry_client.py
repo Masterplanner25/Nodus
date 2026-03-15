@@ -183,11 +183,12 @@ class TestRegistryIntegration(unittest.TestCase):
 
         call_count = [0]
 
-        def mock_urlopen(url, timeout=None):
+        def mock_urlopen(req_or_url, timeout=None):
             mock_response = MagicMock()
             mock_response.__enter__ = lambda s: s
             mock_response.__exit__ = MagicMock(return_value=False)
-            if "/packages/" in url:
+            url_str = req_or_url.full_url if hasattr(req_or_url, "full_url") else str(req_or_url)
+            if "/packages/" in url_str:
                 mock_response.read.return_value = index_payload
             else:
                 mock_response.read.return_value = archive_bytes
@@ -210,6 +211,269 @@ class TestRegistryIntegration(unittest.TestCase):
             self.assertIn('name = "utils"', lock_text)
             self.assertIn('source = "registry"', lock_text)
             self.assertIn('hash = "sha256:', lock_text)
+
+
+class TestCreatePackageArchive(unittest.TestCase):
+    def test_creates_valid_tarball(self):
+        from nodus.tooling.registry_client import create_package_archive
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "mypkg"
+            src.mkdir()
+            (src / "nodus.toml").write_text('[package]\nname="mypkg"\nversion="1.0.0"\n')
+            (src / "main.nd").write_text('print("hi")\n')
+            out = Path(td) / "mypkg-1.0.0.tar.gz"
+            sha = create_package_archive(src, out, name="mypkg", version="1.0.0")
+            self.assertTrue(out.exists())
+            self.assertTrue(sha.startswith("") and len(sha) == 64)  # hex sha256
+            with tarfile.open(out, "r:gz") as tar:
+                names = tar.getnames()
+            self.assertIn("mypkg-1.0.0/nodus.toml", names)
+            self.assertIn("mypkg-1.0.0/main.nd", names)
+
+    def test_excludes_nodus_dir(self):
+        from nodus.tooling.registry_client import create_package_archive
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "mypkg"
+            src.mkdir()
+            (src / "nodus.toml").write_text('[package]\nname="mypkg"\nversion="1.0.0"\n')
+            nodus_dir = src / ".nodus"
+            nodus_dir.mkdir()
+            (nodus_dir / "cache.json").write_text("{}")
+            out = Path(td) / "out.tar.gz"
+            create_package_archive(src, out, name="mypkg", version="1.0.0")
+            with tarfile.open(out, "r:gz") as tar:
+                names = tar.getnames()
+            self.assertFalse(any(".nodus" in n for n in names))
+
+    def test_excludes_pycache(self):
+        from nodus.tooling.registry_client import create_package_archive
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "mypkg"
+            src.mkdir()
+            (src / "nodus.toml").write_text('[package]\nname="mypkg"\nversion="1.0.0"\n')
+            pycache = src / "__pycache__"
+            pycache.mkdir()
+            (pycache / "foo.pyc").write_bytes(b"")
+            out = Path(td) / "out.tar.gz"
+            create_package_archive(src, out, name="mypkg", version="1.0.0")
+            with tarfile.open(out, "r:gz") as tar:
+                names = tar.getnames()
+            self.assertFalse(any("__pycache__" in n for n in names))
+
+    def test_returns_correct_sha256(self):
+        from nodus.tooling.registry_client import create_package_archive
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "mypkg"
+            src.mkdir()
+            (src / "nodus.toml").write_text('[package]\nname="mypkg"\nversion="1.0.0"\n')
+            out = Path(td) / "out.tar.gz"
+            sha = create_package_archive(src, out, name="mypkg", version="1.0.0")
+            expected = hashlib.sha256(out.read_bytes()).hexdigest()
+            self.assertEqual(sha, expected)
+
+    def test_raises_if_no_manifest(self):
+        from nodus.tooling.registry_client import create_package_archive, RegistryError
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "empty"
+            src.mkdir()
+            out = Path(td) / "out.tar.gz"
+            with self.assertRaises(RegistryError):
+                create_package_archive(src, out, name="x", version="1.0.0")
+
+
+class TestPublishPackage(unittest.TestCase):
+    def _make_archive(self, td: str) -> tuple:
+        src = Path(td) / "mypkg"
+        src.mkdir()
+        (src / "nodus.toml").write_text('[package]\nname="mypkg"\nversion="1.0.0"\n')
+        (src / "main.nd").write_text('print("hi")\n')
+        from nodus.tooling.registry_client import create_package_archive
+        out = Path(td) / "mypkg-1.0.0.tar.gz"
+        sha = create_package_archive(src, out, name="mypkg", version="1.0.0")
+        return out, sha
+
+    def test_publish_sends_post_to_correct_endpoint(self):
+        import urllib.error
+        captured = {}
+        with tempfile.TemporaryDirectory() as td:
+            archive, sha = self._make_archive(td)
+
+            def mock_urlopen(req, timeout=None):
+                captured["url"] = req.full_url
+                captured["method"] = req.method
+                captured["headers"] = dict(req.headers)
+                mock_response = MagicMock()
+                mock_response.read.return_value = json.dumps(
+                    {"name": "mypkg", "version": "1.0.0", "url": "https://x/mypkg-1.0.0.tar.gz"}
+                ).encode()
+                mock_response.__enter__ = lambda s: s
+                mock_response.__exit__ = MagicMock(return_value=False)
+                return mock_response
+
+            with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+                client = RegistryClient("https://registry.example.com", token="tok")
+                result = client.publish_package("mypkg", "1.0.0", archive, sha)
+        self.assertIn("/packages/mypkg/1.0.0", captured["url"])
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn("Authorization", captured["headers"])
+
+    def test_publish_raises_on_409_conflict(self):
+        import urllib.error
+        with tempfile.TemporaryDirectory() as td:
+            archive, sha = self._make_archive(td)
+            with patch("urllib.request.urlopen",
+                       side_effect=urllib.error.HTTPError(None, 409, "Conflict", {}, None)):
+                client = RegistryClient("https://registry.example.com", token="tok")
+                with self.assertRaises(RegistryError) as ctx:
+                    client.publish_package("mypkg", "1.0.0", archive, sha)
+            self.assertIn("already exists", str(ctx.exception))
+
+    def test_publish_raises_if_no_token(self):
+        with tempfile.TemporaryDirectory() as td:
+            archive, sha = self._make_archive(td)
+            client = RegistryClient("https://registry.example.com")
+            with self.assertRaises(RegistryError) as ctx:
+                client.publish_package("mypkg", "1.0.0", archive, sha)
+            self.assertIn("token", str(ctx.exception).lower())
+
+    def test_publish_401_does_not_leak_token(self):
+        import urllib.error
+        token = "supersecretpublishtoken"
+        with tempfile.TemporaryDirectory() as td:
+            archive, sha = self._make_archive(td)
+            with patch("urllib.request.urlopen",
+                       side_effect=urllib.error.HTTPError(None, 401, "Unauthorized", {}, None)):
+                client = RegistryClient("https://registry.example.com", token=token)
+                with self.assertRaises(RegistryError) as ctx:
+                    client.publish_package("mypkg", "1.0.0", archive, sha)
+            self.assertNotIn(token, str(ctx.exception))
+
+
+class TestRegistryClientAuth(unittest.TestCase):
+    def test_token_sends_auth_header(self):
+        """Client with token sends Authorization: Bearer header."""
+        payload = json.dumps({"name": "lib", "versions": []}).encode()
+        captured_request = {}
+
+        def mock_urlopen(req, timeout=None):
+            captured_request["headers"] = dict(req.headers) if hasattr(req, "headers") else {}
+            mock_response = MagicMock()
+            mock_response.read.return_value = payload
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            client = RegistryClient("https://registry.example.com", token="mytoken")
+            try:
+                client.fetch_package_index("lib")
+            except RegistryError:
+                pass
+        # Header keys are title-cased by urllib
+        auth = captured_request.get("headers", {}).get("Authorization", "")
+        self.assertEqual(auth, "Bearer mytoken")
+
+    def test_no_token_sends_no_auth_header(self):
+        """Client without token sends no Authorization header."""
+        payload = json.dumps({"name": "lib", "versions": []}).encode()
+        captured_request = {}
+
+        def mock_urlopen(req, timeout=None):
+            captured_request["headers"] = dict(req.headers) if hasattr(req, "headers") else {}
+            mock_response = MagicMock()
+            mock_response.read.return_value = payload
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            client = RegistryClient("https://registry.example.com")
+            try:
+                client.fetch_package_index("lib")
+            except RegistryError:
+                pass
+        auth = captured_request.get("headers", {}).get("Authorization", "")
+        self.assertEqual(auth, "")
+
+    def test_401_raises_registry_error_without_token(self):
+        """401 response raises RegistryError; token not in error message."""
+        import urllib.error
+        token = "supersecrettoken"
+        with patch("urllib.request.urlopen",
+                   side_effect=urllib.error.HTTPError(None, 401, "Unauthorized", {}, None)):
+            client = RegistryClient("https://registry.example.com", token=token)
+            with self.assertRaises(RegistryError) as ctx:
+                client.fetch_package_index("pkg")
+        self.assertNotIn(token, str(ctx.exception))
+
+    def test_403_raises_registry_error(self):
+        """403 response raises RegistryError."""
+        import urllib.error
+        with patch("urllib.request.urlopen",
+                   side_effect=urllib.error.HTTPError(None, 403, "Forbidden", {}, None)):
+            client = RegistryClient("https://registry.example.com", token="tok")
+            with self.assertRaises(RegistryError):
+                client.fetch_package_index("pkg")
+
+
+class TestGetRegistryToken(unittest.TestCase):
+    def test_cli_token_takes_priority(self):
+        from nodus.tooling.package_manager import get_registry_token
+        with patch.dict(os.environ, {"NODUS_REGISTRY_TOKEN": "envtoken"}):
+            result = get_registry_token(cli_token="clitoken")
+        self.assertEqual(result, "clitoken")
+
+    def test_env_var_used_when_no_cli_token(self):
+        from nodus.tooling.package_manager import get_registry_token
+        with patch.dict(os.environ, {"NODUS_REGISTRY_TOKEN": "envtoken"}):
+            result = get_registry_token()
+        self.assertEqual(result, "envtoken")
+
+    def test_returns_none_when_no_token(self):
+        from nodus.tooling.package_manager import get_registry_token
+        env = {k: v for k, v in os.environ.items() if k != "NODUS_REGISTRY_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            with patch("nodus.tooling.user_config.UserConfig.get_registry_token", return_value=None):
+                result = get_registry_token()
+        self.assertIsNone(result)
+
+
+class TestUserConfig(unittest.TestCase):
+    def test_set_and_get_global_token(self):
+        from nodus.tooling.user_config import UserConfig
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.toml"
+            cfg = UserConfig(config_path=cfg_path)
+            cfg.set_registry_token("mytoken")
+            cfg2 = UserConfig(config_path=cfg_path)
+            self.assertEqual(cfg2.get_registry_token(), "mytoken")
+
+    def test_set_and_get_url_specific_token(self):
+        from nodus.tooling.user_config import UserConfig
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.toml"
+            cfg = UserConfig(config_path=cfg_path)
+            cfg.set_registry_token("urltoken", registry_url="https://reg.example.com")
+            cfg2 = UserConfig(config_path=cfg_path)
+            self.assertEqual(cfg2.get_registry_token("https://reg.example.com"), "urltoken")
+            self.assertIsNone(cfg2.get_registry_token("https://other.example.com"))
+
+    def test_clear_token(self):
+        from nodus.tooling.user_config import UserConfig
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "config.toml"
+            cfg = UserConfig(config_path=cfg_path)
+            cfg.set_registry_token("mytoken")
+            cfg.clear_registry_token()
+            cfg2 = UserConfig(config_path=cfg_path)
+            self.assertIsNone(cfg2.get_registry_token())
+
+    def test_missing_config_returns_none(self):
+        from nodus.tooling.user_config import UserConfig
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "nonexistent.toml"
+            cfg = UserConfig(config_path=cfg_path)
+            self.assertIsNone(cfg.get_registry_token())
 
 
 if __name__ == "__main__":

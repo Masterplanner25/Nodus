@@ -20,29 +20,6 @@ from nodus.frontend.parser import Parser
 from nodus.result import Result
 
 
-def compile_source(*args, **kwargs):
-    """Compile a Nodus source string to bytecode.
-
-    .. deprecated:: 0.5
-        Use ``ModuleLoader(...).load_source(src)`` instead.
-        ``compile_source`` is scheduled for removal in v1.0.
-
-    .. warning::
-        This function will be removed in v1.0. Use NodusRuntime or
-        ModuleLoader instead.
-    """
-    import warnings
-    warnings.warn(
-        "compile_source() will be removed in v1.0. "
-        "Use NodusRuntime or ModuleLoader instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    from nodus.tooling.loader import compile_source as _compile_source
-    return _compile_source(*args, **kwargs)
-
-# TODO(v1.0): remove this export entirely
-
 
 def resolve_imports(*args, **kwargs):
     """Resolve and inline imports for a Nodus source string.
@@ -93,7 +70,6 @@ __all__ = [
     "format_error",
     "Tok",
     "tokenize",
-    "compile_source",
     "resolve_imports",
     "run_source",
     "Parser",

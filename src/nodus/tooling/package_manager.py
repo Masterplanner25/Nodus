@@ -1,6 +1,8 @@
 """Package management entrypoints for Nodus tooling."""
 
 import os
+import tempfile
+from pathlib import Path
 
 from nodus.tooling.installer import install_project
 from nodus.tooling.project import (
@@ -13,6 +15,23 @@ from nodus.tooling.project import (
 )
 from nodus.tooling.registry import Registry
 from nodus.tooling.resolver import resolve_project_dependencies
+
+
+def get_registry_token(registry_url: str | None = None, cli_token: str | None = None) -> str | None:
+    """
+    Resolve a registry token using three-tier priority:
+    1. cli_token (from --registry-token flag) — highest priority
+    2. NODUS_REGISTRY_TOKEN environment variable
+    3. ~/.nodus/config.toml (UserConfig)
+    Returns None if no token is found.
+    """
+    if cli_token:
+        return cli_token
+    env_token = os.environ.get("NODUS_REGISTRY_TOKEN")
+    if env_token:
+        return env_token
+    from nodus.tooling.user_config import UserConfig
+    return UserConfig().get_registry_token(registry_url)
 
 
 def ensure_project(root: str) -> ProjectConfig:
@@ -31,6 +50,7 @@ def install_dependencies_for_project(
     *,
     update: bool = False,
     registry_url: str | None = None,
+    cli_token: str | None = None,
 ) -> dict[str, str]:
     from nodus.tooling.registry_client import RegistryClient
 
@@ -44,7 +64,8 @@ def install_dependencies_for_project(
     )
 
     if resolved_url:
-        registry_client: RegistryClient | None = RegistryClient(resolved_url)
+        token = get_registry_token(resolved_url, cli_token=cli_token)
+        registry_client: RegistryClient | None = RegistryClient(resolved_url, token=token)
         registry = None
     else:
         registry_client = None
@@ -112,3 +133,65 @@ def remove_dependency(root: str, package_name: str) -> ProjectConfig:
     )
     install_dependencies_for_project(project.root, update=True)
     return load_project(project.root)
+
+
+def publish_package_to_registry(
+    project_dir: str,
+    registry_url: str | None = None,
+    cli_token: str | None = None,
+) -> int:
+    """
+    Build and publish the current project to the registry.
+    Returns 0 on success, 1 on failure.
+    """
+    from nodus.tooling.registry_client import RegistryClient, RegistryError, create_package_archive
+
+    project = load_project(project_dir)
+
+    # Resolve registry URL
+    resolved_url = (
+        registry_url
+        or os.environ.get("NODUS_REGISTRY_URL")
+        or project.registry_url
+    )
+    if not resolved_url:
+        print(
+            "Error: No registry configured. Use --registry or set "
+            "registry_url in nodus.toml."
+        )
+        return 1
+
+    # Resolve token
+    token = get_registry_token(resolved_url, cli_token=cli_token)
+    if not token:
+        print(
+            "Error: No registry token found. Run 'nodus login' or "
+            "set NODUS_REGISTRY_TOKEN."
+        )
+        return 1
+
+    name = project.name
+    version = project.version
+    if not name or not version:
+        print("Error: nodus.toml must have [package] name and version.")
+        return 1
+
+    client = RegistryClient(resolved_url, token=token)
+    tmp_dir = tempfile.mkdtemp(prefix="nodus_publish_")
+    archive_path = Path(tmp_dir) / f"{name}-{version}.tar.gz"
+    try:
+        print(f"Building archive for {name}@{version}...")
+        sha256 = create_package_archive(
+            Path(project_dir), archive_path, name=name, version=version
+        )
+        print(f"Publishing to {resolved_url}...")
+        result = client.publish_package(name, version, archive_path, sha256)
+        published_url = result.get("url", resolved_url)
+        print(f"Published {name}@{version} → {published_url}")
+        return 0
+    except RegistryError as err:
+        print(f"Publish failed: {err}")
+        return 1
+    finally:
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)

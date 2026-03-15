@@ -683,7 +683,7 @@ class LanguageServer:
 
     def _handle_initialize(self) -> dict:
         return {
-            "serverInfo": {"name": "nodus-lsp", "version": "0.8.0"},
+            "serverInfo": {"name": "nodus-lsp", "version": "0.9.0"},
             "capabilities": {
                 "textDocumentSync": 1,
                 "completionProvider": {"triggerCharacters": ["."]},

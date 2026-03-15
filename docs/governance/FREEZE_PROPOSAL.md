@@ -180,7 +180,7 @@ Items marked ✅ were completed in v0.8.
 | Classification | Count |
 |---|---|
 | stable | 35 |
-| provisional | 9 (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`, and 2 from `FRAME_SIZE`/`LOAD_LOCAL_IDX` promoted above) |
+| provisional | 7 (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`) |
 | deprecated | 1 (`LOAD_LOCAL`) |
 | **Total** | **47** |
 
@@ -217,6 +217,67 @@ Corrected totals: **39 stable**, **7 provisional**, **1 deprecated** = 47.
 5. **No known duplicate or redundant opcodes.** No merge candidates identified.
 
 ---
+
+## v0.9 Opcode Decisions
+
+These decisions were made as part of the v0.9 milestone. All 7 provisional opcodes
+remain provisional. Each is targeted for promotion or redesign at v1.0.
+
+### GET_ITER / ITER_NEXT — remains provisional
+
+**v0.9 decision:** Leave `pending_get_iter` / `pending_iter_next` mechanism as-is.
+Document the behavior in `INSTRUCTION_SEMANTICS.md`. Cleanup deferred to v1.0.
+
+**Rationale:** The mechanism works correctly. The architectural smell (two execution
+paths for the same opcode) does not affect observable behavior for correct programs.
+A clean Iterator protocol object (wrapping builtins and closures uniformly, removing
+the pending flags and the RETURN handler coupling) is the preferred v1.0 fix.
+Estimated v1.0 scope: VM-only change, no compiler or `.nd` source impact.
+
+### SETUP_TRY / POP_TRY / THROW — remains provisional
+
+**v0.9 decision:** `finally` blocks are NOT implemented before v1.0. Exception opcodes
+remain provisional.
+
+**Current capability:** Basic `try { } catch err { }` is supported and stable in
+practice. Multiple catch clauses, `finally` blocks, and typed/pattern-matched catches
+are not supported.
+
+**Rationale:** Adding `finally` requires either a new `SETUP_FINALLY` opcode or
+extending `SETUP_TRY`'s operand format, which changes the handler stack tuple
+structure. The implementation cost is Large and is not justified for v0.9.
+
+**v1.0 scope for exception model:**
+- `finally` blocks (new opcode or extended `SETUP_TRY`)
+- Structured error objects in `catch` (fix `handle_exception` string-flattening
+  at `vm.py:288` — see `TECH_DEBT.md`)
+- Typed/pattern-matched catches: post-v1.0
+
+### YIELD — remains provisional
+
+**v0.9 decision:** Send-value path is not formalized. `YIELD` remains provisional.
+
+**Current behavior:** `YIELD` suspends the current coroutine and returns a value to the
+scheduler. `builtin_coroutine_resume()` can pass a value back into a resumed coroutine
+via the stack, but there is no dedicated user-facing opcode for receiving the sent value.
+
+**v1.0 scope:** Evaluate whether a `YIELD_VALUE` / `SEND` opcode is needed for the
+coroutine model. If the send-value use case is required before v1.0, a new opcode will
+be added via the Post-Freeze Extension Process defined in this document.
+
+### BUILD_MODULE — remains provisional
+
+**v0.9 decision:** Stability classification deferred to v1.0 module system freeze.
+
+**Current behavior:** `BUILD_MODULE` pops `count` key-value pairs, constructs a
+`Record(fields, kind="module")`, and pushes it. The `kind="module"` marker activates
+module-export semantics in `LOAD_FIELD` and `CALL_METHOD`. The opcode's behavior has
+been deterministic and stable since v0.7.
+
+**Rationale:** `BUILD_MODULE`'s stability is coupled to the module system stability
+declaration — specifically, whether live bindings, re-exports, or aliasing semantics
+will change the Record structure before v1.0. Once the module system is declared
+frozen at v1.0, `BUILD_MODULE` will be promoted to stable.
 
 ## Post-Freeze Extension Process
 

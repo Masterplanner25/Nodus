@@ -45,6 +45,11 @@ Primary extension: `.nd`
 - `nodus serve`
 - `nodus workflow-run script.nd`
 - `nodus goal-run script.nd`
+- `nodus install [--registry <url>] [--registry-token <token>]`
+- `nodus login [--registry <url>]`
+- `nodus logout [--registry <url>]`
+- `nodus publish [--registry <url>] [--registry-token <token>]`
 
 ## Current Stage
-Early practical scripting runtime focused on automation and orchestration.
+v0.9.0 — practical scripting runtime with registry publish/auth ecosystem. Focused on
+automation and orchestration. Working toward v1.0 opcode freeze and stable API surface.
