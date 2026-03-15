@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import copy
 import dataclasses
 import hashlib
 import json
 import os
-import uuid
 import threading
+import uuid
 
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.coroutine import Coroutine
@@ -47,6 +48,8 @@ class TaskGraph:
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
 _GRAPH_VMS: dict[str, object] = {}
 _DEFAULT_DISPATCHER = None
+_GRAPH_ROOT = os.path.join(".nodus", "graphs")
+_STATE_LOCK = threading.Lock()
 
 
 def set_default_dispatcher(dispatcher) -> None:
@@ -55,9 +58,58 @@ def set_default_dispatcher(dispatcher) -> None:
 
 
 def _graph_state_path(graph_id: str) -> str:
-    root = os.path.join(".nodus", "graphs")
-    os.makedirs(root, exist_ok=True)
+    root = _ensure_graph_root()
     return os.path.join(root, f"{graph_id}.json")
+
+
+def _checkpoint_path(graph_id: str) -> str:
+    root = _ensure_graph_root()
+    return os.path.join(root, f"{graph_id}.checkpoint.json")
+
+
+def _ensure_graph_root() -> str:
+    os.makedirs(_GRAPH_ROOT, exist_ok=True)
+    return _GRAPH_ROOT
+
+
+def _fsync_directory(path: str) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _atomic_write_json(path: str, data: dict) -> None:
+    tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
+    dirpath = os.path.dirname(path) or "."
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
+    _fsync_directory(dirpath)
+
+
+def _scheduler_queue_snapshot(vm) -> list[str]:
+    scheduler = getattr(vm, "scheduler", None)
+    if scheduler is None:
+        return []
+    queue = getattr(scheduler, "ready_queue", None)
+    if queue is None:
+        return []
+    result = []
+    for coroutine in queue:
+        name = getattr(coroutine, "name", None)
+        if isinstance(name, str):
+            result.append(name)
+    return result
 
 
 def _new_graph_id() -> str:
@@ -84,26 +136,67 @@ def get_registered_vm(graph_id: str):
     return _GRAPH_VMS.get(graph_id)
 
 
-def _persist_graph_state(graph: TaskGraph, tasks: list[TaskNode], attempts: dict[str, float], results: dict[str, object], status: str) -> None:
-    state = {"graph_id": graph.graph_id, "status": status, "tasks": {}, "metadata": graph.metadata}
+def _persist_graph_state(
+    graph: TaskGraph,
+    tasks: list[TaskNode],
+    attempts: dict[str, float],
+    results: dict[str, object],
+    status: str,
+    pending_queue: list[str],
+    task_values: dict[str, object],
+    workflow_state: object | None,
+    checkpoints: list[dict] | None,
+    vm,
+) -> dict:
+    metadata = graph.metadata
+    if isinstance(metadata, dict):
+        metadata = copy.deepcopy(metadata)
+    state: dict[str, object] = {
+        "graph_id": graph.graph_id,
+        "status": status,
+        "tasks": {},
+        "metadata": metadata,
+        "pending": list(pending_queue),
+        "scheduler_queue": _scheduler_queue_snapshot(vm),
+        "task_outputs": {tid: task_values.get(tid) for tid in task_values},
+        "results": {tid: results.get(tid) for tid in results},
+        "workflow_state": workflow_state,
+        "checkpoints": checkpoints,
+        "updated_at": runtime_time_ms(),
+    }
     if isinstance(graph.metadata, dict):
-        if "workflow_name" in graph.metadata:
-            state["workflow_name"] = graph.metadata.get("workflow_name")
-        if "workflow_state" in graph.metadata:
-            state["workflow_state"] = graph.metadata.get("workflow_state")
-        if "checkpoints" in graph.metadata:
-            state["checkpoints"] = graph.metadata.get("checkpoints")
+        for key in ("workflow_name", "goal_name", "execution_kind"):
+            value = graph.metadata.get(key)
+            if value is not None:
+                state[key] = value
     for task in tasks:
-        task_state = {"state": task.status, "attempts": float(task.attempts)}
+        task_state: dict[str, object | float] = {"state": task.status, "attempts": float(task.attempts)}
         if task.task_id in results:
             task_state["result"] = results[task.task_id]
         if task.last_error:
             task_state["last_error"] = task.last_error
         if task.step_name is not None:
             task_state["step_name"] = task.step_name
+        if task.worker is not None:
+            task_state["worker"] = task.worker
+        if task.worker_timeout_ms is not None:
+            task_state["worker_timeout_ms"] = task.worker_timeout_ms
+        if task.started_at is not None:
+            task_state["started_at"] = task.started_at
+        if task.finished_at is not None:
+            task_state["finished_at"] = task.finished_at
+        if task.timeout_ms is not None:
+            task_state["timeout_ms"] = task.timeout_ms
+        if task.cache:
+            task_state["cache"] = True
+        if task.cache_key is not None:
+            task_state["cache_key"] = task.cache_key
+        if task.last_error:
+            task_state["last_error"] = task.last_error
         state["tasks"][task.task_id] = task_state
-    with open(_graph_state_path(graph.graph_id), "w", encoding="utf-8") as f:
-        json.dump(state, f)
+    with _STATE_LOCK:
+        _atomic_write_json(_graph_state_path(graph.graph_id), state)
+    return state
 
 
 def _load_graph_state(graph_id: str) -> dict | None:
@@ -114,21 +207,121 @@ def _load_graph_state(graph_id: str) -> dict | None:
         return json.load(f)
 
 
+def load_checkpoint(graph_id: str) -> dict | None:
+    path = _checkpoint_path(graph_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def delete_checkpoint(graph_id: str) -> None:
+    path = _checkpoint_path(graph_id)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def delete_graph_state(graph_id: str) -> None:
+    path = _graph_state_path(graph_id)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def load_graph_state(graph_id: str) -> dict | None:
     return _load_graph_state(graph_id)
 
 
 def latest_graph_state() -> tuple[str | None, dict | None]:
-    root = os.path.join(".nodus", "graphs")
+    root = _ensure_graph_root()
     if not os.path.isdir(root):
         return None, None
-    candidates = [name for name in os.listdir(root) if name.endswith(".json")]
+    candidates = [name for name in os.listdir(root) if name.endswith(".json") and not name.endswith(".checkpoint.json")]
     if not candidates:
         return None, None
     candidates.sort()
     latest = candidates[-1]
     graph_id = latest.rsplit(".", 1)[0]
     return graph_id, _load_graph_state(graph_id)
+
+
+def list_graph_ids() -> list[str]:
+    root = _ensure_graph_root()
+    if not os.path.isdir(root):
+        return []
+    ids = [
+        name[:-5]
+        for name in os.listdir(root)
+        if name.endswith(".json") and not name.endswith(".checkpoint.json")
+    ]
+    ids.sort()
+    return ids
+
+
+def list_graph_snapshots_info() -> list[dict]:
+    infos: list[dict] = []
+    for graph_id in list_graph_ids():
+        state = load_graph_state(graph_id)
+        if not isinstance(state, dict):
+            continue
+        checkpoint = load_checkpoint(graph_id)
+        metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
+        info = {
+            "graph_id": graph_id,
+            "status": state.get("status"),
+            "workflow": state.get("workflow_name") or metadata.get("workflow_name"),
+            "goal": state.get("goal_name") or metadata.get("goal_name"),
+            "execution_kind": state.get("execution_kind") or metadata.get("execution_kind") or metadata.get("kind"),
+            "updated_at": state.get("updated_at"),
+            "pending": len(state.get("pending") or []),
+            "tasks": len(state.get("tasks") or {}),
+            "has_checkpoint": checkpoint is not None,
+            "checkpoint_label": checkpoint.get("label") if isinstance(checkpoint, dict) else None,
+            "checkpoint_timestamp": checkpoint.get("timestamp") if isinstance(checkpoint, dict) else None,
+        }
+        infos.append(info)
+    return infos
+
+
+def persist_checkpoint_snapshot(graph_id: str, snapshot: dict, label: str | None) -> None:
+    checkpoint = {
+        "graph_id": graph_id,
+        "label": label,
+        "timestamp": runtime_time_ms(),
+        "status": snapshot.get("status"),
+        "tasks": snapshot.get("tasks"),
+        "pending": snapshot.get("pending"),
+        "scheduler_queue": snapshot.get("scheduler_queue"),
+        "task_outputs": snapshot.get("task_outputs"),
+        "results": snapshot.get("results"),
+        "workflow_state": snapshot.get("workflow_state"),
+        "metadata": snapshot.get("metadata"),
+        "checkpoints": snapshot.get("checkpoints"),
+    }
+    with _STATE_LOCK:
+        _atomic_write_json(_checkpoint_path(graph_id), checkpoint)
+
+
+def _merge_resume_state(state: dict | None, checkpoint: dict | None) -> dict | None:
+    if state is None and checkpoint is None:
+        return None
+    merged = dict(state) if isinstance(state, dict) else {}
+    if isinstance(checkpoint, dict):
+        merged.setdefault("tasks", {})
+        merged_tasks = dict(merged.get("tasks") or {})
+        checkpoint_tasks = checkpoint.get("tasks")
+        if isinstance(checkpoint_tasks, dict):
+            merged_tasks.update(checkpoint_tasks)
+        merged["tasks"] = merged_tasks
+        for key in ("pending", "scheduler_queue", "workflow_state", "metadata", "results", "task_outputs"):
+            if key in checkpoint:
+                merged[key] = checkpoint[key]
+        if "label" in checkpoint:
+            merged["checkpoint_label"] = checkpoint["label"]
+    return merged
 
 
 def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> dict:
@@ -139,6 +332,24 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task.task_id = task.task_id or f"task_{idx}"
     by_id = {task.task_id: task for task in tasks}
     pending = set(task.task_id for task in tasks)
+    pending_queue = [task.task_id for task in tasks]
+    scheduler_hint: list[str] = []
+    scheduler_order_map: dict[str, int] = {}
+    def _remove_task_from_pending(task_id: str) -> None:
+        pending.discard(task_id)
+        try:
+            pending_queue.remove(task_id)
+        except ValueError:
+            pass
+
+    def _mark_task_pending(task_id: str) -> None:
+        if task_id not in by_id:
+            return
+        if task_id not in pending:
+            pending.add(task_id)
+        if task_id not in pending_queue:
+            pending_queue.append(task_id)
+
     results: dict[str, object] = {}
     timings: dict[str, dict] = {}
     attempts: dict[str, float] = {}
@@ -181,6 +392,29 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             checkpoints = []
         graph.metadata["workflow_state"] = workflow_state
         graph.metadata["checkpoints"] = checkpoints
+    if resume_state:
+        stored_pending = resume_state.get("pending")
+        if isinstance(stored_pending, list):
+            filtered = []
+            seen = set()
+            for tid in stored_pending:
+                if not isinstance(tid, str) or tid not in by_id or tid in seen:
+                    continue
+                filtered.append(tid)
+                seen.add(tid)
+            pending = set(filtered)
+            pending_queue[:] = filtered
+        stored_scheduler = resume_state.get("scheduler_queue")
+        if isinstance(stored_scheduler, list):
+            filtered_hint = []
+            seen_hint = set()
+            for tid in stored_scheduler:
+                if not isinstance(tid, str) or tid not in by_id or tid in seen_hint:
+                    continue
+                filtered_hint.append(tid)
+                seen_hint.add(tid)
+            scheduler_hint = filtered_hint
+            scheduler_order_map = {tid: idx for idx, tid in enumerate(filtered_hint)}
     if workflow_name is not None:
         vm.event_bus.emit_event("workflow_start", data={"workflow": workflow_name, "graph_id": graph.graph_id})
     if execution_kind == "goal" and isinstance(goal_name, str):
@@ -248,6 +482,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         for task in tasks:
             if task.task_id in pending and all(dep.task_id in results for dep in task.dependencies):
                 ready.append(task)
+        if scheduler_order_map:
+            ready.sort(key=lambda task: scheduler_order_map.get(task.task_id, len(scheduler_order_map)))
         return ready
 
     def _serialize_value(value):
@@ -289,7 +525,19 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             entry["state"] = clone_state(workflow_state)
         if isinstance(checkpoints, list):
             checkpoints.append(entry)
-        _persist_graph_state(graph, tasks, attempts, results, "running")
+        snapshot = _persist_graph_state(
+            graph,
+            tasks,
+            attempts,
+            results,
+            "running",
+            pending_queue,
+            task_values,
+            workflow_state,
+            checkpoints,
+            vm,
+        )
+        persist_checkpoint_snapshot(graph.graph_id, snapshot, label)
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
 
     def _workflow_context(task: TaskNode) -> dict | None:
@@ -314,7 +562,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         with worker_lock:
             if failed is not None:
                 return
-            pending.discard(task.task_id)
+            _remove_task_from_pending(task.task_id)
             task.status = "running"
             if task.started_at is None:
                 task.started_at = runtime_time_ms()
@@ -344,7 +592,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     }
                     cache_hits.append(task.task_id)
                     vm.event_bus.emit_event("task_cache_hit", name=task.task_id)
-                    _persist_graph_state(graph, tasks, attempts, results, "running")
+                    _persist_graph_state(
+                        graph,
+                        tasks,
+                        attempts,
+                        results,
+                        "running",
+                        pending_queue,
+                        task_values,
+                        workflow_state,
+                        checkpoints,
+                        vm,
+                    )
                     vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
                     vm.event_bus.emit_event("task_success", name=task.task_id, data={"attempt": float(task.attempts)})
                     workflow_data = workflow_event_payload(task)
@@ -392,7 +651,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                                 key = task.cache_key or _default_cache_key(task, [results[dep.task_id] for dep in task.dependencies])
                                 vm.task_cache[key] = task.result
                                 vm.event_bus.emit_event("task_cache_store", name=task.task_id)
-                            _persist_graph_state(graph, tasks, attempts, results, "running")
+                            _persist_graph_state(
+                                graph,
+                                tasks,
+                                attempts,
+                                results,
+                                "running",
+                                pending_queue,
+                                task_values,
+                                workflow_state,
+                                checkpoints,
+                                vm,
+                            )
                             vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
                             vm.event_bus.emit_event("task_success", name=task.task_id, data={"attempt": float(task.attempts)})
                             workflow_data = workflow_event_payload(task)
@@ -438,7 +708,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             key = task.cache_key or _default_cache_key(task, [results[dep.task_id] for dep in task.dependencies])
             vm.task_cache[key] = task.result
             vm.event_bus.emit_event("task_cache_store", name=task.task_id)
-        _persist_graph_state(graph, tasks, attempts, results, "running")
+        _persist_graph_state(
+            graph,
+            tasks,
+            attempts,
+            results,
+            "running",
+            pending_queue,
+            task_values,
+            workflow_state,
+            checkpoints,
+            vm,
+        )
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
         vm.event_bus.emit_event("task_success", name=task.task_id, data={"attempt": float(task.attempts)})
         workflow_data = workflow_event_payload(task)
@@ -480,7 +761,19 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if task.attempts <= task.max_retries:
             vm.event_bus.emit_event("task_retry", name=task.task_id, data={"attempt": float(task.attempts + 1)})
             task.status = "retrying"
-            _persist_graph_state(graph, tasks, attempts, results, "running")
+            _mark_task_pending(task.task_id)
+            _persist_graph_state(
+                graph,
+                tasks,
+                attempts,
+                results,
+                "running",
+                pending_queue,
+                task_values,
+                workflow_state,
+                checkpoints,
+                vm,
+            )
             vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
             spawn_task(task, delay_ms=task.retry_delay_ms)
             return False
@@ -497,7 +790,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "cache_hits": cache_hits,
             "graph_id": graph.graph_id,
         }
-        _persist_graph_state(graph, tasks, attempts, results, "failed")
+        _persist_graph_state(
+            graph,
+            tasks,
+            attempts,
+            results,
+            "failed",
+            pending_queue,
+            task_values,
+            workflow_state,
+            checkpoints,
+            vm,
+        )
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
         if workflow_name is not None:
             vm.event_bus.emit_event(
@@ -528,7 +832,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 results[task.task_id] = saved.get("result")
                 task_values[task.task_id] = saved.get("result")
                 task.status = "completed"
-                pending.discard(task.task_id)
+                _remove_task_from_pending(task.task_id)
             elif saved.get("state") in {"failed"}:
                 failed = {
                     "tasks": task_values,
@@ -544,6 +848,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 return failed
             else:
                 task.status = "pending"
+        for task in tasks:
+            if task.task_id not in results and task.task_id not in pending:
+                _mark_task_pending(task.task_id)
 
     for task in ready_tasks():
         spawn_task(task)
@@ -577,7 +884,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         payload.update(workflow_result_payload())
         return payload
 
-    _persist_graph_state(graph, tasks, attempts, results, "completed")
+    _persist_graph_state(
+        graph,
+        tasks,
+        attempts,
+        results,
+        "completed",
+        pending_queue,
+        task_values,
+        workflow_state,
+        checkpoints,
+        vm,
+    )
     vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
     if workflow_name is not None:
         vm.event_bus.emit_event("workflow_complete", data={"workflow": workflow_name, "graph_id": graph.graph_id})
@@ -601,10 +919,12 @@ def resume_graph(vm, graph_id: str) -> dict:
     if graph is None:
         return {"ok": False, "error": "Unknown graph"}
     state = _load_graph_state(graph_id)
-    if state is None:
+    checkpoint = load_checkpoint(graph_id)
+    resume_state = _merge_resume_state(state, checkpoint)
+    if resume_state is None:
         return {"ok": False, "error": "Graph state not found"}
     vm.event_bus.emit_event("graph_resume", data={"graph_id": graph_id})
-    return run_task_graph(vm, graph, resume_state=state)
+    return run_task_graph(vm, graph, resume_state=resume_state)
 
 
 def plan_graph(tasks: list[TaskNode], graph: TaskGraph | None = None) -> dict:

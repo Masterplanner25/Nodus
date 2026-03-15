@@ -437,6 +437,8 @@ event tracing
 
 Workflow syntax is lowered into task graph execution plans during compilation.
 
+Workflow persistence extends these orchestration components. The runtime now writes `.nodus/graphs/<graph_id>.json` snapshots that record the full workflow state (task metadata, outputs, pending queue, scheduler-ready work, workflow/goal metadata, checkpoint history, and an `updated_at` timestamp) using atomic temp-file writes followed by fsync+rename to protect against crashes. Checkpoints recorded inside steps emit `.nodus/graphs/<graph_id>.checkpoint.json`, which stores completed tasks, intermediate outputs, remaining tasks, scheduler order, and workflow state so a resumed workflow can continue from the exact point of interruption. CLI tooling (`nodus workflow list/resume/cleanup`) and the `NODUS_WORKFLOW_RETENTION_SECONDS` setting help operators inspect, resume, and prune persisted workflows without losing scheduler fairness.
+
 5. Tooling and Developer Interfaces
 
 Nodus includes extensive developer tooling.

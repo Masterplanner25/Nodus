@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
 
@@ -19,6 +20,7 @@ from nodus.lsp.server import run_stdio_server
 from nodus.tooling.formatter import format_source
 from nodus.tooling import package_manager as _package_manager
 from nodus.tooling.project import load_project, load_project_from, project_entry_path
+from nodus.orchestration import task_graph as _task_graph
 from nodus.tooling.runner import (
     agent_call_result,
     build_ast,
@@ -108,6 +110,19 @@ def _resolve_project_root(path: object | None) -> tuple[str | None, str | None]:
     return root, None
 
 
+@contextmanager
+def _project_root_context(path: str | None):
+    if path:
+        original = os.getcwd()
+        os.chdir(path)
+        try:
+            yield
+        finally:
+            os.chdir(original)
+    else:
+        yield
+
+
 def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str | None, str | None, str | None]:
     if path is None:
         project = load_project_from(os.getcwd())
@@ -182,6 +197,9 @@ def _render_help() -> str:
             "  nodus workflow-plan <file> [--workflow NAME]",
             "  nodus workflow-resume <graph_id> [--checkpoint LABEL]",
             "  nodus workflow-checkpoints <graph_id>",
+            "  nodus workflow list [--project-root PATH]",
+            "  nodus workflow resume <graph_id> [--checkpoint <label>] [--project-root PATH]",
+            "  nodus workflow cleanup [--project-root PATH --retention-seconds N --force]",
             "  nodus goal-run <file> [--goal NAME]",
             "  nodus goal-plan <file> [--goal NAME]",
             "  nodus goal-resume <graph_id> [--checkpoint LABEL]",
@@ -572,6 +590,60 @@ def _run_resume_goal(graph_id: str, checkpoint: str | None) -> int:
     return 0
 
 
+def _default_retention_seconds() -> int | None:
+    raw = os.environ.get("NODUS_WORKFLOW_RETENTION_SECONDS")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    if value < 0:
+        return None
+    return value
+
+
+def _workflow_list(project_root: str | None) -> int:
+    with _project_root_context(project_root):
+        snapshots = _task_graph.list_graph_snapshots_info()
+    _json_print(snapshots)
+    return 0
+
+
+def _workflow_resume_cli(graph_id: str, checkpoint: str | None, project_root: str | None) -> int:
+    with _project_root_context(project_root):
+        return _run_resume_workflow(graph_id, checkpoint)
+
+
+def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, force: bool) -> int:
+    now_ms = int(time.time() * 1000)
+    threshold = retention_seconds if retention_seconds is not None else _default_retention_seconds()
+    removed: list[str] = []
+    with _project_root_context(project_root):
+        snapshots = _task_graph.list_graph_snapshots_info()
+        for snapshot in snapshots:
+            graph_id = snapshot.get("graph_id")
+            if not graph_id:
+                continue
+            should_remove = False
+            if force:
+                should_remove = True
+            elif threshold and snapshot.get("status") == "completed":
+                updated = snapshot.get("updated_at") or 0
+                try:
+                    updated_ms = int(updated)
+                except (TypeError, ValueError):
+                    updated_ms = 0
+                if updated_ms and now_ms - updated_ms >= threshold * 1000:
+                    should_remove = True
+            if should_remove:
+                _task_graph.delete_graph_state(graph_id)
+                _task_graph.delete_checkpoint(graph_id)
+                removed.append(graph_id)
+    _json_print({"removed": removed, "retention_seconds": threshold, "force": force})
+    return 0
+
+
 def _run_workflow_checkpoints(graph_id: str) -> int:
     payload = workflow_checkpoints(graph_id)
     if not payload.get("ok", False):
@@ -904,6 +976,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow-plan",
         "workflow-resume",
         "workflow-checkpoints",
+        "workflow",
         "goal-run",
         "goal-plan",
         "goal-resume",
@@ -1204,6 +1277,49 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
         return _run_worker(host, port, token=token)
+
+    if command == "workflow":
+        if not cmd_args:
+            _print_stderr("Usage: nodus workflow <list|resume|cleanup> [options]")
+            return 1
+        subcommand = cmd_args[0]
+        sub_args = cmd_args[1:]
+        if subcommand == "list":
+            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_list(project_root)
+        if subcommand == "resume":
+            positional, flags = _parse_flags(sub_args, {"--checkpoint", "--path", "--project-root"}, set())
+            if not positional:
+                _print_stderr("Usage: nodus workflow resume <graph_id> [--checkpoint <label>] [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_resume_cli(positional[0], flags.get("--checkpoint"), project_root)
+        if subcommand == "cleanup":
+            flags_with_values = {"--retention-seconds", "--path", "--project-root"}
+            flags_no_values = {"--force"}
+            positional, flags = _parse_flags(sub_args, flags_with_values, flags_no_values)
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            retention = None
+            if "--retention-seconds" in flags:
+                try:
+                    retention = _parse_int(str(flags["--retention-seconds"]), "--retention-seconds")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            force = "--force" in flags
+            return _workflow_cleanup(project_root, retention, force)
+        _print_stderr(f"Unknown workflow command: {subcommand}")
+        return 1
 
     if command == "workflow-run":
         flags_with_values = {"--workflow", "--project-root"}

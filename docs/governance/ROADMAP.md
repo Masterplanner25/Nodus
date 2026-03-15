@@ -455,7 +455,7 @@ Focus:
 - incremental compilation
 - bytecode caching
 - scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
-- task graph persistence improvements
+- ✅ task graph persistence improvements (resilient snapshots + checkpoint resume, workflow CLI)
 - LSP diagnostics
 - debug adapter
 
