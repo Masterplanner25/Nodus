@@ -3,14 +3,30 @@
 ## [Unreleased]
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Removed
+- None.
+
+## [0.5.0] - 2026-03-14 — Interactive Shell and Inspection
+
+### Added
 - REPL multiline editing with `... ` continuation for brace-delimited blocks.
 - Persistent REPL history via `~/.nodus_history` when Python `readline` is available.
 - REPL inspection commands: `:ast <expr>`, `:dis <expr>`, `:type <expr>`, `:help`, and `:quit`.
 - Dedicated REPL documentation in `docs/tooling/REPL.md`.
+- Profiler documentation and runtime integration for the 0.5.0 tooling milestone.
 
 ### Changed
 - REPL inspection output now supports compact expression AST views and expression bytecode inspection.
 - Onboarding and runtime docs now describe the interactive shell workflow and inspection commands.
+- Project metadata now aligns on version `0.5.0`.
 
 ### Fixed
 - None.

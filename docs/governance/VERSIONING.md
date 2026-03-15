@@ -9,7 +9,9 @@ Nodus uses simple semantic versioning.
 Single source of truth:
 - Version is defined in `version.py`.
 - CLI output (`nodus --version`) is derived from it.
+- Packaging metadata in `pyproject.toml` must be kept in sync with the runtime version.
 
 Release flow:
 - Update `version.py`.
+- Update `pyproject.toml`.
 - Move items from Unreleased in `CHANGELOG.md` to the new version section.
