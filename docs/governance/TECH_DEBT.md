@@ -14,6 +14,14 @@ This document tracks known follow-ups and cleanup items that are not blocking cu
 
 Items below were raised in a third-party review and are now validated with concrete references.
 
+## Phase 2 Fixes Applied (architecture)
+
+- ✅ Builtin registry extracted from VM: `BuiltinRegistry` class in `src/nodus/builtins/__init__.py`; category modules (`io`, `math`, `coroutine`, `collections`) each expose a `register(vm, registry)` function called at VM construction time.
+- ✅ `compile_source()` deprecated: marked `@deprecated` since v0.5; canonical path is `ModuleLoader(...).load_source(src)`. Removal target: v1.0. ~220 deprecation warnings remain in the test suite — tests not yet migrated.
+- ✅ AST `Base` dataclass: all AST node classes inherit from `Base` (`src/nodus/frontend/ast/ast_nodes.py`), which carries `_tok` (source token for error location) and `_module` (module path set by loader), both excluded from `__repr__` and `__eq__`.
+- ✅ `NodeVisitor` base class: `src/nodus/frontend/visitor.py` provides automatic `visit_<ClassName>` dispatch. Missing visitor methods raise `NotImplementedError` at runtime to surface coverage gaps early.
+- ✅ `_StateRewriter` documented: workflow lowering pass documented in `src/nodus/runtime/workflow_lowering.py`; rewrites workflow/goal ASTs into scheduler-compatible coroutine form.
+
 ## Validated Findings
 
 - ✅ VM builtin extraction complete: I/O, math, coroutine, and collection builtins extracted into `src/nodus/builtins/` category modules and registered at VM construction time via `BuiltinRegistry` (`src/nodus/builtins/__init__.py`).
@@ -42,6 +50,13 @@ Items below were raised in a third-party review and are now validated with concr
 - ✅ Fix 13 — Channel waiting queues converted to `collections.deque`: `waiting_receivers` and `waiting_senders` in `src/nodus/runtime/channel.py`; all `pop(0)` (O(n)) replaced with `popleft()` (O(1)) in `src/nodus/builtins/coroutine.py`.
 - ✅ Fix 14 — Bytecode cache migrated from `pickle` to `marshal`: `src/nodus/runtime/bytecode_cache.py` now writes `NDSC` magic (4 bytes) + format version byte + SHA-256 checksum (32 bytes) + `marshal.dumps()` payload. Eliminates pickle's arbitrary-code-execution risk and is faster for primitive-type payloads. Checksum verified on load; any mismatch silently invalidates the cache.
 - ✅ Fix 15 — Optimizer `collect_jump_targets()` hoisted: previously called once inside `fold_constants()` and once inside `remove_useless_stack_ops()` per outer fixed-point iteration (2× O(n) scans). Now computed once per outer iteration and passed as a parameter; recomputed only if `fold_constants` changes code (address compaction). Also removed the O(n) list equality dirty-detection fallback from both functions — the boolean `changed` flag is sufficient.
+
+## Open Items (not yet complete)
+
+- `compile_source()` removal: target v1.0. ~220 deprecation warnings across the test suite — test files still use the deprecated API. Migration guide: replace `compile_source(src, ...)` with `ModuleLoader(...).load_source(src)`.
+- `LOAD_LOCAL_IDX` slot-indexed fast path: Phase 3 Fix 12 added name-keyed `LOAD_LOCAL`; the next step is `LOAD_LOCAL_IDX slot` accessing `frame.locals_[slot]` (list) instead of `frame.locals[name]` (dict). Requires Frame refactoring to fixed-size locals array.
+- `vm.py` line count: ~2,052 lines after Phase 2 extraction. Further extraction of workflow/goal builtins and scheduler helpers is possible.
+- Formatter AST node coverage audit: Three expression nodes (`FnExpr`, `FieldAssign`, `RecordLiteral`) were silently missing from `format_expr()` and would crash the formatter on valid source. A systematic audit of all AST node types against `format_expr()` and `format_stmt()` should be completed before v1.0 to ensure no other nodes have missing handlers.
 
 ## Phase 4 Fixes Applied (documentation completeness)
 

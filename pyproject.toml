@@ -1,6 +1,6 @@
 [project]
 name = "nodus"
-version = "0.5.0"
+version = "0.7.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   {name = "Shawn Knight"}

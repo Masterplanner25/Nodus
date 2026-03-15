@@ -32,6 +32,12 @@ Nodus uses bytecode as the execution contract between the parser/compiler front-
   - The optimizer runs after bytecode generation and before execution by default.
   - Current passes include constant folding, unreachable instruction removal, jump-target simplification, constant canonicalization, and trivial stack cleanup (`PUSH_CONST` followed by `POP`).
   - `nodus run --no-opt ...` disables optimization.
+- Dispatch model:
+  - `VM.execute()` uses a dict dispatch table (`self._dispatch`) built once at `VM.__init__`
+    time by `_build_dispatch_table()`. Each opcode string maps to a bound `_op_XXX` method.
+    This replaced the previous `if/elif` chain in Phase 3, yielding a ~33% speedup on
+    compute-heavy benchmarks (388 ms → 260 ms). Adding a new opcode requires: (a) a new
+    `_op_<name>` method, and (b) a corresponding entry in `_build_dispatch_table()`.
 
 ## 3. Opcode Inventory
 Complete opcode set implemented by VM dispatch (`VM.run`):
@@ -64,6 +70,10 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - Only emitted when the compiler has confirmed the symbol is `scope == "local"` and the access is inside a function scope (`in_function_scope()`).
   - Reads directly from `frame.locals[name]`, unwrapping `Cell` / `LiveBinding` as needed.
   - Must not be emitted for block-level locals at module scope (those still use `LOAD`).
+  - **Planned follow-on — LOAD_LOCAL_IDX**: A slot-indexed variant (`LOAD_LOCAL_IDX slot`)
+    that accesses `frame.locals_[slot]` (a list) instead of `frame.locals[name]` (a dict)
+    would eliminate the dict lookup entirely. Not yet implemented; requires Frame refactoring
+    to use a fixed-size locals array. Tracked in TECH_DEBT.md.
 
 ### LOAD_UPVALUE
 - Category: closure / upvalue access
@@ -631,7 +641,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **43**.
+- Estimated opcode count (exact from VM dispatch): **44**.
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 

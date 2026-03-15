@@ -70,19 +70,23 @@ Compiler tests should validate bytecode structure and runtime behavior.
 
 Recommended pattern:
 
-1. Compile with `loader.compile_source` or `compiler.Compiler`.
+1. Compile with `ModuleLoader` (canonical) or `compiler.Compiler`.
 2. Validate opcode sequences in the emitted bytecode.
 3. Optionally execute with `vm.VM` and assert results.
 
 Example:
 
 ```python
-from loader import compile_source
+from loader import compile_source  # deprecated since v0.5; prefer ModuleLoader
 
 src = "let x = 1 + 2"
 _ast, code, functions, code_locs = compile_source(src)
 assert code[0][0] == "PUSH_CONST"
 ```
+
+Note: `compile_source()` is deprecated since v0.5 and will be removed in v1.0. New
+tests should use `ModuleLoader(...).load_source(src)` instead. See `DEPRECATIONS.md`
+for the migration guide.
 
 Keep compiler tests focused on specific lowering behavior (e.g., short-circuiting, destructuring, closures).
 
@@ -124,23 +128,58 @@ Guidelines:
 
 ## CI Format Check and Auto-format
 
-The CI pipeline (`ci.yml`) runs a format check across all `.nd` and `.tl` files. To prevent
-`examples/` files from failing that check, CI runs two steps before the format check:
+The CI pipeline (`ci.yml`) runs a format check across all `.nd` files. The workflow
+steps run in this order:
 
-1. **Auto-format examples** — runs `python nodus.py fmt` on every `.nd` file under `examples/`
+1. **Checkout** — fetch the repository.
+2. **Setup Python** — install the required Python version.
+3. **Install dependencies** — install package and test dependencies.
+4. **Auto-format examples** — runs `python nodus.py fmt` on every `.nd` file under `examples/`
    (in-place, no `--check` flag).
-2. **Commit formatted files** — if any file was changed by the formatter, CI commits it back
+5. **Commit formatted files** — if any file was changed by the formatter, CI commits it back
    with the message `style: auto-format examples/ [skip ci]`. The `[skip ci]` tag prevents the
-   commit from re-triggering the workflow.
+   commit from re-triggering the workflow. The commit step is a no-op when files are already
+   correctly formatted — `git diff --quiet` exits 0 and nothing is committed.
+6. **Format check** — runs `python nodus.py fmt --check` across all `.nd` files in the repo.
+7. **Run tests** — runs the full pytest suite.
 
-The commit step is a no-op when files are already correctly formatted — `git diff --quiet`
-exits 0 and the commit is skipped. This means the auto-format commit only appears when a
-contributor adds or edits an example without running the formatter locally first.
-
-To avoid these auto-commits, format examples before pushing:
+The auto-format commit only appears when a contributor adds or edits an example without
+running the formatter locally first. To avoid these auto-commits, format examples before
+pushing:
 
 ```bash
 find examples/ -name "*.nd" | sort | while read -r f; do
   python nodus.py fmt "$f"
 done
 ```
+
+If the format check fails locally, fix the file and re-check:
+
+```bash
+python nodus.py fmt <file>          # rewrite in-place
+python nodus.py fmt --check <file>  # confirm it now passes
+```
+
+Or check all examples at once:
+
+```bash
+find examples/ -name "*.nd" | xargs -I {} python nodus.py fmt --check {}
+```
+
+Note: only `.nd` files are checked. There are no `.tl` files in `examples/`.
+
+## Formatter Test Files
+
+Formatter behaviour is covered by several test modules:
+
+- `tests/test_formatter_fixtures.py` — fixture-based round-trip tests for comment handling,
+  import/export layout, unary expressions, and numeric literals. Fixtures live under
+  `tests/fixtures/fmt/`.
+- `tests/test_formatter_foreach.py` — inline test for `for … in` statement formatting.
+- `tests/test_formatter_fnexpr.py` — tests for anonymous function expression (`FnExpr`)
+  formatting, including empty bodies, single-statement inline bodies, return-type annotations,
+  multi-statement block bodies, and use as call arguments (`spawn(fn() { … })`).
+
+To add a formatter regression test, either add a new fixture pair to `tests/fixtures/fmt/`
+and reference it in `test_formatter_fixtures.py`, or add a pytest function in the relevant
+`test_formatter_*.py` module.

@@ -1,0 +1,15 @@
+fn worker(ch) {
+    send(ch, 1)
+    send(ch, 2)
+}
+
+fn receiver(ch) {
+    let a = recv(ch)
+    let b = recv(ch)
+    print(a + b)
+}
+
+let ch = channel()
+spawn(coroutine(fn() { worker(ch) }))
+spawn(coroutine(fn() { receiver(ch) }))
+run_loop()

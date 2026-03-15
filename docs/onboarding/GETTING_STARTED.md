@@ -124,6 +124,56 @@ Notes:
 3. Run `nodus check script.nd`.
 4. Run `nodus run script.nd`.
 
+## Contributing and Development
+
+### Running the test suite
+
+```bash
+python -m pytest tests/ -v
+```
+
+Or with the standard unittest runner:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+### Formatting examples before pushing
+
+CI auto-formats `examples/*.nd` and commits back if anything changed. To avoid
+that automated commit, run the formatter locally before you push:
+
+```bash
+find examples/ -name "*.nd" | sort | while read -r f; do
+  python nodus.py fmt "$f"
+done
+```
+
+Check without rewriting:
+
+```bash
+find examples/ -name "*.nd" | xargs -I {} python nodus.py fmt --check {}
+```
+
+### Adding a builtin function
+
+Builtin functions are organised by category under `src/nodus/builtins/`:
+
+| File | Category |
+|------|----------|
+| `io.py` | print, input, filesystem, path |
+| `math.py` | numeric / math |
+| `coroutine.py` | coroutine, channel, scheduler |
+| `collections.py` | list, map, string, JSON |
+
+To add a new builtin:
+
+1. Implement it in the appropriate category module (or create a new one).
+2. Call `registry.add(name, arity, fn)` inside that module's `register(vm, registry)` function.
+3. Add the name to `BUILTIN_NAMES` in `src/nodus/builtins/nodus_builtins.py`.
+
+The registry is wired into `VM.__init__` automatically — no changes to `vm.py` are needed.
+
 ## More Docs
 
 - `TASK_GRAPHS.md`

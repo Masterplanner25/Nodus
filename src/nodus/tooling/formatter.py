@@ -12,7 +12,9 @@ from nodus.frontend.ast.ast_nodes import (
     ExportFrom,
     ExportList,
     ExprStmt,
+    FieldAssign,
     FnDef,
+    FnExpr,
     For,
     ForEach,
     GoalDef,
@@ -28,6 +30,7 @@ from nodus.frontend.ast.ast_nodes import (
     Num,
     Param,
     Print,
+    RecordLiteral,
     Return,
     Str,
     Unary,
@@ -311,7 +314,31 @@ def format_expr(expr, parent_prec: int = 0) -> str:
     if isinstance(expr, MapLit):
         pairs = ", ".join(f"{format_expr(k)}: {format_expr(v)}" for k, v in expr.items)
         return f"{{{pairs}}}"
-
+    if isinstance(expr, FnExpr):
+        param_text = ", ".join(format_param(param) for param in expr.params)
+        return_text = f" -> {expr.return_type}" if expr.return_type else ""
+        header = f"fn({param_text}){return_text}"
+        if not expr.body.stmts:
+            return f"{header} {{}}"
+        if len(expr.body.stmts) == 1:
+            body_lines = format_stmt(expr.body.stmts[0], indent=0)
+            if len(body_lines) == 1:
+                return f"{header} {{ {body_lines[0].strip()} }}"
+        body_lines = format_block(expr.body, indent=1)
+        return f"{header} {{\n" + "\n".join(body_lines) + "\n}"
+    if isinstance(expr, FieldAssign):
+        obj = format_expr(expr.obj, 8)
+        val = format_expr(expr.value, 1)
+        text = f"{obj}.{expr.name} = {val}"
+        return maybe_paren(text, 1, parent_prec)
+    if isinstance(expr, RecordLiteral):
+        pairs = ", ".join(f"{k}: {format_expr(v)}" for k, v in expr.fields)
+        return f"record {{{pairs}}}"
+    # Nodes intentionally excluded from format_expr (statement-level only):
+    #   Yield, TryCatch, Throw  — parsed by stmt(), never appear as sub-expressions.
+    #   DestructureLet          — parsed by stmt() as a destructuring let binding.
+    #   VarPattern, ListPattern, RecordPattern — pattern nodes, only valid inside
+    #                             DestructureLet; not standalone expressions.
     raise TypeError(f"Unknown expr node: {expr!r}")
 
 

@@ -25,6 +25,20 @@ This document defines the official formatting style for Nodus and the scope of `
   - `while (cond) { ... }`
   - `for (init; cond; inc) { ... }`
 - Function calls: `name(arg1, arg2)`
+- Anonymous functions (FnExpr):
+  - No params, empty body: `fn() {}`
+  - Single-statement body: `fn(a, b) { a + b }` (inline)
+  - With return type: `fn(a) -> Int { return a + 1 }` (inline)
+  - Multi-statement body formatted as a block:
+    ```
+    fn(a, b) {
+        stmt1
+        stmt2
+    }
+    ```
+  - As a call argument: `spawn(fn() { work() })`, `coroutine(fn(x) { x + 1 })`
+- Field assignment (FieldAssign): `obj.field = value`
+- Record literals (RecordLiteral): `record {name: "alice", age: 30}`
 - Trailing newline: files always end with a single newline.
 
 ## Comment Policy
@@ -41,6 +55,20 @@ Nodus protects formatting stability with fixture-based formatter tests. Complex 
 - Float literals keep their decimal spelling (for example, `1.0` stays `1.0`).
 - Unary minus is formatted from a dedicated AST node, so negative literals and grouped unary expressions such as `-5` and `-(a + 1)` round-trip cleanly.
 - The formatter does not infer richer numeric types; it preserves the original token spelling where available and otherwise falls back to canonical numeric rendering.
+
+## Formatter Node Coverage
+
+The following AST expression node types are handled by `format_expr()`:
+`Num`, `Bool`, `Str`, `Nil`, `Var`, `Assign`, `Unary`, `Bin`, `Call`, `Attr`,
+`Index`, `IndexAssign`, `ListLit`, `MapLit`, `FnExpr`, `FieldAssign`,
+`RecordLiteral`, `ActionStmt`.
+
+The following node types are intentionally **not** handled in `format_expr()`
+because they are statement-level constructs, not expression values:
+- `Yield`, `TryCatch`, `Throw` — parsed by `stmt()`, never appear as sub-expressions.
+- `DestructureLet` — a destructuring `let` binding, statement-level only.
+- `VarPattern`, `ListPattern`, `RecordPattern` — pattern nodes used inside
+  `DestructureLet`; not standalone expressions.
 
 ## Scope and Limitations
 

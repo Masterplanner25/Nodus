@@ -15,9 +15,7 @@
 - None.
 
 ### Documentation
-- Documentation synchronization pass for runtime architecture, workflows, tooling, and CLI references.
-- Updated REPL invocation to `python -m nodus.tooling.repl` across docs.
-- Roadmap status refreshed for completed milestones.
+- None.
 
 ### Tests
 - None.
@@ -25,7 +23,7 @@
 ### Refactoring
 - None.
 
-## [0.7.0] - 2026-03-14 — Runtime Orchestration, Diagnostics, and Debugging
+## [0.7.0] - 2026-03-15 — Runtime Orchestration, Diagnostics, Debugging, and Sprint Fixes
 
 ### Added
 - Incremental module compilation backed by a persistent dependency graph (`.nodus/deps.json`).
@@ -34,16 +32,32 @@
 - LSP server with completion, hover, go-to-definition, and diagnostics.
 - Workflow persistence snapshots and checkpoint files under `.nodus/graphs/`.
 - Workflow management CLI commands: `nodus workflow list`, `nodus workflow resume`, `nodus workflow cleanup`.
+- `NodeVisitor` base class (`src/nodus/frontend/visitor.py`) — automatic `visit_<ClassName>` dispatch for all AST walkers.
+- `BuiltinRegistry` class (`src/nodus/builtins/__init__.py`) — category modules (`io`, `math`, `coroutine`, `collections`) register builtins at VM construction time.
+- String escape sequences: `\r`, `\0`, `\xHH`, `\uXXXX` now supported in the lexer.
+- Import chain depth limit: configurable via `NODUS_MAX_IMPORT_DEPTH` env var (default 100); raises `LangSyntaxError` instead of `RecursionError`.
+- Formatter handlers for `FnExpr` (anonymous functions), `FieldAssign` (`obj.field = val`), and `RecordLiteral` (`record { ... }`).
+- CI auto-formats `examples/*.nd` before the format check and commits back with `[skip ci]`.
 
 ### Changed
 - Runtime module loader now skips recompilation when dependency mtimes are unchanged.
 - Workflow resume logic rehydrates persisted task state and scheduler order.
 - `nodus deps` now reports the incremental compilation dependency graph.
+- `compile_source()` marked deprecated since v0.5.0; `ModuleLoader(...).load_source(src)` is the canonical pipeline. Removal target: v1.0.
+- AST `Base` dataclass carries explicit `_tok` and `_module` fields (excluded from `__repr__`/`__eq__`) on all node types.
+- Bytecode cache format changed from `pickle` to `marshal` with `NDSC` magic header + format version byte + SHA-256 integrity check. Eliminates pickle's arbitrary-code-execution risk.
+- Channel `waiting_receivers` / `waiting_senders` converted from `list` to `collections.deque`; `pop(0)` replaced with `popleft()` (O(1)).
+- Optimizer `collect_jump_targets()` hoisted to once per outer fixed-point iteration; O(n) list-equality dirty-detection fallback removed in favour of a boolean `changed` flag.
+- Legacy `.tl` files removed from `examples/`; `examples/` now contains only `.nd` files.
 
 ### Fixed
-- None.
+- `decode_string_literal` now raises `LangSyntaxError` directly with line/col rather than bare `SyntaxError`; tokenize() re-raise workaround removed.
+- Optimizer bool constant folding normalised: arithmetic ops convert bool operands to int before folding to match VM runtime semantics.
+- `builtin_close` now guards receiver wake-up with `state == "suspended"` check to prevent waking non-suspended coroutines.
 
 ### Improved
+- VM `execute()` dispatch replaced `if/elif` chain with a dict dispatch table (`_build_dispatch_table()`). Benchmark: 388 ms → 260 ms (~33% throughput improvement).
+- `LOAD_LOCAL` opcode: compiler emits `LOAD_LOCAL name` instead of `LOAD name` for confirmed function-local variables, bypassing the 4-scope probe in `load_name()`. Benchmark: ~21% additional improvement on tight loops.
 - Scheduler fairness via round-robin execution and `TASK_STEP_BUDGET` enforcement.
 - LSP diagnostics are dependency-aware with cross-module publishing and incremental refresh.
 - Debugger integration reused by both interactive debugger and DAP server.
@@ -51,13 +65,15 @@
 
 ### Documentation
 - Added/updated docs for LSP, DAP, debugging entrypoints, workflow persistence, and scheduler fairness.
+- Documentation synchronisation pass: FORMAT.md, TESTING.md, BYTECODE_REFERENCE.md, RELEASE_CHECKLIST.md, TECH_DEBT.md, GETTING_STARTED.md updated to reflect Phases 1–4.
 
 ### Tests
 - Added coverage for bytecode cache, incremental compilation, scheduler fairness, workflow persistence, LSP diagnostics, and DAP server behavior.
 - Added/expanded tests for module isolation and runtime module objects.
+- Added `tests/test_formatter_fnexpr.py` covering FnExpr, FieldAssign, RecordLiteral formatting.
 
 ### Refactoring
-- None.
+- `_StateRewriter` documented in `src/nodus/runtime/workflow_lowering.py`.
 
 ## [0.5.0] - 2026-03-14 — Interactive Shell and Inspection
 

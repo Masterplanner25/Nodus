@@ -19,9 +19,28 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## In Progress / Release Pending
 
-None.
+v0.7.0 shipped 2026-03-15. Active work is v0.8 planning; see the v0.8 milestone section below.
+[Unreleased] documentation updates are tracked in CHANGELOG.md.
 
 ## Released Versions
+
+### 0.7.0 — Runtime Orchestration, Diagnostics, Debugging, and Sprint Fixes (2026-03-15)
+- Incremental module compilation with persistent dependency graph (`.nodus/deps.json`).
+- Disk bytecode cache: `marshal` + `NDSC` magic + SHA-256 integrity, replacing `pickle`.
+- DAP debug adapter (`nodus dap`) and LSP server (completion, hover, go-to-definition, diagnostics).
+- Workflow persistence snapshots, checkpoint files, and workflow management CLI commands.
+- Scheduler fairness: round-robin execution with `TASK_STEP_BUDGET` enforcement.
+- VM dispatch table (`_build_dispatch_table()`): replaced `if/elif` chain — ~33% throughput improvement.
+- `LOAD_LOCAL` opcode for confirmed function-local variables — ~21% additional loop improvement.
+- Bytecode cache hardened: `pickle` → `marshal` + NDSC magic + SHA-256 integrity check.
+- Channel queues converted to `collections.deque` (O(1) pop).
+- Builtin registry (`BuiltinRegistry`) extracted from VM into `src/nodus/builtins/`.
+- `compile_source()` deprecated; `ModuleLoader` is the canonical pipeline.
+- AST `Base` dataclass with explicit `_tok` / `_module` fields.
+- `NodeVisitor` base class (`src/nodus/frontend/visitor.py`).
+- Correctness fixes: `LangSyntaxError` from lexer, extended escape sequences, bool constant folding, coroutine close guard, import depth limit.
+- Formatter: `FnExpr`, `FieldAssign`, `RecordLiteral` handlers added.
+- CI: auto-format examples/ before format check.
 
 ### 0.3.0 — Tooling and Orchestration
 - Richer stdlib: `std:json`, `std:math`, `std:runtime`, `std:tools`, `std:memory`, `std:agent`, `std:async`, and expanded collections helpers.
@@ -165,6 +184,13 @@ registry-backed dependency resolution
 
 This enables reproducible automation deployments.
 
+Status:
+Partial. Package manager CLI exists (`package_manager.py`): `nodus.toml` / `nodus.lock`,
+semver resolution, local dependency layout under `.nodus/modules/`, and `nodus install` /
+`nodus update` commands are implemented.
+Registry-backed package resolution and publishing: NOT YET STARTED.
+Registry resolution is the primary blocker for this milestone.
+
 Runtime Evolution
 
 Key runtime improvements.
@@ -294,11 +320,10 @@ Virtual Machine Improvements
 
 Planned improvements ranked by feasibility.
 
-1. Threaded Dispatch
+1. ✅ Handler Table Dispatch (shipped v0.7.0)
 
-Replace opcode switch with handler table dispatch.
-
-Expected moderate performance improvement.
+Replaced `if/elif` opcode switch with dict dispatch table (`_build_dispatch_table()`).
+Benchmark: 388 ms → 260 ms (~33% throughput improvement).
 
 2. Opcode Specialization
 
@@ -462,16 +487,58 @@ profiler MVP
 
 improved REPL
 
-Version 0.7
+Version 0.7 ✅ Released 2026-03-15
 
 Focus:
 
-- incremental compilation
-- bytecode caching
-- scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
+- ✅ incremental compilation (`.nodus/deps.json` dependency graph, mtime-based invalidation)
+- ✅ bytecode caching hardened (marshal + NDSC magic + SHA-256 integrity, replacing pickle)
+- ✅ scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
 - ✅ task graph persistence improvements (resilient snapshots + checkpoint resume, workflow CLI)
 - ✅ LSP diagnostics (cross-module publishing, dependency-aware incremental refresh, richer locations, warnings)
 - ✅ debug adapter (DAP stdio server, runtime-debugger-backed breakpoints/stepping, stack traces, variable scopes, CLI entrypoint)
+
+Version 0.8 — Stability & Package Ecosystem
+
+Theme: Close the gap between working language and distributable ecosystem.
+
+Goals:
+
+- [ ] Registry-backed package resolution
+      The single most overdue item. Package manager CLI exists but cannot
+      resolve or publish from a registry. This is required before v1.0.
+      Owner: package_manager.py + new registry client module.
+
+- [ ] compile_source() removal
+      Deprecated since v0.5.0. Tracked in TECH_DEBT.md.
+      All internal callers must migrate to ModuleLoader before removal.
+      Removal unblocks a cleaner public API surface for v1.0.
+      ~220 deprecation warnings remain in the test suite.
+
+- [ ] Opcode set stabilization plan
+      The opcode set must be frozen before v1.0 can be declared.
+      v0.8 deliverable: produce a formal opcode freeze proposal —
+      a documented list of all 44 current opcodes with a stability
+      classification (stable / provisional / deprecated) and a process
+      for adding new opcodes post-freeze.
+      Actual freeze happens at v1.0.
+
+- [ ] LOAD_LOCAL_IDX full VM slot-indexed path
+      Compiler emits LOAD_LOCAL (name-keyed, shipped in v0.7). The next
+      step is LOAD_LOCAL_IDX (slot-indexed list access), bypassing the
+      dict lookup entirely. Requires Frame refactoring to fixed-size
+      locals array. Tracked in TECH_DEBT.md.
+
+- [ ] Formatter AST coverage audit
+      FnExpr, FieldAssign, and RecordLiteral were missing from the
+      formatter and would crash on valid source (fixed in v0.7). Audit
+      all remaining AST nodes against format_expr() and format_stmt()
+      before v1.0 to ensure no other nodes are missing handlers.
+
+Not in v0.8 (deferred to v1.0 or later):
+- Type System Evolution — no version target assigned yet
+- Stable embedding API freeze — v1.0 goal
+- Production hardened sandboxing — v1.0 goal
 
 Version 1.0
 
