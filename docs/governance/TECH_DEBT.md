@@ -43,6 +43,29 @@ Items below were raised in a third-party review and are now validated with concr
 - ✅ Fix 14 — Bytecode cache migrated from `pickle` to `marshal`: `src/nodus/runtime/bytecode_cache.py` now writes `NDSC` magic (4 bytes) + format version byte + SHA-256 checksum (32 bytes) + `marshal.dumps()` payload. Eliminates pickle's arbitrary-code-execution risk and is faster for primitive-type payloads. Checksum verified on load; any mismatch silently invalidates the cache.
 - ✅ Fix 15 — Optimizer `collect_jump_targets()` hoisted: previously called once inside `fold_constants()` and once inside `remove_useless_stack_ops()` per outer fixed-point iteration (2× O(n) scans). Now computed once per outer iteration and passed as a parameter; recomputed only if `fold_constants` changes code (address compaction). Also removed the O(n) list equality dirty-detection fallback from both functions — the boolean `changed` flag is sufficient.
 
+## Phase 4 Fixes Applied (documentation completeness)
+
+- ✅ Fix 16 — ARCHITECTURE.md completeness audit: added AST attribute convention
+  (_tok/_module), workflow lowering (_StateRewriter) reference, and VM dispatch
+  model (dict-based, how to add new opcodes).
+- ✅ Fix 17 — VM execution model docstrings: added docstrings to VM.execute()
+  (stack discipline, frame layout, coroutine protocol, pending flags, dispatch
+  table), VM.load_name() (lookup order, why 4 scopes), VM.builtin_coroutine_resume()
+  (pre-conditions, stack behavior, error propagation), VM.call_closure() (upvalue
+  capture, Cell boxing, frame stack behavior).
+- ✅ Fix 18 — SymbolTable documentation: added module-level docstring (scope types,
+  two-pass design), docstrings for resolve_upvalue() (algorithm, Cell boxing, is_local
+  semantics) and current_function_upvalues() (what it returns, runtime index relation).
+- ✅ Fix 19 — Public API docstrings: full docstrings on NodusRuntime.__init__(),
+  run_source(), run_file(), register_function(), reset(). Updated EMBEDDING.md to
+  correct the initialization example (NodusRuntime vs. vm.register_builtin) and
+  add module docstring to __init__.py public functions.
+- ✅ Fix 20 — Bytecode reference completeness: added BUILD_MODULE opcode entry to
+  BYTECODE_REFERENCE.md (was in dispatch table but missing from docs); updated
+  opcode count from 42 to 43; added BUILD_MODULE semantics to INSTRUCTION_SEMANTICS.md.
+  LOAD_LOCAL was already documented; LOAD_LOCAL_IDX is a future optimization not yet
+  implemented (noted in TECH_DEBT).
+
 ## Phase 1 Fixes Applied (correctness)
 
 - ✅ `decode_string_literal` now raises `LangSyntaxError` directly with line/col instead of bare `SyntaxError`; tokenize() re-raise workaround removed (`src/nodus/frontend/lexer.py`).

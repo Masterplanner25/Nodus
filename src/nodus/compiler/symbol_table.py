@@ -1,4 +1,38 @@
-"""Lexical scope tracking for the compiler."""
+"""Lexical scope tracking for the Nodus compiler.
+
+The symbol table resolves variable names to one of three scope types:
+
+``global``
+    Defined at module top-level.  The VM stores and loads these through
+    ``module_globals`` and the LOAD / STORE opcodes.
+
+``local``
+    Defined inside a function (any block nested inside ``fn``).  The VM
+    stores and loads these through ``frame.locals`` and the STORE_ARG /
+    LOAD_LOCAL / STORE opcodes.  The compiler emits the faster LOAD_LOCAL
+    opcode (instead of LOAD) when it can confirm a symbol is local-scope and
+    the access is inside a function body.
+
+``upvalue``
+    A variable defined in an enclosing function that is captured by a nested
+    function (closure).  The compiler inserts Cell boxing for the captured
+    variable in the enclosing frame and emits LOAD_UPVALUE / STORE_UPVALUE
+    with an integer index into the closure's upvalue array.
+
+Two-pass compilation design
+----------------------------
+Functions are compiled *before* the main module body.  Each function starts
+its own Scope (kind="function") pushed with ``enter_scope("function")``.
+Upvalue resolution (``resolve_upvalue``) can only proceed once all enclosing
+function scopes are in the scope chain, so the two-pass order — inner functions
+first, then the outer body — ensures that when the compiler processes a nested
+``fn``, all enclosing scopes are already on the stack and ``resolve_upvalue``
+can walk up to them.
+
+This is also why ``_current_function_scope`` walks up the scope chain rather
+than just looking at the top scope: block scopes (``if``, ``while``, ``for``)
+are interleaved between function scopes.
+"""
 
 from dataclasses import dataclass
 
@@ -78,12 +112,60 @@ class SymbolTable:
         return None
 
     def resolve_upvalue(self, name: str) -> Symbol | None:
+        """Resolve ``name`` as an upvalue from an enclosing function scope.
+
+        Algorithm (implemented by ``_resolve_upvalue_in``):
+        1. Find the immediately enclosing function scope (``enclosing``).
+        2. Walk scopes between the current function scope and ``enclosing``,
+           looking for ``name``.
+        3. If ``name`` is found with ``scope == "global"``, return it as-is
+           (globals are accessed directly, not via upvalue indirection).
+        4. If ``name`` is found in ``enclosing`` as a local variable, add an
+           upvalue entry with ``is_local=True``.  The VM will call
+           ``capture_local(enclosing_frame, name)`` at closure-creation time
+           to box the local into a Cell.
+        5. If ``name`` is found in ``enclosing`` as an upvalue itself (i.e.
+           it was already captured from a *further* enclosing scope), add an
+           upvalue entry with ``is_local=False`` and copy the outer upvalue's
+           index.  The VM will re-use the outer Cell.
+        6. If not found in ``enclosing``, recurse outward (step 5 of the outer
+           recursion handles the chaining).
+
+        Cell boxing and mutability
+        --------------------------
+        ``is_local=True`` means "the captured variable lives directly in the
+        immediately enclosing function's ``frame.locals``."  The VM boxes that
+        local into a ``Cell`` the first time a closure captures it
+        (``capture_local``), and every closure sharing that capture reads/writes
+        the same Cell object, preserving shared-mutable semantics.
+
+        ``is_local=False`` means "the captured variable was already itself an
+        upvalue in the enclosing function."  The VM fetches the Cell from the
+        enclosing closure's upvalue list by index rather than from ``locals``.
+
+        Returns ``None`` if ``name`` cannot be found in any enclosing scope.
+        """
         func_scope = self._current_function_scope()
         if func_scope is None:
             return None
         return self._resolve_upvalue_in(func_scope, name)
 
     def current_function_upvalues(self) -> list[Upvalue]:
+        """Return the ordered list of upvalues captured by the current function scope.
+
+        Called by the compiler at the end of compiling a ``fn`` body, after all
+        inner function bodies and variable references have been processed.  The
+        compiler passes the returned list to ``FunctionInfo`` so that the VM knows
+        which variables to capture at the MAKE_CLOSURE opcode.
+
+        Each ``Upvalue`` in the list corresponds to one slot in the closure's
+        upvalue array at runtime.  The ``index`` field of a Symbol with
+        ``scope="upvalue"`` is its position in this list, and it is the same integer
+        passed to LOAD_UPVALUE / STORE_UPVALUE at runtime.
+
+        Returns an empty list for module-level code (where there is no enclosing
+        function scope) and for functions that capture no variables.
+        """
         func_scope = self._current_function_scope()
         if func_scope is None:
             return []

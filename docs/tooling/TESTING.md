@@ -121,3 +121,26 @@ Guidelines:
 - Tests live under `tests/`.
 - Formatter fixtures live under `tests/fixtures/fmt`.
 - Prefer one concept per test for clarity and maintainability.
+
+## CI Format Check and Auto-format
+
+The CI pipeline (`ci.yml`) runs a format check across all `.nd` and `.tl` files. To prevent
+`examples/` files from failing that check, CI runs two steps before the format check:
+
+1. **Auto-format examples** — runs `python nodus.py fmt` on every `.nd` file under `examples/`
+   (in-place, no `--check` flag).
+2. **Commit formatted files** — if any file was changed by the formatter, CI commits it back
+   with the message `style: auto-format examples/ [skip ci]`. The `[skip ci]` tag prevents the
+   commit from re-triggering the workflow.
+
+The commit step is a no-op when files are already correctly formatted — `git diff --quiet`
+exits 0 and the commit is skipped. This means the auto-format commit only appears when a
+contributor adds or edits an example without running the formatter locally first.
+
+To avoid these auto-commits, format examples before pushing:
+
+```bash
+find examples/ -name "*.nd" | sort | while read -r f; do
+  python nodus.py fmt "$f"
+done
+```

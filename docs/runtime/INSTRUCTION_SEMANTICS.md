@@ -346,6 +346,20 @@ BUILD_MODULE
 
 Creates a module record containing exported values.
 
+[k1, v1, k2, v2, ..., kN, vN] → [module_record]
+
+Operation:
+
+pairs = pop count (key, value) pairs in reverse order
+module_record = Record(fields, kind="module")
+stack.push(module_record)
+
+Keys must be strings. The resulting Record has kind="module", which activates
+module-export semantics in LOAD_FIELD and CALL_METHOD (i.e. only exported names
+are accessible; missing exports raise a "key" error rather than a generic field
+error). This opcode is emitted by the module loader pipeline to construct the
+runtime module value; it is not emitted directly from user-authored Nodus source.
+
 Final Principle
 
 Instruction semantics must remain:

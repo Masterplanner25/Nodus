@@ -4,6 +4,7 @@ Use this checklist to cut a clean, repeatable release.
 
 ## Pre-release checks
 - Run formatter check: `nodus fmt <targets> --check`
+  (Note: CI auto-formats `examples/` before the check runs and commits any changes back with `[skip ci]`)
 - Run validation on key examples: `nodus check examples/import_demo.nd` (and other representative examples)
 - Run unit tests: `python -m unittest discover -s tests -v`
 - Run example suite (non-interactive): `nodus test-examples`

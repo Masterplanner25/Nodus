@@ -7,6 +7,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -14,6 +16,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Auto-format examples
+        run: |
+          find examples/ -name "*.nd" | sort | while read -r f; do
+            python nodus.py fmt "$f"
+          done
+
+      - name: Commit formatted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet examples/ || (
+            git add examples/*.nd &&
+            git commit -m "style: auto-format examples/ [skip ci]"
+          )
 
       - name: Formatter check
         run: |

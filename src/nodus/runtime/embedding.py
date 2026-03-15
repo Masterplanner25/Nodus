@@ -16,6 +16,25 @@ from nodus.vm.vm import VM, Record
 
 
 class NodusRuntime:
+    """Embedded Nodus runtime for hosting inside Python applications.
+
+    ``NodusRuntime`` is the recommended public API for executing Nodus scripts
+    from Python.  It manages the full compile-and-run pipeline (lexer → parser →
+    module loader → compiler → optimizer → VM) and exposes host integration hooks
+    (registered functions, sandbox constraints, execution limits).
+
+    Typical usage::
+
+        runtime = NodusRuntime(max_steps=100_000, allowed_paths=["/data"])
+        runtime.register_function("log", my_logger)
+        result = runtime.run_source('log("hello")')
+
+    A single ``NodusRuntime`` instance can be reused across multiple script
+    executions; each call to ``run_source`` / ``run_file`` creates a fresh VM and
+    module loader so state does not leak between runs.  ``last_vm`` is overwritten
+    on each call and is available for post-execution inspection.
+    """
+
     def __init__(
         self,
         *,
@@ -27,6 +46,38 @@ class NodusRuntime:
         allow_input: bool = False,
         max_frames: int | None = None,
     ) -> None:
+        """Create a new embedded Nodus runtime.
+
+        Parameters
+        ----------
+        max_steps:
+            Maximum total VM instructions executed per ``run_source`` / ``run_file``
+            call.  Raises ``RuntimeLimitExceeded`` when exceeded.  ``None`` means
+            unlimited.  Defaults to ``MAX_STEPS`` from ``support/config.py``.
+        timeout_ms:
+            Wall-clock timeout in milliseconds per execution.  Raises
+            ``RuntimeLimitExceeded`` when exceeded.  ``None`` means no timeout.
+            Defaults to ``EXECUTION_TIMEOUT_MS`` from ``support/config.py``.
+        max_stdout_chars:
+            Maximum number of stdout characters captured per execution.  Output
+            beyond this limit is silently truncated.  ``None`` means unlimited.
+            Defaults to ``MAX_STDOUT_CHARS`` from ``support/config.py``.
+        project_root:
+            Absolute path to the project root directory.  Used by the module loader
+            to resolve non-relative imports.  ``None`` disables multi-module imports.
+        allowed_paths:
+            List of directory paths the script is allowed to access via filesystem
+            builtins (``read_file``, ``write_file``, ``append_file``, ``mkdir``,
+            ``list_dir``, ``exists``).  Paths outside this list raise a sandbox error.
+            ``None`` means unrestricted filesystem access.
+        allow_input:
+            If ``False`` (default), the ``input()`` builtin raises a sandbox error.
+            Set to ``True`` only when running in interactive/REPL-like contexts where
+            stdin is available.
+        max_frames:
+            Maximum call stack depth.  Raises a sandbox error on overflow.  ``None``
+            means the VM default (``MAX_STACK_DEPTH``).
+        """
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
         self.max_stdout_chars = max_stdout_chars
@@ -38,6 +89,41 @@ class NodusRuntime:
         self.last_vm: VM | None = None
 
     def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None) -> None:
+        """Register a Python callable as a host function available to Nodus scripts.
+
+        The function will be available in every subsequent ``run_source`` /
+        ``run_file`` call on this runtime instance.
+
+        Parameters
+        ----------
+        name:
+            The name Nodus scripts use to call the function.  Must be a non-empty
+            string and must not shadow any built-in Nodus function name.
+        fn:
+            The Python callable to invoke.  Arguments are automatically converted
+            from Nodus runtime values to Python equivalents before the call, and
+            the return value is converted back (see ``_to_host_value`` /
+            ``_to_runtime_value``).
+        arity:
+            Number of positional arguments the function accepts.  Can be an ``int``
+            for a fixed arity or a ``tuple[int, ...]`` for variadic arities
+            (e.g., ``(1, 2)`` means 1 or 2 arguments).  When ``None``, arity is
+            inferred from the callable's signature via ``inspect.signature``.
+            Functions with ``*args``, ``**kwargs``, keyword-only, or defaulted
+            parameters require an explicit ``arity`` value.
+
+        Raises
+        ------
+        ValueError:
+            If ``name`` is empty, shadows a built-in, or ``arity`` is invalid.
+        ValueError:
+            If ``arity`` is ``None`` and the signature cannot be inspected
+            (e.g., the function uses ``*args``).
+
+        Example::
+
+            runtime.register_function("fetch", my_fetch_fn, arity=1)
+        """
         if not isinstance(name, str) or not name:
             raise ValueError("Host function name must be a non-empty string")
         if name in BUILTIN_NAMES:
@@ -46,6 +132,13 @@ class NodusRuntime:
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
 
     def reset(self) -> None:
+        """Clear the reference to the last VM instance.
+
+        ``last_vm`` holds a reference to the VM created by the most recent
+        ``run_source`` / ``run_file`` call.  Calling ``reset()`` releases that
+        reference, allowing the VM (and its associated bytecode, stack, and globals)
+        to be garbage-collected.
+        """
         self.last_vm = None
 
     def run_file(
@@ -59,6 +152,40 @@ class NodusRuntime:
         debugger=None,
         max_frames: int | None = None,
     ) -> dict:
+        """Read a ``.nd`` file from disk and execute it.
+
+        Equivalent to ``run_source(open(path).read(), filename=path, ...)``.
+
+        Parameters
+        ----------
+        path:
+            Absolute or relative path to the ``.nd`` source file.
+        max_steps:
+            Per-call override for ``self.max_steps``.  ``None`` uses the runtime default.
+        timeout_ms:
+            Per-call override for ``self.timeout_ms``.  ``None`` uses the runtime default.
+        max_stdout_chars:
+            Per-call override for ``self.max_stdout_chars``.  ``None`` uses the runtime default.
+        optimize:
+            Whether to run the bytecode optimizer before execution.  Defaults to ``True``.
+        debugger:
+            Optional DAP-compatible debugger object attached to the VM for this run.
+        max_frames:
+            Per-call override for ``self.max_frames``.  ``None`` uses the runtime default.
+
+        Returns
+        -------
+        dict
+            Same shape as ``run_source``: ``{"ok": bool, "stdout": str,
+            "stderr": str, "stage": "execute", "filename": path, ...}``.
+
+        Raises
+        ------
+        OSError:
+            If the file cannot be opened.
+        LangSyntaxError / LangRuntimeError:
+            Propagated from the compiler or VM on parse/runtime failure.
+        """
         with open(path, "r", encoding="utf-8") as handle:
             source = handle.read()
         return self.run_source(
@@ -85,6 +212,56 @@ class NodusRuntime:
         debugger=None,
         max_frames: int | None = None,
     ) -> dict:
+        """Compile and execute a Nodus source string.
+
+        This is the primary entry point for embedded execution.  The method runs
+        the complete pipeline: lexer → parser → import resolution (ModuleLoader) →
+        bytecode compiler → optimizer → VM execution.
+
+        Parameters
+        ----------
+        source:
+            Nodus source code as a string.
+        filename:
+            Optional label used in error messages and the module loader's import
+            resolution.  If ``filename`` points to an existing file on disk, the
+            module loader reads it directly (allowing relative imports).  Pass
+            ``None`` or ``"<memory>"`` for in-memory snippets.
+        max_steps:
+            Per-call override for ``self.max_steps``.
+        timeout_ms:
+            Per-call override for ``self.timeout_ms``.
+        max_stdout_chars:
+            Per-call override for ``self.max_stdout_chars``.
+        optimize:
+            Whether to run the bytecode optimizer.  Defaults to ``True``.
+        import_state:
+            Pre-populated module loader state dict (used by the REPL and test
+            harnesses to share already-loaded modules across calls).  ``None``
+            creates a fresh import state.
+        debugger:
+            Optional DAP-compatible debugger attached to the VM.
+        max_frames:
+            Per-call override for ``self.max_frames``.
+
+        Returns
+        -------
+        dict
+            Result dict from ``Result.to_dict()``:
+            - ``"ok"`` (bool): ``True`` on success.
+            - ``"stdout"`` (str): captured standard output.
+            - ``"stderr"`` (str): captured standard error.
+            - ``"stage"`` (str): always ``"execute"``.
+            - ``"filename"`` (str | None): normalized filename.
+            On failure the dict also contains ``"error"`` with structured error info.
+
+        Raises
+        ------
+        LangSyntaxError:
+            On parse or compile error (re-raised via ``coerce_error``).
+        LangRuntimeError:
+            On uncaught runtime error (re-raised via ``coerce_error``).
+        """
         normalized = normalize_filename(filename)
         if import_state is None and self.project_root is not None:
             import_state = {

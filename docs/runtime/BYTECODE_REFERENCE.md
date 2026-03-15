@@ -311,6 +311,19 @@ STORE x
 - Purpose: record literal construction
 - Notes / edge cases: keys must be strings.
 
+### BUILD_MODULE
+- Category: collections / module construction
+- Stack behavior: pops `count` key/value pairs, pushes a Record with `kind="module"`
+- Operands: field count (int)
+- Emitted by compiler: yes (module object construction in the module loader pipeline)
+- Purpose: construct a runtime module record that exposes named exports
+- Notes / edge cases:
+  - Keys must be strings; non-string keys raise a runtime type error.
+  - The resulting Record has `kind="module"`, which causes LOAD_FIELD and CALL_METHOD
+    to use module-export semantics rather than plain record-field semantics.
+  - Not the same as importing a module: this opcode constructs the module value that
+    the module loader stores and makes available to importers.
+
 ### INDEX
 - Category: collections
 - Stack behavior: pops index/key then sequence/map; pushes selected value
@@ -428,7 +441,7 @@ Unused/transitional/suspicious opcode notes:
 - Arithmetic/comparison core:
   - `ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `EQ`, `NE`, `LT`, `GT`, `LE`, `GE`
 - Collection construction/indexing/mutation:
-  - `BUILD_LIST`, `BUILD_MAP`, `BUILD_RECORD`, `INDEX`, `INDEX_SET`, `LOAD_FIELD`, `STORE_FIELD`
+  - `BUILD_LIST`, `BUILD_MAP`, `BUILD_RECORD`, `BUILD_MODULE`, `INDEX`, `INDEX_SET`, `LOAD_FIELD`, `STORE_FIELD`
 - Module-related behavior:
   - no module opcode family; import and namespace aliasing are compiler/loader responsibilities.
 
@@ -618,7 +631,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **42**.
+- Estimated opcode count (exact from VM dispatch): **43**.
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 
@@ -656,6 +669,7 @@ High-level construct to opcode shape (actual lowering patterns):
 | BUILD_LIST | collections | `..., items[n] -> ..., list` | yes |
 | BUILD_MAP | collections | `..., k1,v1,... -> ..., map` | yes |
 | BUILD_RECORD | records | `..., k1,v1,... -> ..., record` | yes |
+| BUILD_MODULE | module construction | `..., k1,v1,... -> ..., module_record` | yes |
 | INDEX | collections | `..., seq, idx -> ..., value` | yes |
 | INDEX_SET | mutation | `..., seq, idx, v -> ..., v` | yes |
 | LOAD_FIELD | records | `..., rec -> ..., value` | yes |

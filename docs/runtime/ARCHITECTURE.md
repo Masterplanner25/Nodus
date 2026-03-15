@@ -92,6 +92,70 @@ Graph persistence:
 
 Snapshots are written atomically (temp file -> fsync -> rename) and are used by `resume_workflow` / `resume_goal`.
 
+## AST Attribute Convention
+
+Every AST node class inherits from `Base` (defined in `src/nodus/frontend/ast/ast_nodes.py`),
+which declares two optional metadata fields:
+
+| Field     | Type            | Set by                   | Purpose                                              |
+|-----------|-----------------|--------------------------|------------------------------------------------------|
+| `_tok`    | `Tok \| None`   | `Parser.mark()` in parser.py | Source token for error location (line/col)       |
+| `_module` | `str \| None`   | `set_module_on_tree()` in loader.py during import resolution | Absolute file path or `"<memory>"` of the defining module |
+
+Both fields are excluded from `__repr__` and `__eq__` so that structural AST equality
+checks (used in tests and the optimizer) are not affected by metadata.
+
+When the compiler or analyzer needs the source location of a node, it reads `node._tok`.
+When it needs the originating module (for name qualification and diagnostics), it reads
+`node._module`.
+
+## Workflow Lowering (_StateRewriter)
+
+Workflows and goals are lowered to task graphs at compile time inside `compile_stmt`
+(`compiler/compiler.py`). The lowering path is:
+
+```
+WorkflowDef / GoalDef AST node
+  → lower_workflow_ast / lower_goal_ast  (orchestration/workflow_lowering.py)
+  → _StateRewriter                       (orchestration/workflow_lowering.py)
+  → MapLit AST node
+  → Bytecode compiler (compile_expr)
+  → Bytecode instructions
+```
+
+`_StateRewriter` rewrites `state`-variable references in step bodies to map-index
+expressions on a hidden `__state` variable.  The VM therefore executes only
+ordinary map-index opcodes — there are no workflow-specific VM instructions.
+
+This is why workflow lowering does not appear as an explicit pipeline stage between
+the compiler and VM in the execution pipeline diagram above: it is an internal
+phase of `compile_stmt`, triggered by the node type.
+
+See `docs/runtime/WORKFLOWS.md` for the full workflow language reference.
+
+## VM Dispatch Model
+
+`VM.execute()` uses a **dict-based dispatch table** (`self._dispatch`) built once
+at construction time by `VM._build_dispatch_table()`.
+
+```python
+handler = self._dispatch.get(op)
+rv = handler(instr)
+```
+
+This is O(1) per instruction.  The previous if/elif chain was O(n) across ~42 opcodes
+and was replaced in Phase 3 (2026-03-15) with a 33% throughput improvement measured
+on a tight integer loop benchmark (388 ms → 260 ms).
+
+**To add a new opcode:**
+1. Add a method `_op_OPNAME(self, instr)` on the `VM` class.
+   - Advance `self.ip` explicitly before returning (most ops do `self.ip += 1`).
+   - Return `None` for normal continuation, `_NO_PENDING` if ip was redirected
+     (e.g., into a function body), or a `(status, value)` tuple to signal
+     YIELD / HALT to the scheduler.
+2. Add `"OPNAME": self._op_OPNAME` to the dict returned by `_build_dispatch_table()`.
+3. Add the opcode to `BYTECODE_REFERENCE.md` using the standard template.
+
 ## Tooling + Developer Interfaces
 
 Tooling modules in `src/nodus/tooling/` provide:

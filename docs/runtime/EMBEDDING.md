@@ -36,41 +36,60 @@ The host environment provides capabilities while the Nodus runtime executes scri
 
 2. Runtime Initialization
 
-The runtime is typically created through the execution helpers provided by the project.
+For embedded use, create a ``NodusRuntime`` instance from ``nodus.runtime.embedding``.
 
 Example flow:
 
-from nodus.tooling.runner import run_source
+from nodus.runtime.embedding import NodusRuntime
 
-run_source(source_code)
+runtime = NodusRuntime(
+    max_steps=500_000,
+    timeout_ms=5000,
+    project_root="/my/project",
+)
+result = runtime.run_source(source_code)
 
-This function handles:
+``NodusRuntime`` handles the full pipeline internally:
 
 tokenize
 -> parse
--> resolve imports
+-> resolve imports (ModuleLoader)
 -> compile
 -> optimize
 -> execute
 
-For embedded environments, the host system may manage these stages explicitly.
+The ``result`` dict contains ``"ok"``, ``"stdout"``, ``"stderr"``, and on error
+a structured ``"error"`` entry.
+
+The low-level ``nodus.tooling.loader.run_source()`` function is also available
+but does not provide sandbox controls or host function registration.  Prefer
+``NodusRuntime`` for all embedding scenarios.
 
 3. Registering Host Functions
 
-One of the primary embedding mechanisms is the builtin function registry.
+One of the primary embedding mechanisms is the host function registry on
+``NodusRuntime``.
 
 Host applications can expose functionality to Nodus scripts.
 
 Example:
 
+from nodus.runtime.embedding import NodusRuntime
+
 def host_log(message):
     print("[host]", message)
 
-vm.register_builtin("log", host_log)
+runtime = NodusRuntime()
+runtime.register_function("log", host_log)
+result = runtime.run_source('log("hello from script")')
 
 Nodus code can then call the function:
 
 log("hello from script")
+
+``register_function(name, fn, arity=None)`` registers the callable before any
+run; it is available in every subsequent ``run_source`` / ``run_file`` call.
+Arity is inferred from the signature when not provided explicitly.
 
 This mechanism allows scripts to interact with host services such as:
 

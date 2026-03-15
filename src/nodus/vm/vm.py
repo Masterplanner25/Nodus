@@ -320,6 +320,37 @@ class VM:
         self.runtime_error("sandbox", f"{op_name} blocked for path: {path!r}")
 
     def load_name(self, name: str):
+        """Resolve a variable name to its runtime value.
+
+        Lookup order (first match wins):
+        1. `locals_` — the current frame's local variable dict (unwraps Cell and
+           LiveBinding).
+        2. `module_globals` — module-level globals for the currently executing module
+           (unwraps Cell and LiveBinding).
+        3. `functions` — the VM's compiled function table.  Returns a zero-upvalue
+           Closure so callers can treat the result uniformly as a callable value.
+        4. `host_globals` — variables injected by the embedding host (unwraps Cell and
+           LiveBinding).
+
+        Raises a runtime "name" error if the name is not found in any scope.
+
+        Why four separate scopes rather than a single unified dict?
+        -----------------------------------------------------------
+        - `locals_` lives in a Frame, so it is naturally per-call-stack-frame and
+          automatically cleaned up when the frame is popped.
+        - `module_globals` is per-module-object, allowing multiple modules to coexist
+          in one VM without polluting each other's namespaces.
+        - `functions` is a separate dict because function definitions are compiled
+          into their own FunctionInfo records (with a fixed bytecode address) before
+          execution begins.  Separating them avoids name collisions with data variables
+          that happen to have the same name.
+        - `host_globals` is injected by the embedding layer and must remain separate
+          so the host can update its bindings without touching module state.
+
+        LOAD_LOCAL bypasses this method entirely: the compiler emits LOAD_LOCAL only
+        when the symbol is confirmed local-scope, and the VM reads `frame.locals[name]`
+        directly, skipping the three-level fallback.
+        """
         locals_ = self.current_locals()
         if locals_ is not None and name in locals_:
             value = locals_[name]
@@ -1186,6 +1217,34 @@ class VM:
     # Backward-compatible wrappers for methods accessed directly in tests or
     # internal callers (e.g. scheduler.py).
     def builtin_coroutine_resume(self, value):
+        """Resume a suspended coroutine and run it until its next yield or completion.
+
+        This is a thin wrapper around the `resume` builtin registered by
+        `builtins/coroutine.py`.  It exists for backward-compatibility: tests and
+        the scheduler call `vm.builtin_coroutine_resume(coro)` directly rather than
+        going through the CALL opcode.
+
+        Pre-conditions (enforced by the `resume` builtin):
+        - `value` must be a Coroutine instance.
+        - The coroutine must be in `state == "suspended"`.  Calling on a finished or
+          already-running coroutine raises a runtime error.
+
+        Caller's stack during resume:
+        - The VM saves its own execution context (ip, stack, frames, handler_stack,
+          pending flags) before swapping in the coroutine's saved context.
+        - The coroutine's saved stack becomes the active stack for the duration of
+          the resume.
+        - On return (YIELD or RETURN), the VM restores the caller's context.
+
+        Error propagation:
+        - If the coroutine raises a runtime error that is not caught inside the
+          coroutine body, the error propagates out of `execute()` and up to the
+          scheduler or `run_closure()` caller.  The coroutine is left in its
+          error state; the caller is responsible for deciding whether to re-raise.
+
+        Returns the yielded value (on YIELD) or the final return value (on coroutine
+        completion).
+        """
         return self.builtins["resume"].fn(value)
 
     def builtin_read_file(self, path):
@@ -1324,6 +1383,41 @@ class VM:
         return None
 
     def call_closure(self, callee, arg_count: int):
+        """Set up a call frame and transfer control to a closure's bytecode.
+
+        This method does NOT invoke `execute()`.  It modifies VM state (pushes a frame,
+        sets `self.ip`) so that the currently running `execute()` loop continues directly
+        into the closure's bytecode on its next iteration.  This is how the VM achieves
+        efficient function calls without Python-level recursion.
+
+        Upvalue capture:
+        - Upvalues are already attached to `callee.upvalues` when the Closure was created
+          by the MAKE_CLOSURE opcode.  Each upvalue is a `Cell` object.
+        - When the closure reads a captured variable via LOAD_UPVALUE, it reads
+          `closure.upvalues[index].value`.
+        - When the closure writes via STORE_UPVALUE, it writes `closure.upvalues[index].value`.
+        - `Cell` boxing allows two closures capturing the same variable to share one
+          Cell, so mutations are visible across all closures that captured it.
+
+        Cell vs direct locals:
+        - Variables that are captured by any closure are stored as `Cell` objects in
+          the enclosing frame's `locals` dict.
+        - Variables that are never captured remain plain values in `locals`.
+        - The compiler decides at compile time (via SymbolTable) which variables need
+          Cell boxing.  The VM never needs to inspect capture lists at runtime.
+
+        Frame stack and tail calls:
+        - Nodus does not implement tail-call elimination.  Every call_closure() pushes
+          a new Frame.  Deep recursive programs will eventually hit `max_frames` (if
+          configured) or Python's own recursion limit.
+        - The frame's `return_ip` is set to `self.ip + 1` (the instruction after the
+          CALL opcode), so RETURN knows where to resume the caller.
+
+        Args:
+            callee: A Closure value.  Raises a runtime "call" error if not a Closure.
+            arg_count: Number of arguments already pushed onto the stack.  Must match
+                the closure's declared parameter count.
+        """
         if not isinstance(callee, Closure):
             self.runtime_error("call", f"Cannot call non-function: {self.value_to_string(callee, quote_strings=True)}")
         fn = callee.function
@@ -1998,6 +2092,60 @@ class VM:
         }
 
     def execute(self):
+        """Run bytecode from the current instruction pointer until the program ends or a
+        suspend signal is returned.
+
+        Stack discipline
+        ----------------
+        At entry the stack may be non-empty if this call resumes a coroutine that was
+        previously suspended by YIELD.  At a clean program exit (HALT or end-of-code)
+        the stack is typically empty.  At a coroutine suspend (YIELD) the full stack
+        is snapshotted into the Coroutine object and the value passed to YIELD is
+        returned to the caller.
+
+        Frame layout
+        ------------
+        `self.frames` is a stack of Frame objects.  Each Frame holds:
+        - `return_ip`: instruction address to resume after RETURN (None for coroutine
+          entry frames — a RETURN with return_ip=None signals coroutine completion).
+        - `locals_`: variable dict for the current function scope.
+        - `fn_name`: internal name used for stack-trace display.
+        - `call_line/call_col/call_path`: source location of the call site.
+        - `closure`: the Closure object if this frame runs a closure (None for plain
+          functions defined at module top-level with no captured variables).
+
+        Frames are pushed by CALL / CALL_VALUE / CALL_METHOD / call_closure() and
+        popped by RETURN.
+
+        Coroutine suspend/resume protocol
+        ----------------------------------
+        Handlers return a `(status, value)` tuple to signal out-of-band events:
+        - `("yield", value)`: YIELD opcode — coroutine suspends.  The scheduler receives
+          `value` as the yielded payload.
+        - `("yield", {"__task_step_budget__": True})`: scheduler budget exhausted — the
+          task is re-enqueued for fair-sharing.
+        - `("return", value)`: coroutine's entry frame returned — coroutine finished.
+          `value` is the final return value.
+        - `("halt", None)`: HALT opcode or end of bytecode — program terminates.
+
+        Pending flags
+        -------------
+        `pending_get_iter` is set by GET_ITER when the iterable has a custom `__iter__`
+        method.  Because `__iter__` is a closure call, control jumps to the closure
+        body and returns to the execute() loop via RETURN.  The RETURN handler checks
+        this flag and converts the returned value to a ListIterator, then clears the flag.
+
+        `pending_iter_next` stores the `end_ip` target for ITER_NEXT when the iterator
+        has a custom `__next__` method.  The RETURN handler uses it to decide whether
+        the returned value signals iteration end (None) or is the next element.
+
+        Dispatch table
+        --------------
+        Each opcode is looked up in `self._dispatch` (built by `_build_dispatch_table()`
+        at construction time).  Unknown opcodes raise a runtime error immediately.
+        Handlers return None (normal), _NO_PENDING (ip was redirected — do not set
+        pending_after), or a (status, value) tuple (suspend / halt).
+        """
         pending_after = None
         while self.ip < len(self.code):
             if self._budget_exceeded:
