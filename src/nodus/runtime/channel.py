@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import deque
+
 
 class Channel:
     def __init__(self):
-        self.queue: list[object] = []
+        self.queue = deque()
         self.waiting_receivers: list[object] = []
         self.waiting_senders: list[tuple[object, object]] = []
         self.closed: bool = False

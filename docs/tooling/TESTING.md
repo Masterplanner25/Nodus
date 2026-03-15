@@ -17,6 +17,12 @@ Run the full suite:
 python -m unittest discover -s tests -v
 ```
 
+Or with pytest:
+
+```bash
+pytest
+```
+
 Run a single test module:
 
 ```bash
@@ -28,6 +34,10 @@ Run a single test case:
 ```bash
 python -m unittest tests.test_task_graph.TaskGraphTests.test_task_retry_success -v
 ```
+
+## Warnings During Tests
+
+Some optional dependencies may emit deprecation warnings during the test run (for example, Starlette multipart parsing or legacy websockets APIs). These warnings do not indicate test failures and can be safely ignored unless the warnings become errors in CI. If warnings become noisy, consider pinning or upgrading the related dependency in the test environment.
 
 ## Writing Parser Tests
 

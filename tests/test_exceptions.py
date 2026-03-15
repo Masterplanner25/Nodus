@@ -59,6 +59,37 @@ try {
 """
         self.assertEqual(run_program(src), ["inner"])
 
+    def test_catch_exposes_error_fields(self):
+        src = """
+try {
+    let x = "a" - 1
+} catch err {
+    print(err.kind)
+    print(err.message)
+}
+"""
+        out = run_program(src)
+        self.assertEqual(out[0], "type")
+        self.assertIn("Cannot subtract", out[1])
+
+    def test_anonymous_function_names_unique(self):
+        import_state = {"loaded": set(), "loading": set(), "exports": {}}
+        code = """
+fn a() {
+    let f = fn() { return 1 }
+}
+
+fn b() {
+    let f = fn() { return 2 }
+}
+"""
+        _ast, bytecode, functions, _code_locs = lang.compile_source(code, source_path="main.nd", import_state=import_state)
+        display_names = sorted(
+            info.display_name for info in functions.values() if info.display_name and info.display_name.startswith("__anon_")
+        )
+        self.assertGreaterEqual(len(display_names), 2)
+        self.assertEqual(len(display_names), len(set(display_names)))
+
 
 if __name__ == "__main__":
     unittest.main()

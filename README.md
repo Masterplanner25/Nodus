@@ -14,11 +14,15 @@ Quick links:
 - `docs/runtime/TASK_GRAPHS.md`
 - `docs/runtime/WORKFLOWS.md`
 - `docs/runtime/RUNTIME_EVENTS.md`
+- `docs/runtime/PROFILER.md`
 - `docs/tooling/DEBUGGER.md`
+- `docs/tooling/REPL.md`
 - `docs/tooling/PACKAGE_MANAGER.md`
 - `docs/runtime/SERVER_MODE.md`
 - `docs/governance/VERSIONING.md`
 - `docs/governance/RELEASE_NOTES_0.2.0.md`
+- `docs/governance/TECH_DEBT.md`
+- `docs/governance/DEPRECATIONS.md`
 
 ## Example
 
@@ -48,6 +52,7 @@ nodus run examples/hello.nd
   - `pip install -e .`
 - REPL: `python nodus.py` or `nodus repl`
 - Run script: `nodus run script.nd`
+- Profile script: `nodus profile examples/demo.nd`
 - Check script (no execution): `nodus check script.nd`
 - Format script: `nodus fmt script.nd`
 - Run examples: `nodus test-examples`
@@ -81,17 +86,22 @@ Backward compatible invocations are still supported:
 - `nodus dis script.nd --loc` (include source locations in bytecode)
 - `nodus run script.nd` (execute)
 - `nodus repl` (interactive REPL)
+- `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>` (inside the REPL)
 - `nodus run script.nd --trace --trace-limit 50` (short trace)
 - `nodus run script.nd --trace-events` (runtime event stream)
 - `nodus run script.nd --trace-json --trace-file trace.json` (machine-readable events)
 - `nodus run script.nd --trace-scheduler --scheduler-stats` (scheduler tracing)
 - `nodus run script.nd --no-opt` (disable bytecode optimization)
 - `nodus run script.nd --step-limit 100000 --time-limit 5 --output-limit 20000` (sandbox limits)
+- `nodus run script.nd --allow-paths <paths>` (filesystem allowlist)
+- `nodus profile examples/demo.nd` (runtime profiler report)
 - `nodus debug script.nd` (interactive debugger)
 - `nodus install` (install project dependencies)
 - `nodus update` (refresh dependencies and lockfile)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
+- `nodus serve --allow-paths <paths>` (restrict filesystem builtins in server mode)
+- `nodus serve --auth-token <token>` (require Authorization header)
 - `nodus snapshot <session>` (save session snapshot)
 - `nodus snapshots` (list snapshots)
 - `nodus restore <snapshot>` (restore snapshot to new session)
@@ -151,6 +161,29 @@ Runtime service commands:
 - runtime module loader with per-module bytecode units
 - per-module global namespace isolation
 - project manifests (`nodus.toml`) with dependency resolution and `nodus.lock`
+
+## REPL
+
+The REPL now supports multiline editing for brace-delimited blocks, persistent history via `~/.nodus_history`, and interactive inspection commands.
+
+```text
+> fn add(a, b) {
+...   return a + b
+... }
+> :ast 1 + 2 * 3
+Binary(+)
+  Number(1)
+  Binary(*)
+    Number(2)
+    Number(3)
+> :dis 1 + 2
+PUSH_CONST 1.0
+PUSH_CONST 2.0
+ADD
+RETURN
+> :type [1, 2, 3]
+List<number>
+```
 
 ## Imports
 

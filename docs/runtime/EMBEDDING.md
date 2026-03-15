@@ -126,6 +126,8 @@ REPL Execution
 Interactive execution through the runtime REPL.
 
 nodus repl
+
+The REPL supports multiline brace-delimited input, persistent history via `~/.nodus_history` when `readline` is available, and shell inspection commands such as `:ast <expr>`, `:dis <expr>`, and `:type <expr>`.
 Server Mode
 
 The runtime can run as a service through:
@@ -203,6 +205,14 @@ restricted builtin sets
 sandboxed file access
 
 execution time limits
+
+NodusRuntime accepts optional `allowed_paths` and `allow_input` settings.
+`allowed_paths` restricts filesystem builtins
+(`read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, and `exists`). When
+set, paths outside the allowlist raise a sandbox error. When omitted, filesystem
+access remains unrestricted.
+`allow_input` controls whether `input()` is permitted in embedded mode (default: disabled).
+`max_frames` controls the maximum VM call stack depth (default: `MAX_STACK_DEPTH`).
 
 Isolation policies should be defined by the host environment.
 

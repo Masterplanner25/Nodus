@@ -15,7 +15,7 @@ class SnapshotTests(unittest.TestCase):
         cls.temp_dir = tempfile.mkdtemp()
         cls.snapshot_dir = os.path.join(cls.temp_dir, "snapshots")
         os.environ["NODUS_SNAPSHOT_DIR"] = cls.snapshot_dir
-        cls.server, cls.thread = run_in_thread("127.0.0.1", 0)
+        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, allowed_paths=["."])
         cls.port = cls.server.server_address[1]
         time.sleep(0.05)
 

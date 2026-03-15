@@ -6,7 +6,7 @@ import io
 import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 
-from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS
+from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS, MAX_STACK_DEPTH
 from nodus.runtime.diagnostics import RuntimeLimitExceeded
 
 
@@ -32,8 +32,9 @@ def configure_vm_limits(
     vm.max_steps = max_steps
     if timeout_ms is None:
         vm.deadline = None
-        return
-    vm.deadline = time.monotonic() + (timeout_ms / 1000.0)
+    else:
+        vm.deadline = time.monotonic() + (timeout_ms / 1000.0)
+    vm.max_frames = MAX_STACK_DEPTH
 
 
 @contextmanager

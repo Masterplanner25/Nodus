@@ -20,6 +20,13 @@ Use the REPL:
 nodus repl
 ```
 
+Inside the REPL:
+
+- use multiline input for brace-delimited blocks
+- use `:help` to list shell commands
+- use `:ast <expr>`, `:dis <expr>`, and `:type <expr>` for inspection
+- history is stored in `~/.nodus_history` when Python `readline` is available
+
 ## Format and Check
 
 Format a file:
@@ -123,6 +130,7 @@ Notes:
 - `WORKFLOWS.md`
 - `RUNTIME_EVENTS.md`
 - `DEBUGGER.md`
+- `REPL.md`
 - `PACKAGE_MANAGER.md`
 - `SERVER_MODE.md`
 - `TESTING.md`

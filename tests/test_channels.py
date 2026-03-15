@@ -126,6 +126,18 @@ run_loop()
         self.assertIn("Runtime error", err)
         self.assertIn("closed channel", err)
 
+    def test_channel_queue_order(self):
+        src = """
+let ch = channel()
+send(ch, 1)
+send(ch, 2)
+print(recv(ch))
+print(recv(ch))
+"""
+        out, err = run_program(src, source_path="main.nd")
+        self.assertEqual(out, ["1.0", "2.0"])
+        self.assertEqual(err.strip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

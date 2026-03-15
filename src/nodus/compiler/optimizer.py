@@ -39,32 +39,32 @@ def optimize_bytecode(
     while changed:
         changed = False
 
-        canonicalized = canonicalize_constants(current_code)
-        if canonicalized != current_code:
+        canonicalized, did_change = canonicalize_constants(current_code)
+        if did_change:
             current_code = canonicalized
             changed = True
 
-        folded_code, folded_functions, folded_locs = fold_constants(current_code, current_functions, current_locs)
-        if folded_code != current_code or folded_locs != current_locs or function_addrs(folded_functions) != function_addrs(current_functions):
+        folded_code, folded_functions, folded_locs, did_change = fold_constants(current_code, current_functions, current_locs)
+        if did_change:
             current_code = folded_code
             current_functions = folded_functions
             current_locs = folded_locs
             changed = True
 
-        stack_code, stack_functions, stack_locs = remove_useless_stack_ops(current_code, current_functions, current_locs)
-        if stack_code != current_code or stack_locs != current_locs or function_addrs(stack_functions) != function_addrs(current_functions):
+        stack_code, stack_functions, stack_locs, did_change = remove_useless_stack_ops(current_code, current_functions, current_locs)
+        if did_change:
             current_code = stack_code
             current_functions = stack_functions
             current_locs = stack_locs
             changed = True
 
-        jump_code = simplify_jumps(current_code)
-        if jump_code != current_code:
+        jump_code, did_change = simplify_jumps(current_code)
+        if did_change:
             current_code = jump_code
             changed = True
 
-        reachable_code, reachable_functions, reachable_locs = remove_unreachable(current_code, current_functions, current_locs)
-        if reachable_code != current_code or reachable_locs != current_locs or function_addrs(current_functions) != function_addrs(reachable_functions):
+        reachable_code, reachable_functions, reachable_locs, did_change = remove_unreachable(current_code, current_functions, current_locs)
+        if did_change:
             current_code = reachable_code
             current_functions = reachable_functions
             current_locs = reachable_locs
@@ -73,9 +73,10 @@ def optimize_bytecode(
     return current_code, current_functions, current_locs
 
 
-def canonicalize_constants(code: list[tuple]) -> list[tuple]:
+def canonicalize_constants(code: list[tuple]) -> tuple[list[tuple], bool]:
     cache: dict[tuple[str, object], object] = {}
     out: list[tuple] = []
+    changed = False
     for instr in code:
         if instr[0] != "PUSH_CONST":
             out.append(instr)
@@ -86,19 +87,22 @@ def canonicalize_constants(code: list[tuple]) -> list[tuple]:
             continue
         key = (type(value).__name__, value)
         cached = cache.setdefault(key, value)
+        if cached is not value:
+            changed = True
         out.append(("PUSH_CONST", cached))
-    return out
+    return out, changed
 
 
 def fold_constants(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: list[tuple[str | None, int | None, int | None]],
-) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]]]:
+) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]], bool]:
     targets = collect_jump_targets(code)
     out_code: list[tuple] = []
     out_locs: list[tuple[str | None, int | None, int | None]] = []
     mapping: dict[int, int] = {}
+    changed = False
     i = 0
     while i < len(code):
         if i + 1 < len(code) and i + 1 not in targets and code[i][0] == "PUSH_CONST" and code[i + 1][0] in PURE_UNARY_OPS:
@@ -111,6 +115,7 @@ def fold_constants(
                 mapping[i] = len(out_code)
                 out_code.append(("PUSH_CONST", value))
                 out_locs.append(code_locs[i + 1])
+                changed = True
                 i += 2
                 continue
 
@@ -131,6 +136,7 @@ def fold_constants(
                 mapping[i] = len(out_code)
                 out_code.append(("PUSH_CONST", value))
                 out_locs.append(code_locs[i + 2])
+                changed = True
                 i += 3
                 continue
 
@@ -139,32 +145,43 @@ def fold_constants(
         out_locs.append(code_locs[i])
         i += 1
 
-    return remap_compacted(out_code, functions, out_locs, mapping)
+    remapped_code, remapped_functions, remapped_locs = remap_compacted(out_code, functions, out_locs, mapping)
+    if not changed:
+        if remapped_code != code or remapped_locs != code_locs or function_addrs(remapped_functions) != function_addrs(functions):
+            changed = True
+    return remapped_code, remapped_functions, remapped_locs, changed
 
 
 def remove_useless_stack_ops(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: list[tuple[str | None, int | None, int | None]],
-) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]]]:
+) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]], bool]:
     targets = collect_jump_targets(code)
     out_code: list[tuple] = []
     out_locs: list[tuple[str | None, int | None, int | None]] = []
     mapping: dict[int, int] = {}
+    changed = False
     i = 0
     while i < len(code):
         if i + 1 < len(code) and i + 1 not in targets and code[i][0] == "PUSH_CONST" and code[i + 1][0] == "POP":
             i += 2
+            changed = True
             continue
         mapping[i] = len(out_code)
         out_code.append(code[i])
         out_locs.append(code_locs[i])
         i += 1
-    return remap_compacted(out_code, functions, out_locs, mapping)
+    remapped_code, remapped_functions, remapped_locs = remap_compacted(out_code, functions, out_locs, mapping)
+    if not changed:
+        if remapped_code != code or remapped_locs != code_locs or function_addrs(remapped_functions) != function_addrs(functions):
+            changed = True
+    return remapped_code, remapped_functions, remapped_locs, changed
 
 
-def simplify_jumps(code: list[tuple]) -> list[tuple]:
+def simplify_jumps(code: list[tuple]) -> tuple[list[tuple], bool]:
     out = list(code)
+    changed = False
     for i, instr in enumerate(out):
         op = instr[0]
         if op not in TARGETED_OPS:
@@ -175,7 +192,8 @@ def simplify_jumps(code: list[tuple]) -> list[tuple]:
             continue
         if op in {"JUMP", "JUMP_IF_FALSE", "JUMP_IF_TRUE", "ITER_NEXT", "SETUP_TRY"}:
             out[i] = (op, final_target, *instr[2:])
-    return out
+            changed = True
+    return out, changed
 
 
 def resolve_jump_target(code: list[tuple], target: int) -> int:
@@ -196,7 +214,7 @@ def remove_unreachable(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: list[tuple[str | None, int | None, int | None]],
-) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]]]:
+) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]], bool]:
     reachable = compute_reachable(code, functions)
     mapping: dict[int, int] = {}
     new_code: list[tuple] = []
@@ -214,7 +232,8 @@ def remove_unreachable(
         for name, info in functions.items()
         if info.addr in mapping
     }
-    return remapped_code, remapped_functions, new_locs
+    changed = remapped_code != code or new_locs != code_locs or function_addrs(remapped_functions) != function_addrs(functions)
+    return remapped_code, remapped_functions, new_locs, changed
 
 
 def compute_reachable(code: list[tuple], functions: dict[str, FunctionInfo]) -> set[int]:

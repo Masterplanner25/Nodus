@@ -19,6 +19,7 @@ from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_s
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
+from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import ModuleFunction
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
@@ -83,6 +84,8 @@ class VM:
         trace_scheduler: bool = False,
         scheduler_output=print,
         event_bus: RuntimeEventBus | None = None,
+        profiler: Profiler | None = None,
+        allowed_paths: list[str] | None = None,
     ):
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -111,6 +114,8 @@ class VM:
         self.current_coroutine: Coroutine | None = None
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
+        self.profiler = profiler
+        self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
         self.memory_store = GLOBAL_MEMORY_STORE
         self.session_id: str | None = None
         self.instructions_executed = 0
@@ -119,6 +124,9 @@ class VM:
         self.exceptions = 0
         self._instruction_batch_size = 100
         self._last_batch_emit = 0
+        self._deadline_check_interval = 100
+        self._last_deadline_check = 0
+        self.max_frames: int | None = None
         self.max_steps: int | None = None
         self.deadline: float | None = None
         self.trace_scheduler = trace_scheduler
@@ -287,12 +295,24 @@ class VM:
             return False
         handler_ip, stack_depth, frame_depth = self.handler_stack.pop()
         while len(self.frames) > frame_depth:
-            self.frames.pop()
+            frame = self.frames.pop()
+            self._profiler_exit_frame(frame)
         while self.handler_stack and self.handler_stack[-1][2] > len(self.frames):
             self.handler_stack.pop()
         if len(self.stack) > stack_depth:
             self.stack = self.stack[:stack_depth]
-        self.stack.append(str(err))
+        err_record = Record(
+            {
+                "kind": err.kind,
+                "message": str(err),
+                "path": err.path,
+                "line": err.line,
+                "column": err.col,
+                "stack": list(err.stack) if err.stack else [],
+            },
+            kind="error",
+        )
+        self.stack.append(err_record)
         self.ip = handler_ip
         return True
 
@@ -308,6 +328,33 @@ class VM:
         if not self.frames:
             return None
         return self.frames[-1].locals
+
+    def _normalize_allowed_paths(self, allowed_paths: list[str] | None) -> list[str] | None:
+        if allowed_paths is None:
+            return None
+        roots: list[str] = []
+        for path in allowed_paths:
+            if not path:
+                continue
+            roots.append(os.path.normcase(os.path.abspath(path)))
+        return roots
+
+    def _path_within_root(self, path: str, root: str) -> bool:
+        try:
+            return os.path.commonpath([path, root]) == root
+        except ValueError:
+            return False
+
+    def _ensure_path_allowed(self, path: str, op_name: str) -> None:
+        if self.allowed_paths is None:
+            return
+        if not self.allowed_paths:
+            self.runtime_error("sandbox", f"{op_name} is not permitted")
+        normalized = os.path.normcase(os.path.abspath(path))
+        for root in self.allowed_paths:
+            if self._path_within_root(normalized, root):
+                return
+        self.runtime_error("sandbox", f"{op_name} blocked for path: {path!r}")
 
     def load_name(self, name: str):
         locals_ = self.current_locals()
@@ -446,6 +493,18 @@ class VM:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             self.runtime_error("type", f"{name} expects a number")
         return value
+
+    def _type_name(self, value) -> str:
+        return self.builtin_type(value)
+
+    def _binary_type_error(self, op: str, a, b) -> None:
+        self.runtime_error("type", f"Cannot {op} {self._type_name(a)} and {self._type_name(b)}")
+
+    def _compare_type_error(self, a, b) -> None:
+        self.runtime_error("type", f"Cannot compare {self._type_name(a)} and {self._type_name(b)}")
+
+    def _unary_type_error(self, op: str, value) -> None:
+        self.runtime_error("type", f"Cannot {op} {self._type_name(value)}")
 
     def ensure_function(self, value, name: str) -> Closure:
         if not isinstance(value, Closure):
@@ -667,6 +726,12 @@ class VM:
         self.current_coroutine = coroutine
         self.ip = coroutine.ip if coroutine.ip is not None else 0
 
+    def _profiler_exit_frame(self, frame: Frame) -> None:
+        profiler = self.profiler
+        if profiler is None or not profiler.enabled:
+            return
+        profiler.exit_function(self.display_name(frame.fn_name))
+
     def reset_program(
         self,
         code: list[tuple] | dict,
@@ -695,6 +760,8 @@ class VM:
         self.pending_get_iter = False
         self.current_coroutine = None
         self.scheduler = Scheduler(self, trace=self.trace_scheduler, trace_output=self.scheduler_output)
+        self._last_batch_emit = 0
+        self._last_deadline_check = 0
 
     def save_current_coroutine_state(self, next_ip: int | None) -> None:
         coroutine = self.current_coroutine
@@ -736,6 +803,8 @@ class VM:
                 self.load_coroutine_context(coroutine)
                 coroutine.state = "running"
                 fn = coroutine.closure.function
+                if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+                    self.runtime_error("sandbox", "Call stack overflow")
                 self.frames.append(
                     Frame(
                         return_ip=None,
@@ -747,6 +816,8 @@ class VM:
                         closure=coroutine.closure,
                     )
                 )
+                if self.profiler is not None and self.profiler.enabled:
+                    self.profiler.enter_function(self.display_name(fn.name))
                 self.ip = fn.addr
             else:
                 self.load_coroutine_context(coroutine)
@@ -830,7 +901,7 @@ class VM:
     def builtin_recv(self, channel):
         ch = self.ensure_channel(channel, "recv(channel)")
         if ch.queue:
-            value = ch.queue.pop(0)
+            value = ch.queue.popleft()
             self.event_bus.emit_event(
                 "channel_recv",
                 coroutine_id=self.current_coroutine.id if self.current_coroutine is not None else None,
@@ -1452,6 +1523,7 @@ class VM:
     def builtin_read_file(self, path):
         if not isinstance(path, str):
             self.runtime_error("type", "read_file(path) expects a string path")
+        self._ensure_path_allowed(path, "read_file(path)")
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
@@ -1461,6 +1533,7 @@ class VM:
     def builtin_write_file(self, path, content):
         if not isinstance(path, str):
             self.runtime_error("type", "write_file(path, content) expects string path")
+        self._ensure_path_allowed(path, "write_file(path, content)")
         text = self.value_to_string(content, quote_strings=False)
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -1472,11 +1545,13 @@ class VM:
     def builtin_exists(self, path):
         if not isinstance(path, str):
             self.runtime_error("type", "exists(path) expects a string path")
+        self._ensure_path_allowed(path, "exists(path)")
         return os.path.exists(path)
 
     def builtin_append_file(self, path, content):
         if not isinstance(path, str):
             self.runtime_error("type", "append_file(path, content) expects string path")
+        self._ensure_path_allowed(path, "append_file(path, content)")
         text = self.value_to_string(content, quote_strings=False)
         try:
             with open(path, "a", encoding="utf-8") as f:
@@ -1488,6 +1563,7 @@ class VM:
     def builtin_mkdir(self, path):
         if not isinstance(path, str):
             self.runtime_error("type", "mkdir(path) expects a string path")
+        self._ensure_path_allowed(path, "mkdir(path)")
         try:
             os.makedirs(path, exist_ok=True)
         except Exception as err:
@@ -1497,6 +1573,7 @@ class VM:
     def builtin_list_dir(self, path):
         if not isinstance(path, str):
             self.runtime_error("type", "list_dir(path) expects a string path")
+        self._ensure_path_allowed(path, "list_dir(path)")
         try:
             return sorted(os.listdir(path))
         except Exception as err:
@@ -1563,6 +1640,10 @@ class VM:
                 parts.append(f"{key_s}: {val_s}")
             return "{" + ", ".join(parts) + "}"
         if isinstance(value, Record):
+            if value.kind == "error":
+                message = value.fields.get("message")
+                if isinstance(message, str):
+                    return message
             parts = []
             for k, v in value.fields.items():
                 key_s = self.value_to_string(k, quote_strings=True)
@@ -1636,7 +1717,15 @@ class VM:
             self.runtime_error("call", f"{fn_name} expected {expected} args, got {arg_count}")
         args = [self.pop() for _ in range(arg_count)]
         args.reverse()
-        result = builtin.fn(*args)
+        profiler = self.profiler
+        if profiler is not None and profiler.enabled:
+            profiler.enter_function(fn_name)
+            try:
+                result = builtin.fn(*args)
+            finally:
+                profiler.exit_function(fn_name)
+        else:
+            result = builtin.fn(*args)
         if isinstance(result, SleepRequest):
             self.stack.append(None)
             if self.current_coroutine is None:
@@ -1665,7 +1754,11 @@ class VM:
             call_path=call_path,
             closure=callee,
         )
+        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+            self.runtime_error("sandbox", "Call stack overflow")
         self.frames.append(frame)
+        if self.profiler is not None and self.profiler.enabled:
+            self.profiler.enter_function(self.display_name(fn.name))
         self.ip = fn.addr
 
     def run_closure(self, closure, args: list, workflow_context: dict | None = None):
@@ -1696,6 +1789,8 @@ class VM:
                     closure=closure,
                 )
             )
+            if self.profiler is not None and self.profiler.enabled:
+                self.profiler.enter_function(self.display_name(fn.name))
             self.ip = fn.addr
             status, result = self.execute()
             if status == "yield":
@@ -1706,10 +1801,13 @@ class VM:
 
     def record_instruction(self) -> None:
         self.instructions_executed += 1
-        if self.deadline is not None and time.monotonic() >= self.deadline:
-            err = RuntimeLimitExceeded("Execution timed out")
-            self.emit_runtime_error(err)
-            raise err
+        if self.deadline is not None:
+            if self.instructions_executed - self._last_deadline_check >= self._deadline_check_interval:
+                self._last_deadline_check = self.instructions_executed
+                if time.monotonic() >= self.deadline:
+                    err = RuntimeLimitExceeded("Execution timed out")
+                    self.emit_runtime_error(err)
+                    raise err
         if self.max_steps is not None and self.instructions_executed > self.max_steps:
             err = RuntimeLimitExceeded("Execution step limit exceeded")
             self.emit_runtime_error(err)
@@ -1724,6 +1822,8 @@ class VM:
 
     def record_vm_call(self, name: str | None, call_type: str) -> None:
         self.function_calls += 1
+        if self.profiler is not None and self.profiler.enabled:
+            self.profiler.record_function_call(name)
         self.event_bus.emit_event(
             "vm_call",
             name=name,
@@ -1757,6 +1857,8 @@ class VM:
 
             instr = self.code[self.ip]
             op = instr[0]
+            if self.profiler is not None and self.profiler.enabled:
+                self.profiler.record_opcode(op)
             if self.debug and self.debugger is not None:
                 self.debugger.before_instruction(self, instr)
             self.record_instruction()
@@ -1816,28 +1918,42 @@ class VM:
                 elif op == "ADD":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a + b)
+                    try:
+                        self.stack.append(a + b)
+                    except TypeError:
+                        self._binary_type_error("add", a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "SUB":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a - b)
+                    try:
+                        self.stack.append(a - b)
+                    except TypeError:
+                        self._binary_type_error("subtract", a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "MUL":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a * b)
+                    try:
+                        self.stack.append(a * b)
+                    except TypeError:
+                        self._binary_type_error("multiply", a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "DIV":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a / b)
+                    try:
+                        self.stack.append(a / b)
+                    except ZeroDivisionError:
+                        self.runtime_error("runtime", "Division by zero")
+                    except TypeError:
+                        self._binary_type_error("divide", a, b)
                     self.ip += 1
                     pending_after = instr
 
@@ -1858,28 +1974,40 @@ class VM:
                 elif op == "LT":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a < b)
+                    try:
+                        self.stack.append(a < b)
+                    except TypeError:
+                        self._compare_type_error(a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "GT":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a > b)
+                    try:
+                        self.stack.append(a > b)
+                    except TypeError:
+                        self._compare_type_error(a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "LE":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a <= b)
+                    try:
+                        self.stack.append(a <= b)
+                    except TypeError:
+                        self._compare_type_error(a, b)
                     self.ip += 1
                     pending_after = instr
 
                 elif op == "GE":
                     b = self.pop()
                     a = self.pop()
-                    self.stack.append(a >= b)
+                    try:
+                        self.stack.append(a >= b)
+                    except TypeError:
+                        self._compare_type_error(a, b)
                     self.ip += 1
                     pending_after = instr
 
@@ -1971,7 +2099,11 @@ class VM:
                     pending_after = instr
 
                 elif op == "NEG":
-                    self.stack.append(-self.pop())
+                    value = self.pop()
+                    try:
+                        self.stack.append(-value)
+                    except TypeError:
+                        self._unary_type_error("negate", value)
                     self.ip += 1
                     pending_after = instr
 
@@ -2093,7 +2225,11 @@ class VM:
                             call_path=call_path,
                             closure=None,
                         )
+                        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+                            self.runtime_error("sandbox", "Call stack overflow")
                         self.frames.append(frame)
+                        if self.profiler is not None and self.profiler.enabled:
+                            self.profiler.enter_function(self.display_name(fn_name))
                         self.ip = fn.addr
                         pending_after = instr
                         continue
@@ -2200,6 +2336,7 @@ class VM:
                         self.runtime_error("runtime", "RETURN outside function")
 
                     frame = self.frames.pop()
+                    self._profiler_exit_frame(frame)
                     self.record_vm_return(self.display_name(frame.fn_name))
                     while self.handler_stack and self.handler_stack[-1][2] > len(self.frames):
                         self.handler_stack.pop()

@@ -11,6 +11,16 @@ nodus serve --port 7331
 Optional:
 - `--trace` enables trace output
 - `--worker-sweep-interval-ms <ms>` controls worker liveness checks
+- `--allow-paths <paths>` restricts filesystem builtins to an allowlist
+- `--auth-token <token>` requires a Bearer token on all requests
+- `--allow-input` permits `input()` in server mode (disabled by default)
+Snapshot/restore/worker CLI helpers also accept `--auth-token <token>` to supply the Authorization header.
+
+You can also set `NODUS_ALLOWED_PATHS` (path-separated, e.g. `C:\safe;D:\more` on Windows or `/safe:/more` on Unix).
+If `NODUS_SERVER_TOKEN` is set, clients must send `Authorization: Bearer <token>`.
+Set `NODUS_SERVER_ALLOW_INPUT=1` to allow `input()` without the flag.
+
+Binding to a non-local host requires an auth token; otherwise the server refuses to start.
 
 ## Sessions
 The server can create and reuse sessions. Sessions maintain VM state and memory across executions.

@@ -513,6 +513,13 @@ def resolve_import_path(
         base = import_path
     elif import_path.startswith("."):
         base = os.path.join(base_dir, import_path)
+        base_norm = os.path.normcase(os.path.normpath(base))
+        root_norm = os.path.normcase(os.path.normpath(project_root))
+        try:
+            if os.path.commonpath([base_norm, root_norm]) != root_norm:
+                import_error("Invalid import: path escapes project root", tok, module_id)
+        except ValueError:
+            import_error("Invalid import: path escapes project root", tok, module_id)
     else:
         base = os.path.join(project_root, import_path)
 

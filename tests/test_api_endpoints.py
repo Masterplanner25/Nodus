@@ -10,7 +10,7 @@ from nodus.services.server import run_in_thread
 class ApiEndpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server, cls.thread = run_in_thread("127.0.0.1", 0)
+        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, allowed_paths=["."])
         cls.port = cls.server.server_address[1]
         time.sleep(0.05)
 

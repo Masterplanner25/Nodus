@@ -259,12 +259,17 @@ The runtime enforces optional execution limits:
 step limit (instruction count)
 time limit (wall-clock deadline)
 output limit (stdout character cap)
+call stack depth (maximum number of frames)
 
 When a limit is exceeded, the runtime raises RuntimeLimitExceeded (surfaced as a sandbox error in tooling outputs).
 
 7. Runtime Module System
 
 Nodus now executes modules as isolated runtime units. Each module has its own global namespace and is executed once per process. Imports resolve through the module loader, which caches module objects and reuses them for repeated imports.
+
+Module Qualification
+
+To avoid name collisions across modules, the loader assigns each module a unique prefix (`__modN__`). The compiler qualifies imported symbols with this prefix while preserving display names for diagnostics. The VM strips module prefixes when presenting user-facing names.
 
 Modules are represented at runtime by a NodusModule object that stores:
 
@@ -383,6 +388,10 @@ server.py
 Capabilities include:
 
 interactive REPL
+
+- multiline brace-aware input
+- persistent command history via `~/.nodus_history` when `readline` is available
+- shell commands `:ast`, `:dis`, `:type`, `:help`, and `:quit`
 
 deterministic formatting
 

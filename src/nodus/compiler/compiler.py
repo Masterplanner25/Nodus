@@ -510,10 +510,6 @@ class Compiler:
             self.emit("MAKE_CLOSURE", internal_name)
             self.emit("STORE", stmt.name)
             return
-        if isinstance(stmt, For):
-            return
-        if isinstance(stmt, ForEach):
-            return
 
         if isinstance(stmt, ExportList):
             return
@@ -719,7 +715,8 @@ class Compiler:
 
         if isinstance(expr, FnExpr):
             jump_over = self.emit("JUMP", None)
-            anon_name = f"__anon"
+            self.fn_counter += 1
+            anon_name = f"__anon_{self.fn_counter}"
             internal_name = self.compile_fn_def(FnDef(anon_name, expr.params, expr.body, return_type=expr.return_type), is_nested=True)
             self.patch(jump_over, "JUMP", len(self.code))
             self.emit("MAKE_CLOSURE", internal_name)

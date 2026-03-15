@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from nodus.runtime.errors import format_error_payload
+from nodus.runtime.profiler import Profiler
 from nodus.tooling.formatter import format_source
 from nodus.tooling import package_manager as _package_manager
 from nodus.tooling.runner import (
@@ -58,6 +59,38 @@ def _print_stderr(message: str) -> None:
 def _project_root_from_env() -> str | None:
     value = os.environ.get("NODUS_PROJECT_ROOT")
     return value if value else None
+
+
+def _allowed_paths_from_env() -> list[str] | None:
+    raw = os.environ.get("NODUS_ALLOWED_PATHS")
+    if raw is None:
+        return None
+    paths = [part.strip() for part in raw.split(os.pathsep) if part.strip()]
+    return paths
+
+
+def _resolve_allowed_paths(value: object | None) -> list[str] | None:
+    if value is None:
+        return _allowed_paths_from_env()
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return []
+    parts = [part.strip() for part in raw.split(os.pathsep) if part.strip()]
+    return parts
+
+
+def _server_auth_token_from_env() -> str | None:
+    value = os.environ.get("NODUS_SERVER_TOKEN")
+    return value if value else None
+
+
+def _server_allow_input_from_env() -> bool:
+    value = os.environ.get("NODUS_SERVER_ALLOW_INPUT")
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _resolve_project_root(path: object | None) -> tuple[str | None, str | None]:
@@ -110,13 +143,14 @@ def _render_help() -> str:
             "  nodus ast <file> [--compact]",
             "  nodus dis <file> [--loc]",
             "  nodus debug <file>",
+            "  nodus profile <file> [--json] [--project-root PATH] [--allow-paths PATHS]",
             "  nodus test-examples",
             "  nodus graph <file> [--project-root PATH]",
-            "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N]",
-            "  nodus snapshot <session> [--host HOST --port PORT]",
-            "  nodus snapshots [--host HOST --port PORT]",
-            "  nodus restore <snapshot> [--host HOST --port PORT]",
-            "  nodus worker [--host HOST --port PORT]",
+            "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N --allow-paths PATHS --auth-token TOKEN --allow-input]",
+            "  nodus snapshot <session> [--host HOST --port PORT --auth-token TOKEN]",
+            "  nodus snapshots [--host HOST --port PORT --auth-token TOKEN]",
+            "  nodus restore <snapshot> [--host HOST --port PORT --auth-token TOKEN]",
+            "  nodus worker [--host HOST --port PORT --auth-token TOKEN]",
             "  nodus workflow-run <file> [--workflow NAME]",
             "  nodus workflow-plan <file> [--workflow NAME]",
             "  nodus workflow-resume <graph_id> [--checkpoint LABEL]",
@@ -184,6 +218,7 @@ def run_file(
     max_steps: int | None = None,
     timeout_ms: int | None = None,
     max_stdout_chars: int | None = None,
+    allowed_paths: list[str] | None = None,
 ) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
@@ -208,6 +243,7 @@ def run_file(
         max_steps=MAX_STEPS if max_steps is None else max_steps,
         timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else timeout_ms,
         max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
+        allowed_paths=allowed_paths,
     )
     if dump_bytecode and result.get("disassembly"):
         print(result["disassembly"])
@@ -215,6 +251,101 @@ def run_file(
     if not result.get("ok", False):
         _print_error(result, path=path)
         return 1
+    return 0
+
+
+def _format_profile_report(report: dict, *, max_functions: int = 10, max_opcodes: int = 10) -> str:
+    total_ms = report.get("total_time_ms", 0.0)
+    functions = report.get("functions", [])
+    opcodes = report.get("opcode_counts", {})
+
+    lines = [
+        "Nodus Profiling Report",
+        "----------------------",
+        "",
+        f"Total runtime: {total_ms:.3f} ms",
+        "",
+        "Top Functions:",
+        "",
+    ]
+
+    if functions:
+        func_rows = sorted(
+            functions,
+            key=lambda item: (-float(item.get("time_ms", 0.0)), -int(item.get("calls", 0)), str(item.get("name", ""))),
+        )[:max_functions]
+        name_width = max(len(str(item.get("name", ""))) for item in func_rows)
+        for item in func_rows:
+            name = str(item.get("name", "")).ljust(name_width)
+            calls = int(item.get("calls", 0))
+            time_ms = float(item.get("time_ms", 0.0))
+            lines.append(f"{name}  {calls} call{'s' if calls != 1 else ''}  {time_ms:.3f} ms")
+    else:
+        lines.append("<none>")
+
+    lines.extend(["", "Top Opcodes:", ""])
+
+    if opcodes:
+        opcode_rows = sorted(opcodes.items(), key=lambda item: (-item[1], item[0]))[:max_opcodes]
+        name_width = max(len(name) for name, _count in opcode_rows)
+        for name, count in opcode_rows:
+            lines.append(f"{name.ljust(name_width)}  {count}")
+    else:
+        lines.append("<none>")
+
+    return "\n".join(lines)
+
+
+def profile_file(
+    path: str,
+    *,
+    project_root: str | None = None,
+    json_output: bool = False,
+    optimize: bool = True,
+    max_steps: int | None = None,
+    timeout_ms: int | None = None,
+    max_stdout_chars: int | None = None,
+    allowed_paths: list[str] | None = None,
+) -> int:
+    if not os.path.isfile(path):
+        _print_stderr(f"File not found: {path}")
+        return 1
+    code = _read_file(path)
+    profiler = Profiler()
+    profiler.start()
+    try:
+        result, _vm = run_source(
+            code,
+            filename=path,
+            optimize=optimize,
+            project_root=project_root,
+            max_steps=MAX_STEPS if max_steps is None else max_steps,
+            timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else timeout_ms,
+            max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
+            profiler=profiler,
+            allowed_paths=allowed_paths,
+        )
+    finally:
+        profiler.stop()
+
+    if not result.get("ok", False):
+        if not json_output:
+            _print_result_output(result)
+        _print_error(result, path=path)
+        return 1
+
+    if not json_output:
+        _print_result_output(result)
+        print(_format_profile_report(profiler.report()))
+        return 0
+
+    report = profiler.report()
+    payload = {
+        "runtime_ms": float(report.get("total_time_ms", 0.0)),
+        "functions": report.get("functions", []),
+        "opcodes": report.get("opcode_counts", {}),
+    }
+    _json_print(payload)
     return 0
 
 
@@ -293,19 +424,27 @@ def _json_load(value: str):
     return json.loads(value)
 
 
-def _json_post(host: str, port: int, path: str, payload: dict):
+def _json_post(host: str, port: int, path: str, payload: dict, *, token: str | None = None):
     conn = http.client.HTTPConnection(host, port, timeout=5)
     body = json.dumps(payload)
-    conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    token = token or _server_auth_token_from_env()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    conn.request("POST", path, body=body, headers=headers)
     resp = conn.getresponse()
     data = resp.read().decode("utf-8")
     conn.close()
     return json.loads(data) if data else {}
 
 
-def _json_get(host: str, port: int, path: str):
+def _json_get(host: str, port: int, path: str, *, token: str | None = None):
     conn = http.client.HTTPConnection(host, port, timeout=5)
-    conn.request("GET", path)
+    headers = {}
+    token = token or _server_auth_token_from_env()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    conn.request("GET", path, headers=headers)
     resp = conn.getresponse()
     data = resp.read().decode("utf-8")
     conn.close()
@@ -420,31 +559,46 @@ def _run_server(
     port: int = SERVER_PORT,
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
+    allowed_paths: list[str] | None = None,
+    allow_input: bool = False,
+    auth_token: str | None = None,
 ) -> int:
-    serve(host=host, port=port, trace=trace, worker_sweep_interval_ms=worker_sweep_interval_ms)
+    try:
+        serve(
+            host=host,
+            port=port,
+            trace=trace,
+            worker_sweep_interval_ms=worker_sweep_interval_ms,
+            allowed_paths=allowed_paths,
+            allow_input=allow_input,
+            auth_token=auth_token,
+        )
+    except ValueError as err:
+        _print_stderr(str(err))
+        return 1
     return 0
 
 
-def _run_snapshot(session_id: str, *, host: str, port: int) -> int:
-    payload = snapshot_session(host, port, session_id)
+def _run_snapshot(session_id: str, *, host: str, port: int, token: str | None = None) -> int:
+    payload = snapshot_session(host, port, session_id, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
 
 
-def _run_snapshots(*, host: str, port: int) -> int:
-    payload = list_snapshots(host, port)
+def _run_snapshots(*, host: str, port: int, token: str | None = None) -> int:
+    payload = list_snapshots(host, port, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
 
 
-def _run_restore(snapshot_id: str, *, host: str, port: int) -> int:
-    payload = restore_snapshot(host, port, snapshot_id)
+def _run_restore(snapshot_id: str, *, host: str, port: int, token: str | None = None) -> int:
+    payload = restore_snapshot(host, port, snapshot_id, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
 
 
-def _run_worker(host: str, port: int, *, poll_interval: float = 0.1) -> int:
-    register = _json_post(host, port, "/worker/register", {"capabilities": []})
+def _run_worker(host: str, port: int, *, poll_interval: float = 0.1, token: str | None = None) -> int:
+    register = _json_post(host, port, "/worker/register", {"capabilities": []}, token=token)
     worker_id = register.get("worker_id")
     if not worker_id:
         _print_stderr("Failed to register worker.")
@@ -452,7 +606,7 @@ def _run_worker(host: str, port: int, *, poll_interval: float = 0.1) -> int:
     print(f"worker_id={worker_id}")
     try:
         while True:
-            job = _json_post(host, port, "/worker/poll", {"worker_id": worker_id})
+            job = _json_post(host, port, "/worker/poll", {"worker_id": worker_id}, token=token)
             job_id = job.get("job_id")
             if job_id:
                 _json_post(
@@ -460,6 +614,7 @@ def _run_worker(host: str, port: int, *, poll_interval: float = 0.1) -> int:
                     port,
                     "/worker/result",
                     {"worker_id": worker_id, "job_id": job_id, "status": "execute"},
+                    token=token,
                 )
                 continue
             time.sleep(poll_interval)
@@ -654,6 +809,7 @@ def main(argv: list[str] | None = None) -> int:
         "ast",
         "dis",
         "debug",
+        "profile",
         "test-examples",
         "graph",
         "serve",
@@ -698,7 +854,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     if command == "run":
-        flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit"}
+        flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
         flags_no_values = {
             "--trace",
             "--trace-no-loc",
@@ -745,6 +901,7 @@ def main(argv: list[str] | None = None) -> int:
         if err:
             _print_stderr(err)
             return 1
+        allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
         return run_file(
             script,
             trace="--trace" in flags,
@@ -761,6 +918,7 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=step_limit,
             timeout_ms=None if time_limit is None else time_limit * 1000,
             max_stdout_chars=output_limit,
+            allowed_paths=allowed_paths,
         )
 
     if command == "check":
@@ -829,6 +987,51 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return debug_file(script, project_root=project_root)
 
+    if command == "profile":
+        flags_with_values = {"--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
+        flags_no_values = {"--json", "--no-opt"}
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
+        if not positional:
+            _print_stderr("Usage: nodus profile <script.nd> [--json] [--project-root <path>]")
+            return 1
+        script = positional[0]
+        step_limit = None
+        if "--step-limit" in flags:
+            try:
+                step_limit = _parse_int(str(flags["--step-limit"]), "--step-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
+        time_limit = None
+        if "--time-limit" in flags:
+            try:
+                time_limit = _parse_int(str(flags["--time-limit"]), "--time-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
+        output_limit = None
+        if "--output-limit" in flags:
+            try:
+                output_limit = _parse_int(str(flags["--output-limit"]), "--output-limit")
+            except ValueError as err:
+                _print_stderr(str(err))
+                return 1
+        project_root, err = _resolve_project_root(flags.get("--project-root"))
+        if err:
+            _print_stderr(err)
+            return 1
+        allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        return profile_file(
+            script,
+            json_output="--json" in flags,
+            project_root=project_root,
+            optimize="--no-opt" not in flags,
+            max_steps=step_limit,
+            timeout_ms=None if time_limit is None else time_limit * 1000,
+            max_stdout_chars=output_limit,
+            allowed_paths=allowed_paths,
+        )
+
     if command == "test-examples":
         return _run_examples()
 
@@ -845,8 +1048,8 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_graph_file(positional[0], project_root=project_root)
 
     if command == "serve":
-        flags_with_values = {"--host", "--port", "--worker-sweep-interval-ms"}
-        flags_no_values = {"--trace"}
+        flags_with_values = {"--host", "--port", "--worker-sweep-interval-ms", "--allow-paths", "--auth-token"}
+        flags_no_values = {"--trace", "--allow-input"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
@@ -858,10 +1061,21 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as err:
                 _print_stderr(str(err))
                 return 1
-        return _run_server(host=host, port=port, trace="--trace" in flags, worker_sweep_interval_ms=sweep_ms)
+        allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
+        allow_input = "--allow-input" in flags or _server_allow_input_from_env()
+        return _run_server(
+            host=host,
+            port=port,
+            trace="--trace" in flags,
+            worker_sweep_interval_ms=sweep_ms,
+            allowed_paths=allowed_paths,
+            allow_input=allow_input,
+            auth_token=auth_token,
+        )
 
     if command == "snapshot":
-        flags_with_values = {"--host", "--port"}
+        flags_with_values = {"--host", "--port", "--auth-token"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:
             _print_stderr("Usage: nodus snapshot <session>")
@@ -869,18 +1083,20 @@ def main(argv: list[str] | None = None) -> int:
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
-        return _run_snapshot(positional[0], host=host, port=port)
+        token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
+        return _run_snapshot(positional[0], host=host, port=port, token=token)
 
     if command == "snapshots":
-        flags_with_values = {"--host", "--port"}
+        flags_with_values = {"--host", "--port", "--auth-token"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
-        return _run_snapshots(host=host, port=port)
+        token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
+        return _run_snapshots(host=host, port=port, token=token)
 
     if command == "restore":
-        flags_with_values = {"--host", "--port"}
+        flags_with_values = {"--host", "--port", "--auth-token"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:
             _print_stderr("Usage: nodus restore <snapshot>")
@@ -888,15 +1104,17 @@ def main(argv: list[str] | None = None) -> int:
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
-        return _run_restore(positional[0], host=host, port=port)
+        token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
+        return _run_restore(positional[0], host=host, port=port, token=token)
 
     if command == "worker":
-        flags_with_values = {"--host", "--port"}
+        flags_with_values = {"--host", "--port", "--auth-token"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
-        return _run_worker(host, port)
+        token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
+        return _run_worker(host, port, token=token)
 
     if command == "workflow-run":
         flags_with_values = {"--workflow", "--project-root"}

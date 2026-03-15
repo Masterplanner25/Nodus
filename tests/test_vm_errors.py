@@ -23,9 +23,9 @@ class VmErrorWrappingTests(unittest.TestCase):
         src = '"a" - 1'
         with self.assertRaises(lang.LangRuntimeError) as cm:
             run_program(src, source_path="main.nd")
-        self.assertEqual(cm.exception.kind, "runtime")
+        self.assertEqual(cm.exception.kind, "type")
         self.assertIsNotNone(cm.exception.line)
-        self.assertIn("unsupported operand", str(cm.exception))
+        self.assertIn("Cannot subtract", str(cm.exception))
 
 
 if __name__ == "__main__":

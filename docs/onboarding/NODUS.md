@@ -28,7 +28,8 @@ Nodus is designed for readable logic, modular scripting, and runtime orchestrati
 - workflows/goals lowered to task graphs
 - runtime events and trace tooling
 - deterministic formatter and static validation
-- REPL, AST viewer, and bytecode disassembler
+- REPL with multiline editing, history, and inspection commands
+- AST viewer and bytecode disassembler
 
 ## File Extension
 Primary extension: `.nd`
@@ -36,6 +37,7 @@ Primary extension: `.nd`
 ## CLI
 - `nodus run script.nd`
 - `nodus repl`
+- REPL commands: `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>`
 - `nodus fmt script.nd`
 - `nodus check script.nd`
 - `nodus ast script.nd`

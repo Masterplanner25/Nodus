@@ -3,10 +3,14 @@
 ## [Unreleased]
 
 ### Added
-- None.
+- REPL multiline editing with `... ` continuation for brace-delimited blocks.
+- Persistent REPL history via `~/.nodus_history` when Python `readline` is available.
+- REPL inspection commands: `:ast <expr>`, `:dis <expr>`, `:type <expr>`, `:help`, and `:quit`.
+- Dedicated REPL documentation in `docs/tooling/REPL.md`.
 
 ### Changed
-- None.
+- REPL inspection output now supports compact expression AST views and expression bytecode inspection.
+- Onboarding and runtime docs now describe the interactive shell workflow and inspection commands.
 
 ### Fixed
 - None.

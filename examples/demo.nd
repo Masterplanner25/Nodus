@@ -1,0 +1,10 @@
+fn process_items(items) {
+    let total = 0
+    for item in items {
+        total = total + item
+    }
+    return total
+}
+
+let values = [1, 2, 3, 4, 5]
+process_items(values)

@@ -151,6 +151,9 @@ def run_source(
     max_stdout_chars: int = MAX_STDOUT_CHARS,
     import_state: dict | None = None,
     project_root: str | None = None,
+    profiler=None,
+    allowed_paths: list[str] | None = None,
+    input_fn=None,
 ):
     event_bus, event_file = _prepare_event_bus(
         trace_events=trace_events,
@@ -201,6 +204,9 @@ def run_source(
         trace_scheduler=trace_scheduler,
         scheduler_output=scheduler_output,
         event_bus=event_bus,
+        profiler=profiler,
+        allowed_paths=allowed_paths,
+        input_fn=input_fn,
     )
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     extras = {}

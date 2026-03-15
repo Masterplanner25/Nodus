@@ -8,6 +8,7 @@ import os
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error
+from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
@@ -22,11 +23,17 @@ class NodusRuntime:
         timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
         max_stdout_chars: int | None = MAX_STDOUT_CHARS,
         project_root: str | None = None,
+        allowed_paths: list[str] | None = None,
+        allow_input: bool = False,
+        max_frames: int | None = None,
     ) -> None:
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
         self.max_stdout_chars = max_stdout_chars
         self.project_root = project_root
+        self.allowed_paths = allowed_paths
+        self.allow_input = allow_input
+        self.max_frames = max_frames
         self._host_functions: dict[str, BuiltinInfo] = {}
         self.last_vm: VM | None = None
 
@@ -50,6 +57,7 @@ class NodusRuntime:
         max_stdout_chars: int | None = None,
         optimize: bool = True,
         debugger=None,
+        max_frames: int | None = None,
     ) -> dict:
         with open(path, "r", encoding="utf-8") as handle:
             source = handle.read()
@@ -61,6 +69,7 @@ class NodusRuntime:
             max_stdout_chars=max_stdout_chars,
             optimize=optimize,
             debugger=debugger,
+            max_frames=max_frames,
         )
 
     def run_source(
@@ -74,6 +83,7 @@ class NodusRuntime:
         optimize: bool = True,
         import_state: dict | None = None,
         debugger=None,
+        max_frames: int | None = None,
     ) -> dict:
         normalized = normalize_filename(filename)
         if import_state is None and self.project_root is not None:
@@ -93,7 +103,10 @@ class NodusRuntime:
             {},
             code_locs=[],
             source_path=filename,
+            allowed_paths=self.allowed_paths,
         )
+        if not self.allow_input:
+            vm.input_fn = self._blocked_input
         if debugger is not None:
             vm.debugger = debugger
             vm.debug = True
@@ -111,6 +124,8 @@ class NodusRuntime:
         resolved_timeout = self.timeout_ms if timeout_ms is None else timeout_ms
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
         configure_vm_limits(vm, max_steps=resolved_steps, timeout_ms=resolved_timeout)
+        resolved_frames = self.max_frames if max_frames is None else max_frames
+        vm.max_frames = resolved_frames
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
             try:
@@ -168,6 +183,9 @@ class NodusRuntime:
         host_args = [self._to_host_value(arg) for arg in args]
         result = fn(*host_args)
         return self._to_runtime_value(result)
+
+    def _blocked_input(self, _prompt: str):
+        raise LangRuntimeError("sandbox", "input() is not available in embedded mode")
 
     def _to_host_value(self, value):
         if value is None or isinstance(value, (bool, str)):

@@ -34,6 +34,7 @@ from nodus.tooling.runner import (
 )
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import NodusRuntimeError
+from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.orchestration.task_graph import load_graph_state, latest_graph_state
 from nodus.runtime.sessions import SessionManager
 from nodus.runtime.snapshots import SnapshotManager
@@ -286,6 +287,9 @@ class RuntimeService:
         session_timeout_ms: int = SESSION_TIMEOUT_MS,
         max_sessions: int = MAX_SESSIONS,
         worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
+        allowed_paths: list[str] | None = None,
+        allow_input: bool = False,
+        auth_token: str | None = None,
     ):
         self.trace = trace
         self.last_vm = None
@@ -294,6 +298,9 @@ class RuntimeService:
         self.workers = WorkerManager()
         set_default_dispatcher(self.workers)
         self._worker_sweep_interval_ms = worker_sweep_interval_ms
+        self.allowed_paths = allowed_paths
+        self.allow_input = allow_input
+        self.auth_token = auth_token
         self._sweeper_thread = threading.Thread(target=self._worker_sweeper_loop, daemon=True)
         self._sweeper_thread.start()
 
@@ -340,6 +347,24 @@ class RuntimeService:
         status = state.get("status") if state else None
         return {"graph_id": resolved_id, "tasks": tasks, "graph_status": status}
 
+    def _apply_runtime_policies(self, vm: VM | None) -> None:
+        if vm is None:
+            return
+        vm.allowed_paths = self.allowed_paths
+        if not self.allow_input:
+            vm.input_fn = self._blocked_input
+
+    def _blocked_input(self, _prompt: str):
+        raise LangRuntimeError("sandbox", "input() is not available in server mode")
+
+    def is_authorized(self, auth_header: str | None) -> bool:
+        if not self.auth_token:
+            return True
+        if not auth_header:
+            return False
+        expected = f"Bearer {self.auth_token}"
+        return auth_header.strip() == expected
+
     def execute(self, payload: dict):
         code = payload.get("code", "")
         filename = payload.get("filename")
@@ -348,6 +373,7 @@ class RuntimeService:
             session = self.sessions.get(session_id)
             if session is None:
                 return self._session_error("Unknown session", stage="execute")
+            self._apply_runtime_policies(session.vm)
             result, vm = run_in_vm(
                 session.vm,
                 code,
@@ -359,7 +385,8 @@ class RuntimeService:
             self.sessions.record_execution(session)
             self.last_vm = vm
             return result
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_graph_code(vm, code, filename, trace=self.trace)
         if vm is not None:
@@ -394,6 +421,7 @@ class RuntimeService:
             if session is None:
                 return self._session_error("Unknown session", stage="execute")
             session.vm.worker_dispatcher = self.workers
+            self._apply_runtime_policies(session.vm)
             result, vm = run_graph_code(
                 session.vm,
                 code,
@@ -405,7 +433,8 @@ class RuntimeService:
             self.sessions.record_execution(session)
             self.last_vm = vm
             return result
-        result, vm = run_source(code, filename, trace=self.trace)
+        input_fn = None if self.allow_input else self._blocked_input
+        result, vm = run_source(code, filename, trace=self.trace, allowed_paths=self.allowed_paths, input_fn=input_fn)
         if vm is not None:
             vm.worker_dispatcher = self.workers
             self.last_vm = vm
@@ -425,6 +454,7 @@ class RuntimeService:
             session = self.sessions.get(session_id)
             if session is None:
                 return self._session_error("Unknown session", stage="plan_graph")
+            self._apply_runtime_policies(session.vm)
             result, vm = plan_graph_code(
                 session.vm,
                 code,
@@ -438,7 +468,9 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, result.get("plan", {}).get("graph_id")))
             return result
-        result, vm = plan_graph_code(VM([], {}, code_locs=[], source_path=None), code, filename, trace=self.trace)
+        plan_vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(plan_vm)
+        result, vm = plan_graph_code(plan_vm, code, filename, trace=self.trace)
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -463,6 +495,7 @@ class RuntimeService:
             session = self.sessions.get(session_id)
             if session is None:
                 return self._session_error("Unknown session", stage="resume_graph")
+            self._apply_runtime_policies(session.vm)
             result, vm = resume_graph_in_vm(session.vm, graph_id)
             session.vm = vm
             self.sessions.record_execution(session)
@@ -470,7 +503,8 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None)
+        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         result, vm = resume_graph_in_vm(vm, graph_id)
         if vm is not None:
             self.last_vm = vm
@@ -485,7 +519,8 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
         if vm is not None:
@@ -498,7 +533,8 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         result, vm = plan_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
         if vm is not None:
             self.last_vm = vm
@@ -510,7 +546,8 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
         if vm is not None:
@@ -523,7 +560,8 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         result, vm = plan_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
         if vm is not None:
             self.last_vm = vm
@@ -550,6 +588,7 @@ class RuntimeService:
             session = self.sessions.get(session_id)
             if session is None:
                 return self._session_error("Unknown session", stage="resume_workflow")
+            self._apply_runtime_policies(session.vm)
             result, vm = resume_workflow_in_vm(session.vm, graph_id, checkpoint)
             session.vm = vm
             self.sessions.record_execution(session)
@@ -557,7 +596,8 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None)
+        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         result, vm = resume_workflow_in_vm(vm, graph_id, checkpoint)
         if vm is not None:
             self.last_vm = vm
@@ -584,6 +624,7 @@ class RuntimeService:
             session = self.sessions.get(session_id)
             if session is None:
                 return self._session_error("Unknown session", stage="resume_goal")
+            self._apply_runtime_policies(session.vm)
             result, vm = resume_goal_in_vm(session.vm, graph_id, checkpoint)
             session.vm = vm
             self.sessions.record_execution(session)
@@ -591,7 +632,8 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None)
+        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         result, vm = resume_goal_in_vm(vm, graph_id, checkpoint)
         if vm is not None:
             self.last_vm = vm
@@ -643,7 +685,8 @@ class RuntimeService:
         return memory_delete_result(key, vm=self.last_vm)
 
     def create_session(self):
-        vm = VM([], {}, code_locs=[], source_path=None)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
         session = self.sessions.create(vm)
         return {"session": session.id}
 
@@ -680,6 +723,7 @@ class RuntimeService:
         vm_state = state_blob.get("vm", {})
         import_state = state_blob.get("import_state")
         session = self.sessions.create_from_state(vm_state, import_state=import_state)
+        self._apply_runtime_policies(session.vm)
         return {"session": session.id}
 
     def list_snapshots(self):
@@ -738,12 +782,19 @@ def _write_json(handler: BaseHTTPRequestHandler, payload: dict, status: int = 20
     handler.wfile.write(body)
 
 
-def _json_post(host: str, port: int, path: str, payload: dict):
+def _unauthorized(handler: BaseHTTPRequestHandler) -> None:
+    _write_json(handler, {"error": "unauthorized"}, status=401)
+
+
+def _json_post(host: str, port: int, path: str, payload: dict, *, token: str | None = None):
     import http.client
 
     conn = http.client.HTTPConnection(host, port, timeout=5)
     body = json.dumps(payload)
-    conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    conn.request("POST", path, body=body, headers=headers)
     resp = conn.getresponse()
     data = resp.read().decode("utf-8")
     conn.close()
@@ -752,11 +803,14 @@ def _json_post(host: str, port: int, path: str, payload: dict):
     return json.loads(data)
 
 
-def _json_get(host: str, port: int, path: str):
+def _json_get(host: str, port: int, path: str, *, token: str | None = None):
     import http.client
 
     conn = http.client.HTTPConnection(host, port, timeout=5)
-    conn.request("GET", path)
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    conn.request("GET", path, headers=headers)
     resp = conn.getresponse()
     data = resp.read().decode("utf-8")
     conn.close()
@@ -765,16 +819,20 @@ def _json_get(host: str, port: int, path: str):
     return json.loads(data)
 
 
-def snapshot_session(host: str, port: int, session_id: str) -> dict:
-    return _json_post(host, port, "/snapshot", {"session": session_id})
+def _is_local_host(host: str) -> bool:
+    return host in {"127.0.0.1", "localhost", "::1"}
 
 
-def restore_snapshot(host: str, port: int, snapshot_id: str) -> dict:
-    return _json_post(host, port, "/restore", {"snapshot": snapshot_id})
+def snapshot_session(host: str, port: int, session_id: str, *, token: str | None = None) -> dict:
+    return _json_post(host, port, "/snapshot", {"session": session_id}, token=token)
 
 
-def list_snapshots(host: str, port: int) -> dict:
-    return _json_get(host, port, "/snapshots")
+def restore_snapshot(host: str, port: int, snapshot_id: str, *, token: str | None = None) -> dict:
+    return _json_post(host, port, "/restore", {"snapshot": snapshot_id}, token=token)
+
+
+def list_snapshots(host: str, port: int, *, token: str | None = None) -> dict:
+    return _json_get(host, port, "/snapshots", token=token)
 
 
 def start_http_server(service: RuntimeService, host: str, port: int) -> ThreadingHTTPServer:
@@ -783,6 +841,9 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             return
 
         def do_GET(self):
+            if not service.is_authorized(self.headers.get("Authorization")):
+                _unauthorized(self)
+                return
             parsed = urlparse(self.path)
             if parsed.path == "/health":
                 _write_json(self, service.health())
@@ -811,6 +872,9 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             _write_json(self, {"error": "not found"}, status=404)
 
         def do_POST(self):
+            if not service.is_authorized(self.headers.get("Authorization")):
+                _unauthorized(self)
+                return
             payload = _read_json(self)
             if self.path == "/session":
                 _write_json(self, service.create_session())
@@ -899,6 +963,9 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             _write_json(self, {"error": "not found"}, status=404)
 
         def do_DELETE(self):
+            if not service.is_authorized(self.headers.get("Authorization")):
+                _unauthorized(self)
+                return
             if self.path.startswith("/snapshot/"):
                 snapshot_id = self.path.split("/", 2)[2]
                 _write_json(self, service.delete_snapshot(snapshot_id))
@@ -918,6 +985,13 @@ def create_fastapi_app(service: RuntimeService):
     if not FASTAPI_AVAILABLE:
         return None
     app = FastAPI()
+
+    if service.auth_token:
+        @app.middleware("http")
+        async def auth_middleware(request: Request, call_next):
+            if not service.is_authorized(request.headers.get("Authorization")):
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return await call_next(request)
 
     @app.get("/health")
     def health():
@@ -1103,8 +1177,19 @@ def serve(
     *,
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
+    allowed_paths: list[str] | None = None,
+    allow_input: bool = False,
+    auth_token: str | None = None,
 ) -> None:
-    service = RuntimeService(trace=trace, worker_sweep_interval_ms=worker_sweep_interval_ms)
+    if not _is_local_host(host) and not auth_token:
+        raise ValueError("Refusing to bind to non-local host without an auth token.")
+    service = RuntimeService(
+        trace=trace,
+        worker_sweep_interval_ms=worker_sweep_interval_ms,
+        allowed_paths=allowed_paths,
+        allow_input=allow_input,
+        auth_token=auth_token,
+    )
     if FASTAPI_AVAILABLE and UVICORN_AVAILABLE:
         app = create_fastapi_app(service)
         uvicorn.run(app, host=host, port=port, log_level="info")
@@ -1121,12 +1206,20 @@ def run_in_thread(
     session_timeout_ms: int = SESSION_TIMEOUT_MS,
     max_sessions: int = MAX_SESSIONS,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
+    allowed_paths: list[str] | None = None,
+    allow_input: bool = False,
+    auth_token: str | None = None,
 ):
+    if not _is_local_host(host) and not auth_token:
+        raise ValueError("Refusing to bind to non-local host without an auth token.")
     service = RuntimeService(
         trace=trace,
         session_timeout_ms=session_timeout_ms,
         max_sessions=max_sessions,
         worker_sweep_interval_ms=worker_sweep_interval_ms,
+        allowed_paths=allowed_paths,
+        allow_input=allow_input,
+        auth_token=auth_token,
     )
     server = start_http_server(service, host, port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

@@ -40,6 +40,13 @@ None.
 - Tooling-side package resolution/installation and `.nodus/modules/` dependency layout.
 - Debugger MVP (breakpoints, step/next/continue, locals/stack).
 
+### 0.5.0 — Interactive Shell and Inspection
+- REPL multiline editing with brace-aware continuation prompts.
+- Persistent REPL history via `~/.nodus_history` when `readline` is available.
+- REPL shell commands `:ast`, `:dis`, `:type`, `:help`, and `:quit`.
+- Expression inspection workflows for AST, bytecode, and basic runtime type display.
+- REPL documentation and README/onboarding examples for interactive development.
+
 ### 0.2.0 — Stdlib Maturity and Project Ergonomics
 - Coherent stdlib modules (`std:strings`, `std:collections`, `std:fs`, `std:path`).
 - Expanded examples for real-world scripts.
@@ -333,16 +340,12 @@ Profiler with opcode counts and function timing
 Runtime metrics for scheduler and task execution
 
 REPL improvements:
-
-multiline editing
-
-command history
-
-:ast
-
-:dis
-
-:type
+- completed in 0.5.0:
+- multiline editing
+- command history
+- :ast
+- :dis
+- :type
 
 Language Server Protocol (LSP)
 
