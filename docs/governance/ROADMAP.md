@@ -456,7 +456,7 @@ Focus:
 - bytecode caching
 - scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
 - ✅ task graph persistence improvements (resilient snapshots + checkpoint resume, workflow CLI)
-- LSP diagnostics
+- ✅ LSP diagnostics (cross-module publishing, dependency-aware incremental refresh, richer locations, warnings)
 - debug adapter
 
 Version 1.0

@@ -50,8 +50,9 @@ from nodus.frontend.ast.ast_nodes import (
 from nodus.frontend.lexer import KEYWORDS, Tok, tokenize
 from nodus.frontend.parser import Parser
 from nodus.frontend.type_system import ANY, BOOL, FLOAT, FUNCTION, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types
-from nodus.runtime.errors import coerce_error
-from nodus.tooling.loader import collect_module_info, compile_source as compile_nodus_source, ensure_project_root, resolve_import_path
+from nodus.runtime.dependency_graph import DependencyGraph
+from nodus.tooling.diagnostics import WorkspaceDiagnosticEngine
+from nodus.tooling.loader import collect_module_info, ensure_project_root, resolve_import_path
 
 
 COMPLETION_KIND_TEXT = 1
@@ -611,6 +612,9 @@ class LanguageServer:
         self.output_stream = output_stream if output_stream is not None else sys.stdout.buffer
         self.documents: dict[str, DocumentState] = {}
         self.module_cache: dict[str, ModuleRecord] = {}
+        self.current_diagnostics: dict[str, list[dict]] = {}
+        self.dependency_graph: DependencyGraph | None = None
+        self.diagnostic_engine = WorkspaceDiagnosticEngine()
         self.shutdown_requested = False
         self.exit_code = 0
 
@@ -694,9 +698,10 @@ class LanguageServer:
         text = text_document.get("text", "")
         if not uri:
             return
+        self.module_cache.clear()
         state = self._analyze_document(uri, text)
         self.documents[uri] = state
-        self._publish_diagnostics(state)
+        self._refresh_workspace_diagnostics(state.path, text)
 
     def _handle_did_change(self, params: dict) -> None:
         text_document = params.get("textDocument", {})
@@ -706,9 +711,10 @@ class LanguageServer:
         changes = params.get("contentChanges", [])
         if not changes:
             return
+        self.module_cache.clear()
         state = self._analyze_document(uri, changes[-1].get("text", ""))
         self.documents[uri] = state
-        self._publish_diagnostics(state)
+        self._refresh_workspace_diagnostics(state.path, state.text)
 
     def _handle_completion(self, params: dict) -> dict:
         state = self._get_document(params)
@@ -813,8 +819,8 @@ class LanguageServer:
                 return definition
         return state.visible_symbols.get(token.val)
 
-    def _publish_diagnostics(self, state: DocumentState) -> None:
-        self._send_notification("textDocument/publishDiagnostics", {"uri": state.uri, "diagnostics": state.diagnostics})
+    def _publish_diagnostics(self, path: str, diagnostics: list[dict]) -> None:
+        self._send_notification("textDocument/publishDiagnostics", {"uri": _path_to_uri(path), "diagnostics": diagnostics})
 
     def _token_at_position(self, state: DocumentState, position: dict) -> Tok | None:
         line = int(position.get("line", 0)) + 1
@@ -845,38 +851,60 @@ class LanguageServer:
 
     def _analyze_document(self, uri: str, text: str) -> DocumentState:
         path = _uri_to_path(uri)
-        diagnostics: list[dict] = []
         tokens: list[Tok] = []
         try:
             tokens = tokenize(text)
             ast = Parser(tokens).parse()
         except Exception as err:
-            diagnostics.append(self._diagnostic_from_error(err, path))
-            return DocumentState(uri, path, text, diagnostics, tokens, [], [], {}, {})
-        try:
-            compile_nodus_source(text, source_path=path, analyze=True)
-        except Exception as err:
-            diagnostics.append(self._diagnostic_from_error(err, path))
+            return DocumentState(uri, path, text, [], tokens, [], [], {}, {})
         document = _DocumentIndexer(server=self, path=path, uri=uri, text=text, tokens=tokens, ast=ast).build()
-        document.diagnostics = diagnostics
         return document
 
-    def _diagnostic_from_error(self, err: Exception, fallback_path: str) -> dict:
-        payload = coerce_error(err, filename=fallback_path).to_dict()
-        line = payload.get("line")
-        column = payload.get("column")
-        message = payload.get("message", str(err))
-        filename = payload.get("filename")
-        if filename and filename != fallback_path:
-            message = f"{message} ({filename})"
-        return {
-            "range": _range_for(line, column, (column + 1) if column is not None else None),
-            "severity": 1,
-            "source": "nodus",
-            "message": message,
-            "line": line,
-            "column": column,
-        }
+    def _refresh_workspace_diagnostics(self, path: str, text: str) -> None:
+        overlays = {state.path: state.text for state in self.documents.values()}
+        affected = self._collect_affected_paths(path)
+        merged: dict[str, list[dict]] = {}
+        graph = self.dependency_graph
+        updated_paths: set[str] = set()
+        for affected_path in sorted(affected):
+            result = self.diagnostic_engine.analyze(
+                affected_path,
+                source=overlays.get(affected_path, text if os.path.abspath(affected_path) == os.path.abspath(path) else None),
+                overlays=overlays,
+                affected_paths={affected_path},
+                dependency_graph=graph,
+            )
+            graph = result.dependency_graph
+            updated_paths.update(result.diagnostics_by_file)
+            for file_path, diagnostics in result.diagnostics_by_file.items():
+                merged[file_path] = [diagnostic.to_lsp() for diagnostic in diagnostics]
+        self.dependency_graph = graph
+        stale_paths = {existing for existing in self.current_diagnostics if existing in affected and existing not in updated_paths}
+        for stale in sorted(stale_paths):
+            self._publish_diagnostics(stale, [])
+            self.current_diagnostics.pop(stale, None)
+        for file_path, diagnostics in sorted(merged.items()):
+            self._publish_diagnostics(file_path, diagnostics)
+            self.current_diagnostics[file_path] = diagnostics
+
+    def _collect_affected_paths(self, changed_path: str) -> set[str]:
+        normalized = os.path.abspath(changed_path)
+        affected = {normalized}
+        if self.dependency_graph is None:
+            return affected
+        reverse: dict[str, set[str]] = {}
+        for module_path, node in self.dependency_graph.modules.items():
+            for imported in node.imported_modules:
+                reverse.setdefault(os.path.abspath(imported), set()).add(os.path.abspath(module_path))
+        pending = [normalized]
+        while pending:
+            current = pending.pop()
+            for dependent in reverse.get(current, ()):
+                if dependent in affected:
+                    continue
+                affected.add(dependent)
+                pending.append(dependent)
+        return affected
 
     def load_module_record(self, path: str, import_state: dict | None = None) -> ModuleRecord | None:
         resolved = os.path.abspath(path)
@@ -884,8 +912,10 @@ class LanguageServer:
         if cached is not None:
             return cached
         try:
-            with open(resolved, "r", encoding="utf-8") as handle:
-                text = handle.read()
+            text = self._document_text_for_path(resolved)
+            if text is None:
+                with open(resolved, "r", encoding="utf-8") as handle:
+                    text = handle.read()
             tokens = tokenize(text)
             ast = Parser(tokens).parse()
         except Exception:
@@ -971,6 +1001,13 @@ class LanguageServer:
         module_record = ModuleRecord(path=resolved, uri=_path_to_uri(resolved), exports=exports)
         self.module_cache[resolved] = module_record
         return module_record
+
+    def _document_text_for_path(self, path: str) -> str | None:
+        normalized = os.path.abspath(path)
+        for state in self.documents.values():
+            if os.path.abspath(state.path) == normalized:
+                return state.text
+        return None
 
 
 def run_stdio_server() -> int:

@@ -50,7 +50,16 @@ For diagnostics, completion, hover, and go-to-definition support, use the Nodus 
 - Start it with `nodus lsp`
 - Documentation: `docs/tooling/LSP.md`
 
-The current implementation uses stdio JSON-RPC and reuses the existing parser/compiler pipeline for diagnostics.
+The current implementation uses stdio JSON-RPC and reuses the existing parser/compiler/tooling pipeline for diagnostics.
+
+Editor diagnostics now include:
+
+- syntax and import/export failures
+- cross-module diagnostics published to imported files
+- dependency-aware incremental refresh on change
+- warning diagnostics for unused variables, shadowed variables, and unreachable code
+
+Diagnostics clear automatically after fixes when the server republishes an empty diagnostic list for the file.
 
 ## Limitations
 
