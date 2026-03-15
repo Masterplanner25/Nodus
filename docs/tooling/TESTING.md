@@ -142,7 +142,7 @@ steps run in this order:
    commit from re-triggering the workflow. The commit step is a no-op when files are already
    correctly formatted — `git diff --quiet` exits 0 and nothing is committed.
 6. **Format check** — runs `python nodus.py fmt --check` across all `.nd` files in the repo.
-7. **Run tests** — runs the full pytest suite.
+7. **Run tests** — runs the full unittest suite (`python -m unittest discover -s tests -v`).
 
 The auto-format commit only appears when a contributor adds or edits a `.nd` file without
 running the formatter locally first. To avoid these auto-commits, format before pushing:
@@ -191,5 +191,5 @@ Formatter behaviour is covered by several test modules:
   multi-statement block bodies, and use as call arguments (`spawn(fn() { … })`).
 
 To add a formatter regression test, either add a new fixture pair to `tests/fixtures/fmt/`
-and reference it in `test_formatter_fixtures.py`, or add a pytest function in the relevant
+and reference it in `test_formatter_fixtures.py`, or add a `unittest.TestCase` test method in the relevant
 `test_formatter_*.py` module.

@@ -9,16 +9,17 @@
 - None.
 
 ### Fixed
-- None.
+- LSP `_uri_to_path` now uses `os.path.realpath` instead of `os.path.abspath`, normalising double-slash paths (`//tmp/…`) that arise from 4-slash `file:////…` URIs on Linux. This prevented go-to-definition from resolving imported symbols when the client URI contained an extra leading slash.
+- LSP `_publish_diagnostics` now echoes back the exact URI the client registered via `textDocument/didOpen` instead of reconstructing one from the file path. Reconstructed URIs diverged on Linux when the client used a non-canonical (4-slash) URI format, causing `textDocument/publishDiagnostics` URI mismatches.
 
 ### Improved
 - None.
 
 ### Documentation
-- None.
+- `docs/tooling/TESTING.md`: corrected CI step description from "pytest suite" to "unittest suite" (`python -m unittest discover`); updated formatter test authoring guidance to use `unittest.TestCase` methods instead of bare pytest functions.
 
 ### Tests
-- None.
+- Rewrote `tests/test_formatter_fnexpr.py` as a `unittest.TestCase` class. The file previously used `import pytest` and bare assertion functions, which caused an `ImportError` when the test suite was collected by `python -m unittest discover` (pytest is not installed in CI).
 
 ### Refactoring
 - None.

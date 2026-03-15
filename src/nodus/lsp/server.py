@@ -117,7 +117,7 @@ def _uri_to_path(uri: str) -> str:
     path = unquote(parsed.path)
     if os.name == "nt" and path.startswith("/"):
         path = path[1:]
-    return os.path.abspath(path)
+    return os.path.realpath(path)
 
 
 def _read_message(stream: BinaryIO) -> dict | None:
@@ -820,7 +820,15 @@ class LanguageServer:
         return state.visible_symbols.get(token.val)
 
     def _publish_diagnostics(self, path: str, diagnostics: list[dict]) -> None:
-        self._send_notification("textDocument/publishDiagnostics", {"uri": _path_to_uri(path), "diagnostics": diagnostics})
+        normalized = os.path.realpath(path)
+        uri = None
+        for state in self.documents.values():
+            if os.path.realpath(state.path) == normalized:
+                uri = state.uri
+                break
+        if uri is None:
+            uri = _path_to_uri(path)
+        self._send_notification("textDocument/publishDiagnostics", {"uri": uri, "diagnostics": diagnostics})
 
     def _token_at_position(self, state: DocumentState, position: dict) -> Tok | None:
         line = int(position.get("line", 0)) + 1
