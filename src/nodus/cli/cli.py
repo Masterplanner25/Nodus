@@ -12,6 +12,7 @@ from typing import Callable
 
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.profiler import Profiler
+from nodus.lsp.server import run_stdio_server
 from nodus.tooling.formatter import format_source
 from nodus.tooling import package_manager as _package_manager
 from nodus.tooling.project import load_project, load_project_from, project_entry_path
@@ -168,6 +169,7 @@ def _render_help() -> str:
             "  nodus test-examples",
             "  nodus graph <file> [--project-root PATH]",
             "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N --allow-paths PATHS --auth-token TOKEN --allow-input]",
+            "  nodus lsp",
             "  nodus snapshot <session> [--host HOST --port PORT --auth-token TOKEN]",
             "  nodus snapshots [--host HOST --port PORT --auth-token TOKEN]",
             "  nodus restore <snapshot> [--host HOST --port PORT --auth-token TOKEN]",
@@ -866,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
         "test-examples",
         "graph",
         "serve",
+        "lsp",
         "snapshot",
         "snapshots",
         "restore",
@@ -1125,6 +1128,9 @@ def main(argv: list[str] | None = None) -> int:
             allow_input=allow_input,
             auth_token=auth_token,
         )
+
+    if command == "lsp":
+        return run_stdio_server()
 
     if command == "snapshot":
         flags_with_values = {"--host", "--port", "--auth-token"}

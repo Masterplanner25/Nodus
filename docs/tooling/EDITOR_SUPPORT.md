@@ -43,6 +43,15 @@ The VS Code configuration sets:
 - brackets: `{}`, `[]`, `()`
 - auto-closing pairs: braces, brackets, parentheses, double quotes
 
+## Language Server
+
+For diagnostics, completion, hover, and go-to-definition support, use the Nodus LSP server:
+
+- Start it with `nodus lsp`
+- Documentation: `docs/tooling/LSP.md`
+
+The current implementation uses stdio JSON-RPC and reuses the existing parser/compiler pipeline for diagnostics.
+
 ## Limitations
 
 - VS Code only supports a single line-comment token in language configuration, so `//` is used there. The grammar still highlights `#` comments.
@@ -52,4 +61,4 @@ The VS Code configuration sets:
 
 - Distribute as a standalone VS Code extension.
 - Add snippets for common constructs (imports, functions, loops).
-- Investigate an LSP for diagnostics, go-to-definition, and completion.
+- Expand the LSP with richer semantic analysis and editor-specific packaging.

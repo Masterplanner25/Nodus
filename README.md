@@ -9,6 +9,7 @@ Quick links:
 - `docs/onboarding/GETTING_STARTED.md`
 - `docs/language/FORMAT.md`
 - `docs/tooling/EDITOR_SUPPORT.md`
+- `docs/tooling/LSP.md`
 - `docs/governance/STABILITY.md`
 - `docs/tooling/TESTING.md`
 - `docs/runtime/TASK_GRAPHS.md`
@@ -58,6 +59,7 @@ nodus run examples/hello.nd
 - Format script: `nodus fmt script.nd`
 - Run examples: `nodus test-examples`
 - Service mode: `nodus serve` (HTTP runtime server)
+- Language server: `nodus lsp`
 - Session snapshots: `nodus snapshot <session>`, `nodus snapshots`, `nodus restore <snapshot>`
 - Version: `nodus --version`
 
@@ -102,6 +104,7 @@ Backward compatible invocations are still supported:
 - `nodus update` (refresh dependencies and lockfile)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
+- `nodus lsp` (Language Server Protocol over stdio)
 - `nodus serve --allow-paths <paths>` (restrict filesystem builtins in server mode)
 - `nodus serve --auth-token <token>` (require Authorization header)
 - `nodus snapshot <session>` (save session snapshot)
@@ -141,6 +144,14 @@ Runtime service commands:
 
 - Primary extension: `.nd`
 - Legacy extension supported: `.tl`
+
+## IDE Support
+
+Nodus ships baseline editor support for syntax highlighting and snippets, plus a minimal Language Server Protocol implementation for diagnostics, completion, hover, and go-to-definition.
+
+- Syntax highlighting and snippets: `docs/tooling/EDITOR_SUPPORT.md`
+- Language server documentation: `docs/tooling/LSP.md`
+- Start the language server with `nodus lsp`
 
 ## Core Features
 
