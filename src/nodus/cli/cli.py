@@ -12,6 +12,7 @@ from typing import Callable
 
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.bytecode_cache import clear_bytecode_cache
+from nodus.runtime.dependency_graph import DependencyGraph
 from nodus.runtime.profiler import Profiler
 from nodus.dap.server import run_stdio_server as run_dap_stdio_server
 from nodus.lsp.server import run_stdio_server
@@ -196,6 +197,7 @@ def _render_help() -> str:
             "  nodus add <package> [--path PATH]",
             "  nodus remove <package> [--path PATH]",
             "  nodus package-list [--path PATH]",
+            "  nodus deps [--path PATH]",
             "  nodus cache clear [--path PATH]",
             "",
             "Global options:",
@@ -840,6 +842,16 @@ def _package_remove(package_name: str, path: str | None) -> int:
     return 0
 
 
+def _print_dependency_graph(path: str | None) -> int:
+    root = path or os.getcwd()
+    graph = DependencyGraph.load(root)
+    if graph is None:
+        _print_stderr(f"Invalid project root: {root}")
+        return 1
+    print(json.dumps(graph.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def _cache_clear(path: str | None) -> int:
     root = path
     if root is None:
@@ -1324,10 +1336,15 @@ def main(argv: list[str] | None = None) -> int:
         path = flags.get("--project-root") or flags.get("--path")
         return _package_update(path)
 
-    if command in {"package-list", "deps"}:
+    if command == "package-list":
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
         path = flags.get("--project-root") or flags.get("--path")
         return _package_list(path)
+
+    if command == "deps":
+        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        path = flags.get("--project-root") or flags.get("--path")
+        return _print_dependency_graph(path)
 
     if command == "add":
         positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())

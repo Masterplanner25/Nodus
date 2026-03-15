@@ -13,6 +13,7 @@ NODUS_DIRNAME = ".nodus"
 MODULES_DIRNAME = "modules"
 SOURCE_DIRNAME = "src"
 ENTRYPOINT_NAME = "main.nd"
+CACHE_DIRNAME = "cache"
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,7 @@ def load_project_from(start_dir: str) -> ProjectConfig | None:
 def create_project(root: str, name: str | None = None, version: str = "0.1.0") -> ProjectConfig:
     root = os.path.abspath(root)
     os.makedirs(os.path.join(root, NODUS_DIRNAME, MODULES_DIRNAME), exist_ok=True)
+    os.makedirs(os.path.join(root, NODUS_DIRNAME, CACHE_DIRNAME), exist_ok=True)
     src_dir = os.path.join(root, SOURCE_DIRNAME)
     os.makedirs(src_dir, exist_ok=True)
     manifest_path = os.path.join(root, MANIFEST_NAME)

@@ -36,6 +36,7 @@ from nodus.frontend.ast.ast_nodes import (
 )
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.runtime.bytecode_cache import load_cached_bytecode, write_cached_bytecode
+from nodus.runtime.dependency_graph import DependencyGraph
 from nodus.runtime.module import LiveBinding, ModuleBytecode, NodusModule
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
@@ -43,13 +44,16 @@ from nodus.vm.vm import VM
 
 @dataclass
 class ImportSpec:
-    stmt: Import
+    path: str
+    names: list[str]
+    alias: str | None
     resolved_path: str
 
 
 @dataclass
 class ExportFromSpec:
-    stmt: ExportFrom
+    path: str
+    names: list[str]
     resolved_path: str
 
 
@@ -72,7 +76,7 @@ class ModuleMetadata:
     import_specs: list[ImportSpec]
     export_from_specs: list[ExportFromSpec]
     module_info: ModuleInfo
-    parsed: ParsedModule
+    parsed: ParsedModule | None
 
 
 class ModuleLoader:
@@ -102,6 +106,8 @@ class ModuleLoader:
             "module_ids": {},
             "project_root": project_root,
         }
+        self._dependency_graph: DependencyGraph | None = DependencyGraph.load(project_root)
+        self._recompiled_modules: set[str] = set()
         self._vm = vm
         self._debugger = debugger
 
@@ -199,9 +205,13 @@ class ModuleLoader:
         *,
         source_path: str | None,
     ) -> ModuleBytecode:
-        if source_path is not None:
+        can_reuse_cache = source_path is not None and self._can_skip_reprocessing(source_path)
+        if can_reuse_cache and source_path is not None:
             cached = load_cached_bytecode(self.project_root, source_path)
             if cached is not None:
+                if not cached.module_metadata:
+                    cached.module_metadata = self._serialize_module_metadata(metadata)
+                    write_cached_bytecode(self.project_root, source_path, cached)
                 return cached
         bytecode, functions, code_locs = self._compile_module(metadata)
         bytecode_unit = ModuleBytecode(
@@ -214,9 +224,12 @@ class ModuleLoader:
                 "exports": sorted(metadata.exports),
                 "imports": sorted(metadata.import_names),
             },
+            module_metadata=self._serialize_module_metadata(metadata),
         )
         if source_path is not None:
             write_cached_bytecode(self.project_root, source_path, bytecode_unit)
+            self._record_dependency_graph(metadata, source_path)
+            self._recompiled_modules.add(os.path.abspath(source_path))
         return bytecode_unit
 
     def _execute_module(self, module: NodusModule, *, source_path: str | None) -> None:
@@ -247,6 +260,134 @@ class ModuleLoader:
             vm.debug = True
         vm.run()
 
+    def _ensure_dependency_graph(self) -> DependencyGraph | None:
+        if self.project_root is None:
+            return None
+        if self._dependency_graph is None:
+            self._dependency_graph = DependencyGraph.load(self.project_root)
+        return self._dependency_graph
+
+    def _record_dependency_graph(self, metadata: ModuleMetadata, source_path: str) -> None:
+        graph = self._ensure_dependency_graph()
+        if graph is None:
+            return
+        graph.update_module(
+            source_path,
+            [spec.resolved_path for spec in metadata.import_specs] + [spec.resolved_path for spec in metadata.export_from_specs],
+            os.stat(source_path).st_mtime_ns,
+        )
+        graph.save()
+
+    def _can_skip_reprocessing(self, source_path: str) -> bool:
+        graph = self._ensure_dependency_graph()
+        if graph is None:
+            return False
+        return not self._is_module_stale(os.path.abspath(source_path), seen=set())
+
+    def _is_module_stale(self, module_path: str, *, seen: set[str]) -> bool:
+        normalized = os.path.abspath(module_path)
+        if normalized in seen:
+            return False
+        if normalized in self._recompiled_modules:
+            return True
+        seen.add(normalized)
+        graph = self._ensure_dependency_graph()
+        if graph is None:
+            return True
+        node = graph.get(normalized)
+        if node is None or not os.path.isfile(normalized):
+            return True
+        current_mtime = os.stat(normalized).st_mtime_ns
+        if current_mtime != node.last_compiled_mtime:
+            return True
+        for dependency in node.imported_modules:
+            dep_path = os.path.abspath(dependency)
+            if dep_path in self._recompiled_modules:
+                return True
+            if self._is_module_stale(dep_path, seen=seen.copy()):
+                return True
+        return False
+
+    def _serialize_module_metadata(self, metadata: ModuleMetadata) -> dict[str, object]:
+        return {
+            "module_id": metadata.module_id,
+            "exports": sorted(metadata.exports),
+            "import_names": sorted(metadata.import_names),
+            "import_specs": [
+                {
+                    "path": spec.path,
+                    "names": list(spec.names),
+                    "alias": spec.alias,
+                    "resolved_path": spec.resolved_path,
+                }
+                for spec in metadata.import_specs
+            ],
+            "export_from_specs": [
+                {
+                    "path": spec.path,
+                    "names": list(spec.names),
+                    "resolved_path": spec.resolved_path,
+                }
+                for spec in metadata.export_from_specs
+            ],
+            "module_info": {
+                "defs": sorted(metadata.module_info.defs),
+                "exports": sorted(metadata.module_info.exports),
+                "explicit_exports": metadata.module_info.explicit_exports,
+            },
+        }
+
+    def _build_metadata_from_cached_bytecode(self, module_id: str, bytecode_unit: ModuleBytecode) -> ModuleMetadata | None:
+        payload = bytecode_unit.module_metadata
+        if not isinstance(payload, dict):
+            return None
+        raw_import_specs = payload.get("import_specs", [])
+        raw_export_from_specs = payload.get("export_from_specs", [])
+        raw_module_info = payload.get("module_info", {})
+        if not isinstance(raw_import_specs, list) or not isinstance(raw_export_from_specs, list) or not isinstance(raw_module_info, dict):
+            return None
+        import_specs: list[ImportSpec] = []
+        for item in raw_import_specs:
+            if not isinstance(item, dict):
+                return None
+            import_specs.append(
+                ImportSpec(
+                    path=str(item.get("path", "")),
+                    names=[str(name) for name in item.get("names", []) if isinstance(name, str)],
+                    alias=str(item["alias"]) if item.get("alias") is not None else None,
+                    resolved_path=str(item.get("resolved_path", "")),
+                )
+            )
+        export_from_specs: list[ExportFromSpec] = []
+        for item in raw_export_from_specs:
+            if not isinstance(item, dict):
+                return None
+            export_from_specs.append(
+                ExportFromSpec(
+                    path=str(item.get("path", "")),
+                    names=[str(name) for name in item.get("names", []) if isinstance(name, str)],
+                    resolved_path=str(item.get("resolved_path", "")),
+                )
+            )
+        module_info = ModuleInfo(
+            path=module_id,
+            defs=set(str(name) for name in raw_module_info.get("defs", []) if isinstance(name, str)),
+            exports=set(str(name) for name in raw_module_info.get("exports", []) if isinstance(name, str)),
+            imports={},
+            aliases={},
+            explicit_exports=bool(raw_module_info.get("explicit_exports", False)),
+            qualified={},
+        )
+        return ModuleMetadata(
+            module_id=module_id,
+            exports=set(str(name) for name in payload.get("exports", []) if isinstance(name, str)),
+            import_names=set(str(name) for name in payload.get("import_names", []) if isinstance(name, str)),
+            import_specs=import_specs,
+            export_from_specs=export_from_specs,
+            module_info=module_info,
+            parsed=None,
+        )
+
     def _build_metadata(
         self,
         module_id: str,
@@ -261,6 +402,15 @@ class ModuleLoader:
         if "project_root" not in self._import_state or self._import_state["project_root"] is None:
             ensure_project_root(self._import_state, base_dir, source_path)
             self.project_root = self._import_state.get("project_root")
+        self._ensure_dependency_graph()
+
+        if source_path is not None and self._can_skip_reprocessing(source_path):
+            cached = load_cached_bytecode(self.project_root, source_path)
+            if cached is not None:
+                cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
+                if cached_metadata is not None:
+                    self._metadata[module_id] = cached_metadata
+                    return cached_metadata
 
         parsed = self._parse_module(module_id, base_dir=base_dir, source=source, source_path=source_path)
         import_specs: list[ImportSpec] = []
@@ -270,19 +420,19 @@ class ModuleLoader:
         for stmt in parsed.imports:
             tok = getattr(stmt, "_tok", None)
             resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
-            import_specs.append(ImportSpec(stmt=stmt, resolved_path=resolved))
+            import_specs.append(ImportSpec(path=stmt.path, names=list(stmt.names or []), alias=stmt.alias, resolved_path=resolved))
 
         for stmt in parsed.export_from:
             tok = getattr(stmt, "_tok", None)
             resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
-            export_from_specs.append(ExportFromSpec(stmt=stmt, resolved_path=resolved))
+            export_from_specs.append(ExportFromSpec(path=stmt.path, names=list(stmt.names or []), resolved_path=resolved))
 
-        for spec in import_specs:
+        for stmt, spec in zip(parsed.imports, import_specs):
             dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-            if spec.stmt.names:
-                missing = [name for name in spec.stmt.names if name not in dep_meta.exports]
+            if spec.names:
+                missing = [name for name in spec.names if name not in dep_meta.exports]
                 if missing:
-                    tok = getattr(spec.stmt, "_tok", None)
+                    tok = getattr(stmt, "_tok", None)
                     line = tok.line if tok is not None else None
                     col = tok.col if tok is not None else None
                     raise LangRuntimeError(
@@ -292,17 +442,17 @@ class ModuleLoader:
                         col=col,
                         path=spec.resolved_path,
                     )
-                import_names.update(spec.stmt.names)
-            elif spec.stmt.alias:
-                import_names.add(spec.stmt.alias)
+                import_names.update(spec.names)
+            elif spec.alias:
+                import_names.add(spec.alias)
             else:
                 import_names.update(dep_meta.exports)
 
-        for spec in export_from_specs:
+        for stmt, spec in zip(parsed.export_from, export_from_specs):
             dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-            missing = [name for name in spec.stmt.names if name not in dep_meta.exports]
+            missing = [name for name in spec.names if name not in dep_meta.exports]
             if missing:
-                tok = getattr(spec.stmt, "_tok", None)
+                tok = getattr(stmt, "_tok", None)
                 line = tok.line if tok is not None else None
                 col = tok.col if tok is not None else None
                 raise LangRuntimeError(
@@ -357,6 +507,8 @@ class ModuleLoader:
         return parsed
 
     def _compile_module(self, metadata: ModuleMetadata) -> tuple[dict, dict, list]:
+        if metadata.parsed is None:
+            raise LangRuntimeError("compile", f"Module metadata for {metadata.module_id} is not available for compilation", path=metadata.module_id)
         module_info = metadata.module_info
         module_info.imports = {name: name for name in metadata.import_names}
         module_info.qualified = {name: name for name in module_info.defs}
@@ -378,11 +530,11 @@ class ModuleLoader:
         for spec in metadata.import_specs:
             module = self._load_module(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
             modules[spec.resolved_path] = module
-            if spec.stmt.names:
-                for name in spec.stmt.names:
+            if spec.names:
+                for name in spec.names:
                     bindings[name] = module.export_binding(name)
-            elif spec.stmt.alias:
-                bindings[spec.stmt.alias] = module
+            elif spec.alias:
+                bindings[spec.alias] = module
             else:
                 for name in module.exports:
                     bindings[name] = module.export_binding(name)
@@ -401,7 +553,7 @@ class ModuleLoader:
                 continue
             resolved = None
             for spec in metadata.export_from_specs:
-                if name in spec.stmt.names:
+                if name in spec.names:
                     dep = dep_modules.get(spec.resolved_path)
                     if dep is None:
                         dep = self._load_module(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)

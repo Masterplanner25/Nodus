@@ -19,6 +19,7 @@ class ModuleBytecode:
     constants: list[object] = field(default_factory=list)
     code_locs: list[tuple[str | None, int | None, int | None]] = field(default_factory=list)
     symbol_table: dict[str, object] = field(default_factory=dict)
+    module_metadata: dict[str, object] = field(default_factory=dict)
 
     def to_cache_payload(self) -> dict[str, object]:
         return {
@@ -43,6 +44,7 @@ class ModuleBytecode:
             "constants": list(self.constants),
             "code_locs": [list(loc) for loc in self.code_locs],
             "symbol_table": dict(self.symbol_table),
+            "module_metadata": dict(self.module_metadata),
         }
 
     @classmethod
@@ -93,6 +95,7 @@ class ModuleBytecode:
             constants=list(payload.get("constants", [])),
             code_locs=code_locs,
             symbol_table=dict(payload.get("symbol_table", {})),
+            module_metadata=dict(payload.get("module_metadata", {})),
         )
 
 

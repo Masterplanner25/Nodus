@@ -72,7 +72,7 @@ class PackageTests(unittest.TestCase):
                 src = f.read()
             self.assertEqual(run_program(src, source_path=main_path), ["FROM_DEP:ok"])
 
-    def test_deps_lists_installed_dependencies(self):
+    def test_package_list_lists_installed_dependencies(self):
         with tempfile.TemporaryDirectory() as td:
             with open(os.path.join(td, "nodus.toml"), "w", encoding="utf-8") as f:
                 f.write('name = "demo"\n')
@@ -90,7 +90,7 @@ class PackageTests(unittest.TestCase):
             buf = io.StringIO()
             err = io.StringIO()
             with redirect_stdout(buf), redirect_stderr(err):
-                exit_code = lang.main(["nodus", "deps", "--project-root", td])
+                exit_code = lang.main(["nodus", "package-list", "--project-root", td])
             self.assertEqual(exit_code, 0)
             self.assertEqual(err.getvalue(), "")
             self.assertIn("utils: path:./utils", buf.getvalue())

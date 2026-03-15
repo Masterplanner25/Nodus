@@ -69,7 +69,8 @@ Project setup and dependencies:
 - Initialize project: `nodus init`
 - Install dependencies: `nodus install`
 - Update dependencies: `nodus update`
-- List deps: `nodus deps`
+- Show module dependency graph: `nodus deps`
+- List installed package dependencies: `nodus package-list`
 
 Project manifests:
 - `nodus.toml` defines project metadata and dependencies.
@@ -105,6 +106,8 @@ Backward compatible invocations are still supported:
 - `nodus dap` (Debug Adapter Protocol over stdio)
 - `nodus install` (install project dependencies)
 - `nodus update` (refresh dependencies and lockfile)
+- `nodus deps` (print the incremental compilation dependency graph)
+- `nodus package-list` (list package manifest/lockfile dependencies)
 - `nodus cache clear` (remove cached compiled modules from `.nodus/cache/`)
 - `nodus test-examples` (quick smoke test)
 - `nodus serve --port 7331` (HTTP runtime server)
@@ -188,6 +191,8 @@ The DAP adapter reuses the existing runtime debugger, supports source-line break
 - sandbox limits for steps, time, and stdout output
 - runtime module loader with per-module bytecode units
 - on-disk bytecode cache for compiled modules in `.nodus/cache/`
+- scheduler fairness with round-robin queueing and per-task instruction budgets
+- persisted dependency graph for incremental compilation in `.nodus/deps.json`
 - per-module global namespace isolation
 - project manifests (`nodus.toml`) with dependency resolution and `nodus.lock`
 

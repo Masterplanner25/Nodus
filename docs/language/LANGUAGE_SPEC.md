@@ -134,7 +134,8 @@ Stability: Experimental (git-only, may change).
 - CLI:
   - `nodus init` creates `nodus.toml`, `src/main.nd`, and `.nodus/modules/`
   - `nodus install` installs manifest dependencies into `.nodus/modules/` and writes `nodus.lock`
-  - `nodus deps` lists declared dependencies and resolved lock entries
+  - `nodus deps` prints the runtime module dependency graph from `.nodus/deps.json`
+  - `nodus package-list` lists declared dependencies and resolved lock entries
 
 ### Re-exports
 - `export { name } from "./module.nd"`
@@ -566,6 +567,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Primary source extension: `.nd`
 - Legacy `.tl` is still supported for compatibility.
 - CLI: `nodus run script.nd`, `nodus repl`, `nodus check script.nd`
+- Dependency graph inspection: `nodus deps`
 - Cache maintenance: `nodus cache clear`
 - Bytecode optimization runs automatically during compilation.
 - `nodus run --no-opt script.nd` disables the optimizer for debugging or comparison.

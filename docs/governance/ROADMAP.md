@@ -34,6 +34,7 @@ None.
 ### 0.4.0 — Runtime Architecture & Packaging
 - Bytecode version headers and validation.
 - Disk bytecode caching for compiled modules with timestamp/version invalidation and `nodus cache clear`.
+- Incremental compilation with persisted module dependency graph invalidation in `.nodus/deps.json`.
 - Sandbox execution limits (steps/time/stdout).
 - Embedding API for host integration.
 - Runtime module system with per-module bytecode units, runtime module objects, isolated globals, live import bindings, and module caching.
@@ -81,7 +82,7 @@ runtime module loader with per-module bytecode units, runtime module objects, an
 
 Future model:
 
-incremental compilation
+runtime module loader with bytecode caching and incremental compilation
 
 Benefits:
 
@@ -158,7 +159,7 @@ Key runtime improvements.
 
 Module Isolation
 
-Per-module globals, runtime module objects, live import bindings, execute-once module caching, and disk bytecode caching are now implemented. Next steps focus on incremental compilation.
+Per-module globals, runtime module objects, live import bindings, execute-once module caching, disk bytecode caching, incremental compilation, and scheduler fairness improvements are now implemented. Next steps focus on broader compiler and diagnostics improvements.
 
 Runtime Namespaces
 
@@ -229,7 +230,7 @@ Module-qualified names should become first-class identifiers.
 
 Incremental Compilation
 
-Compile modules independently and cache bytecode by hash.
+Modules now compile independently, persist a dependency graph, and reuse cached bytecode and loader metadata when dependency mtimes are unchanged.
 
 Benefits:
 
@@ -441,8 +442,6 @@ Version 0.5
 
 Focus:
 
-incremental compilation
-
 improved module error reporting
 
 profiler MVP
@@ -453,17 +452,12 @@ Version 0.7
 
 Focus:
 
-incremental compilation
-
-bytecode caching
-
-scheduler fairness improvements
-
-task graph persistence improvements
-
-LSP diagnostics
-
-debug adapter
+- incremental compilation
+- bytecode caching
+- scheduler fairness improvements (round-robin queue plus per-task instruction budgets)
+- task graph persistence improvements
+- LSP diagnostics
+- debug adapter
 
 Version 1.0
 

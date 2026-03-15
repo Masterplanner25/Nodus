@@ -118,6 +118,8 @@ class VM:
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
         self.memory_store = GLOBAL_MEMORY_STORE
         self.session_id: str | None = None
+        self.task_step_budget: int | None = None
+        self._budget_exceeded: bool = False
         self.instructions_executed = 0
         self.function_calls = 0
         self.returns = 0
@@ -782,6 +784,8 @@ class VM:
         self.scheduler = Scheduler(self, trace=self.trace_scheduler, trace_output=self.scheduler_output)
         self._last_batch_emit = 0
         self._last_deadline_check = 0
+        self.task_step_budget = None
+        self._budget_exceeded = False
 
     def save_current_coroutine_state(self, next_ip: int | None) -> None:
         coroutine = self.current_coroutine
@@ -1823,6 +1827,10 @@ class VM:
 
     def record_instruction(self) -> None:
         self.instructions_executed += 1
+        if self.task_step_budget is not None:
+            self.task_step_budget -= 1
+            if self.task_step_budget <= 0:
+                self._budget_exceeded = True
         if self.deadline is not None:
             if self.instructions_executed - self._last_deadline_check >= self._deadline_check_interval:
                 self._last_deadline_check = self.instructions_executed
@@ -1873,6 +1881,13 @@ class VM:
     def execute(self):
         pending_after = None
         while self.ip < len(self.code):
+            if self._budget_exceeded:
+                self._budget_exceeded = False
+                self.task_step_budget = None
+                if self.current_coroutine is not None:
+                    self.current_coroutine.state = "suspended"
+                    self.save_current_coroutine_state(self.ip)
+                return ("yield", {"__task_step_budget__": True})
             if self.debug and self.debugger is not None and pending_after is not None:
                 self.debugger.after_instruction(self, pending_after)
                 pending_after = None

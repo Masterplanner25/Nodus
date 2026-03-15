@@ -30,6 +30,7 @@ my-project/
     main.nd
   .nodus/
     cache/
+    deps.json
     modules/
 ```
 
@@ -49,6 +50,8 @@ This creates:
 - `src/main.nd`
 - `.nodus/cache/`
 - `.nodus/modules/`
+
+Runtime execution may also create `.nodus/deps.json`, which records the resolved module dependency graph used for incremental compilation.
 
 Install declared dependencies:
 

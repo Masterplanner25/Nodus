@@ -300,6 +300,7 @@ These units can be cached independently and linked at runtime.
 The module loader is responsible for:
 
 - resolving module paths
+- consulting the dependency graph for incremental compilation
 - loading cached bytecode units when available
 - compiling modules to bytecode units
 - executing modules once
@@ -335,6 +336,38 @@ Invalidation rules are intentionally simple:
 - `NODUS_BYTECODE_VERSION` changes
 
 The runtime still executes modules once per process and caches runtime module objects in memory. The disk cache only skips recompilation; it never stores runtime state. This keeps repeated executions faster while preserving module semantics and prepares the loader for future incremental compilation.
+
+12. Incremental Compilation
+
+The runtime tracks module dependencies in `.nodus/deps.json`.
+
+Each node stores:
+
+- module path
+- imported module paths
+- the source mtime recorded when the module was last compiled
+
+Incremental compilation works with the bytecode cache rather than replacing it:
+
+1. resolve the module path
+2. consult the dependency graph
+3. compare the module mtime and dependency mtimes against the last compiled graph snapshot
+4. if unchanged, load cached bytecode plus cached loader metadata
+5. if changed, parse and compile again, then update `.nodus/cache/` and `.nodus/deps.json`
+
+This lets unchanged modules skip reparsing, import/export metadata rebuilding, and bytecode compilation. A module is recompiled when:
+
+- its own source mtime changes
+- any dependency source mtime changes
+- any dependency was recompiled earlier in the current load session
+
+The dependency graph remains runtime-local. It records filesystem relationships between already-resolved module files and does not perform manifest parsing, package resolution, or registry access.
+
+13. Fair Task Scheduling
+
+The scheduler now enforces a round-robin execution model with a task step budget (`TASK_STEP_BUDGET = 1000`). Each coroutine, workflow step, or goal task runs until it yields, suspends, or exhausts its instruction budget. When the budget is consumed, the VM automatically suspends the task, records its current state, and returns control to the scheduler, which re-enqueues the task at the end of the runnable queue.
+
+This prevents long-running, CPU-bound tasks from dominating execution, allows short-lived tasks to complete, and keeps workflow/goal nodes progressing even when steps loop without explicit yields. The scheduler also tracks optional metadata such as task age so future priority support can reuse the same queue structure without changing the public API.
 
 10. Project Tooling
 

@@ -32,7 +32,9 @@ Resolution is tooling-only and offline-only. Runtime execution never contacts th
 - `nodus install` installs dependencies from the manifest
 - `nodus add <package>` adds the latest locally available registry version to `nodus.toml`, installs it, and updates `nodus.lock`
 - `nodus remove <package>` removes a dependency from `nodus.toml`, prunes the local install, and updates `nodus.lock`
-- `nodus deps` lists resolved dependencies and lockfile status
+- `nodus package-list` lists resolved dependencies and lockfile status
+
+`nodus deps` is reserved for the runtime module dependency graph used by incremental compilation.
 
 ## Lockfile
 `nodus.lock` records the resolved dependency set in a deterministic array-of-tables format.

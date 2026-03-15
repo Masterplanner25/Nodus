@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+TASK_STEP_BUDGET = 1000
+
 import heapq
 import sys
 import time
@@ -37,6 +39,7 @@ class Scheduler:
         self.trace = trace
         self.trace_output = trace_output
         self._counter = 0
+        self.task_ages: dict[int, int] = {}
 
     def _trace(self, message: str) -> None:
         if self.trace:
@@ -59,6 +62,7 @@ class Scheduler:
             self._next_id += 1
             self.total_tasks_spawned += 1
             self.tasks[coroutine.id] = coroutine
+            self.task_ages[coroutine.id] = self.total_tasks_spawned
         if coroutine.name is None and getattr(coroutine, "closure", None) is not None:
             coroutine.name = coroutine.closure.function.display_name
         if coroutine.name is None:
@@ -79,11 +83,15 @@ class Scheduler:
         self.ready_queue.append(coroutine)
         self._emit_event("coroutine_spawn", coroutine)
         self._trace(f"spawn coroutine #{coroutine.id} {coroutine.name}")
+        if coroutine.id is not None:
+            self.task_ages[coroutine.id] = self.total_tasks_spawned
 
     def schedule(self, coroutine) -> None:
         if coroutine.state == "finished":
             return
         self.ready_queue.append(coroutine)
+        if coroutine.id is not None:
+            self.task_ages[coroutine.id] = self.total_resumes
 
     def _schedule_sleep(self, coroutine, ms: float) -> None:
         delay = max(0.0, ms) / 1000.0
@@ -165,6 +173,8 @@ class Scheduler:
                 coroutine.last_run_time = now
                 self._emit_event("coroutine_resume", coroutine)
                 self._trace(f"resume coroutine #{coroutine.id}")
+                self.vm.task_step_budget = TASK_STEP_BUDGET
+                self.vm._budget_exceeded = False
                 result = self.vm.builtin_coroutine_resume(coroutine)
             except Exception as err:
                 print(format_error(err, path=self.vm.source_path), file=sys.stderr)
@@ -178,6 +188,8 @@ class Scheduler:
                 continue
             finally:
                 self.current_task = None
+                self.vm.task_step_budget = None
+                self.vm._budget_exceeded = False
 
             if coroutine.state != "suspended":
                 if coroutine.state == "finished":
