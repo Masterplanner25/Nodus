@@ -601,10 +601,10 @@ All other goals can proceed in parallel and are expected to complete before `fin
 
 Goals:
 
-- Frozen opcode set — all provisional opcodes resolved. YIELD and BUILD_MODULE already
-  decided (stable). 5 opcodes remain provisional: `GET_ITER`, `ITER_NEXT`, `SETUP_TRY`,
-  `POP_TRY`, `THROW`. Freeze proposal at `docs/governance/FREEZE_PROPOSAL.md`.
-  **Status:** ⏳ Blocked by finally implementation, iterator cleanup, and `_op_throw` fix.
+- Frozen opcode set — all provisional opcodes resolved. YIELD, BUILD_MODULE, GET_ITER,
+  and ITER_NEXT decided (stable). 3 opcodes remain provisional: `SETUP_TRY`, `POP_TRY`,
+  `THROW`. Freeze proposal at `docs/governance/FREEZE_PROPOSAL.md`.
+  **Status:** ⏳ Blocked by finally implementation and `_op_throw` final decision.
 
 - ✅ Stable module system — `BUILD_MODULE` promoted to stable in `FREEZE_PROPOSAL.md`.
   Module system (live bindings, re-exports, circular detection) is feature-complete and frozen.
@@ -619,10 +619,11 @@ Goals:
   `ModuleLoader`. Tombstone comment left in `loader.py`. See `DEPRECATIONS.md`.
   **Status:** ✅ Complete.
 
-- Iterator protocol cleanup — replace `pending_get_iter` / `pending_iter_next` flags
-  with a first-class Iterator protocol object. VM-only change; no compiler or `.nd`
-  source impact. 14 pending-flag sites identified in `vm.py`.
-  **Status:** ⏳ Not started. Medium scope (VM-only).
+- ✅ Iterator protocol cleanup — `pending_get_iter` / `pending_iter_next` flags replaced
+  with a first-class `Iterator` protocol object. VM-only change; no compiler or `.nd`
+  source impact. 14 pending-flag sites removed from `vm.py`. `GET_ITER` and `ITER_NEXT`
+  promoted to stable. All 377 tests pass. Coroutine+iteration interaction tests added.
+  **Status:** ✅ Complete at v1.0.
 
 - `finally` block implementation — new opcode or extended `SETUP_TRY` operand. Requires
   lexer, AST, parser, compiler, and VM changes. `BYTECODE_VERSION` bump to 3 required.

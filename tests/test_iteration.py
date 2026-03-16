@@ -71,5 +71,59 @@ for n in iter {
         self.assertEqual(run_program(src), ["1.0", "2.0"])
 
 
+class CoroutineIterationTests(unittest.TestCase):
+    def test_coroutine_iteration_suspend_resume(self):
+        """Iterator object on stack survives coroutine suspend/resume cycles."""
+        src = """
+fn worker() {
+    for n in [10, 20, 30] {
+        yield n
+    }
+}
+
+let c = coroutine(worker)
+print(resume(c))
+print(resume(c))
+print(resume(c))
+print(coroutine_status(c))
+"""
+        self.assertEqual(
+            run_program(src, source_path="main.nd"),
+            ["10.0", "20.0", "30.0", "suspended"],
+        )
+
+    def test_coroutine_custom_iterator_suspend_resume(self):
+        """Custom record iterator advance_fn survives coroutine suspend/resume cycles."""
+        src = """
+fn worker() {
+    let iter = record {
+        data: [1, 2],
+        index: 0,
+        __iter__: fn(self) { return self },
+        __next__: fn(self) {
+            if (self.index >= len(self.data)) {
+                return nil
+            }
+            let v = self.data[self.index]
+            self.index = self.index + 1
+            return v
+        }
+    }
+    for n in iter {
+        yield n
+    }
+}
+
+let c = coroutine(worker)
+print(resume(c))
+print(resume(c))
+print(coroutine_status(c))
+"""
+        self.assertEqual(
+            run_program(src, source_path="main.nd"),
+            ["1.0", "2.0", "suspended"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,21 +51,19 @@ Items below were raised in a third-party review and are now validated with concr
 - ✅ Fix 14 — Bytecode cache migrated from `pickle` to `marshal`: `src/nodus/runtime/bytecode_cache.py` now writes `NDSC` magic (4 bytes) + format version byte + SHA-256 checksum (32 bytes) + `marshal.dumps()` payload. Eliminates pickle's arbitrary-code-execution risk and is faster for primitive-type payloads. Checksum verified on load; any mismatch silently invalidates the cache.
 - ✅ Fix 15 — Optimizer `collect_jump_targets()` hoisted: previously called once inside `fold_constants()` and once inside `remove_useless_stack_ops()` per outer fixed-point iteration (2× O(n) scans). Now computed once per outer iteration and passed as a parameter; recomputed only if `fold_constants` changes code (address compaction). Also removed the O(n) list equality dirty-detection fallback from both functions — the boolean `changed` flag is sufficient.
 
-## GET_ITER pending_get_iter cleanup
+## ✅ GET_ITER pending_get_iter cleanup
 
-The `pending_get_iter` VM flag is a workaround for calling user-defined `__iter__` closures.
-When `GET_ITER` is executed against an object that exposes `__iter__` as a Nodus closure,
-the VM sets `pending_get_iter = True` and arranges a callback call on the next cycle rather
-than resolving the iterator inline. This makes `GET_ITER` and `ITER_NEXT` behave differently
-depending on whether the iterable is a builtin or a user closure, which is an observable
-architectural inconsistency.
+**Resolved at v1.0.** The `pending_get_iter` / `pending_iter_next` VM flags and all
+associated RETURN handler post-processing were removed. A first-class `Iterator` class
+(in `vm.py`) wraps an `advance_fn: () → (value, exhausted)` callable. All GET_ITER
+paths (list, `__iter__` closure, `__next__` closure) produce an `Iterator` synchronously
+using `run_closure()`. `_op_return` pending-flag blocks removed. `_NO_PENDING` sentinel
+and dead dispatch branch removed. `Coroutine` dataclass fields `pending_get_iter` and
+`pending_iter_next` removed. 14 flag sites removed across `vm.py`. All 377 tests pass.
+Coroutine + iteration interaction tests added.
 
-**v0.9 decision:** Cleanup deferred to v1.0. Behavior fully documented in
-`INSTRUCTION_SEMANTICS.md` (GET_ITER and ITER_NEXT sections). See `FREEZE_PROPOSAL.md §
-"v0.9 Opcode Decisions"` for rationale.
-
-Until this is resolved, `GET_ITER` and `ITER_NEXT` remain **provisional** and cannot be
-classified stable. See `FREEZE_PROPOSAL.md` freeze prerequisites.
+`GET_ITER` and `ITER_NEXT` are now **stable**. See `FREEZE_PROPOSAL.md §
+"v1.0 GET_ITER/ITER_NEXT Decision"` and `INSTRUCTION_SEMANTICS.md § 14`.
 
 ## Exception model finalization
 
@@ -83,8 +81,8 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 - ✅ compile_source() public stub removed in v0.9 from nodus.__init__. Loader body retained for internal use; removal target v1.0. test_import_containment.py uses loader directly and will need updating at v1.0.
 - `LOAD_LOCAL` deprecated opcode: superseded by `LOAD_LOCAL_IDX` in v0.8; retained as fallback for bytecode compiled before version 2. Remove at v1.0 once all caches have been invalidated by the version bump. Also remove `_op_load_local` handler from VM dispatch table.
 - ✅ Registry publish and auth: `nodus publish` command and token management implemented in v0.9. `RegistryClient` now supports Bearer token auth. `get_registry_token()` in `package_manager.py` resolves tokens via CLI flag, `NODUS_REGISTRY_TOKEN` env var, or `~/.nodus/config.toml`. `nodus login`/`nodus logout` CLI commands added. See `docs/tooling/PACKAGE_MANAGER.md` Authentication section.
-- Provisional opcode resolution: 7 opcodes remain provisional before v1.0 freeze (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`, `BUILD_MODULE`, `YIELD`). GET_ITER/ITER_NEXT blocked on `pending_get_iter` cleanup (see section above). Exception model (SETUP_TRY/POP_TRY/THROW) blocked on finally/typed-catch decision. BUILD_MODULE and YIELD need stabilization review. All must be resolved before the v1.0 opcode freeze.
-- `GET_ITER`/`ITER_NEXT` Iterator protocol cleanup: replace `pending_get_iter`/`pending_iter_next` flags with a first-class Iterator protocol object. VM-only change; no compiler or `.nd` source impact. See FREEZE_PROPOSAL.md v0.9 decisions.
+- ✅ Provisional opcode resolution (partial): `GET_ITER`, `ITER_NEXT`, `BUILD_MODULE`, `YIELD` promoted to stable at v1.0. 3 opcodes remain provisional: `SETUP_TRY`, `POP_TRY`, `THROW` (all blocked on `finally` implementation). See `FREEZE_PROPOSAL.md` for details.
+- ✅ `GET_ITER`/`ITER_NEXT` Iterator protocol cleanup: complete at v1.0. `pending_get_iter`/`pending_iter_next` flags replaced by first-class `Iterator` protocol object. VM-only change; no compiler or `.nd` source impact. See section above and FREEZE_PROPOSAL.md v1.0 decisions.
 - `finally` block implementation: requires new opcode or extended `SETUP_TRY` operand. See FREEZE_PROPOSAL.md v0.9 decisions.
 - ✅ `_op_throw` structured value preservation: `_op_throw` (vm.py:~2092) now preserves structured values (Records, lists) as `err.payload` in the catch block rather than stringifying. Strings use the message directly; primitives are stringified; Records/lists are passed as `payload` with `kind="thrown"`. `LangRuntimeError` now carries an optional `payload` field. `handle_exception` includes `payload` in the error Record when present. Fixed in v1.0.
 - ✅ `YIELD_VALUE`/`SEND` opcode evaluation: decision made. YIELD frozen as-is. No new opcode needed — no user-facing send-value use cases in `.nd` source. Recorded in FREEZE_PROPOSAL.md.

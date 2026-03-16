@@ -11,8 +11,6 @@ class Coroutine:
     stack: list = field(default_factory=list)
     frames: list = field(default_factory=list)
     handler_stack: list[tuple[int, int, int]] = field(default_factory=list)
-    pending_iter_next: int | None = None
-    pending_get_iter: bool = False
     id: int | None = None
     name: str | None = None
     module: str | None = None

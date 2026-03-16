@@ -25,9 +25,10 @@ Items marked ✅ were completed in v0.8.
 - [x] ✅ `LOAD_LOCAL_IDX` migration complete — LOAD_LOCAL_IDX and STORE_LOCAL_IDX are
   now the canonical forms; LOAD_LOCAL retained only as a fallback for any residual
   bytecode that predates v0.8.
-- [ ] `GET_ITER` / `ITER_NEXT` — the `pending_get_iter` flag workaround needs a
-  clean resolution before these opcodes can be classified stable. See
-  TECH_DEBT.md § "GET_ITER pending_get_iter cleanup". Target: v0.9.
+- [x] ✅ `GET_ITER` / `ITER_NEXT` — `pending_get_iter` / `pending_iter_next` flag
+  mechanism replaced by a first-class `Iterator` protocol object in v1.0. Both
+  opcodes now operate synchronously via `run_closure()`. Promoted to stable at v1.0.
+  See `TECH_DEBT.md § "GET_ITER pending_get_iter cleanup"` and v1.0 Decision below.
 - [ ] `SETUP_TRY` / `POP_TRY` / `THROW` — decision needed on whether `finally`
   blocks or typed catches will be added before v1.0. If yes, these opcodes must
   be revised before freeze. See TECH_DEBT.md § "Exception model finalization".
@@ -122,8 +123,8 @@ Items marked ✅ were completed in v0.8.
 
 | Opcode | Stack effect | Classification | Notes |
 |---|---|---|---|
-| `GET_ITER` | `iterable → iter` | **provisional** | Launches an iterator. The `pending_get_iter` VM flag handles the closure-callback case; this workaround needs cleanup before the opcode can be classified stable. See freeze prerequisite above. |
-| `ITER_NEXT` | `iter → val \| jump` | **provisional** | Advances iterator; jumps to operand address when exhausted. Same pending_get_iter concern as GET_ITER. |
+| `GET_ITER` | `iterable → Iterator` | **stable** | Produces a first-class `Iterator` object. All paths (list, `__iter__`, `__next__`) resolved synchronously via `run_closure()`. `pending_get_iter` flag removed at v1.0. Promoted to stable at v1.0. |
+| `ITER_NEXT` | `Iterator → val \| jump` | **stable** | Calls `iterator.advance()` → `(value, exhausted)`. Pops and jumps to operand on exhaustion; pushes value and advances otherwise. `pending_iter_next` flag removed at v1.0. Promoted to stable at v1.0. |
 
 ### Function Calls
 
@@ -179,8 +180,8 @@ Items marked ✅ were completed in v0.8.
 
 | Classification | Count |
 |---|---|
-| stable | 41 |
-| provisional | 5 (`GET_ITER`, `ITER_NEXT`, `SETUP_TRY`, `POP_TRY`, `THROW`) |
+| stable | 43 |
+| provisional | 3 (`SETUP_TRY`, `POP_TRY`, `THROW`) |
 | deprecated | 1 (`LOAD_LOCAL`) |
 | **Total** | **47** |
 
@@ -188,10 +189,10 @@ Items marked ✅ were completed in v0.8.
 LOAD_UPVALUE, STORE_UPVALUE, STORE_ARG, POP, ADD, SUB, MUL, DIV, EQ, NE, LT, GT, LE, GE,
 NOT, NEG, TO_BOOL, JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VALUE, CALL_METHOD,
 MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
-LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD = **41 stable**, 5 provisional, 1 deprecated.)
+LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT = **43 stable**, 3 provisional, 1 deprecated.)
 
-Totals: **41 stable**, **5 provisional**, **1 deprecated** = 47.
-(v1.0 update: YIELD and BUILD_MODULE promoted from provisional to stable.)
+Totals: **43 stable**, **3 provisional**, **1 deprecated** = 47.
+(v1.0 update: YIELD, BUILD_MODULE, GET_ITER, and ITER_NEXT promoted from provisional to stable.)
 
 ---
 
@@ -201,10 +202,10 @@ Totals: **41 stable**, **5 provisional**, **1 deprecated** = 47.
    (should not happen in normal compilation). Removing it requires verifying no production
    bytecode files still contain it, then bumping `BYTECODE_VERSION` to 3.
 
-2. **`GET_ITER` / `ITER_NEXT` pending_get_iter** — the `pending_get_iter` flag is a
-   VM-level workaround for calling user-defined `__iter__` closures. This is a known
-   architectural smell. Cleaning it up may change the observable stack/execution
-   behavior of these two opcodes, requiring a re-evaluation of their classification.
+2. ✅ **`GET_ITER` / `ITER_NEXT` pending_get_iter** — resolved at v1.0. The
+   `pending_get_iter` / `pending_iter_next` flags were replaced by a first-class
+   `Iterator` protocol object. Both opcodes are now synchronous and stable. No
+   observable stack/execution behavior change for correct programs.
 
 3. **Exception model gap** — `finally` blocks and typed `catch` are not yet supported.
    If these are added before v1.0, `SETUP_TRY` / `POP_TRY` will need new operands or
@@ -234,6 +235,24 @@ paths for the same opcode) does not affect observable behavior for correct progr
 A clean Iterator protocol object (wrapping builtins and closures uniformly, removing
 the pending flags and the RETURN handler coupling) is the preferred v1.0 fix.
 Estimated v1.0 scope: VM-only change, no compiler or `.nd` source impact.
+
+### GET_ITER / ITER_NEXT — v1.0 Decision
+
+**v1.0 decision:** Iterator protocol cleanup complete. `pending_get_iter` and
+`pending_iter_next` VM flags fully removed. Both opcodes promoted to **stable**.
+
+The cleanup introduced a first-class `Iterator` class in `vm.py` wrapping an
+`advance_fn: () → (value, exhausted)` callable. All paths (list, `__iter__` closure,
+`__next__` closure) produce an `Iterator` object synchronously using `run_closure()`.
+The `_op_return` pending-flag post-processing blocks were removed. The `_NO_PENDING`
+sentinel and the dead `elif rv is _NO_PENDING` branch in `execute()` were removed.
+`Coroutine` dataclass fields `pending_get_iter` and `pending_iter_next` removed.
+`save_execution_context()` / `restore_execution_context()` tuples reduced from 7 to 5
+fields. 14 pending-flag sites removed across `vm.py`. VM-only change; no compiler or
+`.nd` source impact. All 377 tests pass. Coroutine + iteration interaction tests added
+(`test_coroutine_iteration_suspend_resume`, `test_coroutine_custom_iterator_suspend_resume`).
+
+**Classification:** → promoted to **stable** at v1.0.
 
 ### SETUP_TRY / POP_TRY / THROW — remains provisional
 
@@ -312,11 +331,13 @@ The `Record` structure produced by `BUILD_MODULE` is frozen.
 
 | Opcode | Unblocked by |
 |---|---|
-| `GET_ITER`, `ITER_NEXT` | Iterator protocol cleanup (Goal: replace `pending_get_iter`/`pending_iter_next` with a first-class Iterator protocol object) |
-| `SETUP_TRY`, `POP_TRY` | `finally` block implementation (new opcode or extended `SETUP_TRY` operand) |
-| `THROW` | `_op_throw` structured value preservation fix (vm.py:~2092) |
+| ✅ `GET_ITER`, `ITER_NEXT` | ✅ Iterator protocol cleanup complete at v1.0. Promoted to stable. |
+| `SETUP_TRY`, `POP_TRY`, `THROW` | `finally` block implementation (new opcode or extended `SETUP_TRY` operand). THROW remains provisional because it may be revised alongside SETUP_TRY when `finally` is added. |
 
-All five are targeted for stable classification at v1.0 release.
+Three opcodes remain provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), all blocked on
+`finally` implementation. `GET_ITER` and `ITER_NEXT` were promoted to stable via the
+Iterator protocol cleanup at v1.0. All remaining provisional opcodes are targeted for
+stable classification once the `finally` implementation is complete.
 
 ---
 

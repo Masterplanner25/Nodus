@@ -23,10 +23,6 @@ from nodus.services.tool_runtime import available_tools, call_tool, describe_too
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
 
-# Sentinel returned by opcode handlers that have redirected self.ip via
-# call_closure() but should NOT set pending_after in the execute() loop.
-_NO_PENDING = object()
-
 
 class Cell:
     def __init__(self, value=None):
@@ -76,6 +72,41 @@ class ListIterator:
     def __init__(self, values: list):
         self.values = values
         self.index = 0
+
+
+class Iterator:
+    """First-class iterator object produced by GET_ITER.
+
+    Wraps either a builtin list (via index-based advance) or a user-defined
+    ``__next__`` closure.  ITER_NEXT always calls ``.advance()`` on this object —
+    no pending flags needed.
+
+    ``advance_fn`` is a zero-argument callable that returns ``(value, exhausted: bool)``.
+    It returns ``(value, False)`` when a value is available, and ``(None, True)``
+    when the iterator is exhausted.
+    """
+
+    __slots__ = ("_advance_fn", "_exhausted")
+
+    def __init__(self, advance_fn):
+        self._advance_fn = advance_fn
+        self._exhausted = False
+
+    def advance(self):
+        """Return ``(value, exhausted: bool)``.
+
+        Once exhausted, always returns ``(None, True)`` without calling advance_fn again.
+        """
+        if self._exhausted:
+            return None, True
+        value, exhausted = self._advance_fn()
+        if exhausted:
+            self._exhausted = True
+        return value, exhausted
+
+    @property
+    def exhausted(self):
+        return self._exhausted
 
 
 @dataclass
@@ -136,8 +167,6 @@ class VM:
         self.debug = debug or debugger is not None
         self.debugger = debugger
         self.handler_stack: list[tuple[int, int, int]] = []
-        self.pending_iter_next: int | None = None
-        self.pending_get_iter: bool = False
         self.current_coroutine: Coroutine | None = None
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
@@ -740,8 +769,6 @@ class VM:
             self.stack,
             self.frames,
             self.handler_stack,
-            self.pending_iter_next,
-            self.pending_get_iter,
             self.current_coroutine,
         )
 
@@ -751,8 +778,6 @@ class VM:
             self.stack,
             self.frames,
             self.handler_stack,
-            self.pending_iter_next,
-            self.pending_get_iter,
             self.current_coroutine,
         ) = ctx
 
@@ -760,8 +785,6 @@ class VM:
         self.stack = coroutine.stack
         self.frames = coroutine.frames
         self.handler_stack = coroutine.handler_stack
-        self.pending_iter_next = coroutine.pending_iter_next
-        self.pending_get_iter = coroutine.pending_get_iter
         self.current_coroutine = coroutine
         self.ip = coroutine.ip if coroutine.ip is not None else 0
 
@@ -795,8 +818,6 @@ class VM:
         self.stack = []
         self.frames = []
         self.handler_stack = []
-        self.pending_iter_next = None
-        self.pending_get_iter = False
         self.current_coroutine = None
         self.scheduler = Scheduler(self, trace=self.trace_scheduler, trace_output=self.scheduler_output)
         self._last_batch_emit = 0
@@ -812,8 +833,6 @@ class VM:
         coroutine.stack = self.stack
         coroutine.frames = self.frames
         coroutine.handler_stack = self.handler_stack
-        coroutine.pending_iter_next = self.pending_iter_next
-        coroutine.pending_get_iter = self.pending_get_iter
 
     def builtin_task(self, fn, deps):
         closure = self.ensure_function(fn, "task(fn, deps)")
@@ -1505,8 +1524,6 @@ class VM:
             self.stack = []
             self.frames = []
             self.handler_stack = []
-            self.pending_iter_next = None
-            self.pending_get_iter = False
             temp_coroutine = Coroutine(closure)
             temp_coroutine.state = "running"
             temp_coroutine.workflow_context = workflow_context
@@ -1794,21 +1811,59 @@ class VM:
         else:
             self.ip += 1
 
+    def _make_record_iterator(self, iterator_record: "Record") -> "Iterator":
+        """Wrap a Nodus Record (with a ``__next__`` closure) in an ``Iterator``.
+
+        Called by ``_op_get_iter`` for both the ``__iter__``-closure path and the
+        ``__next__``-only path.  Each call to ``advance()`` invokes the ``__next__``
+        closure synchronously via ``run_closure`` and interprets a ``None`` return
+        value as iterator exhaustion.
+        """
+        def _adv_record(_rec=iterator_record):
+            next_fn = _rec.fields["__next__"]
+            result = self.run_closure(next_fn, [_rec])
+            if result is None:
+                return None, True
+            return result, False
+        return Iterator(_adv_record)
+
     def _op_get_iter(self, instr):
         value = self.pop()
         if isinstance(value, list):
-            self.stack.append(ListIterator(value))
+            # List path: wrap in Iterator with index-based advance.
+            list_iter = ListIterator(value)
+            def _adv_list(_it=list_iter):
+                if _it.index >= len(_it.values):
+                    return None, True
+                v = _it.values[_it.index]
+                _it.index += 1
+                return v, False
+            self.stack.append(Iterator(_adv_list))
             self.ip += 1
-            return None  # pending_after will be set by execute()
+            return None
         if isinstance(value, Record):
             if "__iter__" in value.fields:
+                # Call __iter__ synchronously; its return value is the iterator record.
                 iterator_fn = value.fields["__iter__"]
-                self.pending_get_iter = True
-                self.stack.append(value)
-                self.call_closure(iterator_fn, 1)
-                return _NO_PENDING  # ip redirected to __iter__ fn; no pending_after
+                iterator_record = self.run_closure(iterator_fn, [value])
+                if isinstance(iterator_record, list):
+                    list_iter = ListIterator(iterator_record)
+                    def _adv_from_list(_it=list_iter):
+                        if _it.index >= len(_it.values):
+                            return None, True
+                        v = _it.values[_it.index]
+                        _it.index += 1
+                        return v, False
+                    self.stack.append(Iterator(_adv_from_list))
+                elif isinstance(iterator_record, Record) and "__next__" in iterator_record.fields:
+                    self.stack.append(self._make_record_iterator(iterator_record))
+                else:
+                    self.runtime_error("type", "__iter__ must return a list or a record with __next__")
+                self.ip += 1
+                return None
             if "__next__" in value.fields:
-                self.stack.append(value)
+                # Record is its own iterator — wrap directly.
+                self.stack.append(self._make_record_iterator(value))
                 self.ip += 1
                 return None
         self.runtime_error("type", "Value is not iterable")
@@ -1818,22 +1873,17 @@ class VM:
         if not self.stack:
             self.runtime_error("runtime", "ITER_NEXT without iterator")
         iterator = self.stack[-1]
-        if not isinstance(iterator, ListIterator):
-            if isinstance(iterator, Record) and "__next__" in iterator.fields:
-                method = iterator.fields["__next__"]
-                self.pending_iter_next = end_ip
-                self.stack.append(iterator)
-                self.call_closure(method, 1)
-                return _NO_PENDING  # ip redirected to __next__ fn
-            self.runtime_error("type", "Iterator is not supported")
-        if iterator.index >= len(iterator.values):
-            self.stack.pop()
-            self.ip = end_ip
+        if isinstance(iterator, Iterator):
+            # All paths now produce Iterator objects; advance() is always valid.
+            item, exhausted = iterator.advance()
+            if exhausted:
+                self.stack.pop()
+                self.ip = end_ip
+            else:
+                self.stack.append(item)
+                self.ip += 1
         else:
-            value = iterator.values[iterator.index]
-            iterator.index += 1
-            self.stack.append(value)
-            self.ip += 1
+            self.runtime_error("type", "Iterator is not supported")
 
     def _op_setup_try(self, instr):
         self.setup_try(instr[1])
@@ -2132,31 +2182,9 @@ class VM:
             self.current_coroutine.stack = []
             self.current_coroutine.frames = []
             self.current_coroutine.handler_stack = []
-            self.current_coroutine.pending_iter_next = None
-            self.current_coroutine.pending_get_iter = False
             return ("return", ret_value)
         self.stack.append(ret_value)
         self.ip = frame.return_ip
-        if self.pending_get_iter:
-            self.pending_get_iter = False
-            value = self.pop()
-            if isinstance(value, list):
-                self.stack.append(ListIterator(value))
-            elif isinstance(value, Record) and "__next__" in value.fields:
-                self.stack.append(value)
-            else:
-                self.runtime_error("type", "Value is not iterable")
-        if self.pending_iter_next is not None:
-            end_ip = self.pending_iter_next
-            self.pending_iter_next = None
-            value = self.pop()
-            if value is None:
-                if not self.stack:
-                    self.runtime_error("runtime", "Iterator stack underflow")
-                self.stack.pop()
-                self.ip = end_ip
-            else:
-                self.stack.append(value)
 
     def _op_halt(self, instr):
         return ("halt", None)
@@ -2259,23 +2287,11 @@ class VM:
           `value` is the final return value.
         - `("halt", None)`: HALT opcode or end of bytecode — program terminates.
 
-        Pending flags
-        -------------
-        `pending_get_iter` is set by GET_ITER when the iterable has a custom `__iter__`
-        method.  Because `__iter__` is a closure call, control jumps to the closure
-        body and returns to the execute() loop via RETURN.  The RETURN handler checks
-        this flag and converts the returned value to a ListIterator, then clears the flag.
-
-        `pending_iter_next` stores the `end_ip` target for ITER_NEXT when the iterator
-        has a custom `__next__` method.  The RETURN handler uses it to decide whether
-        the returned value signals iteration end (None) or is the next element.
-
         Dispatch table
         --------------
         Each opcode is looked up in `self._dispatch` (built by `_build_dispatch_table()`
         at construction time).  Unknown opcodes raise a runtime error immediately.
-        Handlers return None (normal), _NO_PENDING (ip was redirected — do not set
-        pending_after), or a (status, value) tuple (suspend / halt).
+        Handlers return None (normal advance) or a (status, value) tuple (suspend / halt).
         """
         pending_after = None
         while self.ip < len(self.code):
@@ -2307,8 +2323,6 @@ class VM:
                 rv = handler(instr)
                 if rv is None:
                     pending_after = instr
-                elif rv is _NO_PENDING:
-                    pass  # ip redirected to function; don't set pending_after
                 else:
                     return rv  # (status, result) from YIELD / RETURN / HALT
             except LangRuntimeError as err:

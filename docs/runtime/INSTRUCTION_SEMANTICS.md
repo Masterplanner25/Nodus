@@ -365,37 +365,33 @@ GET_ITER
 
 Creates an iterator from a collection.
 
-[collection] → [iterator]
+[collection] → [Iterator]
+
+Produces a first-class `Iterator` object (defined in `vm.py`) and pushes it. The
+`Iterator` wraps an `advance_fn: () → (value, exhausted)` closure and exposes a
+single `advance()` method consumed by `ITER_NEXT`. All paths are synchronous — ip
+advances normally in every case.
 
 Operation depends on the runtime type of *collection*:
 
-- **List:** A `ListIterator` wrapping the list is pushed. ip advances normally.
-- **Record with `__next__` field:** The record itself acts as a stateful iterator and
-  is pushed as-is. ip advances normally. `ITER_NEXT` will call `__next__` on it.
-- **Record with `__iter__` field (closure):** The `__iter__` closure must be called to
-  obtain the iterator. Because closure calls redirect the instruction pointer through
-  the full call/return cycle, GET_ITER cannot return the iterator synchronously.
-  Instead:
-  1. `pending_get_iter` is set to `True` on the VM.
-  2. `call_closure(__iter__, receiver)` is invoked — ip now points inside the
-     `__iter__` function body.
-  3. `_NO_PENDING` is returned from the handler (ip is *not* advanced past GET_ITER).
-  4. When the `__iter__` closure executes `RETURN`, the RETURN handler checks
-     `pending_get_iter`, clears it, and converts the returned value to a
-     `ListIterator` (if a list) or passes through the record (if it has `__next__`).
-     The resulting iterator is pushed onto the stack and execution continues past
-     the original GET_ITER site.
+- **List:** A `ListIterator` (index-based cursor) is wrapped in an `Iterator` whose
+  `advance_fn` reads the next element or signals exhaustion.
+- **Record with `__iter__` field:** `run_closure(__iter__, receiver)` is called
+  synchronously (saves/restores full execution context). The return value is then
+  handled as one of the two cases below.
+- **Record with `__next__` field (directly iterable):** An `Iterator` is constructed
+  whose `advance_fn` calls `run_closure(__next__, record)` on each advance. If
+  `__next__` returns `None`, the iterator is considered exhausted.
 
-  This means GET_ITER with a closure `__iter__` spans at least one full call/return
-  cycle before the iterator is available on the stack. The flag is saved and restored
-  as part of coroutine context so a coroutine may be suspended between the GET_ITER
-  dispatch and the RETURN post-processing.
+`run_closure()` executes the closure via a nested `execute()` call, so `__iter__` and
+`__next__` are resolved completely before GET_ITER/ITER_NEXT return. The `Iterator`
+object is a plain stack value — it is saved and restored as part of coroutine context
+automatically. A coroutine may be suspended between any two ITER_NEXT calls with no
+special handling.
 
-⚠️ **Provisional:** the `pending_get_iter` mechanism is a known architectural smell
-(two observably different code paths for the same opcode). The v0.9 decision deferred
-cleanup to v1.0 — the mechanism works correctly and the architectural smell does not
-affect observable behavior for correct programs. See `TECH_DEBT.md §
-"GET_ITER pending_get_iter cleanup"` and `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"`.
+**Stable** as of v1.0: the `pending_get_iter` / `pending_iter_next` flag mechanism
+was replaced by the `Iterator` protocol object in v1.0. See `TECH_DEBT.md §
+"GET_ITER pending_get_iter cleanup"` and `FREEZE_PROPOSAL.md § "v1.0 GET_ITER/ITER_NEXT Decision"`.
 
 ITER_NEXT
 
@@ -403,33 +399,18 @@ Retrieves the next value from an iterator, or jumps to *end_ip* when exhausted.
 
 Operand: end_ip (absolute) — address to jump to when the iterator is done.
 
-[iterator] → [value]   (advances; ip += 1)
-[iterator] →           (exhausted; iterator popped, ip = end_ip)
+[Iterator] → [value]   (advances; ip += 1)
+[Iterator] →           (exhausted; Iterator popped, ip = end_ip)
 
-Operation depends on the runtime type of *iterator*:
+Calls `iterator.advance()`, which returns `(value, exhausted)`:
 
-- **`ListIterator`:** If `iterator.index >= len(iterator.values)`, pops the iterator
-  and sets ip = end_ip. Otherwise pushes `iterator.values[iterator.index]`, increments
-  `iterator.index`, and advances ip normally.
-- **Record with `__next__` field (closure):** The `__next__` closure must be called to
-  get the next value. Because closure calls redirect ip through the call/return cycle,
-  ITER_NEXT cannot return the value synchronously. Instead:
-  1. `pending_iter_next` is set to *end_ip* on the VM.
-  2. `call_closure(__next__, receiver)` is invoked — ip now points inside `__next__`.
-  3. `_NO_PENDING` is returned from the handler.
-  4. When the `__next__` closure executes `RETURN`, the RETURN handler checks
-     `pending_iter_next`, clears it, and inspects the returned value:
-     - If the value is `None` (iterator signals exhaustion): pops the iterator from
-       the stack and sets ip = end_ip.
-     - Otherwise: pushes the value and advances ip past the ITER_NEXT site.
+- If exhausted: pops the `Iterator` from the stack and sets ip = end_ip.
+- Otherwise: pushes *value* and advances ip normally (ip += 1).
 
-  `pending_iter_next` stores the end_ip so the RETURN handler can perform the
-  exhaustion check without any additional operand. The flag is saved and restored as
-  part of coroutine context.
+The `Iterator` object remains on the stack between calls, preserving iterator state
+across coroutine suspend/resume cycles with no additional bookkeeping.
 
-⚠️ **Provisional:** shares the same architectural concern as GET_ITER regarding the
-two-path closure mechanism. See GET_ITER notes above and `TECH_DEBT.md §
-"GET_ITER pending_get_iter cleanup"`.
+**Stable** as of v1.0: see GET_ITER notes above.
 
 If iteration ends, the VM triggers loop termination behavior.
 
