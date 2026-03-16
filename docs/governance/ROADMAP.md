@@ -622,16 +622,17 @@ Goals:
 - ✅ Iterator protocol cleanup — `pending_get_iter` / `pending_iter_next` flags replaced
   with a first-class `Iterator` protocol object. VM-only change; no compiler or `.nd`
   source impact. 14 pending-flag sites removed from `vm.py`. `GET_ITER` and `ITER_NEXT`
-  promoted to stable. All 377 tests pass. Coroutine+iteration interaction tests added.
+  promoted to stable. All 379 tests pass. Coroutine+iteration interaction tests added.
   **Status:** ✅ Complete at v1.0.
 
 - `finally` block implementation — new opcode or extended `SETUP_TRY` operand. Requires
   lexer, AST, parser, compiler, and VM changes. `BYTECODE_VERSION` bump to 3 required.
   **Status:** ⏳ Not started. Critical path item — longest chain to v1.0.
 
-- `_op_throw` structured value preservation — fix `_op_throw` (vm.py:~2092) which
-  stringifies non-string thrown values. `handle_exception` is already correct.
-  **Status:** ⏳ Small fix. See TECH_DEBT.md.
+- ✅ `_op_throw` structured value preservation — `_op_throw` (vm.py:2142) now preserves
+  Records/lists as `err.payload` with `kind="thrown"`. Strings use message directly;
+  primitives are stringified. `LangRuntimeError.payload` field added.
+  **Status:** ✅ Fixed in v1.0. See TECH_DEBT.md.
 
 - ✅ `YIELD_VALUE` / `SEND` opcode evaluation — decision made. YIELD frozen as-is.
   No new opcode needed. No user-facing send-value use cases exist in `.nd` source.

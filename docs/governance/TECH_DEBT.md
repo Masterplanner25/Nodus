@@ -31,12 +31,12 @@ Items below were raised in a third-party review and are now validated with concr
 - AST node type hints are overly broad (`object`) in `src/nodus/frontend/ast/ast_nodes.py` (e.g., `Unary.expr`, `Bin.a`, `Bin.b`, `Call.callee`, `Let.expr`, `If.cond`).
 - Deadline checking calls `time.monotonic()` on every instruction in `record_instruction` (`src/nodus/vm/vm.py:1731`). Consider batching the check to reduce hot-path overhead.
 - ✅ Channel waiting queues converted to `collections.deque`: `waiting_receivers` and `waiting_senders` in `channel.py`; `pop(0)` replaced with `popleft()` in `builtins/coroutine.py`.
-- ⚠️ `_op_throw` (`src/nodus/vm/vm.py:~2092`) stringifies non-string thrown values via `value_to_string()`. `handle_exception` (vm.py:281) is already correct — it pushes a structured `Record(kind='error')` with all fields. Only the `_op_throw` path needs fixing (tracked in Open Items).
+- ✅ `_op_throw` (`src/nodus/vm/vm.py:2142`) now preserves structured thrown values; fixed in v1.0. `handle_exception` (vm.py:310) is also correct. See Open Items for full resolution notes.
 - Anonymous functions share the same display name (`src/nodus/compiler/compiler.py:722` uses `__anon` for all function expressions). Consider unique names for traceability.
 - File I/O builtins are unrestricted by default (`src/nodus/vm/vm.py:1464-1510`). An allowlist hook is available (`VM.allowed_paths`) and now wired into CLI/server; it remains opt-in.
 - Relative import containment for non-std, non-package relative paths (`src/nodus/tooling/loader.py:150-170` and `src/nodus/runtime/module_loader.py:500-525`) is now guarded by project-root containment checks.
 - HTTP server endpoints now support bearer-token auth (`src/nodus/services/server.py:780-920` and `src/nodus/services/server.py:960-1120`). It remains opt-in, but non-local binding requires a token.
-- VM call stack has no explicit max depth check (e.g., `src/nodus/vm/vm.py:1652` `call_closure` and `src/nodus/vm/vm.py:2067` `CALL` opcode paths). Consider a max frame depth for sandbox safety.
+- VM call stack has no explicit max depth check (e.g., `src/nodus/vm/vm.py:1459` `call_closure` and `src/nodus/vm/vm.py:2012` `CALL` opcode paths). Consider a max frame depth for sandbox safety.
 - `input()` uses `input_fn` defaulting to Python `input()` (`src/nodus/vm/vm.py:76` and `src/nodus/vm/vm.py:1360`). Server mode now blocks `input()` by default, but embedding still uses the default unless configured.
 
 ## Additional Validated Items
@@ -59,7 +59,7 @@ associated RETURN handler post-processing were removed. A first-class `Iterator`
 paths (list, `__iter__` closure, `__next__` closure) produce an `Iterator` synchronously
 using `run_closure()`. `_op_return` pending-flag blocks removed. `_NO_PENDING` sentinel
 and dead dispatch branch removed. `Coroutine` dataclass fields `pending_get_iter` and
-`pending_iter_next` removed. 14 flag sites removed across `vm.py`. All 377 tests pass.
+`pending_iter_next` removed. 14 flag sites removed across `vm.py`. All 379 tests pass.
 Coroutine + iteration interaction tests added.
 
 `GET_ITER` and `ITER_NEXT` are now **stable**. See `FREEZE_PROPOSAL.md §
@@ -84,12 +84,12 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 - ✅ Provisional opcode resolution (partial): `GET_ITER`, `ITER_NEXT`, `BUILD_MODULE`, `YIELD` promoted to stable at v1.0. 3 opcodes remain provisional: `SETUP_TRY`, `POP_TRY`, `THROW` (all blocked on `finally` implementation). See `FREEZE_PROPOSAL.md` for details.
 - ✅ `GET_ITER`/`ITER_NEXT` Iterator protocol cleanup: complete at v1.0. `pending_get_iter`/`pending_iter_next` flags replaced by first-class `Iterator` protocol object. VM-only change; no compiler or `.nd` source impact. See section above and FREEZE_PROPOSAL.md v1.0 decisions.
 - `finally` block implementation: requires new opcode or extended `SETUP_TRY` operand. See FREEZE_PROPOSAL.md v0.9 decisions.
-- ✅ `_op_throw` structured value preservation: `_op_throw` (vm.py:~2092) now preserves structured values (Records, lists) as `err.payload` in the catch block rather than stringifying. Strings use the message directly; primitives are stringified; Records/lists are passed as `payload` with `kind="thrown"`. `LangRuntimeError` now carries an optional `payload` field. `handle_exception` includes `payload` in the error Record when present. Fixed in v1.0.
+- ✅ `_op_throw` structured value preservation: `_op_throw` (vm.py:2142) now preserves structured values (Records, lists) as `err.payload` in the catch block rather than stringifying. Strings use the message directly; primitives are stringified; Records/lists are passed as `payload` with `kind="thrown"`. `LangRuntimeError` now carries an optional `payload` field. `handle_exception` includes `payload` in the error Record when present. Fixed in v1.0.
 - ✅ `YIELD_VALUE`/`SEND` opcode evaluation: decision made. YIELD frozen as-is. No new opcode needed — no user-facing send-value use cases in `.nd` source. Recorded in FREEZE_PROPOSAL.md.
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
 - ✅ `NodusRuntime` added to `__all__`: `src/nodus/__init__.py` now imports and exports `NodusRuntime` directly. `from nodus import NodusRuntime` works as of v1.0. EMBEDDING.md updated. Fixed in v1.0.
 - `LOAD_LOCAL` compiler fallbacks: `DEPRECATIONS.md` claimed the compiler no longer emits `LOAD_LOCAL` — this is false. Three fallback paths at `compiler.py` lines 584, 619, 731 still emit name-keyed `LOAD_LOCAL` instructions when `symbol.index is None`. These paths must be audited and fixed (or confirmed unreachable) before `LOAD_LOCAL` can be removed from the VM dispatch table. Target: v1.0.
-- `vm.py` line count: ~2,052 lines after Phase 2 extraction. Further extraction of workflow/goal builtins and scheduler helpers is possible.
+- `vm.py` line count: ~2,371 lines as of v1.0. Further extraction of workflow/goal builtins and scheduler helpers is possible.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 
@@ -99,7 +99,7 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 
 - ✅ Stale `loader.py` header comment: resolved. The header comment in `src/nodus/tooling/loader.py` no longer claims `compile_source()` is used by `nodus check`, `nodus ast`, or `nodus dis` commands. Those commands use `ModuleLoader`. The comment now correctly notes that the function body is retained for internal tooling use only until v1.0.
 
-- ✅ `INSTRUCTION_SEMANTICS.md` missing `pending_get_iter` / `pending_iter_next` documentation: resolved. GET_ITER and ITER_NEXT entries now fully document the closure-callback mechanism, the pending flags, and the RETURN handler post-processing. See `docs/runtime/INSTRUCTION_SEMANTICS.md` §14.
+- ✅ `INSTRUCTION_SEMANTICS.md` GET_ITER / ITER_NEXT documentation: updated at v1.0. Entries now document the `Iterator` protocol object, `run_closure()` synchronous resolution, and stable classification. The previous `pending_get_iter` / `pending_iter_next` descriptions were replaced. See `docs/runtime/INSTRUCTION_SEMANTICS.md` §14.
 
 - ✅ `NODUS_SERVER_TOKEN` vs. `NODUS_REGISTRY_TOKEN` naming split: now documented in `docs/tooling/PACKAGE_MANAGER.md` (Authentication section, "NODUS_SERVER_TOKEN vs NODUS_REGISTRY_TOKEN" subsection). The two tokens are independent: `NODUS_SERVER_TOKEN` authenticates requests to a running Nodus server process; `NODUS_REGISTRY_TOKEN` authenticates package registry requests.
 
@@ -108,7 +108,7 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 - ✅ `test_task_reassignment_after_worker_failure` flaky test: fixed in v0.9.1. Root cause: `_poll_job` was spinning on `WorkerManager.poll()` every 10ms with a 2-second window; under concurrency the VM thread occasionally missed the window. Fix: added `WorkerManager.wait_for_job()` which blocks on the existing `_cond` condition variable (already notified by `submit()`). `_poll_job` now delegates to `wait_for_job()`. No polling, no race. Test runtime: ~20ms (was up to 2s). See `src/nodus/services/server.py`.
 
 - ✅ Formatter AST coverage audit complete: all 48 AST node types handled in format_stmt()/format_expr(). Added Yield, Throw, TryCatch, DestructureLet, VarPattern, ListPattern, RecordPattern handlers. See tests/test_formatter_coverage.py.
-- ✅ Opcode set stabilization plan: formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md. 47 opcodes classified (39 stable, 7 provisional, 1 deprecated). Freeze prerequisites, post-freeze extension process, and version history documented. See GET_ITER/Exception model sections above for provisional opcode cleanup items.
+- ✅ Opcode set stabilization plan: formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md. 47 opcodes classified (43 stable, 3 provisional, 1 deprecated as of v1.0). Freeze prerequisites, post-freeze extension process, and version history documented. See GET_ITER/Exception model sections above for provisional opcode cleanup items.
 
 ## Phase 4 Fixes Applied (documentation completeness)
 

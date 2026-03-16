@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The current instruction set is **small-to-medium and maturing**: still compact, but now broad enough to support control flow, functions, short-circuit logic, mutable collections, and runtime services through builtins. The opcode set currently contains **47 opcodes**.
 
-**Opcode stability classifications** (stable / provisional / deprecated) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v0.8.0: 39 stable, 7 provisional, 1 deprecated.
+**Opcode stability classifications** (stable / provisional / deprecated) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: 43 stable, 3 provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), 1 deprecated (`LOAD_LOCAL`).
 
 ## 2. VM Model Overview
 - Stack model:

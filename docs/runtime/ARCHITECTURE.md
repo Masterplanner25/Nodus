@@ -150,9 +150,9 @@ on a tight integer loop benchmark (388 ms → 260 ms).
 **To add a new opcode:**
 1. Add a method `_op_OPNAME(self, instr)` on the `VM` class.
    - Advance `self.ip` explicitly before returning (most ops do `self.ip += 1`).
-   - Return `None` for normal continuation, `_NO_PENDING` if ip was redirected
-     (e.g., into a function body), or a `(status, value)` tuple to signal
-     YIELD / HALT to the scheduler.
+   - Return `None` for normal continuation, or a `(status, value)` tuple to signal
+     YIELD / HALT to the scheduler. (The `_NO_PENDING` sentinel was removed at v1.0
+     when the Iterator protocol cleanup eliminated all ip-redirect handler paths.)
 2. Add `"OPNAME": self._op_OPNAME` to the dict returned by `_build_dispatch_table()`.
 3. Add the opcode to `BYTECODE_REFERENCE.md` using the standard template.
 

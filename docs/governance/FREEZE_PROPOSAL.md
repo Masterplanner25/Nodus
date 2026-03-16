@@ -249,7 +249,7 @@ sentinel and the dead `elif rv is _NO_PENDING` branch in `execute()` were remove
 `Coroutine` dataclass fields `pending_get_iter` and `pending_iter_next` removed.
 `save_execution_context()` / `restore_execution_context()` tuples reduced from 7 to 5
 fields. 14 pending-flag sites removed across `vm.py`. VM-only change; no compiler or
-`.nd` source impact. All 377 tests pass. Coroutine + iteration interaction tests added
+`.nd` source impact. All 379 tests pass. Coroutine + iteration interaction tests added
 (`test_coroutine_iteration_suspend_resume`, `test_coroutine_custom_iterator_suspend_resume`).
 
 **Classification:** → promoted to **stable** at v1.0.
@@ -269,8 +269,8 @@ structure. The implementation cost is Large and is not justified for v0.9.
 
 **v1.0 scope for exception model:**
 - `finally` blocks (new opcode or extended `SETUP_TRY`)
-- Structured value preservation in `throw` (fix `_op_throw` stringifying non-string
-  values at `vm.py:~2092` — `handle_exception` is already correct; see `TECH_DEBT.md`)
+- ✅ Structured value preservation in `throw` — `_op_throw` (vm.py:2142) now preserves
+  Records/lists as `err.payload` with `kind="thrown"`. Fixed in v1.0.
 - Typed/pattern-matched catches: post-v1.0
 
 ### YIELD — remains provisional
