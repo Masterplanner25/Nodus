@@ -226,13 +226,12 @@ Two compilation pipelines exist in `src/nodus/tooling/loader.py`:
 - Entry point: `ModuleLoader(...).load_module_from_source(src)` or `.load_module_from_path(path)`
 - For tooling commands that only need AST/bytecode: `ModuleLoader(...).compile_only(src, module_name=name)`
 
-### `compile_source()` — Removed in v0.9.0 (public stub)
+### `compile_source()` — Fully removed in v1.0
 The public re-export from `nodus.__init__` was removed in v0.9.0.
-The function body in `nodus.tooling.loader` is retained for internal tooling use only
-and will be removed at v1.0.
+The function body in `nodus.tooling.loader` was removed in v1.0.
 - **All internal callers migrated to `ModuleLoader` in v0.8.0** (runner.py, vm.py, dap/server.py, all test files).
 - **Public stub (`nodus.__init__`) removed in v0.9.0.**
-- **Loader body (`nodus.tooling.loader`) removal target: v1.0.**
+- **Loader body (`nodus.tooling.loader`) removed in v1.0.**
 - Migration: use `ModuleLoader(...).load_module_from_source(src)` or `NodusRuntime(...).run_source(src)`.
 
 ## Local Variable Access (v0.8.0+)

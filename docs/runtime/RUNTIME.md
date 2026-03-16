@@ -282,27 +282,48 @@ Relevant instructions:
 GET_ITER
 ITER_NEXT
 
-Collections such as lists and maps provide iterator objects.
+`GET_ITER` produces a first-class `Iterator` object (added in v1.0) wrapping an
+`advance_fn: () → (value, exhausted)` callable. All GET_ITER paths (list, `__iter__`
+closure, `__next__` closure) resolve synchronously via `run_closure()`. `ITER_NEXT`
+calls `iterator.advance()` and either pushes the next value or jumps to the end
+target on exhaustion.
 
-The VM manages iteration state internally.
+Lists and records with `__iter__`/`__next__` are iterable. The `pending_get_iter`
+and `pending_iter_next` VM flags were removed in v1.0 when the first-class `Iterator`
+class replaced the deferred-flag mechanism.
 
 13. Exception Handling
 
-Exception support is implemented through runtime stack markers.
+Exception support is implemented through a handler stack.
 
 Instructions include:
 
 SETUP_TRY
 POP_TRY
+FINALLY_END
 THROW
+
+`SETUP_TRY handler_ip [finally_ip]` pushes a 4-tuple
+`(handler_ip, finally_ip, stack_depth, frame_depth)` onto `handler_stack`.
+When `finally_ip` is non-zero, `POP_TRY` on normal try exit redirects execution
+to the finally block instead of advancing ip.
+
+`FINALLY_END` marks the end of a finally block. If a deferred return is pending
+(set by `RETURN` executing while a finally-bearing handler is active), it completes
+the return. Otherwise it advances ip.
+
+`THROW` pops an error value. Non-string values are preserved as `err.payload` with
+`err.kind="thrown"`. Strings become `err.message` directly.
 
 When an exception occurs:
 
-the VM searches for the nearest try block
+the VM searches for the nearest handler on `handler_stack`
 
-control jumps to the associated handler
+control jumps to `handler_ip`; the stack is restored to `stack_depth`
 
-the stack is restored to the handler state
+the error record is pushed for the catch variable binding
+
+finally blocks run on all exit paths (normal, caught exception, return)
 
 14. Module Objects
 
@@ -381,9 +402,7 @@ equality fallback check has been removed.
 
 Potential runtime improvements include:
 
-runtime module objects
-
-bytecode versioning
+runtime module objects (currently compile-time flattening)
 
 optional custom memory manager
 
@@ -391,7 +410,12 @@ improved scheduler isolation
 
 optimized bytecode execution
 
+structured event sinks for host embedding
+
 These changes should preserve the existing runtime semantics wherever possible.
+
+Note: Bytecode versioning is complete as of v1.0 (`BYTECODE_VERSION = 4`, frozen).
+The embedding API is stable (`NodusRuntime` in `nodus.__all__`).
 
 Final Principle
 

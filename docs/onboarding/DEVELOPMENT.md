@@ -118,13 +118,17 @@ explicit instruction set
 Example instructions:
 
 PUSH_CONST
-LOAD_VAR
-STORE_VAR
+LOAD
+STORE
+LOAD_LOCAL_IDX
+STORE_LOCAL_IDX
 CALL
 RETURN
 ADD
 SUB
 JUMP
+SETUP_TRY
+FINALLY_END
 
 The VM is intentionally simple to make execution behavior easy to understand.
 
@@ -199,13 +203,15 @@ Examples of future improvements:
 
 richer standard library
 
-improved debugging tools
-
-language server integration
-
 performance improvements in the VM
 
+runtime module objects (currently compile-time flattening)
+
+structured event sinks for embedding
+
 These should be added without compromising architectural clarity.
+
+Note: Language server (LSP/DAP) and debugging tools are complete as of v0.7.0+.
 
 Final Note
 

@@ -1,6 +1,6 @@
 # Nodus Runtime Profiler
 
-The profiler is a lightweight, optional component that instruments the VM execution loop without altering language semantics. It is intended to provide quick, practical insight into runtime behavior for Nodus 0.5.0.
+The profiler is a lightweight, optional component that instruments the VM execution loop without altering language semantics. It provides quick, practical insight into runtime behavior.
 
 ## Architecture
 

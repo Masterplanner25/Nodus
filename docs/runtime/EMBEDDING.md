@@ -276,23 +276,21 @@ retry operations
 
 report failures to external systems
 
-10. Future Embedding Direction
+10. Embedding API Stability (v1.0)
 
-Embedding support will continue to evolve as Nodus matures.
+The `NodusRuntime` embedding API is **stable as of v1.0** (2026-03-15).
+
+- `NodusRuntime` constructor parameters are stable.
+- `run_source()`, `run_file()`, `register_function()`, and `reset()` are stable.
+- `from nodus import NodusRuntime` is the canonical import path.
 
 Areas of future work include:
 
-stable embedding APIs
+- structured event sinks (subscribe to runtime events from the host)
+- module loading hooks (intercept or override module resolution)
+- additional sandbox controls
 
-runtime configuration objects
-
-structured event sinks
-
-module loading hooks
-
-sandbox environments
-
-These improvements will allow Nodus to integrate more cleanly with larger systems.
+These additions will not break the existing stable API surface.
 
 11. Example Embedding Architecture
 

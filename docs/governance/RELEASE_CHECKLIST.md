@@ -37,3 +37,16 @@ Use this checklist to cut a clean, repeatable release.
 ## Post-release
 - Create a fresh Unreleased section in `CHANGELOG.md`
 - Note any follow-up issues
+
+## Adding a new opcode (post-v1.0 freeze)
+
+The opcode set is frozen at v1.0. To add a new opcode in a future release:
+
+1. Open `docs/governance/FREEZE_PROPOSAL.md` and add a new "Extension Proposal" entry
+   documenting the opcode name, motivation, and provisional/stable classification.
+2. Add `_op_<name>` to `src/nodus/vm/vm.py` and register it in `_build_dispatch_table()`.
+3. Emit it from `src/nodus/compiler/compiler.py`.
+4. Bump `BYTECODE_VERSION` in `compiler.py` and `NODUS_BYTECODE_VERSION` in `module.py`.
+5. Document the opcode in `docs/runtime/BYTECODE_REFERENCE.md`, `BYTECODE.md`, and
+   `INSTRUCTION_SEMANTICS.md`. Add a version history entry to `BYTECODE.md`.
+6. Update `CHANGELOG.md` to record the version bump reason.

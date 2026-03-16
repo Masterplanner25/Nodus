@@ -1,5 +1,9 @@
 # Getting Started with Nodus
 
+> **v1.0 (2026-03-15) — Stable release.** Core language syntax, the VM execution model,
+> and the `NodusRuntime` embedding API are frozen. The opcode set is stable (47 opcodes,
+> `BYTECODE_VERSION = 4`).
+
 Nodus is a small practical scripting language implemented in Python. This guide takes you from running the first example to a tiny multi-file project.
 
 ## Prerequisites
@@ -116,6 +120,30 @@ Notes:
 - Relative imports start with `./` or `../`.
 - Importing `./utils` resolves to `./utils/index.nd` when there is no `utils.nd`.
 - Non-relative imports resolve from the project root.
+
+## Exception Handling
+
+Nodus supports `try/catch/finally` for structured error handling:
+
+```nd
+fn read_config(path) {
+    let f = nil
+    try {
+        let data = read_file(path)
+        return data
+    } catch err {
+        print("Error reading config: " + err.message)
+        return nil
+    } finally {
+        print("read_config done")
+    }
+}
+```
+
+The `finally` block always runs — whether the try body succeeds, an exception is
+caught, or `return` executes inside the try block. Thrown non-string values are
+preserved as `err.payload` (with `err.kind = "thrown"`); string throws become
+`err.message` directly.
 
 ## Package Dependencies
 

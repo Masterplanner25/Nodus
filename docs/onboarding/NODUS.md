@@ -19,7 +19,7 @@ Nodus is designed for readable logic, modular scripting, and runtime orchestrati
 - numbers, booleans, strings, nil
 - lists, maps, and records
 - functions, closures, and recursion
-- control flow (if/while/for/foreach)
+- control flow (if/while/for/foreach/try/catch/finally/throw)
 - imports and namespaces with explicit exports
 - stdlib modules (`std:`)
 - file I/O builtins
@@ -51,5 +51,6 @@ Primary extension: `.nd`
 - `nodus publish [--registry <url>] [--registry-token <token>]`
 
 ## Current Stage
-v0.9.0 — practical scripting runtime with registry publish/auth ecosystem. Focused on
-automation and orchestration. Working toward v1.0 opcode freeze and stable API surface.
+v1.0.0 (2026-03-15) — stable release. Opcode set frozen at 47 stable opcodes
+(`BYTECODE_VERSION = 4`). `try/catch/finally` supported. `NodusRuntime` embedding
+API stable. Registry publish/auth ecosystem complete.

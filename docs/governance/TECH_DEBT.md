@@ -73,8 +73,8 @@ exit. New `FINALLY_END` opcode added. Handler stack extended to 4-tuple
 `(handler_ip, finally_ip, stack_depth, frame_depth)`. Deferred-return mechanism added
 to `_op_return`. `BYTECODE_VERSION` bumped to 4.
 
-`SETUP_TRY` / `POP_TRY` / `FINALLY_END` / `THROW` remain provisional pending typed/
-pattern-matched catch (post-v1.0). See `FREEZE_PROPOSAL.md § "v1.0 Decision"`.
+`SETUP_TRY` / `POP_TRY` / `FINALLY_END` / `THROW` promoted to **stable** at v1.0
+freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 
 ## Open Items (not yet complete)
 
@@ -99,7 +99,7 @@ pattern-matched catch (post-v1.0). See `FREEZE_PROPOSAL.md § "v1.0 Decision"`.
 
 - ✅ `compile_source()` removal-target doc contradiction: resolved in v0.9.0. Public stub removed from `nodus.__init__` at v0.9 (one version earlier than the `DeprecationWarning` message indicated). ROADMAP.md, DEPRECATIONS.md, TECH_DEBT.md, and CHANGELOG.md all updated to reflect v0.9.0 removal. The warning message discrepancy is noted in DEPRECATIONS.md and CHANGELOG.md.
 
-- ✅ Stale `loader.py` header comment: resolved. The header comment in `src/nodus/tooling/loader.py` no longer claims `compile_source()` is used by `nodus check`, `nodus ast`, or `nodus dis` commands. Those commands use `ModuleLoader`. The comment now correctly notes that the function body is retained for internal tooling use only until v1.0.
+- ✅ Stale `loader.py` header comment: resolved. The `compile_source()` function body was removed in v1.0. The file no longer claims the function is used by `nodus check`, `nodus ast`, or `nodus dis` (those use `ModuleLoader`).
 
 - ✅ `INSTRUCTION_SEMANTICS.md` GET_ITER / ITER_NEXT documentation: updated at v1.0. Entries now document the `Iterator` protocol object, `run_closure()` synchronous resolution, and stable classification. The previous `pending_get_iter` / `pending_iter_next` descriptions were replaced. See `docs/runtime/INSTRUCTION_SEMANTICS.md` §14.
 

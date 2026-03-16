@@ -137,16 +137,12 @@ stack.push(value)
 
 LOAD_LOCAL
 
-⚠️ Deprecated since v0.8.0. The compiler now emits LOAD_LOCAL_IDX for all
-local variable accesses inside functions. LOAD_LOCAL is retained as a
-compatibility fallback only and will be removed at v1.0. See DEPRECATIONS.md.
+⛔ Removed in v1.0. The compiler emits LOAD_LOCAL_IDX for all local variable
+accesses inside functions. LOAD_LOCAL is no longer in the VM dispatch table;
+executing it raises a RuntimeError tombstone directing the user to recompile.
+See DEPRECATIONS.md.
 
-[] → [value]
-
-Operation:
-
-value = frame.locals[name]  // direct dict lookup, no fallback probes
-stack.push(value)
+(No stack semantics — opcode is a tombstone.)
 
 STORE
 

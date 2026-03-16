@@ -1,6 +1,6 @@
 # Nodus Language Server
 
-Nodus includes a Language Server Protocol implementation for editor integration in the `0.7.0` developer-tooling milestone.
+Nodus includes a Language Server Protocol implementation for editor integration.
 
 ## Capabilities
 

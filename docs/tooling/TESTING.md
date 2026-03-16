@@ -83,9 +83,8 @@ runtime = NodusRuntime()
 result = runtime.run_source(src)
 ```
 
-Note: `compile_source()` public re-export was removed in v0.9.0. The function body
-in `nodus.tooling.loader` is still accessible for internal use but is scheduled for
-removal at v1.0. New tests should use `ModuleLoader` or `NodusRuntime`. See
+Note: `compile_source()` is fully removed as of v1.0 (public re-export in v0.9.0,
+function body in v1.0). New tests must use `ModuleLoader` or `NodusRuntime`. See
 `DEPRECATIONS.md` for the migration guide.
 
 Keep compiler tests focused on specific lowering behavior (e.g., short-circuiting, destructuring, closures).
@@ -213,5 +212,6 @@ The test passes consistently when run in isolation:
 python -m unittest tests.test_task_graph.TaskGraphTests.test_task_reassignment_after_worker_failure -v
 ```
 
-**Root cause:** Pre-existing timing sensitivity. Not caused by v0.9 changes. Tracked
-in `TECH_DEBT.md` for fix in v0.9.x.
+**Root cause:** Pre-existing timing sensitivity. Fixed in v0.9.1 — `_poll_job` now
+delegates to `WorkerManager.wait_for_job()` which blocks on the existing `_cond`
+condition variable instead of polling. Test runtime reduced to ~20ms. See `CHANGELOG.md`.

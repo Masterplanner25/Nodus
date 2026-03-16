@@ -2,6 +2,12 @@
 
 All notable changes to Nodus are documented here.
 
+## [Unreleased]
+
+_Nothing yet._
+
+---
+
 ## [1.0.0] — 2026-03-15
 
 **The Nodus opcode set is frozen. This is the first stable release.**

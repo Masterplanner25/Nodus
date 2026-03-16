@@ -625,11 +625,63 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - Runtime event tracing: `--trace-events`, `--trace-json`, `--trace-file <path>`
 - Formatting: `nodus fmt script.nd` (see `FORMAT.md` for rules)
 
+## Exception Handling
+Stability: Stable.
+
+`try/catch/finally` provides structured error handling.
+
+```nd
+try {
+    risky()
+} catch err {
+    print(err.message)
+} finally {
+    print("always runs")
+}
+```
+
+### Exit paths
+
+All five exit paths are handled correctly:
+
+1. **Normal (no exception):** try body completes, finally (if present) runs, execution continues after.
+2. **Caught exception:** exception raised in try, catch binds `err`, catch block runs, finally runs.
+3. **Uncaught exception:** exception raised in try with no matching handler, finally runs, exception propagates.
+4. **`return` inside try:** finally runs before the function returns; the return value is preserved.
+5. **`return` inside catch:** finally runs before the function returns; the return value is preserved.
+
+### The error object
+
+Inside a `catch` block, the caught error record has these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `err.message` | string | Human-readable error description (always present). |
+| `err.kind` | string | Error category (e.g. `"name"`, `"type"`, `"index"`, `"thrown"`, `"sandbox"`). |
+| `err.payload` | any | Original thrown value when `throw <non-string>` was used; `nil` otherwise. |
+
+When `throw expr` is used with a string value, `err.message` contains the string directly.
+When `throw expr` is used with a non-string value (record, list, number), `err.kind` is
+`"thrown"` and `err.payload` contains the original value.
+
+```nd
+try {
+    throw record { code: 404, reason: "not found" }
+} catch err {
+    print(err.kind)        // "thrown"
+    print(err.payload.code)  // 404
+}
+```
+
+### `finally` without `catch`
+
+A `finally` clause is only valid after a `catch` clause. The `catch` block is always required.
+
 ## Errors
 - Lex errors (unexpected characters, malformed string escapes): `LangSyntaxError` with line/col, raised directly from the lexer.
 - Parse errors: `LangSyntaxError` with line/col.
 - Runtime errors: `LangRuntimeError` with kind + line/col + stack trace.
-- `try/catch` can intercept runtime errors and bind the message to a variable.
+- `try/catch/finally` can intercept runtime errors; the caught error record exposes `message`, `kind`, and `payload` fields.
 
 ## Stack Traces
 Runtime errors include a compact stack trace with function name, file path, line, and column:

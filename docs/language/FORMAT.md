@@ -100,8 +100,21 @@ try {
 }
 ```
 
+With an optional finally clause:
+
+```
+try {
+    <body>
+} catch <var> {
+    <handler>
+} finally {
+    <cleanup>
+}
+```
+
 The `catch` clause binds the caught error to `<var>` for use in the handler
-block. There is no `finally` clause.
+block. The `finally` clause, when present, always executes after the try or
+catch block — including when a `return` statement executes inside the try block.
 
 ### DestructureLet (pattern bindings)
 

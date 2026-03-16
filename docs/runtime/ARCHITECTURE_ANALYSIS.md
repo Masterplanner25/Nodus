@@ -43,13 +43,17 @@ Opcode families (from VM dispatch):
 - Arithmetic/logic: `ADD`, `SUB`, `MUL`, `DIV`, `EQ`, `NE`, `LT`, `GT`, `LE`, `GE`, `NOT`, `NEG`, `TO_BOOL`
 - Control flow: `JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`, `HALT`
 - Iteration: `GET_ITER`, `ITER_NEXT`
-- Exceptions: `SETUP_TRY`, `POP_TRY`, `THROW`
+- Exceptions: `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW`
 - Calls/closures: `CALL`, `CALL_VALUE`, `CALL_METHOD`, `MAKE_CLOSURE`, `RETURN`, `YIELD`
 - Collections/records: `BUILD_LIST`, `BUILD_MAP`, `BUILD_RECORD`, `BUILD_MODULE`, `INDEX`, `INDEX_SET`, `LOAD_FIELD`, `STORE_FIELD`
 
 Notes:
 - Imports are handled at compile time; the VM does not execute module load opcodes.
-- Bytecode is stable enough for tooling (disassembler, trace) but not yet versioned.
+- Bytecode is versioned: `BYTECODE_VERSION = 4` (frozen at v1.0). All 47 active opcodes
+  are stable. `LOAD_LOCAL` was removed in v1.0; `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`,
+  and `FRAME_SIZE` are the canonical slot-indexed local variable opcodes. `FINALLY_END`
+  was added at v1.0 for `try/catch/finally` support.
+- Variable access fast path (v0.8.0+): `FRAME_SIZE`, `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`.
 
 ## 4. Parser / Compiler Assessment
 Strengths:
@@ -71,7 +75,8 @@ Complexity hot spots:
 
 Biggest usability gaps:
 - Compile-time module flattening limits isolation and incremental compilation.
-- No stable embedding API contract yet (runner/server are practical but not formalized).
+- ✅ Stable embedding API: `NodusRuntime` in `nodus.__all__` since v1.0. Constructor
+  parameters, `run_source()`, `run_file()`, `register_function()`, and `reset()` are stable.
 
 ## 6. Testing / Reliability Signals
 - Unit tests cover core semantics and loader behaviors.
@@ -83,21 +88,26 @@ Biggest usability gaps:
 2. Compile-time module alias records are snapshots, not live module objects.
 3. Orchestration features increase VM/runtime coupling without a clear interface boundary.
 4. Python VM limits performance headroom for heavy workloads.
-5. Multiple subsystems (server, runner, scheduler) share runtime state without a formal embedding boundary.
+5. ✅ `NodusRuntime` formalizes the embedding boundary (v1.0). Multiple lower-level
+   subsystems (server, runner, scheduler) still share runtime state internally, but
+   external embedders should use `NodusRuntime` exclusively.
 
 ## 8. Recommended Next Moves (Aligned With Current Code)
 1. Define a runtime module object model and stop flattening imports into a single compile unit.
-2. Add bytecode versioning and a stable opcode reference for tooling compatibility.
-3. Formalize embedding APIs (run code, load module, register builtins, event sinks).
+2. ✅ Bytecode versioning and stable opcode reference: complete at v1.0. `BYTECODE_VERSION = 4`,
+   47 stable opcodes, `docs/runtime/BYTECODE_REFERENCE.md` is the authoritative reference.
+3. ✅ Embedding API formalized: `NodusRuntime` in `nodus.__all__` as of v1.0.
 4. Clarify runtime service contracts (tools/agents/memory/events) with structured results.
 5. Expand orchestration tests: workflows/goals, resume, checkpoints, and worker dispatch.
 
 ## 9. Lifecycle Placement
-Nodus is an early practical scripting runtime with a strong automation/orchestration tilt.
+Nodus is a stable practical scripting runtime (v1.0, 2026-03-15) with a strong automation/orchestration tilt.
 
 Justification:
-- Beyond prototype: bytecode VM, modules, stdlib, CLI, formatter, static analysis, and orchestration runtime.
-- Not yet ecosystem-stage: module isolation, package registry, and embedding stability are still evolving.
+- Stable: bytecode VM frozen (47 opcodes, BYTECODE_VERSION=4), embedding API stable (`NodusRuntime`),
+  package registry with auth/publish, finally blocks, Iterator protocol, LSP/DAP.
+- Still maturing: module isolation (compile-time flattening), runtime service contracts,
+  orchestration test coverage.
 
 ## 10. Final Verdict
 Nodus is a credible automation scripting runtime with a clean compiler/VM core and a distinctive orchestration layer. The highest-leverage architectural shift for maturity is moving from compile-time module flattening to runtime module objects with per-module bytecode units.
