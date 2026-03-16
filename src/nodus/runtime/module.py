@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from nodus.compiler.compiler import FunctionInfo
 
 
-NODUS_BYTECODE_VERSION = 3  # v1.0: LOAD_LOCAL removed from VM dispatch table
+NODUS_BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode added
 
 
 @dataclass

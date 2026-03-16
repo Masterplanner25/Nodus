@@ -56,7 +56,7 @@ from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
 from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_workflow_ast
 
 
-BYTECODE_VERSION = 3  # v1.0: LOAD_LOCAL removed from VM dispatch table
+BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode added
 
 
 def wrap_bytecode(
@@ -490,12 +490,20 @@ class Compiler:
             return
 
         if isinstance(stmt, TryCatch):
-            setup_idx = self.emit("SETUP_TRY", None)
+            has_finally = stmt.finally_block is not None
+            if has_finally:
+                setup_idx = self.emit("SETUP_TRY", None, None)
+            else:
+                setup_idx = self.emit("SETUP_TRY", None)
             self.compile_stmt(stmt.try_block)
             self.emit("POP_TRY")
-            jmp_end = self.emit("JUMP", None)
+            if not has_finally:
+                jmp_end = self.emit("JUMP", None)
             handler_ip = len(self.code)
-            self.patch(setup_idx, "SETUP_TRY", handler_ip)
+            if has_finally:
+                self.patch(setup_idx, "SETUP_TRY", handler_ip, None)
+            else:
+                self.patch(setup_idx, "SETUP_TRY", handler_ip)
             if self.symbols is not None:
                 self.symbols.enter_scope("block")
                 self.symbols.define(stmt.catch_var)
@@ -507,7 +515,15 @@ class Compiler:
             self.compile_stmt(stmt.catch_block)
             if self.symbols is not None:
                 self.symbols.exit_scope()
-            self.patch(jmp_end, "JUMP", len(self.code))
+            if has_finally:
+                jmp_finally = self.emit("JUMP", None)
+                finally_ip = len(self.code)
+                self.patch(setup_idx, "SETUP_TRY", handler_ip, finally_ip)
+                self.patch(jmp_finally, "JUMP", finally_ip)
+                self.compile_stmt(stmt.finally_block)
+                self.emit("FINALLY_END")
+            else:
+                self.patch(jmp_end, "JUMP", len(self.code))
             return
 
         if isinstance(stmt, Throw):

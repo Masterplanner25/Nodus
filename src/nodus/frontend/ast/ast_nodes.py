@@ -306,6 +306,7 @@ class TryCatch(Base):
     try_block: object
     catch_var: str
     catch_block: object
+    finally_block: object = None
 
 
 @dataclass

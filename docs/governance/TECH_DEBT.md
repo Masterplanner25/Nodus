@@ -67,12 +67,14 @@ Coroutine + iteration interaction tests added.
 
 ## Exception model finalization
 
-`SETUP_TRY` / `POP_TRY` / `THROW` are provisional pending a decision on `finally` blocks
-and typed catches. If either feature is added before v1.0, these opcodes need new operands
-or companion opcodes.
+✅ `finally` block support implemented at v1.0. `SETUP_TRY` extended to two operands
+(`handler_ip`, `finally_ip`). `POP_TRY` updated to redirect to `finally_ip` on normal
+exit. New `FINALLY_END` opcode added. Handler stack extended to 4-tuple
+`(handler_ip, finally_ip, stack_depth, frame_depth)`. Deferred-return mechanism added
+to `_op_return`. `BYTECODE_VERSION` bumped to 4.
 
-**v0.9 decision:** `finally` blocks deferred to v1.0. Exception opcodes remain provisional.
-See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
+`SETUP_TRY` / `POP_TRY` / `FINALLY_END` / `THROW` remain provisional pending typed/
+pattern-matched catch (post-v1.0). See `FREEZE_PROPOSAL.md § "v1.0 Decision"`.
 
 ## Open Items (not yet complete)
 
@@ -81,9 +83,9 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 - ✅ compile_source() public stub removed in v0.9 from nodus.__init__. Loader body retained for internal use; removal target v1.0. test_import_containment.py uses loader directly and will need updating at v1.0.
 - ✅ `LOAD_LOCAL` deprecated opcode: removed from VM dispatch table in v1.0. `_op_load_local` replaced with `RuntimeError` tombstone. `BYTECODE_VERSION` bumped from 2 to 3 to invalidate version-2 caches. See DEPRECATIONS.md.
 - ✅ Registry publish and auth: `nodus publish` command and token management implemented in v0.9. `RegistryClient` now supports Bearer token auth. `get_registry_token()` in `package_manager.py` resolves tokens via CLI flag, `NODUS_REGISTRY_TOKEN` env var, or `~/.nodus/config.toml`. `nodus login`/`nodus logout` CLI commands added. See `docs/tooling/PACKAGE_MANAGER.md` Authentication section.
-- ✅ Provisional opcode resolution (partial): `GET_ITER`, `ITER_NEXT`, `BUILD_MODULE`, `YIELD` promoted to stable at v1.0. 3 opcodes remain provisional: `SETUP_TRY`, `POP_TRY`, `THROW` (all blocked on `finally` implementation). See `FREEZE_PROPOSAL.md` for details.
+- ✅ Provisional opcode resolution: all 7 opcodes promoted to stable. `GET_ITER`, `ITER_NEXT`, `BUILD_MODULE`, `YIELD` promoted first; `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW` promoted at v1.0 freeze declaration (2026-03-15). Zero provisional opcodes remain. See `FREEZE_PROPOSAL.md`.
 - ✅ `GET_ITER`/`ITER_NEXT` Iterator protocol cleanup: complete at v1.0. `pending_get_iter`/`pending_iter_next` flags replaced by first-class `Iterator` protocol object. VM-only change; no compiler or `.nd` source impact. See section above and FREEZE_PROPOSAL.md v1.0 decisions.
-- `finally` block implementation: requires new opcode or extended `SETUP_TRY` operand. See FREEZE_PROPOSAL.md v0.9 decisions.
+- ✅ `finally` block implementation: complete at v1.0. `SETUP_TRY` extended to 2 operands; `POP_TRY` updated; `FINALLY_END` added; handler_stack to 4-tuple; `BYTECODE_VERSION` bumped to 4. See Exception model section above.
 - ✅ `_op_throw` structured value preservation: `_op_throw` (vm.py:2142) now preserves structured values (Records, lists) as `err.payload` in the catch block rather than stringifying. Strings use the message directly; primitives are stringified; Records/lists are passed as `payload` with `kind="thrown"`. `LangRuntimeError` now carries an optional `payload` field. `handle_exception` includes `payload` in the error Record when present. Fixed in v1.0.
 - ✅ `YIELD_VALUE`/`SEND` opcode evaluation: decision made. YIELD frozen as-is. No new opcode needed — no user-facing send-value use cases in `.nd` source. Recorded in FREEZE_PROPOSAL.md.
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
@@ -108,7 +110,7 @@ See `FREEZE_PROPOSAL.md § "v0.9 Opcode Decisions"` for rationale.
 - ✅ `test_task_reassignment_after_worker_failure` flaky test: fixed in v0.9.1. Root cause: `_poll_job` was spinning on `WorkerManager.poll()` every 10ms with a 2-second window; under concurrency the VM thread occasionally missed the window. Fix: added `WorkerManager.wait_for_job()` which blocks on the existing `_cond` condition variable (already notified by `submit()`). `_poll_job` now delegates to `wait_for_job()`. No polling, no race. Test runtime: ~20ms (was up to 2s). See `src/nodus/services/server.py`.
 
 - ✅ Formatter AST coverage audit complete: all 48 AST node types handled in format_stmt()/format_expr(). Added Yield, Throw, TryCatch, DestructureLet, VarPattern, ListPattern, RecordPattern handlers. See tests/test_formatter_coverage.py.
-- ✅ Opcode set stabilization plan: formal freeze proposal published at docs/governance/FREEZE_PROPOSAL.md. 47 opcodes classified (43 stable, 3 provisional, 1 deprecated as of v1.0). Freeze prerequisites, post-freeze extension process, and version history documented. See GET_ITER/Exception model sections above for provisional opcode cleanup items.
+- ✅ Opcode set frozen: freeze declared 2026-03-15. 48 opcodes (47 active + 1 removed); **47 stable, 0 provisional, 1 removed** (`LOAD_LOCAL`). `BYTECODE_VERSION = 4`. See `FREEZE_PROPOSAL.md` for the formal declaration and post-freeze extension process.
 
 ## Phase 4 Fixes Applied (documentation completeness)
 

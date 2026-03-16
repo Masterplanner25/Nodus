@@ -24,6 +24,9 @@ from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow
 from nodus.orchestration.workflow_state import checkpoints_public
 
 
+_DEFERRED_NONE = object()  # sentinel: no deferred return pending
+
+
 class Cell:
     def __init__(self, value=None):
         self.value = value
@@ -166,7 +169,8 @@ class VM:
         self.trace_count = 0
         self.debug = debug or debugger is not None
         self.debugger = debugger
-        self.handler_stack: list[tuple[int, int, int]] = []
+        self.handler_stack: list[tuple[int, int, int, int]] = []
+        self._deferred_return = _DEFERRED_NONE
         self.current_coroutine: Coroutine | None = None
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
@@ -310,11 +314,11 @@ class VM:
     def handle_exception(self, err: LangRuntimeError) -> bool:
         if not self.handler_stack:
             return False
-        handler_ip, stack_depth, frame_depth = self.handler_stack.pop()
+        handler_ip, _finally_ip, stack_depth, frame_depth = self.handler_stack.pop()
         while len(self.frames) > frame_depth:
             frame = self.frames.pop()
             self._profiler_exit_frame(frame)
-        while self.handler_stack and self.handler_stack[-1][2] > len(self.frames):
+        while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
             self.handler_stack.pop()
         if len(self.stack) > stack_depth:
             self.stack = self.stack[:stack_depth]
@@ -333,13 +337,14 @@ class VM:
         self.ip = handler_ip
         return True
 
-    def setup_try(self, handler_ip: int):
-        self.handler_stack.append((handler_ip, len(self.stack), len(self.frames)))
+    def setup_try(self, handler_ip: int, finally_ip: int = 0):
+        self.handler_stack.append((handler_ip, finally_ip, len(self.stack), len(self.frames)))
 
-    def pop_try(self):
+    def pop_try(self) -> int:
         if not self.handler_stack:
             self.runtime_error("runtime", "POP_TRY without handler")
-        self.handler_stack.pop()
+        _, finally_ip, _, _ = self.handler_stack.pop()
+        return finally_ip
 
     def current_locals(self) -> dict | None:
         if not self.frames:
@@ -818,6 +823,7 @@ class VM:
         self.stack = []
         self.frames = []
         self.handler_stack = []
+        self._deferred_return = _DEFERRED_NONE
         self.current_coroutine = None
         self.scheduler = Scheduler(self, trace=self.trace_scheduler, trace_output=self.scheduler_output)
         self._last_batch_emit = 0
@@ -1889,12 +1895,39 @@ class VM:
             self.runtime_error("type", "Iterator is not supported")
 
     def _op_setup_try(self, instr):
-        self.setup_try(instr[1])
+        finally_ip = instr[2] if len(instr) > 2 else 0
+        self.setup_try(instr[1], finally_ip)
         self.ip += 1
 
     def _op_pop_try(self, instr):
-        self.pop_try()
-        self.ip += 1
+        finally_ip = self.pop_try()
+        if finally_ip != 0:
+            self.ip = finally_ip
+        else:
+            self.ip += 1
+
+    def _op_finally_end(self, instr):
+        if self._deferred_return is not _DEFERRED_NONE:
+            ret_value = self._deferred_return
+            self._deferred_return = _DEFERRED_NONE
+            if not self.frames:
+                self.runtime_error("runtime", "FINALLY_END deferred return outside function")
+            frame = self.frames.pop()
+            self._profiler_exit_frame(frame)
+            self.record_vm_return(self.display_name(frame.fn_name))
+            while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
+                self.handler_stack.pop()
+            if self.current_coroutine is not None and frame.return_ip is None:
+                self.current_coroutine.state = "finished"
+                self.current_coroutine.ip = None
+                self.current_coroutine.stack = []
+                self.current_coroutine.frames = []
+                self.current_coroutine.handler_stack = []
+                return ("return", ret_value)
+            self.stack.append(ret_value)
+            self.ip = frame.return_ip
+        else:
+            self.ip += 1
 
     def _op_to_bool(self, instr):
         self.stack.append(self.is_truthy(self.pop()))
@@ -2174,10 +2207,18 @@ class VM:
         ret_value = self.pop()
         if not self.frames:
             self.runtime_error("runtime", "RETURN outside function")
+        # If a finally block is pending in the current frame, defer the return.
+        if (self.handler_stack and
+                self.handler_stack[-1][3] == len(self.frames) and
+                self.handler_stack[-1][1] != 0):
+            _, finally_ip, _, _ = self.handler_stack.pop()
+            self._deferred_return = ret_value
+            self.ip = finally_ip
+            return
         frame = self.frames.pop()
         self._profiler_exit_frame(frame)
         self.record_vm_return(self.display_name(frame.fn_name))
-        while self.handler_stack and self.handler_stack[-1][2] > len(self.frames):
+        while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
             self.handler_stack.pop()
         if self.current_coroutine is not None and frame.return_ip is None:
             self.current_coroutine.state = "finished"
@@ -2231,6 +2272,7 @@ class VM:
             "ITER_NEXT":    self._op_iter_next,
             "SETUP_TRY":    self._op_setup_try,
             "POP_TRY":      self._op_pop_try,
+            "FINALLY_END":  self._op_finally_end,
             "TO_BOOL":      self._op_to_bool,
             "NOT":          self._op_not,
             "NEG":          self._op_neg,

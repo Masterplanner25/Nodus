@@ -1,11 +1,57 @@
-# Nodus Opcode Freeze Proposal — v0.8
+# Nodus Opcode Freeze — v1.0
+
+---
+
+## ✅ FREEZE DECLARED — Nodus v1.0
+
+**Date:** 2026-03-15
+**Version:** Nodus v1.0
+**BYTECODE_VERSION:** 4
+
+The Nodus opcode set is hereby frozen.
+
+### Freeze Summary
+
+| Metric | Value |
+|---|---|
+| Total opcodes (active) | **47** |
+| Stable | **47** |
+| Provisional | **0** |
+| Removed | 1 (`LOAD_LOCAL`) |
+| Total in opcode space | 48 |
+
+All opcodes previously classified as provisional have been resolved:
+
+| Opcode | Resolved by | v1.0 Status |
+|---|---|---|
+| `GET_ITER` | Iterator protocol object (v1.0) | ✅ stable |
+| `ITER_NEXT` | Iterator protocol object (v1.0) | ✅ stable |
+| `SETUP_TRY` | finally implementation (v1.0) | ✅ stable |
+| `POP_TRY` | finally implementation (v1.0) | ✅ stable |
+| `FINALLY_END` | New opcode for finally termination (v1.0) | ✅ stable |
+| `THROW` | `_op_throw` structured values (v1.0) | ✅ stable |
+| `YIELD` | No new opcode needed — decision v0.9 | ✅ stable |
+| `BUILD_MODULE` | Module system frozen (v1.0) | ✅ stable |
+
+### What Freeze Means
+
+- **Stable opcodes** are locked. Their names, operand formats, and stack effects will
+  not change in any v1.x release.
+- **Post-freeze additions** require a `BYTECODE_VERSION` bump, a new entry in
+  `BYTECODE_REFERENCE.md`, and an amendment to this document via the extension
+  process defined below.
+- **Breaking changes** to stable opcode semantics require a major version increment
+  (v2.0).
+- **Deprecated opcodes** (`LOAD_LOCAL`) retain their tombstone handler permanently;
+  the tombstone raises a clear `RuntimeError` directing users to recompile.
+
+---
 
 ## Purpose
 
-This document proposes the stability classification for all 47 opcodes in the
-Nodus VM dispatch table as of v0.8.0.  The opcode set will be formally frozen at
-v1.0.  After freeze, adding or removing an opcode requires a bytecode version
-bump and an RFC-style addition to this document.
+This document records the stability classification for all opcodes in the Nodus VM
+dispatch table. The opcode set was formally frozen at v1.0. After freeze, adding or
+removing an opcode requires a bytecode version bump and an amendment to this document.
 
 The three stability classifications used here:
 
@@ -29,18 +75,20 @@ Items marked ✅ were completed in v0.8.
   mechanism replaced by a first-class `Iterator` protocol object in v1.0. Both
   opcodes now operate synchronously via `run_closure()`. Promoted to stable at v1.0.
   See `TECH_DEBT.md § "GET_ITER pending_get_iter cleanup"` and v1.0 Decision below.
-- [ ] `SETUP_TRY` / `POP_TRY` / `THROW` — decision needed on whether `finally`
-  blocks or typed catches will be added before v1.0. If yes, these opcodes must
-  be revised before freeze. See TECH_DEBT.md § "Exception model finalization".
-- [ ] `BUILD_MODULE` — module-object semantics are still evolving (live bindings,
-  re-export, aliasing). Classify stable once the module system is declared
-  frozen at v1.0.
+- [x] ✅ `SETUP_TRY` / `POP_TRY` / `THROW` — `finally` block support implemented at v1.0.
+  `SETUP_TRY` extended to two operands (`handler_ip`, `finally_ip`). `POP_TRY` updated to
+  redirect to `finally_ip` on normal exit. New `FINALLY_END` opcode added. Handler stack
+  extended to 4-tuple. Deferred-return mechanism added to `_op_return`. `BYTECODE_VERSION`
+  bumped to 4. See v1.0 Decision below.
+- [x] ✅ `BUILD_MODULE` — promoted to stable at v1.0. Module system (live bindings,
+  re-exports, circular detection, `std:` stdlib) is feature-complete and frozen.
+  See v1.0 Decision below.
 
 ---
 
 ## Opcode Stability Table
 
-47 total opcodes as of v0.8.0 (`BYTECODE_VERSION = 2`).
+48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.)
 
 ### Constants / Literals
 
@@ -140,9 +188,10 @@ Items marked ✅ were completed in v0.8.
 
 | Opcode | Stack effect | Classification | Notes |
 |---|---|---|---|
-| `SETUP_TRY` | none | **provisional** | Pushes an exception handler entry. Operand: handler IP. May be revised if `finally` or typed catches are added before v1.0. |
-| `POP_TRY` | none | **provisional** | Pops the current exception handler on clean exit from a try block. Same concern as SETUP_TRY. |
-| `THROW` | `val →` | **provisional** | Raises a Nodus-level exception. May be revised alongside SETUP_TRY. |
+| `SETUP_TRY` | none | **stable** | Pushes a 4-tuple `(handler_ip, finally_ip, stack_depth, frame_depth)`. Two operand forms: `SETUP_TRY handler` (no finally) and `SETUP_TRY handler finally`. Encoding frozen at v1.0. |
+| `POP_TRY` | none | **stable** | Pops the current exception handler on clean exit. If `finally_ip != 0`, redirects to finally block instead of advancing ip. Behavior frozen at v1.0. |
+| `FINALLY_END` | none (or full return) | **stable** | End of finally block. Completes a deferred RETURN if pending; otherwise ip += 1. Added v1.0. Promoted to stable at v1.0. |
+| `THROW` | `val →` | **stable** | Raises a Nodus-level exception. Non-string values preserved as structured payload (`err.kind="thrown"`, `err.payload=value`). Behavior frozen at v1.0. |
 
 ### Collections
 
@@ -180,20 +229,24 @@ Items marked ✅ were completed in v0.8.
 
 | Classification | Count |
 |---|---|
-| stable | 43 |
-| provisional | 3 (`SETUP_TRY`, `POP_TRY`, `THROW`) |
+| **stable** | **47** |
+| provisional | 0 |
 | removed | 1 (`LOAD_LOCAL`) |
-| **Total (active)** | **46** |
+| **Total (active)** | **47** |
 
-(Stable count: PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
+(Stable count — all 47 active opcodes:
+PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
 LOAD_UPVALUE, STORE_UPVALUE, STORE_ARG, POP, ADD, SUB, MUL, DIV, EQ, NE, LT, GT, LE, GE,
 NOT, NEG, TO_BOOL, JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VALUE, CALL_METHOD,
 MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
-LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT = **43 stable**, 3 provisional.)
+LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT,
+SETUP_TRY, POP_TRY, FINALLY_END, THROW = **47 stable**.)
 
-Totals: **43 stable**, **3 provisional**, **1 removed** = 46 active + 1 removed.
-(v1.0 update: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted from provisional to stable.
- LOAD_LOCAL removed from dispatch table; BYTECODE_VERSION bumped to 3.)
+Totals: **47 stable**, **0 provisional**, **1 removed** = 47 active + 1 removed = 48 total.
+(v1.0: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted to stable. LOAD_LOCAL removed.
+ BYTECODE_VERSION bumped 2→3 (LOAD_LOCAL removal) then 3→4 (finally support).
+ FINALLY_END added; SETUP_TRY/POP_TRY extended. SETUP_TRY, POP_TRY, FINALLY_END, THROW
+ promoted to stable at freeze declaration.)
 
 ---
 
@@ -208,14 +261,15 @@ Totals: **43 stable**, **3 provisional**, **1 removed** = 46 active + 1 removed.
    `Iterator` protocol object. Both opcodes are now synchronous and stable. No
    observable stack/execution behavior change for correct programs.
 
-3. **Exception model gap** — `finally` blocks and typed `catch` are not yet supported.
-   If these are added before v1.0, `SETUP_TRY` / `POP_TRY` will need new operands or
-   new companion opcodes.
+3. ✅ **Exception model — finally blocks** — `finally` blocks implemented at v1.0. `SETUP_TRY`
+   extended to two operands; `POP_TRY` updated; `FINALLY_END` opcode added; handler stack
+   extended to 4-tuple; deferred return mechanism added. `BYTECODE_VERSION` bumped to 4.
+   Typed/pattern-matched catches remain post-v1.0.
 
-4. **`YIELD` coroutine resume** — the scheduler currently drives coroutines by sending
-   values back via `builtin_coroutine_resume`. The protocol is stable in practice but
-   the send-value path is implicit. Formalizing it may require a `YIELD_VALUE` or
-   `SEND` opcode.
+4. ✅ **`YIELD` coroutine resume** — decision made at v1.0. YIELD is frozen as-is.
+   The send-value path via `builtin_coroutine_resume()` is not user-accessible from `.nd`
+   source and does not require a dedicated opcode. A `YIELD_VALUE` / `SEND` opcode is
+   deferred post-v1.0 if send-value coroutines become a user requirement.
 
 5. **No known duplicate or redundant opcodes.** No merge candidates identified.
 
@@ -255,24 +309,28 @@ fields. 14 pending-flag sites removed across `vm.py`. VM-only change; no compile
 
 **Classification:** → promoted to **stable** at v1.0.
 
-### SETUP_TRY / POP_TRY / THROW — remains provisional
+### SETUP_TRY / POP_TRY / FINALLY_END / THROW — v1.0 Decision
 
-**v0.9 decision:** `finally` blocks are NOT implemented before v1.0. Exception opcodes
-remain provisional.
+**v0.9 decision:** `finally` blocks NOT implemented before v1.0. Deferred to v1.0.
 
-**Current capability:** Basic `try { } catch err { }` is supported and stable in
-practice. Multiple catch clauses, `finally` blocks, and typed/pattern-matched catches
-are not supported.
+**v1.0 decision:** `finally` block support implemented. All four exception opcodes
+promoted to **stable** at v1.0 freeze declaration. Typed/pattern-matched catch is post-v1.0.
 
-**Rationale:** Adding `finally` requires either a new `SETUP_FINALLY` opcode or
-extending `SETUP_TRY`'s operand format, which changes the handler stack tuple
-structure. The implementation cost is Large and is not justified for v0.9.
-
-**v1.0 scope for exception model:**
-- `finally` blocks (new opcode or extended `SETUP_TRY`)
-- ✅ Structured value preservation in `throw` — `_op_throw` (vm.py:2142) now preserves
+**Changes at v1.0:**
+- `SETUP_TRY` extended to two operands: `SETUP_TRY <handler_ip> [<finally_ip>]`.
+  `finally_ip = 0` means no finally. Handler stack extended to 4-tuple
+  `(handler_ip, finally_ip, stack_depth, frame_depth)`.
+- `POP_TRY` updated: if `finally_ip != 0`, redirects execution to `finally_ip`
+  on normal exit instead of advancing ip.
+- New `FINALLY_END` opcode added. Completes a deferred RETURN if `_deferred_return`
+  is set; otherwise `ip += 1`.
+- `_op_return` updated: detects a pending finally in the current frame and defers
+  the return by storing the value in `_deferred_return` and jumping to `finally_ip`.
+- ✅ Structured value preservation in `throw` — `_op_throw` now preserves
   Records/lists as `err.payload` with `kind="thrown"`. Fixed in v1.0.
-- Typed/pattern-matched catches: post-v1.0
+- Typed/pattern-matched catches: post-v1.0.
+
+**BYTECODE_VERSION bumped to 4.** (3 → 4; previous bump 2 → 3 was for LOAD_LOCAL removal.)
 
 ### YIELD — remains provisional
 
@@ -328,17 +386,22 @@ The `Record` structure produced by `BUILD_MODULE` is frozen.
 
 **Classification:** → promoted to **stable** at v1.0.
 
-## Remaining Provisional Opcodes (as of v1.0 planning)
+## Provisional Opcode Resolution (v1.0 complete)
 
-| Opcode | Unblocked by |
-|---|---|
-| ✅ `GET_ITER`, `ITER_NEXT` | ✅ Iterator protocol cleanup complete at v1.0. Promoted to stable. |
-| `SETUP_TRY`, `POP_TRY`, `THROW` | `finally` block implementation (new opcode or extended `SETUP_TRY` operand). THROW remains provisional because it may be revised alongside SETUP_TRY when `finally` is added. |
+All 7 opcodes that entered v1.0 planning as provisional have been resolved:
 
-Three opcodes remain provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), all blocked on
-`finally` implementation. `GET_ITER` and `ITER_NEXT` were promoted to stable via the
-Iterator protocol cleanup at v1.0. All remaining provisional opcodes are targeted for
-stable classification once the `finally` implementation is complete.
+| Opcode | Resolved by | Final status |
+|---|---|---|
+| `GET_ITER` | Iterator protocol cleanup — first-class `Iterator` object | ✅ **stable** |
+| `ITER_NEXT` | Iterator protocol cleanup — first-class `Iterator` object | ✅ **stable** |
+| `YIELD` | Decision: frozen as-is — no send-value opcode needed | ✅ **stable** |
+| `BUILD_MODULE` | Module system frozen at v1.0 | ✅ **stable** |
+| `SETUP_TRY` | finally implementation — 2-operand form, 4-tuple handler stack | ✅ **stable** |
+| `POP_TRY` | finally implementation — finally_ip redirect on normal exit | ✅ **stable** |
+| `FINALLY_END` | New opcode added for finally block termination | ✅ **stable** |
+| `THROW` | `_op_throw` structured value preservation (`err.payload`) | ✅ **stable** |
+
+**Zero provisional opcodes remain. Freeze is complete.**
 
 ---
 
@@ -371,4 +434,4 @@ survive at least one full release cycle after deprecation before removal.
 | Version | Event |
 |---|---|
 | v0.8.0 | Initial freeze proposal drafted. 47 opcodes classified. LOAD_LOCAL_IDX and STORE_LOCAL_IDX added. FRAME_SIZE added. LOAD_LOCAL deprecated. Bytecode version bumped to 2. |
-| v1.0 | Formal freeze — stable opcodes are locked. POST-FREEZE process applies. LOAD_LOCAL removed from dispatch table (tombstone handler remains). BYTECODE_VERSION bumped to 3. GET_ITER, ITER_NEXT, BUILD_MODULE, YIELD promoted to stable. 46 active opcodes. |
+| v1.0 | Formal freeze declared 2026-03-15. All 47 active opcodes are stable. Zero provisional opcodes. LOAD_LOCAL removed (tombstone). BYTECODE_VERSION = 4. GET_ITER, ITER_NEXT, BUILD_MODULE, YIELD, SETUP_TRY, POP_TRY, FINALLY_END, THROW all promoted to stable. FINALLY_END opcode added. SETUP_TRY/POP_TRY extended. |

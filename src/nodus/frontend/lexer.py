@@ -46,6 +46,7 @@ KEYWORDS = {
     "from",
     "try",
     "catch",
+    "finally",
     "throw",
     "record",
     "in",

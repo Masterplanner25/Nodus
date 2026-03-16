@@ -276,6 +276,8 @@ class _SemanticAnalyzer:
             self._bind(stmt.catch_var, kind="catch", tok=getattr(stmt, "_tok", None))
             self._walk_stmt(stmt.catch_block)
             self._pop_scope()
+            if stmt.finally_block is not None:
+                self._walk_stmt(stmt.finally_block)
             return False
         if isinstance(stmt, Throw):
             self._walk_expr(stmt.expr)

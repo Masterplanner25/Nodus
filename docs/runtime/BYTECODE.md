@@ -193,14 +193,27 @@ Exception support allows structured error handling.
 
 SETUP_TRY
 
-Registers an exception handler.
+Registers an exception handler, and optionally a finally block.
 
 SETUP_TRY <handler_ip>
+SETUP_TRY <handler_ip> <finally_ip>
+
+When `finally_ip` is present and non-zero, `POP_TRY` on normal exit redirects
+to `finally_ip` instead of the next instruction.
+
 POP_TRY
 
-Removes the current exception handler.
+Removes the current exception handler. If the popped entry has a non-zero
+`finally_ip`, redirects execution to the finally block (instead of advancing ip).
 
 POP_TRY
+FINALLY_END
+
+Signals the end of a finally block. If a deferred return is pending (set by a
+RETURN instruction executed while a finally was active), completes the return.
+Otherwise advances ip by 1.
+
+FINALLY_END
 THROW
 
 Raises an exception.
@@ -309,7 +322,7 @@ Instructions such as PUSH_CONST reference this table by index.
 12. Bytecode Versioning
 
 The bytecode format is versioned. `BYTECODE_VERSION` in `src/nodus/compiler/compiler.py` is the
-authoritative constant (currently `3`). The version is embedded in every compiled bytecode dict
+authoritative constant (currently `4`). The version is embedded in every compiled bytecode dict
 and checked on cache load; a mismatch silently invalidates the cache entry and triggers recompilation.
 
 Disk cache file format (`src/nodus/runtime/bytecode_cache.py`):
@@ -330,6 +343,10 @@ Version history:
   0x03 — v1.0:   LOAD_LOCAL removed from VM dispatch table; compiler fallback paths replaced
                   with assertions; bytecode compiled with version 0x02 is incompatible and is
                   recompiled automatically
+  0x04 — v1.0:   finally block support added; FINALLY_END opcode added; SETUP_TRY extended
+                  to two operands (handler_ip, finally_ip); handler_stack tuples extended to
+                  4-tuple; bytecode compiled with version 0x03 is incompatible and is recompiled
+                  automatically
 
 Tooling compatibility: compiler, VM, and cache share the same `BYTECODE_VERSION` constant to ensure compatibility between:
 

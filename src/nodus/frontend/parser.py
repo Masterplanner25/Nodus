@@ -243,7 +243,12 @@ class Parser:
             self.eat("CATCH")
             catch_var = self.eat("ID").val
             catch_block = self.block()
-            return self.mark(TryCatch(try_block, catch_var, catch_block), start)
+            finally_block = None
+            self.skip_seps()
+            if self.at("FINALLY"):
+                self.eat("FINALLY")
+                finally_block = self.block()
+            return self.mark(TryCatch(try_block, catch_var, catch_block, finally_block), start)
 
         if self.at("THROW"):
             start = self.eat("THROW")

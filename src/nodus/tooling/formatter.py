@@ -244,7 +244,12 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         try_lines = format_block(stmt.try_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
         catch_header = f"{prefix}}} catch {stmt.catch_var} {{"
         catch_lines = format_block(stmt.catch_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        out = [try_header] + try_lines + [catch_header] + catch_lines + [f"{prefix}}}"]
+        if stmt.finally_block is not None:
+            finally_header = f"{prefix}}} finally {{"
+            finally_lines = format_block(stmt.finally_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
+            out = [try_header] + try_lines + [catch_header] + catch_lines + [finally_header] + finally_lines + [f"{prefix}}}"]
+        else:
+            out = [try_header] + try_lines + [catch_header] + catch_lines + [f"{prefix}}}"]
         return lines + out + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, DestructureLet):

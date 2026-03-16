@@ -152,6 +152,8 @@ class Analyzer(NodeVisitor):
             self.bind(stmt.catch_var, STRING)
             self.analyze_stmt(stmt.catch_block)
             self.pop_scope()
+            if stmt.finally_block is not None:
+                self.analyze_stmt(stmt.finally_block)
             return
         if isinstance(stmt, Throw):
             self.infer_expr(stmt.expr)

@@ -10,7 +10,7 @@ class Coroutine:
     ip: int | None = None
     stack: list = field(default_factory=list)
     frames: list = field(default_factory=list)
-    handler_stack: list[tuple[int, int, int]] = field(default_factory=list)
+    handler_stack: list[tuple[int, int, int, int]] = field(default_factory=list)
     id: int | None = None
     name: str | None = None
     module: str | None = None

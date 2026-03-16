@@ -2,6 +2,45 @@
 
 All notable changes to Nodus are documented here.
 
+## [1.0.0] — 2026-03-15
+
+**The Nodus opcode set is frozen. This is the first stable release.**
+
+### Changed (Breaking — bytecode cache invalidated)
+- `BYTECODE_VERSION` bumped from 3 to 4. All existing `.ndsc` cache files are
+  automatically invalidated and recompiled on next load.
+
+### Added
+- **`finally` block support** — `try { } catch e { } finally { }` syntax. All three
+  normal-path execution paths handled: try-success, caught exception, return-inside-try.
+  - `FINALLY_END` opcode added (signals end of finally block; completes deferred returns).
+  - `SETUP_TRY` extended to two operands: `SETUP_TRY handler_ip [finally_ip]`.
+  - `POP_TRY` updated: redirects to `finally_ip` on normal try exit when non-zero.
+  - `_deferred_return` mechanism in `_op_return` for deferred returns through finally.
+  - Handler stack extended from 3-tuple to 4-tuple: `(handler_ip, finally_ip, stack_depth, frame_depth)`.
+  - `FINALLY` keyword added to lexer; `TryCatch` AST extended with `finally_block` field.
+  - Formatter, diagnostics, analyzer, LSP server, and workflow lowering updated.
+  - 15 new tests in `tests/test_finally.py`.
+
+### Changed
+- **Opcode freeze declared** — all 47 active opcodes promoted to stable.
+  Zero provisional opcodes. `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW` promoted
+  at freeze declaration. See `docs/governance/FREEZE_PROPOSAL.md`.
+
+### Previous v1.0 changes (accumulated from v0.9.x):
+- **Iterator protocol cleanup** — `GET_ITER`/`ITER_NEXT` use first-class `Iterator`
+  objects. `pending_get_iter`/`pending_iter_next` VM flags removed. Both promoted to stable.
+- **`_op_throw` structured values** — non-string thrown values preserved as `err.payload`
+  with `err.kind="thrown"`. Strings become `err.message` directly.
+- **`LOAD_LOCAL` removed** — opcode removed from VM dispatch table; `_op_load_local`
+  replaced with `RuntimeError` tombstone. Three compiler fallback paths confirmed
+  unreachable via audit; replaced with `assert` guards. `BYTECODE_VERSION` bumped 2→3.
+- **`NodusRuntime` added to `nodus.__all__`** — `from nodus import NodusRuntime` works.
+- **`compile_source()` fully removed** — function body removed from `nodus.tooling.loader`.
+  Last test caller migrated to `ModuleLoader`.
+- **Module system frozen** — `BUILD_MODULE` promoted to stable. Module system
+  (live bindings, re-exports, circular detection) is feature-complete.
+
 ## [0.9.1] — 2026-03-15
 
 ### Fixed

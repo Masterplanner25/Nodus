@@ -1,9 +1,14 @@
 ﻿# Nodus Bytecode Reference
 
-## 1. Executive Summary
-Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The current instruction set is **small-to-medium and maturing**: still compact, but now broad enough to support control flow, functions, short-circuit logic, mutable collections, and runtime services through builtins. The opcode set currently contains **47 opcodes**.
+> **The Nodus opcode set was frozen at v1.0 (2026-03-15).**
+> All 47 active opcodes are **stable**. Zero provisional opcodes remain.
+> Post-freeze additions follow the extension process in
+> [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md).
 
-**Opcode stability classifications** (stable / provisional / removed) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: 43 stable, 3 provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), 1 removed (`LOAD_LOCAL`). Total active opcodes in dispatch table: 46.
+## 1. Executive Summary
+Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The instruction set is **frozen at v1.0**: 47 active stable opcodes, `BYTECODE_VERSION = 4`.
+
+**Opcode stability classifications** (stable / removed) and the v1.0 freeze declaration are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: **47 stable**, 0 provisional, 1 removed (`LOAD_LOCAL`). Total active opcodes in dispatch table: **47**.
 
 ## 2. VM Model Overview
 - Stack model:
@@ -280,18 +285,29 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 ### SETUP_TRY
 - Category: exceptions
 - Stack behavior: no stack change
-- Operands: handler IP (absolute)
+- Operands: `handler_ip` (absolute); optional `finally_ip` (absolute, 0 = no finally)
 - Emitted by compiler: yes
-- Purpose: push an exception handler for the current frame
-- Notes / edge cases: runtime error if handler IP is invalid.
+- **Status: stable** (frozen at v1.0)
+- Purpose: push an exception handler (and optional finally target) for the current frame. Pushes 4-tuple `(handler_ip, finally_ip, stack_depth, frame_depth)` onto `handler_stack`.
+- Notes / edge cases: when `finally_ip` is non-zero, `POP_TRY` on normal exit redirects to the finally block.
 
 ### POP_TRY
 - Category: exceptions
 - Stack behavior: no stack change
 - Operands: none
 - Emitted by compiler: yes
-- Purpose: remove the most recent exception handler
+- **Status: stable** (frozen at v1.0)
+- Purpose: remove the most recent exception handler; if `finally_ip` is non-zero, redirect execution to the finally block
 - Notes / edge cases: runtime error if no handler exists.
+
+### FINALLY_END
+- Category: exceptions
+- Stack behavior: no stack change (or full return if deferred return is pending)
+- Operands: none
+- Emitted by compiler: yes (at end of every finally block)
+- **Status: stable** (added and frozen at v1.0)
+- Purpose: complete a finally block; if a deferred RETURN is pending, execute it now; otherwise advance ip
+- Notes / edge cases: deferred return is set by RETURN executing while a finally-bearing handler is active.
 
 ### TO_BOOL
 - Category: boolean / logical flow
@@ -437,7 +453,8 @@ STORE x
 - Stack behavior: pops error value; transfers control to handler
 - Operands: none
 - Emitted by compiler: yes
-- Purpose: raise a runtime error with a user-provided value
+- **Status: stable** (frozen at v1.0)
+- Purpose: raise a runtime error with a user-provided value. Non-string values preserved as structured payload (`err.kind="thrown"`, `err.payload=<original value>`). String values become `err.message` directly.
 - Notes / edge cases: if uncaught, error propagates to host with stack trace.
 
 ### YIELD
@@ -481,7 +498,7 @@ Unused/transitional/suspicious opcode notes:
 - Function calls:
   - `CALL`, `CALL_VALUE`, `CALL_METHOD`, `RETURN`, `STORE_ARG`, `YIELD`
 - Exceptions:
-  - `SETUP_TRY`, `POP_TRY`, `THROW`
+  - `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW`
 - Arithmetic/comparison core:
   - `ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `EQ`, `NE`, `LT`, `GT`, `LE`, `GE`
 - Collection construction/indexing/mutation:
@@ -537,6 +554,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Nested function definition emits `MAKE_CLOSURE` then stores into local/global.
   - Return site: `RETURN`.
   - `try/catch` lowers to `SETUP_TRY handler`, body, `POP_TRY`, `JUMP end`, handler block.
+  - `try/catch/finally` lowers to `SETUP_TRY handler finally`, body, `POP_TRY`, handler block, `JUMP finally`, finally block, `FINALLY_END`.
 
 - List literal `[a, b, c]`
   - emit `a`, `b`, `c`
@@ -597,7 +615,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Captured variables are boxed in runtime cells and accessed via `LOAD_UPVALUE` / `STORE_UPVALUE`.
   - Closure values are created with `MAKE_CLOSURE` and invoked with `CALL_VALUE`.
 - Exceptions
-  - `SETUP_TRY` and `POP_TRY` manage a handler stack.
+  - `SETUP_TRY`, `POP_TRY`, and `FINALLY_END` manage a handler stack and finally execution.
   - `THROW` raises a runtime error and jumps to the nearest handler.
 
 ## 6. Stack Discipline Assessment
@@ -707,6 +725,7 @@ High-level construct to opcode shape (actual lowering patterns):
 | ITER_NEXT | iteration | `..., iter -> ..., value` | yes |
 | SETUP_TRY | exceptions | no stack change | yes |
 | POP_TRY | exceptions | no stack change | yes |
+| FINALLY_END | exceptions | no stack change (or full return) | yes |
 | TO_BOOL | logical | `..., v -> ..., bool` | yes |
 | NOT | logical | `..., v -> ..., bool` | yes |
 | NEG | arithmetic | `..., v -> ..., -v` | yes |
@@ -728,12 +747,26 @@ High-level construct to opcode shape (actual lowering patterns):
 | HALT | control flow | terminate VM | yes |
 
 ## Opcode Maturity Snapshot
-- Instruction-set classification: **maturing**.
-- VM lifecycle placement: closest to **prototype VM language transitioning into early real scripting runtime**.
-- Most load-bearing opcode families/opcodes today:
+- Instruction-set classification: **frozen at v1.0**.
+- All 47 active opcodes are **stable**. Zero provisional opcodes remain.
+- `BYTECODE_VERSION = 4`. Future opcodes require a version bump and FREEZE_PROPOSAL.md amendment.
+- Most load-bearing opcode families/opcodes:
 1. `CALL`/`RETURN`/`STORE_ARG` (function model, builtins, recursion)
 2. `JUMP` + `JUMP_IF_FALSE` + `JUMP_IF_TRUE` (all structured control flow + short-circuit logic)
 3. `LOAD`/`STORE` (globals/locals variable semantics)
 4. `BUILD_LIST`/`BUILD_MAP` + `INDEX`/`INDEX_SET` (core collection scripting workflows)
 5. `PUSH_CONST` + arithmetic/comparison core (`ADD`..`GE`) (expression engine foundation)
+
+## Removed Opcodes
+
+### LOAD_LOCAL
+- **Deprecated in:** v0.8.0
+- **Removed in:** v1.0
+- **Replaced by:** `LOAD_LOCAL_IDX`
+- **Reason:** Name-keyed local variable access replaced by slot-indexed access
+  (`LOAD_LOCAL_IDX`). The compiler now always emits `LOAD_LOCAL_IDX` for
+  function-local variables. The `_op_load_local` VM handler was replaced with a
+  `RuntimeError` tombstone directing users to recompile.
+- Any bytecode containing `LOAD_LOCAL` will raise:
+  `RuntimeError: LOAD_LOCAL opcode encountered ... Recompile your source ...`
 

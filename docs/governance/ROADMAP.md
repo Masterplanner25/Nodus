@@ -596,15 +596,13 @@ Goals:
 
 Version 1.0
 
-**Critical path:** `finally` implementation (Large) → opcode freeze.
-All other goals can proceed in parallel and are expected to complete before `finally` is done.
+**Critical path:** ✅ `finally` implementation complete → opcode freeze achieved.
 
 Goals:
 
-- Frozen opcode set — all provisional opcodes resolved. YIELD, BUILD_MODULE, GET_ITER,
-  and ITER_NEXT decided (stable). 3 opcodes remain provisional: `SETUP_TRY`, `POP_TRY`,
-  `THROW`. Freeze proposal at `docs/governance/FREEZE_PROPOSAL.md`.
-  **Status:** ⏳ Blocked by finally implementation and `_op_throw` final decision.
+- ✅ Frozen opcode set — all 47 active opcodes stable. Zero provisional opcodes.
+  `BYTECODE_VERSION = 4`. Freeze declared 2026-03-15. See `docs/governance/FREEZE_PROPOSAL.md`.
+  **Status:** ✅ Complete. Freeze declared at v1.0.
 
 - ✅ Stable module system — `BUILD_MODULE` promoted to stable in `FREEZE_PROPOSAL.md`.
   Module system (live bindings, re-exports, circular detection) is feature-complete and frozen.
@@ -625,9 +623,12 @@ Goals:
   promoted to stable. All 379 tests pass. Coroutine+iteration interaction tests added.
   **Status:** ✅ Complete at v1.0.
 
-- `finally` block implementation — new opcode or extended `SETUP_TRY` operand. Requires
-  lexer, AST, parser, compiler, and VM changes. `BYTECODE_VERSION` bump to 3 required.
-  **Status:** ⏳ Not started. Critical path item — longest chain to v1.0.
+- ✅ `finally` block implementation — `SETUP_TRY` extended to two operands; `POP_TRY`
+  updated to redirect to `finally_ip`; `FINALLY_END` opcode added; handler_stack extended
+  to 4-tuple; deferred-return mechanism added to `_op_return`. Full-stack change: lexer,
+  AST, parser, compiler, VM, formatter, LSP, analyzer, diagnostics. `BYTECODE_VERSION`
+  bumped to 4. 15 new tests in `tests/test_finally.py`. All 404 tests pass.
+  **Status:** ✅ Complete at v1.0.
 
 - ✅ `_op_throw` structured value preservation — `_op_throw` (vm.py:2142) now preserves
   Records/lists as `err.payload` with `kind="thrown"`. Strings use message directly;
@@ -651,6 +652,42 @@ Goals:
   unreachable; replaced with `assert` guards. `BYTECODE_VERSION` bumped to 3.
   `_op_load_local` handler replaced with `RuntimeError` tombstone.
   **Status:** ✅ Complete at v1.0.
+
+---
+
+## v1.0 — Released 2026-03-15
+
+**Theme:** Stable, Frozen, Production-Ready
+
+All v1.0 goals complete:
+
+| Goal | Status |
+|---|---|
+| Frozen opcode set (47 stable, 0 provisional) | ✅ |
+| Stable module system | ✅ |
+| Stable embedding API (`NodusRuntime` in `__all__`) | ✅ |
+| `compile_source()` fully removed | ✅ |
+| Iterator protocol cleanup | ✅ |
+| `finally` block implementation | ✅ |
+| `_op_throw` structured values | ✅ |
+| `LOAD_LOCAL` removed | ✅ |
+| Production sandboxing (6 limit types) | ✅ |
+| `YIELD_VALUE`/`SEND` evaluated — deferred post-v1.0 | ✅ |
+| Stable package manager | ✅ |
+
+`BYTECODE_VERSION = 4`. `__version__ = "1.0.0"`.
+
+---
+
+## v1.0.x — Patch releases (planned)
+
+- `.ndignore` support for `nodus publish` (package authors control archive contents)
+- Memory limit sandbox option (the one gap in production sandboxing)
+- `try { } finally { }` without `catch` — syntax convenience (post-v1.0)
+- `YIELD_VALUE` / `SEND` opcode if send-value coroutines become a user requirement
+- Typed / pattern-matched `catch` (post-v1.0 exception model extension)
+
+---
 
 Long-Term Vision (3–5 Years)
 

@@ -41,6 +41,7 @@ Stability: Mostly stable (missing `break`/`continue`).
 - `for (init; cond; inc) { ... }` lowered to while behavior.
 - `for name in iterable { ... }`
 - `try { ... } catch err { ... }`
+- `try { ... } catch err { ... } finally { ... }`
 - `throw expr`
 - `yield expr` suspends the current coroutine and returns the yielded value to `resume(...)`
 

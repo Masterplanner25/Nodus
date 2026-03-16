@@ -516,6 +516,8 @@ class _DocumentIndexer:
             self._add_definition(stmt.catch_var, "variable", line, col, f"catch {stmt.catch_var}", type_text="string")
             self._walk_stmt(stmt.catch_block)
             self._pop_scope()
+            if stmt.finally_block is not None:
+                self._walk_stmt(stmt.finally_block)
             return
 
         if isinstance(stmt, Throw):

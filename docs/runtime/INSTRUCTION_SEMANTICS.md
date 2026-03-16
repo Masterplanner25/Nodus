@@ -1,5 +1,9 @@
 Nodus Instruction Semantics
 
+> The opcode semantics in this document are frozen at v1.0 (2026-03-15).
+> All 47 active opcodes are stable. See docs/governance/FREEZE_PROPOSAL.md
+> for the freeze declaration and post-freeze extension process.
+
 This document defines the precise behavior of each Nodus bytecode instruction.
 
 While BYTECODE.md describes the instruction set, this document specifies how each instruction transforms the runtime state.
@@ -417,22 +421,52 @@ If iteration ends, the VM triggers loop termination behavior.
 15. Exception Handling
 SETUP_TRY
 
-Registers an exception handler.
+Registers an exception handler and optional finally block. Pushes a 4-tuple
+(handler_ip, finally_ip, stack_depth, frame_depth) onto the handler stack.
+When finally_ip is 0, no finally block is registered.
 
-push exception frame
+SETUP_TRY <handler_ip>
+SETUP_TRY <handler_ip> <finally_ip>
+
+push exception frame (4-tuple)
+
+**stable** as of v1.0 freeze.
+
 POP_TRY
 
-Removes the exception handler.
+Removes the exception handler. If the popped entry has a non-zero finally_ip,
+redirects execution to the finally block rather than advancing ip by 1.
+
+pop exception frame → if finally_ip != 0: jump to finally_ip; else ip += 1
+
+**stable** as of v1.0 freeze.
+
+FINALLY_END
+
+Signals the end of a finally block. Two behaviors:
+
+- If a deferred return is pending (_deferred_return is set): pop the current
+  frame and complete the return with the deferred value.
+- Otherwise: ip += 1 (normal continuation after finally).
+
+**stable** as of v1.0.
 
 THROW
 
-Raises an exception.
+Raises a Nodus-level exception with the value on top of the stack.
+
+Non-string thrown values are preserved as structured payload:
+  err.kind = "thrown"
+  err.payload = <original value>
+String thrown values become err.message directly.
 
 Operation:
 
 search call frames for handler
 restore stack
 jump to handler
+
+**stable** as of v1.0 freeze.
 16. Module Construction
 BUILD_MODULE
 
