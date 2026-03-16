@@ -23,8 +23,8 @@ All items below must be resolved before the formal v1.0 freeze can be declared.
 Items marked ✅ were completed in v0.8.
 
 - [x] ✅ `LOAD_LOCAL_IDX` migration complete — LOAD_LOCAL_IDX and STORE_LOCAL_IDX are
-  now the canonical forms; LOAD_LOCAL retained only as a fallback for any residual
-  bytecode that predates v0.8.
+  now the canonical forms. LOAD_LOCAL removed from VM dispatch table at v1.0;
+  replaced with RuntimeError tombstone. BYTECODE_VERSION bumped to 3.
 - [x] ✅ `GET_ITER` / `ITER_NEXT` — `pending_get_iter` / `pending_iter_next` flag
   mechanism replaced by a first-class `Iterator` protocol object in v1.0. Both
   opcodes now operate synchronously via `run_closure()`. Promoted to stable at v1.0.
@@ -67,7 +67,7 @@ Items marked ✅ were completed in v0.8.
 |---|---|---|---|
 | `LOAD_LOCAL_IDX` | `→ val` | **stable** | Added v0.8. Canonical fast path. Slot-indexed read from `frame.locals_array`. Handles Cell unwrapping. |
 | `STORE_LOCAL_IDX` | `val →` | **stable** | Added v0.8. Canonical fast path. Slot-indexed write to `frame.locals_array`. Handles Cell boxing. |
-| `LOAD_LOCAL` | `→ val` | **deprecated** | Name-keyed legacy path. Retained as fallback. Removal target: v1.0 after full bytecode migration. Replacement: `LOAD_LOCAL_IDX`. |
+| `LOAD_LOCAL` | `→ val` | ⛔ **removed** | Name-keyed legacy path. Removed from VM dispatch table at v1.0. Handler replaced with RuntimeError tombstone. Replacement: `LOAD_LOCAL_IDX`. |
 
 ### Variable Access — Closures
 
@@ -182,25 +182,26 @@ Items marked ✅ were completed in v0.8.
 |---|---|
 | stable | 43 |
 | provisional | 3 (`SETUP_TRY`, `POP_TRY`, `THROW`) |
-| deprecated | 1 (`LOAD_LOCAL`) |
-| **Total** | **47** |
+| removed | 1 (`LOAD_LOCAL`) |
+| **Total (active)** | **46** |
 
 (Stable count: PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
 LOAD_UPVALUE, STORE_UPVALUE, STORE_ARG, POP, ADD, SUB, MUL, DIV, EQ, NE, LT, GT, LE, GE,
 NOT, NEG, TO_BOOL, JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VALUE, CALL_METHOD,
 MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
-LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT = **43 stable**, 3 provisional, 1 deprecated.)
+LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT = **43 stable**, 3 provisional.)
 
-Totals: **43 stable**, **3 provisional**, **1 deprecated** = 47.
-(v1.0 update: YIELD, BUILD_MODULE, GET_ITER, and ITER_NEXT promoted from provisional to stable.)
+Totals: **43 stable**, **3 provisional**, **1 removed** = 46 active + 1 removed.
+(v1.0 update: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted from provisional to stable.
+ LOAD_LOCAL removed from dispatch table; BYTECODE_VERSION bumped to 3.)
 
 ---
 
 ## Freeze Risks
 
-1. **`LOAD_LOCAL` removal** — currently emitted as a fallback when `symbol.index is None`
-   (should not happen in normal compilation). Removing it requires verifying no production
-   bytecode files still contain it, then bumping `BYTECODE_VERSION` to 3.
+1. ✅ **`LOAD_LOCAL` removal** — complete at v1.0. The three compiler fallback paths were
+   confirmed unreachable via audit. The opcode was removed from the VM dispatch table and
+   the handler replaced with a RuntimeError tombstone. `BYTECODE_VERSION` bumped to 3.
 
 2. ✅ **`GET_ITER` / `ITER_NEXT` pending_get_iter** — resolved at v1.0. The
    `pending_get_iter` / `pending_iter_next` flags were replaced by a first-class
@@ -370,4 +371,4 @@ survive at least one full release cycle after deprecation before removal.
 | Version | Event |
 |---|---|
 | v0.8.0 | Initial freeze proposal drafted. 47 opcodes classified. LOAD_LOCAL_IDX and STORE_LOCAL_IDX added. FRAME_SIZE added. LOAD_LOCAL deprecated. Bytecode version bumped to 2. |
-| v1.0 | Formal freeze — stable opcodes are locked. POST-FREEZE process applies. |
+| v1.0 | Formal freeze — stable opcodes are locked. POST-FREEZE process applies. LOAD_LOCAL removed from dispatch table (tombstone handler remains). BYTECODE_VERSION bumped to 3. GET_ITER, ITER_NEXT, BUILD_MODULE, YIELD promoted to stable. 46 active opcodes. |

@@ -1630,17 +1630,20 @@ class VM:
         self.ip += 1
 
     def _op_load_local(self, instr):
-        # Fast path for known-local variables: read directly from frame locals
-        # dict, bypassing the 4-dict probe in load_name().
-        name = instr[1]
-        locals_ = self.frames[-1].locals
-        value = locals_[name]
-        if isinstance(value, Cell):
-            value = value.value
-        elif isinstance(value, LiveBinding):
-            value = value.get()
-        self.stack.append(value)
-        self.ip += 1
+        # LOAD_LOCAL was removed from the VM dispatch table in v1.0.
+        # The compiler no longer emits this opcode — all local variable loads
+        # use LOAD_LOCAL_IDX (slot-indexed) instead.
+        # If this handler is ever reached, it means either:
+        #   (a) old cached bytecode (version < 3) bypassed the version check, or
+        #   (b) there is a compiler bug emitting LOAD_LOCAL unexpectedly.
+        # In both cases, recompiling the source file will fix it.
+        name = instr[1] if len(instr) > 1 else "<unknown>"
+        raise RuntimeError(
+            f"LOAD_LOCAL opcode encountered for variable '{name}' at runtime. "
+            f"This opcode was removed in Nodus v1.0. "
+            f"Recompile your source to regenerate bytecode using LOAD_LOCAL_IDX. "
+            f"If you see this error on freshly compiled source, please file a bug."
+        )
 
     def _op_load_local_idx(self, instr):
         """Slot-indexed fast path for local variable loads.
@@ -2204,7 +2207,6 @@ class VM:
             "PUSH_CONST":   self._op_push_const,
             "FRAME_SIZE":   self._op_frame_size,
             "LOAD":         self._op_load,
-            "LOAD_LOCAL":     self._op_load_local,
             "LOAD_LOCAL_IDX": self._op_load_local_idx,
             "LOAD_UPVALUE":   self._op_load_upvalue,
             "STORE":          self._op_store,

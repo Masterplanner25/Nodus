@@ -39,8 +39,16 @@ This document tracks known deprecation warnings and suggested remediation steps.
 
 ### `LOAD_LOCAL` opcode
 - **Deprecated since:** v0.8.0 (superseded by `LOAD_LOCAL_IDX`)
-- **Removal target:** v1.0 (after bytecode cache invalidation window closes)
-- **Status:** Retained as a compatibility fallback in the VM dispatch table (`_op_load_local`). The compiler emits `LOAD_LOCAL_IDX` for all normal local variable access. Three fallback paths (`compiler.py` lines 584, 619, 731) still emit name-keyed `LOAD_LOCAL` when slot index is unavailable (`symbol.index is None`). These fallback paths must be audited and fixed before `LOAD_LOCAL` can be removed from the VM dispatch table.
-- **Migration:** Recompile source files. The compiler automatically emits `LOAD_LOCAL_IDX` for all new bytecode. The bytecode cache version bump (0x01 → 0x02 in v0.8.0) triggers automatic recompilation of any cached modules on next load — no user action required.
-- **Note:** Bytecode compiled before v0.8.0 (cache version 0x01) is silently invalidated on load and recompiled with `LOAD_LOCAL_IDX`. The `LOAD_LOCAL` fallback handler exists only for in-memory bytecode constructed outside the compiler (e.g., tests that hand-craft instruction lists).
-- **Prerequisite for removal:** Audit and fix the three compiler fallback paths (compiler.py lines 584, 619, 731). See TECH_DEBT.md.
+- **Removed in:** v1.0
+- **Status:** ⛔ Removed. The three compiler fallback paths at `compiler.py` lines 584,
+  619, and 731 were audited in v1.0. All three were confirmed unreachable: `SymbolTable.define()`
+  assigns `symbol.index` whenever `_current_function_scope()` is not None, which is exactly
+  the same condition as `in_function_scope()`. The "local + in function scope + index is None"
+  case is a logical contradiction. The fallback emissions were replaced with `assert` guards.
+  `LOAD_LOCAL` was removed from the VM dispatch table (`_build_dispatch_table()`). The handler
+  method (`_op_load_local`) was replaced with a `RuntimeError` tombstone. `BYTECODE_VERSION`
+  bumped from 2 to 3, invalidating any cached bytecode containing `LOAD_LOCAL` instructions.
+- **Migration:** Recompile source files. `BYTECODE_VERSION` 3 invalidates all version-2
+  caches automatically on next load — no user action required.
+- **If tombstone is encountered at runtime:** The error message directs the user to recompile.
+  A `RuntimeError` is raised with the opcode name and instructions to recompile.

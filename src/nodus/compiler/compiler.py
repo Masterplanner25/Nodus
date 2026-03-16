@@ -56,7 +56,7 @@ from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
 from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_workflow_ast
 
 
-BYTECODE_VERSION = 2
+BYTECODE_VERSION = 3  # v1.0: LOAD_LOCAL removed from VM dispatch table
 
 
 def wrap_bytecode(
@@ -578,10 +578,14 @@ class Compiler:
                 self.emit("LOAD_UPVALUE", symbol.index)
                 return
             if symbol is not None and symbol.scope == "local" and self.in_function_scope():
-                if symbol.index is not None:
-                    self.emit("LOAD_LOCAL_IDX", symbol.index)
-                else:
-                    self.emit("LOAD_LOCAL", expr.name)  # fallback: no slot assigned
+                # symbol.index is always non-None here: SymbolTable.define() assigns
+                # a slot whenever _current_function_scope() is not None, which is the
+                # same condition as in_function_scope(). If this fires it is a compiler bug.
+                assert symbol.index is not None, (
+                    f"Internal compiler error: local symbol '{expr.name}' has no slot index. "
+                    f"This indicates a missing slot assignment in SymbolTable. Please file a bug."
+                )
+                self.emit("LOAD_LOCAL_IDX", symbol.index)
                 return
             self.ensure_name_access(expr.name, node=expr)
             self.emit("LOAD", self.resolve_name(expr.name))
@@ -610,15 +614,17 @@ class Compiler:
                 self.emit("LOAD_UPVALUE", symbol.index)
                 return
             store_name = self.resolve_store_name(expr.name)
-            if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
+            if symbol is not None and symbol.scope == "local" and self.in_function_scope():
+                # symbol.index is always non-None here (see Var case above for explanation).
+                assert symbol.index is not None, (
+                    f"Internal compiler error: local symbol '{expr.name}' has no slot index "
+                    f"in Assign expression. Please file a bug."
+                )
                 self.emit("STORE_LOCAL_IDX", symbol.index)
                 self.emit("LOAD_LOCAL_IDX", symbol.index)
             else:
                 self.emit("STORE", store_name)
-                if symbol is not None and symbol.scope == "local" and self.in_function_scope():
-                    self.emit("LOAD_LOCAL", store_name)
-                else:
-                    self.emit("LOAD", store_name)
+                self.emit("LOAD", store_name)
             return
 
         if isinstance(expr, Unary):
@@ -725,10 +731,12 @@ class Compiler:
                         if symbol.scope == "upvalue":
                             self.emit("LOAD_UPVALUE", symbol.index)
                         elif symbol.scope == "local" and self.in_function_scope():
-                            if symbol.index is not None:
-                                self.emit("LOAD_LOCAL_IDX", symbol.index)
-                            else:
-                                self.emit("LOAD_LOCAL", expr.callee.name)
+                            # symbol.index is always non-None here (see Var case above for explanation).
+                            assert symbol.index is not None, (
+                                f"Internal compiler error: local symbol '{expr.callee.name}' has no "
+                                f"slot index in Call expression. Please file a bug."
+                            )
+                            self.emit("LOAD_LOCAL_IDX", symbol.index)
                         else:
                             self.emit("LOAD", self.resolve_name(expr.callee.name))
                         for arg in expr.args:

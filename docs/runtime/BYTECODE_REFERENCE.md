@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The current instruction set is **small-to-medium and maturing**: still compact, but now broad enough to support control flow, functions, short-circuit logic, mutable collections, and runtime services through builtins. The opcode set currently contains **47 opcodes**.
 
-**Opcode stability classifications** (stable / provisional / deprecated) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: 43 stable, 3 provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), 1 deprecated (`LOAD_LOCAL`).
+**Opcode stability classifications** (stable / provisional / removed) and the v1.0 freeze process are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: 43 stable, 3 provisional (`SETUP_TRY`, `POP_TRY`, `THROW`), 1 removed (`LOAD_LOCAL`). Total active opcodes in dispatch table: 46.
 
 ## 2. VM Model Overview
 - Stack model:
@@ -75,16 +75,16 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - No-op at module top-level (never emitted outside function bodies).
 
 ### LOAD_LOCAL
-- Category: variable access (fast path, name-keyed)
-- Stack behavior: pushes local variable value
-- Operands: variable name (string)
-- Emitted by compiler: yes (fallback only — emitted when slot index is unavailable)
-- Purpose: fast local variable read inside functions, bypassing the 4-dict probe in `load_name()`
-- Notes / edge cases:
-  - Only emitted when the compiler has confirmed the symbol is `scope == "local"` and the access is inside a function scope (`in_function_scope()`).
-  - Reads directly from `frame.locals[name]`, unwrapping `Cell` / `LiveBinding` as needed.
-  - Must not be emitted for block-level locals at module scope (those still use `LOAD`).
-  - **Legacy name-keyed path retained as fallback.** Use `LOAD_LOCAL_IDX` for new bytecode. New compilation always assigns slot indices, so this path is only reached for edge cases where `symbol.index is None`.
+- Category: variable access (fast path, name-keyed) — **⛔ Removed in v1.0**
+- Status: **Removed**. No longer in the VM dispatch table. Attempting to execute a `LOAD_LOCAL`
+  instruction raises a `RuntimeError` tombstone directing the user to recompile.
+- History: Deprecated since v0.8.0 when `LOAD_LOCAL_IDX` (slot-indexed) was introduced.
+  The compiler retained three fallback paths (formerly at lines 584, 619, 731) that emitted
+  `LOAD_LOCAL` when `symbol.index is None`. Audit in v1.0 confirmed all three were unreachable
+  (`SymbolTable.define()` always assigns a slot index when inside a function scope). The fallbacks
+  were replaced with `assert` guards and `BYTECODE_VERSION` was bumped to 3.
+- Migration: Recompile any source that was cached with `BYTECODE_VERSION = 2`. The version bump
+  invalidates caches automatically.
 
 ### LOAD_LOCAL_IDX
 - Category: variable access (fast path, slot-indexed)
@@ -684,7 +684,7 @@ High-level construct to opcode shape (actual lowering patterns):
 |---|---|---|---|
 | PUSH_CONST | constants | `... -> ..., v` | yes |
 | LOAD | variable access | `... -> ..., value` | yes |
-| LOAD_LOCAL | variable access (fast path) | `... -> ..., value` | yes |
+| LOAD_LOCAL | variable access (name-keyed) | `... -> ..., value` | ⛔ Removed in v1.0 |
 | LOAD_UPVALUE | closure access | `... -> ..., value` | yes |
 | STORE | variable access | `..., v -> ...` | yes |
 | STORE_UPVALUE | closure access | `..., v -> ...` | yes |

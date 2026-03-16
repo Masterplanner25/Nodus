@@ -85,9 +85,10 @@ LOAD_LOCAL_IDX <slot>
 
 LOAD_LOCAL
 
-⚠️ Deprecated since v0.8.0. The compiler no longer emits this instruction;
-LOAD_LOCAL_IDX is used for all new bytecode. Retained as a fallback only.
-Removal target: v1.0. See DEPRECATIONS.md.
+⛔ Removed in v1.0. LOAD_LOCAL_IDX is the canonical opcode for all local
+variable loads. The VM dispatch table no longer contains LOAD_LOCAL;
+executing this opcode raises a RuntimeError tombstone directing the user
+to recompile. BYTECODE_VERSION bumped to 3. See DEPRECATIONS.md.
 
 LOAD_LOCAL <name>
 STORE
@@ -308,7 +309,7 @@ Instructions such as PUSH_CONST reference this table by index.
 12. Bytecode Versioning
 
 The bytecode format is versioned. `BYTECODE_VERSION` in `src/nodus/compiler/compiler.py` is the
-authoritative constant (currently `2`). The version is embedded in every compiled bytecode dict
+authoritative constant (currently `3`). The version is embedded in every compiled bytecode dict
 and checked on cache load; a mismatch silently invalidates the cache entry and triggers recompilation.
 
 Disk cache file format (`src/nodus/runtime/bytecode_cache.py`):
@@ -326,6 +327,9 @@ Version history:
   0x02 — v0.8.0: FRAME_SIZE / LOAD_LOCAL_IDX / STORE_LOCAL_IDX opcodes added;
                   FunctionInfo.local_slots field added to payload;
                   bytecode compiled with version 0x01 is incompatible and is recompiled automatically
+  0x03 — v1.0:   LOAD_LOCAL removed from VM dispatch table; compiler fallback paths replaced
+                  with assertions; bytecode compiled with version 0x02 is incompatible and is
+                  recompiled automatically
 
 Tooling compatibility: compiler, VM, and cache share the same `BYTECODE_VERSION` constant to ensure compatibility between:
 

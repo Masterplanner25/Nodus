@@ -646,11 +646,11 @@ Goals:
   `.ndignore` deferred to v1.0.x.
   **Status:** ✅ Declared stable.
 
-- `LOAD_LOCAL` deprecated opcode removal — remove `_op_load_local` handler from VM
-  dispatch table. Prerequisite: audit and fix three compiler fallback paths
-  (`compiler.py` lines 584, 619, 731) that still emit name-keyed `LOAD_LOCAL`.
-  **Status:** ⚠️ Compiler still emits `LOAD_LOCAL` at 3 fallback paths.
-  `DEPRECATIONS.md` claim was inaccurate — corrected. Audit required before removal.
+- ✅ `LOAD_LOCAL` deprecated opcode removal — `_op_load_local` removed from VM dispatch
+  table. Three compiler fallback paths (lines 584, 619, 731) audited and confirmed
+  unreachable; replaced with `assert` guards. `BYTECODE_VERSION` bumped to 3.
+  `_op_load_local` handler replaced with `RuntimeError` tombstone.
+  **Status:** ✅ Complete at v1.0.
 
 Long-Term Vision (3–5 Years)
 
