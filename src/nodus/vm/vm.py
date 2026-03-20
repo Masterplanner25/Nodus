@@ -236,6 +236,20 @@ class VM:
             "memory_put": BuiltinInfo("memory_put", 2, self.builtin_memory_put),
             "memory_delete": BuiltinInfo("memory_delete", 1, self.builtin_memory_delete),
             "memory_keys": BuiltinInfo("memory_keys", 0, self.builtin_memory_keys),
+            "recall": BuiltinInfo("recall", (0, 1, 2, 3), self.builtin_recall),
+            "remember": BuiltinInfo("remember", (1, 2, 3), self.builtin_remember),
+            "suggest": BuiltinInfo("suggest", (0, 1, 2), self.builtin_suggest),
+            "record_outcome": BuiltinInfo("record_outcome", 2, self.builtin_record_outcome),
+            "recall_from": BuiltinInfo("recall_from", (1, 2, 3, 4), self.builtin_recall_from),
+            "recall_all": BuiltinInfo("recall_all", (0, 1, 2, 3), self.builtin_recall_all),
+            "share": BuiltinInfo("share", 1, self.builtin_share),
+            "__memory_recall": BuiltinInfo("__memory_recall", (0, 1, 2, 3), self.builtin_recall),
+            "__memory_remember": BuiltinInfo("__memory_remember", (1, 2, 3), self.builtin_remember),
+            "__memory_suggest": BuiltinInfo("__memory_suggest", (0, 1, 2), self.builtin_suggest),
+            "__memory_record_outcome": BuiltinInfo("__memory_record_outcome", 2, self.builtin_record_outcome),
+            "__memory_recall_from": BuiltinInfo("__memory_recall_from", (1, 2, 3, 4), self.builtin_recall_from),
+            "__memory_recall_all": BuiltinInfo("__memory_recall_all", (0, 1, 2, 3), self.builtin_recall_all),
+            "__memory_share": BuiltinInfo("__memory_share", 1, self.builtin_share),
             "agent_call": BuiltinInfo("agent_call", 2, self.builtin_agent_call),
             "agent_available": BuiltinInfo("agent_available", 0, self.builtin_agent_available),
             "agent_describe": BuiltinInfo("agent_describe", 1, self.builtin_agent_describe),
@@ -1268,6 +1282,86 @@ class VM:
     def builtin_memory_keys(self):
         return list_keys(vm=self)
 
+    def _get_memory_bridge(self):
+        if self.host_globals and "memory_bridge" in self.host_globals:
+            return self.host_globals.get("memory_bridge")
+        if self.module_globals and "memory_bridge" in self.module_globals:
+            return self.module_globals.get("memory_bridge")
+        return None
+
+    def builtin_recall(self, query=None, tags=None, limit=None):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return []
+        try:
+            if limit is None:
+                return bridge.recall(query=query, tags=tags, limit=3)
+            return bridge.recall(query=query, tags=tags, limit=limit)
+        except Exception:
+            return []
+
+    def builtin_remember(self, content, node_type=None, tags=None):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return None
+        try:
+            if node_type is None:
+                return bridge.remember(content=content, tags=tags)
+            return bridge.remember(content=content, node_type=node_type, tags=tags)
+        except Exception:
+            return None
+
+    def builtin_suggest(self, query=None, tags=None):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return []
+        try:
+            return bridge.get_suggestions(query=query, tags=tags, limit=3)
+        except Exception:
+            return []
+
+    def builtin_record_outcome(self, node_id, outcome):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return None
+        try:
+            bridge.record_outcome(node_id, outcome)
+        except Exception:
+            return None
+        return None
+
+    def builtin_recall_from(self, agent, query=None, tags=None, limit=None):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return []
+        if not isinstance(agent, str):
+            self.runtime_error("type", "recall_from(agent, ...) expects agent as string")
+        try:
+            if limit is None:
+                return bridge.recall_from(agent_namespace=agent, query=query, tags=tags, limit=3)
+            return bridge.recall_from(agent_namespace=agent, query=query, tags=tags, limit=limit)
+        except Exception:
+            return []
+
+    def builtin_recall_all(self, query=None, tags=None, limit=None):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return {"merged_results": [], "results_by_agent": {}}
+        try:
+            if limit is None:
+                return bridge.recall_all_agents(query=query, tags=tags, limit=5)
+            return bridge.recall_all_agents(query=query, tags=tags, limit=limit)
+        except Exception:
+            return {"merged_results": [], "results_by_agent": {}}
+
+    def builtin_share(self, node_id):
+        bridge = self._get_memory_bridge()
+        if bridge is None:
+            return False
+        try:
+            return bool(bridge.share(node_id))
+        except Exception:
+            return False
     def builtin_agent_call(self, name, payload):
         return call_agent(name, payload, vm=self)
 
@@ -2413,3 +2507,6 @@ class VM:
             return f"[trace] {op_text}"
         loc_text = self.format_loc(self.current_loc())
         return f"[trace] {op_text} ({loc_text})"
+
+
+

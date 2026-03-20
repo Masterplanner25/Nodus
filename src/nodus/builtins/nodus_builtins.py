@@ -62,6 +62,17 @@ BUILTIN_NAMES = {
     "memory_put",
     "memory_delete",
     "memory_keys",
+    "recall",
+    "remember",
+    "suggest",
+    "record_outcome",
+    "__memory_recall",
+    "__memory_remember",
+    "__memory_suggest",
+    "__memory_record_outcome",
+    "__memory_recall_from",
+    "__memory_recall_all",
+    "__memory_share",
     "agent_call",
     "agent_available",
     "agent_describe",
@@ -106,3 +117,6 @@ BUILTIN_NAMES = {
     "path_ext",
     "path_stem",
 }
+
+
+

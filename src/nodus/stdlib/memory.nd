@@ -1,3 +1,31 @@
+﻿# memory.nd - A.I.N.D.Y. Memory Bridge stdlib for Nodus
+#
+# Import this module to access extended memory operations
+# beyond the core recall/remember primitives.
+#
+# Usage:
+#   import memory
+#
+#   task build_feature {
+#       let context = memory.recall_by_type(
+#           "decision",
+#           "authentication approach",
+#           3
+#       )
+#
+#       let hints = memory.suggest(
+#           "optimize database queries",
+#           ["database", "performance"]
+#       )
+#
+#       memory.remember(
+#           "Used connection pooling - 3x speedup",
+#           "outcome",
+#           ["database", "optimization"]
+#       )
+#   }
+
+# Backward-compatible in-process memory helpers.
 fn get(key) {
     return memory_get(key)
 }
@@ -17,4 +45,81 @@ fn keys() {
 fn has(key) {
     let value = memory_get(key)
     return value != nil
+}
+
+# Core memory bridge wrappers.
+fn recall(query, tags, limit) {
+    return __memory_recall(query, tags, limit)
+}
+
+fn remember(content, kind, tags) {
+    return __memory_remember(content, kind, tags)
+}
+
+fn suggest(query, tags) {
+    return __memory_suggest(query, tags)
+}
+
+fn record_feedback(node_id, outcome) {
+    return __memory_record_outcome(node_id, outcome)
+}
+
+# Extended helpers.
+fn recall_by_type(kind, query, limit) {
+    return __memory_recall(query, [kind], limit)
+}
+
+fn traverse(node_id, depth) {
+    return __memory_recall(node_id, ["relationship", "traverse"], depth)
+}
+
+fn expand(node_ids) {
+    let out = []
+    let i = 0
+    while (i < collection_len(node_ids)) {
+        let related = __memory_recall(node_ids[i], ["related"], 3)
+        list_push(out, related)
+        i = i + 1
+    }
+    return out
+}
+
+fn get_performance(node_id) {
+    let results = __memory_recall(node_id, ["feedback", "outcome"], 1)
+    if (results == nil) {
+        return nil
+    }
+    if (collection_len(results) == 0) {
+        return nil
+    }
+    return results[0]
+}
+# Federation — query other agents
+#
+# recall_from(agent, query, tags, limit)
+# Query another agent's shared memory.
+# Example:
+#   let insights = memory.recall_from("arm", "code patterns")
+#
+# recall_all(query, tags, limit)
+# Query ALL agents' shared memory.
+# Example:
+#   let collective = memory.recall_all("authentication")
+#
+# share(node_id)
+# Make a memory visible to all agents.
+# Example:
+#   memory.share(my_node_id)
+
+# Federation helpers
+fn recall_from(agent, query, tags, limit) {
+    return __memory_recall_from(agent, query, tags, limit)
+}
+
+fn recall_all(query, tags, limit) {
+    return __memory_recall_all(query, tags, limit)
+}
+
+fn share(node_id) {
+    return __memory_share(node_id)
 }
