@@ -1,0 +1,41 @@
+﻿# memory_task.nd - Example: Memory-Native Nodus Task
+#
+# This demonstrates the full v5 memory loop in Nodus:
+# recall -> execute -> remember -> feedback
+
+import memory
+
+task build_auth_feature {
+    # Step 1: Recall relevant past decisions
+    let past_decisions = recall(
+        "authentication JWT implementation",
+        ["auth", "decision"],
+        3
+    )
+
+    # Step 2: Get suggestions based on past outcomes
+    let hints = suggest(
+        "implement secure authentication",
+        ["auth"]
+    )
+
+    # Step 3: Execute with memory context available
+    # (past_decisions and hints inform the implementation)
+
+    # Step 4: Remember the outcome
+    let node_id = remember(
+        "Implemented JWT auth with refresh tokens. Used 1h expiry + 7d refresh. All security tests passing.",
+        "outcome",
+        ["auth", "jwt", "security"]
+    )
+
+    # Step 5: Record feedback on what was useful
+    if (past_decisions != nil) {
+        if (collection_len(past_decisions) > 0) {
+            record_outcome(past_decisions[0]["id"], "success")
+        }
+    }
+}
+
+# Run the task
+build_auth_feature()
