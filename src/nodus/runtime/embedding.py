@@ -151,6 +151,8 @@ class NodusRuntime:
         optimize: bool = True,
         debugger=None,
         max_frames: int | None = None,
+        initial_globals: dict | None = None,
+        host_globals: dict | None = None,
     ) -> dict:
         """Read a ``.nd`` file from disk and execute it.
 
@@ -197,6 +199,8 @@ class NodusRuntime:
             optimize=optimize,
             debugger=debugger,
             max_frames=max_frames,
+            initial_globals=initial_globals,
+            host_globals=host_globals,
         )
 
     def run_source(
@@ -211,6 +215,8 @@ class NodusRuntime:
         import_state: dict | None = None,
         debugger=None,
         max_frames: int | None = None,
+        initial_globals: dict | None = None,
+        host_globals: dict | None = None,
     ) -> dict:
         """Compile and execute a Nodus source string.
 
@@ -281,6 +287,8 @@ class NodusRuntime:
             code_locs=[],
             source_path=filename,
             allowed_paths=self.allowed_paths,
+            module_globals=initial_globals,
+            host_globals=host_globals,
         )
         if not self.allow_input:
             vm.input_fn = self._blocked_input

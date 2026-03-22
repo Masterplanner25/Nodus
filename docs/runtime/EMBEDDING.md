@@ -54,6 +54,14 @@ runtime = NodusRuntime(
 )
 result = runtime.run_source(source_code)
 
+# Optional: inject initial globals or host globals
+# (useful for sharing runtime context with scripts)
+result = runtime.run_source(
+    source_code,
+    initial_globals={"memory_context": "...", "memory_ids": []},
+    host_globals={"memory_bridge": {"recall": "..."}},
+)
+
 Constructor parameters:
 
 - ``max_steps`` (int | None, default MAX_STEPS): Maximum total VM instructions per
@@ -84,6 +92,10 @@ tokenize
 
 The ``result`` dict contains ``"ok"``, ``"stdout"``, ``"stderr"``, and on error
 a structured ``"error"`` entry.
+
+``run_source()`` / ``run_file()`` optional parameters:
+- ``initial_globals``: dict injected into ``module_globals`` for the VM (script-level globals).
+- ``host_globals``: dict injected into ``host_globals`` for the VM (host-provided services).
 
 The low-level ``nodus.tooling.loader.run_source()`` function is also available
 but does not provide sandbox controls or host function registration.  Prefer
