@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: nodus-lang
+Version: 1.1.0
+Summary: A stack-VM scripting language and distributed workflow runtime
+Author: Shawn Knight
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
 ﻿# Nodus
 
 Nodus is a lightweight, practical scripting language implemented in Python. It targets small scripts and automation tasks with a clean module system, a compact standard library, and predictable tooling.

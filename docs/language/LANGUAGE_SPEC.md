@@ -213,7 +213,7 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
 - `tool_call(name, args)` dispatches a registered runtime tool and returns a structured result
 - `tool_available()` returns registered tool names
 - `tool_describe(name)` returns tool metadata or `nil`
-- `memory_get(key)` reads a shared runtime memory entry or `nil`
+- `memory_get(key)` reads a local runtime memory entry or `nil`
 - `memory_put(key, value)` stores a JSON-safe value and returns it
 - `memory_delete(key)` removes a memory entry and returns `true` if it existed
 - `memory_keys()` returns memory keys
@@ -486,8 +486,8 @@ Actions are only valid inside workflow/goal steps and lower into existing runtim
 
 - `action tool "name" with { ... }` -> tool dispatch
 - `action agent "name" with { ... }` -> agent dispatch
-- `action memory_put "key" expr` -> shared runtime memory write
-- `action memory_get "key"` -> shared runtime memory read
+- `action memory_put "key" expr` -> local runtime memory write
+- `action memory_get "key"` -> local runtime memory read
 - `action emit "event" with { ... }` -> runtime event emission
 
 Action rules:
@@ -510,7 +510,7 @@ Workflow checkpoints can be queried with `workflow_checkpoints(graph_id)`.
 
 ## Agent, Tool, And Memory Primitives
 
-Nodus keeps AI-native orchestration out of the language core syntax and exposes it through explicit built-ins plus standard-library modules.
+Nodus keeps integration behavior out of the language core syntax and exposes it through explicit built-ins plus standard-library modules.
 
 Example:
 
@@ -533,10 +533,11 @@ Phase 1 semantics:
 - Tools dispatch through the local runtime registry and currently expose `nodus_execute`, `nodus_check`, `nodus_ast`, and `nodus_dis`.
 - Agents dispatch through a local handler registry. Unregistered agents return a structured `agent_call` failure.
 - Memory stores JSON-safe values. Outside sessions it is process-local. In server sessions it is session-local and snapshot-aware.
+- Advanced memory systems, including A.I.N.D.Y., may be connected by the host as external integrations. They are not core runtime memory primitives.
 
 Workflow state and memory stay distinct:
 - Workflow state is durable per-workflow execution state managed by the workflow runtime.
-- `memory_*` and `std:memory` are shared runtime lookup/storage primitives outside workflow state.
+- `memory_*` and `std:memory` are local runtime lookup/storage primitives outside workflow state.
 
 Runtime events are emitted for:
 - `tool_call_start`, `tool_call_complete`, `tool_call_fail`

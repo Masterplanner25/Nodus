@@ -19,10 +19,16 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## In Progress / Release Pending
 
-v0.9.0 shipped 2026-03-15. See CHANGELOG.md for the full entry.
+v1.1.0 is release-ready pending final publish/tagging. See CHANGELOG.md for the full entry.
 [Unreleased] documentation updates are tracked in CHANGELOG.md.
 
 ## Released Versions
+
+### 1.1.0 — Installable Package & Execution Model Cleanup
+- Installable `nodus-lang` package metadata and CLI entrypoint.
+- Automatic `main()` execution after top-level code.
+- Repository boundary cleanup for Nodus as a standalone execution engine.
+- README execution model clarified for script-friendly usage.
 
 ### 0.9.0 — Registry Auth, Publish & Ecosystem Completeness (2026-03-15)
 - `compile_source()` public re-export removed from `nodus.__init__`; loader body

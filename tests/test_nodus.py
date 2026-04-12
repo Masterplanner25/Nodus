@@ -473,6 +473,39 @@ print(read_file("{out_path}"))
             self.assertEqual(lang.main(["nodus", script]), 0)
             self.assertEqual(lang.main(["language", script]), 0)
 
+    def test_cli_run_auto_executes_main_after_top_level(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "x.nd")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write('print("top")\nfn main() {\n    print("main")\n}\n')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = lang.main(["nodus", "run", script])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(buf.getvalue().splitlines(), ["top", "main"])
+
+    def test_cli_run_without_main_executes_top_level_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "x.nd")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write('print("top")\n')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = lang.main(["nodus", "run", script])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(buf.getvalue().splitlines(), ["top"])
+
+    def test_cli_run_manual_main_call_does_not_double_execute(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "x.nd")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write('fn main() {\n    print("main")\n}\nmain()\n')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = lang.main(["nodus", "run", script])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(buf.getvalue().splitlines(), ["main"])
+
     def test_cli_help_mentions_check_and_flags(self):
         buf = io.StringIO()
         with redirect_stdout(buf):

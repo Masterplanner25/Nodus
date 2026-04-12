@@ -213,7 +213,7 @@ def run_source(
                 vm.source_code = code
                 module_name = os.path.abspath(filename) if filename is not None else "<memory>"
                 base_dir = os.path.dirname(module_name) if filename is not None else os.getcwd()
-                loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir)
+                loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir, auto_run_main=True)
             except Exception as err:
                 stage = _compile_stage(err)
                 if stage not in {"parse", "compile"}:

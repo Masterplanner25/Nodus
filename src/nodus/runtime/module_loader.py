@@ -31,6 +31,7 @@ from nodus.frontend.ast.ast_nodes import (
     ModuleInfo,
     WorkflowDef,
     Unary,
+    Var,
     While,
     For,
 )
@@ -39,7 +40,7 @@ from nodus.runtime.bytecode_cache import load_cached_bytecode, write_cached_byte
 from nodus.runtime.dependency_graph import DependencyGraph
 from nodus.runtime.module import LiveBinding, ModuleBytecode, NodusModule
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
-from nodus.vm.vm import VM
+from nodus.vm.vm import Closure, VM
 
 
 @dataclass
@@ -122,10 +123,22 @@ class ModuleLoader:
             module_id,
         )
 
-    def load_module_from_path(self, path: str, *, initial_globals: dict | None = None) -> NodusModule:
+    def load_module_from_path(
+        self,
+        path: str,
+        *,
+        initial_globals: dict | None = None,
+        auto_run_main: bool = False,
+    ) -> NodusModule:
         module_id = os.path.abspath(path)
         base_dir = os.path.dirname(module_id)
-        return self._load_module(module_id, base_dir=base_dir, source_path=module_id, initial_globals=initial_globals)
+        return self._load_module(
+            module_id,
+            base_dir=base_dir,
+            source_path=module_id,
+            initial_globals=initial_globals,
+            auto_run_main=auto_run_main,
+        )
 
     def load_module_from_source(
         self,
@@ -134,6 +147,7 @@ class ModuleLoader:
         module_name: str = "<memory>",
         base_dir: str | None = None,
         initial_globals: dict | None = None,
+        auto_run_main: bool = False,
     ) -> NodusModule:
         module_id = module_name
         base_dir = base_dir or os.getcwd()
@@ -146,6 +160,7 @@ class ModuleLoader:
             source=source,
             source_path=source_path,
             initial_globals=initial_globals,
+            auto_run_main=auto_run_main,
         )
 
     def compile_only(self, source: str, *, module_name: str, base_dir: str | None = None) -> tuple[dict, dict, list]:
@@ -163,6 +178,7 @@ class ModuleLoader:
         source: str | None = None,
         source_path: str | None = None,
         initial_globals: dict | None = None,
+        auto_run_main: bool = False,
     ) -> NodusModule:
         if module_id in self._modules:
             return self._modules[module_id]
@@ -192,7 +208,8 @@ class ModuleLoader:
             module.globals.update(import_bindings)
             if initial_globals:
                 module.globals.update(initial_globals)
-            self._execute_module(module, source_path=source_path)
+            should_auto_run_main = auto_run_main and not self._has_top_level_main_call(metadata)
+            self._execute_module(module, source_path=source_path, auto_run_main=should_auto_run_main)
             module.exports = self._build_exports(metadata, module, dep_modules)
             module.initialized = True
             return module
@@ -232,7 +249,7 @@ class ModuleLoader:
             self._recompiled_modules.add(os.path.abspath(source_path))
         return bytecode_unit
 
-    def _execute_module(self, module: NodusModule, *, source_path: str | None) -> None:
+    def _execute_module(self, module: NodusModule, *, source_path: str | None, auto_run_main: bool = False) -> None:
         vm = self._vm
         if vm is None:
             vm = VM(
@@ -259,6 +276,19 @@ class ModuleLoader:
             vm.debugger = self._debugger
             vm.debug = True
         vm.run()
+        if auto_run_main and "main" in module.functions:
+            vm.run_closure(Closure(module.functions["main"], []), [])
+
+    def _has_top_level_main_call(self, metadata: ModuleMetadata) -> bool:
+        if metadata.parsed is None:
+            return False
+        for stmt in metadata.parsed.ast:
+            if not isinstance(stmt, ExprStmt):
+                continue
+            expr = stmt.expr
+            if isinstance(expr, Call) and isinstance(expr.callee, Var) and expr.callee.name == "main":
+                return True
+        return False
 
     def _ensure_dependency_graph(self) -> DependencyGraph | None:
         if self.project_root is None:

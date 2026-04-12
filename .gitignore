@@ -6,6 +6,8 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
+.release-venv/
+.release-smoke/
 
 # Test cache
 .pytest_cache/
@@ -13,6 +15,7 @@ venv/
 # Build artifacts
 build/
 dist/
+*.egg-info/
 
 # OS files
 .DS_Store
@@ -23,3 +26,6 @@ Thumbs.db
 
 # Virtual environment 
 .venv/
+
+# Claude Code
+.claude/

@@ -55,11 +55,11 @@ runtime = NodusRuntime(
 result = runtime.run_source(source_code)
 
 # Optional: inject initial globals or host globals
-# (useful for sharing runtime context with scripts)
+# (useful for passing host-owned context to scripts)
 result = runtime.run_source(
     source_code,
-    initial_globals={"memory_context": "...", "memory_ids": []},
-    host_globals={"memory_bridge": {"recall": "..."}},
+    initial_globals={"request_id": "abc123"},
+    host_globals={"external_service": {"name": "example"}},
 )
 
 Constructor parameters:
@@ -137,7 +137,7 @@ task schedulers
 
 monitoring systems
 
-AI agents
+external agents
 
 4. Providing Runtime Services
 
@@ -148,6 +148,10 @@ Examples include:
 tool execution
 
 memory systems
+
+External memory systems, including A.I.N.D.Y., can be connected by the host
+application through explicit host functions or services. They are integration
+concerns and are not part of Nodus core local key/value memory.
 
 agent frameworks
 

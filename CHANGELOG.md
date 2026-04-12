@@ -23,6 +23,13 @@
 ### Refactoring
 - None.
 
+## 1.1.0
+
+* Added automatic `main()` execution
+* Introduced installable PyPI package (`nodus-lang`)
+* Cleaned repository boundary (removed A.I.N.D.Y. concepts)
+* Clarified execution model
+
 ## [0.9.0] - 2026-03-15 — Registry Auth, Publish & Ecosystem Completeness
 
 ### Added

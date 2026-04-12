@@ -322,9 +322,9 @@ class NodusRuntime:
                     debugger=debugger,
                 )
                 if filename and os.path.isfile(filename):
-                    loader.load_module_from_path(filename)
+                    loader.load_module_from_path(filename, auto_run_main=True)
                 else:
-                    loader.load_module_from_source(source, module_name=filename or "<memory>")
+                    loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True)
             except Exception as err:
                 raise coerce_error(err, stage="execute", filename=normalized) from err
 

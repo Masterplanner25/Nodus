@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: nodus-lang
+Version: 1.1.0
+Summary: A stack-VM scripting language and distributed workflow runtime
+Author: Shawn Knight
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
 ﻿# Nodus
 
 Nodus is a lightweight, practical scripting language implemented in Python. It targets small scripts and automation tasks with a clean module system, a compact standard library, and predictable tooling.
@@ -26,28 +36,6 @@ Quick links:
 - `docs/governance/TECH_DEBT.md`
 - `docs/governance/DEPRECATIONS.md`
 
-## Quick Start
-
-Install Nodus:
-
-```bash
-pip install nodus-lang
-```
-
-Create `hello.nd`:
-
-```nd
-fn main() {
-    print("Hello, Nodus")
-}
-```
-
-Run it:
-
-```bash
-nodus run hello.nd
-```
-
 ## Example
 
 ```nd
@@ -72,8 +60,8 @@ nodus run examples/hello.nd
 
 ## Getting Started
 
-- Install:
-  - `pip install nodus-lang`
+- Install (editable):
+  - `pip install -e .`
 - REPL: `python -m nodus.tooling.repl`
 - Run script: `nodus run script.nd`
 - Profile script: `nodus profile examples/demo.nd`
@@ -101,12 +89,6 @@ Project manifests:
 Backward compatible invocations are still supported:
 - `python language.py script.nd`
 - `python tiny_vm_lang_functions.py script.nd`
-
-## Execution Model
-
-- Top-level code executes automatically when a script is run.
-- If a top-level `main()` function is defined, `nodus run file.nd` automatically invokes it after top-level execution.
-- No manual entrypoint call is required.
 
 ## Common Commands
 
@@ -308,7 +290,7 @@ Core: `clock`, `type`, `str`, `len`, `print`, `input`, `keys`, `values`
 
 File utilities: `read_file`, `write_file`, `append_file`, `exists`, `mkdir`
 
-Runtime and integration adapters: `tool_call`, `tool_available`, `tool_describe`, `memory_get`, `memory_put`, `memory_delete`, `memory_keys`, `agent_call`, `agent_available`, `agent_describe`, `emit`, `run_goal`, `plan_goal`, `resume_goal`
+AI/runtime adapters: `tool_call`, `tool_available`, `tool_describe`, `memory_get`, `memory_put`, `memory_delete`, `memory_keys`, `agent_call`, `agent_available`, `agent_describe`, `emit`, `run_goal`, `plan_goal`, `resume_goal`
 
 ## Bytecode Versioning
 
@@ -376,23 +358,9 @@ Notes:
 - Agents are local handler adapters in phase 1. Unregistered agents return a structured error instead of invoking an external provider.
 - Memory stores JSON-safe values. Without a session it is process-local; in server sessions it is session-local.
 
-## Memory
+## AI-Native Workflow Pattern
 
-Nodus provides a local in-process key/value memory system:
-
-- `memory_get`
-- `memory_put`
-- `memory_delete`
-- `memory_keys`
-
-The `std:memory` module wraps those primitives as `get`, `put`, `delete`, `keys`, and `has`.
-
-Nodus may integrate with external systems, including A.I.N.D.Y., for advanced
-memory features. Those integrations are not part of the core runtime.
-
-## Integration Workflow Pattern
-
-Nodus keeps the language core small and exposes tools, agents, and local memory through explicit built-ins and stdlib modules:
+Nodus keeps the language core small and adds agent, tool, and memory behavior through explicit built-ins and stdlib modules:
 
 ```nd
 import "std:agent" as agent
@@ -421,4 +389,4 @@ workflow ai_pipeline {
 
 Keep these semantics distinct:
 - Workflow `state` is durable per-workflow execution state.
-- `memory.*` is local runtime key/value memory outside workflow state.
+- `memory.*` is shared runtime memory outside workflow state.

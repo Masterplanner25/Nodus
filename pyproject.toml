@@ -1,12 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "nodus"
-version = "1.0.0"
+name = "nodus-lang"
+version = "1.1.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
-  {name = "Shawn Knight"}
+  { name = "Shawn Knight" }
 ]
-
+readme = "README.md"
 requires-python = ">=3.10"
+
+dependencies = []
+
+[project.scripts]
+nodus = "nodus.cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nodus = ["stdlib/*.nd"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -15,3 +30,4 @@ filterwarnings = [
     "ignore::DeprecationWarning:uvicorn",
     "ignore::PendingDeprecationWarning:starlette",
 ]
+
