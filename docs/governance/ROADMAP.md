@@ -19,8 +19,8 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## In Progress / Release Pending
 
-v1.1.0 is release-ready pending final publish/tagging. See CHANGELOG.md for the full entry.
-[Unreleased] documentation updates are tracked in CHANGELOG.md.
+v1.1.1 is release-ready pending final publish/tagging. See CHANGELOG.md for the full entry.
+[Unreleased] is currently empty pending post-publish follow-up work.
 
 ## Released Versions
 

@@ -3,14 +3,34 @@
 ## [Unreleased]
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Improved
+- None.
+
+### Documentation
+- None.
+
+### Tests
+- None.
+
+### Refactoring
+- None.
+
+## 1.1.1 - 2026-04-26
+
+### Added
 - Optional `server` install extra for FastAPI/Uvicorn: `pip install "nodus-lang[server]"`.
 
 ### Changed
 - `nodus check` now mirrors `nodus run` project resolution and can validate the default project entry file when invoked with no explicit file from a project directory.
 - HTTP server docs now identify canonical route names and compatibility aliases for overlapping endpoint names.
-
-### Fixed
-- None.
 
 ### Improved
 - Added installed-wheel smoke coverage for the packaged `nodus` CLI, including `run`, `init`, `repl`, `serve`, and stdlib import resolution.
@@ -22,9 +42,6 @@
 ### Tests
 - Added installed-wheel distribution smoke validation.
 - Added CLI coverage for `nodus check` project-root and project-directory resolution.
-
-### Refactoring
-- None.
 
 ## 1.1.0
 
