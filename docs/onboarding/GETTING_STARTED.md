@@ -1,283 +1,79 @@
 # Getting Started with Nodus
 
-> **v1.0 (2026-03-15) — Stable release.** Core language syntax, the VM execution model,
-> and the `NodusRuntime` embedding API are frozen. The opcode set is stable (47 opcodes,
-> `BYTECODE_VERSION = 4`).
+This guide is for first-time users who installed Nodus with `pip`.
 
-Nodus is a small practical scripting language implemented in Python. This guide takes you from running the first example to a tiny multi-file project.
-
-## Prerequisites
-
-- Python 3.10+ on your `PATH`
-
-## First Run
-
-Run the single-file example:
+## Install
 
 ```bash
-nodus run examples/hello.nd
+pip install nodus-lang
 ```
 
-Use the REPL:
+## First Project
+
+Create a new folder and move into it:
 
 ```bash
-python -m nodus.tooling.repl
+mkdir my-app
+cd my-app
 ```
 
-Inside the REPL:
-
-- use multiline input for brace-delimited blocks
-- use `:help` to list shell commands
-- use `:ast <expr>`, `:dis <expr>`, and `:type <expr>` for inspection
-- history is stored in `~/.nodus_history` when Python `readline` is available
-
-## Format and Check
-
-Format a file:
-
-```bash
-nodus fmt script.nd
-```
-
-Check formatting without rewriting:
-
-```bash
-nodus fmt script.nd --check
-```
-
-Validate syntax, imports, and compilation without executing:
-
-```bash
-nodus check script.nd
-```
-
-Notes:
-- `nodus fmt` is deterministic and idempotent.
-- Integer-looking literals stay integer-looking; float literals keep their decimal form.
-- Trailing comments are preserved, but by default they move to their own following line. Use `--keep-trailing` to keep them inline when possible.
-
-## Small Project Layout
-
-A simple Nodus project usually has:
-
-- one entry file such as `main.nd`
-- local modules next to it or in subfolders
-- `index.nd` when a folder should behave like a package entrypoint
-
-Example layout:
-
-```
-project_layout_demo/
-  main.nd
-  math.nd
-  utils/
-    index.nd
-```
-
-This repository includes that exact example in `examples/project_layout_demo/`.
-
-Run it:
-
-```bash
-nodus run examples/project_layout_demo/main.nd
-```
-
-Check it:
-
-```bash
-nodus check examples/project_layout_demo/main.nd
-```
-
-## How the Example Is Organized
-
-`main.nd` imports from a sibling module and a package folder:
-
-```nd
-import { sum_list, square } from "./math.nd"
-import { format_result } from "./utils"
-import { join } from "std:strings"
-```
-
-`math.nd` exports reusable functions:
-
-```nd
-export fn square(x) {
-    return x * x
-}
-```
-
-`utils/index.nd` acts as the package entrypoint and can use the standard library:
-
-```nd
-import { repeat } from "std:strings"
-
-export fn format_result(label, value) {
-    return repeat("-", 2) + " " + label + ": " + str(value)
-}
-```
-
-Notes:
-- Relative imports start with `./` or `../`.
-- Importing `./utils` resolves to `./utils/index.nd` when there is no `utils.nd`.
-- Non-relative imports resolve from the project root.
-
-## Exception Handling
-
-Nodus supports `try/catch/finally` for structured error handling:
-
-```nd
-fn read_config(path) {
-    let f = nil
-    try {
-        let data = read_file(path)
-        return data
-    } catch err {
-        print("Error reading config: " + err.message)
-        return nil
-    } finally {
-        print("read_config done")
-    }
-}
-```
-
-The `finally` block always runs — whether the try body succeeds, an exception is
-caught, or `return` executes inside the try block. Thrown non-string values are
-preserved as `err.payload` (with `err.kind = "thrown"`); string throws become
-`err.message` directly.
-
-## Package Dependencies
-
-To set up a project with external packages, initialize a manifest first:
+Initialize a Nodus project:
 
 ```bash
 nodus init
 ```
 
-This creates `nodus.toml` and `.nodus/modules/`.
-
-Add a registry dependency:
+Run the project:
 
 ```bash
-nodus add mypackage "^1.0.0"
+nodus run
 ```
 
-Add a local dependency:
+This runs the default project file created by `nodus init`.
 
-```bash
-nodus add mylib --path ../mylib
-```
+## Standalone File
 
-Install all dependencies declared in `nodus.toml`:
-
-```bash
-nodus install
-```
-
-To use a specific registry:
-
-```bash
-nodus install --registry https://registry.example.com
-# or set NODUS_REGISTRY_URL in your environment
-```
-
-Installed packages are imported using the `package:module` syntax:
+Create `hello.nd`:
 
 ```nd
-import "mypackage:utils"
+print("hello")
 ```
 
-### Publishing a package
-
-To publish your package to a registry:
-
-1. Ensure `nodus.toml` has `[package]` with `name` and `version`
-2. Authenticate: `nodus login --registry https://your-registry.example.com`
-3. Publish: `nodus publish --registry https://your-registry.example.com`
-
-Or set the registry in `nodus.toml`:
-
-```toml
-[package]
-name = "mypackage"
-version = "1.0.0"
-registry_url = "https://your-registry.example.com"
-```
-
-Then just run:
+Run it:
 
 ```bash
-nodus login
-nodus publish
+nodus run hello.nd
 ```
 
-Published versions are immutable.
+## REPL
 
-See `PACKAGE_MANAGER.md` for the full manifest format and lockfile reference.
-
-## Suggested Workflow
-
-1. Edit your `.nd` files.
-2. Run `nodus fmt script.nd`.
-3. Run `nodus check script.nd`.
-4. Run `nodus run script.nd`.
-
-## Contributing and Development
-
-### Running the test suite
+Start the REPL:
 
 ```bash
-python -m pytest tests/ -v
+nodus repl
 ```
 
-Or with the standard unittest runner:
+The REPL is for interactive execution. You can type code directly and run it immediately.
+
+Inside the REPL:
+
+- `:help` shows available REPL commands.
+- `exit`, `quit`, or `:quit` closes the REPL.
+
+## Minimal Flow
 
 ```bash
-python -m unittest discover -s tests -v
+pip install nodus-lang
+nodus init
+nodus run
+nodus repl
 ```
 
-### Formatting examples before pushing
+## Useful Commands
 
-CI auto-formats `examples/*.nd` and commits back if anything changed. To avoid
-that automated commit, run the formatter locally before you push:
-
-```bash
-find examples/ -name "*.nd" | sort | while read -r f; do
-  python nodus.py fmt "$f"
-done
-```
-
-Check without rewriting:
-
-```bash
-find examples/ -name "*.nd" | xargs -I {} python nodus.py fmt --check {}
-```
-
-### Adding a builtin function
-
-Builtin functions are organised by category under `src/nodus/builtins/`:
-
-| File | Category |
-|------|----------|
-| `io.py` | print, input, filesystem, path |
-| `math.py` | numeric / math |
-| `coroutine.py` | coroutine, channel, scheduler |
-| `collections.py` | list, map, string, JSON |
-
-To add a new builtin:
-
-1. Implement it in the appropriate category module (or create a new one).
-2. Call `registry.add(name, arity, fn)` inside that module's `register(vm, registry)` function.
-3. Add the name to `BUILTIN_NAMES` in `src/nodus/builtins/nodus_builtins.py`.
-
-The registry is wired into `VM.__init__` automatically — no changes to `vm.py` are needed.
-
-## More Docs
-
-- `TASK_GRAPHS.md`
-- `WORKFLOWS.md`
-- `RUNTIME_EVENTS.md`
-- `DEBUGGING.md`
-- `REPL.md`
-- `PACKAGE_MANAGER.md`
-- `SERVER_MODE.md`
-- `TESTING.md`
+- `nodus run hello.nd` runs a single file.
+- `nodus run` runs the current project.
+- `nodus repl` starts the interactive prompt.
+- `nodus check hello.nd` checks a file without running it.
+- `nodus check` checks the current project's `src/main.nd` when run inside a project directory.
+- `nodus fmt hello.nd` formats a file.
