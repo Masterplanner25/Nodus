@@ -58,8 +58,12 @@ nodus worker --host 127.0.0.1 --port 7331
 ## HTTP Endpoints (High Level)
 The server exposes JSON endpoints for:
 
-- Execution and inspection: `/execute`, `/check`, `/ast`, `/dis` (also `/disassemble`)
-- Task graphs: `/graph`, `/graph/run`, `/graph/plan`, `/graph/resume`
+- Execution and inspection:
+  - Canonical: `/execute`, `/check`, `/ast`, `/dis`
+  - Compatibility alias: `/disassemble` (same behavior as `/dis`)
+- Task graphs:
+  - Canonical: `/graph`, `/graph/run`, `/graph/plan`, `/graph/resume`
+  - Compatibility aliases: `/plan_graph`, `/graph_plan`, `/resume_graph`
 - Workflows/goals: `/workflow/run`, `/workflow/plan`, `/workflow/resume`, `/goal/run`, `/goal/plan`, `/goal/resume`
 - Tooling services: `/tool/call`, `/agent/call`, `/memory`
 - Sessions and snapshots: `/session`, `/snapshot`, `/restore`

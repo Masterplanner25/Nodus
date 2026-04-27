@@ -927,6 +927,7 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             if self.path == "/graph":
                 _write_json(self, service.graph(payload))
                 return
+            # Compatibility aliases: prefer /graph/plan and /graph/resume.
             if self.path == "/graph_plan":
                 _write_json(self, service.graph_plan(payload))
                 return
@@ -954,6 +955,7 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             if self.path == "/goal/resume":
                 _write_json(self, service.goal_resume(payload))
                 return
+            # Compatibility alias: prefer /dis as the canonical short route.
             if self.path == "/disassemble":
                 _write_json(self, service.disassemble(payload))
                 return
@@ -1085,6 +1087,7 @@ def create_fastapi_app(service: RuntimeService):
         payload = await request.json()
         return JSONResponse(service.graph(payload))
 
+    # Compatibility aliases: prefer /graph/plan and /graph/resume.
     @app.post("/graph_plan")
     async def graph_plan(request: Request):
         payload = await request.json()
@@ -1130,6 +1133,7 @@ def create_fastapi_app(service: RuntimeService):
         payload = await request.json()
         return JSONResponse(service.goal_resume(payload))
 
+    # Compatibility alias: prefer /dis as the canonical short route.
     @app.post("/disassemble")
     async def disassemble(request: Request):
         payload = await request.json()
