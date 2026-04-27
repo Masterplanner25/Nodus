@@ -8,6 +8,16 @@ This guide is for first-time users who installed Nodus with `pip`.
 pip install nodus-lang
 ```
 
+If you plan to use the optional FastAPI/Uvicorn server stack for `nodus serve`,
+install:
+
+```bash
+pip install "nodus-lang[server]"
+```
+
+With plain `pip install nodus-lang`, the normal CLI still works and `nodus serve`
+falls back to the built-in HTTP server implementation.
+
 ## First Project
 
 Create a new folder and move into it:

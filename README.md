@@ -8,6 +8,16 @@ Nodus is a scripting language runtime with a small CLI for running files, starti
 pip install nodus-lang
 ```
 
+For the optional FastAPI/Uvicorn HTTP server path:
+
+```bash
+pip install "nodus-lang[server]"
+```
+
+Plain `pip install nodus-lang` still works for the CLI, REPL, project commands,
+and `nodus serve`. Without the `server` extra, `nodus serve` uses the built-in
+fallback HTTP server instead of the FastAPI/Uvicorn path.
+
 ## Canonical User Flow
 
 Start a new project:

@@ -17,6 +17,12 @@ dependencies = []
 [project.scripts]
 nodus = "nodus.cli.cli:main"
 
+[project.optional-dependencies]
+server = [
+  "fastapi",
+  "uvicorn",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

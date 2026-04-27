@@ -17,6 +17,13 @@ the documented public server contract.
 nodus serve --port 7331
 ```
 
+Install options:
+
+- `pip install nodus-lang` keeps server dependencies optional. `nodus serve`
+  still works and uses the built-in fallback HTTP server.
+- `pip install "nodus-lang[server]"` installs the optional FastAPI/Uvicorn
+  stack used when those packages are available.
+
 Optional:
 - `--trace` enables trace output
 - `--worker-sweep-interval-ms <ms>` controls worker liveness checks
