@@ -1,4 +1,10 @@
-"""HTTP service mode for Nodus runtime."""
+"""Canonical HTTP service surface for Nodus.
+
+This module defines the user-facing HTTP API exposed by ``nodus serve``.
+It is the canonical server surface referenced by tests and runtime docs,
+whether the process is served through the built-in HTTP server or the
+FastAPI/Uvicorn path selected at runtime.
+"""
 
 from __future__ import annotations
 

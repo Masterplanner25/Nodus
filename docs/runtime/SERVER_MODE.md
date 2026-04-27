@@ -2,6 +2,15 @@
 
 Nodus can run as an HTTP service to execute code, manage sessions, and coordinate worker-backed task graphs.
 
+## Canonical Surface
+
+The canonical user-facing HTTP API is the surface exposed by `nodus serve`
+and implemented in `src/nodus/services/server.py`.
+
+`src/nodus/services/api.py` also defines a FastAPI app factory, but that module
+is internal and runner-oriented. It is retained as a helper surface rather than
+the documented public server contract.
+
 ## Start Server
 
 ```bash

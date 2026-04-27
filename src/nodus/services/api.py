@@ -1,4 +1,10 @@
-"""FastAPI execution service for Nodus runner functions."""
+"""Internal FastAPI adapter for runner-level execution helpers.
+
+This module is not the canonical user-facing HTTP server contract for Nodus.
+The public HTTP surface is defined by ``nodus.services.server`` and exposed
+through ``nodus serve``. The app factory here is retained as an internal
+helper for embedding/experimentation with a smaller runner-oriented surface.
+"""
 
 from __future__ import annotations
 
@@ -122,6 +128,10 @@ class ExecutionState:
 
 
 def create_app(state: ExecutionState | None = None) -> FastAPI:
+    """Create the internal runner-oriented FastAPI app.
+
+    Use ``nodus.services.server`` for the canonical user-facing HTTP API.
+    """
     state = state or ExecutionState()
     app = FastAPI()
 
