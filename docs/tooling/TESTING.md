@@ -29,6 +29,15 @@ Run a single test case:
 python -m unittest tests.test_task_graph.TaskGraphTests.test_task_retry_success -v
 ```
 
+Run the installed-wheel smoke validation:
+
+```bash
+NODUS_RUN_DIST_SMOKE=1 python -m unittest tests.test_distribution_smoke -v
+```
+
+This builds a wheel, installs it into a fresh virtual environment, and validates the
+installed `nodus` CLI without relying on repo-local `src/` imports.
+
 ## Warnings During Tests
 
 Some optional dependencies may emit deprecation warnings during the test run (for example, Starlette multipart parsing or legacy websockets APIs). These warnings do not indicate test failures and can be safely ignored unless the warnings become errors in CI. If warnings become noisy, consider pinning or upgrading the related dependency in the test environment.

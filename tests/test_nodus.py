@@ -530,6 +530,37 @@ print(read_file("{out_path}"))
             exit_code = lang.main(["nodus", "check", script])
             self.assertEqual(exit_code, 0)
 
+    def test_cli_check_project_root_without_explicit_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = os.path.join(td, "app")
+            os.makedirs(os.path.join(project, ".nodus", "modules"), exist_ok=True)
+            os.makedirs(os.path.join(project, "src"), exist_ok=True)
+            with open(os.path.join(project, "nodus.toml"), "w", encoding="utf-8") as f:
+                f.write('[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n')
+            with open(os.path.join(project, "src", "main.nd"), "w", encoding="utf-8") as f:
+                f.write("print(1)\n")
+
+            cwd = os.getcwd()
+            try:
+                os.chdir(project)
+                exit_code = lang.main(["nodus", "check"])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(exit_code, 0)
+
+    def test_cli_check_project_dir_argument(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = os.path.join(td, "app")
+            os.makedirs(os.path.join(project, ".nodus", "modules"), exist_ok=True)
+            os.makedirs(os.path.join(project, "src"), exist_ok=True)
+            with open(os.path.join(project, "nodus.toml"), "w", encoding="utf-8") as f:
+                f.write('[package]\nname = "app"\nversion = "0.1.0"\n\n[dependencies]\n')
+            with open(os.path.join(project, "src", "main.nd"), "w", encoding="utf-8") as f:
+                f.write("print(1)\n")
+
+            exit_code = lang.main(["nodus", "check", project])
+            self.assertEqual(exit_code, 0)
+
     def test_cli_check_syntax_failure(self):
         with tempfile.TemporaryDirectory() as td:
             script = os.path.join(td, "bad.nd")

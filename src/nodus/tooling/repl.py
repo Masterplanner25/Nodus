@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import metadata
 import os
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
@@ -406,3 +407,15 @@ def run_repl(version: str):
                 print(format_error(err))
     finally:
         _save_history()
+
+
+def main() -> None:
+    try:
+        version = metadata.version("nodus-lang")
+    except Exception:
+        version = "dev"
+    run_repl(version)
+
+
+if __name__ == "__main__":
+    main()

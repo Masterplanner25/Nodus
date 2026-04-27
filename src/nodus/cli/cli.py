@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+from importlib import metadata
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from nodus.runtime.profiler import Profiler
 from nodus.dap.server import run_stdio_server as run_dap_stdio_server
 from nodus.lsp.server import run_stdio_server
 from nodus.tooling.formatter import format_source
+from nodus.tooling.repl import run_repl
 from nodus.tooling import package_manager as _package_manager
 from nodus.tooling.project import load_project, load_project_from, project_entry_path
 from nodus.orchestration import task_graph as _task_graph
@@ -178,13 +180,14 @@ def _render_help() -> str:
             "",
             "Commands:",
             "  nodus run [<file|project-dir>] [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
-            "  nodus check <file> [--project-root PATH]",
+            "  nodus check [<file|project-dir>] [--project-root PATH]",
             "  nodus fmt <file> [--check] [--keep-trailing]",
             "  nodus ast <file> [--compact]",
             "  nodus dis <file> [--loc]",
             "  nodus debug <file>",
             "  nodus profile <file> [--json] [--project-root PATH] [--allow-paths PATHS]",
             "  nodus test-examples",
+            "  nodus repl",
             "  nodus graph <file> [--project-root PATH]",
             "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N --allow-paths PATHS --auth-token TOKEN --allow-input]",
             "  nodus lsp",
@@ -484,6 +487,13 @@ def _json_print(payload) -> None:
 
 def _json_load(value: str):
     return json.loads(value)
+
+
+def _resolve_installed_version() -> str:
+    try:
+        return metadata.version("nodus-lang")
+    except Exception:
+        return "dev"
 
 
 def _json_post(host: str, port: int, path: str, payload: dict, *, token: str | None = None):
@@ -992,6 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
         "debug",
         "profile",
         "test-examples",
+        "repl",
         "graph",
         "serve",
         "lsp",
@@ -1109,15 +1120,18 @@ def main(argv: list[str] | None = None) -> int:
         flags_with_values = {"--project-root"}
         flags_no_values = {"--trace", "--trace-no-loc", "--trace-scheduler", "--trace-events", "--trace-json", "--no-opt"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
-        if not positional:
-            _print_stderr("Usage: nodus check <script.nd>")
-            return 1
         if any(flag in flags for flag in flags_no_values):
             _print_stderr("Trace flags and --no-opt are not supported with `nodus check`.")
             return 2
-        script = positional[0]
+        script = positional[0] if positional else None
         project_root, err = _resolve_project_root(flags.get("--project-root"))
         if err:
+            _print_stderr(err)
+            return 1
+        script, project_root, err = _resolve_run_target(script, project_root)
+        if err:
+            if script is None and err == "Usage: nodus run <script.nd | project-dir>":
+                err = "Usage: nodus check [<script.nd | project-dir>]"
             _print_stderr(err)
             return 1
         return check_file(script, project_root=project_root)
@@ -1260,6 +1274,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if command == "lsp":
         return run_stdio_server()
+
+    if command == "repl":
+        run_repl(_resolve_installed_version())
+        return 0
 
     if command == "dap":
         return run_dap_stdio_server()
