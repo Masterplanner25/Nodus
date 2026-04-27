@@ -4,7 +4,19 @@ All notable changes to Nodus are documented here.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- Optional `server` install extra for FastAPI/Uvicorn: `pip install "nodus-lang[server]"`.
+
+### Changed
+- `nodus check` now mirrors `nodus run` project resolution when invoked from a project directory with no explicit file.
+- HTTP server documentation now distinguishes canonical route names from compatibility aliases.
+
+### Documentation
+- Clarified that `nodus serve` / `src/nodus/services/server.py` is the canonical user-facing HTTP API surface.
+- Documented base-install fallback server behavior versus the optional FastAPI/Uvicorn server extra.
+
+### Tests
+- Added installed-wheel smoke validation for the packaged CLI and server startup path.
 
 ---
 
