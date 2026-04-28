@@ -73,3 +73,68 @@ def test_nodus_run_accepts_project_directory(tmp_path):
 
     assert exit_code == 0
     assert stdout.getvalue() == "project run\n"
+
+
+def test_nodus_run_prefers_project_src_main_without_running_root_main(tmp_path):
+    (tmp_path / "nodus.toml").write_text(
+        "\n".join(
+            [
+                "[package]",
+                'name = "demo"',
+                'version = "0.1.0"',
+                "",
+                "[dependencies]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "main.nd").write_text('print("root main")\n', encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "main.nd").write_text('print("src main")\n', encoding="utf-8")
+
+    current = os.getcwd()
+    stdout = io.StringIO()
+    try:
+        os.chdir(tmp_path)
+        with redirect_stdout(stdout):
+            exit_code = lang.main(["nodus", "run"])
+    finally:
+        os.chdir(current)
+
+    assert exit_code == 0
+    assert stdout.getvalue() == "src main\n"
+
+
+def test_nodus_run_explicit_file_does_not_switch_to_project_entrypoint(tmp_path):
+    (tmp_path / "nodus.toml").write_text(
+        "\n".join(
+            [
+                "[package]",
+                'name = "demo"',
+                'version = "0.1.0"',
+                "",
+                "[dependencies]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    root_main = tmp_path / "main.nd"
+    root_main.write_text('print("root main")\n', encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "main.nd").write_text('print("src main")\n', encoding="utf-8")
+
+    current = os.getcwd()
+    stdout = io.StringIO()
+    try:
+        os.chdir(tmp_path)
+        with redirect_stdout(stdout):
+            exit_code = lang.main(["nodus", "run", str(root_main)])
+    finally:
+        os.chdir(current)
+
+    assert exit_code == 0
+    assert stdout.getvalue() == "root main\n"

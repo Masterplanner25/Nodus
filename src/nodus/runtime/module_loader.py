@@ -99,6 +99,9 @@ class ModuleLoader:
         self._metadata: dict[str, ModuleMetadata] = {}
         self._parsed: dict[str, ParsedModule] = {}
         self._loading: set[str] = set()
+        self._loading_stack: list[str] = []
+        self._metadata_loading: set[str] = set()
+        self._metadata_stack: list[str] = []
         self._import_state: dict = {
             "loaded": set(),
             "loading": set(),
@@ -183,9 +186,10 @@ class ModuleLoader:
         if module_id in self._modules:
             return self._modules[module_id]
         if module_id in self._loading:
-            raise LangRuntimeError("import", f"Cyclic import detected: {module_id}", path=module_id)
+            raise self._circular_import_error(module_id, self._loading_stack)
 
         self._loading.add(module_id)
+        self._loading_stack.append(module_id)
         try:
             metadata = self._build_metadata(module_id, base_dir=base_dir, source=source, source_path=source_path)
             bytecode_unit = self._load_or_compile_module_bytecode(metadata, source_path=source_path)
@@ -214,7 +218,25 @@ class ModuleLoader:
             module.initialized = True
             return module
         finally:
+            if self._loading_stack and self._loading_stack[-1] == module_id:
+                self._loading_stack.pop()
+            elif module_id in self._loading_stack:
+                self._loading_stack.remove(module_id)
             self._loading.discard(module_id)
+
+    def _circular_import_error(self, module_id: str, stack: list[str]) -> LangRuntimeError:
+        if module_id in stack:
+            start = stack.index(module_id)
+            cycle = stack[start:] + [module_id]
+        else:
+            cycle = [module_id, module_id]
+        chain = " -> ".join(cycle)
+        return LangRuntimeError(
+            "import",
+            f"Circular import detected: {chain}",
+            path=module_id,
+            stack=cycle,
+        )
 
     def _load_or_compile_module_bytecode(
         self,
@@ -428,38 +450,63 @@ class ModuleLoader:
     ) -> ModuleMetadata:
         if module_id in self._metadata:
             return self._metadata[module_id]
+        if module_id in self._metadata_loading:
+            raise self._circular_import_error(module_id, self._metadata_stack)
 
-        if "project_root" not in self._import_state or self._import_state["project_root"] is None:
-            ensure_project_root(self._import_state, base_dir, source_path)
-            self.project_root = self._import_state.get("project_root")
-        self._ensure_dependency_graph()
+        self._metadata_loading.add(module_id)
+        self._metadata_stack.append(module_id)
+        try:
+            if "project_root" not in self._import_state or self._import_state["project_root"] is None:
+                ensure_project_root(self._import_state, base_dir, source_path)
+                self.project_root = self._import_state.get("project_root")
+            self._ensure_dependency_graph()
 
-        if source_path is not None and self._can_skip_reprocessing(source_path):
-            cached = load_cached_bytecode(self.project_root, source_path)
-            if cached is not None:
-                cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
-                if cached_metadata is not None:
-                    self._metadata[module_id] = cached_metadata
-                    return cached_metadata
+            if source_path is not None and self._can_skip_reprocessing(source_path):
+                cached = load_cached_bytecode(self.project_root, source_path)
+                if cached is not None:
+                    cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
+                    if cached_metadata is not None:
+                        self._metadata[module_id] = cached_metadata
+                        return cached_metadata
 
-        parsed = self._parse_module(module_id, base_dir=base_dir, source=source, source_path=source_path)
-        import_specs: list[ImportSpec] = []
-        export_from_specs: list[ExportFromSpec] = []
-        import_names: set[str] = set()
+            parsed = self._parse_module(module_id, base_dir=base_dir, source=source, source_path=source_path)
+            import_specs: list[ImportSpec] = []
+            export_from_specs: list[ExportFromSpec] = []
+            import_names: set[str] = set()
 
-        for stmt in parsed.imports:
-            tok = getattr(stmt, "_tok", None)
-            resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
-            import_specs.append(ImportSpec(path=stmt.path, names=list(stmt.names or []), alias=stmt.alias, resolved_path=resolved))
+            for stmt in parsed.imports:
+                tok = getattr(stmt, "_tok", None)
+                resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
+                import_specs.append(ImportSpec(path=stmt.path, names=list(stmt.names or []), alias=stmt.alias, resolved_path=resolved))
 
-        for stmt in parsed.export_from:
-            tok = getattr(stmt, "_tok", None)
-            resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
-            export_from_specs.append(ExportFromSpec(path=stmt.path, names=list(stmt.names or []), resolved_path=resolved))
+            for stmt in parsed.export_from:
+                tok = getattr(stmt, "_tok", None)
+                resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
+                export_from_specs.append(ExportFromSpec(path=stmt.path, names=list(stmt.names or []), resolved_path=resolved))
 
-        for stmt, spec in zip(parsed.imports, import_specs):
-            dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-            if spec.names:
+            for stmt, spec in zip(parsed.imports, import_specs):
+                dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
+                if spec.names:
+                    missing = [name for name in spec.names if name not in dep_meta.exports]
+                    if missing:
+                        tok = getattr(stmt, "_tok", None)
+                        line = tok.line if tok is not None else None
+                        col = tok.col if tok is not None else None
+                        raise LangRuntimeError(
+                            "import",
+                            f"Import failed: {spec.resolved_path} does not export {', '.join(missing)}",
+                            line=line,
+                            col=col,
+                            path=spec.resolved_path,
+                        )
+                    import_names.update(spec.names)
+                elif spec.alias:
+                    import_names.add(spec.alias)
+                else:
+                    import_names.update(dep_meta.exports)
+
+            for stmt, spec in zip(parsed.export_from, export_from_specs):
+                dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
                 missing = [name for name in spec.names if name not in dep_meta.exports]
                 if missing:
                     tok = getattr(stmt, "_tok", None)
@@ -467,43 +514,29 @@ class ModuleLoader:
                     col = tok.col if tok is not None else None
                     raise LangRuntimeError(
                         "import",
-                        f"Import failed: {spec.resolved_path} does not export {', '.join(missing)}",
+                        f"Re-export failed: {spec.resolved_path} does not export {', '.join(missing)}",
                         line=line,
                         col=col,
                         path=spec.resolved_path,
                     )
-                import_names.update(spec.names)
-            elif spec.alias:
-                import_names.add(spec.alias)
-            else:
-                import_names.update(dep_meta.exports)
 
-        for stmt, spec in zip(parsed.export_from, export_from_specs):
-            dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-            missing = [name for name in spec.names if name not in dep_meta.exports]
-            if missing:
-                tok = getattr(stmt, "_tok", None)
-                line = tok.line if tok is not None else None
-                col = tok.col if tok is not None else None
-                raise LangRuntimeError(
-                    "import",
-                    f"Re-export failed: {spec.resolved_path} does not export {', '.join(missing)}",
-                    line=line,
-                    col=col,
-                    path=spec.resolved_path,
-                )
-
-        metadata = ModuleMetadata(
-            module_id=module_id,
-            exports=set(parsed.module_info.exports),
-            import_names=import_names,
-            import_specs=import_specs,
-            export_from_specs=export_from_specs,
-            module_info=parsed.module_info,
-            parsed=parsed,
-        )
-        self._metadata[module_id] = metadata
-        return metadata
+            metadata = ModuleMetadata(
+                module_id=module_id,
+                exports=set(parsed.module_info.exports),
+                import_names=import_names,
+                import_specs=import_specs,
+                export_from_specs=export_from_specs,
+                module_info=parsed.module_info,
+                parsed=parsed,
+            )
+            self._metadata[module_id] = metadata
+            return metadata
+        finally:
+            if self._metadata_stack and self._metadata_stack[-1] == module_id:
+                self._metadata_stack.pop()
+            elif module_id in self._metadata_stack:
+                self._metadata_stack.remove(module_id)
+            self._metadata_loading.discard(module_id)
 
     def _parse_module(
         self,

@@ -137,12 +137,7 @@ def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str
         except Exception as err:
             return None, project_root, str(err)
         return project_entry_path(project), project_root or project.root, None
-    resolved_root = project_root
-    if resolved_root is None:
-        project = load_project_from(os.path.dirname(os.path.abspath(path)) or os.getcwd())
-        if project is not None:
-            resolved_root = project.root
-    return path, resolved_root, None
+    return path, project_root, None
 
 
 def _parse_flags(args: list[str], flags_with_values: set[str], flags_no_values: set[str]) -> tuple[list[str], dict]:

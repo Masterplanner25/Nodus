@@ -573,7 +573,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 ## Files and CLI
 - Primary source extension: `.nd`
 - Legacy `.tl` is still supported for compatibility.
-- CLI: `nodus run script.nd`, `python -m nodus.tooling.repl`, `nodus check script.nd`
+- CLI: `nodus run script.nd`, `nodus run`, `nodus repl`, `nodus check script.nd`
 - Dependency graph inspection: `nodus deps`
 - Cache maintenance: `nodus cache clear`
 - Bytecode optimization runs automatically during compilation.

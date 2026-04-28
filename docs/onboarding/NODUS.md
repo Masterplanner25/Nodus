@@ -36,7 +36,8 @@ Primary extension: `.nd`
 
 ## CLI
 - `nodus run script.nd`
-- `python -m nodus.tooling.repl`
+- `nodus run`
+- `nodus repl`
 - REPL commands: `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>`
 - `nodus fmt script.nd`
 - `nodus check script.nd`

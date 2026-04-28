@@ -1,7 +1,0 @@
-dist
-docs
-examples
-src
-tests
-tmp_demo
-tools

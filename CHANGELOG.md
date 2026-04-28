@@ -23,6 +23,22 @@
 ### Refactoring
 - None.
 
+## [1.1.2] - 2026-04-27
+
+### Added
+- `nodus repl` CLI command.
+
+### Fixed
+- duplicate execution when both `main.nd` and `src/main.nd` exist.
+- circular import detection with full chain reporting.
+- stdlib packaging issues.
+
+### Changed
+- clarified execution behavior for `nodus run`.
+
+### Notes
+- runtime behavior is now consistent between development and installed environments.
+
 ## 1.1.1 - 2026-04-26
 
 ### Added

@@ -75,3 +75,50 @@ def test_module_loader_resolves_installed_modules_before_stdlib(tmp_path):
     result, _vm = run_source(code, filename=main_path)
     assert result["ok"] is True
     assert result["stdout"].strip() == "dep:ok"
+
+
+def test_module_loader_reports_circular_import_chain(tmp_path):
+    a_path = _write(tmp_path, "A.nd", 'import "./B.nd"\n')
+    b_path = _write(tmp_path, "B.nd", 'import "./A.nd"\n')
+
+    code = open(a_path, "r", encoding="utf-8").read()
+    result, _vm = run_source(code, filename=a_path)
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "runtime"
+    assert result["error"]["kind"] == "import"
+    message = result["error"]["message"]
+    assert "Circular import detected" in message
+    assert a_path in message
+    assert b_path in message
+    assert f"{a_path} -> {b_path} -> {a_path}" in message
+    assert "maximum recursion depth exceeded" not in message
+    assert result["error"]["path"] == a_path
+
+
+def test_module_loader_reports_deep_circular_import_chain(tmp_path):
+    paths = {
+        name: _write(tmp_path, f"{name}.nd", f'import "./{next_name}.nd"\n')
+        for name, next_name in [
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "D"),
+            ("D", "E"),
+            ("E", "A"),
+        ]
+    }
+
+    code = open(paths["A"], "r", encoding="utf-8").read()
+    result, _vm = run_source(code, filename=paths["A"])
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "runtime"
+    assert result["error"]["kind"] == "import"
+    message = result["error"]["message"]
+    expected_chain = " -> ".join(
+        [paths["A"], paths["B"], paths["C"], paths["D"], paths["E"], paths["A"]]
+    )
+    assert "Circular import detected" in message
+    assert expected_chain in message
+    assert "maximum recursion depth exceeded" not in message
+    assert result["error"]["path"] == paths["A"]

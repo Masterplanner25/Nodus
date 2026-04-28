@@ -5,7 +5,7 @@ The Nodus REPL is an interactive shell for quick experiments, bytecode inspectio
 Start it with:
 
 ```bash
-python -m nodus.tooling.repl
+nodus repl
 ```
 
 ## Multiline Editing

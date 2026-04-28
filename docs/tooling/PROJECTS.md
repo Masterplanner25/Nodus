@@ -74,7 +74,7 @@ nodus remove json
 Run a script directly:
 
 ```bash
-nodus run src/main.nd
+nodus run main.nd
 ```
 
 Run a project directory:
@@ -84,6 +84,8 @@ nodus run .
 ```
 
 If `nodus run` is executed inside a project root with no script argument, it runs `src/main.nd`.
+
+If `nodus run <file>` is given an explicit file path, Nodus runs only that file even when `nodus.toml` is present.
 
 ## Lockfile
 

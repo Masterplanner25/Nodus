@@ -87,3 +87,8 @@ nodus repl
 - `nodus check hello.nd` checks a file without running it.
 - `nodus check` checks the current project's `src/main.nd` when run inside a project directory.
 - `nodus fmt hello.nd` formats a file.
+
+Execution rule:
+
+- `nodus run <file>` runs only the file you provide.
+- `nodus run` with no file runs only `src/main.nd` when `nodus.toml` is present.
