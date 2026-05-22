@@ -112,6 +112,20 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 - ✅ Formatter AST coverage audit complete: all 48 AST node types handled in format_stmt()/format_expr(). Added Yield, Throw, TryCatch, DestructureLet, VarPattern, ListPattern, RecordPattern handlers. See tests/test_formatter_coverage.py.
 - ✅ Opcode set frozen: freeze declared 2026-03-15. 48 opcodes (47 active + 1 removed); **47 stable, 0 provisional, 1 removed** (`LOAD_LOCAL`). `BYTECODE_VERSION = 4`. See `FREEZE_PROPOSAL.md` for the formal declaration and post-freeze extension process.
 
+## Phase 2 Code Hygiene Fixes Applied (2026-05-22)
+
+- ✅ `nodus.py:23` F821 undefined name `main`: added `from nodus.cli.cli import main` inside the `if __name__ == "__main__":` block. Previously relied on `spec.loader.exec_module()` populating the namespace implicitly; now unconditionally resolved.
+- ✅ `src/nodus/frontend/types.py` exec() pattern: replaced `exec(compile(_f.read(), _stdlib_types_path, "exec"), _stdlib_namespace)` block with explicit `from types import ...` statements covering all names in `types.__all__`. `FunctionType` from stdlib is intentionally omitted since the subsequent `from nodus.frontend.type_system import FunctionType` always overwrote it. `__all__` converted from dynamic construction to a static list. Module is now statically analysable.
+- ✅ `src/nodus/runtime/project.py` unused imports: removed 9 unused imports from `nodus.tooling.project` (`DependencySpec`, `create_project`, `find_project_root`, `load_manifest`, `load_project`, `load_project_from`, `parse_dependencies`, `read_lockfile`, `write_lockfile`). Confirmed no consumer imports these names via `nodus.runtime.project`; all callers use `nodus.tooling.project` directly.
+
+## Phase 1 CI & Safety Fixes Applied (2026-05-22)
+
+- ✅ CI: Added `Pytest` step (`python -m pytest -q`) after `Unit tests`, before `Install build tooling`. `tests/test_formatter_foreach.py` was silently excluded from the `python -m unittest discover` runner because it uses bare pytest function style. Now run in CI.
+- ✅ CI: Added `Lint` step (`pip install ruff && ruff check .`) as the first substantive step after `Set up Python`. The step fails the build on any lint error. 77 existing errors will immediately surface on the next CI run. No `--fix` flag; lint is check-only.
+- ✅ CI: Removed auto-format + git-commit step pair (`Auto-format all .nd files` + `Commit formatted files`). These steps mutated branch history on every push with `permissions: contents: write`. Format enforcement is now check-only via the existing `nodus fmt --check` step.
+- ✅ CI: `permissions: contents` downgraded from `write` to `read` now that the auto-commit step is gone.
+- ✅ `pyproject.toml` `[server]` extras: `fastapi` and `uvicorn` now carry explicit version bounds (`>=0.111.0,<1` and `>=0.30.0,<1` respectively). Previously fully unpinned; a `pip install "nodus-lang[server]"` could pull `fastapi 0.136` or `uvicorn 0.47` against tested `0.111`/`0.30`.
+
 ## Phase 4 Fixes Applied (documentation completeness)
 
 - ✅ Fix 16 — ARCHITECTURE.md completeness audit: added AST attribute convention

@@ -23,32 +23,55 @@ Nodus prioritizes:
 Changes should improve readability, reliability, or tooling quality without unnecessarily increasing complexity.
 
 Repository Structure
-nodus/
+
+```
+src/nodus/
 │
-├─ lexer.py                # Tokenizer
-├─ parser.py               # Parser → AST
-├─ ast_nodes.py            # AST node definitions
-├─ compiler.py             # AST → bytecode
-├─ vm.py                   # Stack virtual machine
-├─ task_graph.py           # Task/workflow runtime layer
-├─ workflow_lowering.py    # Workflow → task graph lowering
+├─ frontend/               # Language frontend
+│  ├─ lexer.py             # Source text → tokens
+│  ├─ parser.py            # Tokens → AST
+│  ├─ ast/ast_nodes.py     # AST node definitions
+│  ├─ ast/ast_printer.py   # AST inspection tooling
+│  ├─ visitor.py           # NodeVisitor base class
+│  └─ type_system.py       # Static type objects
 │
-├─ ast_printer.py          # AST inspection tooling
-├─ formatter.py            # Deterministic formatter
+├─ compiler/               # AST → bytecode
+│  ├─ compiler.py          # Bytecode emitter
+│  ├─ optimizer.py         # Constant folding / peephole
+│  └─ symbol_table.py      # Scope and slot tracking
 │
-├─ cli.py                  # CLI interface
-├─ runner.py               # Execution helpers
-├─ api.py                  # Optional service layer
+├─ vm/                     # Stack virtual machine
+│  └─ vm.py                # Opcode dispatch and execution
 │
-├─ stdlib/                 # Standard library modules
+├─ runtime/                # Execution infrastructure
+│  ├─ module_loader.py     # Import resolution
+│  ├─ scheduler.py         # Coroutine scheduler
+│  ├─ embedding.py         # NodusRuntime public API
+│  └─ diagnostics.py       # Error types and formatting
+│
+├─ orchestration/          # Workflow / task graph layer
+│  ├─ task_graph.py        # Task graph execution
+│  └─ workflow_lowering.py # Workflow → task graph lowering
+│
+├─ tooling/                # Developer-facing tools
+│  ├─ formatter.py         # Deterministic source formatter
+│  ├─ runner.py            # Execution helpers
+│  └─ package_manager.py   # Package install / publish
+│
+├─ services/               # Optional HTTP / agent services
+│  └─ server.py            # HTTP API (nodus serve)
+│
+├─ builtins/               # Built-in function registry
+├─ lsp/                    # Language Server Protocol server
+├─ dap/                    # Debug Adapter Protocol server
+├─ stdlib/                 # Standard library (.nd modules)
 │
 tests/
-│
 docs/
-│
 README.md
-LANGUAGE_SPEC.md
 CHANGELOG.md
+pyproject.toml
+```
 
 If adding new components, keep the architecture consistent with this structure.
 
@@ -72,7 +95,7 @@ Windows (PowerShell)
 
 Install development dependencies:
 
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 Running Tests
 
 Nodus uses the standard `unittest` runner for testing.
@@ -187,7 +210,7 @@ Update the VM
 
 Add tests
 
-Update LANGUAGE_SPEC.md
+Update docs/language/LANGUAGE_SPEC.md
 
 Pull requests missing these updates may be rejected.
 

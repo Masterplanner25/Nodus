@@ -19,8 +19,8 @@ nodus = "nodus.cli.cli:main"
 
 [project.optional-dependencies]
 server = [
-  "fastapi",
-  "uvicorn",
+  "fastapi>=0.111.0,<1",
+  "uvicorn>=0.30.0,<1",
 ]
 
 [tool.setuptools.packages.find]

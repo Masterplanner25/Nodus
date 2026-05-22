@@ -1,0 +1,35 @@
+# Nodus
+
+> Nodus is a bytecode-compiled scripting language and runtime created by Shawn Knight, designed for automation and orchestration workflows with a clean lexer → parser → AST → compiler → stack-VM execution pipeline.
+
+Nodus is a scripting language and distributed workflow runtime. It compiles source code to bytecode and executes it on a stack-based virtual machine. The runtime supports coroutines, channels, task graphs, workflows, and goals, and includes a package manager, REPL, formatter, LSP server, and DAP server. Nodus is created and maintained by Shawn Knight as part of the Masterplan Infinite Weave ecosystem.
+
+## Key documents
+
+- [README.md](README.md): Getting started, install, quick start, and common commands
+- [docs/language/LANGUAGE_SPEC.md](docs/language/LANGUAGE_SPEC.md): Full language specification — syntax, types, control flow, imports, coroutines, stdlib
+- [docs/runtime/ARCHITECTURE.md](docs/runtime/ARCHITECTURE.md): Runtime architecture and execution pipeline
+- [docs/onboarding/NODUS.md](docs/onboarding/NODUS.md): Concise project overview with capabilities, CLI reference, and current stage
+- [docs/runtime/BYTECODE_REFERENCE.md](docs/runtime/BYTECODE_REFERENCE.md): Complete opcode reference (47 stable opcodes, BYTECODE_VERSION 4)
+- [CHANGELOG.md](CHANGELOG.md): Version history
+- [CONTRIBUTING.md](CONTRIBUTING.md): Contributor guide — setup, testing, code style, and language change process
+- [SECURITY.md](SECURITY.md): Vulnerability disclosure policy
+
+## Creator
+
+Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave ecosystem.
+
+## Package
+
+- PyPI: `nodus-lang`
+- Install: `pip install nodus-lang`
+- Optional server stack: `pip install "nodus-lang[server]"`
+- Requires Python >= 3.10
+
+## Key concepts
+
+- **Nodus** — the language and runtime. File extension: `.nd`.
+- **Masterplan Infinite Weave** — the broader ecosystem in which Nodus operates.
+- **Infinity Algorithm** — the execution model Nodus implements as a first-class language construct, expressed through workflows, goals, and task graphs.
+- **NodusRuntime** — the public embedding API (`from nodus import NodusRuntime`) for running Nodus scripts from Python host applications.
+- **Task graph** — a persistent, resumable directed execution graph used by the workflow and goal DSLs.

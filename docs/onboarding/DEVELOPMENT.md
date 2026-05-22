@@ -25,7 +25,7 @@ Lexer
 
 File:
 
-lexer.py
+src/nodus/frontend/lexer.py
 
 Responsibilities:
 
@@ -41,7 +41,7 @@ Parser
 
 File:
 
-parser.py
+src/nodus/frontend/parser.py
 
 Responsibilities:
 
@@ -49,7 +49,7 @@ Convert tokens into an Abstract Syntax Tree (AST)
 
 Enforce language grammar rules
 
-Produce structured AST nodes defined in ast_nodes.py
+Produce structured AST nodes defined in src/nodus/frontend/ast/ast_nodes.py
 
 The parser uses recursive descent parsing.
 
@@ -57,7 +57,7 @@ AST Nodes
 
 File:
 
-ast_nodes.py
+src/nodus/frontend/ast/ast_nodes.py
 
 Defines the language structure.
 
@@ -85,7 +85,7 @@ Compiler
 
 File:
 
-compiler.py
+src/nodus/compiler/compiler.py
 
 Responsibilities:
 
@@ -103,7 +103,7 @@ Virtual Machine
 
 File:
 
-vm.py
+src/nodus/vm/vm.py
 
 The Nodus runtime executes bytecode instructions.
 
@@ -136,8 +136,8 @@ Task Graph Runtime
 
 Files:
 
-task_graph.py
-workflow_lowering.py
+src/nodus/orchestration/task_graph.py
+src/nodus/orchestration/workflow_lowering.py
 
 These components allow Nodus to express workflow-style execution.
 

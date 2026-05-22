@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -17,23 +17,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Auto-format all .nd files
+      - name: Lint
         run: |
-          find . -name "*.nd" \
-            -not -path "./.git/*" \
-            -not -path "./.venv/*" \
-            -not -path "./tmp_demo/*" \
-            -not -path "./tests/fixtures/fmt/*" \
-            | xargs -I {} python nodus.py fmt {}
-
-      - name: Commit formatted files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet || (
-            git add $(find . -name "*.nd" -not -path "./.git/*" -not -path "./.venv/*") &&
-            git commit -m "style: auto-format .nd files [skip ci]"
-          )
+          pip install ruff
+          ruff check .
 
       - name: Check .nd formatting
         run: |
@@ -51,6 +38,9 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+
+      - name: Pytest
+        run: python -m pytest -q
 
       - name: Install build tooling
         run: python -m pip install build wheel

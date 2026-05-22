@@ -20,4 +20,5 @@ if spec and spec.loader:
 
 
 if __name__ == "__main__":
+    from nodus.cli.cli import main
     raise SystemExit(main())
