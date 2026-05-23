@@ -9,6 +9,7 @@ description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   { name = "Shawn Knight" }
 ]
+license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.10"
 
@@ -43,4 +44,3 @@ filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",
 ]
-
