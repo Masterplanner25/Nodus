@@ -15,42 +15,18 @@
 # =============================================================================
 
 import os
-import warnings
 
-from nodus.tooling.analyzer import analyze_program
 from nodus.frontend.visitor import NodeVisitor
 from nodus.frontend.ast.ast_nodes import (
-    Assign,
-    Attr,
-    Bin,
-    Block,
     ExportList,
     ExportFrom,
-    ExprStmt,
-    FnDef,
-    GoalDef,
-    If,
     Import,
-    Index,
-    IndexAssign,
-    Let,
-    ListLit,
-    MapLit,
     ModuleAlias,
     ModuleInfo,
-    WorkflowDef,
-    Call,
-    Comment,
-    Unary,
-    While,
-    For,
 )
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.frontend.lexer import Tok, tokenize
-from nodus.compiler.optimizer import optimize_bytecode
 from nodus.frontend.parser import Parser
-from nodus.compiler.compiler import Compiler, wrap_bytecode
-from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
 from nodus.runtime.module_loader import ModuleLoader

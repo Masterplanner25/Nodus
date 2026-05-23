@@ -1,4 +1,4 @@
-Contributing to Nodus
+# Contributing to Nodus
 
 Thank you for your interest in contributing to Nodus.
 
@@ -10,7 +10,7 @@ The goal of the project is to maintain a clear, disciplined architecture while g
 
 Even small contributions should respect this structure.
 
-Project Philosophy
+## Project Philosophy
 
 Nodus prioritizes:
 
@@ -22,7 +22,7 @@ Nodus prioritizes:
 
 Changes should improve readability, reliability, or tooling quality without unnecessarily increasing complexity.
 
-Repository Structure
+## Repository Structure
 
 ```
 src/nodus/
@@ -75,7 +75,7 @@ pyproject.toml
 
 If adding new components, keep the architecture consistent with this structure.
 
-Development Setup
+## Development Setup
 
 Clone the repository:
 
@@ -88,15 +88,17 @@ python -m venv .venv
 
 Activate it:
 
-Linux / Mac
+### Linux / Mac
 source .venv/bin/activate
-Windows (PowerShell)
+
+### Windows (PowerShell)
 .venv\Scripts\Activate.ps1
 
 Install development dependencies:
 
 pip install -r requirements.txt
-Running Tests
+
+## Running Tests
 
 Nodus uses the standard `unittest` runner for testing.
 
@@ -114,7 +116,7 @@ python -m unittest tests.test_vm.VMTests.test_name -v
 
 All contributions must pass the full test suite.
 
-CLI Development Tools
+## CLI Development Tools
 
 Several CLI tools help inspect the language.
 
@@ -136,7 +138,7 @@ nodus fmt file.nd
 
 These tools should remain stable and deterministic.
 
-Code Style Guidelines
+## Code Style Guidelines
 
 Follow standard Python practices.
 
@@ -162,7 +164,8 @@ def compile_expression(expr):
 Avoid:
 
 def c(e): emit(OP_ADD)
-Submitting Changes
+
+## Submitting Changes
 
 Fork the repository
 
@@ -184,7 +187,7 @@ Add AST serialization support for tooling
 
 Submit a pull request.
 
-Language Feature Changes
+## Language Feature Changes
 
 Changes to the language itself must be handled carefully.
 
@@ -214,7 +217,7 @@ Update docs/language/LANGUAGE_SPEC.md
 
 Pull requests missing these updates may be rejected.
 
-Standard Library Contributions
+## Standard Library Contributions
 
 The standard library should remain small and coherent.
 
@@ -230,7 +233,7 @@ Avoid:
 • Highly specialized features
 • Heavy dependencies
 
-Backwards Compatibility
+## Backwards Compatibility
 
 Breaking changes should be avoided unless necessary.
 
@@ -240,7 +243,7 @@ If a breaking change is required:
 • Update the changelog
 • Bump the appropriate version
 
-Versioning
+## Versioning
 
 Nodus follows Semantic Versioning.
 
@@ -258,7 +261,7 @@ Meaning:
 • MINOR — new features
 • PATCH — bug fixes
 
-Release Process
+## Release Process
 
 Update CHANGELOG.md
 
@@ -271,7 +274,7 @@ git push origin v0.3.0
 
 Publish release notes.
 
-Reporting Issues
+## Reporting Issues
 
 When reporting a bug include:
 
@@ -288,13 +291,13 @@ fn main() {
 
 Expected vs actual behavior should be clearly described.
 
-Code of Conduct
+## Code of Conduct
 
 Be respectful and constructive.
 
 Nodus is an educational and experimental language project intended to promote learning and exploration in language design.
 
-Final Notes
+## Final Notes
 
 The most valuable contributions are:
 

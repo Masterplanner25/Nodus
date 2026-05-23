@@ -30,7 +30,6 @@ from nodus.frontend.ast.ast_nodes import (
     Let,
     ListLit,
     MapLit,
-    ModuleAlias,
     Nil,
     Num,
     Param,
@@ -865,7 +864,7 @@ class LanguageServer:
         try:
             tokens = tokenize(text)
             ast = Parser(tokens).parse()
-        except Exception as err:
+        except Exception:
             return DocumentState(uri, path, text, [], tokens, [], [], {}, {})
         document = _DocumentIndexer(server=self, path=path, uri=uri, text=text, tokens=tokens, ast=ast).build()
         return document

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-TASK_STEP_BUDGET = 1000
-
 import heapq
 import sys
 import time
@@ -13,6 +11,7 @@ from nodus.runtime.diagnostics import LangRuntimeError, format_error
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.runtime_events import RuntimeEvent
 
+TASK_STEP_BUDGET = 1000
 SLEEP_KEY = "__sleep_ms"
 CHANNEL_WAIT_KEY = "__channel_wait"
 

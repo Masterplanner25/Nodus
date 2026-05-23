@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import io
 import json
 import os
 import shutil

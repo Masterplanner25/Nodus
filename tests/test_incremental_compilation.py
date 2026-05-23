@@ -22,7 +22,7 @@ def _bump_mtime(path: str) -> None:
 
 def test_unchanged_modules_skip_reparsing_and_recompilation(tmp_path, monkeypatch):
     (tmp_path / "nodus.toml").write_text('name = "demo"\nversion = "0.1.0"\n', encoding="utf-8")
-    util_path = _write(tmp_path, "util.nd", "export let value = 1\n")
+    _write(tmp_path, "util.nd", "export let value = 1\n")
     main_path = _write(tmp_path, "main.nd", 'import "./util.nd" as util\nprint(util.value)\n')
 
     ModuleLoader(project_root=str(tmp_path)).load_module_from_path(main_path)

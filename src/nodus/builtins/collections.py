@@ -2,7 +2,6 @@
 
 import json
 
-from nodus.vm.runtime_values import is_json_safe
 
 
 def register(vm, registry) -> None:

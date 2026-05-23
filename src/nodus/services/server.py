@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import threading
 from urllib.parse import parse_qs, urlparse
+from nodus.support.version import VERSION
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from nodus.support.config import SERVER_HOST, SERVER_PORT, SESSION_TIMEOUT_MS, MAX_SESSIONS, WORKER_SWEEP_INTERVAL_MS
@@ -34,7 +35,6 @@ from nodus.tooling.runner import (
     resume_workflow_in_vm,
     run_workflow_code,
     plan_workflow_code,
-    resume_goal,
     workflow_checkpoints,
     tool_call_result,
 )
@@ -45,7 +45,6 @@ from nodus.orchestration.task_graph import load_graph_state, latest_graph_state
 from nodus.runtime.sessions import SessionManager
 from nodus.runtime.snapshots import SnapshotManager
 from nodus.vm.vm import VM
-import threading
 import time
 from nodus.orchestration.task_graph import set_default_dispatcher
 
@@ -297,7 +296,6 @@ class WorkerManager:
             job["done"] = True
             self._cond.notify_all()
             return {"ok": True}
-from nodus.support.version import VERSION
 
 try:
     from fastapi import FastAPI, Request

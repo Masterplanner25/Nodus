@@ -25,19 +25,19 @@ Items below were raised in a third-party review and are now validated with concr
 ## Validated Findings
 
 - ✅ VM builtin extraction complete: I/O, math, coroutine, and collection builtins extracted into `src/nodus/builtins/` category modules and registered at VM construction time via `BuiltinRegistry` (`src/nodus/builtins/__init__.py`).
-- Compiler contains unreachable `For`/`ForEach` branches that return immediately (`src/nodus/compiler/compiler.py:513` and `src/nodus/compiler/compiler.py:515`), after already handling those node types earlier (`src/nodus/compiler/compiler.py:412` and `src/nodus/compiler/compiler.py:431`).
+- ✅ Compiler unreachable `For`/`ForEach` branches: the duplicate `return`-only handlers at the old compiler.py:513/515 have been removed. A single handler per node type now exists: `For` at compiler.py:435, `ForEach` at compiler.py:454. Confirmed resolved in v0.9 code hygiene pass.
 - ✅ VM execute() dispatch table implemented: if/elif chain replaced with dict dispatch (_dispatch) built at construction time; each opcode is handled by a _op_XXX method (src/nodus/vm/vm.py).
 - Long `elif` dispatch chains remain in the compiler (compiler.py:327 for compile_stmt and compiler.py:540 for compile_expr). Consider dispatch tables for maintainability.
 - AST node type hints are overly broad (`object`) in `src/nodus/frontend/ast/ast_nodes.py` (e.g., `Unary.expr`, `Bin.a`, `Bin.b`, `Call.callee`, `Let.expr`, `If.cond`).
-- Deadline checking calls `time.monotonic()` on every instruction in `record_instruction` (`src/nodus/vm/vm.py:1731`). Consider batching the check to reduce hot-path overhead.
+- ✅ Deadline checking batched in `record_instruction`: `time.monotonic()` is now called only every `_deadline_check_interval` instructions, not on every step. Check interval logic at `src/nodus/vm/vm.py` in `record_instruction`.
 - ✅ Channel waiting queues converted to `collections.deque`: `waiting_receivers` and `waiting_senders` in `channel.py`; `pop(0)` replaced with `popleft()` in `builtins/coroutine.py`.
 - ✅ `_op_throw` (`src/nodus/vm/vm.py:2142`) now preserves structured thrown values; fixed in v1.0. `handle_exception` (vm.py:310) is also correct. See Open Items for full resolution notes.
-- Anonymous functions share the same display name (`src/nodus/compiler/compiler.py:722` uses `__anon` for all function expressions). Consider unique names for traceability.
+- ✅ Anonymous functions now have unique display names: `src/nodus/compiler/compiler.py:791` emits `f"__anon_{self.fn_counter}"`, giving each anonymous function expression a distinct, traceable name.
 - File I/O builtins are unrestricted by default (`src/nodus/vm/vm.py:1464-1510`). An allowlist hook is available (`VM.allowed_paths`) and now wired into CLI/server; it remains opt-in.
-- Relative import containment for non-std, non-package relative paths (`src/nodus/tooling/loader.py:150-170` and `src/nodus/runtime/module_loader.py:500-525`) is now guarded by project-root containment checks.
-- HTTP server endpoints now support bearer-token auth (`src/nodus/services/server.py:780-920` and `src/nodus/services/server.py:960-1120`). It remains opt-in, but non-local binding requires a token.
-- VM call stack has no explicit max depth check (e.g., `src/nodus/vm/vm.py:1459` `call_closure` and `src/nodus/vm/vm.py:2012` `CALL` opcode paths). Consider a max frame depth for sandbox safety.
-- `input()` uses `input_fn` defaulting to Python `input()` (`src/nodus/vm/vm.py:76` and `src/nodus/vm/vm.py:1360`). Server mode now blocks `input()` by default, but embedding still uses the default unless configured.
+- ✅ Relative import containment implemented: non-std, non-package relative paths are guarded by project-root containment checks in `src/nodus/tooling/loader.py` and `src/nodus/runtime/module_loader.py`.
+- ✅ HTTP bearer-token auth implemented: `src/nodus/services/server.py` enforces token authentication. Non-local binding requires a token; local-only binding remains opt-in.
+- ✅ VM call stack max depth check: enforced in `call_closure` (`src/nodus/vm/vm.py:1518`) and the `CALL` opcode path (`src/nodus/vm/vm.py:2071`). `self.max_frames` guard raises `sandbox / Call stack overflow` if exceeded. Remains opt-in (`max_frames` defaults to `None`).
+- `input()` uses `input_fn` defaulting to Python `input()` (`src/nodus/vm/vm.py:137` and `src/nodus/vm/vm.py:162`). Server mode now blocks `input()` by default, but embedding still uses the default unless configured.
 
 ## Additional Validated Items
 
@@ -91,7 +91,7 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
 - ✅ `NodusRuntime` added to `__all__`: `src/nodus/__init__.py` now imports and exports `NodusRuntime` directly. `from nodus import NodusRuntime` works as of v1.0. EMBEDDING.md updated. Fixed in v1.0.
 - ✅ `LOAD_LOCAL` compiler fallbacks: audited and fixed in v1.0. All three paths (compiler.py lines 584, 619, 731) confirmed unreachable — `SymbolTable.define()` always assigns `symbol.index` when `in_function_scope()` is True, making "local + in_function + index is None" a logical contradiction. Fallback emissions replaced with `assert symbol.index is not None` guards. See DEPRECATIONS.md.
-- `vm.py` line count: ~2,371 lines as of v1.0. Further extraction of workflow/goal builtins and scheduler helpers is possible.
+- `vm.py` line count: 2,418 lines as of v1.1.2. Further extraction of workflow/goal builtins and scheduler helpers is possible.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 
@@ -121,7 +121,7 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 ## Phase 1 CI & Safety Fixes Applied (2026-05-22)
 
 - ✅ CI: Added `Pytest` step (`python -m pytest -q`) after `Unit tests`, before `Install build tooling`. `tests/test_formatter_foreach.py` was silently excluded from the `python -m unittest discover` runner because it uses bare pytest function style. Now run in CI.
-- ✅ CI: Added `Lint` step (`pip install ruff && ruff check .`) as the first substantive step after `Set up Python`. The step fails the build on any lint error. 77 existing errors will immediately surface on the next CI run. No `--fix` flag; lint is check-only.
+- ✅ CI: Added `Lint` step (`pip install ruff && ruff check .`) as the first substantive step after `Set up Python`. The step fails the build on any lint error. No `--fix` flag; lint is check-only. Legacy backlog of 66 errors resolved in Phase 4A (2026-05-22); `ruff check .` now exits 0.
 - ✅ CI: Removed auto-format + git-commit step pair (`Auto-format all .nd files` + `Commit formatted files`). These steps mutated branch history on every push with `permissions: contents: write`. Format enforcement is now check-only via the existing `nodus fmt --check` step.
 - ✅ CI: `permissions: contents` downgraded from `write` to `read` now that the auto-commit step is gone.
 - ✅ `pyproject.toml` `[server]` extras: `fastapi` and `uvicorn` now carry explicit version bounds (`>=0.111.0,<1` and `>=0.30.0,<1` respectively). Previously fully unpinned; a `pip install "nodus-lang[server]"` could pull `fastapi 0.136` or `uvicorn 0.47` against tested `0.111`/`0.30`.

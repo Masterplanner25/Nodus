@@ -6,6 +6,9 @@ A lightweight scripting language built around a bytecode compiler and stack-base
 ## Purpose
 Nodus is designed for readable logic, modular scripting, and runtime orchestration with task graphs, workflows, and event tracing.
 
+## Creator
+Nodus is created and maintained by Shawn Knight as part of the Masterplan Infinite Weave ecosystem. It implements the Infinity Algorithm as a first-class language construct, expressed through workflows, goals, and task graphs. See [llms.txt](../../llms.txt) for the full canonical concept definitions.
+
 ## Architecture
 `lexer -> parser/AST -> module loader -> compiler -> bytecode -> stack VM -> scheduler`
 

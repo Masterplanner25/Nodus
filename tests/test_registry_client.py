@@ -293,7 +293,6 @@ class TestPublishPackage(unittest.TestCase):
         return out, sha
 
     def test_publish_sends_post_to_correct_endpoint(self):
-        import urllib.error
         captured = {}
         with tempfile.TemporaryDirectory() as td:
             archive, sha = self._make_archive(td)
@@ -312,7 +311,7 @@ class TestPublishPackage(unittest.TestCase):
 
             with patch("urllib.request.urlopen", side_effect=mock_urlopen):
                 client = RegistryClient("https://registry.example.com", token="tok")
-                result = client.publish_package("mypkg", "1.0.0", archive, sha)
+                client.publish_package("mypkg", "1.0.0", archive, sha)
         self.assertIn("/packages/mypkg/1.0.0", captured["url"])
         self.assertEqual(captured["method"], "POST")
         self.assertIn("Authorization", captured["headers"])

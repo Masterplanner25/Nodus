@@ -1,14 +1,17 @@
-Security Policy
-Supported Versions
+# Security Policy
+
+## Supported Versions
 
 Nodus is currently in early development.
 
 Security fixes will be applied to the latest version only.
 
-Version	Supported
-Latest	✅
-Older versions	❌
-Reporting a Vulnerability
+| Version        | Supported |
+| -------------- | --------- |
+| Latest         | ✅        |
+| Older versions | ❌        |
+
+## Reporting a Vulnerability
 
 If you discover a security vulnerability, please do not open a public issue immediately.
 
@@ -28,7 +31,7 @@ Potential impact
 
 Suggested mitigation if known
 
-What Qualifies as a Security Issue
+## What Qualifies as a Security Issue
 
 Examples include:
 
@@ -44,7 +47,7 @@ Unsafe interpreter behavior
 
 General bugs or crashes should be reported through normal GitHub issues.
 
-Responsible Disclosure
+## Responsible Disclosure
 
 Once a vulnerability is reported:
 
@@ -56,7 +59,7 @@ A patch release will be published
 
 Contributors who report vulnerabilities responsibly will be credited where appropriate.
 
-Security Philosophy
+## Security Philosophy
 
 Nodus prioritizes:
 

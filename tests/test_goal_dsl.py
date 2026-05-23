@@ -10,7 +10,7 @@ import http.client
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.services.agent_runtime import AGENT_REGISTRY, register_agent, unregister_agent
+from nodus.services.agent_runtime import AGENT_REGISTRY, register_agent
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE
 from nodus.services.server import run_in_thread
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state, get_registered_graph
-from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
+from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded

@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from nodus.cli.cli import debug_file, main
+from nodus.cli.cli import debug_file, main  # noqa: E402
 
 __all__ = ["main", "debug_file"]
 

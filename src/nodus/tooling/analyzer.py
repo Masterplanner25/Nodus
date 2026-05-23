@@ -38,7 +38,7 @@ from nodus.frontend.ast.ast_nodes import (
     CheckpointStmt,
     While,
 )
-from nodus.frontend.type_system import ANY, BOOL, FLOAT, FUNCTION, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types, is_assignable, parse_type_name
+from nodus.frontend.type_system import ANY, BOOL, FLOAT, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types, is_assignable, parse_type_name
 from nodus.frontend.visitor import NodeVisitor
 
 

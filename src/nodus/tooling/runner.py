@@ -385,7 +385,7 @@ def check_source(
 ):
     from nodus.tooling.analyzer import analyze_program
     from nodus.runtime.module_loader import set_module_on_tree
-    from nodus.compiler.compiler import Compiler, wrap_bytecode
+    from nodus.compiler.compiler import Compiler
     from nodus.builtins.nodus_builtins import BUILTIN_NAMES
     project_root_val = import_state.get("project_root") if import_state else None
     try:

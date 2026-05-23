@@ -194,7 +194,6 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         then_lines = format_block(stmt.then_branch, indent + 1, keep_trailing_comments=keep_trailing_comments)
         out = [header] + then_lines + [f"{prefix}}}"]
         if stmt.else_branch is not None:
-            else_header = f"{prefix}else {{"
             else_lines = format_block(stmt.else_branch, indent + 1, keep_trailing_comments=keep_trailing_comments)
             out[-1] = f"{prefix}}} else {{"
             out += else_lines + [f"{prefix}}}"]

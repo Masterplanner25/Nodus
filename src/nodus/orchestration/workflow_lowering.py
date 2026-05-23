@@ -44,7 +44,6 @@ from nodus.frontend.ast.ast_nodes import (
     VarPattern,
     While,
     WorkflowDef,
-    WorkflowStateDecl,
     WorkflowStep,
 )
 from nodus.orchestration.task_graph import TaskGraph, TaskNode

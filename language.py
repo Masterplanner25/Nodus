@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import nodus as lang
+import nodus as lang  # noqa: E402
 
 
 def main(argv=None):

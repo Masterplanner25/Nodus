@@ -333,7 +333,6 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     by_id = {task.task_id: task for task in tasks}
     pending = set(task.task_id for task in tasks)
     pending_queue = [task.task_id for task in tasks]
-    scheduler_hint: list[str] = []
     scheduler_order_map: dict[str, int] = {}
     def _remove_task_from_pending(task_id: str) -> None:
         pending.discard(task_id)
@@ -413,7 +412,6 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     continue
                 filtered_hint.append(tid)
                 seen_hint.add(tid)
-            scheduler_hint = filtered_hint
             scheduler_order_map = {tid: idx for idx, tid in enumerate(filtered_hint)}
     if workflow_name is not None:
         vm.event_bus.emit_event("workflow_start", data={"workflow": workflow_name, "graph_id": graph.graph_id})
@@ -934,7 +932,6 @@ def plan_graph(tasks: list[TaskNode], graph: TaskGraph | None = None) -> dict:
     nodes = [task.task_id for task in tasks]
     edges = []
     indegree: dict[str, int] = {task.task_id: 0 for task in tasks}
-    by_id = {task.task_id: task for task in tasks}
 
     for task in tasks:
         for dep in task.dependencies:

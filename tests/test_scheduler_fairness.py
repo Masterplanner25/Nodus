@@ -1,4 +1,3 @@
-import os
 
 from nodus.tooling.runner import run_source
 

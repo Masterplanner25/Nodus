@@ -2,7 +2,6 @@ import io
 import json
 import os
 import tempfile
-import time
 import unittest
 
 from nodus.dap.server import DebugAdapterServer

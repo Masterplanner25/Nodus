@@ -19,7 +19,7 @@ nodus = "nodus.cli.cli:main"
 
 [project.optional-dependencies]
 server = [
-  "fastapi>=0.111.0,<1",
+  "fastapi>=0.136.0,<1",
   "uvicorn>=0.30.0,<1",
 ]
 
@@ -34,6 +34,5 @@ testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",
-    "ignore::PendingDeprecationWarning:starlette",
 ]
 
