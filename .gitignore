@@ -30,3 +30,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Audit reports
+AUDIT_REPORT*.md
