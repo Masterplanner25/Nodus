@@ -23,41 +23,23 @@ from nodus.result import Result
 from nodus.runtime.embedding import NodusRuntime
 
 
-
-def resolve_imports(*args, **kwargs):
-    """Resolve and inline imports for a Nodus source string.
-
-    Delegates to ``nodus.tooling.loader.resolve_imports``.
-    Prefer the ``ModuleLoader`` API for new code.
-    """
-    from nodus.tooling.loader import resolve_imports as _resolve_imports
-
-    return _resolve_imports(*args, **kwargs)
-
-
-def run_source(*args, **kwargs):
-    """Compile and execute a Nodus source string, returning a ``Result`` dict.
-
-    Convenience wrapper around ``nodus.tooling.loader.run_source``.
-    For embedding use cases, prefer ``NodusRuntime`` (``nodus.runtime.embedding``)
-    which provides sandbox controls, execution limits, and host function registration.
-    """
-    from nodus.tooling.loader import run_source as _run_source
-
-    return _run_source(*args, **kwargs)
-
-
-def main(argv=None):
-    """CLI entry point — delegates to ``nodus.cli.cli.main``."""
-    from nodus.cli.cli import main as _main
-
-    return _main(argv)
-
-
 def __getattr__(name):
+    # Heavy modules are loaded lazily to avoid circular imports and keep
+    # startup time low for callers that only use lightweight nodus APIs.
+    if name in ("resolve_imports", "run_source"):
+        from nodus.tooling.loader import (  # noqa: F401
+            resolve_imports as _resolve_imports,
+            run_source as _run_source,
+        )
+        globals()["resolve_imports"] = _resolve_imports
+        globals()["run_source"] = _run_source
+        return globals()[name]
+    if name == "main":
+        from nodus.cli.cli import main as _main  # noqa: F401
+        globals()["main"] = _main
+        return _main
     if name == "VM":
         from nodus.vm.vm import VM as _VM
-
         return _VM
     raise AttributeError(name)
 
@@ -83,4 +65,4 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(__getattr__("main")())

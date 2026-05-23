@@ -12,6 +12,9 @@ cleanenv/
 
 # Test cache
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Build artifacts
 build/

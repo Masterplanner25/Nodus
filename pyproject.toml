@@ -29,6 +29,14 @@ where = ["src"]
 [tool.setuptools.package-data]
 nodus = ["stdlib/*.nd", "stdlib/*.tl"]
 
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+# Baseline: do not fail the build until annotation coverage improves.
+# Run with --no-error-summary until the annotation backlog is addressed.
+# See TECH_DEBT.md for per-module error counts.
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = [

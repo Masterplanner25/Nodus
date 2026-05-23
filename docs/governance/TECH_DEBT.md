@@ -91,7 +91,49 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
 - ✅ `NodusRuntime` added to `__all__`: `src/nodus/__init__.py` now imports and exports `NodusRuntime` directly. `from nodus import NodusRuntime` works as of v1.0. EMBEDDING.md updated. Fixed in v1.0.
 - ✅ `LOAD_LOCAL` compiler fallbacks: audited and fixed in v1.0. All three paths (compiler.py lines 584, 619, 731) confirmed unreachable — `SymbolTable.define()` always assigns `symbol.index` when `in_function_scope()` is True, making "local + in_function + index is None" a logical contradiction. Fallback emissions replaced with `assert symbol.index is not None` guards. See DEPRECATIONS.md.
-- `vm.py` line count: 2,418 lines as of v1.1.2. Further extraction of workflow/goal builtins and scheduler helpers is possible.
+- `vm.py` line count: 2,438 lines as of v1.1.2 (post-Phase 6). Further extraction of workflow/goal builtins and scheduler helpers is possible.
+
+- **Coverage baseline (pytest-cov 7.1.0, 2026-05-23):** Overall: 77% (14,232 stmts). Gate: `--cov-fail-under=60`. Three timing-sensitive tests deselected from the coverage run (they pass in the regular pytest step but fail under instrumentation overhead: `test_scheduler_fairness.py::test_multiple_tasks_progress`, `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`, `test_task_graph.py::TaskGraphTests::test_worker_death_detection`). Modules below 60%:
+  - `src/nodus/__main__.py`: 0% (3 stmts — trivial entry point, not exercised by test suite)
+  - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
+  - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
+
+- **mypy baseline (mypy 2.1.0, 2026-05-23):** Non-blocking step added to CI (`continue-on-error: true`). Total: 208 errors across 29 modules. Per-module counts:
+
+  | Module | Errors |
+  |--------|--------|
+  | `cli/cli.py` | 49 |
+  | `vm/vm.py` | 24 |
+  | `frontend/formatter.py` | 18 |
+  | `runtime/task_graph.py` | 18 |
+  | `dap/server.py` | 14 |
+  | `tooling/loader.py` | 12 |
+  | `repl/repl.py` | 8 |
+  | `services/server.py` | 8 |
+  | `runtime/module_loader.py` | 7 |
+  | `lsp/server.py` | 7 |
+  | `runtime/scheduler.py` | 6 |
+  | `services/api.py` | 5 |
+  | `runtime/module.py` | 5 |
+  | `compiler/optimizer.py` | 5 |
+  | `orchestration/workflow_lowering.py` | 4 |
+  | `tooling/diagnostics.py` | 2 |
+  | `tooling/analyzer.py` | 2 |
+  | `tooling/user_config.py` | 1 |
+  | `tooling/tiny_vm_lang_functions.py` | 1 |
+  | `tooling/runner.py` | 1 |
+  | `runtime/snapshots.py` | 1 |
+  | `runtime/runtime_events.py` | 1 |
+  | `runtime/profiler.py` | 1 |
+  | `runtime/errors.py` | 1 |
+  | `runtime/debugger.py` | 1 |
+  | `main/nodus.py` | 1 |
+  | `frontend/parser.py` | 1 |
+  | `frontend/lexer.py` | 1 |
+  | `frontend/ast/ast_printer.py` | 1 |
+  | `__main__.py` | 1 |
+
+  Top priority: `cli/cli.py` (49), `vm/vm.py` (24), `frontend/formatter.py` (18), `runtime/task_graph.py` (18). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 

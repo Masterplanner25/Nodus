@@ -130,10 +130,10 @@ class ModuleLoader:
             )
         except Exception as _err:
             if self._import_trace_fn is not None:
-                self._import_trace_fn(f'[import] Failed "{import_path}" — {getattr(_err, "message", str(_err))}')
+                self._import_trace_fn(f'[import] Failed "{import_path}" -- {getattr(_err, "message", str(_err))}')
             raise
         if self._import_trace_fn is not None:
-            self._import_trace_fn(f'[import] Resolved "{import_path}" → {resolved}')
+            self._import_trace_fn(f'[import] Resolved "{import_path}" -> {resolved}')
         return resolved
 
     def load_module_from_path(

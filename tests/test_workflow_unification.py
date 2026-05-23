@@ -53,7 +53,7 @@ class WorkflowRunSubcommandTests(unittest.TestCase):
     def test_workflow_no_args_shows_usage(self):
         out = io.StringIO()
         with redirect_stdout(out):
-            exit_code = main(["nodus", "workflow"])
+            main(["nodus", "workflow"])
         output = out.getvalue()
         self.assertIn("run", output)
 

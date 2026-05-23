@@ -644,6 +644,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - `nodus memory-put <key> --json <value>`
 - `nodus memory-delete <key>`
 - `nodus memory-keys`
+- Project inspection: `nodus status` — prints the project root, entry file, and working directory that `nodus run` would use from the current directory; prints `No project found in current directory` when no `nodus.toml` is reachable; always exits 0.
 - Debugger: `nodus debug script.nd`
   - Commands: `break <line>`, `step`, `next`, `continue`, `locals`, `stack`, `quit`
   - Breakpoints pause on source lines using compiler-provided location metadata
@@ -655,6 +656,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
   - `--compact` prints a denser tree for large files.
 - Bytecode disassembly: `nodus dis script.nd` (compile only, no execution)
   - `--loc` includes source locations when available.
+- Run mode flags: `--strict` (disables project auto-discovery; requires an explicit file path — exits non-zero with an error if no file argument is provided), `--trace-imports` (prints one `[import] Resolved "path" -> /abs/path` line to stderr per resolved import; failed imports print `[import] Failed "path" -- <reason>`)
 - Debug flags: `--dump-bytecode`, `--trace`
 - Trace controls: `--trace-no-loc`, `--trace-filter <text>`, `--trace-limit <n>`
 - Scheduler tracing: `--trace-scheduler`

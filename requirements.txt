@@ -1,4 +1,6 @@
 pytest==8.2.0
+pytest-cov==7.1.0
+mypy==2.1.0
 fastapi==0.136.1
 starlette==1.0.1
 uvicorn==0.30.0

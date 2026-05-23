@@ -61,7 +61,7 @@ class RunTraceTests(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stderr(buf):
             main(["nodus", "run", "--trace", script])
-        lines = [l for l in buf.getvalue().splitlines() if l.startswith("[trace]")]
+        lines = [line for line in buf.getvalue().splitlines() if line.startswith("[trace]")]
         self.assertTrue(len(lines) > 0)
         for line in lines:
             parts = line.split()

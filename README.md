@@ -95,3 +95,26 @@ print(math.abs(-4))
 - [Changelog](CHANGELOG.md) — version history
 - [Contributing](CONTRIBUTING.md) — development setup, code style, and contribution process
 - [llms.txt](llms.txt) — machine-readable project index for AI tools
+
+<!-- Structured metadata for search engines and AI indexers (schema.org/SoftwareApplication) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Nodus",
+  "description": "A bytecode-compiled scripting language and distributed workflow runtime implementing the Infinity Algorithm as a first-class language construct.",
+  "author": {
+    "@type": "Person",
+    "name": "Shawn Knight",
+    "url": "https://github.com/Masterplanner25"
+  },
+  "applicationCategory": "DeveloperApplication",
+  "programmingLanguage": "Python",
+  "operatingSystem": "Linux, macOS, Windows",
+  "url": "https://github.com/Masterplanner25/nodus-lang",
+  "downloadUrl": "https://pypi.org/project/nodus-lang/",
+  "license": "https://spdx.org/licenses/MIT.html",
+  "version": "1.1.2",
+  "softwareRequirements": "Python >= 3.10"
+}
+</script>
