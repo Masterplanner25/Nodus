@@ -98,6 +98,34 @@ Install development dependencies:
 
 pip install -r requirements.txt
 
+## Distribution Testing
+
+To build the distribution wheel locally, first install build tooling:
+
+pip install build wheel
+
+Then build the wheel:
+
+python -m build --wheel
+
+To install the wheel into an isolated environment for manual testing:
+
+### bash / macOS / Linux
+pip install dist/*.whl
+
+### PowerShell (Windows)
+pip install (Get-Item dist\*.whl).FullName
+
+To run the full distribution smoke test suite (builds a wheel, creates a fresh venv, installs, and verifies the CLI):
+
+### bash / macOS / Linux
+NODUS_RUN_DIST_SMOKE=1 python -m pytest tests/test_distribution_smoke.py -v
+
+### PowerShell (Windows)
+$env:NODUS_RUN_DIST_SMOKE = "1"; python -m pytest tests/test_distribution_smoke.py -v
+
+The smoke tests cover: `nodus run`, `nodus repl` (non-interactive), `nodus --help`, project initialisation, and the HTTP server health endpoint.
+
 ## Running Tests
 
 Nodus uses the standard `unittest` runner for testing.

@@ -48,6 +48,9 @@ jobs:
       - name: Install build tooling
         run: python -m pip install build wheel
 
+      - name: Build wheel
+        run: python -m build --wheel
+
       - name: Installed wheel smoke test
         env:
           NODUS_RUN_DIST_SMOKE: "1"

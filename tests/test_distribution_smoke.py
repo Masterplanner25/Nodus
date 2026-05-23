@@ -64,6 +64,9 @@ class DistributionSmokeTests(unittest.TestCase):
             self.assertIn("REPL", repl_run.stdout)
             self.assertEqual(repl_run.returncode, 0)
 
+            help_run = self._run([str(nodus_exe), "--help"], cwd=workspace, env=env)
+            self.assertIn("Usage", help_run.stdout)
+
             port = self._reserve_port()
             server = subprocess.Popen(
                 [str(nodus_exe), "serve", "--host", "127.0.0.1", "--port", str(port), "--allow-paths", str(workspace)],
@@ -90,6 +93,9 @@ class DistributionSmokeTests(unittest.TestCase):
                     server.stderr.close()
 
     def _build_wheel(self, wheelhouse: Path) -> Path:
+        existing = sorted((REPO_ROOT / "dist").glob("nodus_lang-*.whl"))
+        if existing:
+            return existing[-1]
         wheelhouse.mkdir(parents=True, exist_ok=True)
         self._run(
             [
