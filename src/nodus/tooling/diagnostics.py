@@ -178,10 +178,14 @@ class _SemanticAnalyzer:
             tok = getattr(stmt, "_tok", None)
             if isinstance(stmt, Let):
                 self._bind(stmt.name, kind="variable", tok=tok)
+                if getattr(stmt, "exported", False):
+                    self._mark_used(stmt.name)
             elif isinstance(stmt, FnDef):
                 self._bind(stmt.name, kind="function", tok=tok)
             elif isinstance(stmt, (WorkflowDef, GoalDef)):
                 self._bind(stmt.name, kind="variable", tok=tok)
+                if getattr(stmt, "exported", False):
+                    self._mark_used(stmt.name)
         for stmt in stmts:
             if not isinstance(stmt, Import):
                 continue
