@@ -287,7 +287,7 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   - `put(key, value)`
   - `delete(key)`
   - `keys()`
-  - `has(key)` returns `true` when `get(key) != nil`
+  - `has(key)` — returns true if key exists in memory store (key-existence check, not value check)
 - `std:agent`
   - `call(name, payload)` wraps `agent_call(...)`
   - `available()` returns registered agent names
