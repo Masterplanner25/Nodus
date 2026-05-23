@@ -17,6 +17,8 @@ For a machine-readable project index see [llms.txt](llms.txt).
 
 ## Install
 
+Requires **Python 3.10+**.
+
 ```bash
 pip install nodus-lang
 ```
@@ -114,7 +116,7 @@ print(math.abs(-4))
   "url": "https://github.com/Masterplanner25/nodus-lang",
   "downloadUrl": "https://pypi.org/project/nodus-lang/",
   "license": "https://spdx.org/licenses/MIT.html",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "softwareRequirements": "Python >= 3.10"
 }
 </script>
