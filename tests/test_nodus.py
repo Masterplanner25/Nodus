@@ -603,14 +603,14 @@ print(read_file("{out_path}"))
             with open(script, "w", encoding="utf-8") as f:
                 f.write("print(1)\nprint(2)\n")
             buf = io.StringIO()
-            with redirect_stdout(buf):
+            with redirect_stderr(buf):
                 exit_code = lang.main(["nodus", "run", script, "--trace", "--trace-no-loc", "--trace-limit", "2"])
             output = buf.getvalue().splitlines()
             self.assertEqual(exit_code, 0)
             trace_lines = [line for line in output if line.startswith("[trace]")]
             self.assertEqual(len(trace_lines), 2)
             for line in trace_lines:
-                self.assertNotIn("(", line)
+                self.assertNotIn("line ", line)
 
     def test_trace_filter(self):
         with tempfile.TemporaryDirectory() as td:
@@ -618,7 +618,7 @@ print(read_file("{out_path}"))
             with open(script, "w", encoding="utf-8") as f:
                 f.write("print(1)\n")
             buf = io.StringIO()
-            with redirect_stdout(buf):
+            with redirect_stderr(buf):
                 exit_code = lang.main(["nodus", "run", script, "--trace", "--trace-filter", "PUSH_CONST"])
             output = buf.getvalue().splitlines()
             self.assertEqual(exit_code, 0)
@@ -1046,13 +1046,13 @@ print(read_file("{out_path}"))
             script = os.path.join(td, "x.nd")
             with open(script, "w", encoding="utf-8") as f:
                 f.write("print(1)\n")
-            buf = io.StringIO()
-            with redirect_stdout(buf):
+            err_buf = io.StringIO()
+            out_buf = io.StringIO()
+            with redirect_stderr(err_buf), redirect_stdout(out_buf):
                 exit_code = lang.main(["nodus", "run", script, "--trace"])
-            output = buf.getvalue()
             self.assertEqual(exit_code, 0)
-            self.assertIn("[trace]", output)
-            self.assertIn("1.0", output)
+            self.assertIn("[trace]", err_buf.getvalue())
+            self.assertIn("1.0", out_buf.getvalue())
 
     def test_calling_non_function_error_message(self):
         src = """

@@ -52,6 +52,52 @@ from nodus.frontend.ast.ast_nodes import (
 )
 from nodus.orchestration.workflow_lowering import STEP_OPTION_KEYS
 
+# Human-readable display names for token kinds used in error messages.
+_TOKEN_DISPLAY: dict[str, str] = {
+    "ID": "identifier",
+    "STR": "string literal",
+    "NUM": "number",
+    "SEP": "end of statement",
+    "EOF": "end of file",
+    "LET": "'let'",
+    "FN": "'fn'",
+    "RETURN": "'return'",
+    "YIELD": "'yield'",
+    "IF": "'if'",
+    "ELSE": "'else'",
+    "WHILE": "'while'",
+    "FOR": "'for'",
+    "IN": "'in'",
+    "AS": "'as'",
+    "FROM": "'from'",
+    "IMPORT": "'import'",
+    "EXPORT": "'export'",
+    "PRINT": "'print'",
+    "TRY": "'try'",
+    "CATCH": "'catch'",
+    "FINALLY": "'finally'",
+    "THROW": "'throw'",
+    "RECORD": "'record'",
+    "WITH": "'with'",
+    "ACTION": "'action'",
+    "TRUE": "'true'",
+    "FALSE": "'false'",
+    "NIL": "'nil'",
+}
+
+
+def _tok_name(kind: str) -> str:
+    if kind in _TOKEN_DISPLAY:
+        return _TOKEN_DISPLAY[kind]
+    return f"'{kind}'"
+
+
+def _tok_desc(kind: str, val: str) -> str:
+    name = _tok_name(kind)
+    if kind in ("ID", "STR", "NUM"):
+        return f"{name} ({val!r})"
+    return name
+
 
 class Parser:
     def __init__(self, toks: list[Tok]):
@@ -98,7 +144,7 @@ class Parser:
     def eat(self, kind: str) -> Tok:
         t = self.peek()
         if t.kind != kind:
-            self.error(f"Expected {kind}, got {t.kind} ({t.val!r})", t)
+            self.error(f"Expected {_tok_name(kind)}, got {_tok_desc(t.kind, t.val)}", t)
         self.i += 1
         self.last_token = t
         return t
@@ -621,7 +667,7 @@ class Parser:
             tok = self.eat("ID")
             return self.mark(VarPattern(tok.val), tok)
         t = self.peek()
-        self.error(f"Expected pattern, got {t.kind} ({t.val!r})", t)
+        self.error(f"Expected a destructuring pattern ('[', '{{', or identifier), got {_tok_desc(t.kind, t.val)}", t)
 
     def parse_list_pattern(self):
         tok = self.eat("[")
@@ -738,7 +784,13 @@ class Parser:
             return e
 
         t = self.peek()
-        self.error(f"Unexpected token: {t.kind} ({t.val!r})", t)
+        kind = t.kind
+        if kind == "}":
+            self.error("Unexpected '}' — check for a missing expression or extra closing brace", t)
+        elif kind in ("EOF", "SEP"):
+            self.error(f"Unexpected {_tok_name(kind)} — expression is incomplete", t)
+        else:
+            self.error(f"Unexpected {_tok_desc(kind, t.val)} in expression", t)
 
     def parse_action_expr(self):
         start = self.eat("ACTION")

@@ -16,6 +16,5 @@ fn keys() {
 }
 
 fn has(key) {
-    let value = memory_get(key)
-    return value != nil
+    return memory_has(key)
 }

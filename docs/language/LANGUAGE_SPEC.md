@@ -115,11 +115,17 @@ Import behavior:
 Import resolution:
 - `std:` prefix resolves to built-in `std/` modules (e.g. `std:strings`).
 - `package:module` resolves under `.nodus/modules/<package>/...` (e.g. `utils:strings` -> `.nodus/modules/utils/strings.nd`).
-- Relative paths (`./` or `../`) resolve from the importing file.
-- Non-relative paths resolve from the project root.
-- If no extension is provided, `.nd` is preferred, then `.tl` as legacy fallback.
+- Relative paths (`./` or `../`) resolve from the importing file's directory. A relative path that would resolve outside the project root (or, in single-file execution, outside the entry file's directory) is always rejected **before any filesystem access** with: `Invalid import: path '<path>' escapes the project root.` This rule applies equally in the CLI and the REPL.
+- Bare paths (no leading `.`, no `:` prefix) resolve in this order:
+  1. `<project_root>/<path>` (project-root-relative)
+  2. `<project_root>/.nodus/modules/<path>` (installed packages)
+  3. `<stdlib>/<path>` (built-in stdlib modules)
+  - If none found: error naming all candidates tried.
+  - If no project manifest is found, `<project_root>` falls back to the importing file's directory.
+- If no extension is provided, resolution checks in order: `.nd`, `.tl`, `<path>/index.nd`, `<path>/index.tl`.
 - Cyclic imports are detected and reported as `LangSyntaxError`.
 - The import chain depth is limited to 100 levels by default (override with the `NODUS_MAX_IMPORT_DEPTH` environment variable). Exceeding the limit raises a `LangSyntaxError` with a clear message rather than a Python `RecursionError`.
+- `nodus run --trace-imports` prints one `[import] Resolved "path" → /abs/path` line to stderr per resolved import. Failed imports print `[import] Failed "path" — <reason>` before the error.
 
 ## Projects And Packages
 Stability: Experimental (git-only, may change).
@@ -147,13 +153,6 @@ Stability: Experimental (git-only, may change).
 - `export { name } from "./module.nd"`
 - Re-exported names must already be exported by the target module.
 - Re-exports do not grant access to private names.
-
-### Package/Index Resolution
-When importing a path without an extension, Nodus checks in this order:
-1. `path.nd`
-2. `path.tl`
-3. `path/index.nd`
-4. `path/index.tl`
 
 ## Exports
 Stability: Syntax stable; visibility semantics mostly stable.
@@ -507,6 +506,42 @@ Use `resume_graph(graph_id)` to resume pending tasks after interruption.
 
 Workflow checkpoints can be queried with `workflow_checkpoints(graph_id)`.
 `resume_workflow(graph_id, checkpoint)` restores workflow state from the latest matching checkpoint label and rolls back the checkpointed step plus downstream steps to `pending` before resuming. Completed tasks upstream of the checkpoint are preserved.
+
+## Memory API
+
+Nodus exposes an in-process key/value memory store through both top-level builtins and the `std:memory` module.
+
+### Top-level builtins
+
+```nd
+memory_put("key", value)   // store a JSON-safe value; returns the stored value
+memory_get("key")          // retrieve value; returns nil if key not found
+memory_delete("key")       // remove key; returns true if existed, false otherwise
+memory_has("key")          // returns true if key exists regardless of stored value
+memory_keys()              // returns sorted list of all keys
+```
+
+### `std:memory` module (recommended)
+
+```nd
+import "std:memory" as memory
+
+memory.put("key", value)   // store value
+memory.get("key")          // retrieve; nil if not found
+memory.delete("key")       // remove; no-op if absent
+memory.has("key")          // boolean existence check
+memory.keys()              // sorted key list
+```
+
+### Rules
+
+- Keys must be non-empty strings. Passing any other type raises a runtime `TypeError`.
+- Values must be JSON-safe (strings, numbers, booleans, nil, lists, maps of the above).
+- `memory.get` on a missing key returns `nil` — it is not an error.
+- `memory.has` checks key existence; it returns `true` even when `nil` is stored under the key.
+- `memory.delete` on a missing key is a no-op (returns `false`).
+- Memory is process-local by default. In server sessions it is session-local and snapshot-aware.
+- Workflow state and runtime memory are distinct: `memory_*` / `std:memory` are ephemeral per-process; workflow state is durable per-workflow-execution.
 
 ## Agent, Tool, And Memory Primitives
 

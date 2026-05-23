@@ -101,7 +101,7 @@ def test_cross_module_errors_publish_for_imported_file():
     notifications = _diagnostic_notifications(messages)
     lib_notification = next(item for item in notifications if item["params"]["uri"].endswith("/lib.nd"))
     assert lib_notification["params"]["diagnostics"]
-    assert "Expected ID" in lib_notification["params"]["diagnostics"][0]["message"]
+    assert "Expected identifier" in lib_notification["params"]["diagnostics"][0]["message"]
 
 
 def test_diagnostics_clear_after_fix():

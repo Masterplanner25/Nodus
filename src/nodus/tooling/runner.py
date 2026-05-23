@@ -144,6 +144,7 @@ def run_source(
     trace_events: bool = False,
     trace_json: bool = False,
     trace_file: str | None = None,
+    trace_imports: bool = False,
     optimize: bool = True,
     dump_bytecode: bool = False,
     max_steps: int = MAX_STEPS,
@@ -155,6 +156,12 @@ def run_source(
     allowed_paths: list[str] | None = None,
     input_fn=None,
 ):
+    import sys as _sys
+    _import_stderr = _sys.stderr
+
+    def _import_trace_fn(msg: str) -> None:
+        print(msg, file=_import_stderr)
+
     event_bus, event_file = _prepare_event_bus(
         trace_events=trace_events,
         trace_json=trace_json,
@@ -180,7 +187,11 @@ def run_source(
         input_fn=input_fn,
     )
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
-    loader = ModuleLoader(project_root=project_root, vm=vm)
+    loader = ModuleLoader(
+        project_root=project_root,
+        vm=vm,
+        import_trace_fn=_import_trace_fn if trace_imports else None,
+    )
 
     try:
         if dump_bytecode:

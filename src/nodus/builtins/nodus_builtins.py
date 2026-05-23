@@ -62,6 +62,7 @@ BUILTIN_NAMES = {
     "memory_put",
     "memory_delete",
     "memory_keys",
+    "memory_has",
     "agent_call",
     "agent_available",
     "agent_describe",

@@ -90,6 +90,7 @@ class ModuleLoader:
         extra_builtins: set[str] | None = None,
         vm: VM | None = None,
         debugger=None,
+        import_trace_fn=None,
     ) -> None:
         self.project_root = project_root
         self.host_globals = host_globals or {}
@@ -114,17 +115,26 @@ class ModuleLoader:
         self._recompiled_modules: set[str] = set()
         self._vm = vm
         self._debugger = debugger
+        self._import_trace_fn = import_trace_fn
 
     def resolve_import(self, import_path: str, base_dir: str, tok: Tok | None, module_id: str) -> str:
         if "project_root" not in self._import_state:
             self._import_state["project_root"] = self.project_root
-        return resolve_import_path(
-            import_path,
-            base_dir,
-            self._import_state,
-            tok,
-            module_id,
-        )
+        try:
+            resolved = resolve_import_path(
+                import_path,
+                base_dir,
+                self._import_state,
+                tok,
+                module_id,
+            )
+        except Exception as _err:
+            if self._import_trace_fn is not None:
+                self._import_trace_fn(f'[import] Failed "{import_path}" — {getattr(_err, "message", str(_err))}')
+            raise
+        if self._import_trace_fn is not None:
+            self._import_trace_fn(f'[import] Resolved "{import_path}" → {resolved}')
+        return resolved
 
     def load_module_from_path(
         self,
@@ -761,9 +771,9 @@ def resolve_import_path(
         root_norm = os.path.normcase(os.path.normpath(project_root))
         try:
             if os.path.commonpath([base_norm, root_norm]) != root_norm:
-                import_error("Invalid import: path escapes project root", tok, module_id)
+                import_error(f"Invalid import: path {import_path!r} escapes the project root.", tok, module_id)
         except ValueError:
-            import_error("Invalid import: path escapes project root", tok, module_id)
+            import_error(f"Invalid import: path {import_path!r} escapes the project root.", tok, module_id)
     else:
         base = os.path.join(project_root, import_path)
 
@@ -782,7 +792,27 @@ def resolve_import_path(
     if resolved is not None:
         return resolved
 
-    return resolve_with_extensions(base, import_path, tok, module_id)
+    # Build a comprehensive error listing every path that was attempted.
+    _all_tried: list[str] = []
+    for _sfx in (".nd", ".tl"):
+        _all_tried.append(os.path.abspath(base + _sfx))
+    _all_tried.append(os.path.abspath(os.path.join(base, "index.nd")))
+    _all_tried.append(os.path.abspath(os.path.join(base, "index.tl")))
+    try:
+        _std_b = _resolve_std_base(import_path, tok, module_id)
+        for _sfx in (".nd", ".tl"):
+            _all_tried.append(os.path.abspath(_std_b + _sfx))
+    except Exception:
+        pass
+    _line = tok.line if tok is not None else None
+    _col = tok.col if tok is not None else None
+    raise LangRuntimeError(
+        "import",
+        f"Import not found: {import_path!r} (tried {', '.join(_all_tried)})",
+        line=_line,
+        col=_col,
+        path=module_id,
+    )
 
 
 def import_error(message: str, tok: Tok | None, module_id: str):

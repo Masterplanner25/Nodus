@@ -79,6 +79,12 @@ def delete_value(key: str, *, vm=None):
     return existed
 
 
+def has_value(key: str, *, vm=None) -> bool:
+    _validate_key(key)
+    store = get_store(vm)
+    return key in store._values
+
+
 def list_keys(*, vm=None) -> list[str]:
     return get_store(vm).keys()
 

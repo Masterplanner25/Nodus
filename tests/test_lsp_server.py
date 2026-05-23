@@ -82,7 +82,7 @@ class LspServerTests(unittest.TestCase):
         self.assertEqual(diagnostics["params"]["uri"], uri)
         published = diagnostics["params"]["diagnostics"]
         self.assertEqual(len(published), 1)
-        self.assertIn("Unexpected token", published[0]["message"])
+        self.assertIn("Unexpected", published[0]["message"])
         self.assertEqual(published[0]["severity"], 1)
         self.assertIn("line", published[0])
         self.assertIn("column", published[0])

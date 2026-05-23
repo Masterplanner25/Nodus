@@ -1,6 +1,7 @@
 """Stack VM runtime for Nodus."""
 
 import os
+import sys
 import time
 from dataclasses import dataclass
 
@@ -12,7 +13,7 @@ from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded
 from nodus.services.agent_runtime import available_agents, call_agent, describe_agent
-from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, list_keys, put_value
+from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.vm.runtime_values import is_json_safe, payload_keys
@@ -236,6 +237,7 @@ class VM:
             "memory_put": BuiltinInfo("memory_put", 2, self.builtin_memory_put),
             "memory_delete": BuiltinInfo("memory_delete", 1, self.builtin_memory_delete),
             "memory_keys": BuiltinInfo("memory_keys", 0, self.builtin_memory_keys),
+            "memory_has": BuiltinInfo("memory_has", 1, self.builtin_memory_has),
             "agent_call": BuiltinInfo("agent_call", 2, self.builtin_agent_call),
             "agent_available": BuiltinInfo("agent_available", 0, self.builtin_agent_available),
             "agent_describe": BuiltinInfo("agent_describe", 1, self.builtin_agent_describe),
@@ -1267,6 +1269,12 @@ class VM:
 
     def builtin_memory_keys(self):
         return list_keys(vm=self)
+
+    def builtin_memory_has(self, key):
+        try:
+            return has_value(key, vm=self)
+        except ValueError as err:
+            self.runtime_error("type", str(err))
 
     def builtin_agent_call(self, name, payload):
         return call_agent(name, payload, vm=self)
@@ -2358,7 +2366,7 @@ class VM:
                 self.debugger.before_instruction(self, instr)
             self.record_instruction()
             if self.trace and self.should_trace(instr):
-                print(self.format_trace(instr))
+                print(self.format_trace(instr), file=sys.stderr)
                 self.trace_count += 1
             try:
                 handler = self._dispatch.get(op)
@@ -2399,20 +2407,32 @@ class VM:
         haystack = f"{self.display_name(current_fn)} {op} {self.format_loc(loc)}"
         return self.trace_filter in haystack
 
+    def _trace_context(self, instr: tuple) -> str:
+        op = instr[0]
+        if op == "CALL" and len(instr) > 1:
+            return f"fn={self.display_name(str(instr[1]))}"
+        if op in {"LOAD", "STORE"} and len(instr) > 1:
+            return f"name={instr[1]}"
+        if op in {"LOAD_FIELD", "STORE_FIELD"} and len(instr) > 1:
+            return f"field={instr[1]}"
+        if op == "PUSH_CONST" and len(instr) > 1:
+            return f"val={instr[1]!r}"
+        if op == "JUMP" and len(instr) > 1:
+            return f"target={instr[1]}"
+        return ""
+
     def format_trace(self, instr: tuple) -> str:
         op = instr[0]
-        operands = instr[1:]
-        formatted_ops = []
-        for value in operands:
-            if isinstance(value, str):
-                formatted_ops.append(value)
-            else:
-                formatted_ops.append(repr(value))
-        op_text = " ".join([op] + formatted_ops) if formatted_ops else op
+        op_padded = op.ljust(14)
         if self.trace_no_loc:
-            return f"[trace] {op_text}"
-        loc_text = self.format_loc(self.current_loc())
-        return f"[trace] {op_text} ({loc_text})"
+            ctx = self._trace_context(instr)
+            return f"[trace] {op_padded}  {ctx}" if ctx else f"[trace] {op_padded}"
+        _, line, _ = self.current_loc()
+        line_str = f"line {line}" if line is not None else "line ?"
+        ctx = self._trace_context(instr)
+        if ctx:
+            return f"[trace] {op_padded}  {line_str}  {ctx}"
+        return f"[trace] {op_padded}  {line_str}"
 
 
 

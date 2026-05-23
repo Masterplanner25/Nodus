@@ -183,7 +183,8 @@ def _render_help() -> str:
             "  nodus profile <file> [--json] [--project-root PATH] [--allow-paths PATHS]",
             "  nodus test-examples",
             "  nodus repl",
-            "  nodus graph <file> [--project-root PATH]",
+            "  nodus graph run <file> [--project-root PATH]",
+            "  nodus workflow run <file> [--workflow NAME] [--project-root PATH]",
             "  nodus serve [--host HOST --port PORT --trace --worker-sweep-interval-ms N --allow-paths PATHS --auth-token TOKEN --allow-input]",
             "  nodus lsp",
             "  nodus dap",
@@ -207,7 +208,8 @@ def _render_help() -> str:
             "  nodus memory-put <key> --json <value>",
             "  nodus memory-delete <key>",
             "  nodus memory-keys",
-            "  nodus package-init [--path PATH]",
+            "  nodus status",
+            "  nodus init [--path PATH]",
             "  nodus install [--path PATH] [--registry <url>] [--registry-token <token>]",
             "  nodus update [--path PATH]",
             "  nodus add <package> [--path PATH]",
@@ -224,6 +226,100 @@ def _render_help() -> str:
             "  --help",
         ]
     )
+
+
+_COMMAND_HELP: dict[str, str] = {
+    "run": "\n".join([
+        "Usage: nodus run [<file|project-dir>] [options]",
+        "",
+        "Run a Nodus script file or project. Without a file argument, discovers and",
+        "runs the project in the current directory.",
+        "",
+        "Options:",
+        "  --trace                    Print each VM instruction to stderr as it executes (high-volume)",
+        "  --trace-no-loc             Omit line-number annotations from trace output",
+        "  --trace-limit N            Stop tracing after N instructions",
+        "  --trace-filter STR         Only show trace lines containing STR",
+        "  --trace-scheduler          Include scheduler events in trace output",
+        "  --trace-events             Include runtime event bus entries in trace output",
+        "  --dump-bytecode            Print compiled bytecode before executing",
+        "  --no-opt                   Disable the bytecode optimizer",
+        "  --project-root PATH        Override the project root directory",
+        "  --step-limit N             Abort after N VM instructions",
+        "  --time-limit SECS          Abort after SECS seconds of wall time",
+        "  --output-limit N           Truncate stdout after N characters",
+        "  --allow-paths PATHS        Restrict file I/O to colon-separated paths",
+        "  --strict                   Require an explicit file path; disable project auto-discovery",
+        "  --trace-imports            Print each resolved import path to stderr at resolution time",
+        "",
+        "Examples:",
+        "  nodus run main.nd",
+        "  nodus run                  (runs project from current directory)",
+        "  nodus run src/",
+        "  nodus run main.nd --trace",
+    ]),
+    "repl": "\n".join([
+        "Usage: nodus repl",
+        "",
+        "Start an interactive Nodus REPL (read-eval-print loop).",
+        "Type expressions or statements at the prompt; results are printed automatically.",
+        "Built-in REPL commands: :help, :quit, :clear, :reset",
+        "",
+        "Examples:",
+        "  nodus repl",
+        "  nodus repl    # at the prompt: let x = 42; print(x * 2)",
+    ]),
+    "init": "\n".join([
+        "Usage: nodus init [--path PATH]",
+        "",
+        "Initialize a new Nodus project in the current directory (or the given path).",
+        "Creates a nodus.toml manifest and a src/main.nd entry file.",
+        "",
+        "Options:",
+        "  --path PATH    Directory to initialize (default: current directory)",
+        "",
+        "Examples:",
+        "  nodus init",
+        "  nodus init --path ./my-project",
+    ]),
+    "check": "\n".join([
+        "Usage: nodus check [<file|project-dir>] [options]",
+        "",
+        "Parse and type-check a Nodus script or project without executing it.",
+        "Exits 0 if no errors are found, 1 otherwise.",
+        "",
+        "Options:",
+        "  --project-root PATH    Override the project root directory",
+        "",
+        "Examples:",
+        "  nodus check main.nd",
+        "  nodus check            (checks project in current directory)",
+    ]),
+    "status": "\n".join([
+        "Usage: nodus status",
+        "",
+        "Show the project that would run if `nodus run` were called from the current directory.",
+        "Prints the project root, entry file, and current working directory.",
+        "Exits 0 whether or not a project is found.",
+        "",
+        "Examples:",
+        "  nodus status",
+        "  nodus status    # from a directory with no nodus.toml",
+    ]),
+    "fmt": "\n".join([
+        "Usage: nodus fmt <file> [options]",
+        "",
+        "Format a Nodus source file in-place according to the standard style.",
+        "",
+        "Options:",
+        "  --check           Check formatting without modifying the file (exits 1 if unformatted)",
+        "  --keep-trailing   Preserve trailing comments in their original positions",
+        "",
+        "Examples:",
+        "  nodus fmt main.nd",
+        "  nodus fmt main.nd --check",
+    ]),
+}
 
 
 def _print_result_output(result: dict) -> None:
@@ -262,6 +358,7 @@ def run_file(
     trace_events: bool = False,
     trace_json: bool = False,
     trace_file: str | None = None,
+    trace_imports: bool = False,
     optimize: bool = True,
     dump_bytecode: bool = False,
     project_root: str | None = None,
@@ -270,6 +367,7 @@ def run_file(
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
 ) -> int:
+    is_project_run = path is None or (path is not None and os.path.isdir(str(path)))
     resolved_path, project_root, err = _resolve_run_target(path, project_root)
     if err:
         _print_stderr(err)
@@ -278,6 +376,10 @@ def run_file(
         _print_stderr(f"File not found: {resolved_path or path}")
         return 1
     path = resolved_path
+    if is_project_run and project_root:
+        abs_root = os.path.abspath(project_root)
+        _print_stderr(f"Running project from: {abs_root}")
+        _print_stderr(f"Entry: {os.path.relpath(path, abs_root)}")
     code = _read_file(path)
     if path.endswith(".tl"):
         _print_stderr("Warning: legacy .tl file detected. Consider using .nd.")
@@ -292,6 +394,7 @@ def run_file(
         trace_events=trace_events,
         trace_json=trace_json,
         trace_file=trace_file,
+        trace_imports=trace_imports,
         optimize=optimize,
         dump_bytecode=dump_bytecode,
         project_root=project_root,
@@ -860,6 +963,22 @@ def _run_examples() -> int:
     return 0
 
 
+def _nodus_status() -> int:
+    cwd = os.path.abspath(os.getcwd())
+    project = load_project_from(cwd)
+    if project is None:
+        print("No project found in current directory")
+        print(f"{'Working dir:':<14}{cwd}")
+        return 0
+    abs_root = os.path.abspath(project.root)
+    entry = project_entry_path(project)
+    rel_entry = os.path.relpath(entry, abs_root)
+    print(f"{'Project root:':<14}{abs_root}")
+    print(f"{'Entry:':<14}{rel_entry}")
+    print(f"{'Working dir:':<14}{cwd}")
+    return 0
+
+
 def _package_init(path: str | None) -> int:
     root = path or os.getcwd()
     try:
@@ -976,7 +1095,7 @@ def main(argv: list[str] | None = None) -> int:
         print(_render_help())
         return 0
 
-    if "--help" in args or "-h" in args:
+    if args[0] in ("--help", "-h"):
         print(_render_help())
         return 0
 
@@ -1031,6 +1150,10 @@ def main(argv: list[str] | None = None) -> int:
         "install",
         "update",
         "deps",
+        "login",
+        "logout",
+        "publish",
+        "status",
     }
 
     if command not in known_commands:
@@ -1047,6 +1170,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     if command == "run":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["run"])
+            return 0
         flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
         flags_no_values = {
             "--trace",
@@ -1056,9 +1182,20 @@ def main(argv: list[str] | None = None) -> int:
             "--trace-json",
             "--no-opt",
             "--dump-bytecode",
+            "--strict",
+            "--trace-imports",
         }
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         script = positional[0] if positional else None
+        if "--strict" in flags:
+            if script is None:
+                _print_stderr("Error: --strict mode requires an explicit file path.")
+                _print_stderr("Usage: nodus run --strict main.nd")
+                return 1
+            if os.path.isdir(script):
+                _print_stderr("Error: --strict mode requires an explicit file path, not a directory.")
+                _print_stderr("Usage: nodus run --strict main.nd")
+                return 1
         trace_limit = None
         if "--trace-limit" in flags:
             try:
@@ -1102,6 +1239,7 @@ def main(argv: list[str] | None = None) -> int:
             trace_events="--trace-events" in flags,
             trace_json="--trace-json" in flags,
             trace_file=flags.get("--trace-file"),
+            trace_imports="--trace-imports" in flags,
             optimize="--no-opt" not in flags,
             dump_bytecode="--dump-bytecode" in flags,
             project_root=project_root,
@@ -1112,6 +1250,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "check":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["check"])
+            return 0
         flags_with_values = {"--project-root"}
         flags_no_values = {"--trace", "--trace-no-loc", "--trace-scheduler", "--trace-events", "--trace-json", "--no-opt"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
@@ -1132,6 +1273,9 @@ def main(argv: list[str] | None = None) -> int:
         return check_file(script, project_root=project_root)
 
     if command == "fmt":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["fmt"])
+            return 0
         flags_no_values = {"--check", "--keep-trailing"}
         positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
         if not positional:
@@ -1229,7 +1373,35 @@ def main(argv: list[str] | None = None) -> int:
         return _run_examples()
 
     if command == "graph":
+        if cmd_args and cmd_args[0] in ("--help", "-h"):
+            print("\n".join([
+                "Usage: nodus graph <subcommand | file> [options]",
+                "",
+                "Subcommands:",
+                "  run <file> [--project-root PATH]",
+                "             Analyze and plan the task graph defined in <file>.",
+                "             Equivalent to: nodus graph <file>",
+                "",
+                "Direct usage (backward-compatible):",
+                "  nodus graph <file> [--project-root PATH]",
+                "",
+                "Examples:",
+                "  nodus graph tasks.nd",
+                "  nodus graph run tasks.nd",
+                "  nodus graph run tasks.nd --project-root /my/project",
+            ]))
+            return 0
         flags_with_values = {"--project-root"}
+        if cmd_args and cmd_args[0] == "run":
+            positional, flags = _parse_flags(cmd_args[1:], flags_with_values, set())
+            if not positional:
+                _print_stderr("Usage: nodus graph run <script.nd> [--project-root PATH]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _plan_graph_file(positional[0], project_root=project_root)
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:
             _print_stderr("Usage: nodus graph <script.nd>")
@@ -1271,6 +1443,9 @@ def main(argv: list[str] | None = None) -> int:
         return run_stdio_server()
 
     if command == "repl":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["repl"])
+            return 0
         run_repl(_resolve_installed_version())
         return 0
 
@@ -1320,11 +1495,44 @@ def main(argv: list[str] | None = None) -> int:
         return _run_worker(host, port, token=token)
 
     if command == "workflow":
-        if not cmd_args:
-            _print_stderr("Usage: nodus workflow <list|resume|cleanup> [options]")
-            return 1
+        if not cmd_args or cmd_args[0] in ("--help", "-h"):
+            print("\n".join([
+                "Usage: nodus workflow <subcommand> [options]",
+                "",
+                "Subcommands:",
+                "  run <file> [--workflow NAME] [--project-root PATH]",
+                "             Run the workflow defined in <file>.",
+                "  list [--project-root PATH]",
+                "             List saved workflow graph snapshots.",
+                "  resume <graph_id> [--checkpoint LABEL] [--project-root PATH]",
+                "             Resume a previously saved workflow.",
+                "  cleanup [--retention-seconds N] [--force] [--project-root PATH]",
+                "             Remove old workflow snapshots.",
+                "",
+                "Examples:",
+                "  nodus workflow run pipeline.nd",
+                "  nodus workflow run pipeline.nd --workflow publish",
+                "  nodus workflow list",
+                "  nodus workflow resume g_abc123 --checkpoint step2",
+            ]))
+            return 0
         subcommand = cmd_args[0]
         sub_args = cmd_args[1:]
+        if subcommand == "run":
+            flags_with_values = {"--workflow", "--project-root"}
+            positional, flags = _parse_flags(sub_args, flags_with_values, set())
+            if not positional:
+                _print_stderr("Usage: nodus workflow run <script.nd> [--workflow <name>]")
+                return 1
+            script = positional[0]
+            if not os.path.isfile(script):
+                _print_stderr(f"File not found: {script}")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _run_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root)
         if subcommand == "list":
             positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
@@ -1479,6 +1687,9 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_keys()
 
     if command in {"package-init", "init"}:
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["init"])
+            return 0
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
         path = flags.get("--project-root") or flags.get("--path")
         return _package_init(path)
@@ -1553,6 +1764,12 @@ def main(argv: list[str] | None = None) -> int:
             registry_url=registry_url,
             cli_token=registry_token,
         )
+
+    if command == "status":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["status"])
+            return 0
+        return _nodus_status()
 
     _print_stderr(f"Unknown command: {command}")
     return 1

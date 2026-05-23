@@ -32,6 +32,7 @@ from nodus.runtime.channel import Channel
 from nodus.runtime.diagnostics import format_error
 from nodus.tooling.loader import set_module_on_tree
 from nodus.runtime.module_loader import ModuleLoader
+from nodus.tooling.project import load_project_from
 from nodus.vm.vm import Closure, Record, VM
 
 try:
@@ -48,6 +49,8 @@ HELP_TEXT = "\n".join(
         ":ast <expr>    show AST",
         ":dis <expr>    show bytecode",
         ":type <expr>   show inferred type",
+        ":modules       list imported modules",
+        ":reload        restart REPL session",
         ":help          show commands",
         ":quit          exit REPL",
     ]
@@ -312,27 +315,38 @@ def _merge_types(values) -> str:
     return "mixed"
 
 
-def execute_repl_command(state: ReplState, src: str) -> tuple[bool, str | None, bool]:
+def execute_repl_command(
+    state: ReplState, src: str, loader: ModuleLoader | None = None
+) -> tuple[bool, str | None, bool, bool]:
     command = parse_repl_command(src)
     if command is None:
-        return False, None, False
+        return False, None, False, False
     if command.name == "help":
-        return True, HELP_TEXT, False
+        return True, HELP_TEXT, False, False
     if command.name == "quit":
-        return True, None, True
+        return True, None, True, False
     if command.name == "ast":
         if not command.arg:
             raise ValueError("Usage: :ast <expr>")
-        return True, format_expression_ast(command.arg), False
+        return True, format_expression_ast(command.arg), False, False
     if command.name == "dis":
         if not command.arg:
             raise ValueError("Usage: :dis <expr>")
-        return True, disassemble_expression(state, command.arg), False
+        return True, disassemble_expression(state, command.arg), False, False
     if command.name == "type":
         if not command.arg:
             raise ValueError("Usage: :type <expr>")
-        return True, infer_expression_type(state, command.arg), False
-    raise ValueError(f"Unknown REPL command: :{command.name}")
+        return True, infer_expression_type(state, command.arg), False, False
+    if command.name == "modules":
+        loaded = state.import_state.get("loaded", set())
+        if loaded:
+            output = "\n".join(sorted(loaded))
+        else:
+            output = "No modules imported."
+        return True, output, False, False
+    if command.name == "reload":
+        return True, None, False, True
+    return True, f"Unknown REPL command ':{command.name}'. Type :help for available commands.", False, False
 
 
 def _execute_source(state: ReplState, loader: ModuleLoader, src: str) -> None:
@@ -360,24 +374,32 @@ def _execute_source(state: ReplState, loader: ModuleLoader, src: str) -> None:
     state.fn_defs = merged_defs
 
 
-def run_repl(version: str):
-    state = ReplState(
+def _make_fresh_state() -> ReplState:
+    return ReplState(
         globals={},
         fn_defs={},
         import_state={"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": None},
     )
-    loader = ModuleLoader(project_root=os.getcwd())
+
+
+def run_repl(version: str):
+    project = load_project_from(os.getcwd())
+    project_root = project.root if project is not None else os.getcwd()
+    prompt = f"nodus ({project.name})> " if project is not None else "nodus> "
+
+    state = _make_fresh_state()
+    loader = ModuleLoader(project_root=project_root)
     _setup_history()
     print(f"{version} REPL (type 'exit', 'quit', or ':quit' to quit)")
 
     try:
         while True:
             lines = []
-            prompt = "> "
+            active_prompt = prompt
 
             while True:
                 try:
-                    line = input(prompt)
+                    line = input(active_prompt)
                 except EOFError:
                     print()
                     return
@@ -388,19 +410,23 @@ def run_repl(version: str):
                 lines.append(line)
                 if is_complete_chunk(lines):
                     break
-                prompt = "... "
+                active_prompt = "... "
 
             src = "\n".join(lines).strip()
             if not src:
                 continue
 
             try:
-                handled, output, should_exit = execute_repl_command(state, src)
+                handled, output, should_exit, should_reload = execute_repl_command(state, src, loader=loader)
                 if handled:
                     if output:
                         print(output)
                     if should_exit:
                         return
+                    if should_reload:
+                        state = _make_fresh_state()
+                        loader = ModuleLoader(project_root=project_root)
+                        print("REPL session restarted.")
                     continue
                 _execute_source(state, loader, src)
             except Exception as err:
