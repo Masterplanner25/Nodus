@@ -28,6 +28,12 @@ dependencies = []
 [project.scripts]
 nodus = "nodus.cli.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/Masterplanner25/Nodus"
+Repository = "https://github.com/Masterplanner25/Nodus"
+Changelog = "https://github.com/Masterplanner25/Nodus/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Masterplanner25/Nodus/issues"
+
 [project.optional-dependencies]
 server = [
   "fastapi>=0.136.0,<1",
