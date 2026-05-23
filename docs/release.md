@@ -4,7 +4,7 @@ This document prepares a local release build for `nodus-lang` without uploading 
 
 ## Version
 
-Release target: `1.1.2`
+Release target: `2.0.0`
 
 ## Clean Build Preparation
 
@@ -66,7 +66,7 @@ nodus run invalid_import.nd
 
 Expected outcomes:
 
-- `nodus --version` reports `1.1.2`
+- `nodus --version` reports `2.0.0`
 - `nodus repl` starts successfully from the installed package
 - `nodus run main.nd` runs only the explicit file
 - `nodus run` runs only `src/main.nd` inside a project root
