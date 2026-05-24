@@ -77,7 +77,6 @@ run_loop()
 """
         out, err = run_program(src, source_path="main.nd")
         self.assertEqual(out, ["ok"])
-        self.assertIn("Runtime error", err)
         self.assertIn("boom", err)
 
 

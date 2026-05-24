@@ -182,6 +182,8 @@ def tokenize(src: str) -> list[Tok]:
         start_col = col
         m = TOKEN_RE.match(src, pos)
         if not m:
+            if src[pos] == '"':
+                raise LangSyntaxError("Unterminated string literal", line=start_line, col=start_col)
             raise LangSyntaxError(f"Unexpected character {src[pos]!r}", line=start_line, col=start_col)
 
         kind = m.lastgroup

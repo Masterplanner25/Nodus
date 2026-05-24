@@ -350,6 +350,8 @@ class Parser:
 
     def while_stmt(self):
         start = self.eat("WHILE")
+        if not self.at("("):
+            self.error("while condition must be in parentheses: while (condition) { ... }", start)
         self.eat("(")
         cond = self.expr()
         self.eat(")")
@@ -802,9 +804,9 @@ class Parser:
         t = self.peek()
         kind = t.kind
         if kind == "}":
-            self.error("Unexpected '}' — check for a missing expression or extra closing brace", t)
+            self.error("Unexpected '}' - check for a missing expression or extra closing brace", t)
         elif kind in ("EOF", "SEP"):
-            self.error(f"Unexpected {_tok_name(kind)} — expression is incomplete", t)
+            self.error(f"Unexpected {_tok_name(kind)} - expression is incomplete", t)
         else:
             self.error(f"Unexpected {_tok_desc(kind, t.val)} in expression", t)
 

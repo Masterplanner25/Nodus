@@ -43,7 +43,7 @@ try {
     def test_uncaught_throw(self):
         with self.assertRaises(lang.LangRuntimeError) as cm:
             run_program('throw "boom"\n', source_path="main.nd")
-        self.assertEqual(cm.exception.kind, "runtime")
+        self.assertEqual(cm.exception.kind, "thrown")
         self.assertIn("boom", str(cm.exception))
 
     def test_nested_try_blocks(self):
@@ -96,7 +96,7 @@ try {
 }
 """
         out = run_program(src)
-        self.assertEqual(out[0], "runtime")
+        self.assertEqual(out[0], "thrown")
         self.assertEqual(out[1], "bad input")
 
     def test_throw_number(self):

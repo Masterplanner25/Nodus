@@ -2209,11 +2209,9 @@ class VM:
         # See TECH_DEBT.md — was previously always stringifying.
         value = self.pop()
         if isinstance(value, str):
-            # String throw: use as message directly
-            self.runtime_error("runtime", value)
+            self.runtime_error("thrown", value)
         elif isinstance(value, (int, float, bool)):
-            # Primitive throw: convert to string message
-            self.runtime_error("runtime", self.value_to_string(value))
+            self.runtime_error("thrown", self.value_to_string(value))
         else:
             # Structured throw (Record, list, etc.): preserve as payload.
             # The catch block receives err where err.kind == "thrown",

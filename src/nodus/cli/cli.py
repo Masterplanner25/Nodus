@@ -285,7 +285,9 @@ _COMMAND_HELP: dict[str, str] = {
     "check": "\n".join([
         "Usage: nodus check [<file|project-dir>] [options]",
         "",
-        "Parse and type-check a Nodus script or project without executing it.",
+        "Parse and validate a Nodus script or project without executing it.",
+        "Catches syntax errors and import resolution failures. Does not check",
+        "undefined variable/function references (those are caught at run time).",
         "Exits 0 if no errors are found, 1 otherwise.",
         "",
         "Options:",
