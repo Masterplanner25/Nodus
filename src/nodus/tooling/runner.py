@@ -155,6 +155,7 @@ def run_source(
     profiler=None,
     allowed_paths: list[str] | None = None,
     input_fn=None,
+    fs_root: str | None = None,
 ):
     import sys as _sys
     _import_stderr = _sys.stderr
@@ -170,6 +171,20 @@ def run_source(
     import_state = _resolve_import_state(import_state, project_root)
     disassembly = None
     disassembly_lines = None
+
+    # Compute the effective filesystem root for CLI-mode path enforcement.
+    # When allowed_paths is None (no embedded sandbox), fs_root limits fs.* builtins
+    # to the project root so ../traversal attacks are blocked the same way imports are.
+    if fs_root is None and allowed_paths is None:
+        if project_root is not None:
+            fs_root = project_root
+        elif filename is not None:
+            from nodus.tooling.project import find_project_root as _find_root
+            _base = os.path.dirname(os.path.abspath(filename))
+            fs_root = _find_root(_base) or os.getcwd()
+        else:
+            fs_root = os.getcwd()
+
     vm = VM(
         [],
         {},
@@ -185,6 +200,7 @@ def run_source(
         profiler=profiler,
         allowed_paths=allowed_paths,
         input_fn=input_fn,
+        fs_root=fs_root,
     )
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     loader = ModuleLoader(

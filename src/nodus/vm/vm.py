@@ -148,6 +148,7 @@ class VM:
         event_bus: RuntimeEventBus | None = None,
         profiler: Profiler | None = None,
         allowed_paths: list[str] | None = None,
+        fs_root: str | None = None,
     ):
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -177,6 +178,7 @@ class VM:
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
+        self.fs_root = os.path.normcase(os.path.abspath(fs_root)) if fs_root else None
         self.memory_store = GLOBAL_MEMORY_STORE
         self.session_id: str | None = None
         self.task_step_budget: int | None = None
@@ -370,11 +372,16 @@ class VM:
             return False
 
     def _ensure_path_allowed(self, path: str, op_name: str) -> None:
+        normalized = os.path.normcase(os.path.abspath(path))
         if self.allowed_paths is None:
+            if self.fs_root is not None and not self._path_within_root(normalized, self.fs_root):
+                self.runtime_error(
+                    "sandbox",
+                    f"{op_name} blocked: path {path!r} escapes the project root",
+                )
             return
         if not self.allowed_paths:
             self.runtime_error("sandbox", f"{op_name} is not permitted")
-        normalized = os.path.normcase(os.path.abspath(path))
         for root in self.allowed_paths:
             if self._path_within_root(normalized, root):
                 return
