@@ -22,7 +22,7 @@ Nodus is created and maintained by Shawn Knight as part of the Masterplan Infini
 - numbers, booleans, strings, nil
 - lists, maps, and records
 - functions, closures, and recursion
-- control flow (if/while/for/foreach/try/catch/finally/throw)
+- control flow (if/while/for/for item in list/try/catch/finally/throw)
 - imports and namespaces with explicit exports
 - stdlib modules (`std:`)
 - file I/O builtins

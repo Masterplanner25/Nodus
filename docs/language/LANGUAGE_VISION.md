@@ -57,7 +57,7 @@ Source Code
 - Numbers, booleans, strings, nil
 - Lists, maps, and records
 - Functions, closures, and recursion
-- If/else, while, for, foreach
+- If/else, while, for, for item in list
 - Imports/exports with namespaced imports
 - Deterministic formatter and static validation
 - REPL and CLI tooling
