@@ -137,6 +137,26 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 
+## Testing Methodology
+
+### Security boundary cross-context test requirement
+
+All security boundary tests (path traversal, sandbox escapes, allowed_paths
+enforcement, resource limits) must exercise BOTH CLI mode and NodusRuntime
+embedded mode. The same bug class can exist in one context and not the
+other if the enforcement code path differs.
+
+**Precedent:** BUG-016 (v2.0.1) was a path traversal vulnerability in CLI
+mode. BUG-046 (v2.1.1) was the same vulnerability class in embedded mode,
+discovered six weeks later. The v2.0.1 fix correctly built a shared
+validation function but the embedded mode's module VM did not invoke it.
+Two-line fix once located, but the gap existed in a shipped release.
+
+**Rule:** Any test added for a security-boundary fix must include at least
+one CLI mode case and one NodusRuntime case, even if the underlying
+validation function is shared. The test exercises the call path, not
+just the validator.
+
 ## Untracked Items (surfaced in v0.9 assessment, 2026-03-15)
 
 - ✅ `compile_source()` removal-target doc contradiction: resolved in v0.9.0. Public stub removed from `nodus.__init__` at v0.9 (one version earlier than the `DeprecationWarning` message indicated). ROADMAP.md, DEPRECATIONS.md, TECH_DEBT.md, and CHANGELOG.md all updated to reflect v0.9.0 removal. The warning message discrepancy is noted in DEPRECATIONS.md and CHANGELOG.md.
