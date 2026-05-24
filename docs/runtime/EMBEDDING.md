@@ -277,20 +277,35 @@ Isolation policies should be defined by the host environment.
 
 9. Error Handling
 
-Errors originating from scripts propagate through the runtime diagnostics system.
+As of v2.1.0 (BUG-005), `run_source()` catches all runtime and syntax errors and returns
+`{"ok": false, ...}` instead of propagating Python exceptions to the caller. Users on
+v2.0.x who relied on exception handling around `run_source()` must upgrade to v2.1.0
+to get this behavior.
 
-Key modules:
+Example:
 
-errors.py
-diagnostics.py
+result = rt.run_source(code)
+if not result["ok"]:
+    print(f"Error: {result['error']}")
+    print(f"Stderr: {result['stderr']}")
+else:
+    print(f"Result: {result['stdout']}")
 
-Hosts may intercept runtime errors to:
+The result dict always contains `"ok"` (bool), `"stdout"` (str), and `"stderr"` (str).
+On error, `"error"` contains a human-readable description of the failure.
+
+Hosts may also intercept runtime errors to:
 
 log failures
 
 retry operations
 
 report failures to external systems
+
+Key modules:
+
+errors.py
+diagnostics.py
 
 10. Embedding API Stability (v1.0)
 
