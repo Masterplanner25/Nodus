@@ -17,12 +17,32 @@ long-term evolution
 Nodus is evolving as a bytecode-based scripting runtime designed for automation and orchestration systems.
 
 
-## In Progress / Release Pending
+## Active Development
 
-v1.1.1 is release-ready pending final publish/tagging. See CHANGELOG.md for the full entry.
-[Unreleased] is currently empty pending post-publish follow-up work.
+Current release: **v2.1.0** (2026-05-24). See root `CHANGELOG.md` for full history.
+
+Open milestones:
+- **v2.2** — `nodus fmt --check` false-negative on freshly written files (BUG-025).
+- **v3.0** — Integer type (distinct from float), equality coercion semantics redesign.
 
 ## Released Versions
+
+### 2.1.0 — Bug Fixes and Language Completeness (2026-05-24)
+- New builtins: `has_key(map, key)` (O(1) map membership), modulo operator `%`, scientific notation literals.
+- New stdlib: `strings.replace(s, old, new)`.
+- `json.parse` now returns maps (BREAKING from v2.0.0); `NodusRuntime.run_source` returns `{"ok": false}` on error instead of raising.
+- 16 additional bug fixes across parser, runtime, CLI, and embedding API.
+
+### 2.0.1 — Security Patches (2026-05-23)
+- CRITICAL: `fs.*` builtins now enforce filesystem root; path traversal attacks blocked in CLI mode (BUG-016).
+- CRITICAL: UTF-8 BOM files no longer cause Python traceback crash (BUG-017).
+- CRITICAL: 100+ nested parentheses no longer cause uncaught `RecursionError` (BUG-007).
+
+### 2.0.0 — Large Refactoring Release (2026-05-23)
+- VM reduced from ~2,400 to ~2,050 lines; `BuiltinRegistry` extracted to `src/nodus/builtins/registry.py`.
+- AST `Base` dataclass, `NodeVisitor` pattern, and `compile_source()` fully removed.
+- CI distribution validation, per-command `--help`, strict run mode, `nodus status`, and REPL improvements.
+- Memory API stabilization: `memory_has()` builtin and `has()` in `std:memory`.
 
 ### 1.1.0 — Installable Package & Execution Model Cleanup
 - Installable `nodus-lang` package metadata and CLI entrypoint.

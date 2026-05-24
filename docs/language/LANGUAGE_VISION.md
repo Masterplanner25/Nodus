@@ -70,14 +70,21 @@ Source Code
 
 # Near-Term Direction
 
-The next steps focus on:
+All v1.0 near-term goals are complete as of v2.1.0:
+- Runtime module objects and per-module bytecode caching ✅
+- Stable bytecode versioning (`BYTECODE_VERSION = 4`, frozen) ✅
+- Stable embedding API (`NodusRuntime` in `nodus.__all__`) ✅
+- Debugger (DAP), profiler, and LSP tooling ✅
+- Package management (`nodus install`, `nodus publish`, registry auth) ✅
+- Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-- Stronger module isolation (runtime module objects)
-- Stable bytecode versioning for tooling
-- Formal embedding APIs for host integrations
-- Improved debugging and profiling workflows
-- Package management that remains simple and reproducible
-- Publish a stability policy for syntax and runtime features
+## v2.2 (next)
+- `nodus fmt --check` false-negative on freshly written files (BUG-025).
+
+## v3.0 (planned)
+- Integer type: `int` as a distinct type from `float`.
+- Equality coercion semantics: align `==` behavior across number types.
+- Type-aware linting in `nodus check` (optional annotations producing warnings, not errors).
 
 ---
 

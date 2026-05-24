@@ -205,7 +205,7 @@ Builtin functions are organised into category modules under `src/nodus/builtins/
 | `coroutine.py`  | `coroutine`, `resume`, `spawn`, `channel`, `send`, `recv`, `close`, `sleep` |
 | `collections.py`| `len`, string ops, `keys`/`values`, `list_push/pop`, `json_parse/stringify` |
 
-`BuiltinRegistry` (in `src/nodus/builtins/__init__.py`) is the aggregation point.
+`BuiltinRegistry` (defined in `src/nodus/builtins/registry.py`, re-exported from `__init__.py`) is the aggregation point.
 
 `VM.__init__` creates a `BuiltinRegistry`, calls `registry.register_all(self)`, then merges
 the result into `self.builtins`.

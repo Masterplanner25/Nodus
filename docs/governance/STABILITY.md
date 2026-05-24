@@ -17,7 +17,7 @@ This document summarizes which parts of the language are considered stable, most
 - Blocks and statement separators
 - Control flow: `if`, `while`, `for (init; cond; inc)`, `return`, `try/catch/finally`, `throw`
 - Literals: numbers, strings, booleans, `nil`
-- Operators: arithmetic, comparisons, `&&`, `||`, `!`, unary `-`
+- Operators: arithmetic (`+ - * / %`), comparisons, `&&`, `||`, `!`, unary `-`
 - Lists and maps (literals, indexing, assignment)
 - Basic import/export syntax
 - VM execution model

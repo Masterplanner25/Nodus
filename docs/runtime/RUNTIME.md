@@ -327,17 +327,16 @@ finally blocks run on all exit paths (normal, caught exception, return)
 
 14. Module Objects
 
-Modules currently exist as compile-time constructs.
+Each module compiles to a separate bytecode unit and loads independently via the module loader.
 
-During compilation:
+During execution:
 
-imported modules are flattened
+- Each module runs once and is cached by resolved path (execute-once semantics).
+- Imported modules produce runtime module objects with isolated global namespaces.
+- Named imports (`import { name } from "mod.nd"`) create live bindings — reads and writes reflect the current exported value.
+- Namespace imports (`import "mod.nd" as mod`) bind `mod` to a runtime module object; field access reads the live exported state.
 
-exported names are mapped into global scope
-
-The VM does not currently load modules dynamically.
-
-Future versions may introduce runtime module objects.
+See docs/runtime/ARCHITECTURE.md for the full runtime pipeline overview.
 
 15. Scheduler and Coroutines
 
@@ -401,8 +400,6 @@ equality fallback check has been removed.
 17. Future Runtime Evolution
 
 Potential runtime improvements include:
-
-runtime module objects (currently compile-time flattening)
 
 optional custom memory manager
 

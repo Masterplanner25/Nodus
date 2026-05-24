@@ -205,8 +205,6 @@ richer standard library
 
 performance improvements in the VM
 
-runtime module objects (currently compile-time flattening)
-
 structured event sinks for embedding
 
 These should be added without compromising architectural clarity.
