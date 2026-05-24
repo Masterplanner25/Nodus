@@ -2,7 +2,7 @@
 
 ## Values
 Stability: Mostly stable (record vs map semantics may evolve).
-- number (float-based)
+- number (float-based; scientific notation `1e3`, `2.5e-4`, `1E10` supported)
 - bool (`true`, `false`)
 - string (double-quoted with escapes: `\\`, `\"`, `\n`, `\t`, `\r`, `\0`, `\xHH`, `\uXXXX`)
   - `\xHH` — hex byte (two hex digits, e.g. `\x41` → `A`)
@@ -29,7 +29,7 @@ Stability: Stable.
 
 ## Operators
 Stability: Stable.
-- Arithmetic: `+ - * /`
+- Arithmetic: `+ - * / %` (`%` is modulo; works for integer and float values)
 - Comparison: `== != < > <= >=`
 - Logical: `&& || !`
 - Truthiness: `nil` is falsey; booleans use natural value; others use Python-like truthiness.
@@ -82,7 +82,7 @@ Stability: Experimental (tooling-only, likely to evolve).
   - `record`
   - `function`
   - `any`
-- `nodus check` runs static analysis and reports type mismatches for annotated code.
+- `nodus check` parses the file and reports syntax errors only; it does not perform type checking or detect undefined names.
 - Programs without annotations continue to run as before.
 
 ## Iteration Protocol
@@ -176,6 +176,7 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
 - `input(prompt)`
 - `keys(map)`
 - `values(map)`
+- `has_key(map, key)` — O(1) map membership test; returns `true` if `key` exists in `map`
 - `read_file(path)`
 - `write_file(path, content)`
 - `append_file(path, content)`
@@ -236,6 +237,7 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   - `join(list, delimiter)`
   - `contains(string, substring)`
   - `repeat(string, count)`
+  - `replace(s, old, new)` — returns a new string with all occurrences of `old` replaced by `new`
 - `std:collections`
   - `len(collection)`
   - `map(list, fn)`
@@ -246,7 +248,21 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
 - `std:json`
   - `parse(string)` decodes JSON values
   - `stringify(value)` encodes lists, maps, records, strings, booleans, numbers, and `nil`
-  - JSON objects decode to Nodus `record` values, so fields can be accessed with `obj.name`
+  - **JSON objects decode to Nodus `map` values** (breaking change from v2.0.0, which returned `record`). Use `[]` for field access, not dot-notation.
+  - `map["key"]` — field access
+  - `has_key(map, "key")` — membership test (top-level builtin, no import required)
+  - `keys(map)` — list of keys
+  - `values(map)` — list of values
+
+  ```nd
+  import "std:json" as json
+  let obj = json.parse("{\"name\": \"ada\"}")
+  print(obj["name"])          // "ada"
+  print(has_key(obj, "name")) // true
+  print(keys(obj))            // ["name"]
+  ```
+
+  > **Migration note:** Code using `obj.name` on `json.parse` results will break. Replace dot access with `obj["name"]`.
 - `std:math`
   - `abs(x)`
   - `min(a, b)`
