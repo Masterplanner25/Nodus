@@ -390,4 +390,19 @@ TESTED COMMANDS (all run against nodus-lang v2.1.1 dev source):
 12: nodus run import_trace.nd --trace-imports → "[import] Resolved ..." line
 13: nodus run err_fields.nd              → err.line=7, err.stack[0] shows at inner, err.stack[1] shows called from outer
 14: nodus run print_debug.nd             → per-item debug output with type annotations
+
+BEHAVIORAL FINDINGS (filed as v2.2 issues):
+F32: `nodus debug --help` outputs "File not found: --help" instead of help text.
+     BUG-001/002 fixed --help for check/ast/dis in v2.1.0; debug was missed.
+     Filed as BUG-047 (#48).
+
+F33: Stack overflow trace prints all 10,000 frames with no depth cap (~800 KB stderr).
+     Output is truncated by the terminal, not by Nodus. Should cap at ~20 frames
+     with "... (N more frames)" summary, matching Python/Node.js convention.
+     Filed as BUG-048 (#49).
+
+KNOWN LIMITATION (pre-existing, not filed):
+F27: --trace-imports only fires on cold cache (module_loader bypasses resolve_import()
+     on cache hits). Documented in guide body as a known limitation. Filed separately
+     in modules-and-imports.md findings.
 -->
