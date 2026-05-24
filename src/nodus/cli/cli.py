@@ -642,6 +642,7 @@ def _run_workflow(path: str, workflow_name: str | None = None, *, project_root: 
         return 1
     code = _read_file(path)
     result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root)
+    _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
         return 1
@@ -668,6 +669,7 @@ def _run_goal(path: str, goal_name: str | None = None, *, project_root: str | No
         return 1
     code = _read_file(path)
     result, _vm = run_goal_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, goal_name=goal_name, project_root=project_root)
+    _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
         return 1
