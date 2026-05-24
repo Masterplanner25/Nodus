@@ -686,6 +686,7 @@ class Compiler:
                 "-": "SUB",
                 "*": "MUL",
                 "/": "DIV",
+                "%": "MOD",
                 "==": "EQ",
                 "!=": "NE",
                 "<": "LT",

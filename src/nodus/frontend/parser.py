@@ -576,7 +576,7 @@ class Parser:
 
     def parse_mul(self):
         node = self.parse_unary()
-        while self.at("*") or self.at("/"):
+        while self.at("*") or self.at("/") or self.at("%"):
             tok = self.peek()
             op = tok.kind
             self.i += 1

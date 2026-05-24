@@ -1770,6 +1770,17 @@ class VM:
             self._binary_type_error("divide", a, b)
         self.ip += 1
 
+    def _op_mod(self, instr):
+        b = self.pop()
+        a = self.pop()
+        try:
+            self.stack.append(a % b)
+        except ZeroDivisionError:
+            self.runtime_error("runtime", "Modulo by zero")
+        except TypeError:
+            self._binary_type_error("modulo", a, b)
+        self.ip += 1
+
     def _op_eq(self, instr):
         b = self.pop()
         a = self.pop()
@@ -2274,6 +2285,7 @@ class VM:
             "SUB":          self._op_sub,
             "MUL":          self._op_mul,
             "DIV":          self._op_div,
+            "MOD":          self._op_mod,
             "EQ":           self._op_eq,
             "NE":           self._op_ne,
             "LT":           self._op_lt,
