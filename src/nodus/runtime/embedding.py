@@ -7,8 +7,8 @@ import os
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
-from nodus.runtime.errors import coerce_error
-from nodus.runtime.diagnostics import LangRuntimeError
+from nodus.runtime.errors import coerce_error, legacy_error_dict
+from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
@@ -326,7 +326,16 @@ class NodusRuntime:
                 else:
                     loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True)
             except Exception as err:
-                raise coerce_error(err, stage="execute", filename=normalized) from err
+                stage = "parse" if isinstance(err, (LangSyntaxError, SyntaxError)) else "execute"
+                structured = coerce_error(err, stage=stage, filename=normalized)
+                return Result.failure(
+                    stage=stage,
+                    filename=normalized,
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    errors=[structured.to_dict()],
+                    error=legacy_error_dict(err, filename=normalized),
+                ).to_dict()
 
         return Result.success(
             stage="execute",

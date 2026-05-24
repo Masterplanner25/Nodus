@@ -7,10 +7,11 @@ from nodus.runtime.errors import NodusSandboxError
 class EmbeddingInputTests(unittest.TestCase):
     def test_input_blocked_by_default(self):
         runtime = NodusRuntime()
-        with self.assertRaises(NodusSandboxError) as ctx:
-            runtime.run_source('input("x")', filename="inline.nd")
-        self.assertEqual(ctx.exception.error_type, "SandboxError")
-        self.assertIn("input()", str(ctx.exception))
+        result = runtime.run_source('input("x")', filename="inline.nd")
+        self.assertFalse(result["ok"])
+        err = result.get("error") or {}
+        self.assertIn(err.get("type", ""), {"SandboxError", "sandbox"})
+        self.assertIn("input()", err.get("message", ""))
 
     def test_input_allowed_when_enabled(self):
         runtime = NodusRuntime(allow_input=True)
