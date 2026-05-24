@@ -1,7 +1,6 @@
 import unittest
 
 from nodus.runtime.embedding import NodusRuntime
-from nodus.runtime.errors import NodusSandboxError
 
 
 class EmbeddingInputTests(unittest.TestCase):
