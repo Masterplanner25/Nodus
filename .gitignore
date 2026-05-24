@@ -37,3 +37,14 @@ Thumbs.db
 # Audit reports
 AUDIT_REPORT*.md
 DOCS_AUDIT_REPORT*.md
+
+# Planning and evaluation documents (working files, not part of the repo)
+CAPTURE RELEASE PLAYBOOK.md
+DOCS AUDIT TASK.md
+EVAL_LOG.md
+NODUS_EVAL_BUGS.md
+NODUS_EVAL_REPORT.md
+NODUS_EVAL_RUBRIC.md
+P0 BLOCKER FIXES.md
+PYPI RELEASE.md
+STRESS-TEST USER EVALUATION*
