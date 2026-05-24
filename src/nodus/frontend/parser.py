@@ -99,6 +99,9 @@ def _tok_desc(kind: str, val: str) -> str:
     return name
 
 
+_MAX_PARSE_DEPTH = 50
+
+
 class Parser:
     def __init__(self, toks: list[Tok]):
         self.toks = toks
@@ -111,6 +114,7 @@ class Parser:
         self.workflow_depth = 0
         self.workflow_step_depth = 0
         self.goal_depth = 0
+        self._parse_depth = 0
 
     def error(self, message: str, tok: Tok | None = None):
         t = self.peek() if tok is None else tok
@@ -504,7 +508,19 @@ class Parser:
         return self.parse_named_map_literal(error_keys=STEP_OPTION_KEYS, error_template="Unsupported workflow step option: {key}")
 
     def expr(self):
-        return self.parse_assignment()
+        self._parse_depth += 1
+        if self._parse_depth > _MAX_PARSE_DEPTH:
+            t = self.peek()
+            self._parse_depth -= 1
+            raise LangSyntaxError(
+                f"Expression too deeply nested (max depth: {_MAX_PARSE_DEPTH})",
+                line=t.line,
+                col=t.col,
+            )
+        try:
+            return self.parse_assignment()
+        finally:
+            self._parse_depth -= 1
 
     def parse_assignment(self):
         node = self.parse_or()
