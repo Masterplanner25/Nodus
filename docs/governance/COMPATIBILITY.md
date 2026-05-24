@@ -13,8 +13,9 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - **v1.0.0 (2026-03-15):** `compile_source()` loader body removed.
   Legacy launchers (`.tl`, `language.py`, `language.bat`) are still supported with
   warnings pending migration verification. Re-evaluation deferred to v1.1.x.
-- **v2.1.0 (2026-05-24, current):** `json.parse` now returns maps (BREAKING from v2.0.0).
+- **v2.1.0 (2026-05-24):** `json.parse` now returns maps (BREAKING from v2.0.0).
   Legacy `.tl` extension and `language.py` / `language.bat` launchers remain supported with warnings; no removal date set.
+- **v2.1.1 (2026-05-24, current):** `allowed_paths` sandbox now enforced for `std:fs` module calls (security fix, BUG-046). No deprecation or compatibility impact — scripts relying on the bypass were relying on a bug.
 
 ## Migration Path
 - Use `.nd` files for new code.
