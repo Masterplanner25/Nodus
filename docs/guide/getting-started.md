@@ -15,7 +15,7 @@ pip install nodus-lang
 nodus --version
 ```
 
-Expected output: `nodus 2.1.0`.
+Expected output: `nodus 2.1.1`.
 
 For the optional FastAPI/Uvicorn HTTP server:
 
@@ -281,7 +281,7 @@ Key things this example demonstrates:
 - `str(list)` converts a list to its string representation for printing.
 
 For a full treatment of module resolution, exports, and bare paths, see
-[modules-and-imports.md](modules-and-imports.md) (coming soon).
+[modules-and-imports.md](modules-and-imports.md).
 
 ---
 
@@ -323,30 +323,49 @@ nodus run error_demo.nd
 ```
 
 For structured error handling inside your scripts (try/catch/finally), see
-[error-handling.md](error-handling.md) (coming soon).
+[error-handling.md](error-handling.md).
 
 ---
 
 ## 7. Where to Go Next
 
-These guide files are the natural next steps:
+Start with the foundation guides, then pick the topic you need:
 
-- **[types-and-values.md](types-and-values.md)** — the foundation
-  everything else builds on. Covers records vs maps, float-only numbers,
-  nil semantics, and functions as values. Read this before anything else.
+**Foundation**
+
+- **[types-and-values.md](types-and-values.md)** — records vs maps,
+  float-only numbers, nil semantics, functions as values. Read this first.
+- **[error-handling.md](error-handling.md)** — try/catch/finally, err.kind
+  reference, throw patterns, finally guarantees.
+- **[modules-and-imports.md](modules-and-imports.md)** — project layout,
+  relative vs bare imports, exports, index modules, how resolution works.
+
+**Standard library and data**
+
+- **[standard-library.md](standard-library.md)** — complete function
+  reference for every `std:` module.
+- **[working-with-maps.md](working-with-maps.md)** — map creation, bracket
+  access, has_key, keys/values, accumulation patterns, map vs record.
+- **[working-with-json.md](working-with-json.md)** — json.parse (returns
+  maps since v2.1.0), stringify, traversal, working with nested structures.
+
+**Tooling and integration**
+
+- **[debugging.md](debugging.md)** — --trace and filter flags,
+  --dump-bytecode, nodus check limitations, the interactive debugger,
+  common diagnostic patterns.
+- **[embedding-nodus.md](embedding-nodus.md)** — NodusRuntime API,
+  allowed_paths sandbox, register_function, type marshaling, sandbox limits.
+
+**Orchestration**
+
+- **[workflows-and-tasks.md](workflows-and-tasks.md)** — workflow/goal DSL,
+  step dependencies, state, checkpoints, retries, print visibility (BUG-022).
+
+**Language reference**
 
 - **[LANGUAGE_SPEC.md](../language/LANGUAGE_SPEC.md)** — the authoritative
-  reference for every operator, form, and builtin. The guide explains usage;
-  the spec defines behavior.
-
-Coming soon:
-
-- `modules-and-imports.md` — project layout, bare vs relative paths, re-exports
-- `standard-library.md` — complete function reference for all `std:` modules
-- `working-with-json.md` — json.parse, stringify, the v2.1.0 map behavior
-- `error-handling.md` — try/catch/finally, err.kind values, throw patterns
-- `working-with-maps.md` — map creation, has_key, accumulation patterns
-- `debugging.md` — --trace, --strict, nodus check limitations
+  reference for every operator, form, and builtin.
 
 ---
 

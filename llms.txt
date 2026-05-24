@@ -15,6 +15,21 @@ Nodus is a scripting language and distributed workflow runtime. It compiles sour
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contributor guide — setup, testing, code style, and language change process
 - [SECURITY.md](SECURITY.md): Vulnerability disclosure policy
 
+## User guide
+
+Operational guides for writing, debugging, and embedding Nodus — all tested against v2.1.1:
+
+- [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
+- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers (float-only), strings, lists, maps, records, nil, functions as values
+- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, error patterns
+- [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, bare vs relative paths, stdlib modules, resolution
+- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete function reference for all std: modules
+- [docs/guide/working-with-maps.md](docs/guide/working-with-maps.md): Map creation, bracket access, has_key, keys/values, accumulation, map vs record
+- [docs/guide/working-with-json.md](docs/guide/working-with-json.md): json.parse (returns maps since v2.1.0), stringify, nested access
+- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check limitations, --dump-bytecode, interactive debugger
+- [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, allowed_paths sandbox, register_function, type marshaling
+- [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+
 ## Creator
 
 Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave ecosystem.
