@@ -2,7 +2,6 @@
 
 import unittest
 
-from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.tooling.runner import run_source
 
 
