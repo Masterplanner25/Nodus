@@ -34,6 +34,12 @@ def register(vm, registry) -> None:
         vm.ensure_string(needle, "contains(x, needle)")
         return needle in value
 
+    def builtin_replace(value, old, new):
+        vm.ensure_string(value, "str_replace(s, old, new)")
+        vm.ensure_string(old, "str_replace(s, old, new)")
+        vm.ensure_string(new, "str_replace(s, old, new)")
+        return value.replace(old, new)
+
     def builtin_keys(value):
         if not isinstance(value, dict):
             vm.runtime_error("type", "keys(x) expects a map")
@@ -118,6 +124,7 @@ def register(vm, registry) -> None:
     registry.add("str_trim", 1, builtin_trim)
     registry.add("str_split", 2, builtin_split)
     registry.add("str_contains", 2, builtin_contains)
+    registry.add("str_replace", 3, builtin_replace)
     registry.add("keys", 1, builtin_keys)
     registry.add("values", 1, builtin_values)
     registry.add("list_push", 2, builtin_list_push)

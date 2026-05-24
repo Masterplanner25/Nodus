@@ -79,6 +79,7 @@ BUILTIN_NAMES = {
     "str_trim",
     "str_split",
     "str_contains",
+    "str_replace",
     "print",
     "input",
     "keys",
