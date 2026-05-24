@@ -204,7 +204,7 @@ ababab
 ```
 
 For the complete stdlib reference, see
-[standard-library.md](standard-library.md) (coming soon).
+[standard-library.md](standard-library.md).
 
 ---
 
