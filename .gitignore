@@ -36,3 +36,4 @@ Thumbs.db
 
 # Audit reports
 AUDIT_REPORT*.md
+DOCS_AUDIT_REPORT*.md
