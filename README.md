@@ -116,7 +116,7 @@ print(math.abs(-4))
   "url": "https://github.com/Masterplanner25/nodus-lang",
   "downloadUrl": "https://pypi.org/project/nodus-lang/",
   "license": "https://spdx.org/licenses/MIT.html",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "softwareRequirements": "Python >= 3.10"
 }
 </script>
