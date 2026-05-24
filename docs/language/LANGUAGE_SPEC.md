@@ -14,6 +14,10 @@ Stability: Mostly stable (record vs map semantics may evolve).
 - record (`record { key: value, ... }`)
 - record methods: `record { greet: fn(self) { ... } }`, called as `obj.greet()`
 
+**Record vs map access:**
+- **record** — created with `record { key: value }` syntax. Dot-access only: `r.name`, `r.field = value`. Methods called as `obj.method()`.
+- **map** — created with `{ key: value }` literal syntax, or returned by `json.parse` and certain stdlib calls. Bracket access is canonical: `m["key"]`, `m["key"] = value`. `has_key(m, "key")`, `keys(m)`, and `values(m)` are also available.
+
 ## Variables and Assignment
 Stability: Stable.
 - Declare: `let x = expr`
@@ -712,11 +716,12 @@ Inside a `catch` block, the caught error record has these fields:
 |-------|------|-------------|
 | `err.message` | string | Human-readable error description (always present). |
 | `err.kind` | string | Error category (e.g. `"name"`, `"type"`, `"index"`, `"thrown"`, `"sandbox"`). |
-| `err.payload` | any | Original thrown value when `throw <non-string>` was used; `nil` otherwise. |
+| `err.payload` | any | Original thrown value when `throw <non-string>` was used; `nil` for string throws. |
 
-When `throw expr` is used with a string value, `err.message` contains the string directly.
-When `throw expr` is used with a non-string value (record, list, number), `err.kind` is
-`"thrown"` and `err.payload` contains the original value.
+All explicit `throw` statements set `err.kind = "thrown"`, regardless of value type.
+The difference is in `err.payload`:
+- String throw (`throw "msg"`): `err.message` contains the string; `err.payload` is `nil`.
+- Non-string throw (`throw record { ... }`): `err.message` is a generic description; `err.payload` contains the original value.
 
 ```nd
 try {
