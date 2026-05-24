@@ -525,6 +525,7 @@ def check_file(path: str, *, project_root: str | None = None) -> int:
     if not result.get("ok", False):
         _print_error(result, path=path)
         return 1
+    print(f"{path}: OK")
     return 0
 
 
@@ -1293,6 +1294,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "ast":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print("Usage: nodus ast <script.nd> [--compact]")
+            return 0
         flags_no_values = {"--compact"}
         positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
         if not positional:
@@ -1302,6 +1306,9 @@ def main(argv: list[str] | None = None) -> int:
         return ast_file(script, compact="--compact" in flags)
 
     if command == "dis":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print("Usage: nodus dis <script.nd> [--loc] [--project-root PATH]")
+            return 0
         flags_with_values = {"--project-root"}
         flags_no_values = {"--loc"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
