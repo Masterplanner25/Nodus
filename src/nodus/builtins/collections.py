@@ -75,8 +75,7 @@ def register(vm, registry) -> None:
         if isinstance(value, list):
             return [from_json_value(item) for item in value]
         if isinstance(value, dict):
-            from nodus.vm.vm import Record
-            return Record({key: from_json_value(item) for key, item in value.items()})
+            return {key: from_json_value(item) for key, item in value.items()}
         vm.runtime_error("runtime", f"Unsupported JSON value: {value!r}")
 
     def to_json_value(value):

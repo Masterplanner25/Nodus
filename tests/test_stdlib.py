@@ -54,8 +54,8 @@ print(nums)
         src = """
 import "std:json" as j
 let obj = j.parse("{\\"x\\":1,\\"name\\":\\"Alice\\",\\"tags\\":[1,2]}")
-print(obj.x)
-print(obj.name)
+print(obj["x"])
+print(obj["name"])
 print(j.stringify(obj))
 """
         self.assertEqual(
