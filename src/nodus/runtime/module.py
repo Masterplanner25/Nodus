@@ -187,6 +187,8 @@ class NodusModule:
             module_globals=self.globals,
             host_globals=self.host_globals,
             source_path=self.path,
+            allowed_paths=caller_vm.allowed_paths if caller_vm is not None else None,
+            fs_root=caller_vm.fs_root if caller_vm is not None else None,
         )
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)

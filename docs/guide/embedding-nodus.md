@@ -275,58 +275,15 @@ error: {'type': 'sandbox', 'kind': 'sandbox',
         'message': "read_file(path) blocked for path: '/tmp/secret.txt'", ...}
 ```
 
-### BUG-046: stdlib module calls bypass allowed_paths
+### Enforcement coverage
 
-> **Security note.** In v2.1.0, `allowed_paths` does **not** protect against
-> filesystem access through the `std:fs` module. The `fs.read()` and
-> `fs.write()` wrappers create a new internal VM that does not receive the
-> `allowed_paths` restriction.
+`allowed_paths` is enforced for all filesystem operations — both direct builtin
+calls (`read_file`, `write_file`) and stdlib module calls (`fs.read`, `fs.write`,
+`fs.append`, `fs.exists`, `fs.listdir`). Path traversal (`../`) is also blocked.
 
-Demonstrated:
-
-```python
-# test_09_sandbox_direct.py
-import os, tempfile
-from nodus import NodusRuntime
-
-with tempfile.TemporaryDirectory() as allowed_dir:
-    forbidden_dir = tempfile.mkdtemp()
-    forbidden_file = os.path.join(forbidden_dir, "secret.txt")
-    with open(forbidden_file, "w") as f:
-        f.write("classified")
-    allowed_file = os.path.join(allowed_dir, "data.txt")
-    with open(allowed_file, "w") as f:
-        f.write("allowed data")
-
-    forbidden_fwd = forbidden_file.replace("\\", "/")
-    allowed_fwd = allowed_file.replace("\\", "/")
-
-    rt = NodusRuntime(allowed_paths=[allowed_dir])
-
-    # Direct builtin: forbidden file is blocked
-    r2 = rt.run_source(f'print(read_file("{forbidden_fwd}"))')
-    print("Forbidden, direct builtin — ok:", r2["ok"])
-    print("error:", r2["error"])
-
-    # Stdlib module: sandbox bypassed
-    r3 = rt.run_source(f'import "std:fs" as fs\nprint(fs.read("{forbidden_fwd}"))')
-    print("\nForbidden, fs.read (BUG-046) — ok:", r3["ok"])
-    print("stdout:", repr(r3["stdout"]))
-```
-
-```
-Forbidden, direct builtin — ok: False
-error: {'type': 'sandbox', 'kind': 'sandbox',
-        'message': "read_file(path) blocked for path: '...'", ...}
-
-Forbidden, fs.read (BUG-046) — ok: True
-stdout: 'classified\n'
-```
-
-Until BUG-046 ([#47](https://github.com/Masterplanner25/Nodus/issues/47)) is
-fixed, do not use `allowed_paths` as the sole defense against untrusted scripts
-that import `std:fs`. Consider also blocking stdlib imports at the host level
-or running scripts in a process-level sandbox.
+> **v2.1.0 note:** In v2.1.0, `std:fs` module calls bypassed `allowed_paths`
+> (BUG-046, [#47](https://github.com/Masterplanner25/Nodus/issues/47)).
+> This was fixed in v2.1.1. If you are on v2.1.0, upgrade immediately.
 
 ---
 
