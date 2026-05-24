@@ -41,7 +41,7 @@ Primary extension: `.nd`
 - `nodus run script.nd`
 - `nodus run`
 - `nodus repl`
-- REPL commands: `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>`
+- REPL commands: `:help`, `:ast <expr>`, `:dis <expr>`, `:type <expr>`, `:modules`, `:reload`, `:quit` — see [REPL.md](../tooling/REPL.md) for the full reference
 - `nodus fmt script.nd`
 - `nodus check script.nd`
 - `nodus ast script.nd`
@@ -55,6 +55,4 @@ Primary extension: `.nd`
 - `nodus publish [--registry <url>] [--registry-token <token>]`
 
 ## Current Stage
-v1.0.0 (2026-03-15) — stable release. Opcode set frozen at 47 stable opcodes
-(`BYTECODE_VERSION = 4`). `try/catch/finally` supported. `NodusRuntime` embedding
-API stable. Registry publish/auth ecosystem complete.
+v2.1.0 — stable release. Stack VM, full stdlib, coroutines, task graphs, workflows, goals, REPL, debugger, and `NodusRuntime` embedding API are all stable. Registry publish/auth ecosystem complete.
