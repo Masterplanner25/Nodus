@@ -80,6 +80,7 @@ BUILTIN_NAMES = {
     "str_split",
     "str_contains",
     "str_replace",
+    "has_key",
     "print",
     "input",
     "keys",
