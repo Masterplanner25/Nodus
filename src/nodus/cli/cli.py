@@ -52,7 +52,7 @@ from nodus.support.version import VERSION
 
 
 def _read_file(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8-sig") as handle:
         return handle.read()
 
 
@@ -326,7 +326,11 @@ def _print_result_output(result: dict) -> None:
     stdout = result.get("stdout") or ""
     stderr = result.get("stderr") or ""
     if stdout:
-        print(stdout, end="")
+        try:
+            print(stdout, end="")
+        except UnicodeEncodeError:
+            sys.stdout.buffer.write(stdout.encode("utf-8", errors="replace"))
+            sys.stdout.buffer.flush()
     if stderr:
         _print_stderr(stderr)
 

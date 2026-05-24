@@ -188,7 +188,7 @@ class NodusRuntime:
         LangSyntaxError / LangRuntimeError:
             Propagated from the compiler or VM on parse/runtime failure.
         """
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8-sig") as handle:
             source = handle.read()
         return self.run_source(
             source,

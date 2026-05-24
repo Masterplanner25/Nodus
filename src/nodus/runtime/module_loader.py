@@ -559,7 +559,7 @@ class ModuleLoader:
         if module_id in self._parsed:
             return self._parsed[module_id]
         if source is None:
-            with open(module_id, "r", encoding="utf-8") as handle:
+            with open(module_id, "r", encoding="utf-8-sig") as handle:
                 source = handle.read()
         toks = tokenize(source)
         ast = Parser(toks).parse()

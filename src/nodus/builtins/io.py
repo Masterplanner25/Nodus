@@ -22,7 +22,7 @@ def register(vm, registry) -> None:
             vm.runtime_error("type", "read_file(path) expects a string path")
         vm._ensure_path_allowed(path, "read_file(path)")
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8-sig") as f:
                 return f.read()
         except Exception as err:
             vm.runtime_error("runtime", f"read_file failed for {path!r}: {err}")
