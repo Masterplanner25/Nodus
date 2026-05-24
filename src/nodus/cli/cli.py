@@ -995,6 +995,7 @@ def _package_init(path: str | None) -> int:
     except Exception as err:
         _print_stderr(str(err))
         return 1
+    print(f"Initialized Nodus project at {os.path.abspath(root)}/")
     return 0
 
 

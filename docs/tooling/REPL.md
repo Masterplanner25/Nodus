@@ -44,6 +44,8 @@ REPL commands start with `:` and are handled by the shell instead of the VM.
 :ast <expr>    show AST
 :dis <expr>    show bytecode
 :type <expr>   show inferred type
+:modules       list imported modules
+:reload        restart REPL session
 :help          show commands
 :quit          exit REPL
 ```

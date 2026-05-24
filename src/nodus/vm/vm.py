@@ -126,6 +126,13 @@ class Frame:
     locals_name_to_slot: dict | None = None  # name → slot; set from fn.local_slots at call time
 
 
+def _is_stdlib_path(path: str | None) -> bool:
+    if not path:
+        return False
+    normalized = path.replace("\\", "/")
+    return "/stdlib/" in normalized and normalized.endswith(".nd")
+
+
 class VM:
     def __init__(
         self,
@@ -283,6 +290,21 @@ class VM:
 
     def build_runtime_error(self, kind: str, message: str, payload: object = None) -> LangRuntimeError:
         path, line, col = self.current_loc()
+        if _is_stdlib_path(path):
+            promoted = False
+            for frame in reversed(self.frames):
+                if frame.call_line is not None and frame.call_col is not None:
+                    call_path = frame.call_path or self.source_path or "<repl>"
+                    if not _is_stdlib_path(call_path):
+                        path, line, col = call_path, frame.call_line, frame.call_col
+                        promoted = True
+                        break
+            if not promoted:
+                caller_vm = getattr(self, "_caller_vm", None)
+                if caller_vm is not None:
+                    caller_path, caller_line, caller_col = caller_vm.current_loc()
+                    if caller_line is not None and not _is_stdlib_path(caller_path):
+                        path, line, col = caller_path or "<repl>", caller_line, caller_col
         current_fn = self.frames[-1].fn_name if self.frames else "<main>"
         stack = [f"at {self.display_name(current_fn)} ({self.format_loc((path, line, col))})"]
 
@@ -2443,7 +2465,9 @@ class VM:
         op_padded = op.ljust(14)
         if self.trace_no_loc:
             ctx = self._trace_context(instr)
-            return f"[trace] {op_padded}  {ctx}" if ctx else f"[trace] {op_padded}"
+            if ctx:
+                return f"[trace] {op_padded}  {ctx}"
+            return f"[trace] {op}"
         _, line, _ = self.current_loc()
         line_str = f"line {line}" if line is not None else "line ?"
         ctx = self._trace_context(instr)

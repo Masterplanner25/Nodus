@@ -19,8 +19,8 @@ class NodusRuntime:
     """Embedded Nodus runtime for hosting inside Python applications.
 
     ``NodusRuntime`` is the recommended public API for executing Nodus scripts
-    from Python.  It manages the full compile-and-run pipeline (lexer → parser →
-    module loader → compiler → optimizer → VM) and exposes host integration hooks
+    from Python.  It manages the full compile-and-run pipeline (lexer -> parser ->
+    module loader -> compiler -> optimizer -> VM) and exposes host integration hooks
     (registered functions, sandbox constraints, execution limits).
 
     Typical usage::
@@ -221,8 +221,8 @@ class NodusRuntime:
         """Compile and execute a Nodus source string.
 
         This is the primary entry point for embedded execution.  The method runs
-        the complete pipeline: lexer → parser → import resolution (ModuleLoader) →
-        bytecode compiler → optimizer → VM execution.
+        the complete pipeline: lexer -> parser -> import resolution (ModuleLoader) ->
+        bytecode compiler -> optimizer -> VM execution.
 
         Parameters
         ----------
