@@ -218,3 +218,9 @@ just the validator.
 - ✅ Optimizer bool constant folding normalised: arithmetic ops convert bool operands to int before folding to prevent semantic divergence from VM runtime semantics (`src/nodus/compiler/optimizer.py`).
 - ✅ `builtin_close` guards receiver wake-up with `state == "suspended"` check to prevent waking non-suspended coroutines (`src/nodus/vm/vm.py`).
 - ✅ `resolve_imports` now enforces a configurable import chain depth limit (default 100, env `NODUS_MAX_IMPORT_DEPTH`) and raises `LangSyntaxError` instead of `RecursionError` (`src/nodus/tooling/loader.py`).
+
+## Process Gaps (surfaced during v3.0 Phase 0, 2026-05-25)
+
+- **Duplicate BUG-NNN:** BUG-029 was filed twice — [#27](https://github.com/Masterplanner25/Nodus/issues/27) (CLI `--help` grouping, no milestone, not in v3.0 scope) and [#30](https://github.com/Masterplanner25/Nodus/issues/30) (else-if syntax, v3.0 `phase:2-fix`). Root cause: the v2.1.1 handoff assigned the number from a running counter without checking existing issues. **Playbook action:** bug filing checklist must include a uniqueness check against open+closed issues before assigning a BUG-NNN. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
+
+- **Missing rubric eval for v2.1.0:** v2.1.0 shipped without a formal rubric eval. Guide-writing surfaced 23 issues but produced no composite score, leaving v2.0.0 (5.52) as the only comparable data point going into v3.0. **Playbook action:** every major/minor release must run the formal rubric eval and record the composite score before close. Guide-writing is supplementary, not a substitute. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
