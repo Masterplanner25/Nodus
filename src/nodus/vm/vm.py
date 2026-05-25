@@ -26,6 +26,7 @@ from nodus.orchestration.workflow_state import checkpoints_public
 
 
 _DEFERRED_NONE = object()  # sentinel: no deferred return pending
+_FINALLY_GATE = -1         # handler_ip sentinel: RETURN defers to finally; exception propagates past
 
 
 class Cell:
@@ -338,30 +339,38 @@ class VM:
         setattr(err, "_event_emitted", True)
 
     def handle_exception(self, err: LangRuntimeError) -> bool:
-        if not self.handler_stack:
-            return False
-        handler_ip, _finally_ip, stack_depth, frame_depth = self.handler_stack.pop()
-        while len(self.frames) > frame_depth:
-            frame = self.frames.pop()
-            self._profiler_exit_frame(frame)
-        while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
-            self.handler_stack.pop()
-        if len(self.stack) > stack_depth:
-            self.stack = self.stack[:stack_depth]
-        err_fields = {
-            "kind": err.kind,
-            "message": str(err),
-            "path": err.path,
-            "line": err.line,
-            "column": err.col,
-            "stack": list(err.stack) if err.stack else [],
-        }
-        if getattr(err, "payload", None) is not None:
-            err_fields["payload"] = err.payload
-        err_record = Record(err_fields, kind="error")
-        self.stack.append(err_record)
-        self.ip = handler_ip
-        return True
+        while self.handler_stack:
+            handler_ip, _finally_ip, stack_depth, frame_depth = self.handler_stack.pop()
+            if handler_ip == _FINALLY_GATE:
+                # Finally-gate entries are left by a catch block that has a finally.
+                # They are consumed by RETURN (see _op_return); skip them during
+                # exception propagation so the exception reaches the next real handler.
+                continue
+            while len(self.frames) > frame_depth:
+                frame = self.frames.pop()
+                self._profiler_exit_frame(frame)
+            while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
+                self.handler_stack.pop()
+            if len(self.stack) > stack_depth:
+                self.stack = self.stack[:stack_depth]
+            err_fields = {
+                "kind": err.kind,
+                "message": str(err),
+                "path": err.path,
+                "line": err.line,
+                "column": err.col,
+                "stack": list(err.stack) if err.stack else [],
+            }
+            if getattr(err, "payload", None) is not None:
+                err_fields["payload"] = err.payload
+            err_record = Record(err_fields, kind="error")
+            self.stack.append(err_record)
+            if _finally_ip != 0:
+                # Push a finally-gate so RETURN inside the catch block defers to finally.
+                self.handler_stack.append((_FINALLY_GATE, _finally_ip, len(self.stack), len(self.frames)))
+            self.ip = handler_ip
+            return True
+        return False
 
     def setup_try(self, handler_ip: int, finally_ip: int = 0):
         self.handler_stack.append((handler_ip, finally_ip, len(self.stack), len(self.frames)))
@@ -1955,6 +1964,12 @@ class VM:
             self.ip += 1
 
     def _op_finally_end(self, instr):
+        # On the normal catch-exit path (JUMP finally_ip), the finally-gate pushed
+        # by handle_exception was not consumed by _op_return. Pop it now so it
+        # doesn't pollute the outer handler stack.
+        # On the deferred-return path, _op_return already popped the gate.
+        if self.handler_stack and self.handler_stack[-1][0] == _FINALLY_GATE:
+            self.handler_stack.pop()
         if self._deferred_return is not _DEFERRED_NONE:
             ret_value = self._deferred_return
             self._deferred_return = _DEFERRED_NONE

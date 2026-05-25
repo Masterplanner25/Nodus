@@ -251,3 +251,99 @@ print(cleanup(3))
 print(cleanup(5))
 """
         self.assertEqual(run_program(src), ["done", "6.0", "done", "10.0"])
+
+
+class FinallyCatchReturnTests(unittest.TestCase):
+    """Finally runs when the catch block contains a return. Closes #42 BUG-041."""
+
+    def test_finally_runs_when_catch_returns(self):
+        """Core regression: finally must run even when catch block returns."""
+        src = """
+fn f() {
+    try {
+        throw "oops"
+    } catch e {
+        print("catch")
+        return "from-catch"
+    } finally {
+        print("finally")
+    }
+}
+print(f())
+"""
+        self.assertEqual(run_program(src), ["catch", "finally", "from-catch"])
+
+    def test_return_value_preserved_through_finally(self):
+        """Return value from catch is preserved after finally executes."""
+        src = """
+fn f() {
+    try {
+        throw "x"
+    } catch e {
+        return 99
+    } finally {
+        let side = 1
+    }
+}
+print(f())
+"""
+        self.assertEqual(run_program(src), ["99.0"])
+
+    def test_finally_runs_after_catch_early_return_in_loop(self):
+        """Finally runs even when catch returns inside a nested structure."""
+        src = """
+fn scan(items) {
+    for item in items {
+        try {
+            if (item == 0) { throw "zero" }
+            print(item)
+        } catch e {
+            print("bad")
+            return "stopped"
+        } finally {
+            print("check")
+        }
+    }
+    return "ok"
+}
+print(scan([1, 0, 2]))
+"""
+        # item=1: print(1)="1.0", normal exit→finally="check"
+        # item=0: throw, catch→"bad", return defers→finally="check", then "stopped"
+        self.assertEqual(run_program(src), ["1.0", "check", "bad", "check", "stopped"])
+
+    def test_exception_from_outer_try_still_caught(self):
+        """Exception propagation through a finally-gate reaches the outer handler."""
+        src = """
+fn f() {
+    try {
+        try {
+            throw "inner"
+        } catch e {
+            throw "from-catch"
+        } finally {
+            print("inner-finally")
+        }
+    } catch e2 {
+        print("outer caught: " + e2.message)
+    }
+}
+f()
+"""
+        self.assertEqual(run_program(src), ["outer caught: from-catch"])
+
+    def test_finally_without_catch_return_unaffected(self):
+        """Return from try block still defers to finally correctly (regression)."""
+        src = """
+fn f() {
+    try {
+        return "try-return"
+    } catch e {
+        return "catch-return"
+    } finally {
+        print("finally")
+    }
+}
+print(f())
+"""
+        self.assertEqual(run_program(src), ["finally", "try-return"])
