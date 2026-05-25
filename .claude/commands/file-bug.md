@@ -84,5 +84,14 @@ Arguments: $ARGUMENTS
 
 ## Milestone
 
-Milestone 3 = v2.2. Use this unless the fix is clearly targeted at a
-different milestone.
+Determine the current target milestone from the open milestone list — do not
+hardcode the number:
+
+```python
+import urllib.request, json
+
+# GET /repos/Masterplanner25/Nodus/milestones?state=open&per_page=10
+# Pick the lowest-numbered open milestone, or the one matching the target version.
+```
+
+Use that milestone number in the issue payload.

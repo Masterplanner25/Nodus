@@ -56,6 +56,15 @@ Release order: bump both files → move `[Unreleased]` in `CHANGELOG.md` to
 the new version section → commit → `git tag vX.Y.Z` → `git push origin main
 --tags` → build wheel → upload to PyPI.
 
+PyPI upload — use explicit flags; `~/.pypirc` may have an empty password field
+which causes a 403:
+
+```powershell
+"C:/dev/Coding Language/.venv/Scripts/python.exe" -m twine upload --username __token__ --password <token> dist/*
+```
+
+Token: retrieve from the user at upload time. Never store in any file.
+
 Full release checklist: `docs/release.md`.
 
 ## Guide file testing standard
@@ -86,6 +95,8 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Guide files | `docs/guide/` |
 | Runtime reference docs | `docs/runtime/` |
 | Governance docs | `docs/governance/` |
+| Release playbook | `docs/governance/RELEASE_PLAYBOOK.md` |
+| Skills | `.claude/commands/` |
 
 ## Test suite
 

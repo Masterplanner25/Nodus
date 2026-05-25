@@ -101,11 +101,13 @@ Both should report `nodus X.Y.Z`.
 
 ## Step 8 — Upload to PyPI
 
-```
-"C:/dev/Coding Language/.venv/Scripts/python.exe" -m twine upload dist/*
+Retrieve the token from the user (do NOT store in any file). Use explicit
+flags — `~/.pypirc` may have an empty password field that causes a 403:
+
+```powershell
+"C:/dev/Coding Language/.venv/Scripts/python.exe" -m twine upload --username __token__ --password <token> dist/*
 ```
 
-Token: retrieve from user or environment. Do NOT store the token in any file.
 After upload, confirm the new version appears on PyPI.
 
 ## Step 9 — GitHub release
