@@ -1,6 +1,97 @@
 ﻿# Changelog
 
-## [Unreleased] — targeting v3.0.1
+## [3.0.1] - 2026-05-25
+
+Patch release addressing 22 issues found during the v3.0.0 stress-test eval.
+All issues filed as GitHub #53–#74 against the v3.0.1 milestone.
+
+### Fixed
+
+**Replace contract completeness (Commit 1)**
+
+- **BUG-E01 (#53):** `json.parse` type-check now returns a `type_error` err
+  record when the argument is not a string, instead of throwing a VM runtime
+  error.
+- **BUG-E02 (#54):** `math.sqrt(-1)` now returns a `value_error` err record
+  instead of throwing. The Replace contract now covers all `std:math` domain
+  errors.
+- **BUG-E05 (#57):** `math.log(n)` and `math.log_base(n, base)` are now
+  exposed in `std:math`. Previously `math_log` was wired as a builtin but
+  never surfaced through the stdlib module.
+- **BUG-E06 (#58):** `math.pow(base, exp)` is now exposed in `std:math`.
+  Handles `OverflowError` and returns a `math_error` err record on overflow.
+- **BUG-E07 (#59):** `fs.mkdir(path)` is now exposed in `std:fs`. Creates
+  the directory; returns an `io_error` err record if the path already exists
+  or is inaccessible.
+- **BUG-E10 (#62):** `fs.delete(path)`, `path.relative(p, base)`, and
+  `path.absolute(p)` are now exposed in `std:fs` and `std:path` respectively.
+  All three are Replace-wrapped and return err records on failure.
+- **BUG-E13 (#65):** The parser now accepts `catch (err)` with parentheses
+  around the catch variable, in addition to the existing `catch err` form.
+
+**Embedding API (Commit 2)**
+
+- **BUG-E03 (#55):** `NodusRuntime.run_source(host_globals=...)` now correctly
+  forwards `host_globals` to the `ModuleLoader`, so named variables injected
+  from the host are accessible in Nodus scripts.
+- **BUG-E04 (#56):** Python exceptions raised by host-registered functions
+  (via `NodusRuntime.register_function`) now propagate to the Python caller
+  as the original exception type. Previously they were silently absorbed by
+  the VM's `except Exception` handler and converted to `LangRuntimeError`.
+  A new `HostFunctionError` sentinel in `nodus.runtime.diagnostics` bypasses
+  the VM wrapper.
+
+**Documentation reconciliation (Commit 3)**
+
+- **BUG-E08 (#60):** `docs/policy/error-surfaces.md` now documents that sandbox
+  validation fires before stdlib error wrapping. Includes a code example showing
+  that absolute paths produce sandbox errors, not `io_error` records.
+- **BUG-E09 (#61):** `docs/policy/error-surfaces.md` §5 trace-errors example
+  output updated to match the actual `print_trace()` format emitted at runtime.
+- **BUG-E19 (#71):** `docs/migration/v2-to-v3.md` now includes an explicit
+  breaking-change callout that `has_key(err, key)` **crashes** in v3.0 (throws
+  a runtime type error) rather than silently returning a wrong value. Includes
+  the error message, an audit call-to-action, and replacement patterns.
+- **BUG-E20 (#72):** CHANGELOG v3.0.0 `path.join` entry corrected — removed
+  the incorrect claim "in addition to the variadic form". The function accepts
+  a single list argument only.
+
+**Polish, deprecations, and design capture (Commit 4)**
+
+- **BUG-E11 (#63):** The lexer now emits `"Identifiers must use ASCII letters
+  only: '<char>'"` when a non-ASCII alphabetic character appears at identifier
+  position, instead of the generic `"Unexpected character"` message.
+- **BUG-E16 (#68):** Import error messages no longer double the `.nd` extension.
+  `import "logparse.nd"` that fails now shows `"logparse.nd"` in the tried
+  paths, not `"logparse.nd.nd"`. Fixed in both the local resolution path and
+  the stdlib fallback path.
+
+### Changed
+
+- **BUG-E14 (#66):** `nodus.tooling.loader.run_source()` now emits
+  `DeprecationWarning` on every call, directing callers to
+  `NodusRuntime.run_source()` from `nodus.runtime.embedding`. Planned removal
+  in v4.0. See `docs/governance/DEPRECATIONS.md`.
+
+### Documentation
+
+- **BUG-E15 (#67):** `docs/guide/standard-library.md` now notes that `len()`
+  returns a float (e.g., `3.0`) in v3.x. Changing to `int` is a v3.1 design
+  candidate; see `docs/governance/V3_1_PLAN.md §1`.
+- **BUG-E17 (#69):** `docs/guide/standard-library.md` now notes the `type()`
+  naming asymmetry (`"number"` for floats, `"int"` for integers). Renaming
+  `"number"` to `"float"` is a v3.1 design candidate; see
+  `docs/governance/V3_1_PLAN.md §2`.
+- **BUG-E21 (#73):** `docs/guide/standard-library.md` now documents that
+  `print(42i)` displays `42` (not `42i`). The `i` suffix is source syntax only;
+  it is not part of the runtime string representation.
+- **BUG-E22 (#74):** `docs/guide/standard-library.md` now notes that
+  `json.stringify` accepts `int` values natively (e.g., `42i` serializes as
+  `42` in JSON output).
+- `docs/governance/V3_1_PLAN.md` created — captures deferred design items
+  (BUG-E15, BUG-E17, the `finally`/`catch`-return bug) as v3.1 candidates
+  with rationale and proposed resolution options.
+- `docs/governance/DEPRECATIONS.md` updated with the `run_source()` entry.
 
 ## [3.0.0] - 2026-05-25
 
