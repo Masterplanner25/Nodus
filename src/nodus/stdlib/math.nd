@@ -46,11 +46,10 @@ fn idiv(a, b) {
     return math_idiv(a, b)
 }
 
-fn log(n) {
-    return math_log(n)
-}
-
-fn log_base(n, base) {
+fn log(n, base) {
+    if (base == nil) {
+        return math_log(n)
+    }
     return math_log(n, base)
 }
 

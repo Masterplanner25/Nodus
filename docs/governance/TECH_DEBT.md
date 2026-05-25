@@ -133,6 +133,47 @@ freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
   | `frontend/ast/ast_printer.py` | 1 |
   | `__main__.py` | 1 |
 
+## Patch closure verification gap (surfaced 2026-05-25 by v3.0.1 eval)
+
+**Status:** OPEN — process gap to address in playbook
+
+The v3.0.1 cycle closed #64 (BUG-E12, 1I uppercase suffix parse error) in the
+CHANGELOG and on GitHub, but the fix did not land in the distributed wheel. The
+v3.0.1 eval (`docs/evals/v3.0.1/`) caught this; it was not caught pre-release.
+
+**Root cause** (determined during v3.0.2 fix work):
+The lexer fix for `1I` was present in `src/nodus/frontend/lexer.py` at the time
+the v3.0.2 regression tests were written. Running the new tests against the dev
+source confirmed ALL six BUG-V31E-01 tests passed without any code change. This
+means the fix was committed to source before the v3.0.1 wheel was built, but
+the wheel was built from a state that did not include the commit — most likely
+a missing `git push` before the PyPI upload step, or the wheel was built from a
+stale local clone rather than from the pushed tag. No regression test for the
+`1I` → parse error behavior existed in the test suite at the time of the v3.0.1
+release, so CI did not catch the gap between source state and wheel contents.
+
+**Process gap:**
+The Playbook A Stage 3 (PyPI publish) procedure includes a "smoke test after
+install" that runs `nodus --version`. It does not run the closed-issue regression
+tests against the installed wheel. A closed issue's regression test should be
+exercised against the installed artifact before the wheel is considered shipped.
+
+**Proposed mitigation for Playbook A Stage 3:**
+Add a "closure verification" sub-step between TestPyPI install and real PyPI
+publish: for each issue closed in the release, run its regression test against
+the installed wheel. If any test fails, the issue's CHANGELOG entry is wrong and
+the release must be held.
+
+Mechanical implementation: a script that reads the CHANGELOG section for the
+release, extracts referenced issue numbers, locates each issue's regression test
+by convention (`grep -r "issue #NN"` or `grep -r "BUG-V31E-NN"` in tests/), and
+runs them against `pip install`'d package in a temp venv. Failing tests block
+the release.
+
+This will be incorporated into `docs/governance/PLAYBOOK_PATCH_MINOR.md` Stage 3
+in the next playbook revision. See GitHub issue filed as follow-up in v3.1
+milestone.
+
   Top priority: `cli/cli.py` (49), `vm/vm.py` (24), `frontend/formatter.py` (18), `runtime/task_graph.py` (18). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.

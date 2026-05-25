@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **BUG-V31E-01 (#75):** `1I` (uppercase integer suffix) now reliably produces
+  a parse-time syntax error in all distribution artifacts. The lexer fix was
+  committed in v3.0.1 but was absent from the v3.0.1 wheel due to a packaging
+  gap (see `docs/governance/TECH_DEBT.md` § Patch closure verification gap).
+- **BUG-V31E-02 (#76):** `math.log(value, base)` now correctly returns
+  `log_base(value)`. The v3.0.1 implementation silently computed `ln(base)` and
+  ignored `value` for all two-argument calls. The `log` and `log_base` wrappers
+  in `std:math` have been unified into a single `fn log(n, base)` that passes
+  `nil` for the base when called with one argument. The separate `log_base`
+  export has been removed; callers should use `math.log(n, base)`.
+
 ## [3.0.1] - 2026-05-25
 
 Patch release addressing 22 issues found during the v3.0.0 stress-test eval.

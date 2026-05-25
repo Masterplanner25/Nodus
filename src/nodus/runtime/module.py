@@ -178,7 +178,20 @@ class NodusModule:
     def invoke_function(self, name: str, args: list[object], caller_vm=None) -> object:
         if name not in self.functions:
             raise ValueError(f"Unknown module function: {name}")
+        from nodus.runtime.diagnostics import LangRuntimeError
         from nodus.vm.vm import Closure, _ClosureProxy, VM
+        fn_info = self.functions[name]
+        expected = len(fn_info.params)
+        if len(args) > expected:
+            raise LangRuntimeError(
+                "call",
+                f"{name} expected {expected} args, got {len(args)}",
+                path=None, stack=[],
+            )
+        # Pad missing args with None (nil) to support optional parameters.
+        # Module functions may inspect missing params via `== nil` guards.
+        if len(args) < expected:
+            args = list(args) + [None] * (expected - len(args))
 
         vm = VM(
             self.bytecode,

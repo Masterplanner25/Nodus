@@ -103,15 +103,16 @@ class MathLogTests(unittest.TestCase):
         self.assertEqual(run(src), ["value_error"])
 
     def test_log_base_valid(self):
-        src = 'import "std:math" as m\nprint(m.log_base(8.0, 2.0))'
+        # log_base renamed to log(n, base) in v3.0.2 (BUG-V31E-02 fix)
+        src = 'import "std:math" as m\nprint(m.log(8.0, 2.0))'
         self.assertEqual(run(src), ["3.0"])
 
     def test_log_base_invalid_zero_base_returns_err(self):
-        src = 'import "std:math" as m\nlet r = m.log_base(1.0, 0.0)\nprint(r.kind)'
+        src = 'import "std:math" as m\nlet r = m.log(1.0, 0.0)\nprint(r.kind)'
         self.assertEqual(run(src), ["value_error"])
 
     def test_log_base_one_returns_err(self):
-        src = 'import "std:math" as m\nlet r = m.log_base(1.0, 1.0)\nprint(r.kind)'
+        src = 'import "std:math" as m\nlet r = m.log(1.0, 1.0)\nprint(r.kind)'
         self.assertEqual(run(src), ["value_error"])
 
 
