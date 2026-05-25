@@ -31,6 +31,7 @@ from nodus.frontend.ast.ast_nodes import (
     RecordPattern,
     ModuleAlias,
     ModuleInfo,
+    Int,
     Nil,
     Num,
     Print,
@@ -589,6 +590,10 @@ class Compiler:
     def compile_expr(self, expr):
         self.set_current_module(expr)
         self.set_current_loc(expr)
+        if isinstance(expr, Int):
+            self.emit("PUSH_CONST", expr.v)
+            return
+
         if isinstance(expr, Num):
             self.emit("PUSH_CONST", expr.v)
             return

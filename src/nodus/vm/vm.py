@@ -320,6 +320,10 @@ class VM:
 
         return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload)
 
+    def make_err(self, kind: str, message: str) -> "Record":
+        """Return an err record value (does not throw)."""
+        return Record({"kind": kind, "message": message}, kind="error")
+
     def emit_runtime_error(self, err: LangRuntimeError) -> None:
         if getattr(err, "_event_emitted", False):
             return
@@ -546,7 +550,9 @@ class VM:
             return "nil"
         if isinstance(value, bool):
             return "bool"
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool):
+            return "int"
+        if isinstance(value, float):
             return "number"
         if isinstance(value, str):
             return "string"

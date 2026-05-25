@@ -28,6 +28,7 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     ListPattern,
     MapLit,
+    Int,
     Nil,
     Num,
     Param,
@@ -303,6 +304,9 @@ def format_pattern(pattern) -> str:
 
 
 def format_expr(expr, parent_prec: int = 0) -> str:
+    if isinstance(expr, Int):
+        raw = expr.raw if expr.raw is not None else str(expr.v) + "i"
+        return raw
     if isinstance(expr, Num):
         return format_number(expr)
     if isinstance(expr, ActionStmt):

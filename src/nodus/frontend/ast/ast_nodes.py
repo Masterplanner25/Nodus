@@ -35,6 +35,12 @@ class Num(Base):
 
 
 @dataclass
+class Int(Base):
+    v: int
+    raw: str | None = None
+
+
+@dataclass
 class Bool(Base):
     v: bool
 

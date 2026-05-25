@@ -339,6 +339,7 @@ class InfoCollector(NodeVisitor):
             self.visit(arg)
 
     # Leaf nodes (no children to walk)
+    def visit_Int(self, expr): pass
     def visit_Num(self, expr): pass
     def visit_Bool(self, expr): pass
     def visit_Str(self, expr): pass

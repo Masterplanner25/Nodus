@@ -34,6 +34,7 @@ from nodus.frontend.ast.ast_nodes import (
     For,
     ForEach,
     Nil,
+    Int,
     Num,
     Param,
     Print,
@@ -57,6 +58,7 @@ _TOKEN_DISPLAY: dict[str, str] = {
     "ID": "identifier",
     "STR": "string literal",
     "NUM": "number",
+    "NUM_INT": "integer literal",
     "SEP": "end of statement",
     "EOF": "end of file",
     "LET": "'let'",
@@ -94,7 +96,7 @@ def _tok_name(kind: str) -> str:
 
 def _tok_desc(kind: str, val: str) -> str:
     name = _tok_name(kind)
-    if kind in ("ID", "STR", "NUM"):
+    if kind in ("ID", "STR", "NUM", "NUM_INT"):
         return f"{name} ({val!r})"
     return name
 
@@ -735,6 +737,10 @@ class Parser:
             if self.workflow_step_depth <= 0:
                 self.error("action expressions are only valid inside steps")
             return self.parse_action_expr()
+
+        if self.at("NUM_INT"):
+            tok = self.eat("NUM_INT")
+            return self.mark(Int(int(tok.val), raw=tok.val + "i"), tok)
 
         if self.at("NUM"):
             tok = self.eat("NUM")

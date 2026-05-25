@@ -23,6 +23,7 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     MapLit,
     ModuleAlias,
+    Int,
     Nil,
     Num,
     Print,
@@ -160,6 +161,8 @@ class Analyzer(NodeVisitor):
             return
 
     def infer_expr(self, expr):
+        if isinstance(expr, Int):
+            return INT
         if isinstance(expr, Num):
             if expr.raw is not None and "." not in expr.raw:
                 return INT

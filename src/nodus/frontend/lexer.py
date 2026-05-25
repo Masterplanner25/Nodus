@@ -21,6 +21,7 @@ TOKEN_RE = re.compile(
   | (?P<COMMENT2>//.*)
   | (?P<NL>\n+)
   | (?P<STR>"(?:\\.|[^"\\])*")
+  | (?P<NUM_INT>\d+i)
   | (?P<NUM>\d+(\.\d+)?([eE][+-]?\d+)?)
   | (?P<ID>[A-Za-z_][A-Za-z0-9_]*)
   | (?P<OP>&&|\|\||==|!=|<=|>=|->|[+\-*/=%(){}\[\],;:.<>!])
@@ -201,6 +202,11 @@ def tokenize(src: str) -> list[Tok]:
             out.append(Tok("SEP", "\n", start_line, start_col))
             line += len(text)
             col = 1
+            continue
+        if kind == "NUM_INT":
+            # Strip the trailing 'i' suffix; store the digit part only.
+            out.append(Tok("NUM_INT", text[:-1], start_line, start_col))
+            col += len(text)
             continue
         if kind == "NUM":
             out.append(Tok("NUM", text, start_line, start_col))

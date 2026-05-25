@@ -25,3 +25,23 @@ fn sqrt(value) {
 fn random() {
     return math_random()
 }
+
+fn parse_int(s) {
+    return math_parse_int(s)
+}
+
+fn to_int(n) {
+    return math_to_int(n)
+}
+
+fn to_float(n) {
+    return math_to_float(n)
+}
+
+fn is_int(n) {
+    return math_is_int(n)
+}
+
+fn idiv(a, b) {
+    return math_idiv(a, b)
+}

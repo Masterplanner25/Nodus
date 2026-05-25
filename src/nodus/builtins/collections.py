@@ -120,6 +120,16 @@ def register(vm, registry) -> None:
                 raise
             vm.runtime_error("runtime", f"json_stringify failed: {err}")
 
+    def builtin_json_parse_int(s):
+        vm.ensure_string(s, "json.parse_int(s)")
+        # Scientific notation is explicitly rejected with a specific message.
+        if "e" in s.lower():
+            return vm.make_err("parse_error", f'not an integer (scientific notation): "{s}"')
+        try:
+            return int(s)
+        except ValueError:
+            return vm.make_err("parse_error", f'not a valid integer: "{s}"')
+
     registry.add("str", 1, lambda x: vm.value_to_string(x, quote_strings=False))
     registry.add("len", 1, builtin_len)
     registry.add("collection_len", 1, builtin_len)
@@ -137,3 +147,4 @@ def register(vm, registry) -> None:
     registry.add("list_pop", 1, builtin_list_pop)
     registry.add("json_parse", 1, builtin_json_parse)
     registry.add("json_stringify", 1, builtin_json_stringify)
+    registry.add("json_parse_int", 1, builtin_json_parse_int)

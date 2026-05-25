@@ -18,6 +18,7 @@ from nodus.frontend.ast.ast_nodes import (
     Index,
     ListLit,
     MapLit,
+    Int,
     Nil,
     Num,
     Str,
@@ -142,6 +143,10 @@ def format_expression_ast(src: str) -> str:
 
 def _format_expr_node(node, indent: int, lines: list[str]) -> None:
     prefix = "  " * indent
+    if isinstance(node, Int):
+        value = node.raw if node.raw is not None else str(node.v) + "i"
+        lines.append(f"{prefix}Integer({value})")
+        return
     if isinstance(node, Num):
         value = node.raw if node.raw is not None else str(node.v)
         lines.append(f"{prefix}Number({value})")
@@ -280,7 +285,9 @@ def describe_runtime_type(value) -> str:
         return "nil"
     if isinstance(value, bool):
         return "bool"
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "int"
+    if isinstance(value, float):
         return "number"
     if isinstance(value, str):
         return "string"

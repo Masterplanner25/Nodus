@@ -184,7 +184,8 @@ try {
 }
 """
         out = run_program(src)
-        self.assertEqual(out, ["number"])
+        # Phase 3: err.line is a Nodus int (type() returns "int")
+        self.assertEqual(out, ["int"])
 
     def test_err_has_column_field(self):
         src = """
@@ -195,7 +196,8 @@ try {
 }
 """
         out = run_program(src)
-        self.assertEqual(out, ["number"])
+        # Phase 3: err.column is a Nodus int (type() returns "int")
+        self.assertEqual(out, ["int"])
 
     def test_err_has_stack_field(self):
         src = """

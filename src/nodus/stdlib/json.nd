@@ -5,3 +5,7 @@ fn parse(text) {
 fn stringify(value) {
     return json_stringify(value)
 }
+
+fn parse_int(s) {
+    return json_parse_int(s)
+}

@@ -28,6 +28,7 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     MapLit,
     ModuleAlias,
+    Int,
     Nil,
     Num,
     Param,
@@ -67,6 +68,10 @@ class AstPrinter:
         if isinstance(node, list):
             for item in node:
                 self.visit(item, indent)
+            return
+        if isinstance(node, Int):
+            raw = node.raw if node.raw is not None else str(node.v) + "i"
+            self.emit(f"Integer {raw}", indent)
             return
         if isinstance(node, Num):
             self.emit(f"Number {self.format_number(node)}", indent)

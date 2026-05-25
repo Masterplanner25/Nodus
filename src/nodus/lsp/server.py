@@ -30,6 +30,7 @@ from nodus.frontend.ast.ast_nodes import (
     Let,
     ListLit,
     MapLit,
+    Int,
     Nil,
     Num,
     Param,
@@ -233,6 +234,8 @@ def _identifier_column(lines: list[str], line: int, name: str, start_col: int) -
 
 
 def _infer_expr_type(expr, env: _TypeEnv):
+    if isinstance(expr, Int):
+        return INT
     if isinstance(expr, Num):
         if expr.raw is not None and "." not in expr.raw:
             return INT

@@ -29,6 +29,7 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     ListPattern,
     MapLit,
+    Int,
     Nil,
     Num,
     Param,
@@ -520,7 +521,7 @@ class _StateRewriter:
         if isinstance(expr, ActionStmt):
             lowered = _lower_action_expr(expr)
             return self.rewrite_expr(lowered)
-        if isinstance(expr, (Num, Bool, Str, Nil)):
+        if isinstance(expr, (Int, Num, Bool, Str, Nil)):
             return expr
         if isinstance(expr, Var):
             if expr.name in self.state_names and not self._is_local(expr.name):
