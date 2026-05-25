@@ -2,6 +2,8 @@
 
 import json
 
+from nodus.runtime.error_wrap import print_trace, translate_json_decode_error
+
 
 
 def register(vm, registry) -> None:
@@ -83,6 +85,10 @@ def register(vm, registry) -> None:
             return {key: from_json_value(item) for key, item in value.items()}
         vm.runtime_error("runtime", f"Unsupported JSON value: {value!r}")
 
+    class _JsonTypeError(Exception):
+        def __init__(self, nodus_type: str):
+            self.nodus_type = nodus_type
+
     def to_json_value(value):
         from nodus.vm.vm import Record
         if value is None:
@@ -101,24 +107,32 @@ def register(vm, registry) -> None:
             return {str(key): to_json_value(item) for key, item in value.items()}
         if isinstance(value, Record):
             return {key: to_json_value(item) for key, item in value.fields.items()}
-        vm.runtime_error("type", f"json.stringify cannot encode value of type {vm.builtin_type(value)}")
+        raise _JsonTypeError(vm.builtin_type(value))
+
+    def _json_trace(func_name: str, exc: BaseException) -> None:
+        if getattr(vm, "trace_errors", False):
+            print_trace(func_name, exc)
 
     def builtin_json_parse(text):
         vm.ensure_string(text, "json_parse(text)")
         try:
             parsed = json.loads(text)
-        except json.JSONDecodeError as err:
-            vm.runtime_error("runtime", f"json_parse failed: {err.msg}")
+        except json.JSONDecodeError as exc:
+            _json_trace("json.parse", exc)
+            return vm.make_err("parse_error", translate_json_decode_error(exc))
+        except Exception as exc:
+            _json_trace("json.parse", exc)
+            return vm.make_err("internal_error", "unexpected internal error in json.parse")
         return from_json_value(parsed)
 
     def builtin_json_stringify(value):
         try:
             return json.dumps(to_json_value(value), ensure_ascii=False)
-        except Exception as err:
-            from nodus.runtime.diagnostics import LangRuntimeError
-            if isinstance(err, LangRuntimeError):
-                raise
-            vm.runtime_error("runtime", f"json_stringify failed: {err}")
+        except _JsonTypeError as exc:
+            return vm.make_err("type_error", f"cannot serialize to JSON: value of type {exc.nodus_type} is not JSON-compatible")
+        except Exception as exc:
+            _json_trace("json.stringify", exc)
+            return vm.make_err("internal_error", "unexpected internal error in json.stringify")
 
     def builtin_json_parse_int(s):
         vm.ensure_string(s, "json.parse_int(s)")

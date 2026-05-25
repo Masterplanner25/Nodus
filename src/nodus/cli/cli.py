@@ -174,7 +174,7 @@ def _render_help() -> str:
             "Usage: nodus <command> [options] [file]",
             "",
             "Commands:",
-            "  nodus run [<file|project-dir>] [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
+            "  nodus run [<file|project-dir>] [--trace --trace-no-loc --trace-limit N --trace-filter STR --trace-scheduler --trace-events --trace-errors --dump-bytecode --no-opt --project-root PATH --step-limit N --time-limit SECS --output-limit N]",
             "  nodus check [<file|project-dir>] [--project-root PATH]",
             "  nodus fmt <file> [--check] [--keep-trailing]",
             "  nodus ast <file> [--compact]",
@@ -251,6 +251,7 @@ _COMMAND_HELP: dict[str, str] = {
         "  --allow-paths PATHS        Restrict file I/O to colon-separated paths",
         "  --strict                   Require an explicit file path; disable project auto-discovery",
         "  --trace-imports            Print each resolved import path to stderr at resolution time",
+        "  --trace-errors             Print Python exception details to stderr for stdlib errors (also: NODUS_TRACE_ERRORS=1)",
         "",
         "Examples:",
         "  nodus run main.nd",
@@ -386,6 +387,7 @@ def run_file(
     trace_json: bool = False,
     trace_file: str | None = None,
     trace_imports: bool = False,
+    trace_errors: bool = False,
     optimize: bool = True,
     dump_bytecode: bool = False,
     project_root: str | None = None,
@@ -422,6 +424,7 @@ def run_file(
         trace_json=trace_json,
         trace_file=trace_file,
         trace_imports=trace_imports,
+        trace_errors=trace_errors,
         optimize=optimize,
         dump_bytecode=dump_bytecode,
         project_root=project_root,
@@ -1211,6 +1214,7 @@ def main(argv: list[str] | None = None) -> int:
             "--trace-scheduler",
             "--trace-events",
             "--trace-json",
+            "--trace-errors",
             "--no-opt",
             "--dump-bytecode",
             "--strict",
@@ -1260,6 +1264,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_stderr(err)
             return 1
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        trace_errors_env = str(os.environ.get("NODUS_TRACE_ERRORS", "")).strip().lower() in {"1", "true", "yes", "on"}
         return run_file(
             script,
             trace="--trace" in flags,
@@ -1271,6 +1276,7 @@ def main(argv: list[str] | None = None) -> int:
             trace_json="--trace-json" in flags,
             trace_file=flags.get("--trace-file"),
             trace_imports="--trace-imports" in flags,
+            trace_errors="--trace-errors" in flags or trace_errors_env,
             optimize="--no-opt" not in flags,
             dump_bytecode="--dump-bytecode" in flags,
             project_root=project_root,

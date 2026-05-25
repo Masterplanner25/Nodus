@@ -202,6 +202,7 @@ class VM:
         self.max_frames: int | None = None
         self.max_steps: int | None = None
         self.deadline: float | None = None
+        self.trace_errors: bool = False
         self.trace_scheduler = trace_scheduler
         self.scheduler_output = scheduler_output
         self._task_counter = 0
@@ -320,9 +321,9 @@ class VM:
 
         return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload)
 
-    def make_err(self, kind: str, message: str) -> "Record":
+    def make_err(self, kind: str, message: str, payload=None) -> "Record":
         """Return an err record value (does not throw)."""
-        return Record({"kind": kind, "message": message}, kind="error")
+        return Record({"kind": kind, "message": message, "payload": payload}, kind="error")
 
     def emit_runtime_error(self, err: LangRuntimeError) -> None:
         if getattr(err, "_event_emitted", False):
@@ -365,8 +366,7 @@ class VM:
                 "column": err.col,
                 "stack": list(err.stack) if err.stack else [],
             }
-            if getattr(err, "payload", None) is not None:
-                err_fields["payload"] = err.payload
+            err_fields["payload"] = err.payload  # always present; nil when no payload
             err_record = Record(err_fields, kind="error")
             self.stack.append(err_record)
             if _finally_ip != 0:

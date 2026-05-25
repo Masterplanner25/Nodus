@@ -190,6 +190,8 @@ class NodusModule:
             allowed_paths=caller_vm.allowed_paths if caller_vm is not None else None,
             fs_root=caller_vm.fs_root if caller_vm is not None else None,
         )
+        if caller_vm is not None:
+            vm.trace_errors = getattr(caller_vm, "trace_errors", False)
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
 

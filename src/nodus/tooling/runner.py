@@ -145,6 +145,7 @@ def run_source(
     trace_json: bool = False,
     trace_file: str | None = None,
     trace_imports: bool = False,
+    trace_errors: bool = False,
     optimize: bool = True,
     dump_bytecode: bool = False,
     max_steps: int = MAX_STEPS,
@@ -202,6 +203,7 @@ def run_source(
         input_fn=input_fn,
         fs_root=fs_root,
     )
+    vm.trace_errors = trace_errors
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     loader = ModuleLoader(
         project_root=project_root,
