@@ -1091,7 +1091,7 @@ print(c.has_key(m, "z"))
 import "std:fs" as fs
 import "std:path" as p
 let dir = "{td_norm}"
-let file_path = p.join(dir, "note.txt")
+let file_path = p.join([dir, "note.txt"])
 fs.write(file_path, "hello")
 print(fs.read(file_path))
 print(p.basename(file_path))
@@ -1103,7 +1103,7 @@ print(fs.exists_path(file_path))
             output = run_program(src, source_path="main.nd")
             self.assertEqual(output[0], "hello")
             self.assertEqual(output[1], "note.txt")
-            self.assertEqual(output[2], "txt")
+            self.assertEqual(output[2], ".txt")
             self.assertEqual(output[3], "note")
             self.assertEqual(output[4], expected_dir)
             self.assertEqual(output[5], "true")

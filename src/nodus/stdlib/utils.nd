@@ -16,3 +16,10 @@ fn coalesce(a, b) {
     }
     return a
 }
+
+fn get(m, key, default) {
+    if (has_key(m, key)) {
+        return m[key]
+    }
+    return default
+}

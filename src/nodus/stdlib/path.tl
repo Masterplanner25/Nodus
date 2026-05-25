@@ -1,5 +1,11 @@
-fn join(a, b) {
-    return path_join(a, b)
+fn join(parts) {
+    let out = parts[0]
+    let i = 1
+    while (i < len(parts)) {
+        out = path_join(out, parts[i])
+        i = i + 1
+    }
+    return out
 }
 
 fn dirname(path) {

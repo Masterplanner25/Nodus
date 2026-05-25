@@ -91,10 +91,7 @@ def register(vm, registry) -> None:
 
     def builtin_path_ext(path):
         _ensure_path_string(path, "path_ext(path)")
-        ext = os.path.splitext(path)[1]
-        if ext.startswith("."):
-            return ext[1:]
-        return ext
+        return os.path.splitext(path)[1]
 
     def builtin_path_stem(path):
         _ensure_path_string(path, "path_stem(path)")

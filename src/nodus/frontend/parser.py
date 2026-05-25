@@ -639,6 +639,7 @@ class Parser:
             while True:
                 key = self.expr()
                 self.eat(":")
+                self.skip_seps()
                 value = self.expr()
                 items.append((key, value))
                 self.skip_seps()
@@ -662,6 +663,7 @@ class Parser:
             while True:
                 key = self.eat("ID").val
                 self.eat(":")
+                self.skip_seps()
                 value = self.expr()
                 fields.append((key, value))
                 self.skip_seps()
@@ -843,6 +845,7 @@ class Parser:
                 if error_keys is not None and key_tok.val not in error_keys:
                     self.error((error_template or "Unsupported key: {key}").format(key=key_tok.val), key_tok)
                 self.eat(":")
+                self.skip_seps()
                 value = self.expr()
                 items.append((Str(key_tok.val), value))
                 self.skip_seps()

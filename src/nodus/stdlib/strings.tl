@@ -9,7 +9,7 @@ fn repeat(s, n) {
 }
 
 fn is_blank(s) {
-    return len(s) == 0
+    return len(str_trim(s)) == 0
 }
 
 fn join(items, sep) {

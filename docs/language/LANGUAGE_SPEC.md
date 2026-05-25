@@ -173,7 +173,7 @@ Module visibility rules:
 ## Built-ins
 Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experimental.
 - `clock()`
-- `type(x)`
+- `type(x)` — returns `"number"` for all numeric values (both integers and floats). Use `rt.typeof(x)` from `std:runtime` when you need to distinguish `"int"` from `"float"`.
 - `str(x)`
 - `len(x)` for list/map/string
 - `print(x)`
@@ -717,6 +717,10 @@ Inside a `catch` block, the caught error record has these fields:
 | `err.message` | string | Human-readable error description (always present). |
 | `err.kind` | string | Error category (e.g. `"name"`, `"type"`, `"index"`, `"thrown"`, `"sandbox"`). |
 | `err.payload` | any | Original thrown value when `throw <non-string>` was used; `nil` for string throws. |
+| `err.path` | string | Source file path where the error occurred; empty string if unavailable. |
+| `err.line` | number | Source line number; `0` if unavailable. |
+| `err.column` | number | Source column number; `0` if unavailable. |
+| `err.stack` | list | Stack trace as a list of strings (one entry per frame). |
 
 All explicit `throw` statements set `err.kind = "thrown"`, regardless of value type.
 The difference is in `err.payload`:
@@ -740,7 +744,7 @@ A `finally` clause is only valid after a `catch` clause. The `catch` block is al
 - Lex errors (unexpected characters, malformed string escapes): `LangSyntaxError` with line/col, raised directly from the lexer.
 - Parse errors: `LangSyntaxError` with line/col.
 - Runtime errors: `LangRuntimeError` with kind + line/col + stack trace.
-- `try/catch/finally` can intercept runtime errors; the caught error record exposes `message`, `kind`, and `payload` fields.
+- `try/catch/finally` can intercept runtime errors; the caught error record exposes `message`, `kind`, `payload`, `path`, `line`, `column`, and `stack` fields.
 
 ## Stack Traces
 Runtime errors include a compact stack trace with function name, file path, line, and column:

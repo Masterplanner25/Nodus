@@ -166,7 +166,7 @@ import "std:strings" as strings
 | `replace` | `(s, old, new)` | `string` | Replace **all** occurrences of `old` with `new` |
 | `join` | `(items, sep)` | `string` | Join list items into a string; each item converted via `str()` |
 | `repeat` | `(s, n)` | `string` | Repeat `s` exactly `n` times; `n=0` returns `""` |
-| `is_blank` | `(s)` | `bool` | `true` only if `len(s) == 0`; does **not** match whitespace-only strings |
+| `is_blank` | `(s)` | `bool` | `true` if the string is empty or contains only whitespace |
 
 ```nd
 import "std:strings" as strings
@@ -195,11 +195,10 @@ baz bar baz
 x | y | z
 ababab
 true
-false
+true
 ```
 
-`is_blank` is equivalent to `len(s) == 0`. If you need to detect a
-whitespace-only string, use `strings.trim(s) == ""` instead.
+`is_blank` returns `true` for empty strings and whitespace-only strings (spaces, tabs, newlines).
 
 ---
 
@@ -455,10 +454,10 @@ import "std:path" as path
 
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
-| `join` | `(a, b)` | `string` | Join two path segments using the OS separator |
+| `join` | `(parts)` | `string` | Join a list of path segments using the OS separator |
 | `dirname` | `(path)` | `string` | Parent directory portion |
 | `basename` | `(path)` | `string` | Filename including extension |
-| `ext` | `(path)` | `string` | Extension **without** the leading dot |
+| `ext` | `(path)` | `string` | Extension including the leading dot (e.g. `".nd"`); `""` if none |
 | `stem` | `(path)` | `string` | Filename without extension |
 
 ```nd
@@ -469,7 +468,8 @@ print(path.dirname(p))
 print(path.basename(p))
 print(path.ext(p))
 print(path.stem(p))
-print(path.join("src", "main.nd"))
+print(path.join(["src", "main.nd"]))
+print(path.join(["a", "b", "c"]))
 ```
 
 Output:
@@ -477,19 +477,14 @@ Output:
 ```
 docs/guide
 getting-started.md
-md
+.md
 getting-started
 src\main.nd
+a\b\c
 ```
 
-Two things to note:
-
-1. `path.join` takes exactly **two** arguments. To join three or more
-   segments, chain calls: `path.join(path.join("a", "b"), "c")`.
-2. `path.ext` returns the extension **without** a leading dot. `ext("file.nd")`
-   returns `"nd"`, not `".nd"`.
-3. `path.join` uses the OS path separator — backslash on Windows, forward
-   slash elsewhere.
+One thing to note: `path.join` uses the OS path separator — backslash on
+Windows, forward slash elsewhere.
 
 ---
 
@@ -547,7 +542,8 @@ import "std:utils" as utils
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
 | `clamp` | `(value, min, max)` | `number` | Clamp `value` to the range `[min, max]` |
-| `coalesce` | `(...)` | value | Return the first non-`nil` argument; `nil` if all are `nil` |
+| `coalesce` | `(a, b)` | value | Return `a` if it is not `nil`, otherwise `b` |
+| `get` | `(map, key, default)` | value | Return `map[key]` if the key exists, otherwise `default` |
 
 ```nd
 import "std:utils" as utils
@@ -556,8 +552,8 @@ print(utils.clamp(5, 0, 10))
 print(utils.clamp(-3, 0, 10))
 print(utils.clamp(15, 0, 10))
 
-print(utils.coalesce(nil, nil, "found"))
-print(utils.coalesce(nil, nil, nil))
+print(utils.coalesce(nil, "found"))
+print(utils.coalesce(nil, nil))
 print(utils.coalesce("first", "second"))
 ```
 
@@ -572,39 +568,23 @@ nil
 first
 ```
 
-`coalesce` is useful for providing defaults when a value might be absent:
+**Tip:** `coalesce` evaluates both arguments eagerly — if the first argument is a map access for a key that may not exist, it raises before `coalesce` is ever called. Use `utils.get` to safely read from a map with a default:
 
 ```nd
 import "std:utils" as utils
 import "std:json" as json
 
 let data = json.parse("{\"host\": \"prod.example.com\"}")
-let host = utils.coalesce(data["host"], "localhost")
-let port = utils.coalesce(data["port"], 8080)
+let host = utils.get(data, "host", "localhost")
+let port = utils.get(data, "port", 8080)
 print(host)
-print(port)
-```
-
-Wait — the above will raise a `Key error` on `data["port"]` before
-`coalesce` can provide the default, because Nodus evaluates arguments
-before calling the function. Use `has_key` to guard:
-
-```nd
-import "std:utils" as utils
-import "std:json" as json
-
-let data = json.parse("{\"host\": \"prod.example.com\"}")
-let port_raw = nil
-if (has_key(data, "port")) {
-    port_raw = data["port"]
-}
-let port = utils.coalesce(port_raw, 8080)
 print(port)
 ```
 
 Output:
 
 ```
+prod.example.com
 8080.0
 ```
 
@@ -814,16 +794,15 @@ TESTED EXAMPLES (all code blocks with nd code verified):
 22. std:runtime typeof comparison table — confirmed (int vs float vs number)
 
 BEHAVIORAL FINDINGS:
-F7: strings.is_blank checks len(s)==0 only. Does NOT match whitespace-only strings.
-    "   " → false. Workaround: strings.trim(s) == "".
-F8: std:collections.has_key is O(n) linear scan. Builtin has_key is O(1).
-F9: path.join takes exactly 2 args. Extra args cause undefined behavior.
-F10: path.ext returns extension without leading dot ("nd" not ".nd").
+F7: strings.is_blank now checks whitespace-only strings via trim (fixed BUG-035).
+F8: std:collections.has_key is now O(1) via map_has_key alias (fixed BUG-033).
+F9: path.join now accepts a list of segments: path.join(["a","b","c"]) (fixed BUG-036).
+F10: path.ext now returns extension with leading dot (".nd" not "nd") (fixed BUG-037).
 F11: path.join uses OS separator (backslash on Windows).
 F12: rt.typeof returns "int" for whole-number floats, "float" for fractional.
      The builtin type() always returns "number" for all floats.
 F13: list_push mutates in place. col.push wraps list_push (same semantics).
-F14: coalesce evaluates all args before the function is called (eager evaluation).
-     Cannot use as a nil-safe accessor; must guard with has_key.
+F14: coalesce evaluates both args eagerly. Use utils.get(map, key, default) for
+     safe map access with a default (fixed BUG-034: get() added to std:utils).
 F15: std:utils is not documented in LANGUAGE_SPEC.md.
 -->
