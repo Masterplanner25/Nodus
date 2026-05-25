@@ -11,7 +11,7 @@ from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, 
 from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
-from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded
+from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, HostFunctionError
 from nodus.services.agent_runtime import available_agents, call_agent, describe_agent
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
@@ -2442,6 +2442,8 @@ class VM:
                 self.emit_runtime_error(err)
                 if self.handle_exception(err):
                     continue
+                raise
+            except HostFunctionError:
                 raise
             except Exception as err:
                 self.record_vm_exception(err)

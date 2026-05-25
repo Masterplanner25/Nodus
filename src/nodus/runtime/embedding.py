@@ -8,7 +8,7 @@ import os
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
-from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
+from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
@@ -320,11 +320,14 @@ class NodusRuntime:
                     host_builtins=host_builtins,
                     extra_builtins=set(self._host_functions.keys()),
                     debugger=debugger,
+                    host_globals=host_globals,
                 )
                 if filename and os.path.isfile(filename):
-                    loader.load_module_from_path(filename, auto_run_main=True)
+                    loader.load_module_from_path(filename, auto_run_main=True, initial_globals=initial_globals)
                 else:
-                    loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True)
+                    loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True, initial_globals=initial_globals)
+            except HostFunctionError as wrapped:
+                raise wrapped.cause
             except Exception as err:
                 stage = "parse" if isinstance(err, (LangSyntaxError, SyntaxError)) else "execute"
                 structured = coerce_error(err, stage=stage, filename=normalized)
@@ -375,7 +378,12 @@ class NodusRuntime:
 
     def _invoke_host_function(self, vm: VM, fn, *args):
         host_args = [self._to_host_value(arg) for arg in args]
-        result = fn(*host_args)
+        try:
+            result = fn(*host_args)
+        except (LangRuntimeError, LangSyntaxError):
+            raise
+        except Exception as exc:
+            raise HostFunctionError(exc) from exc
         return self._to_runtime_value(result)
 
     def _blocked_input(self, _prompt: str):

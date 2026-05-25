@@ -111,6 +111,19 @@ class LangRuntimeError(RuntimeError):
         self.payload = payload
 
 
+class HostFunctionError(Exception):
+    """Wraps a Python exception raised by a host-registered function.
+
+    Signals that the exception originated in host Python code and must propagate
+    to the Python caller, not be caught and formatted as a Nodus error dict.
+    The VM execute loop re-raises this without wrapping.
+    """
+
+    def __init__(self, cause: BaseException) -> None:
+        self.cause = cause
+        super().__init__(str(cause))
+
+
 class RuntimeLimitExceeded(LangRuntimeError):
     def __init__(
         self,
