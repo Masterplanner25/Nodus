@@ -2,6 +2,129 @@
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-05-25
+
+### Breaking changes
+
+**v2.1.1 is the last v2.x release.** v3.0 folds the v2.2 bug-fix milestone
+and all breaking language changes into a single release. Migration guide:
+`docs/migration/v2-to-v3.md`.
+
+- **`{foo: bar}` is now a record literal, not a map lookup.** In v2.x, bare
+  (unquoted) identifier keys in a map literal context were evaluated as variable
+  lookups. In v3.0, `{ host: "localhost" }` is a **record literal** — `host`
+  is a field name, not a variable. To use a variable's value as a map key, wrap
+  it in parentheses: `{ (mykey): value }`. To create a map with a literal string
+  key, quote it: `{ "host": "localhost" }`.
+
+- **Bare identifier as map key is now a parse error.** Using a bare identifier
+  as a map key (e.g. `{ host: ... }` in a map context) was a silent runtime error
+  in v2.x. In v3.0 it is a parse error with a helpful message naming the two
+  correct forms.
+
+- **`fs.*` and `json.*` errors are returned, not thrown.** `fs.read`, `fs.write`,
+  `json.parse`, and similar stdlib functions now **return** an err record when
+  they fail. They no longer throw a runtime error. `try/catch` still works for
+  VM-level errors; returned err records are the preferred pattern for expected
+  I/O and parse failures. Check with `type(result) == "error"`.
+
+- **New err.kind values for stdlib failures.** Code that branched on
+  `err.kind == "runtime"` to catch file or JSON errors will no longer match.
+  The specific kinds are:
+
+  | v2.x kind | v3.0 kind | What changed |
+  |-----------|-----------|--------------|
+  | `"runtime"` | `"io_error"` | `fs.read`, `fs.write`, `fs.listdir`, etc. |
+  | `"runtime"` | `"parse_error"` | `json.parse` failures, `math.parse_int` failures |
+  | `"runtime"` | `"type_error"` | `json.stringify` with non-serializable value, `math.idiv` with float args |
+  | `"runtime"` | `"math_error"` | `math.idiv` division by zero |
+  | (new) | `"value_error"` | Domain errors in math functions (`math.sqrt(-1)`) |
+  | (new) | `"internal_error"` | Unexpected internal error in a wrapped stdlib function |
+
+- **`err.payload` is always present.** In v2.x, `err.payload` was absent on
+  runtime errors and string throws — accessing it raised `"Key error: Missing
+  record field: payload"`. In v3.0, `err.payload` is always present and is `nil`
+  for runtime errors and string throws. Existing guards (`has_key(err, "payload")`)
+  are still safe; they return true where they previously returned false.
+
+- **Integer type: `42i` literals, `type()` returns `"int"`.** v3.0 introduces
+  the `int` type. Integer literals use the `i` suffix (`42i`, `0i`, `-1i`). Plain
+  number literals (`42`) remain floats. `type(42i)` returns `"int"`; `type(42)`
+  still returns `"number"`. Integer arithmetic (`int + int`) returns `int`;
+  integer division always returns float. Code that checks `type(x) == "number"`
+  for values that may now be integers should also check `type(x) == "int"`.
+
+### Added
+
+- **Integer type** (`42i` syntax, `"int"` type). New integer stdlib functions in
+  `std:math`: `math.parse_int(s)`, `math.to_int(n)`, `math.to_float(n)`,
+  `math.is_int(v)`, `math.idiv(a, b)`. Large integers maintain exact precision.
+  Booleans continue to coerce to float in arithmetic.
+- **`--trace-errors` CLI flag and `NODUS_TRACE_ERRORS=1` env var.** When set,
+  prints the original Python exception to stderr whenever a stdlib function
+  converts a Python exception to an err record. Script behavior is unchanged —
+  `err.message` always contains only Nodus-voice text.
+- **`docs/policy/error-surfaces.md`** — new policy doc describing the Replace
+  contract, which stdlib surfaces are wrapped, and how to use `--trace-errors`.
+- **`docs/migration/v2-to-v3.md`** — migration guide for all six breaking changes,
+  "What does NOT break" section, and list of non-breaking v2.2 improvements.
+
+### Fixed (v2.2 backlog, folded into v3.0)
+
+- **`finally` now runs correctly in all cases** except the one known case where
+  `catch` has a `return` (tracked as a v3.1 bug). Previously, `finally` was
+  silently skipped in several exit paths.
+- **Import errors inside function bodies and `if/else` blocks now work
+  correctly.** Previously, a failed import inside a function body or `if/else`
+  branch silently left the module name undefined instead of propagating the error.
+- **Imports inside function bodies and `if`/`else` blocks now work correctly** —
+  the module is loaded and the alias is defined in the enclosing scope, matching
+  expected behavior. Note: import errors inside `try/catch` are still not catchable
+  (the alias is left undefined and accessing it raises a `"name"` error); this
+  is a known v3.1 bug, documented in error-handling.md §6.
+- **`strings.is_blank` correctly returns `true` for whitespace-only strings.**
+  Previously returned `false` for strings containing only spaces, tabs, or newlines.
+- **`path.join` now accepts a list of segments.** `path.join(["a", "b", "c"])`
+  is now supported in addition to the variadic form.
+- **`path.ext` now returns the leading dot.** `path.ext("file.nd")` returns
+  `".nd"` (previously returned `"nd"`).
+- **`utils.get(map, key, default)` added** — new function for safe map access
+  with a default value when the key is absent.
+- **Multi-line map literals work.** The value of a map entry can now start on
+  the line after the `:` without a parse error.
+- **`err.line`, `err.column`, `err.path`, `err.stack` are now documented fields.**
+  These fields were always present but undocumented. `err.line` and `err.column`
+  are `int` values in v3.0.
+- **`type()` and `rt.typeof()` are now consistent and documented.** Previously
+  the two functions returned different strings for the same value in some cases.
+  `rt.typeof()` returns the runtime type name; `type()` returns the user-facing
+  type name. See `docs/guide/types-and-values.md` for the complete comparison table.
+- **`collections.has_key` O(n) shadow fixed.** The stdlib `has_key` function
+  in `std:collections` was inadvertently shadowing the O(1) builtin `has_key`
+  with an O(n) implementation.
+- **`coalesce` now evaluates arguments lazily.** Previously `coalesce(a, b)`
+  evaluated `b` even when `a` was non-nil.
+- **Cyclic workflow dependency now errors correctly.** Previously, a workflow
+  with a cyclic step dependency produced exit code 0 silently.
+- **Stack overflow trace truncated.** Previously, a call stack overflow would
+  print all 10,000 frames to stderr. Now truncated to a readable summary.
+- **`nodus debug --help` no longer outputs "File not found".**
+- **`nodus fmt --check` false-negative on fresh files fixed.**
+- **`else if` is now valid syntax.** Previously required `else { if ... }` nesting.
+
+### Documentation
+
+- `docs/guide/types-and-values.md` — complete rewrite for v3.0: integer type
+  section, `42i` syntax, arithmetic semantics, integer stdlib table, `{key: value}`
+  disambiguation (record vs map), updated falsy values list, equality coercion
+  documented as stable behavior.
+- `docs/guide/error-handling.md` — major update: new stdlib err.kind table,
+  err.payload always present, returned-not-thrown pattern documented, Section 5
+  rewritten with guidance on try/catch vs. err-record checks, `--trace-errors`
+  usage in Section 7.
+- `docs/guide/standard-library.md` — v3.0 update: integer type additions,
+  `json.parse_int`, updated fs error docs, rt.typeof comparison table corrected.
+
 ## [2.1.1] - 2026-05-24
 
 ### Security

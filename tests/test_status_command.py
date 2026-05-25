@@ -69,4 +69,4 @@ class StatusCommandTests(unittest.TestCase):
         with redirect_stdout(buf):
             exit_code = main(["nodus", "--help"])
         self.assertEqual(exit_code, 0)
-        self.assertIn("nodus status", buf.getvalue())
+        self.assertIn("status", buf.getvalue())

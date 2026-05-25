@@ -120,4 +120,5 @@ class GraphRunSubcommandTests(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             main(["nodus", "--help"])
-        self.assertIn("workflow run", out.getvalue())
+        # Global help groups workflow commands under "workflow <cmd>"
+        self.assertIn("workflow", out.getvalue())

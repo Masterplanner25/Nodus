@@ -99,4 +99,4 @@ Execution rule:
 - [Nodus Overview](NODUS.md) — project orientation, architecture, and design philosophy
 - Interactive reference: start the REPL and type `:help` to explore available commands
 
-<!-- TODO(guide-phase): link docs/guide/getting-started.md here once the user guide is written -->
+- [User Guide — Getting Started](../guide/getting-started.md) — install, first script, REPL, error handling, two-file project

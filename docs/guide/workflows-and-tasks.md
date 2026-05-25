@@ -218,11 +218,7 @@ if result is cached), `cache_key` (override the cache key).
 
 ## 6. Print, logging, and observability
 
-In Nodus v2.0.x, `print()` inside a workflow step produced no output —
-step stdout was silently discarded. **This was fixed in v2.1.0 (BUG-022).**
-If you used workflows in v2.0.x and saw nothing, upgrade to v2.1.x.
-
-In v2.1.1, `print()` inside a step works as in any other function:
+`print()` inside a workflow step works as in any other function:
 
 ```nd
 workflow observable {
@@ -330,14 +326,15 @@ let t2 = task(report, t1)
 let r  = run_graph([t1, t2])
 ```
 
-When a step needs multiple dependencies via the options map, use string
-keys — bare identifiers cause a name error:
+When a step needs multiple dependencies via the options map, use **quoted
+string keys** to create a map — bare identifier keys create a record, not
+a map, and `task()` expects a map:
 
 ```nd
-// WRONG: Name error: Undefined variable: deps
+// WRONG: {deps: ...} is a record literal in v3.0, not a map
 let t3 = task(my_fn, {deps: [t1, t2]})
 
-// RIGHT:
+// RIGHT: quoted key creates a map
 let opts = {"deps": [t1, t2]}
 let t3 = task(my_fn, opts)
 ```
@@ -403,7 +400,7 @@ persist into the next retry. See section 5.
 ---
 
 <!--
-TESTED SCRIPTS (all run against nodus-lang v2.1.1 dev source,
+TESTED SCRIPTS (originally run against nodus-lang v2.1.1; reviewed for v3.0 —
 23 workflow test files in /tmp/workflow-tests/):
 
 01: wf01_minimal.nd         → "hello from step"  BUG-022 confirmed fixed
@@ -422,7 +419,7 @@ TESTED SCRIPTS (all run against nodus-lang v2.1.1 dev source,
 14: wf13_step_options.nd    → retries:2; each failed attempt logs to stderr; state accumulates
 15: wf14_checkpoint.nd      → checkpoint recorded in r["checkpoints"] with label/step/task_id
 16: wf15_trace.nd           → --trace shows VM bytecode for lowered workflow, not step-level events
-17: wf16b_task_graph.nd     → task()/run_graph() API; bare {deps:...} causes name error
+17: wf16b_task_graph.nd     → task()/run_graph() API; bare {deps:...} creates a record in v3.0, use {"deps":...} map
 18: embedded (python3)      → NodusRuntime.run_source() captures step stdout in result["stdout"]
 19: wf17_fan_out.nd         → fan-out/fan-in via state accumulation
 20: wf18_limits.nd          → --step-limit global across all steps; Sandbox error fires

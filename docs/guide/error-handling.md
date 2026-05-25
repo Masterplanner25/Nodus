@@ -45,17 +45,11 @@ Inside `catch`, `err` is a record with these fields:
 |-------|------|---------------|-------------|
 | `err.kind` | string | yes | Error category (see Section 4) |
 | `err.message` | string | yes | Human-readable description |
-| `err.line` | number | yes | Source line where the error occurred |
-| `err.column` | number | yes | Source column |
+| `err.line` | int | yes | Source line where the error occurred |
+| `err.column` | int | yes | Source column |
 | `err.path` | string | yes | Source file path |
 | `err.stack` | list | yes | Stack trace as a list of strings |
-| `err.payload` | any | **only for non-string throws** | Original thrown value |
-
-> **Spec note:** LANGUAGE_SPEC only documents `message`, `kind`, and `payload`.
-> The `line`, `column`, `path`, and `stack` fields are real, usable, and tested
-> but not yet in the spec. `err.payload` is absent (not `nil`) on runtime errors
-> and string throws — accessing it on a runtime error raises
-> `Key error: Missing record field: payload`.
+| `err.payload` | any | yes | Original thrown value; `nil` for runtime errors and string throws |
 
 ```nd
 try {
@@ -82,7 +76,7 @@ Missing map key: "missing"
 
 `finally` runs after `try` completes (with or without an error) and after
 `catch` completes. One known limitation: **`finally` does not run when the
-`catch` block contains a `return`** (tracked as a v2.2 bug). In all other
+`catch` block contains a `return`** (tracked as a v3.1 bug). In all other
 exit paths the spec describes, `finally` runs correctly.
 
 ```nd
@@ -164,6 +158,7 @@ try {
 } catch err {
     print(err.kind)
     print(err.message)
+    print(err.payload)
 }
 ```
 
@@ -172,10 +167,11 @@ Output:
 ```
 thrown
 value must be positive
+nil
 ```
 
-`err.kind` is always `"thrown"` for explicit throws. `err.payload` is absent
-for string throws — do not access it.
+`err.kind` is always `"thrown"` for explicit throws. `err.payload` is `nil`
+for string throws.
 
 ### Record throw — structured errors
 
@@ -207,6 +203,8 @@ value, which is rarely useful. Prefer `err.payload` for structured errors.
 
 ## 4. err.kind reference
 
+### Runtime error kinds (from the VM)
+
 | `err.kind` | What triggers it | Example message |
 |------------|-----------------|-----------------|
 | `"type"` | Type mismatch in operation | `Cannot add number and string` |
@@ -214,56 +212,105 @@ value, which is rarely useful. Prefer `err.payload` for structured errors.
 | `"index"` | List index out of range | `List index out of range: 10` |
 | `"name"` | Undefined variable | `Undefined variable: x` |
 | `"call"` | Wrong arity, call a non-function | `add expected 2 args, got 1` |
-| `"runtime"` | Division by zero, stdlib failures | `Division by zero` |
+| `"runtime"` | Division by zero, VM-level failures | `Division by zero` |
 | `"sandbox"` | Call stack overflow, path traversal | `Call stack overflow` |
 | `"thrown"` | Any `throw` statement | the thrown value as string |
 
-**Notes:**
+### Stdlib error kinds (from wrapped stdlib functions)
 
-- `"runtime"` is a catch-all for VM-level errors that don't fit a more specific
-  kind. Division by zero, `json.parse` failures, and `fs.read` failures all
-  surface as `"runtime"`.
+| `err.kind` | What triggers it | Example message |
+|------------|-----------------|-----------------|
+| `"parse_error"` | Input string cannot be parsed in the expected format | `invalid JSON at line 1 column 2: expected property name` |
+| `"type_error"` | Argument is the wrong type for the operation | `math.idiv requires int args, got float` |
+| `"value_error"` | Argument is the right type but an invalid value | `math.sqrt requires a non-negative number, got -1` |
+| `"math_error"` | Domain or arithmetic error in a math operation | `division by zero` |
+| `"io_error"` | File or path operation failed for an I/O reason | `file not found: "/missing/file.txt"` |
+| `"path_error"` | Path manipulation failed structurally | (path.relative mixing rel/abs) |
+| `"internal_error"` | Unexpected Python exception inside a wrapped stdlib function | `unexpected internal error in fs.read` |
+
+**Important distinctions:**
+
+- `"runtime"` is the VM catch-all. Division by zero with `/` produces `"runtime"`,
+  but `math.idiv` division by zero produces `"math_error"`.
+- `"type_error"` (from stdlib) is different from `"type"` (from the VM). Both
+  describe type mismatches; the VM raises `"type"` for operators like `+`; stdlib
+  functions return `"type_error"` err records.
 - `"sandbox"` is also used for execution step-limit and time-limit exceeded, but
   those cannot be caught from inside the script — they terminate execution
   immediately.
 - Import errors (`Import not found: ...`) have kind `"import"` but are NOT
   catchable. See [Section 6](#6-what-is-not-catchable).
-- BUG-027 (v2.1.0): `throw "string"` now correctly sets `err.kind = "thrown"`.
-  In v2.0.0 all throws produced `"runtime"`.
+
+### Stdlib errors are returned, not thrown
+
+In v3.0, stdlib functions that fail at the I/O or parsing boundary **return**
+an err record rather than throwing. This means your code can inspect the err
+record without a try/catch:
+
+```nd
+import "std:fs" as fs
+
+let content = fs.read("config.json")
+if (type(content) == "error") {
+    print("read failed: " + content.kind + " — " + content.message)
+} else {
+    print("read ok: " + str(len(content)) + " bytes")
+}
+```
+
+The `type(x) == "error"` check is the idiomatic way to detect a returned err
+record. Alternatively, branch on `err.kind`:
+
+```nd
+import "std:fs" as fs
+
+let content = fs.read("config.json")
+if (type(content) == "error" and content.kind == "io_error") {
+    print("I/O failure: " + content.message)
+}
+```
+
+You can still use `try/catch` for stdlib errors, but the returned-value pattern
+is preferred for functions where errors are expected outcomes.
 
 ---
 
-## 5. When to use try/catch vs. defensive checks
+## 5. When to use try/catch vs. err-record checks
 
-**Use `try/catch`** when failure is a normal, expected outcome at a trust
-boundary:
-- Reading a file that might not exist
-- Parsing JSON from external input that might be malformed
-- Calling an operation whose failure you need to respond to gracefully
+**Use `try/catch`** for:
+- VM-level errors you cannot predict (type mismatches, index errors, name errors)
+- Code that calls multiple operations and needs one handler for any failure
+- Re-throwing with added context
+
+**Use returned err-record checks** for:
+- Stdlib I/O and parse functions where failure is a normal expected outcome
+- When you need to branch on `err.kind` for different error types
+- When you need to continue execution after a failure
 
 **Use `has_key` guards** when failure is predictable from data you control:
 - Accessing a map key that might be absent
 - Checking parsed JSON for optional fields
 
-Using `try/catch` to handle a missing key you could have checked is wasteful
-and obscures intent. The `has_key` pattern is faster and clearer. See
-[working-with-maps.md](working-with-maps.md#3-reading-from-a-map) and
-[working-with-json.md](working-with-json.md#2-inspecting-parsed-data).
-
-### File read pattern
+### File read pattern (v3.0 style)
 
 ```nd
 import "std:fs" as fs
 import "std:json" as json
 
 fn load_config(path) {
-    try {
-        let raw = fs.read(path)
-        return json.parse(raw)
-    } catch err {
-        print("config load failed: " + err.message)
+    let raw = fs.read(path)
+    if (type(raw) == "error") {
+        if (raw.kind == "io_error") {
+            print("file error: " + raw.message)
+        }
         return nil
     }
+    let data = json.parse(raw)
+    if (type(data) == "error") {
+        print("parse error: " + data.message)
+        return nil
+    }
+    return data
 }
 
 let cfg = load_config("config.json")
@@ -272,20 +319,17 @@ if (cfg == nil) {
 }
 ```
 
-This catches both `fs.read` failures (`"runtime"`, file not found) and
-`json.parse` failures (`"runtime"`, malformed JSON) in one handler.
-
 ### Re-throw with context
 
 Catch, add information, throw a new error to the caller:
 
 ```nd
 fn parse_user(raw) {
-    try {
-        return json.parse(raw)
-    } catch err {
-        throw "parse_user failed: " + err.message
+    let result = json.parse(raw)
+    if (type(result) == "error") {
+        throw "parse_user failed: " + result.message
     }
+    return result
 }
 ```
 
@@ -299,7 +343,7 @@ These abort at load time before any `try` block can execute.
 **Import errors**: `import "./missing_module"` inside a `try` block does not
 raise a catchable error — the import silently fails, leaving the module name
 undefined. Accessing the undefined name later raises `"name"`. This is a known
-v2.2 bug: import errors inside try blocks should be catchable.
+v3.1 bug: import errors inside try blocks should be catchable.
 
 **Execution limits**: When `--step-limit` or `--time-limit` is exceeded, the
 runtime terminates the script from the outside. The `catch` block never runs.
@@ -308,22 +352,40 @@ regardless of what the script does with error handling.
 
 ---
 
-## 7. Stdlib error quality
+## 7. Stdlib error messages in v3.0
 
-**BUG-015 (v2.1.0):** Stdlib errors now report your call site, not the
-stdlib's internal path. When `fs.read` fails, the error location points to
-the line in your script that called `fs.read`, not to a line inside
-`std/fs.nd`. This makes stack traces useful.
+Stdlib functions produce errors in Nodus voice. No Python error text appears
+in `err.message`. Concrete examples:
 
-**Known Python text leaks:** Two stdlib functions pass Python error text
-through verbatim:
-- `json.parse` failures: `"json_parse failed: Expecting property name enclosed in double quotes"` — Python `json` module wording. Filed as [BUG-038](https://github.com/Masterplanner25/Nodus/issues/39).
-- `fs.read` failures: `"read_file failed for 'path': [Errno 2] No such file or directory: 'path'"` — Python `OSError` wording. Similar pattern, not yet filed.
+```nd
+import "std:fs" as fs
 
-These errors are informative but break the "Nodus error voice" consistency.
-The `err.kind` is `"runtime"` for both, so you can catch them; the
-`err.message` text you display to users will look Python-flavored until these
-are resolved.
+let r = fs.read("/missing/file.txt")
+print(r.kind)     // io_error
+print(r.message)  // file not found: "/missing/file.txt"
+```
+
+```nd
+import "std:json" as json
+
+let r = json.parse("{bad")
+print(r.kind)     // parse_error
+print(r.message)  // invalid JSON at line 1 column 2: expected property name
+```
+
+### Debugging stdlib errors
+
+If you need to see the underlying Python exception detail (for debugging a
+strange internal error), run with `--trace-errors`:
+
+```sh
+nodus run --trace-errors script.nd
+```
+
+Or set `NODUS_TRACE_ERRORS=1` in the environment. When set, Nodus prints the
+original Python exception and traceback to stderr whenever a wrapped stdlib
+function converts a Python exception into an err record. The script's behavior
+is unchanged — `err.message` still contains only the Nodus message.
 
 ---
 
@@ -332,62 +394,20 @@ are resolved.
 - [working-with-maps.md — Reading from a map](working-with-maps.md#3-reading-from-a-map) — `has_key` guard patterns
 - [working-with-json.md — Edge cases](working-with-json.md#6-edge-cases-and-gotchas) — json.parse error format
 - [standard-library.md](standard-library.md) — each function's error behavior
+- [../policy/error-surfaces.md](../policy/error-surfaces.md) — which stdlib surfaces are wrapped and what the wrapping contract guarantees
 - [LANGUAGE_SPEC.md — Exception Handling](../language/LANGUAGE_SPEC.md) — formal spec
 
 ---
 
 <!--
-TESTED EXAMPLES (17 total — files in /tmp/error-tests/)
-1.  err_location_fields.nd — err.line, err.column, err.stack confirmed
-2.  err_fields.nd — full field list per error category confirmed
-3.  kind_type.nd — kind="type", message="Cannot add number and string" confirmed
-4.  kind_key.nd — kind="key", message="Missing map key: "missing"" confirmed
-5.  kind_index.nd — kind="index", message="List index out of range: 10" confirmed
-6.  kind_name.nd — kind="name", message="Undefined variable: undefined_var" confirmed
-7.  kind_call.nd — kind="call", arity and non-function cases confirmed
-8.  division_zero.nd — kind="runtime", message="Division by zero" confirmed
-9.  kind_stdlib_json.nd — kind="runtime", json_parse failed text confirmed
-10. kind_stdlib_fs_missing.nd — kind="runtime", read_file failed Python text confirmed
-11. stack_overflow.nd — kind="sandbox", message="Call stack overflow" confirmed
-12. step_limit.nd — step limit NOT catchable, exits externally confirmed
-13. kind_thrown_string.nd — kind="thrown", message=thrown string confirmed
-14. kind_thrown_record.nd — kind="thrown", payload.field accessible confirmed
-15. kind_thrown_number.nd — kind="thrown", message=str(number) confirmed
-16. finally_basic.nd — finally runs on normal exit confirmed
-17. finally_catch_return.nd — finally does NOT run when catch returns (BUG)
-18. rethrow.nd — throw err re-throws to outer handler confirmed
-19. import_in_try_use_m.nd — import in try silently fails; m undefined confirmed
-20. import_what_is_m.nd — import at top level fails with Import error confirmed
-
-VERBATIM ERROR MESSAGES CAPTURED:
-- "Missing map key: "missing""
-- "List index out of range: 10"
-- "Undefined variable: undefined_var"
-- "Cannot add number and string"
-- "Division by zero"
-- "json_parse failed: Expecting property name enclosed in double quotes"
-- "read_file failed for '...': [Errno 2] No such file or directory: '...'"
-- "Call stack overflow"
-- "add expected 2 args, got 1"
-- "Cannot call non-function: 42.0"
-
-BEHAVIORAL FINDINGS (new — to file as v2.2 bugs):
-F21: finally block does NOT run when catch block has a return statement.
-     LANGUAGE_SPEC exit path 5 says "return inside catch: finally runs before
-     the function returns; the return value is preserved." This is not the case.
-     Confirmed: finally_catch_return.nd shows "in catch", "from catch" but no
-     "finally ran".
-F22: import errors inside try/catch are silently swallowed — the import fails,
-     m is undefined, and no error is raised to the catch block. The import
-     statement appears to succeed (no exception), but using m later raises
-     "name: Undefined variable: m". Not catchable, not propagated.
-F23: err.payload is absent (not nil) on string throws. LANGUAGE_SPEC says
-     "String throw: err.payload is nil." Actual: the payload field doesn't
-     exist on the record for string throws — accessing it raises
-     "Key error: Missing record field: payload".
-F24: err record has 4 undocumented fields: path, line, column, stack. These
-     are usable (e.g. err.line, err.stack[0]) but absent from LANGUAGE_SPEC.
-     Not a bug (more fields is better), but a spec gap.
-F25: fs.read failure leaks Python OSError text verbatim, parallel to BUG-038
-     (json.parse leaks Python json module text). Same architectural pattern.
+TESTED EXAMPLES (v3.0 — all code blocks verified)
+1. try/catch/finally basic — confirmed
+2. err.line, err.stack — confirmed (note: err.line is now "int" in v3.0, not "number")
+3. finally semantics — confirmed (finally skipped when catch returns — known bug)
+4. rethrow — confirmed
+5. string throw — confirmed (payload is nil, not absent)
+6. record throw — confirmed
+7. type(content) == "error" pattern — confirmed
+8. fs.read missing file: kind="io_error", message starts with "file not found" — confirmed
+9. json.parse bad JSON: kind="parse_error", message starts with "invalid JSON" — confirmed
 -->

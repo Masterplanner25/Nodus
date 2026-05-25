@@ -1,7 +1,7 @@
 # Types and Values
 
 Nodus has a small, fixed set of value types. Understanding them — especially
-the record/map distinction and float-only numbers — prevents most early
+the record/map distinction and the two numeric kinds — prevents most early
 confusion. This file covers everything.
 
 If you haven't installed Nodus yet, start with
@@ -27,10 +27,11 @@ surprises.
 | `nil` | `nil` | Default, absent values | `== nil`, truthiness check |
 | `bool` | `true`, `false` | Comparisons, logical ops | `&&`, `\|\|`, `!` |
 | `number` | `42`, `3.14`, `1e3` | Arithmetic, literals | `+ - * / %`, comparisons |
+| `int` | `42i`, `0i` | Integer literals, `math.parse_int` | `+ - * %`, comparisons; division yields `number` |
 | `string` | `"hello"` | Literals, `str(x)` | `+` (concat), std:strings |
 | `list` | `[1, 2, 3]` | Literals, push/pop | `[i]`, `len()`, for-in |
 | `map` | `{ "k": v }` | Literals, `json.parse()` | `["k"]`, `has_key()`, `keys()`, `values()` |
-| `record` | `record { k: v }` | `record` keyword | `.field`, `.method()` |
+| `record` | `record { k: v }` or `{ k: v }` | `record` keyword or bare-key literal | `.field`, `.method()` |
 | `function` | `fn(x) { ... }` | `fn` keyword | `f(args)` |
 
 Use `type(x)` to inspect any value at runtime:
@@ -39,6 +40,7 @@ Use `type(x)` to inspect any value at runtime:
 print(type(nil))
 print(type(true))
 print(type(42))
+print(type(42i))
 print(type("hello"))
 print(type([1, 2, 3]))
 print(type({ "a": 1 }))
@@ -52,6 +54,7 @@ Output:
 nil
 bool
 number
+int
 string
 list
 map
@@ -61,13 +64,34 @@ function
 
 ---
 
-## 3. Numbers Are Floats
+## 3. Numbers: float by default, integer opt-in
 
-Every number in Nodus is a 64-bit float (IEEE 754 double). There is no
-separate integer type. This is intentional for v2.x; a distinct `int` type
-is planned for v3.0.
+Nodus has two numeric kinds.
 
-### Division always returns a float
+**`number` (float)** — the default. Every numeric literal without an `i` suffix
+is a 64-bit float (IEEE 754 double). This is the type `type()` returns as
+`"number"`.
+
+**`int`** — arbitrary-precision integer. Write the `i` suffix on any integer
+literal: `42i`, `0i`, `-7i`. `type()` returns `"int"`.
+
+```nd
+print(type(42))    // "number" — float
+print(type(42i))   // "int"
+print(42)          // 42.0
+print(42i)         // 42
+```
+
+Output:
+
+```
+number
+int
+42.0
+42
+```
+
+### Float arithmetic
 
 ```nd
 print(10 / 2)
@@ -85,64 +109,147 @@ Output:
 3.0
 ```
 
-`10 / 2` is `5.0`, not `5`. `len()` returns `3.0`, not `3`. If you
-build output strings like `"Total: " + str(count)`, you'll get
-`"Total: 3.0"` — not `"Total: 3"`. There is no built-in way to strip
-the `.0` from whole-number floats in v2.1.0.
+`10 / 2` is `5.0`, not `5`. `len()` returns `3.0`, not `3`. If you build output
+strings like `"Total: " + str(count)`, you'll get `"Total: 3.0"`. Use
+`math.to_int` or integer literals when you need exact integer output.
 
-### Modulo works on both integer-valued and fractional floats
+### Integer arithmetic
 
 ```nd
-print(10 % 3)
-print(7.5 % 2.5)
+print(1i + 1i)    // int + int → int
+print(5i - 3i)    // int - int → int
+print(3i * 4i)    // int * int → int
+print(7i % 3i)    // int % int → int
+print(4i / 2i)    // int / int → number (division always yields float)
+print(1i + 1.0)   // int + number → number (promotes to float)
 ```
 
 Output:
 
 ```
-1.0
-0.0
+2
+2
+12
+1
+2.0
+2.0
 ```
 
-### Scientific notation
+Division (`/`) always produces a `number` even when both operands are integers.
+For integer division with truncation, use `math.idiv`.
+
+### Large integers stay exact
 
 ```nd
-print(1e3)
-print(2.5e-1)
-print(1E10)
-print(6.022e23)
+print(9007199254740993i)           // exact — would lose precision as float
+print(9007199254740992i + 1i)      // still exact
 ```
 
 Output:
 
 ```
-1000.0
-0.25
-10000000000.0
-6.022e+23
+9007199254740993
+9007199254740993
 ```
 
-### Precision limit
-
-Integers are represented exactly up to 2^53 (9,007,199,254,740,992).
-Beyond that, precision silently erodes:
+Floats cannot represent integers beyond 2^53 (9,007,199,254,740,992) exactly:
 
 ```nd
-print(9007199254740992)
-print(9007199254740993)
-print(999999999999999999)
+print(9007199254740993)   // float — loses precision
 ```
 
 Output:
 
 ```
 9007199254740992.0
-9007199254740992.0
-1e+18
 ```
 
-If you need exact large integers, Nodus v2.1.0 cannot provide them.
-An integer type is planned for v3.0.
+### Boolean coercion for integers
+
+`0i` is falsy; any non-zero integer is truthy.
+
+```nd
+if (0i) { print("truthy") } else { print("falsy") }
+if (1i) { print("truthy") } else { print("falsy") }
+```
+
+Output:
+
+```
+falsy
+truthy
+```
+
+### Integer functions in std:math
+
+| Function | Signature | Returns | Description |
+|----------|-----------|---------|-------------|
+| `math.parse_int(s)` | `(string)` | `int` or error | Parse a decimal string as an integer |
+| `math.to_int(n)` | `(number)` | `int` | Truncate a float to integer (toward zero) |
+| `math.to_float(n)` | `(int)` | `number` | Convert an integer to float |
+| `math.is_int(x)` | `(any)` | `bool` | `true` if `x` is an `int` value |
+| `math.idiv(a, b)` | `(int, int)` | `int` or error | Integer division, truncating toward zero |
+
+```nd
+import "std:math" as math
+
+print(math.to_int(3.7))      // 3   (truncates toward zero)
+print(math.to_int(-3.7))     // -3
+print(math.to_float(5i))     // 5.0
+print(math.is_int(3i))       // true
+print(math.is_int(3.0))      // false
+print(math.idiv(7i, 2i))     // 3   (truncates toward zero)
+print(math.parse_int("42"))  // 42
+print(math.parse_int("-5"))  // -5
+```
+
+Output:
+
+```
+3
+-3
+5.0
+true
+false
+3
+42
+-5
+```
+
+`math.parse_int` returns an error record when the string is not a valid integer:
+
+```nd
+import "std:math" as math
+
+let r = math.parse_int("not_a_number")
+print(r.kind)
+print(r.message)
+```
+
+Output:
+
+```
+parse_error
+not an integer: "not_a_number"
+```
+
+### Comparison across int and float
+
+`1i == 1` is `true`. Integers and floats coerce for comparison:
+
+```nd
+print(1i == 1)     // true
+print(1i == 1.0)   // true
+print(2i > 1)      // true
+```
+
+Output:
+
+```
+true
+true
+true
+```
 
 ---
 
@@ -274,7 +381,7 @@ are intentional:
 
 ### When you get a record
 
-Use the `record` keyword in your source code:
+Use the `record` keyword, or a **bare-identifier key literal** `{ key: value }`:
 
 ```nd
 let user = record { name: "Alice", age: 30 }
@@ -289,6 +396,20 @@ Output:
 record
 Alice
 30.0
+```
+
+```nd
+// v3.0: { key: value } with bare identifiers is a record literal
+let cfg = { host: "localhost", port: 8080 }
+print(type(cfg))
+print(cfg.host)
+```
+
+Output:
+
+```
+record
+localhost
 ```
 
 Records support dot-access only. You can assign fields: `user.age = 31`.
@@ -325,10 +446,10 @@ false
 Maps support bracket-access only. `has_key`, `keys`, and `values` work on
 maps, not records.
 
-> **Map literal syntax requires quoted keys.** `{ "key": value }` creates a
-> map. `{ key: value }` with an unquoted identifier evaluates `key` as a
-> variable expression — if `key` isn't defined, you get
-> `Undefined variable: key`.
+> **v3.0 map literal disambiguation:** `{ "key": value }` with quoted string
+> keys creates a map. `{ key: value }` with a bare identifier creates a
+> **record**. To use a variable's value as a map key, wrap it in parens:
+> `{ (mykey): value }`. Mixing quoted and bare keys in one literal is an error.
 
 ### Side-by-side comparison
 
@@ -384,7 +505,7 @@ false
 ### Migration note (v2.0.0 → v2.1.0)
 
 In v2.0.0, `json.parse` returned a `record`. Code like `data.name` worked.
-In v2.1.0, `json.parse` returns a `map`. Any code using dot-access on parsed
+In v2.1.0+, `json.parse` returns a `map`. Any code using dot-access on parsed
 JSON **will break** with `Field access is only supported on records`. Replace
 `data.name` with `data["name"]`.
 
@@ -409,11 +530,12 @@ The following values are **falsy** in boolean context:
 - `nil`
 - `false`
 - `0` (the float zero)
+- `0i` (the integer zero)
 - `""` (empty string)
 - `[]` (empty list)
 
-Everything else is truthy: non-zero numbers, non-empty strings, non-empty
-lists, maps, records, and functions.
+Everything else is truthy: non-zero numbers, non-zero integers, non-empty
+strings, non-empty lists, maps, records, and functions.
 
 ```nd
 let nothing = nil
@@ -429,6 +551,12 @@ if (0) {
     print("0 is falsy")
 }
 
+if (0i) {
+    print("truthy")
+} else {
+    print("0i is falsy")
+}
+
 if ([]) {
     print("truthy")
 } else {
@@ -441,24 +569,27 @@ Output:
 ```
 nil is falsy
 0 is falsy
+0i is falsy
 empty list is falsy
 ```
 
-### Known awkwardness: numeric-boolean coercion
+### Numeric-boolean coercion
 
-`0 == false` is `true`, and `1 == true` is `true`. This is a consequence
-of Python-style truthiness coercion in the equality operator. It's a known
-issue (BUG-013, deferred to v3.0). If your code distinguishes between
-integer zero and boolean false, use explicit type checks via `type(x)`.
+`0 == false` is `true`, and `1 == true` is `true`. This is the documented
+coercion contract for `==`. It applies to both float zero (`0`) and integer
+zero (`0i`). If your code needs to distinguish between numeric zero and boolean
+false, use explicit type checks via `type(x)`.
 
 ```nd
 print(0 == false)
 print(1 == true)
+print(0i == false)
 ```
 
 Output:
 
 ```
+true
 true
 true
 ```
@@ -554,52 +685,44 @@ key not present
 safety in Nodus is enforced entirely at runtime.
 
 For patterns around catching and recovering from type errors, see
-[error-handling.md](error-handling.md) (coming soon).
+[error-handling.md](error-handling.md).
 
 ---
 
 ## 10. What's Next
 
-- **[working-with-maps.md](working-with-maps.md)** (coming soon) — deeper
-  map patterns: accumulation, dynamic keys, building maps at runtime.
-- **[working-with-json.md](working-with-json.md)** (coming soon) — json.parse,
-  stringify, handling optional fields with has_key, migrating from v2.0.0.
-- **[error-handling.md](error-handling.md)** (coming soon) — try/catch/finally,
-  all err.kind values, throw patterns, stdlib error locations.
+- **[working-with-maps.md](working-with-maps.md)** — deeper map patterns:
+  accumulation, dynamic keys, building maps at runtime.
+- **[working-with-json.md](working-with-json.md)** — json.parse, stringify,
+  handling optional fields with has_key, `json.parse_int` for large integers.
+- **[error-handling.md](error-handling.md)** — try/catch/finally, all err.kind
+  values, throw patterns, stdlib error locations.
+- **[standard-library.md](standard-library.md)** — complete function reference.
 - **[LANGUAGE_SPEC.md](../language/LANGUAGE_SPEC.md)** — formal definitions
   for every type, operator, and builtin.
 
 ---
 
 <!--
-TESTED EXAMPLES (15 total — matches code block count)
-1. type() on all types → "nil\nbool\nnumber\n..." confirmed
-2. float division: 10/2=5.0, 7/2=3.5, 3+4=7.0, len([1,2,3])=3.0 confirmed
-3. modulo: 10%3=1.0, 7.5%2.5=0.0 confirmed
-4. scientific notation: 1e3=1000.0, 2.5e-1=0.25, 1E10=10000000000.0 confirmed
-5. precision limit: 9007199254740993 → 9007199254740992.0, 999...999 → 1e+18 confirmed
-6. string concat: "Hello, " + "Nodus" + "!" → "Hello, Nodus!" confirmed
-7. std:strings: trim/upper/lower/contains/replace/split/join/repeat confirmed
-8. list: len([10,20,30,40])=4.0, nums[0]=10.0, for-in confirmed
-9. std:collections map/filter/reduce confirmed
-10. record: user.name="Alice", user.age=30.0, type="record" confirmed
-11. map: config["host"]="localhost", has_key, keys, values confirmed
-12. json.parse: returns type "map", bracket access, has_key, keys confirmed
-13. nil/falsy: nil,0,[] all falsy confirmed
-14. 0==false=true, 1==true=true confirmed
-15. functions as values: col.map/filter/reduce, anonymous fn confirmed
-16. type error: "Cannot add string and number" confirmed (tested via embedding)
-17. key error: "Missing map key: missing" confirmed (tested via embedding)
-18. has_key guard pattern: confirmed works
-
-BEHAVIORAL FINDINGS (new, during types-and-values testing)
-F4: {} literal with unquoted identifier keys is NOT shorthand for string
-    keys. { name: "Alice" } evaluates 'name' as an identifier expression
-    (variable lookup), not as a string key. Map literals MUST use quoted
-    string keys: { "name": "Alice" }. The LANGUAGE_SPEC Values section
-    shows '{ key: value }' which implies bare identifiers work — misleading.
-F5: Both 0==false and 1==true return true (numeric-boolean coercion).
-    Documented in guide as known issue BUG-013, deferred v3.0.
-F6: 'else if' is not valid syntax (confirmed via testing in getting-started).
-    Not documented in LANGUAGE_SPEC. Documented in guide as behavioral note.
+TESTED EXAMPLES (v3.0 — all code blocks verified)
+1. type() on all types including int → confirmed
+2. float arithmetic: 10/2=5.0, 7/2=3.5 — confirmed
+3. integer arithmetic: 1i+1i=2, 4i/2i=2.0, 1i+1.0=2.0 — confirmed
+4. large int precision — confirmed
+5. int boolean coercion — confirmed
+6. math.parse_int, to_int, to_float, is_int, idiv — confirmed
+7. int == float coercion — confirmed
+8. string concat confirmed
+9. std:strings confirmed
+10. list confirmed
+11. std:collections confirmed
+12. record literal with bare identifiers (v3.0) — confirmed
+13. map literal with quoted keys — confirmed
+14. json.parse returns map — confirmed
+15. nil/falsy including 0i — confirmed
+16. 0==false, 1==true, 0i==false — confirmed
+17. functions as values — confirmed
+18. type error runtime — confirmed
+19. key error runtime — confirmed
+20. has_key guard pattern — confirmed
 -->

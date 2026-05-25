@@ -207,37 +207,28 @@ prod.example.com
 
 ## 7. Footguns
 
-### Unquoted keys evaluate the variable — they don't make string keys
+### Bare identifier keys create a record, not a map
 
-`{ name: value }` does not create a map with key `"name"`. It evaluates
-`name` as a variable and uses its runtime value as the key:
+`{ name: "Alice" }` with a bare (unquoted) identifier key is a
+**record literal** in v3.0 — not a map. To create a map with a
+literal string key, always quote it:
+
+```nd
+let m = { "name": "Alice" }  // map — bracket access: m["name"]
+let r = { name: "Alice" }    // record — dot access: r.name
+```
+
+To use a variable's value as a map key, wrap it in parentheses:
 
 ```nd
 let field = "score"
-let m = { field: 99 }
-print(keys(m))     // ["score"] — the VALUE of field, not "field"
+let m = { (field): 99 }     // map with key "score"
+print(keys(m))              // ["score"]
 ```
 
-If the variable holds a number (`let n = 42`), the key is `42.0`
-(accessible as `m[42]`, not `m["42"]`). If the identifier is undefined,
-you get `Name error: Undefined variable: <name>`.
-
-**Always use quoted string literals for literal string keys.** Filed as
-[BUG-030](https://github.com/Masterplanner25/Nodus/issues/31) — the
-LANGUAGE_SPEC map literal example is misleading.
-
-### collections.has_key is O(n) — use the builtin
-
-The top-level `has_key` is O(1). `std:collections`'s `has_key` is a
-linear scan. Never use `col.has_key` for map membership tests. See
-[BUG-033](https://github.com/Masterplanner25/Nodus/issues/34).
-
-### coalesce is eager and throws on missing keys
-
-`utils.coalesce(m["port"], 8080)` raises `Key error` before `coalesce`
-is called, because Nodus evaluates all arguments first. Use `has_key`
-+ `if/else` or the `get_or` helper above. See
-[BUG-034](https://github.com/Masterplanner25/Nodus/issues/35).
+Using a bare identifier where a map key is expected (e.g. inside
+`json.parse` result manipulation) is a parse error in v3.0, with a
+message naming the two correct forms.
 
 ---
 
@@ -255,7 +246,7 @@ time. Full treatment in
 - [types-and-values.md — Records vs Maps](types-and-values.md#6-records-vs-maps--the-distinction)
 - [working-with-json.md](working-with-json.md) — maps from `json.parse`
 - [standard-library.md](standard-library.md#1-built-in-functions) — `has_key`, `keys`, `values`
-- [error-handling.md](error-handling.md) (coming soon) — `try/catch` for map access
+- [error-handling.md](error-handling.md) — `try/catch` for map access, `has_key` guard patterns
 
 ---
 
@@ -275,17 +266,16 @@ TESTED EXAMPLES (13 total — files in /tmp/maps-tests/)
 12. dynamic_key.nd — bare identifier uses variable VALUE as key confirmed
 13. nonstring_key_access.nd — non-string keys via dynamic syntax accessible confirmed
 
-BEHAVIORAL FINDINGS (new):
-F19: Multi-line map literals fail when a value ([, {) starts on a line after its
-     key. Parser treats the newline as end-of-statement. Documented as gotcha.
-     Not yet filed — adjacent to BUG-030.
-F20: Bare identifier map keys use the variable's runtime VALUE as the key, not
-     the identifier name. Non-string variable values create non-string keys
-     (e.g. let n = 42; {n: "x"} → key is 42.0). Undocumented behavior.
-     Adjacent to BUG-030 (#31); documented in footguns section.
+BEHAVIORAL FINDINGS (historical — tested against v2.1.1; resolved in v3.0):
+F19: Multi-line map literals failed when a value ([, {) started on a line after
+     its key. RESOLVED in v3.0 (BUG-039 fix).
+F20: Bare identifier map keys used the variable's runtime VALUE as the key.
+     CHANGED in v3.0: bare identifier keys now create a record literal, not a map.
+     Using a bare identifier where a quoted key is expected is a parse error.
 
-Filed v2.2 issues linked in this doc:
-- BUG-030 (#31): unquoted keys misleading spec
-- BUG-033 (#34): collections.has_key O(n) shadow
+v2.2/v3.0 fixes merged:
+- BUG-030 (#31): bare identifier map key disambiguation — now a parse error with hint
+- BUG-033 (#34): collections.has_key O(n) shadow — fixed, builtin now used
+- BUG-034 (#35): coalesce eager evaluation — fixed, now lazy
 - BUG-034 (#35): coalesce eager evaluation
 -->

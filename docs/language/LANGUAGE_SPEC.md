@@ -1,8 +1,9 @@
 ﻿# Nodus Language Spec (Working)
 
 ## Values
-Stability: Mostly stable (record vs map semantics may evolve).
-- number (float-based; scientific notation `1e3`, `2.5e-4`, `1E10` supported)
+Stability: Stable (v3.0).
+- number (float; scientific notation `1e3`, `2.5e-4`, `1E10` supported; `type()` returns `"number"`)
+- int (integer literal suffix `i`: `42i`, `0i`, `-1i`; `type()` returns `"int"`; large integers stay exact)
 - bool (`true`, `false`)
 - string (double-quoted with escapes: `\\`, `\"`, `\n`, `\t`, `\r`, `\0`, `\xHH`, `\uXXXX`)
   - `\xHH` — hex byte (two hex digits, e.g. `\x41` → `A`)
@@ -10,13 +11,19 @@ Stability: Mostly stable (record vs map semantics may evolve).
   - All escape errors (unterminated, unsupported, or malformed `\x`/`\u`) are reported as `LangSyntaxError` with source line and column.
 - nil (`nil`)
 - list (`[...]`)
-- map (`{"key": value, ...}`) — keys must be quoted strings
-- record (`record { key: value, ... }`)
+- map (`{"key": value, ...}`) — keys must be **quoted strings**
+- record (`record { key: value, ... }` or `{ key: value }` with bare-identifier keys)
 - record methods: `record { greet: fn(self) { ... } }`, called as `obj.greet()`
 
+**Record vs map literal disambiguation (v3.0):**
+- `{ "key": value }` — **map** (quoted string key)
+- `{ key: value }` — **record** (bare identifier key; shorthand for `record { key: value }`)
+- `{ (expr): value }` — **map** with the runtime value of `expr` as the key
+- Using a bare identifier as a map key is a **parse error** naming both correct forms.
+
 **Record vs map access:**
-- **record** — created with `record { key: value }` syntax. Dot-access only: `r.name`, `r.field = value`. Methods called as `obj.method()`.
-- **map** — created with `{ "key": value }` literal syntax (keys must be quoted strings); or returned by `json.parse` and certain stdlib calls. Bracket access is canonical: `m["key"]`, `m["key"] = value`. `has_key(m, "key")`, `keys(m)`, and `values(m)` are also available.
+- **record** — dot-access only: `r.name`, `r.field = value`. Methods called as `obj.method()`.
+- **map** — bracket access: `m["key"]`, `m["key"] = value`. `has_key(m, "key")`, `keys(m)`, `values(m)` available. Returned by `json.parse` and certain stdlib calls.
 
 ## Variables and Assignment
 Stability: Stable.
@@ -173,7 +180,7 @@ Module visibility rules:
 ## Built-ins
 Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experimental.
 - `clock()`
-- `type(x)` — returns `"number"` for all numeric values (both integers and floats). Use `rt.typeof(x)` from `std:runtime` when you need to distinguish `"int"` from `"float"`.
+- `type(x)` — returns `"number"` for floats, `"int"` for integer values (`42i`), `"bool"`, `"string"`, `"nil"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"`. Use `rt.typeof(x)` from `std:runtime` for the internal runtime type name.
 - `str(x)`
 - `len(x)` for list/map/string
 - `print(x)`
@@ -715,11 +722,11 @@ Inside a `catch` block, the caught error record has these fields:
 | Field | Type | Description |
 |-------|------|-------------|
 | `err.message` | string | Human-readable error description (always present). |
-| `err.kind` | string | Error category (e.g. `"name"`, `"type"`, `"index"`, `"thrown"`, `"sandbox"`). |
-| `err.payload` | any | Original thrown value when `throw <non-string>` was used; `nil` for string throws. |
+| `err.kind` | string | Error category. VM kinds: `"type"`, `"key"`, `"index"`, `"name"`, `"call"`, `"runtime"`, `"sandbox"`, `"thrown"`. Stdlib kinds (v3.0): `"io_error"`, `"parse_error"`, `"type_error"`, `"value_error"`, `"math_error"`, `"path_error"`, `"internal_error"`. |
+| `err.payload` | any | Original thrown value for non-string throws; `nil` for runtime errors and string throws. **Always present** (never absent). |
 | `err.path` | string | Source file path where the error occurred; empty string if unavailable. |
-| `err.line` | number | Source line number; `0` if unavailable. |
-| `err.column` | number | Source column number; `0` if unavailable. |
+| `err.line` | int | Source line number; `0` if unavailable. |
+| `err.column` | int | Source column number; `0` if unavailable. |
 | `err.stack` | list | Stack trace as a list of strings (one entry per frame). |
 
 All explicit `throw` statements set `err.kind = "thrown"`, regardless of value type.

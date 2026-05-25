@@ -512,11 +512,21 @@ print(read_file("{out_path}"))
             exit_code = lang.main(["nodus", "--help"])
         output = buf.getvalue()
         self.assertEqual(exit_code, 0)
-        self.assertIn("nodus check", output)
-        self.assertIn("nodus fmt", output)
-        self.assertIn("--trace", output)
-        self.assertIn("--trace-limit", output)
-        self.assertIn("--project-root", output)
+        # Global help shows grouped command names with short descriptions
+        self.assertIn("run", output)
+        self.assertIn("check", output)
+        self.assertIn("fmt", output)
+        self.assertIn("repl", output)
+        # Global help hints at per-command help for flags
+        self.assertIn("--help", output)
+        # Per-command flags are in 'nodus run --help', not the global help
+        buf2 = io.StringIO()
+        with redirect_stdout(buf2):
+            lang.main(["nodus", "run", "--help"])
+        run_help = buf2.getvalue()
+        self.assertIn("--trace", run_help)
+        self.assertIn("--trace-limit", run_help)
+        self.assertIn("--project-root", run_help)
 
     def test_version_consistency(self):
         self.assertTrue(lang.VERSION.startswith("Nodus "))

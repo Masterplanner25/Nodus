@@ -382,16 +382,12 @@ TESTED EXAMPLES (10 total — matches code block count)
 9. error_demo.nd — nodus run → "Name error at ...2:7: Undefined variable: y"
 10. nodus check error_demo.nd → "OK" (confirms parse-only)
 
-BEHAVIORAL FINDINGS (bugs or surprises discovered during testing)
-F1: 'else if' is not valid syntax — parser error: "Expected '{', got 'if'".
-    Must use nested 'if' inside 'else {}'. Not documented in LANGUAGE_SPEC.
-    Worked around in guide by showing nested form.
-F2: {} literal with unquoted identifier keys tries to evaluate identifiers
-    as variable expressions, not string keys. { name: "Alice" } fails with
-    "Undefined variable: name". Map literals require quoted string keys:
-    { "name": "Alice" }. LANGUAGE_SPEC shows { key: value } which implies
-    bare identifiers work — this is misleading. Filed for review.
-F3: imports inside function bodies fail with "Undefined variable: <module>"
-    at call time. Imports must be at module top level. Workaround: shown in
-    math_utils.nd example with top-level import.
+BEHAVIORAL FINDINGS (historical — tested against v2.1.1; resolved in v3.0)
+F1: 'else if' was not valid syntax in v2.x. RESOLVED in v3.0: `else if` is
+    now supported directly.
+F2: In v2.x, `{ name: "Alice" }` tried to evaluate `name` as a variable and
+    failed. CHANGED in v3.0: `{ name: "Alice" }` with a bare identifier is
+    now a record literal. For maps, quote the key: `{ "name": "Alice" }`.
+F3: Imports inside function bodies silently failed in v2.x. RESOLVED in v3.0
+    (BUG-031 fix): import errors in function bodies now propagate correctly.
 -->

@@ -374,7 +374,7 @@ unbounded recursion vs. expected deep nesting.
 ---
 
 <!--
-TESTED COMMANDS (all run against nodus-lang v2.1.1 dev source):
+TESTED COMMANDS (originally run against nodus-lang v2.1.1; reviewed for v3.0):
 
 01: nodus check hello.nd                 → "OK"
 02: nodus check syntax_err.nd            → "Syntax error at ...:2:9: Unexpected character '@'"  exit 1
@@ -391,15 +391,15 @@ TESTED COMMANDS (all run against nodus-lang v2.1.1 dev source):
 13: nodus run err_fields.nd              → err.line=7, err.stack[0] shows at inner, err.stack[1] shows called from outer
 14: nodus run print_debug.nd             → per-item debug output with type annotations
 
-BEHAVIORAL FINDINGS (filed as v2.2 issues):
+BEHAVIORAL FINDINGS:
 F32: `nodus debug --help` outputs "File not found: --help" instead of help text.
      BUG-001/002 fixed --help for check/ast/dis in v2.1.0; debug was missed.
-     Filed as BUG-047 (#48).
+     Filed as BUG-047 (#48). RESOLVED in v3.0.
 
 F33: Stack overflow trace prints all 10,000 frames with no depth cap (~800 KB stderr).
      Output is truncated by the terminal, not by Nodus. Should cap at ~20 frames
      with "... (N more frames)" summary, matching Python/Node.js convention.
-     Filed as BUG-048 (#49).
+     Filed as BUG-048 (#49). RESOLVED in v3.0 (stack overflow trace now truncated).
 
 KNOWN LIMITATION (pre-existing, not filed):
 F27: --trace-imports only fires on cold cache (module_loader bypasses resolve_import()

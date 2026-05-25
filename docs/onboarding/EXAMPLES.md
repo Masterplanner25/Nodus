@@ -18,4 +18,4 @@ contains tested, operational guides with verified code examples:
 - [embedding-nodus.md](../guide/embedding-nodus.md) — NodusRuntime, sandbox, register_function
 - [workflows-and-tasks.md](../guide/workflows-and-tasks.md) — workflow/goal DSL, steps, state
 
-All examples in those files were tested against nodus-lang v2.1.1.
+All examples in those files were tested against nodus-lang v3.0.

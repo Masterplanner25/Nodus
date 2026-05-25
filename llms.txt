@@ -17,18 +17,26 @@ Nodus is a scripting language and distributed workflow runtime. It compiles sour
 
 ## User guide
 
-Operational guides for writing, debugging, and embedding Nodus — all tested against v2.1.1:
+Operational guides for writing, debugging, and embedding Nodus — all tested against v3.0:
 
 - [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
-- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers (float-only), strings, lists, maps, records, nil, functions as values
-- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, error patterns
+- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers (float and int), strings, lists, maps, records, nil, functions as values, integer type (42i), map/record disambiguation
+- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference (VM kinds and stdlib kinds), returned-vs-thrown pattern
 - [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, bare vs relative paths, stdlib modules, resolution
-- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete function reference for all std: modules
+- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete function reference for all std: modules (v3.0)
 - [docs/guide/working-with-maps.md](docs/guide/working-with-maps.md): Map creation, bracket access, has_key, keys/values, accumulation, map vs record
-- [docs/guide/working-with-json.md](docs/guide/working-with-json.md): json.parse (returns maps since v2.1.0), stringify, nested access
-- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check limitations, --dump-bytecode, interactive debugger
+- [docs/guide/working-with-json.md](docs/guide/working-with-json.md): json.parse (returns maps), stringify, nested access, json.parse_int
+- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check limitations, --dump-bytecode, interactive debugger, --trace-errors for stdlib errors
 - [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, allowed_paths sandbox, register_function, type marshaling
 - [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+
+## Migration
+
+- [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes from v2.x to v3.0, what does not break, non-breaking v2.2 improvements
+
+## Policy
+
+- [docs/policy/error-surfaces.md](docs/policy/error-surfaces.md): Which stdlib surfaces replace Python errors with Nodus err records, the Replace contract, --trace-errors escape hatch
 
 ## Creator
 
@@ -48,3 +56,5 @@ Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave
 - **Infinity Algorithm** — the execution model Nodus implements as a first-class language construct, expressed through workflows, goals, and task graphs.
 - **NodusRuntime** — the public embedding API (`from nodus import NodusRuntime`) for running Nodus scripts from Python host applications.
 - **Task graph** — a persistent, resumable directed execution graph used by the workflow and goal DSLs.
+- **Integer type (v3.0)** — `42i` literals produce `int` values; `type(42i)` returns `"int"`. Plain `42` is still a float. Integer stdlib functions live in `std:math` (`parse_int`, `to_int`, `idiv`, etc.).
+- **Returned err records (v3.0)** — `std:fs` and `std:json` functions return err records on failure instead of throwing. Check with `type(result) == "error"`. Stdlib err.kind values: `io_error`, `parse_error`, `type_error`, `value_error`, `math_error`, `path_error`, `internal_error`.

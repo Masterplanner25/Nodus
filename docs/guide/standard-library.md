@@ -1,12 +1,12 @@
 # Standard Library Reference
 
 This file covers every built-in function and every `std:` module available
-in Nodus v2.1.0. Built-ins require no import. Standard modules are imported
+in Nodus v3.0. Built-ins require no import. Standard modules are imported
 with `import "std:<name>" as <alias>`.
 
 If you haven't read [types-and-values.md](types-and-values.md) yet, do that
 first — every return type and error condition here assumes you understand the
-record/map distinction and float-only numbers.
+record/map distinction and the two numeric kinds (`number` and `int`).
 
 ---
 
@@ -34,15 +34,17 @@ These functions are always available. No import needed.
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `type(x)` | `string` | Type name: `"nil"`, `"bool"`, `"number"`, `"string"`, `"list"`, `"map"`, `"record"`, `"function"` |
+| `type(x)` | `string` | Type name: `"nil"`, `"bool"`, `"number"`, `"int"`, `"string"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"` |
 | `str(x)` | `string` | String representation of any value |
 | `len(x)` | `number` | Length of a list or string (returns a float) |
 
 ```nd
 print(type(42))
+print(type(42i))
 print(type("hello"))
 print(type([1, 2, 3]))
 print(str(3.14))
+print(str(42i))
 print(len([10, 20, 30]))
 print(len("hello"))
 ```
@@ -51,15 +53,20 @@ Output:
 
 ```
 number
+int
 string
 list
 3.14
+42
 3.0
 5.0
 ```
 
-`len` always returns a float. `str(3.14)` returns `"3.14"`; `str(10.0)` returns
-`"10.0"` — there is no way to strip the `.0` in v2.1.0.
+`type(x)` returns `"int"` for integer values and `"number"` for floats.
+`type(x)` returns `"error"` for err records returned by stdlib functions.
+`len` always returns a float. `str(42i)` returns `"42"` (no `.0`); `str(10.0)`
+returns `"10.0"`. Use integer literals or `math.to_int` to get whole-number output
+without the `.0`.
 
 ### Output
 
@@ -289,12 +296,13 @@ import "std:json" as json
 
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
-| `parse` | `(s)` | `map` or `list` | Parse a JSON string |
-| `stringify` | `(value)` | `string` | Serialize a map or list to JSON |
+| `parse` | `(s)` | `map`, `list`, or err record | Parse a JSON string; returns `parse_error` err record on invalid JSON |
+| `stringify` | `(value)` | `string` or err record | Serialize a value to JSON; returns `type_error` err record for non-serializable values |
+| `parse_int` | `(s)` | `int` or err record | Parse a decimal string as an arbitrary-precision integer |
 
 `json.parse` always returns a **map** when the JSON root is an object, and a
 **list** when the JSON root is an array. In v2.0.0, `parse` returned a record;
-v2.1.0 changed this to a map (breaking change). Code using dot-access on parsed
+v2.1.0+ changed this to a map (breaking change). Code using dot-access on parsed
 JSON — e.g. `data.name` — will fail with `Field access is only supported on
 records`. Use bracket-access: `data["name"]`.
 
@@ -334,7 +342,7 @@ Output:
 
 ```
 {"name": "bob", "active": true}
-[1.0, 2.0, 3.0]
+[1, 2, 3]
 ```
 
 For optional field access patterns, use `has_key` before indexing:
@@ -356,6 +364,65 @@ Output:
 no role set
 ```
 
+### json.parse errors
+
+`json.parse` returns a `parse_error` err record on invalid JSON (it does not
+throw). The error message is in Nodus voice with line and column:
+
+```nd
+import "std:json" as json
+
+let r = json.parse("{bad json}")
+print(type(r))
+print(r.kind)
+print(r.message)
+```
+
+Output:
+
+```
+error
+parse_error
+invalid JSON at line 1 column 2: expected property name
+```
+
+### json.parse_int — large integers without precision loss
+
+`json.parse_int` parses a decimal integer string into an arbitrary-precision
+`int`. Use it when you need to read JSON integer values that exceed float
+precision (> 2^53):
+
+```nd
+import "std:json" as json
+
+print(json.parse_int("9007199254740993"))
+print(type(json.parse_int("42")))
+```
+
+Output:
+
+```
+9007199254740993
+int
+```
+
+`json.parse_int` returns a `parse_error` err record for non-integer strings:
+
+```nd
+import "std:json" as json
+
+let r = json.parse_int("1e9")
+print(r.kind)
+print(r.message)
+```
+
+Output:
+
+```
+parse_error
+not an integer (scientific notation): "1e9"
+```
+
 ---
 
 ## 5. std:math
@@ -364,6 +431,8 @@ no role set
 import "std:math" as math
 ```
 
+### Float operations
+
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
 | `abs` | `(n)` | `number` | Absolute value |
@@ -371,7 +440,7 @@ import "std:math" as math
 | `max` | `(a, b)` | `number` | Larger of two numbers |
 | `floor` | `(n)` | `number` | Round down to nearest integer-valued float |
 | `ceil` | `(n)` | `number` | Round up to nearest integer-valued float |
-| `sqrt` | `(n)` | `number` | Square root; runtime error if `n < 0` |
+| `sqrt` | `(n)` | `number` | Square root; returns `value_error` err if `n < 0` |
 | `random` | `()` | `number` | Pseudo-random float in `[0, 1)` |
 
 ```nd
@@ -396,8 +465,53 @@ Output:
 5.0
 ```
 
-All functions return floats. `floor` and `ceil` return whole-number floats
-(`3.0`, `4.0`), not strings. `math.sqrt(-1)` raises a runtime error.
+All float operations return `number`. `floor` and `ceil` return whole-number
+floats (`3.0`, `4.0`), not strings.
+
+### Integer operations
+
+| Function | Signature | Returns | Description |
+|----------|-----------|---------|-------------|
+| `parse_int` | `(s)` | `int` or err | Parse a decimal string as arbitrary-precision integer |
+| `to_int` | `(n)` | `int` | Truncate a float to integer (toward zero) |
+| `to_float` | `(n)` | `number` | Convert an integer to float |
+| `is_int` | `(x)` | `bool` | `true` if `x` is an `int` value |
+| `idiv` | `(a, b)` | `int` or err | Integer division, truncating toward zero; both args must be `int` |
+
+```nd
+import "std:math" as math
+
+print(math.parse_int("42"))       // 42
+print(math.parse_int("-100"))     // -100
+print(type(math.parse_int("5"))) // int
+print(math.to_int(3.7))          // 3   (truncates toward zero)
+print(math.to_int(-3.7))         // -3
+print(math.to_float(5i))         // 5.0
+print(math.is_int(3i))           // true
+print(math.is_int(3.0))          // false
+print(math.idiv(7i, 2i))         // 3
+print(math.idiv(-7i, 2i))        // -3  (truncates toward zero, not floor)
+```
+
+Output:
+
+```
+42
+-100
+int
+3
+-3
+5.0
+true
+false
+3
+-3
+```
+
+`math.parse_int` returns a `parse_error` err record when the string is not a
+valid integer (including decimal strings or scientific notation). `math.idiv`
+returns a `type_error` err if either argument is not an `int`, and a
+`math_error` err for division by zero.
 
 ---
 
@@ -441,8 +555,32 @@ list
 ```
 
 All filesystem operations are subject to the VM's path-sandboxing policy.
-If the runtime is configured with a restricted path, operations outside
-that path raise a runtime error.
+Operations outside the allowed path raise a `sandbox` runtime error (thrown,
+not returned as an err record).
+
+### fs error records
+
+When a filesystem operation fails for an I/O reason, the function **returns**
+an `io_error` err record. It does not throw. The message is in Nodus voice:
+
+| Failure | err.message |
+|---------|------------|
+| File does not exist | `file not found: "/path"` |
+| Permission denied | `permission denied: "/path"` |
+| Path is a directory, not a file | `expected a file, got a directory: "/path"` |
+| File is not valid UTF-8 | `file is not valid UTF-8: "/path"` |
+| Directory does not exist | `directory not found: "/path"` |
+| Path is a file, not a directory | `expected a directory, got a file: "/path"` |
+| Parent directory missing on write | `cannot write file, parent directory does not exist: "/path"` |
+
+```nd
+import "std:fs" as fs
+
+let content = fs.read("/missing/file.txt")
+print(type(content))    // error
+print(content.kind)     // io_error
+print(content.message)  // file not found: "/missing/file.txt"
+```
 
 ---
 
@@ -657,18 +795,24 @@ false
 
 `rt.typeof` differs from the builtin `type()`:
 
-| Value | `type(x)` | `rt.typeof(x)` |
-|-------|-----------|----------------|
-| `42` (whole float) | `"number"` | `"int"` |
-| `3.14` (fractional float) | `"number"` | `"float"` |
-| `"hello"` | `"string"` | `"string"` |
-| `true` | `"bool"` | `"bool"` |
-| `nil` | `"nil"` | `"nil"` |
-| `[1, 2]` | `"list"` | `"list"` |
-| `{ "a": 1 }` | `"map"` | `"map"` |
+| Value | `type(x)` | `rt.typeof(x)` | Notes |
+|-------|-----------|----------------|-------|
+| `42` (float) | `"number"` | `"float"` | Plain number literals are floats |
+| `3.14` (float) | `"number"` | `"float"` | |
+| `42i` (integer) | `"int"` | `"int"` | Integer literals have `i` suffix |
+| `"hello"` | `"string"` | `"string"` | |
+| `true` | `"bool"` | `"bool"` | |
+| `nil` | `"nil"` | `"nil"` | |
+| `[1, 2]` | `"list"` | `"list"` | |
+| `{ "a": 1 }` | `"map"` | `"map"` | |
 
 Use `type()` for type checks in application logic. Use `rt.typeof()` when
-you need to distinguish whole-number floats from fractional floats.
+you need to distinguish whole-number floats from fractional floats, or when
+you need the granular `"float"` vs `"int"` distinction.
+
+Note: `type()` returns `"int"` for integer values and `"number"` for both
+whole-number and fractional floats. `rt.typeof()` returns `"float"` for all
+floats (including `42.0`) and `"int"` for integer values.
 
 ### Timing and stack
 

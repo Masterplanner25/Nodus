@@ -115,7 +115,7 @@ evaluation.
 
 ## Version
 
-Release target: `2.1.1`
+Release target: `3.0.0`
 
 ## Clean Build Preparation
 
@@ -177,10 +177,12 @@ nodus run invalid_import.nd
 
 Expected outcomes:
 
-- `nodus --version` reports `2.1.1`
+- `nodus --version` reports `3.0.0`
 - `nodus repl` starts successfully from the installed package
 - `nodus run main.nd` runs only the explicit file
 - `nodus run` runs only `src/main.nd` inside a project root
 - stdlib imports resolve from the installed wheel
 - circular imports fail with a clear chain message instead of a recursion error
 - invalid imports fail with a structured import error
+- `fs.read` on a missing file returns an err record (kind `"io_error"`), does not throw
+- integer literals (`42i`) parse and `type(42i)` returns `"int"`

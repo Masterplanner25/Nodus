@@ -643,7 +643,16 @@ class Parser:
 
         if not self.at("}"):
             while True:
+                key_start = self.peek()
                 key = self.expr()
+                # Bare single identifier in map key position is a parse error.
+                if isinstance(key, Var) and key_start.kind == "ID":
+                    self.error(
+                        f'bare identifier "{key.name}" cannot be a map key.\n'
+                        f'  - to use the variable\'s value as the key, write: {{({key.name}): ...}}\n'
+                        f'  - to use the literal string "{key.name}" as the key, write: {{"{key.name}": ...}}',
+                        key_start,
+                    )
                 self.eat(":")
                 self.skip_seps()
                 value = self.expr()
@@ -667,6 +676,12 @@ class Parser:
 
         if not self.at("}"):
             while True:
+                if self.at("STR"):
+                    self.error(
+                        'cannot mix quoted and bare-identifier keys in the same literal.\n'
+                        '  - to use a map literal with string keys, quote all keys: {"key": value, ...}\n'
+                        '  - to use a record literal with field names, use bare identifiers: {field: value, ...}',
+                    )
                 key = self.eat("ID").val
                 self.eat(":")
                 self.skip_seps()
@@ -799,6 +814,19 @@ class Parser:
             return self.mark(ListLit(items), tok)
 
         if self.at("{"):
+            # Lookahead: if first key is exactly "ID :" → record literal context.
+            # Anything else (quoted key, paren, complex expression) → map literal.
+            look = self.i + 1
+            while look < len(self.toks) and self.toks[look].kind == "SEP":
+                look += 1
+            first_tok = self.toks[look] if look < len(self.toks) else None
+            look2 = look + 1
+            while look2 < len(self.toks) and self.toks[look2].kind == "SEP":
+                look2 += 1
+            second_tok = self.toks[look2] if look2 < len(self.toks) else None
+            if (first_tok and first_tok.kind == "ID"
+                    and second_tok and second_tok.kind == ":"):
+                return self.parse_record_literal()
             return self.parse_map_literal()
 
         if self.at("RECORD"):

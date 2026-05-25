@@ -55,4 +55,4 @@ Primary extension: `.nd`
 - `nodus publish [--registry <url>] [--registry-token <token>]`
 
 ## Current Stage
-v2.1.0 — stable release. Stack VM, full stdlib, coroutines, task graphs, workflows, goals, REPL, debugger, and `NodusRuntime` embedding API are all stable. Registry publish/auth ecosystem complete.
+v3.0 — breaking-change release. Adds integer type (`42i`), record-literal disambiguation (`{key: val}` is a record, `{"key": val}` is a map), stdlib error-return semantics (`fs.*`/`json.*` return err records instead of throwing), and cleaned-up err.kind taxonomy. See `docs/migration/v2-to-v3.md` for the migration guide. Stack VM, full stdlib, coroutines, task graphs, workflows, goals, REPL, debugger, and `NodusRuntime` embedding API are all stable.

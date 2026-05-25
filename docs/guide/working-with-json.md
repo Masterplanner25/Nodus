@@ -354,20 +354,24 @@ bob (guest)
 
 ## 6. Edge cases and gotchas
 
-### Malformed JSON raises a runtime error
+### Malformed JSON returns an err record
+
+In v3.0, `json.parse` **returns** an err record on bad input — it does not
+throw. Check with `type(result) == "error"`:
 
 ```nd
 import "std:json" as json
-json.parse("{not valid}")
+
+let result = json.parse("{not valid}")
+if (type(result) == "error") {
+    print(result.kind)     // parse_error
+    print(result.message)  // invalid JSON at line 1 column 2: expected property name
+}
 ```
 
-```
-Runtime error at script.nd:2:11: json_parse failed: Expecting property name enclosed in double quotes
-```
-
-An empty string produces `json_parse failed: Expecting value`. Both errors
-come from Python's json module verbatim. Wrap with `try/catch` to handle
-bad input — see [error-handling.md](error-handling.md) (coming soon).
+An empty string produces `kind="parse_error"` with message
+`"invalid JSON at line 1 column 1: expected a value"`. See
+[error-handling.md](error-handling.md) for the full returned-err-record pattern.
 
 ### Accessing a missing key raises, not returns nil
 
@@ -402,8 +406,8 @@ encoders are not supported.
   function reference
 - [types-and-values.md — Records vs Maps](types-and-values.md#6-records-vs-maps--the-distinction) —
   the distinction this file depends on
-- [error-handling.md](error-handling.md) (coming soon) — wrapping
-  `json.parse` in `try/catch` for malformed-input recovery
+- [error-handling.md](error-handling.md) — returned err-record pattern for
+  `json.parse` and `fs.read` error handling
 
 ---
 
@@ -426,17 +430,24 @@ TESTED EXAMPLES (16 total — files in /tmp/json-tests/)
 15. roundtrip.nd — float round-trip: stringify removes .0 confirmed
 16. pattern_transform.nd — col.map/filter on parsed array confirmed
 
-VERBATIM ERROR MESSAGES CAPTURED (3):
+VERBATIM ERROR MESSAGES — v2.1.1 (historical; changed in v3.0):
 - Migration: "Type error at ...: Field access is only supported on records"
 - Malformed: "Runtime error at ...: json_parse failed: Expecting property name enclosed in double quotes"
 - Missing key: "Key error at ...: Missing map key: "role""
 
-BEHAVIORAL FINDINGS (new — not filing as bugs, documenting only):
+v3.0 ERROR FORMAT (updated):
+- json.parse error: returns err record with kind="parse_error", Nodus-voice message
+  e.g. "invalid JSON at line 1 column 2: expected property name"
+  No longer throws; no longer leaks Python json module text.
+
+BEHAVIORAL FINDINGS (historical — tested against v2.1.1):
 F16: json.stringify removes .0 from whole-number floats (42.0 → 42 in JSON output).
      This is correct JSON spec behavior, not a bug. Documented as a gotcha since
-     it differs from Nodus str() behavior.
+     it differs from Nodus str() behavior. Unchanged in v3.0.
 F17: json.stringify works on records, not just maps. LANGUAGE_SPEC says so but it's
      easy to miss. Confirmed: record { name: "alice", age: 30 } → {"name": "alice", "age": 30}.
-F18: Parse error format is "Runtime error: json_parse failed: ..." (Python json
-     module message verbatim). Not "JSON error" or "Parse error". Documented.
+     Unchanged in v3.0.
+F18: Parse error format was "Runtime error: json_parse failed: ..." (Python json
+     module message verbatim) in v2.1.1. CHANGED in v3.0: json.parse returns an
+     err record with kind="parse_error" and a Nodus-voice message. Does not throw.
 -->

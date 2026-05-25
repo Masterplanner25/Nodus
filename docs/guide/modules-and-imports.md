@@ -262,53 +262,43 @@ production
 > These are the import rules that produce non-obvious errors. Read them before
 > writing your first multi-file project.
 
-### Imports must be literal top-level statements
+### Import placement
 
-An import must appear at the top level of a file, not inside any block —
-not a function, not a `try/catch`, not an `if/else`.
+Imports work correctly at the top level of a file and inside function bodies
+and `if`/`else` blocks (fixed in v3.0). The recommended style is always
+top-level imports for clarity.
 
-**Function body** — fails at call time with a misleading "Undefined variable"
-error ([BUG-031, #32](https://github.com/Masterplanner25/Nodus/issues/32)):
+**Top-level (recommended):**
 
 ```nd
-// WRONG — import inside a function
+import "./helpers" as h
+
+fn do_work() {
+    return h.ping()
+}
+```
+
+**Function body and if/else — work in v3.0**, though top-level is preferred:
+
+```nd
+// Works in v3.0 — but prefer top-level imports
 fn do_work() {
     import "./helpers" as h
     return h.ping()
 }
-print(do_work())
 ```
 
-Output:
+### Imports inside `try/catch` are not catchable
 
-```
-Name error at main.nd:3:12: Undefined variable: h
-```
-
-The fix: move the import to the top of the file.
-
-**`if`/`else` block** — same failure, even at the file's top level:
-
-```nd
-// WRONG — import inside an if block
-if (flag) {
-    import "./helpers" as h
-    print(h.ping())    // Name error: Undefined variable: h
-}
-```
-
-### Imports inside `try/catch` are silently swallowed
-
-([BUG-042, #43](https://github.com/Masterplanner25/Nodus/issues/43)) — the
-import failure is not raised to the `catch` block. The alias is simply left
-undefined, and accessing it later raises a `"name"` error:
+Import errors inside a `try` block do not raise to the `catch` block. The
+alias is left undefined; accessing it later raises a `"name"` error:
 
 ```nd
 try {
     import "./helpers" as h
     print(h.ping())
 } catch err {
-    print(err.kind)       // name
+    print(err.kind)       // name  (not "import")
     print(err.message)    // Undefined variable: h
 }
 ```
@@ -320,7 +310,7 @@ name
 Undefined variable: h
 ```
 
-There is no way to detect a failed import from inside a script. See
+This is a known v3.1 bug. See
 [error-handling.md §6](error-handling.md#6-what-is-not-catchable).
 
 ### Cyclic imports are an error
