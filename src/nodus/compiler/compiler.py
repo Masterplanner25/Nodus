@@ -159,6 +159,17 @@ class Compiler:
             scope = scope.parent
         return False
 
+    def _in_nested_scope(self) -> bool:
+        """Return True when not at module root (inside a function, block, or loop body)."""
+        if self.symbols is None:
+            return False
+        scope = self.symbols.current
+        while scope:
+            if scope.kind in ("function", "block"):
+                return True
+            scope = scope.parent
+        return False
+
     def resolve_symbol(self, name: str) -> Symbol | None:
         if self.symbols is None:
             return None
@@ -532,6 +543,12 @@ class Compiler:
             return
 
         if isinstance(stmt, Import):
+            if self._in_nested_scope():
+                self.raise_syntax(
+                    "import statements must be at the top level of a module; "
+                    "move this import to the top of the file",
+                    node=stmt,
+                )
             return
 
         if isinstance(stmt, Comment):
