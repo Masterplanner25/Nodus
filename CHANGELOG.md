@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-05-25
+
+Patch release fixing two issues surfaced by the v3.0.1 independent stress-test
+eval: a patch closure failure (BUG-V31E-01, #75) and a new HIGH bug introduced
+by v3.0.1's `math.log` addition (BUG-V31E-02, #76).
+
 ### Fixed
 
 - **BUG-V31E-01 (#75):** `1I` (uppercase integer suffix) now reliably produces

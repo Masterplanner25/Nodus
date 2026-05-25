@@ -15,7 +15,8 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
   warnings pending migration verification. Re-evaluation deferred to v1.1.x.
 - **v2.1.0 (2026-05-24):** `json.parse` now returns maps (BREAKING from v2.0.0).
   Legacy `.tl` extension and `language.py` / `language.bat` launchers remain supported with warnings; no removal date set.
-- **v2.1.1 (2026-05-24, current):** `allowed_paths` sandbox now enforced for `std:fs` module calls (security fix, BUG-046). No deprecation or compatibility impact — scripts relying on the bypass were relying on a bug.
+- **v2.1.1 (2026-05-24):** `allowed_paths` sandbox now enforced for `std:fs` module calls (security fix, BUG-046). No deprecation or compatibility impact — scripts relying on the bypass were relying on a bug.
+- **v3.0.2 (2026-05-25, current):** `math.log_base` export removed; use `math.log(n, base)` instead. Patch release fixing BUG-V31E-01 (1I parse error) and BUG-V31E-02 (math.log argument order).
 
 ## Migration Path
 - Use `.nd` files for new code.
