@@ -6,7 +6,6 @@ from contextlib import redirect_stdout
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.runtime.diagnostics import LangSyntaxError, LangRuntimeError
 
 
 def run_program(src: str) -> list[str]:

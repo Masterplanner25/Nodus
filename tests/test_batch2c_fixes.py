@@ -2,10 +2,9 @@
 
 import io
 import os
-import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import redirect_stdout
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
@@ -121,7 +120,7 @@ class StackTraceCapTests(unittest.TestCase):
     """BUG-048: stack overflow trace must be capped at 20 frames."""
 
     def _make_deep_stack(self, depth: int) -> list[str]:
-        return [f"at recurse (script.nd:2:24)"] * depth + ["at <module> (script.nd:5:1)"]
+        return ["at recurse (script.nd:2:24)"] * depth + ["at <module> (script.nd:5:1)"]
 
     def test_format_error_caps_at_20_frames(self):
         from nodus.runtime.diagnostics import LangRuntimeError
@@ -129,7 +128,7 @@ class StackTraceCapTests(unittest.TestCase):
         err.stack = self._make_deep_stack(500)
         formatted = format_error(err)
         lines = formatted.splitlines()
-        stack_lines = [l for l in lines if l.strip().startswith("at ") or "more frames" in l]
+        stack_lines = [ln for ln in lines if ln.strip().startswith("at ") or "more frames" in ln]
         self.assertLessEqual(len(stack_lines), 21)  # 20 + summary line
 
     def test_format_error_shows_elided_count(self):

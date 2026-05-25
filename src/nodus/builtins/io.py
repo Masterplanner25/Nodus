@@ -1,7 +1,6 @@
 """I/O and filesystem builtin functions for the Nodus VM."""
 
 import os
-import sys
 
 from nodus.runtime.error_wrap import print_trace
 
@@ -50,7 +49,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'cannot read file: "{path}"')
         except Exception as exc:
             _trace("fs.read", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.read')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.read')
 
     def builtin_write_file(path, content):
         if not isinstance(path, str):
@@ -74,7 +73,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'cannot write file: "{path}"')
         except Exception as exc:
             _trace("fs.write", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.write')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.write')
         return None
 
     def builtin_exists(path):
@@ -88,7 +87,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'permission denied: "{path}"')
         except Exception as exc:
             _trace("fs.exists", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.exists')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.exists')
 
     def builtin_append_file(path, content):
         if not isinstance(path, str):
@@ -112,7 +111,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'cannot write file: "{path}"')
         except Exception as exc:
             _trace("fs.append", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.append')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.append')
         return None
 
     def builtin_mkdir(path):
@@ -135,7 +134,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'file system error: "{path}"')
         except Exception as exc:
             _trace("fs.mkdir", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.mkdir')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.mkdir')
         return None
 
     def builtin_list_dir(path):
@@ -158,7 +157,7 @@ def register(vm, registry) -> None:
             return vm.make_err("io_error", f'file system error: "{path}"')
         except Exception as exc:
             _trace("fs.list_dir", exc)
-            return vm.make_err("internal_error", f'unexpected internal error in fs.list_dir')
+            return vm.make_err("internal_error", 'unexpected internal error in fs.list_dir')
 
     def builtin_path_join(a, b):
         _ensure_path_string(a, "path_join(a, b)")

@@ -9,15 +9,12 @@ Covers:
 
 import io
 import os
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.tooling.runner import run_source
-from nodus.vm.vm import VM
 
 
 def run_program(src: str, *, trace_errors: bool = False) -> list[str]:
