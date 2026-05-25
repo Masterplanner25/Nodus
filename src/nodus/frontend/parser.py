@@ -293,7 +293,12 @@ class Parser:
             try_block = self.block()
             self.skip_seps()
             self.eat("CATCH")
-            catch_var = self.eat("ID").val
+            if self.at("("):
+                self.eat("(")
+                catch_var = self.eat("ID").val
+                self.eat(")")
+            else:
+                catch_var = self.eat("ID").val
             catch_block = self.block()
             finally_block = None
             self.skip_seps()

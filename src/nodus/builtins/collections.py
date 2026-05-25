@@ -114,7 +114,8 @@ def register(vm, registry) -> None:
             print_trace(func_name, exc)
 
     def builtin_json_parse(text):
-        vm.ensure_string(text, "json_parse(text)")
+        if not isinstance(text, str):
+            return vm.make_err("type_error", f"json.parse expects a string, got {vm.builtin_type(text)}")
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:

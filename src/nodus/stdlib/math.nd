@@ -45,3 +45,15 @@ fn is_int(n) {
 fn idiv(a, b) {
     return math_idiv(a, b)
 }
+
+fn log(n) {
+    return math_log(n)
+}
+
+fn log_base(n, base) {
+    return math_log(n, base)
+}
+
+fn pow(base_val, exp) {
+    return math_pow(base_val, exp)
+}

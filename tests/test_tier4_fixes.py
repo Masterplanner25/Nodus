@@ -14,7 +14,8 @@ class StdlibStackTraceTests(unittest.TestCase):
     """BUG-015: errors from stdlib functions report the user call site, not the stdlib file."""
 
     def test_stdlib_type_error_points_to_user_call(self):
-        src = 'import "std:math" as m\nm.sqrt(-1)'
+        # math.sqrt("bad") throws a type error; the error path must not point into stdlib
+        src = 'import "std:math" as m\nm.sqrt("bad")'
         r = _run(src)
         self.assertFalse(r["ok"])
         err = r.get("error", {})
@@ -22,11 +23,11 @@ class StdlibStackTraceTests(unittest.TestCase):
         self.assertNotIn("stdlib", path.replace("\\", "/"))
 
     def test_stdlib_error_line_is_user_call_line(self):
-        # sqrt(-1) is on line 2; error should report line 2, not a line inside math.nd
-        src = 'import "std:math" as m\nm.sqrt(-1)'
+        # math.sqrt("bad") is on line 2; error must report line 2, not inside math.nd
+        src = 'import "std:math" as m\nm.sqrt("bad")'
         r = _run(src)
         err = r.get("error", {})
-        # Line must be 2 (user call) not something much larger (inside math.nd)
+        # Line must be 2 (user call) not something inside math.nd
         self.assertEqual(err.get("line"), 2)
 
     def test_stdlib_strings_error_points_to_user_call(self):

@@ -1,6 +1,7 @@
 """I/O and filesystem builtin functions for the Nodus VM."""
 
 import os
+import pathlib
 
 from nodus.runtime.error_wrap import print_trace
 
@@ -137,6 +138,52 @@ def register(vm, registry) -> None:
             return vm.make_err("internal_error", 'unexpected internal error in fs.mkdir')
         return None
 
+    def builtin_fs_mkdir(path):
+        if not isinstance(path, str):
+            vm.runtime_error("type", "fs.mkdir(path) expects a string path")
+        vm._ensure_path_allowed(path, "fs.mkdir(path)")
+        try:
+            os.makedirs(path, exist_ok=False)
+        except FileExistsError as exc:
+            _trace("fs.mkdir", exc)
+            return vm.make_err("io_error", f'path already exists: "{path}"')
+        except PermissionError as exc:
+            _trace("fs.mkdir", exc)
+            return vm.make_err("io_error", f'permission denied: "{path}"')
+        except FileNotFoundError as exc:
+            _trace("fs.mkdir", exc)
+            return vm.make_err("io_error", f'cannot create directory, parent does not exist: "{path}"')
+        except OSError as exc:
+            _trace("fs.mkdir", exc)
+            return vm.make_err("io_error", f'file system error: "{path}"')
+        except Exception as exc:
+            _trace("fs.mkdir", exc)
+            return vm.make_err("internal_error", 'unexpected internal error in fs.mkdir')
+        return None
+
+    def builtin_fs_delete(path):
+        if not isinstance(path, str):
+            vm.runtime_error("type", "fs.delete(path) expects a string path")
+        vm._ensure_path_allowed(path, "fs.delete(path)")
+        try:
+            os.remove(path)
+        except FileNotFoundError as exc:
+            _trace("fs.delete", exc)
+            return vm.make_err("io_error", f'file not found: "{path}"')
+        except IsADirectoryError as exc:
+            _trace("fs.delete", exc)
+            return vm.make_err("io_error", f'cannot delete a directory with fs.delete: "{path}"')
+        except PermissionError as exc:
+            _trace("fs.delete", exc)
+            return vm.make_err("io_error", f'permission denied: "{path}"')
+        except OSError as exc:
+            _trace("fs.delete", exc)
+            return vm.make_err("io_error", f'file system error: "{path}"')
+        except Exception as exc:
+            _trace("fs.delete", exc)
+            return vm.make_err("internal_error", 'unexpected internal error in fs.delete')
+        return None
+
     def builtin_list_dir(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "list_dir(path) expects a string path")
@@ -181,6 +228,33 @@ def register(vm, registry) -> None:
         base = os.path.basename(path)
         return os.path.splitext(base)[0]
 
+    def builtin_path_relative(p, base):
+        _ensure_path_string(p, "path_relative(p, base)")
+        _ensure_path_string(base, "path_relative(p, base)")
+        p_abs = os.path.isabs(p)
+        base_abs = os.path.isabs(base)
+        if p_abs != base_abs:
+            return vm.make_err("path_error", f'cannot mix absolute and relative paths: "{p}" and "{base}"')
+        try:
+            return os.path.relpath(p, base)
+        except ValueError as exc:
+            _trace("path.relative", exc)
+            return vm.make_err("path_error", f'cannot compute relative path: "{p}" from "{base}"')
+        except Exception as exc:
+            _trace("path.relative", exc)
+            return vm.make_err("path_error", f'path error in path.relative: {exc}')
+
+    def builtin_path_absolute(p):
+        _ensure_path_string(p, "path_absolute(p)")
+        try:
+            return os.path.abspath(p)
+        except (OSError, ValueError) as exc:
+            _trace("path.absolute", exc)
+            return vm.make_err("path_error", f'cannot resolve absolute path: {exc}')
+        except Exception as exc:
+            _trace("path.absolute", exc)
+            return vm.make_err("path_error", f'path error in path.absolute: {exc}')
+
     registry.add("print", 1, builtin_print)
     registry.add("input", 1, builtin_input)
     registry.add("read_file", 1, builtin_read_file)
@@ -195,3 +269,7 @@ def register(vm, registry) -> None:
     registry.add("path_basename", 1, builtin_path_basename)
     registry.add("path_ext", 1, builtin_path_ext)
     registry.add("path_stem", 1, builtin_path_stem)
+    registry.add("fs_mkdir", 1, builtin_fs_mkdir)
+    registry.add("fs_delete", 1, builtin_fs_delete)
+    registry.add("path_relative", 2, builtin_path_relative)
+    registry.add("path_absolute", 1, builtin_path_absolute)

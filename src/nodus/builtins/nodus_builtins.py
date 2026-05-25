@@ -103,6 +103,8 @@ BUILTIN_NAMES = {
     "math_to_float",
     "math_is_int",
     "math_idiv",
+    "math_log",
+    "math_pow",
     "read_file",
     "write_file",
     "exists",
@@ -115,6 +117,10 @@ BUILTIN_NAMES = {
     "path_basename",
     "path_ext",
     "path_stem",
+    "fs_mkdir",
+    "fs_delete",
+    "path_relative",
+    "path_absolute",
 }
 
 

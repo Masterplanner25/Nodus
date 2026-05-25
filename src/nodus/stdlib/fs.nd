@@ -26,3 +26,11 @@ fn ensure_dir(path) {
 fn exists_path(path) {
     return path_exists(path)
 }
+
+fn mkdir(path) {
+    return fs_mkdir(path)
+}
+
+fn delete(path) {
+    return fs_delete(path)
+}

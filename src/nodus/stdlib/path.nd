@@ -23,3 +23,11 @@ fn ext(path) {
 fn stem(path) {
     return path_stem(path)
 }
+
+fn relative(p, base) {
+    return path_relative(p, base)
+}
+
+fn absolute(p) {
+    return path_absolute(p)
+}

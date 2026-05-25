@@ -29,8 +29,33 @@ def register(vm, registry) -> None:
     def builtin_math_sqrt(value):
         number = vm.ensure_number(value, "math_sqrt(x)")
         if number < 0:
-            vm.runtime_error("runtime", "math_sqrt(x) expects a non-negative number")
+            return vm.make_err("value_error", f"math.sqrt requires a non-negative number, got {number}")
         return _math.sqrt(number)
+
+    def builtin_math_log(value, base=None):
+        vm.ensure_number(value, "math.log(n)")
+        if value <= 0:
+            return vm.make_err("value_error", f"math.log requires a positive number, got {value}")
+        if base is None:
+            return _math.log(value)
+        vm.ensure_number(base, "math.log(n, base)")
+        if base <= 0 or base == 1:
+            return vm.make_err("value_error", f"math.log base must be positive and not 1, got {base}")
+        try:
+            return _math.log(value, base)
+        except (ValueError, ZeroDivisionError) as exc:
+            return vm.make_err("value_error", f"math.log error: {exc}")
+
+    def builtin_math_pow(base_val, exp):
+        vm.ensure_number(base_val, "math.pow(base, exp)")
+        vm.ensure_number(exp, "math.pow(base, exp)")
+        try:
+            result = _math.pow(base_val, exp)
+        except (ValueError, OverflowError) as exc:
+            return vm.make_err("math_error", f"math.pow error: {exc}")
+        if _math.isinf(result):
+            return vm.make_err("math_error", "math.pow overflow: result is infinite")
+        return result
 
     def builtin_math_random():
         return random.random()
@@ -82,6 +107,8 @@ def register(vm, registry) -> None:
     registry.add("math_floor", 1, builtin_math_floor)
     registry.add("math_ceil", 1, builtin_math_ceil)
     registry.add("math_sqrt", 1, builtin_math_sqrt)
+    registry.add("math_log", (1, 2), builtin_math_log)
+    registry.add("math_pow", 2, builtin_math_pow)
     registry.add("math_random", 0, builtin_math_random)
     registry.add("math_parse_int", 1, builtin_math_parse_int)
     registry.add("math_to_int", 1, builtin_math_to_int)
