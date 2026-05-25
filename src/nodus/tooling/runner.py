@@ -840,6 +840,11 @@ def run_workflow_code(
         try:
             workflow = _resolve_workflow_from_vm(vm, workflow_name)
             workflow_result = vm.builtin_run_workflow(workflow)
+            if isinstance(workflow_result, dict) and "error" in workflow_result:
+                raise NodusRuntimeError(
+                    workflow_result["error"],
+                    filename=normalize_filename(filename),
+                )
         except Exception as err:
             return (
                 _error_result(
