@@ -152,6 +152,31 @@ try {
 is still safe (payload is nil, not absent). If your code avoids `err.payload`
 on runtime errors, you can simplify that code.
 
+> **Breaking change — `has_key(err, key)` crashes in v3.0, it does not silently return a wrong value.**
+>
+> `has_key` operates on maps only. In v3.0, err records are the `Record` type,
+> not maps. Calling `has_key(err, "payload")` throws a runtime type error:
+>
+> ```
+> Runtime error: has_key(map, key) expects a map
+> ```
+>
+> Any v2.x code using `has_key` on err records **crashes** in v3.0 without surrounding
+> try/catch. **Audit your codebase for `has_key(err, ...)` calls before migrating.**
+>
+> Replace with field access or nil check:
+>
+> ```nd
+> // v2.x (crashes in v3.0 — has_key does not work on err records)
+> if (has_key(err, "payload")) { ... }
+>
+> // v3.0 equivalent
+> if (err.payload != nil) { ... }
+>
+> // Check err type first, then access payload
+> if (type(result) == "error" and result.payload != nil) { ... }
+> ```
+
 ### 6. Integer type: `type()` returns `"int"` for `42i` values
 
 **v2.x behavior:** No integer type. All numbers were floats; `type(42)` returned

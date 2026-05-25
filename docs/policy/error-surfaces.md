@@ -70,6 +70,29 @@ it does not throw.
 | `path.relative(p, base)` | `path_error` |
 | `path.absolute(p)` | `path_error` |
 
+### Sandbox checks take precedence
+
+Sandbox validation fires **before** stdlib error wrapping. If a path argument
+fails the sandbox check (e.g., it escapes the project root or is outside
+`allowed_paths`), the function produces a sandbox error regardless of whether
+the underlying file exists or what kind of I/O error would have occurred.
+
+```nd
+import "std:fs" as fs
+
+// Absolute paths escape the project root sandbox:
+let r = fs.read("/etc/passwd")
+// -> Sandbox error: read_file blocked: path escapes project root
+// (NOT io_error, even though the file exists or doesn't)
+
+// Relative paths within the project root exercise the io_error path:
+let r2 = fs.read("data/missing.json")
+// -> err{kind: "io_error", message: "file not found: \"data/missing.json\""}
+```
+
+Use relative paths in examples that demonstrate io_error behavior. Absolute
+paths will hit the sandbox before reaching the Replace-wrapped I/O layer.
+
 ---
 
 ## 3. err.kind values for stdlib errors
@@ -131,9 +154,19 @@ normal output still goes to stdout.
 Example output when `--trace-errors` is active and `fs.read` fails:
 
 ```
-[trace-errors] in fs.read: FileNotFoundError
-  [Errno 2] No such file or directory: '/missing/file.txt'
+[trace-errors] in fs.read
+  underlying Python exception: FileNotFoundError
+  [Errno 2] No such file or directory: 'data/missing.txt'
+  Traceback:
+    Traceback (most recent call last):
+      File ".../nodus/builtins/io.py", line 31, in builtin_read_file
+        with open(path, "r", encoding="utf-8-sig") as f:
+    FileNotFoundError: [Errno 2] No such file or directory: 'data/missing.txt'
 ```
+
+The output includes the exception type, the exception message, and the full
+Python traceback. `err.message` in the Nodus script still contains only the
+Nodus-voice text.
 
 ---
 

@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## [Unreleased]
+## [Unreleased] — targeting v3.0.1
 
 ## [3.0.0] - 2026-05-25
 
@@ -84,8 +84,9 @@ and all breaking language changes into a single release. Migration guide:
   is a known v3.1 bug, documented in error-handling.md §6.
 - **`strings.is_blank` correctly returns `true` for whitespace-only strings.**
   Previously returned `false` for strings containing only spaces, tabs, or newlines.
-- **`path.join` now accepts a list of segments.** `path.join(["a", "b", "c"])`
-  is now supported in addition to the variadic form.
+- **`path.join` accepts a list of path segments.** `path.join(["a", "b", "c"])`
+  joins a list of strings into a path. The function takes a single list argument,
+  not variadic arguments.
 - **`path.ext` now returns the leading dot.** `path.ext("file.nd")` returns
   `".nd"` (previously returned `"nd"`).
 - **`utils.get(map, key, default)` added** — new function for safe map access
