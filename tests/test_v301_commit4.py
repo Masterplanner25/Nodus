@@ -2,6 +2,7 @@
 
 Covers:
 - BUG-E11: Lexer gives specific error for non-ASCII identifiers (#63)
+- BUG-E12: Uppercase 'I' integer suffix produces parse error, not name error (#64)
 - BUG-E14: Deprecated top-level run_source emits DeprecationWarning (#66)
 - BUG-E16: Import path resolution error message doesn't double .nd extension (#68)
 """
@@ -64,6 +65,28 @@ class NonAsciiIdentifierTests(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("Unexpected character", msg)
         self.assertNotIn("ASCII", msg)
+
+
+class UppercaseIntegerSuffixTests(unittest.TestCase):
+    """BUG-E12: 1I (uppercase I suffix) gives parse error, not a confusing name error."""
+
+    def test_uppercase_I_suffix_raises_syntax_error(self):
+        with self.assertRaises(LangSyntaxError) as ctx:
+            tokenize("let x = 1I")
+        msg = str(ctx.exception)
+        self.assertIn("lowercase", msg)
+
+    def test_uppercase_I_suffix_hints_at_lowercase(self):
+        with self.assertRaises(LangSyntaxError) as ctx:
+            tokenize("42I")
+        msg = str(ctx.exception)
+        self.assertIn("42i", msg)
+
+    def test_lowercase_i_suffix_still_works(self):
+        tokens = tokenize("42i")
+        int_toks = [t for t in tokens if t.kind == "NUM_INT"]
+        self.assertEqual(len(int_toks), 1)
+        self.assertEqual(int_toks[0].val, "42")
 
 
 class DeprecatedRunSourceTests(unittest.TestCase):

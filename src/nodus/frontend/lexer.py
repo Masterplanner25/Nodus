@@ -21,6 +21,7 @@ TOKEN_RE = re.compile(
   | (?P<COMMENT2>//.*)
   | (?P<NL>\n+)
   | (?P<STR>"(?:\\.|[^"\\])*")
+  | (?P<NUM_INT_BAD>\d+I)
   | (?P<NUM_INT>\d+i)
   | (?P<NUM>\d+(\.\d+)?([eE][+-]?\d+)?)
   | (?P<ID>[A-Za-z_][A-Za-z0-9_]*)
@@ -210,6 +211,12 @@ def tokenize(src: str) -> list[Tok]:
             line += len(text)
             col = 1
             continue
+        if kind == "NUM_INT_BAD":
+            raise LangSyntaxError(
+                f"Integer suffix must be lowercase 'i', not 'I': use {text[:-1]}i instead of {text}",
+                line=start_line,
+                col=start_col,
+            )
         if kind == "NUM_INT":
             # Strip the trailing 'i' suffix; store the digit part only.
             out.append(Tok("NUM_INT", text[:-1], start_line, start_col))
