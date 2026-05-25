@@ -7,4 +7,4 @@ fn process_items(items) {
 }
 
 let values = [1, 2, 3, 4, 5]
-process_items(values)
+print(process_items(values))
