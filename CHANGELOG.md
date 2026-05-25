@@ -61,6 +61,10 @@ All issues filed as GitHub #53–#74 against the v3.0.1 milestone.
 - **BUG-E11 (#63):** The lexer now emits `"Identifiers must use ASCII letters
   only: '<char>'"` when a non-ASCII alphabetic character appears at identifier
   position, instead of the generic `"Unexpected character"` message.
+- **BUG-E12 (#64):** `1I`, `42I`, and similar integer literals with an
+  uppercase `I` suffix now produce a parse error (`"Integer suffix must be
+  lowercase 'i'"`) instead of silently splitting into a number and a name that
+  later causes a confusing runtime name-lookup failure.
 - **BUG-E16 (#68):** Import error messages no longer double the `.nd` extension.
   `import "logparse.nd"` that fails now shows `"logparse.nd"` in the tried
   paths, not `"logparse.nd.nd"`. Fixed in both the local resolution path and
