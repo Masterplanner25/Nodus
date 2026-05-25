@@ -344,7 +344,11 @@ class Parser:
         else_branch = None
         if self.at("ELSE"):
             self.eat("ELSE")
-            else_branch = self.block()
+            self.skip_seps()
+            if self.at("IF"):
+                else_branch = self.if_stmt()
+            else:
+                else_branch = self.block()
 
         return self.mark(If(cond, then_branch, else_branch), start)
 

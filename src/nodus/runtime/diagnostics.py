@@ -169,7 +169,15 @@ def format_error(err: Exception, path: str | None = None) -> str:
         else:
             base = f"{kind} error: {err}"
         if err.stack:
-            return base + "\nStack trace:\n  " + "\n  ".join(err.stack)
+            frames = err.stack
+            max_frames = 20
+            if len(frames) > max_frames:
+                shown = frames[:max_frames]
+                elided = len(frames) - max_frames
+                stack_str = "\n  ".join(shown) + f"\n  ... ({elided} more frames)"
+            else:
+                stack_str = "\n  ".join(frames)
+            return base + "\nStack trace:\n  " + stack_str
         return base
     if isinstance(err, SyntaxError):
         if location:

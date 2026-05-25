@@ -459,6 +459,8 @@ class ModuleLoader:
         source_path: str | None = None,
     ) -> ModuleMetadata:
         if module_id in self._metadata:
+            if self._import_trace_fn is not None:
+                self._import_trace_fn(f'[import] Cache hit "{module_id}"')
             return self._metadata[module_id]
         if module_id in self._metadata_loading:
             raise self._circular_import_error(module_id, self._metadata_stack)

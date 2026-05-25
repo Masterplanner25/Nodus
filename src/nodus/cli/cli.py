@@ -321,6 +321,27 @@ _COMMAND_HELP: dict[str, str] = {
         "  nodus fmt main.nd",
         "  nodus fmt main.nd --check",
     ]),
+    "debug": "\n".join([
+        "Usage: nodus debug <script.nd> [--project-root PATH]",
+        "",
+        "Run a Nodus script under the interactive step debugger.",
+        "",
+        "Debugger commands (entered at the (nodus-dbg) prompt):",
+        "  step        Execute the next instruction and pause",
+        "  next        Execute the next statement (steps over calls)",
+        "  continue    Resume until the next breakpoint or end of program",
+        "  break <n>   Set a breakpoint at line n",
+        "  print <x>   Evaluate expression x and print the result",
+        "  locals      Show all local variables in the current frame",
+        "  stack       Show the current call stack",
+        "  quit        Exit the debugger",
+        "",
+        "Options:",
+        "  --project-root PATH   Override the project root directory",
+        "",
+        "Examples:",
+        "  nodus debug main.nd",
+    ]),
 }
 
 
@@ -925,7 +946,7 @@ def _format_file(path: str, *, check_only: bool = False, keep_trailing: bool = F
     original = _read_file(path)
     formatted = format_source(original, keep_trailing_comments=keep_trailing)
     if check_only:
-        if formatted != original:
+        if formatted != original.replace("\r\n", "\n").replace("\r", "\n"):
             _print_stderr(f"File not formatted: {path}")
             return 1
         return 0
@@ -1328,6 +1349,9 @@ def main(argv: list[str] | None = None) -> int:
         return dis_file(script, include_locs="--loc" in flags, project_root=project_root)
 
     if command == "debug":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["debug"])
+            return 0
         flags_with_values = {"--project-root"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:

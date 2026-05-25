@@ -10,13 +10,13 @@ Stability: Mostly stable (record vs map semantics may evolve).
   - All escape errors (unterminated, unsupported, or malformed `\x`/`\u`) are reported as `LangSyntaxError` with source line and column.
 - nil (`nil`)
 - list (`[...]`)
-- map (`{key: value, ...}`)
+- map (`{"key": value, ...}`) — keys must be quoted strings
 - record (`record { key: value, ... }`)
 - record methods: `record { greet: fn(self) { ... } }`, called as `obj.greet()`
 
 **Record vs map access:**
 - **record** — created with `record { key: value }` syntax. Dot-access only: `r.name`, `r.field = value`. Methods called as `obj.method()`.
-- **map** — created with `{ key: value }` literal syntax, or returned by `json.parse` and certain stdlib calls. Bracket access is canonical: `m["key"]`, `m["key"] = value`. `has_key(m, "key")`, `keys(m)`, and `values(m)` are also available.
+- **map** — created with `{ "key": value }` literal syntax (keys must be quoted strings); or returned by `json.parse` and certain stdlib calls. Bracket access is canonical: `m["key"]`, `m["key"] = value`. `has_key(m, "key")`, `keys(m)`, and `values(m)` are also available.
 
 ## Variables and Assignment
 Stability: Stable.
