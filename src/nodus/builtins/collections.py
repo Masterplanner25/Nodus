@@ -130,6 +130,7 @@ def register(vm, registry) -> None:
     registry.add("str_contains", 2, builtin_contains)
     registry.add("str_replace", 3, builtin_replace)
     registry.add("has_key", 2, builtin_has_key)
+    registry.add("map_has_key", 2, builtin_has_key)  # internal alias used by std:collections
     registry.add("keys", 1, builtin_keys)
     registry.add("values", 1, builtin_values)
     registry.add("list_push", 2, builtin_list_push)

@@ -22,12 +22,7 @@ fn push(items, value) {
     return items + [value]
 }
 
-fn has_key(map, key) {
-    let ks = keys(map)
-    for (let i = 0; i < len(ks); i = i + 1) {
-        if (ks[i] == key) {
-            return true
-        }
-    }
-    return false
+fn has_key(m, key) {
+    return map_has_key(m, key)
 }
+

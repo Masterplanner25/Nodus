@@ -81,6 +81,7 @@ BUILTIN_NAMES = {
     "str_contains",
     "str_replace",
     "has_key",
+    "map_has_key",
     "print",
     "input",
     "keys",
