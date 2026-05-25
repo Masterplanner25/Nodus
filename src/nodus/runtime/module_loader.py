@@ -796,12 +796,17 @@ def resolve_import_path(
 
     # Build a comprehensive error listing every path that was attempted.
     _all_tried: list[str] = []
+    _base_noext = base
+    if _base_noext.endswith(".nd") or _base_noext.endswith(".tl"):
+        _base_noext = _base_noext[:-3]
     for _sfx in (".nd", ".tl"):
-        _all_tried.append(os.path.abspath(base + _sfx))
-    _all_tried.append(os.path.abspath(os.path.join(base, "index.nd")))
-    _all_tried.append(os.path.abspath(os.path.join(base, "index.tl")))
+        _all_tried.append(os.path.abspath(_base_noext + _sfx))
+    _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.nd")))
+    _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.tl")))
     try:
         _std_b = _resolve_std_base(import_path, tok, module_id)
+        if _std_b.endswith(".nd") or _std_b.endswith(".tl"):
+            _std_b = _std_b[:-3]
         for _sfx in (".nd", ".tl"):
             _all_tried.append(os.path.abspath(_std_b + _sfx))
     except Exception:

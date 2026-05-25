@@ -37,6 +37,16 @@ This document tracks known deprecation warnings and suggested remediation steps.
   External users who received this warning should migrate to `NodusRuntime` or
   `ModuleLoader` immediately.
 
+### `run_source()` in `src/nodus/tooling/loader.py`
+- **Deprecated since:** v3.0.1
+- **Planned removal:** v4.0
+- **Status:** Deprecated. Emits `DeprecationWarning` on every call.
+- **Replacement:** `NodusRuntime(...).run_source(src)` from `nodus.runtime.embedding`.
+- **Migration:** Replace `from nodus.tooling.loader import run_source; run_source(src)` with
+  `from nodus.runtime.embedding import NodusRuntime; NodusRuntime().run_source(src)`.
+- **Reason:** `run_source()` in `loader.py` predates the `NodusRuntime` embedding API and
+  does not support sandbox constraints, host functions, or execution limits.
+
 ### `LOAD_LOCAL` opcode
 - **Deprecated since:** v0.8.0 (superseded by `LOAD_LOCAL_IDX`)
 - **Removed in:** v1.0

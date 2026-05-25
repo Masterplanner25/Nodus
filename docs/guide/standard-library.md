@@ -64,9 +64,20 @@ list
 
 `type(x)` returns `"int"` for integer values and `"number"` for floats.
 `type(x)` returns `"error"` for err records returned by stdlib functions.
-`len` always returns a float. `str(42i)` returns `"42"` (no `.0`); `str(10.0)`
-returns `"10.0"`. Use integer literals or `math.to_int` to get whole-number output
-without the `.0`.
+
+> **Naming note:** `type()` returns `"number"` for floats and `"int"` for
+> integers. The asymmetry (`"number"` vs `"float"`) is a known inconsistency;
+> renaming `"number"` to `"float"` is a v3.1 design candidate. See
+> `docs/governance/V3_1_PLAN.md §2`.
+
+`len` always returns a float (e.g., `len([1, 2, 3])` → `3.0`). This is a
+known inconsistency; returning an `int` is a v3.1 candidate. See
+`docs/governance/V3_1_PLAN.md §1`. `str(42i)` returns `"42"` (no `.0`);
+`str(10.0)` returns `"10.0"`. Use integer literals or `math.to_int` to get
+whole-number output without the `.0`.
+
+`print(42i)` displays `42` (not `42i` — the `i` suffix is source syntax only,
+not part of the runtime representation).
 
 ### Output
 
@@ -297,7 +308,7 @@ import "std:json" as json
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
 | `parse` | `(s)` | `map`, `list`, or err record | Parse a JSON string; returns `parse_error` err record on invalid JSON |
-| `stringify` | `(value)` | `string` or err record | Serialize a value to JSON; returns `type_error` err record for non-serializable values |
+| `stringify` | `(value)` | `string` or err record | Serialize a value to JSON; returns `type_error` err record for non-serializable values. `int` values are serialized as JSON numbers (e.g., `42i` → `42`). |
 | `parse_int` | `(s)` | `int` or err record | Parse a decimal string as an arbitrary-precision integer |
 
 `json.parse` always returns a **map** when the JSON root is an object, and a

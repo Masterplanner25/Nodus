@@ -185,7 +185,14 @@ def tokenize(src: str) -> list[Tok]:
         if not m:
             if src[pos] == '"':
                 raise LangSyntaxError("Unterminated string literal", line=start_line, col=start_col)
-            raise LangSyntaxError(f"Unexpected character {src[pos]!r}", line=start_line, col=start_col)
+            ch = src[pos]
+            if ch.isalpha() and ord(ch) > 127:
+                raise LangSyntaxError(
+                    f"Identifiers must use ASCII letters only: {ch!r}",
+                    line=start_line,
+                    col=start_col,
+                )
+            raise LangSyntaxError(f"Unexpected character {ch!r}", line=start_line, col=start_col)
 
         kind = m.lastgroup
         text = m.group(kind)

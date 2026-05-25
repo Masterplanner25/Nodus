@@ -15,6 +15,7 @@
 # =============================================================================
 
 import os
+import warnings
 
 from nodus.frontend.visitor import NodeVisitor
 from nodus.frontend.ast.ast_nodes import (
@@ -607,6 +608,12 @@ def run_source(
     source_path: str | None = None,
     import_state: dict | None = None,
 ):
+    warnings.warn(
+        "nodus.tooling.loader.run_source() is deprecated and will be removed in v4.0. "
+        "Use NodusRuntime from nodus.runtime.embedding instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     project_root = None
     if import_state is not None:
         project_root = import_state.get("project_root")
