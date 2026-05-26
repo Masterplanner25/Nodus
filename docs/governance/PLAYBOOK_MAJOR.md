@@ -1,9 +1,9 @@
 # Playbook B: Major Releases
 
-**Scope:** vX+1.0.0 releases with breaking changes or new language semantics
+**Scope:** vX+1.0.0 releases with breaking changes or new language semantics  
 **Evidence base:** v3.0.0 (one major release cycle, plus the v3.0.1 patch
-that followed it via Playbook A)
-**Estimated total time:** 2-6 weeks for design + execution + release
+that followed it via Playbook A)  
+**Estimated total time:** 2–6 weeks for design + execution + release  
 **Maturity:** one-cycle evidence base. This playbook captures the pattern
 that worked once. Revise after the next major release adds a second data
 point.
@@ -13,6 +13,7 @@ point.
 ## When this playbook applies
 
 Use Playbook B when the release includes any of:
+
 - Breaking changes to existing user code (changed defaults, removed
   functions, changed semantics)
 - New language semantics (operators, type system changes, control flow
@@ -34,16 +35,18 @@ to slow down the parts that benefit from slowing down.
 ## Overview
 
 Six phases in strict order. Phase 0 and Phase 1 happen in a planning
-conversation with the maintainer-AI pairing. Phases 2-5 happen in
+conversation with the maintainer-AI pairing. Phases 2–5 happen in
 execution sessions (typically Claude Code). The handoff between planning
 and execution is the design docs.
 
-0. **Phase 0 — Decisions.** Resolve open design questions before any code work.
-1. **Phase 1 — Design docs.** Specify the chosen path so execution has a contract.
-2. **Phase 2 — Non-breaking fixes.** Bug fix backlog cleared first.
-3. **Phase 3 — Breaking changes.** Implement per the design docs.
-4. **Phase 4 — Documentation sweep.** Docs catch up to shipped reality.
-5. **Phase 5 — Release.** PyPI publish + eval + retrospective.
+| Phase | Name | Where |
+|---|---|---|
+| 0 | Decisions | Planning conversation |
+| 1 | Design docs | Planning conversation |
+| 2 | Non-breaking fixes | Claude Code execution |
+| 3 | Breaking changes | Claude Code execution |
+| 4 | Documentation sweep | Claude Code execution |
+| 5 | Release | Claude Code execution |
 
 After release, the eval typically surfaces issues. Those are handled via
 Playbook A (patch release).
@@ -79,7 +82,7 @@ detail (repro, expected, actual, severity, fix direction, cross-refs).
 The `file-bug` skill keeps issue shape consistent.
 
 **Tactical execution prompts** are short, generated as needed during
-execution conversations. They are not standalone artifacts. They're
+execution conversations. They are not standalone artifacts — they're
 "now do Commit 2" with the implicit context that Commit 2's scope is
 already specified in `VN_PLAN.md` and the issues are already filed.
 
@@ -144,7 +147,7 @@ start Phase 1.
 
 **When to run:** after Phase 0 decisions are locked.
 
-**Why it exists:** the design docs are the contract that Phase 2-5
+**Why it exists:** the design docs are the contract that Phases 2–5
 work executes against. They make claims falsifiable. v3.0's eval
 specifically credited the design docs for making bugs findable:
 "Because they existed, this evaluation could definitively say 'doc says
@@ -285,7 +288,7 @@ to match shipped behavior.
 
 **Inputs:**
 - The full docs tree
-- The CHANGELOG `[Unreleased]` section as it stands after Phase 3
+- The `CHANGELOG` `[Unreleased]` section as it stands after Phase 3
 - Any v(N-1) docs that need to be EOL'd or marked deprecated
 
 **Outputs:**
@@ -293,7 +296,7 @@ to match shipped behavior.
   per the `CLAUDE.md` guide file testing standard
 - Migration guide complete (`docs/migration/v(N-1)-to-vN.md`)
 - New policy docs as needed (v3.0 added `docs/policy/error-surfaces.md`)
-- `CHANGELOG.md [Unreleased]` complete and accurate
+- `CHANGELOG.md` `[Unreleased]` complete and accurate
 - `llms.txt` updated with new surfaces
 - `docs/release.md` updated with release target
 
@@ -305,9 +308,9 @@ anything that doesn't behave as documented.
 **Lessons from v3.0:**
 - This phase needs a hard gate at the end: a script that asserts every
   function documented in policy docs and stdlib references actually
-  exists. v3.0 shipped six functions documented in error-surfaces.md
-  that didn't exist. Mechanical check, would have caught all six pre-
-  release. **This gate is the most important addition to Playbook B
+  exists. v3.0 shipped six functions documented in `error-surfaces.md`
+  that didn't exist. Mechanical check, would have caught all six
+  pre-release. **This gate is the most important addition to Playbook B
   going forward.**
 - Re-testing every guide example is tedious but catches real bugs.
   v3.0 found behavioral findings in five guide files via this pass.
@@ -379,8 +382,8 @@ These have been hit once each and should not be hit again:
 - **Treating Phase 0 as optional.** "We already know what we're doing,
   let's skip to design docs." v3.0 caught this once — the integer type
   question would have shipped as Model A without Phase 0 pressure-
-  testing, which would have been a 3-5 week project instead of the
-  1-2 week scope that actually shipped. Phase 0 is the cheapest
+  testing, which would have been a 3–5 week project instead of the
+  1–2 week scope that actually shipped. Phase 0 is the cheapest
   insurance in the cycle.
 
 - **Letting Phase 1 design docs ship without scope ceilings.** v3.0's
@@ -440,11 +443,11 @@ date and the cycle it was validated against.
 ## File index
 
 | What | Where |
-|------|-------|
+|---|---|
 | This document | `docs/governance/PLAYBOOK_MAJOR.md` |
 | Overview | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Patch/minor playbook | `docs/governance/PLAYBOOK_PATCH_MINOR.md` |
-| Captured prompts (Playbook B) | `docs/governance/release-prompts/major/` (pending) |
+| Captured prompts (Playbook B) | `docs/governance/release-prompts/major/` *(pending)* |
 | Per-cycle design docs | `docs/design/vN/` |
 | Per-cycle plan | `docs/governance/VN_PLAN.md` |
 | Standing context | `CLAUDE.md` (project root) |
@@ -465,7 +468,7 @@ If you are starting a major release cycle:
 3. Phase 0 produces `docs/design/vN/00-phase-0-decisions.md` and the
    first draft of `docs/governance/VN_PLAN.md`.
 4. Phase 1 produces the remaining design docs in `docs/design/vN/`.
-5. Phase 2-5 happen in Claude Code execution sessions. Each phase ends
+5. Phases 2–5 happen in Claude Code execution sessions. Each phase ends
    with the plan document's exit condition met.
 6. After Phase 5 publishes to PyPI, run the post-release eval via
    Playbook A Stage 4.
