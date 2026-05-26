@@ -312,3 +312,54 @@ The capability layer stays narrow.
 specifically the rejection of per-request retry options in `std:http`.
 The principle generalizes beyond HTTP; it applies to every stdlib
 capability namespace (subprocess, future namespaces).
+
+---
+
+## v4.1 Candidates
+
+### std:server (HTTP server namespace)
+
+Surfaced by `nodus-a2a` v0.1 (webhook reception for push notifications)
+and `nodus-mcp` v0.1 (server-side HTTP and Streamable HTTP transports).
+Both libraries bundle their own HTTP servers in v0.1; the shared pattern
+becomes visible once they ship.
+
+`std:http` is a client. `std:server` would provide the listening side:
+bind a port, handle incoming requests, dispatch to Nodus handlers, return
+responses. Not in v4.0 scope. v4.1 candidate pending post-launch
+evaluation of nodus-mcp and nodus-a2a server implementations.
+
+**Source:** `docs/design/v4/01-http-api.md` § "Scope ceiling" and
+§ "MCP and A2A consumer validation".
+
+---
+
+## Phase 3B Open Implementation Questions: std:http
+
+From `docs/design/v4/01-http-api.md` § "Open implementation questions
+for Phase 3B". These are resolved during Phase 3B execution; they do
+not affect the API surface (which is locked by 01-http-api.md).
+
+1. **Asyncio loop strategy.** One loop per VM instance vs shared global
+   loop. Tentative direction: per-VM loop, lazy start on first `_async`
+   call.
+
+2. **Thread-safety between Nodus VM and asyncio loop.** Tentative
+   direction: document single-threaded usage as the supported model;
+   multi-threaded embedding requires user-provided synchronization.
+
+3. **Connection pool lifecycle.** Tentative direction: lazy creation,
+   per-VM lifetime, closed on VM shutdown.
+
+4. **Channel implementation for streaming.** Verify the existing channel
+   primitive supports cancellation that maps to httpx stream cancellation;
+   if gaps exist, file as a Phase 3B work item at that time.
+
+5. **Memory bounds on buffered responses.** Tentative direction: no
+   implicit limit (matches httpx default); users who care use `timeout_ms`
+   and `http.stream` for large bodies.
+
+6. **UTF-8 boundary buffering implementation.** httpx provides
+   line-buffered iteration but not character-boundary-buffered iteration.
+   Tentative direction: incremental decoder pattern
+   (`codecs.getincrementaldecoder`).
