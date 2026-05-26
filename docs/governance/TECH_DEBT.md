@@ -363,3 +363,38 @@ not affect the API surface (which is locked by 01-http-api.md).
    line-buffered iteration but not character-boundary-buffered iteration.
    Tentative direction: incremental decoder pattern
    (`codecs.getincrementaldecoder`).
+
+---
+
+## Phase 3B Open Implementation Questions: std:subprocess
+
+From `docs/design/v4/04-subprocess-api.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 04-subprocess-api.md).
+
+1. **Asyncio loop sharing with HTTP.** Both `std:http` and
+   `std:subprocess` use the asyncio bridge. Tentative direction: shared
+   per-VM loop; subprocess and HTTP asyncio tasks coexist on the same
+   loop.
+
+2. **Stream pump task lifecycle.** If the consumer doesn't read from
+   `p.stdout`, the pump task keeps buffering. Tentative direction:
+   bounded channel with backpressure; pump blocks when buffer fills,
+   providing automatic backpressure into the OS pipe.
+
+3. **Line buffer size limits.** A pathological process can emit a
+   gigabyte-long line. Tentative direction: 1MB line limit; lines longer
+   than that get split with a `line_truncated` flag on the channel
+   record. Reconsider if real demand surfaces.
+
+4. **Process group cleanup on VM shutdown.** Tentative direction: VM
+   shutdown terminates all process groups it spawned with
+   `process_group: true`, leaves others. Document explicitly.
+
+5. **Windows job object inheritance.** Nested job objects have complex
+   rules on Windows. Tentative direction: each spawn creates its own
+   job; child jobs nest per Windows rules if Nodus itself is in a job.
+
+6. **stdin write backpressure.** If user calls `p.stdin.send(...)`
+   faster than the process consumes. Tentative direction: bounded write
+   buffer; `send()` blocks (or yields in async context) when full.
