@@ -111,6 +111,42 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Coverage baseline: 77% overall. Gate: 60%. See `docs/governance/TECH_DEBT.md`
 for the per-module breakdown and the three deselected flaky tests.
 
+## Lint gate (ruff)
+
+Ruff runs in CI and blocks merges. Check locally before pushing:
+
+```powershell
+& "C:/dev/Coding Language/.venv/Scripts/python.exe" -m ruff check src/ tests/
+```
+
+Two rules come up repeatedly:
+
+- **F401 unused import** — just remove it; never suppress with `# noqa`.
+- **E402 module-level import not at top** — occurs in test files that do
+  `sys.path.insert` before imports (intentional path isolation pattern).
+  Suppress with `# noqa: E402` on each affected import line. Do not
+  restructure the path manipulation to avoid it.
+
+## Git commit syntax (PowerShell)
+
+Multi-line commit messages require a PowerShell here-string — bash `<<EOF`
+syntax is not valid in PowerShell:
+
+```powershell
+git commit -m @'
+Subject line here
+
+Body paragraph here.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+'@
+```
+
+The closing `'@` must be at column 0 with no leading whitespace. For commits
+that need a file (e.g. cross-repo where stdin is awkward), write the message
+to `.git\COMMIT_MSG_TEMP` with `Out-File -Encoding utf8` then use
+`git commit -F ".git\COMMIT_MSG_TEMP"`.
+
 ## Security boundary test rule
 
 Any fix for a security boundary (path traversal, sandbox escape, allowed_paths
