@@ -8,6 +8,15 @@ Patch release fixing two issues surfaced by the v3.0.1 independent stress-test
 eval: a patch closure failure (BUG-V31E-01, #75) and a new HIGH bug introduced
 by v3.0.1's `math.log` addition (BUG-V31E-02, #76).
 
+### Fixed (undocumented in original release)
+
+- `strings.split(x)` (wrong arity) now produces a Nodus-voice type error
+  (`type error: split(x, delimiter) expects a string`) instead of leaking the
+  internal "Stack underflow" message. This was an unintended side effect of
+  the v3.0.2 work that was not captured in the original release notes.
+  Identified by the v3.0.2 stress-test eval. The fix is real and shipped in
+  the v3.0.2 wheel; this note is a retroactive disclosure.
+
 ### Fixed
 
 - **BUG-V31E-01 (#75):** `1I` (uppercase integer suffix) now reliably produces
