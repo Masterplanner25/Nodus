@@ -265,3 +265,50 @@ just the validator.
 - **Duplicate BUG-NNN:** BUG-029 was filed twice — [#27](https://github.com/Masterplanner25/Nodus/issues/27) (CLI `--help` grouping, no milestone, not in v3.0 scope) and [#30](https://github.com/Masterplanner25/Nodus/issues/30) (else-if syntax, v3.0 `phase:2-fix`). Root cause: the v2.1.1 handoff assigned the number from a running counter without checking existing issues. **Playbook action:** bug filing checklist must include a uniqueness check against open+closed issues before assigning a BUG-NNN. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
 
 - **Missing rubric eval for v2.1.0:** v2.1.0 shipped without a formal rubric eval. Guide-writing surfaced 23 issues but produced no composite score, leaving v2.0.0 (5.52) as the only comparable data point going into v3.0. **Playbook action:** every major/minor release must run the formal rubric eval and record the composite score before close. Guide-writing is supplementary, not a substitute. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
+
+## Phase 4 Deferred Content: STDLIB_PHILOSOPHY.md
+
+The following principles surfaced during v4.0 Phase 1 design and need to
+be captured in `docs/governance/STDLIB_PHILOSOPHY.md` when it is created
+in Phase 4. The principles are already captured in
+`docs/language/LANGUAGE_VISION.md` (positioning),
+`docs/language/DESIGN.md` (architectural rationale),
+`docs/language/STYLE_GUIDE.md` (idiomatic-code pattern), and
+`docs/governance/LIBRARY_ECOSYSTEM.md` (ecosystem cross-reference); the
+Phase 4 STDLIB_PHILOSOPHY.md draft consolidates them as one of the
+foundational stdlib-design rules.
+
+### Capabilities, not orchestration (principle)
+
+Stdlib functions provide capabilities. They do not provide orchestration.
+The boundary:
+
+- **Capability:** make one HTTP call, run one subprocess, parse one JSON
+  document, read one file.
+- **Orchestration:** retry on failure, parallelize across inputs,
+  sequence with conditional branches, recover from partial failure, rate
+  limiting, circuit breaking, fan-out/fan-in patterns.
+
+Orchestration concerns are workflow concerns. They compose capabilities;
+they do not extend them. This means:
+
+1. No `retries` option on capability functions
+2. No automatic backoff schedules embedded in capability options
+3. No fallback chains baked into stdlib calls
+4. No rate-limiting decorators on stdlib functions
+
+The orchestration layer (workflows, channels, future stdlib helpers in a
+`std:retry` namespace if real demand surfaces) handles these concerns.
+The capability layer stays narrow.
+
+**Cross-references for STDLIB_PHILOSOPHY.md:**
+
+- `docs/language/LANGUAGE_VISION.md` principle #6 — positioning framing
+- `docs/language/DESIGN.md` § "Capability Surfaces Stay Narrow" — architectural rationale
+- `docs/language/STYLE_GUIDE.md` § 18 "Retry, Backoff, and Recovery" — idiomatic pattern
+- `docs/governance/LIBRARY_ECOSYSTEM.md` § "Not pursued: per-call orchestration options in stdlib" — ecosystem scope
+
+**Source:** v4.0 Phase 1 design conversation for `01-http-api.md`,
+specifically the rejection of per-request retry options in `std:http`.
+The principle generalizes beyond HTTP; it applies to every stdlib
+capability namespace (subprocess, future namespaces).

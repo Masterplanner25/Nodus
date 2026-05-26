@@ -62,6 +62,47 @@ event tracing
 
 These systems extend the runtime without increasing the complexity of the core language grammar.
 
+Capability Surfaces Stay Narrow
+
+Stdlib namespaces provide capabilities, not orchestration. An HTTP
+function makes one HTTP call. A subprocess function runs one process. A
+hash function hashes one input. The retry/backoff/timeout-with-fallback
+patterns belong to workflow code that composes capability calls.
+
+This is a hard boundary. Per-request retry options are tempting because
+they are easy to add and feel helpful. They are rejected because:
+
+1. Option surfaces grow without bound. A retries option leads to
+   retry_delay_ms, then retry_backoff, then retry_jitter, then
+   retry_on, then retry_status_codes. Every option added invites more.
+   The capability function becomes a small orchestration engine buried
+   in its option surface.
+
+2. Per-request retry does not compose with workflow-level retry. A
+   workflow that wants "retry this whole segment if any step fails"
+   cannot delegate to per-call retries inside individual steps. The
+   two patterns conflict; the workflow-level pattern is more expressive.
+
+3. It blurs the orchestration DSL identity. Nodus is an orchestration
+   DSL with narrow capability primitives. If every capability ships its
+   own retry surface, the orchestration layer becomes redundant and the
+   identity blurs into "general-purpose language with retry built in
+   everywhere."
+
+The orchestrating layer (workflows, channels, future stdlib helpers in a
+std:retry namespace if real demand surfaces) handles retry. The
+capability layer stays narrow.
+
+This boundary applies to all orchestration concerns, not just retry:
+rate limiting, circuit breaking, fan-out/fan-in patterns, conditional
+execution, partial-failure recovery. All are workflow concerns. All
+compose capabilities; none extend them.
+
+See LANGUAGE_VISION.md principle #6 (Orchestration Composes; Capabilities
+Don't) for the positioning framing, and the eventual
+docs/governance/STDLIB_PHILOSOPHY.md (Phase 4 deliverable) for the
+full stdlib-design rules.
+
 2. Why a Bytecode VM
 
 Nodus compiles to bytecode executed by a stack-based virtual machine.

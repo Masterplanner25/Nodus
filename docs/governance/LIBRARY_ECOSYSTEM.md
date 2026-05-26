@@ -253,6 +253,31 @@ add these will come; this document is the reference for why the answer is no.
   the language they're written for (Python, JavaScript, Go). Nodus calls
   them via subprocess, HTTP, or MCP.
 
+### Not pursued: per-call orchestration options in stdlib
+
+Retry, backoff, rate limiting, circuit breaking, and similar
+orchestration patterns are not added as options to stdlib capability
+functions. Nodus orchestrates retries via workflows; it doesn't bake
+them into every call.
+
+This means `std:http.get()` will never have a `retries` option,
+`std:subprocess.run()` will never have a `retry_on_failure` option, and
+future capability functions follow the same rule. The workflow layer
+composes capabilities; capabilities don't compose themselves.
+
+If real demand surfaces, a future `std:retry` or `std:resilience`
+namespace MAY provide helper functions that compose with capability
+calls. The stdlib's capability namespaces stay narrow regardless.
+
+For the full statement of this principle, see:
+
+- `docs/language/LANGUAGE_VISION.md` principle #6 (Orchestration
+  Composes; Capabilities Don't)
+- `docs/language/DESIGN.md` § "Capability Surfaces Stay Narrow"
+- `docs/language/STYLE_GUIDE.md` § 18 "Retry, Backoff, and Recovery"
+- `docs/governance/STDLIB_PHILOSOPHY.md` § "Capabilities, not
+  orchestration" (Phase 4 deliverable)
+
 ---
 
 ## Library development guidelines (for registry libraries)

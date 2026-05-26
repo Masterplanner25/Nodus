@@ -39,6 +39,22 @@ The runtime should allow new capabilities through:
 ### 5. Predictable Behavior
 Evaluation and scoping rules should be consistent. Errors should be explainable and localized.
 
+### 6. Orchestration Composes; Capabilities Don't
+
+Capabilities (HTTP, subprocess, file I/O, hashing, datetime) provide
+narrow, focused operations. Orchestration concerns (retry, backoff,
+parallelism, sequencing, error recovery, rate limiting, circuit breaking)
+compose those operations through workflow primitives.
+
+Nodus orchestrates retries via workflows; it doesn't bake them into every
+call. This principle extends to all orchestration concerns: per-call
+retry options, built-in backoff schedules, automatic fallback chains, and
+rate-limiting decorators all belong to workflow code, not to the
+capability's option surface.
+
+The language's job is to make composition expressive. The capabilities'
+job is to do one thing well.
+
 ---
 
 # Language Architecture

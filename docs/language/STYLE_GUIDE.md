@@ -289,6 +289,43 @@ Consistency is more important than personal preference.
 
 If a file already follows a style pattern, maintain that pattern when modifying it.
 
+18. Retry, Backoff, and Recovery
+
+Nodus orchestrates retries via workflows; it doesn't bake them into
+every call. When you need to retry an HTTP call (or any other capability),
+wrap it in a workflow construct rather than looking for a retry option.
+
+Idiomatic:
+
+    workflow fetch_with_retry {
+        step attempt {
+            let r = http.get(url, {timeout_ms: 5000})
+            if type(r) == "error" or !r.ok {
+                return retry(attempt, max_attempts: 3, delay_ms: 1000)
+            }
+            return r
+        }
+    }
+
+Not idiomatic, and not supported:
+
+    let r = http.get(url, {retries: 3, retry_delay_ms: 1000})
+    # No such options. Capability functions in std:http (and elsewhere
+    # in the stdlib) deliberately omit retry options.
+
+The same pattern applies to all orchestration concerns: retry, rate
+limiting, circuit breaking, fan-out/fan-in, partial-failure recovery.
+Capability functions in the stdlib are deliberately narrow. The workflow
+layer composes them into patterns.
+
+If you find yourself wanting a "retry this call" option, the
+orchestration DSL answer is: wrap the call in a workflow. The workflow
+primitive is the composition tool. The capability is the thing being
+composed.
+
+For the full architectural reasoning, see DESIGN.md section
+"Capability Surfaces Stay Narrow" and LANGUAGE_VISION.md principle #6.
+
 Final Principle
 
 Good Nodus code should be easy to read, easy to debug, and easy to maintain.
