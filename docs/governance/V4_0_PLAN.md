@@ -1054,6 +1054,254 @@ designed to catch this.
 
 ---
 
+### Decision 16 (amendment) — MCP spec revision pin and Elicitation capability
+
+**Date of amendment:** 2026-05-25 (same Phase 0 session, after spec
+verification fetch)
+
+**Question:** Which MCP spec revision does v0.1 implement against, and does
+the implementation outline (Phase A-N) cover all current MCP capabilities?
+
+**Decision:** `nodus-mcp` v0.1 implements against the MCP 2025-11-25
+specification revision. This revision adds Elicitation as a Client feature
+(server-initiated requests for additional information from users), which
+the original Decision 16 implementation outline did not list as a discrete
+capability.
+
+**Amended phase plan:**
+
+The original Decision 16 listed 14 phases (A-N). Phase F (Client advanced)
+covered sampling, logging, progress, completion, and roots. The amendment
+adds Elicitation to Phase F:
+
+- Phase F (Client advanced): sampling, logging, progress, completion,
+  roots, **elicitation**
+
+No other phase reordering required. Phase F was the natural home for
+Elicitation given it is a Client feature exposed by Servers (server-
+initiated requests answered by Clients).
+
+**Reasoning:**
+
+1. The MCP spec is dated rather than versioned; pinning to the 2025-11-25
+   revision provides a concrete contract.
+2. Elicitation was missed in the original Decision 16 because the
+   implementation outline was drafted from memory rather than against a
+   fresh fetch of the spec.
+3. The spec verification discipline (Decision 16 appendix) is what caught
+   this gap. Applying the discipline at Phase 0 (not just before release)
+   catches scope gaps earlier when they cost less to address.
+
+**Process improvement:**
+
+Future protocol-library decisions in the Phase 0 design phase MUST fetch
+the spec before drafting the implementation outline, not after. Decision
+17 (A2A library v0.1) was drafted after a fresh A2A spec fetch and does
+not have an analogous omission.
+
+**Spec verification revisit before release:**
+
+The Decision 16 spec verification step (run between implementation
+complete and public registry release) compares against this pinned
+revision. Spec changes between 2025-11-25 and v4.0 ship date are
+classified as additive (note for next library version, proceed),
+breaking/critical (pause, evaluate), or none (proceed as planned).
+
+---
+
+## Decision 17 — A2A Library v0.1 Scope
+
+**Question:** What is the scope of `nodus-a2a` v0.1, and does it ship with
+v4.0?
+
+**Decision:** Comprehensive A2A specification support. Bidirectional
+(client + server roles). All three protocol bindings (JSON-RPC, gRPC,
+HTTP+JSON/REST). Full A2A v1.0.0 spec coverage including Task lifecycle,
+Message/Artifact/Part data model, AgentCard discovery, streaming via SSE,
+push notifications via webhooks, multi-turn via contextId/taskId, and the
+Extensions mechanism. Bearer-token authentication for v0.1; advanced auth
+(OAuth2, OIDC, mTLS) deferred to v0.2. Ships with v4.0 as a flagship
+library validating the second protocol adapter in the orchestration DSL +
+ecosystem story.
+
+**Specification pin:** A2A v1.0.0 stable release. This is a versioned
+release (unlike MCP's dated revisions), which simplifies the spec
+verification discipline.
+
+**Implementation sequenced in 14 phases (A-N):**
+
+- Phase A: Foundation (JSON-RPC, A2A data model, AgentCard parsing and
+  serving)
+- Phase B: HTTP+JSON transport (primary binding)
+- Phase C: Client core operations (SendMessage, GetTask, CancelTask)
+- Phase D: Client streaming (SendStreamingMessage, SubscribeToTask)
+- Phase E: Client task management (ListTasks with pagination)
+- Phase F: Client push notifications (Create/Get/List/Delete config,
+  webhook delivery)
+- Phase G: Client extended agent card + multi-turn (contextId, taskId,
+  referenceTaskIds)
+- Phase H: Server foundation (task lifecycle, contextId management)
+- Phase I: Server core operations (SendMessage handler, task creation,
+  GetTask, CancelTask)
+- Phase J: Server streaming (SSE event delivery, multiple-stream
+  broadcast)
+- Phase K: Server push notification delivery (webhook POST with
+  authentication)
+- Phase L: gRPC binding (both client and server sides)
+- Phase M: HTTP+JSON/REST binding (both client and server sides)
+- Phase N: Extensions mechanism + polish (CLI integration, REPL,
+  documentation, test suite)
+
+**Out of v0.1 (deferred to v0.x patches or v0.2):**
+
+- OAuth2, OpenID Connect, and mTLS authentication schemes
+- Custom protocol bindings (the spec allows URI-identified custom
+  bindings; v0.1 ships only the three standard bindings)
+- Performance optimization beyond correctness
+- A2A spec features added after v1.0.0
+
+**Bidirectional rationale:**
+
+Same reasoning as Decision 16. A client-only A2A library makes Nodus
+"useful for consuming external agents." A bidirectional library makes
+Nodus "part of the agent ecosystem" — workflows expose themselves as A2A
+agents, and other agents (regardless of framework) can call them.
+
+**Three-binding rationale:**
+
+The A2A spec explicitly allows agents to support any subset of the three
+bindings, declared in `AgentCard.supportedInterfaces`. A library that
+supports only one binding cannot interoperate with agents using a
+different binding. JSON-RPC is most common; gRPC offers performance and
+strict typing; HTTP+REST offers simplicity. Supporting all three matches
+A2A's design intent and makes `nodus-a2a` interoperable with the full
+A2A ecosystem.
+
+**Update delivery mechanisms:**
+
+All three A2A delivery mechanisms ship in v0.1:
+
+- Polling (GetTask called on a schedule)
+- Streaming (SSE-based, requires `AgentCard.capabilities.streaming = true`)
+- Push notifications (webhooks, requires
+  `AgentCard.capabilities.pushNotifications = true`)
+
+Client code can choose mechanism per task. Server code declares
+capabilities in its AgentCard.
+
+**Extensions mechanism:**
+
+A2A's extension system (URI-identified, declared in AgentCard) is
+supported in v0.1. Libraries can register extensions; clients and servers
+can negotiate extension use via the `A2A-Extensions` header. This is
+necessary for the orchestration DSL positioning — extensions are how
+domain-specific capabilities layer onto A2A without modifying the core
+protocol.
+
+**Auth scope:**
+
+v0.1 supports Bearer token authentication only. The A2A spec supports
+API key, HTTP auth (Basic, Bearer, Digest), OAuth2, OpenID Connect, and
+mTLS. Bearer is the most common pattern and unblocks the v4.0 launch use
+cases. Advanced auth schemes ship in v0.2 (post-v4.0).
+
+**Reasoning:**
+
+1. Two protocol adapters at launch (MCP + A2A) is architecturally
+   stronger than one. One adapter is a coincidence; two is a pattern.
+   The "protocols are adapters" commitment in LIBRARY_ECOSYSTEM.md is
+   validated by shipping with two adapters that both work, rather than
+   shipped with one and "the pattern works for future protocols too."
+2. A2A is well-bounded against a stable v1.0.0 spec. The implementation
+   uncertainty is low. Like MCP, the design effort is in mapping spec
+   concepts to Nodus runtime primitives, not in inventing new design.
+3. A2A v0.1 shipping with v4.0 validates the Tier 3 ecosystem story at
+   launch. It also makes the Nodus runtime visible to the broader A2A
+   ecosystem, which has Google's institutional backing and 23.9k GitHub
+   stars on the spec repo as of v4.0 cycle.
+4. Velocity supports the scope. The maintainer's working pattern
+   (design-heavy planning conversations + concentrated execution) handles
+   bounded-task libraries well. MCP and A2A development can happen in
+   parallel or sequentially after v4.0 Phase 3 stabilizes.
+5. Discipline of "fix everything that's known wrong" applies to A2A
+   spec features. Skipping spec features in v0.1 because they're
+   "advanced" leaves known gaps. The auth deferral is the only
+   exception, justified by the auth schemes being independent of A2A's
+   core semantics (a v0.2 auth update doesn't change how Tasks or
+   Messages work).
+
+**Rejected alternatives:**
+
+*Minimum viable (client only).* **Rejected because** half the
+orchestration DSL story. Without a server, Nodus workflows cannot be
+called by other agents — they can only call others. The bidirectional
+positioning is what makes Nodus "part of the agent ecosystem."
+
+*Client + one binding (JSON-RPC only).* **Rejected because** the A2A
+ecosystem allows agents to choose their binding, and a library limited
+to JSON-RPC cannot interoperate with gRPC or REST agents. Limiting
+binding support is a hidden capability gap.
+
+*Build separately, ship as v4.x library after v4.0.* **Rejected because**
+MCP and A2A together at v4.0 launch validate the protocol-adapter
+pattern in a way that shipping MCP alone does not. Deferring A2A
+weakens the LIBRARY_ECOSYSTEM.md architectural commitment.
+
+*Ship full auth in v0.1.* **Rejected because** the auth schemes (OAuth2,
+OIDC, mTLS) are substantial implementation effort each, and bearer
+tokens cover the common case. Splitting them into v0.2 lets v0.1 ship
+without the auth scope dominating the cycle.
+
+**Spec verification discipline:**
+
+Same as Decision 16. Before v4.0 PyPI release:
+
+1. Fetch the A2A spec at https://github.com/a2aproject/A2A
+2. Check release notes between A2A v1.0.0 (the pinned version) and
+   current date
+3. Classify changes: none, additive only, breaking/critical
+4. Breaking/critical → pause v4.0 PyPI release, evaluate incorporation
+5. Additive → note for nodus-a2a v0.2, proceed with v4.0 release
+6. None → proceed as planned
+
+Cost: ~1 hour. Applied once before v4.0 PyPI release.
+
+**Reconsideration triggers:**
+
+This decision should be revisited if:
+
+- A2A spec ships a v2.0 with breaking changes before v4.0 release
+  (spec verification catches this)
+- A2A adoption proves smaller than projected post-v4.0 (the library
+  scope is large; if the protocol's reach is small, scoping down to
+  client-only is reasonable for v0.2)
+- A different agent-to-agent protocol gains dominance during the v4.0
+  cycle (LIBRARY_ECOSYSTEM.md's "protocols are adapters" commitment
+  means swapping is recoverable)
+
+Until one of those triggers fires, the comprehensive A2A v0.1 scope
+holds.
+
+---
+
+## Process note: this is the second amendment to Phase 0
+
+The original Phase 0 session (2026-05-25 morning) produced 16 decisions.
+Both amendments above were drafted later the same day after fetching
+both protocol specs.
+
+The pattern that produced both gaps (Decision 16 missing Elicitation,
+no Decision 17 for A2A) is the same: design drafted from memory rather
+than against a fresh spec fetch.
+
+**Process improvement captured:** for any Phase 0 decision that
+references an external specification (protocol library, format spec,
+standard), the decision drafting MUST include a spec fetch as the
+first step. This is added to PLAYBOOK_MAJOR.md Phase 0 in this prep
+batch.
+
+---
+
 ## Cross-cutting decisions captured for reference
 
 ### Decision: Spec verification before external-protocol library release
