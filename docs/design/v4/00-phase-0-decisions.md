@@ -147,25 +147,89 @@ accurately describes shipped behavior.
 
 ### Phase 5 — Release (NOT STARTED)
 
-**Estimated effort:** 1-2 hours
+**Estimated effort:** 4-6 hours (extended from prior estimate due to
+two-library coordination)
 
-**Procedure:** Standard release-prep flow with v4.0-specific additions:
+**Sequence overview:**
 
-1. Run `nodus_gate --all` (mandatory pre-release verification)
-2. Verify MCP library v0.1 spec verification pass (Decision 16 discipline)
-3. Bump version in `src/nodus/support/version.py` and `pyproject.toml`
-4. Promote `CHANGELOG.md [Unreleased]` → `[4.0.0] - YYYY-MM-DD`
-5. Commit: `release: bump to 4.0.0`
-6. Tag `v4.0.0`, push tag
-7. Build and upload to TestPyPI; verify install + smoke test against
-   key new features
-8. Build and upload to real PyPI
-9. Publish GitHub release with [4.0.0] CHANGELOG entry as body
-10. Publish MCP library v0.1 to Nodus registry (parallel)
+v4.0 ships three artifacts in coordination: `nodus-lang` 4.0.0 to PyPI,
+`nodus-mcp` 0.1 to the Nodus registry, and `nodus-a2a` 0.1 to the Nodus
+registry. The PyPI release is gated on both libraries being built and
+spec-verified against the locked v4.0 source. The sequence is:
 
-**Exit condition:** PyPI shows v4.0.0; `pip install nodus-lang==4.0.0`
-works in fresh environment; `nodus --version` matches; GitHub release
-published; MCP library available in registry.
+1. Phase 4 completes; `nodus_gate --all` passes against the dev branch
+2. v4.0 source is locked (no further code changes to `nodus-lang`)
+3. Both libraries are built against the locked source in parallel
+4. Both libraries pass spec verification
+5. All three artifacts release coordinated
+
+**Detailed procedure:**
+
+Step 1 — Lock v4.0 source
+
+1.1. Confirm `nodus_gate --all` passes
+1.2. Confirm test suite green (full and coverage variants)
+1.3. Confirm CHANGELOG [Unreleased] is complete and accurate
+1.4. Tag a working release candidate: `git tag v4.0.0-rc1`
+1.5. The locked source is the `v4.0.0-rc1` tag commit. All library
+     development uses this exact commit.
+
+Step 2 — Build libraries in parallel
+
+Both libraries are independent development efforts. Either or both may
+already be in progress before this step (per Phase 1 design docs and any
+library-specific design phases). Step 2 confirms they are complete and
+production-ready against the locked source.
+
+2.1. `nodus-mcp` v0.1 — complete implementation per Decision 16 (Phase
+     A-N), spec-verified against MCP 2025-11-25 revision
+2.2. `nodus-a2a` v0.1 — complete implementation per Decision 17 (Phase
+     A-N), spec-verified against A2A v1.0.0 stable release
+2.3. Both libraries pass their own test suites
+2.4. Both libraries install cleanly via the registry tooling
+
+Step 3 — Final spec verification
+
+3.1. Fetch current MCP spec; compare against MCP 2025-11-25 revision.
+     Classify changes: none / additive / breaking. If breaking, pause
+     and evaluate.
+3.2. Fetch current A2A spec; compare against A2A v1.0.0. Classify
+     changes: none / additive / breaking. If breaking, pause and
+     evaluate.
+3.3. Document spec verification results in
+     `docs/release-notes/v4.0/spec-verification.md`
+
+Step 4 — Coordinated release
+
+4.1. Bump version: `src/nodus/support/version.py` and `pyproject.toml`
+     to `"4.0.0"`
+4.2. Promote `CHANGELOG.md [Unreleased]` → `[4.0.0] - YYYY-MM-DD`
+4.3. Commit: `release: bump to 4.0.0`
+4.4. Tag `v4.0.0`, push tag
+4.5. Build wheel; upload to TestPyPI
+4.6. Smoke test against TestPyPI: install in fresh venv, run a
+     representative script that exercises new stdlib namespaces
+4.7. Install both libraries against the TestPyPI nodus-lang; verify
+     they work end-to-end (e.g., a workflow that calls an MCP server
+     and exposes itself as an A2A agent)
+4.8. Upload `nodus-lang` 4.0.0 to PyPI
+4.9. Publish `nodus-mcp` 0.1 to Nodus registry
+4.10. Publish `nodus-a2a` 0.1 to Nodus registry
+4.11. Publish GitHub release for `nodus-lang` v4.0.0 with [4.0.0]
+      CHANGELOG entry as body
+4.12. Publish GitHub releases for `nodus-mcp` v0.1 and `nodus-a2a` v0.1
+4.13. Announce v4.0 (out of scope for this plan — handled separately)
+
+**Exit condition:**
+
+- PyPI shows `nodus-lang` 4.0.0
+- Nodus registry shows `nodus-mcp` 0.1 and `nodus-a2a` 0.1
+- `pip install nodus-lang==4.0.0` works in fresh environment
+- `nodus --version` matches `4.0.0`
+- Both libraries installable via the registry tooling
+- `nodus_gate --all` passes against the installed PyPI wheel
+- GitHub releases published for all three artifacts
+- Spec verification document committed
 
 ### Post-release — v4.0 stress-test eval (NOT STARTED)
 
@@ -198,16 +262,32 @@ architecturally" 9.5+/10.
 "anti-bloat clause" pattern from v3.0 design docs (capping function
 counts, namespace counts) gets applied to every v4.0 design doc.
 
-### Risk 2 — MCP library implementation takes longer than estimated
+### Risk 2 — Either library implementation takes longer than estimated
 
-**Likelihood:** Medium
+**Likelihood:** Medium-High (two libraries instead of one; either can
+slip)
 
-**Impact:** Medium (delays v4.0 release if MCP must ship with v4.0)
+**Impact:** High (PyPI release is gated on both libraries shipping)
 
-**Mitigation:** MCP library development can run in parallel with
-v4.0 work after Phase 3B (HTTP, subprocess, JSON dependencies). If
-MCP library isn't ready at v4.0 launch, ship v4.0 first; MCP library
-ships shortly after.
+**Mitigation:** Library development runs in parallel with v4.0 work
+after Phase 3B (HTTP, subprocess, JSON dependencies). Both libraries
+have well-bounded specifications and 14-phase implementation outlines.
+The maintainer's design-heavy planning + concentrated execution pattern
+handles bounded-task work well. If one library is at risk of slipping,
+the response is to focus on that library; the PyPI release waits. No
+fallback to "ship v4.0 first, library later" — the coordinated launch
+is what validates the protocols-are-adapters architecture.
+
+If both libraries are at risk simultaneously, the response is to extend
+the v4.0 cycle, not to scope down. The cycle-extension cost is
+acceptable; the architectural-message cost of an uncoordinated launch
+is not.
+
+**Reconsideration trigger:** If after a month of focused library
+development one library is clearly capped at a percentage of scope
+(say, 60%) and the other is complete, consider shipping v4.0 with the
+complete library and the partial library as v4.0.1. This is a fallback,
+not a default.
 
 ### Risk 3 — Doc-vs-code gate implementation surfaces unexpected
 complications
@@ -264,26 +344,53 @@ breaking changes need incorporation.
 documented. v4.0 eval includes specific probe for inf/nan handling
 in real workflows.
 
+### Risk 8 — A2A spec evolves between Phase 0 and v4.0 release
+
+**Likelihood:** Medium (A2A v1.0.0 is stable but the protocol is still
+maturing in ecosystem adoption)
+
+**Impact:** Variable (small if additive, large if breaking)
+
+**Mitigation:** Spec verification discipline applied (Decision 17,
+mirroring Decision 16 for MCP). Run before v4.0 release to PyPI. Pause
+release if breaking changes need incorporation. A2A v1.0.0 stable
+status provides a versioned anchor (unlike MCP's dated revisions),
+which simplifies the verification comparison.
+
 ---
 
 ## Dependencies and sequencing
 
 **Critical path through Phase 3:**
 
-1. JSON (already exists) ← prerequisite for stdlib err records, MCP,
-   HTTP body decoding
+1. JSON (already exists) ← prerequisite for stdlib err records, both
+   protocol libraries, HTTP body decoding
 2. Phase 3A (breaking changes) — must complete first because tests
    for new stdlib will be written against new behavior
-3. Phase 3B HTTP — required for MCP HTTP transport
-4. Phase 3B Subprocess — required for MCP stdio transport
-5. Phase 3C Tool registry library-side handlers — required for MCP
-   tool registration
+3. Phase 3B HTTP — required for nodus-mcp HTTP transport and nodus-a2a
+   HTTP+JSON binding
+4. Phase 3B Subprocess — required for nodus-mcp stdio transport
+5. Phase 3C Tool registry library-side handlers — required for both
+   libraries' tool registration (Decision 12 covers both)
 6. Phase 3C Test framework — depends on doc-vs-code gate for
    coverage doc verification
 7. Phase 3C Doc-vs-code gate — depends on stdlib being settled
-8. MCP library — depends on 3B HTTP, 3B Subprocess, 3C Tool registry
+8. nodus-mcp library — depends on 3B HTTP, 3B Subprocess, 3C Tool
+   registry
+9. nodus-a2a library — depends on 3B HTTP, 3C Tool registry (no
+   subprocess dependency — A2A is HTTP/gRPC, not stdio)
 
-**Parallelism opportunities:**
+**Parallelism opportunities (libraries):**
+
+- nodus-mcp and nodus-a2a are independent of each other; can be
+  developed in parallel after their respective dependencies are met
+- Each library's Phase A (foundation, data model) can begin once
+  Phase 3B HTTP is stable; later phases require Phase 3C Tool registry
+- gRPC binding for nodus-a2a (Phase L) requires no v4.0 work beyond
+  what's already in scope; can be developed independently of the
+  HTTP-binding phases
+
+**Parallelism opportunities (other):**
 - 3A subphases can be done somewhat in parallel (different files)
 - 3B HTTP and 3B Subprocess are independent
 - 3B namespaces all independent of each other (HTTP, env, datetime,
@@ -366,6 +473,8 @@ For quick reference, the 16 decisions from Phase 0:
 | 14 | Equality: numeric-only coercion, no `===` operator | Locked |
 | 15 | Doc-vs-code gate: three-phase verification | Locked |
 | 16 | MCP library v0.1: comprehensive, ships with v4.0 | Locked |
+| 16+ | MCP spec pin: 2025-11-25, Elicitation added to Phase F | Locked |
+| 17 | A2A library v0.1: comprehensive, three bindings, ships with v4.0 | Locked |
 
 Full reasoning, rejected alternatives, and reconsideration triggers
 for each decision are in `docs/design/v4/00-phase-0-decisions.md`.
@@ -378,6 +487,8 @@ for each decision are in `docs/design/v4/00-phase-0-decisions.md`.
 
 - `docs/design/v4/00-phase-0-decisions.md` (this document's companion)
 - `docs/governance/V4_0_PLAN.md` (this document)
+- `docs/governance/LIBRARY_ECOSYSTEM.md` (three-tier ecosystem
+  architecture, protocols-as-adapters commitment, v4.0 launch shape)
 
 ### To create during Phase 1
 
@@ -385,6 +496,8 @@ for each decision are in `docs/design/v4/00-phase-0-decisions.md`.
 
 ### To create or update during Phase 4
 
+- `docs/release-notes/v4.0/spec-verification.md` (Phase 5 deliverable)
+  — both protocol library spec verifications documented
 - `docs/migration/v3-to-v4.md` (new) — migration guide
 - `LANGUAGE_VISION.md` (root) — updated for v4.0 reality and v5.x+
   outlook
@@ -412,7 +525,10 @@ for each decision are in `docs/design/v4/00-phase-0-decisions.md`.
 These items are explicitly out of scope for v4.0 Phase 0 planning;
 they get their own design and planning when needed:
 
-- MCP library design phase (separate cycle, dependencies on v4.0 Phase 3)
+- nodus-mcp library design phase (separate cycle, dependencies on
+  v4.0 Phase 3B HTTP + 3B Subprocess + 3C Tool registry)
+- nodus-a2a library design phase (separate cycle, dependencies on
+  v4.0 Phase 3B HTTP + 3C Tool registry)
 - v5.x planning (will start after v4.0 eval cycle completes)
 - Performance optimization passes (separate effort, not v4.0 priority)
 - IDE integration polish beyond what exists in v3.x
@@ -429,8 +545,9 @@ v4.0 is considered complete when all of the following are true:
 2. GitHub release v4.0.0 published with full CHANGELOG entry
 3. `pip install nodus-lang==4.0.0` works cleanly in fresh environment
 4. `nodus_gate --all` passes against the installed wheel
-5. MCP library v0.1 published to Nodus registry (or v4.0.x milestone
-   created with MCP library as the v4.0.1 deliverable)
+5. Both `nodus-mcp` v0.1 and `nodus-a2a` v0.1 published to the Nodus
+   registry. No fallback to "library ships later as v4.0.x" — both
+   libraries gate the PyPI release.
 6. v4.0 stress-test eval completed with composite score ≥ 8.0
 7. Migration guide complete and verified against representative v3.x
    code
@@ -455,5 +572,8 @@ when accumulated v4.x work and Tier 4 items justify a new major cycle.
 | Tech debt tracker | `docs/governance/TECH_DEBT.md` |
 | Release playbook | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Major release playbook | `docs/governance/PLAYBOOK_MAJOR.md` |
+| Library ecosystem | `docs/governance/LIBRARY_ECOSYSTEM.md` |
+| nodus-mcp repo | `github.com/Masterplanner25/nodus-mcp` |
+| nodus-a2a repo | `github.com/Masterplanner25/nodus-a2a` |
 
 Plan complete. Phase 1 begins when ready.
