@@ -20,6 +20,68 @@ not let design work expand into the patch/minor release window.
 
 ---
 
+## Session handoff methodology
+
+Release cycles span multiple sessions. The session-to-session handoff
+discipline matters as much as the within-session work. The pattern that
+has produced 7 successful release cycles is:
+
+### Per-session deliverables
+
+Each session ends with one or more of the following:
+
+1. **Chat session summary** — when the work happened in this chat
+   interface (planning, design, eval, governance work). Captured from
+   the chat itself: the decisions made, files created or staged, open
+   follow-ups, and what the next session should pick up.
+
+2. **Claude Code session summary** — when the work happened in Claude
+   Code (implementation, fixes, tests, refactors). Captured from the
+   Claude Code session itself, not reconstructed from memory. Includes
+   commit hashes, files touched, tests run, and known follow-ups.
+
+Both formats are first-class. Neither replaces the other. A cycle
+typically has a mix: design conversations produce chat summaries, then
+Claude Code sessions execute against the resulting specs and produce
+their own summaries.
+
+### Standing documentation updates from Claude Code sessions
+
+Each Claude Code session that introduces a new pattern, command,
+convention, or environmental fact updates the project's standing
+documentation:
+
+- **CLAUDE.md** — for patterns Claude Code needs every session (build
+  commands, PYTHONPATH conventions, lint rules, PowerShell syntax
+  quirks, GitHub API patterns, etc.). Updated in the same session
+  that surfaces the pattern.
+- **.claude/commands/*** — for repeatable workflows that warrant a
+  named skill (file-bug, release-prep, milestone-transition, etc.).
+  Created or updated in the same session that surfaces the workflow.
+
+The discipline is: if a Claude Code session needed something the
+session before didn't have, capture that delta before ending the
+session. CLAUDE.md and skills compound across sessions; missing a
+delta loses leverage.
+
+### Why this matters
+
+Without this discipline:
+
+- Patterns are reinvented each session
+- Environment-specific gotchas re-surface as bugs in the next session
+- Session-to-session handoffs lose information
+- The maintainer ends up re-explaining the same things
+
+With this discipline:
+
+- Each session inherits the accumulated wisdom of all prior sessions
+- New collaborators (or the maintainer after a break) can pick up
+  from CLAUDE.md and the session summaries
+- The handoff doc for the next session is concrete and current
+
+---
+
 ## Overview
 
 Five stages in order. Stage 4 (eval) is optional for targeted security
@@ -152,6 +214,31 @@ invoked, the prompt is largely automated.
 - `nodus --version` after install from PyPI is the final smoke test. If
   it doesn't match the tag, something went wrong (most likely:
   `version.py` and `pyproject.toml` drifted).
+
+### CHANGELOG diff check
+
+Before locking the CHANGELOG entry for this release, diff stdlib
+behavior against the previous version. The check is:
+
+1. Identify all stdlib functions and CLI surfaces touched during this
+   release cycle (including incidental changes from refactors,
+   bug fixes, and dependency updates).
+2. For each, verify the behavior change is captured in the CHANGELOG
+   under the appropriate subsection (Added / Changed / Fixed /
+   Removed / Deprecated).
+3. If a behavior change is shipping but not documented, add it to the
+   CHANGELOG before release. The discipline is: every behavior change
+   ships in the CHANGELOG, even if discovered during release prep.
+
+**Why this matters:** v3.0.2 shipped an undocumented improvement to
+`strings.split` arity errors (from "Stack underflow" to a Nodus-voice
+type error). It was a positive change; the omission was a
+documentation gap, not a code gap. Caught by the v3.0.2 stress-test
+eval. The diff check prevents recurrence.
+
+**Practical approach:** Compare error messages and return values for
+representative inputs against the previous shipped wheel. Where
+behavior differs, confirm the CHANGELOG covers it.
 
 **Exit condition:** PyPI page shows new version; `pip install
 nodus-lang==X.Y.Z` works in a fresh environment; `nodus --version`

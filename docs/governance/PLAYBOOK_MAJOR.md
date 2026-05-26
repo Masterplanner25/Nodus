@@ -53,6 +53,68 @@ Playbook A (patch release).
 
 ---
 
+## Session handoff methodology
+
+Release cycles span multiple sessions. The session-to-session handoff
+discipline matters as much as the within-session work. The pattern that
+has produced 7 successful release cycles is:
+
+### Per-session deliverables
+
+Each session ends with one or more of the following:
+
+1. **Chat session summary** — when the work happened in this chat
+   interface (planning, design, eval, governance work). Captured from
+   the chat itself: the decisions made, files created or staged, open
+   follow-ups, and what the next session should pick up.
+
+2. **Claude Code session summary** — when the work happened in Claude
+   Code (implementation, fixes, tests, refactors). Captured from the
+   Claude Code session itself, not reconstructed from memory. Includes
+   commit hashes, files touched, tests run, and known follow-ups.
+
+Both formats are first-class. Neither replaces the other. A cycle
+typically has a mix: design conversations produce chat summaries, then
+Claude Code sessions execute against the resulting specs and produce
+their own summaries.
+
+### Standing documentation updates from Claude Code sessions
+
+Each Claude Code session that introduces a new pattern, command,
+convention, or environmental fact updates the project's standing
+documentation:
+
+- **CLAUDE.md** — for patterns Claude Code needs every session (build
+  commands, PYTHONPATH conventions, lint rules, PowerShell syntax
+  quirks, GitHub API patterns, etc.). Updated in the same session
+  that surfaces the pattern.
+- **.claude/commands/*** — for repeatable workflows that warrant a
+  named skill (file-bug, release-prep, milestone-transition, etc.).
+  Created or updated in the same session that surfaces the workflow.
+
+The discipline is: if a Claude Code session needed something the
+session before didn't have, capture that delta before ending the
+session. CLAUDE.md and skills compound across sessions; missing a
+delta loses leverage.
+
+### Why this matters
+
+Without this discipline:
+
+- Patterns are reinvented each session
+- Environment-specific gotchas re-surface as bugs in the next session
+- Session-to-session handoffs lose information
+- The maintainer ends up re-explaining the same things
+
+With this discipline:
+
+- Each session inherits the accumulated wisdom of all prior sessions
+- New collaborators (or the maintainer after a break) can pick up
+  from CLAUDE.md and the session summaries
+- The handoff doc for the next session is concrete and current
+
+---
+
 ## The actual workflow
 
 This playbook describes a layered system, not a procedure to follow
@@ -136,6 +198,44 @@ the AI pressure-tests reasoning, the maintainer makes the final call.
 - The plan document gets ahead of itself sometimes — early drafts
   contain scope that turns out to need Phase 1 design work. That's fine.
   The plan is a working document; it evolves between phases.
+
+### Spec-fetch requirement for protocol or format decisions
+
+When a Phase 0 decision references an external specification —
+including but not limited to:
+
+- Protocol libraries (MCP, A2A, future protocols)
+- Format specifications (JSON Schema, Protobuf, CBOR, etc.)
+- Standards documents (RFCs, W3C specs, etc.)
+
+The decision drafting MUST include a fresh fetch of the specification
+as the first step. Drafting from memory is forbidden for spec-
+referencing decisions.
+
+**Why this matters:** the v4.0 Phase 0 session originally produced
+Decision 16 (nodus-mcp library v0.1) from memory. The implementation
+outline missed the Elicitation capability that the MCP 2025-11-25
+revision had added. The omission was caught only when the A2A spec
+was fetched later in the same session, prompting a re-fetch of MCP.
+Decision 16 received an amendment block; Decision 17 (nodus-a2a) was
+drafted correctly against a fresh spec fetch from the start.
+
+**Procedure:**
+
+1. Before drafting the decision, identify the authoritative spec
+   source (URL to the canonical specification document).
+2. Fetch the current revision. Note the date or version.
+3. Read the spec sections relevant to the decision (data model,
+   operations, capabilities).
+4. Draft the decision against the fetched content, citing the spec
+   revision in the decision text.
+5. The pinned revision becomes the contract for implementation. The
+   spec verification step (before release) compares against this
+   pinned revision.
+
+**Cost:** typically 10-30 minutes per spec, depending on length.
+Cheap relative to the rework cost of discovering missing capabilities
+during Phase 3 implementation.
 
 **Exit condition:** every open design question has a decision (which
 may be "defer to a later cycle"); the plan document is sufficient to
@@ -317,6 +417,35 @@ anything that doesn't behave as documented.
 - Don't forget non-`docs/` doc locations: `README.md`, `llms.txt`,
   PyPI long_description, GitHub release templates. v3.0 missed some
   onboarding docs in the initial pass and had to do a follow-up sweep.
+
+### CHANGELOG diff check (major release variant)
+
+For a major release, the CHANGELOG entry is larger and the diff check
+is more involved. Run all of the following before locking the [X.Y.Z]
+entry:
+
+1. **Stdlib surface diff:** for every public stdlib function, compare
+   behavior against the previous major release on representative
+   inputs. Document deltas.
+2. **Error message diff:** compare error message text for the same
+   error categories. Even small wording changes affect users who
+   string-match errors (a known anti-pattern, but it happens).
+3. **CLI surface diff:** every CLI flag and subcommand exit code,
+   confirmed against current behavior.
+4. **Embedding API diff:** every dict shape returned by NodusRuntime,
+   every kwarg accepted, every error type raised.
+5. **For each diff item:** confirm the CHANGELOG [X.Y.Z] entry covers
+   it under the appropriate subsection.
+
+If the diff surfaces a behavior change not in the CHANGELOG, either
+add it to the CHANGELOG or revert the unintended change. Behavior
+changes shipping silently is a credibility cost; once is unfortunate,
+twice is a pattern.
+
+The `nodus_gate --runtime` check catches doc-vs-code drift in guides.
+This CHANGELOG diff check catches CHANGELOG-vs-code drift in the
+release notes themselves. Both are necessary; neither subsumes the
+other.
 
 **Exit condition:** every documented function exists; every documented
 example runs and produces verbatim output; migration guide is complete;
