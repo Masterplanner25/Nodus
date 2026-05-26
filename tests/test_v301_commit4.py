@@ -18,16 +18,15 @@ PYTHONPATH = os.path.join(os.path.dirname(__file__), "..", "src")
 if PYTHONPATH not in sys.path:
     sys.path.insert(0, PYTHONPATH)
 
-from nodus import NodusRuntime
-from nodus.runtime.diagnostics import LangSyntaxError
-from nodus.frontend.lexer import tokenize
+from nodus import NodusRuntime  # noqa: E402
+from nodus.runtime.diagnostics import LangSyntaxError  # noqa: E402
+from nodus.frontend.lexer import tokenize  # noqa: E402
 
 
 class NonAsciiIdentifierTests(unittest.TestCase):
     """BUG-E11: Non-ASCII identifier characters produce a helpful error message."""
 
     def _parse_err(self, src):
-        from nodus.tooling import runner
         rt = NodusRuntime()
         return rt.run_source(src)
 

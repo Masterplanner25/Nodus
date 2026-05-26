@@ -1,7 +1,6 @@
 """I/O and filesystem builtin functions for the Nodus VM."""
 
 import os
-import pathlib
 
 from nodus.runtime.error_wrap import print_trace
 
