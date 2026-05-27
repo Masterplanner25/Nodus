@@ -398,3 +398,37 @@ they do not affect the API surface (which is locked by 04-subprocess-api.md).
 6. **stdin write backpressure.** If user calls `p.stdin.send(...)`
    faster than the process consumes. Tentative direction: bounded write
    buffer; `send()` blocks (or yields in async context) when full.
+
+---
+
+## Phase 3B Open Implementation Questions: std:time
+
+From `docs/design/v4/02-datetime-api.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 02-datetime-api.md).
+
+1. **Year range support.** DST rules for years before 1900 or after
+   2100 may be undefined for specific zones. Tentative direction:
+   support 1900-2099 explicitly; outside that range return err with
+   `category: "out_of_range"`.
+
+2. **Zone lookup performance.** zoneinfo creates ZoneInfo objects on
+   demand; the C implementation caches them. Verify caching behavior
+   is sufficient for workloads that repeatedly create datetimes in the
+   same zone.
+
+3. **Thread safety of zoneinfo cache.** ZoneInfo objects are thread-safe
+   to read but not to construct. The Nodus VM is single-threaded by
+   default; verify no issues when embedded in a multi-threaded host.
+
+4. **Format string caching.** Format strings should be tokenized once
+   per unique string. Tentative direction: LRU cache or weakref dict,
+   capped at ~100 entries to bound memory.
+
+5. **Leap second handling.** Unix epoch ms assumes 86400 seconds per
+   day always; leap seconds are not represented. Document the
+   limitation; reconsider only if a concrete use case surfaces.
+
+6. **`time.from_iso8601` sub-millisecond precision.** The spec allows
+   arbitrary fractional-second precision. Tentative direction: truncate
+   (don't round) to milliseconds. Document explicitly.
