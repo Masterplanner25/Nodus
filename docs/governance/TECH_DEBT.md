@@ -692,3 +692,77 @@ implementation questions for Phase 3B". These are resolved during Phase
    the reference doesn't prevent garbage collection of un-registered
    tools. Tentative: weak reference where possible; strong reference for
    tools currently invocable.
+
+---
+
+## Phase 3B Open Implementation Questions: test framework API (doc 07)
+
+From `docs/design/v4/07-test-framework-api.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by
+07-test-framework-api.md).
+
+1. **Virtual clock semantics for nested async operations.** Tests that
+   spawn coroutines that themselves spawn coroutines can have complex
+   timing. Tentative: depth-first virtual time advancement when
+   `test.advance_clock` is called.
+
+2. **Filesystem watcher implementation.** Use `watchdog` Python package
+   or implement minimal polling-based watcher? Tentative: `watchdog` for
+   production; falls back to polling if not installed.
+
+3. **Diff algorithm performance on very large values.** Records or lists
+   with thousands of elements could produce huge diffs. Tentative:
+   truncate diff to ~100 lines; show "N more changes omitted" indicator.
+
+4. **Parallel execution thread safety.** Each worker runs in its own
+   context, but shared resources (tool registry, env vars) need
+   synchronization. Tentative: workers get independent VM instances;
+   tests in parallel can't easily share state by design.
+
+5. **Test discovery for nested suite-only files.** Files with
+   `test.suite` but no `test.case` at top level (suites that group
+   children). Tentative: recurse into nested suites; warn on suites with
+   no test cases at all (likely a bug).
+
+6. **Coverage integration point.** Connects to
+   `08-test-framework-coverage.md`. Tentative: `--coverage` enables the
+   line-execution event stream; the coverage collector subscribes and
+   aggregates.
+
+---
+
+## Phase 3B Open Implementation Questions: test framework coverage (doc 08)
+
+From `docs/design/v4/08-test-framework-coverage.md` § "Open
+implementation questions for Phase 3B". These are resolved during Phase
+3B execution; they do not affect the API surface (which is locked by
+08-test-framework-coverage.md).
+
+1. **Event bus implementation.** Does Nodus's existing event
+   infrastructure (`--trace-errors`, debugger) support efficient per-line
+   events? Tentative: extend existing event bus; profile overhead before
+   committing.
+
+2. **Source-position table size.** Adding executable_lines and
+   excluded_lines per file to compiled modules adds memory. Tentative:
+   small overhead; verify with realistic test suites.
+
+3. **HTML report size for large codebases.** A project with 100K lines
+   of source would produce a large coverage.html. Tentative: single file
+   for v4.0; split into per-file pages if size becomes a problem.
+
+4. **Coverage data merging across test runs.** Some workflows run tests
+   multiple times with different configurations and want combined
+   coverage. Tentative: not in v4.0; users merge JSON files externally.
+   Add `--coverage-merge` flag in v4.x if demand surfaces.
+
+5. **Line attribution for nested function definitions.** Anonymous
+   functions defined inside other functions span multiple lines.
+   Tentative: count the `fn` keyword line as executable; nested function
+   body lines counted separately.
+
+6. **Skip-comment parsing performance.** Parsing comments during
+   compilation adds time. Tentative: only parse coverage comments when
+   the compiler is invoked with coverage support enabled; falls back to
+   non-coverage mode for production compilation.
