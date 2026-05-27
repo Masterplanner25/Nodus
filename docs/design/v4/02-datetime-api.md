@@ -724,6 +724,21 @@ Both libraries' use cases are covered by the locked API surface.
 
 ---
 
+## Bytecode impact
+
+**No new opcodes required. `BYTECODE_VERSION` stays at 4.**
+
+`std:time` is implemented as Python-side builtin functions registered
+through the existing builtin registry. Datetime and duration values are
+Nodus records (existing type) with methods that compute from epoch_ms
+and zone. User code calls all `std:time` functions via the existing
+`CALL_BUILTIN` opcode.
+
+The frozen-bytecode contract from v1.0 is preserved by this design.
+Compiled v3.x `.ndbc` files remain loadable in the v4.0 VM.
+
+---
+
 ## Cross-references
 
 - `docs/design/v4/00-phase-0-decisions.md` Decision 6 (datetime API)

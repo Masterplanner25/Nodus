@@ -462,3 +462,71 @@ they do not affect the API surface (which is locked by 03-crypto-hashing-api.md)
 
 6. **`binascii` vs manual hex.** Tentative direction: use Python's
    `binascii.hexlify` (fast C code); manual implementation is ~3x slower.
+
+---
+
+## Phase 1 process improvement: bytecode-impact sections
+
+**Surfaced by:** v4.0 Phase 1 design conversation for `05-string-
+interpolation.md`. The frozen-bytecode constraint (`BYTECODE_VERSION = 4`
+since v1.0, per LANGUAGE_VISION.md principle #4 which lists bytecode
+instruction extensions as allowed but architecturally significant) was
+not explicitly addressed in the first four Phase 1 design docs (HTTP,
+subprocess, time, crypto). The omission was caught when string
+interpolation surfaced the question.
+
+**Process improvement:** every Phase 1 design doc going forward includes
+a "Bytecode impact" section. The section states explicitly:
+
+- Whether the feature requires new opcodes
+- If yes: which opcodes, why they're needed, what `BYTECODE_VERSION`
+  becomes, and what compatibility handling is required for older `.ndbc`
+  files
+- If no: explicitly state that `BYTECODE_VERSION` stays at 4 and the
+  feature uses existing opcodes (typically `CALL_BUILTIN` for new
+  stdlib functions)
+
+The four prior docs (01-http-api, 02-datetime-api, 03-crypto-hashing-api,
+04-subprocess-api) had bytecode-impact sections added retroactively in
+the same commit that introduced `05-string-interpolation.md`.
+
+**Rationale:** explicit bytecode-impact analysis forces every Phase 1
+design to confront the frozen-bytecode contract rather than implicitly
+assuming new opcodes are free. The four prior docs happened to not
+require opcodes, but the omission was lucky rather than designed.
+
+**Follow-up:** PLAYBOOK_MAJOR.md Phase 1 guidance updated in a
+separate follow-up commit.
+
+---
+
+## Phase 3B Open Implementation Questions: string interpolation
+
+From `docs/design/v4/05-string-interpolation.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 05-string-interpolation.md).
+
+1. **Mode stack data structure.** Lightweight (list of mode enums) or
+   richer structure (mode + per-mode state like paren_depth)? Tentative
+   direction: richer structure for cleaner code; bounded memory cost
+   (max 32 entries x constant per-entry).
+
+2. **Recovery from unclosed forms.** When the lexer hits EOF inside a
+   string or interpolation, recover for LSP or abort? Tentative
+   direction: emit an error token with the partial content; LSP can use
+   this for highlighting up to the error point.
+
+3. **Multiline string interpolation.** Resolve via LANGUAGE_SPEC reading
+   before lexer work begins; the mode-stack lexer handles multiline
+   naturally if the feature exists.
+
+4. **Empty interpolation diagnostic precision.** `"\()"` is a hard
+   error; users who want a template placeholder write `"\(\"\")"`.
+
+5. **Source position recording overhead.** Tentative direction: piggyback
+   on existing source-position infrastructure; verify `.ndbc` file size
+   impact is under ~5% for interpolation-heavy scripts.
+
+6. **Migration tooling.** Tentative direction: not in v4.0; migration
+   guide documents the manual `\(` -> `\\(` change. Reconsider if real
+   users hit the breaking change frequently.

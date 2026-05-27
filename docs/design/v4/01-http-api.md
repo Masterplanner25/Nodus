@@ -399,6 +399,22 @@ migration to native `std:http` is opt-in.
 
 ---
 
+## Bytecode impact
+
+**No new opcodes required. `BYTECODE_VERSION` stays at 4.**
+
+`std:http` is implemented as Python-side builtin functions registered
+through the existing builtin registry. User code calls these functions
+via the existing `CALL_BUILTIN` opcode (or the equivalent function-call
+infrastructure). No bytecode-level changes to the VM are required.
+
+The frozen-bytecode contract from v1.0 is preserved by this design.
+Compiled v3.x `.ndbc` files remain loadable in the v4.0 VM; v4.0 source
+files compile to the same opcode shapes as v3.x code that called
+external services through the embedding API.
+
+---
+
 ## Implementation outline
 
 ### Substrate: httpx

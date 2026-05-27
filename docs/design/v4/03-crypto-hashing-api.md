@@ -687,6 +687,21 @@ v4.0. No migration from v3.x.
 
 ---
 
+## Bytecode impact
+
+**No new opcodes required. `BYTECODE_VERSION` stays at 4.**
+
+All three crypto namespaces (`std:hash`, `std:encoding`, `std:secrets`)
+are implemented as Python-side builtin functions registered through the
+existing builtin registry. Hash records are Nodus records (existing
+type) with methods that format from underlying bytes. User code calls
+all crypto functions via the existing `CALL_BUILTIN` opcode.
+
+The frozen-bytecode contract from v1.0 is preserved by this design.
+Compiled v3.x `.ndbc` files remain loadable in the v4.0 VM.
+
+---
+
 ## Cross-references
 
 - `docs/design/v4/00-phase-0-decisions.md` Decision 7 (three crypto

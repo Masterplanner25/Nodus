@@ -593,6 +593,22 @@ to native `std:subprocess` is opt-in.
 
 ---
 
+## Bytecode impact
+
+**No new opcodes required. `BYTECODE_VERSION` stays at 4.**
+
+`std:subprocess` is implemented as Python-side builtin functions
+registered through the existing builtin registry. User code calls these
+functions via the existing `CALL_BUILTIN` opcode. The process handle
+returned by `subprocess.spawn` is a Nodus record (existing type); its
+channel-based stdout/stderr/stdin use the existing channel primitive
+from v1.x.
+
+The frozen-bytecode contract from v1.0 is preserved by this design.
+Compiled v3.x `.ndbc` files remain loadable in the v4.0 VM.
+
+---
+
 ## Cross-references
 
 - `docs/design/v4/00-phase-0-decisions.md` Decision 8 (subprocess API
