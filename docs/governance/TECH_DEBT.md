@@ -530,3 +530,131 @@ they do not affect the API surface (which is locked by 05-string-interpolation.m
 6. **Migration tooling.** Tentative direction: not in v4.0; migration
    guide documents the manual `\(` -> `\\(` change. Reconsider if real
    users hit the breaking change frequently.
+
+---
+
+## Phase 3B Open Implementation Questions: IEEE 754 float division (doc 09)
+
+From `docs/design/v4/09-ieee-754-division.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 09-ieee-754-division.md).
+
+1. **Current integer division throw vs err.** Verify current v3.x
+   integer div-by-zero behavior. If it throws, this doc's spec converts
+   it to err record (consistent with v4.0 patterns). If it already errs,
+   no change needed for integer path.
+
+2. **Performance regression check.** Removing the zero-check in float
+   division saves a comparison per division. Verify no performance
+   regression elsewhere (Python's IEEE 754 path is implemented in C and
+   should be as fast or faster than the explicit check).
+
+3. **Bytecode disassembly output.** The disassembler should print `DIV`
+   the same way; no opcode change. Verify disassembly tests don't need
+   updates.
+
+4. **Embedding API impact.** Python host code that catches Nodus's
+   division-by-zero exception via the embedding API no longer sees it
+   (because the exception isn't thrown). Document this in the embedding
+   API migration notes.
+
+---
+
+## Phase 3B Open Implementation Questions: type() naming reconciliation (doc 10)
+
+From `docs/design/v4/10-type-naming-reconciliation.md` § "Open
+implementation questions for Phase 3B". These are resolved during Phase
+3B execution; they do not affect the API surface (which is locked by
+10-type-naming-reconciliation.md).
+
+1. **Integer literals without suffix.** Verify that unadorned integer
+   literals (e.g., `1`, `42`) are represented as Python `int` in the VM
+   and that `type(42)` returns `"int"` and `type(42.0)` returns `"float"`.
+   The type dispatch must be clean between the two.
+
+2. **nan and infinity type.** Verify `type(math.nan)` returns `"float"`
+   and `type(math.infinity)` returns `"float"`. These are Python floats;
+   the type() implementation should naturally return `"float"` without
+   special-casing.
+
+3. **Grep tooling for migration.** Decide whether the migration guide
+   should include a recommended `rg`/grep pattern for user codebases, or
+   whether a `nodus migrate` subcommand is in scope for Phase 4. The
+   grep pattern is low-effort; the subcommand is out of scope for v4.0.
+
+4. **Type string stability contract.** Decide whether type() return
+   strings are part of the stable public API (i.e., will never change
+   again). If yes, document this in `LANGUAGE_SPEC.md` as a stability
+   guarantee. Recommendation: yes, lock them as stable with v4.0.
+
+---
+
+## Phase 3B Open Implementation Questions: equality coercion narrowing (doc 11)
+
+From `docs/design/v4/11-equality-coercion.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 11-equality-coercion.md).
+
+1. **Python bool/int subclass guard.** Verify the bool exclusion in the
+   equality opcode handles all cases: `True`, `False`, bool variables,
+   and bool results of expressions. Python's `isinstance(True, int)` is
+   `True` — the guard must be in place or the coercion check fires.
+
+2. **Current v3.x coercion implementation.** Audit `coerce_equal` (or
+   equivalent) in the current VM to understand all active cross-type
+   coercions. Only number↔number coercion survives; all others are
+   removed. Create a test for each removed coercion to verify it's gone.
+
+3. **`!=` operator consistency.** Verify `!=` is implemented as
+   `not (a == b)` using the same narrowed equality logic — not as a
+   separate coercion path. `0 != false` must return `true` in v4.0.
+
+4. **List and record equality.** List equality (`[1, 2] == [1, 2]`) uses
+   element-wise comparison. Verify that element comparisons within a list
+   also use the narrowed equality — i.e., `[0] == [false]` is `false` in
+   v4.0. The narrowing must propagate into recursive equality checks.
+
+5. **Truthiness unchanged.** Confirm that narrowing `==` does not affect
+   the `if` condition evaluation path. `if 0 { ... }` behavior is governed
+   by truthiness rules, not the `==` opcode. These are separate code paths;
+   verify they don't share the coercion logic being changed.
+
+---
+
+## Phase 3B Open Implementation Questions: err record location fields (doc 13)
+
+From `docs/design/v4/13-err-record-location-fields.md` § "Open
+implementation questions for Phase 3B". These are resolved during Phase
+3B execution; they do not affect the API surface (which is locked by
+13-err-record-location-fields.md).
+
+1. **Source map completeness.** Verify that the compiler emits source map
+   entries for every `CALL_BUILTIN` instruction — not just for some
+   expressions. If the source map has gaps (no entry for a given PC), the
+   augmentation produces `path: nil, line: nil, column: nil`. A gap
+   analysis is needed during Phase 3B.
+
+2. **REPL source map.** In REPL sessions, the `path` is not a real file
+   path. Decide on the convention: `nil`, `"<repl>"`, or `"<stdin>"`.
+   The `nil` convention is simplest; `"<repl>"` is more readable in
+   error output.
+
+3. **Performance of stack trace collection.** `build_stack_trace` walks
+   the call stack on every err return. For deeply nested calls this may
+   be non-trivial. Profile with a 100-deep call stack. If it's a
+   regression, consider lazy stack collection (build on first access).
+
+4. **User err literal — BUILD_ERR_RECORD opcode.** Verify the existing
+   `BUILD_ERR_RECORD` opcode is the right place to hook augmentation.
+   If user errs are built via a different path (e.g., via dict
+   construction and a cast), find the correct interception point.
+
+5. **Embedding API.** Python host code that creates Nodus err records
+   directly (via the embedding API) should also have location fields.
+   Decide whether the embedding API fills location fields or leaves them
+   nil. Nil is acceptable for embedding; document the behavior.
+
+6. **Err records in async context.** Verify that async builtin calls
+   (e.g., `http.get_async`) go through the same `CALL_BUILTIN`
+   interceptor and get location fields. If async builtins have a separate
+   dispatch path, hook it separately.
