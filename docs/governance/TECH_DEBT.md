@@ -658,3 +658,37 @@ implementation questions for Phase 3B". These are resolved during Phase
    (e.g., `http.get_async`) go through the same `CALL_BUILTIN`
    interceptor and get location fields. If async builtins have a separate
    dispatch path, hook it separately.
+
+---
+
+## Phase 3B Open Implementation Questions: tool registry (doc 06)
+
+From `docs/design/v4/06-tool-registry-library-handlers.md` § "Open
+implementation questions for Phase 3B". These are resolved during Phase
+3B execution; they do not affect the API surface (which is locked by
+06-tool-registry-library-handlers.md).
+
+1. **JSON Schema validator dependency.** Use Python's `jsonschema`
+   package or implement a minimal validator? Tentative: `jsonschema`
+   package; add to `pyproject.toml` if not already present.
+
+2. **Warning emission mechanism.** Stderr write, or a more structured
+   warning channel? Tentative: stderr write with library-overridable
+   sink. Aligns with Python's `warnings` module pattern.
+
+3. **Deprecated-warning state storage.** Per-VM dict of warned-tool
+   names. Tentative: simple set; clears on VM shutdown.
+
+4. **Registry capacity limit.** Should there be a maximum number of
+   registered tools? Tentative: no hard limit; very large registries
+   (10000+ tools) are unusual but not problematic.
+
+5. **Thread-safety primitive.** RLock is the conservative choice; verify
+   whether actual usage patterns warrant lighter-weight synchronization.
+   Tentative: RLock initially; optimize if profiling shows contention.
+
+6. **Function-value handler representation.** When a Nodus function value
+   is registered as a handler, the registry stores a reference. Verify
+   the reference doesn't prevent garbage collection of un-registered
+   tools. Tentative: weak reference where possible; strong reference for
+   tools currently invocable.
