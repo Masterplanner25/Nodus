@@ -432,3 +432,33 @@ they do not affect the API surface (which is locked by 02-datetime-api.md).
 6. **`time.from_iso8601` sub-millisecond precision.** The spec allows
    arbitrary fractional-second precision. Tentative direction: truncate
    (don't round) to milliseconds. Document explicitly.
+
+---
+
+## Phase 3B Open Implementation Questions: std:hash / std:encoding / std:secrets
+
+From `docs/design/v4/03-crypto-hashing-api.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by 03-crypto-hashing-api.md).
+
+1. **Builder state representation.** Internal flag or sentinel for
+   "consumed" state. Tentative direction: boolean flag; subsequent
+   update/finalize calls return err with `kind: "state_error"`.
+
+2. **Streaming HMAC user demand.** Not in v4.0 scope. Track issues
+   requesting it; reconsider for v4.x if 10+ distinct use cases surface.
+
+3. **UUIDv7 entropy quality.** Verify Python `secrets` module provides
+   sufficient entropy for the 74-bit random portion. Tentative direction:
+   yes, `secrets.token_bytes(10)` provides 80 bits from the OS CSPRNG.
+
+4. **`random_int` rejection sampling.** For uniform distribution without
+   modulo bias. Tentative direction: use Python `secrets.randbelow()`
+   pattern; well-tested.
+
+5. **Hash record garbage collection.** Hash records hold a small bytes
+   value (<=64 bytes for SHA-512). No special handling needed; standard
+   Python GC suffices.
+
+6. **`binascii` vs manual hex.** Tentative direction: use Python's
+   `binascii.hexlify` (fast C code); manual implementation is ~3x slower.
