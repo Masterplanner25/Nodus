@@ -832,3 +832,73 @@ corrected to use valid syntax (try/catch/finally inside functions).
 
 The existing `tests/test_finally.py` `FinallyCatchReturnTests` class
 already covers this behavior comprehensively via the `run_program` API.
+
+---
+
+## Phase 3B Open Implementation Questions: len() returns int (doc 14)
+
+From `docs/design/v4/14-len-returns-int.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by
+14-len-returns-int.md).
+
+1. **Existing v3.x tests assuming float return.** Audit the test
+   suite for tests that compare `len(x) == 5.0` (using float
+   equality) versus `len(x) == 5i`. Update test assertions to use
+   int.
+
+2. **`range` boundary behavior with negative steps.** `range(10, 0,
+   -1)` should produce ints 10, 9, ..., 1. Verify Python's `range`
+   produces this naturally; if not, adjust the Nodus wrapper.
+
+3. **`index_of` and `last_index_of` consistency.** Both should
+   return `nil` for "not found"; verify no current code returns -1
+   from one and nil from the other.
+
+4. **`count(s, "")` edge case.** Counting empty substring in a
+   string. Python's `str.count("")` returns `len(s) + 1` for non-
+   empty strings and 1 for empty strings. Document this; users
+   sometimes find it surprising.
+
+5. **`range(0)` and `range(5, 5)`.** Both should produce empty
+   iterables. Verify.
+
+6. **Performance impact.** Returning `NodusInt` instead of `float`
+   has a marginally different value-translation path. Verify no
+   regression in hot loops using `len()` heavily.
+
+---
+
+## Phase 3B Open Implementation Questions: cyclic workflow err record (doc 15)
+
+From `docs/design/v4/15-cyclic-workflow-err-record.md` § "Open
+implementation questions for Phase 3B". These are resolved during
+Phase 3B execution; they do not affect the API surface (which is
+locked by 15-cyclic-workflow-err-record.md).
+
+1. **Cycle detection algorithm.** Verify the current Python-side
+   detection produces deterministic step ordering within a cycle.
+   If non-deterministic, fix to ensure same output across runs.
+
+2. **Self-cycle detection.** A step depending on itself (`step A
+   after A`). Verify this is detected and reported with
+   `cycle = ["A"]`.
+
+3. **`workflow_name` for anonymous workflows.** What goes in the
+   `workflow_name` field for workflows without explicit names?
+   Tentative: `"<unnamed>"` string. Verify v3.x has a way to
+   identify the workflow (file path? line number?) and include that.
+
+4. **CALL_BUILTIN wrapping verification.** Ensure the err record
+   returned by `run_workflow` properly receives location fields from
+   the CALL_BUILTIN wrapper. This depends on
+   `13-err-record-location-fields.md` being implemented first.
+
+5. **Test for multi-cycle workflows.** Construct a workflow with
+   two independent cycles; verify first cycle is reported, second
+   is not.
+
+6. **Migration audit.** Check the v3.x test suite and docs for any
+   examples using the map-with-error-key pattern. Update to the
+   err record pattern; ensure `nodus_gate --runtime` catches any
+   examples in docs.
