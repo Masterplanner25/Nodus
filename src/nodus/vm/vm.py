@@ -1,5 +1,6 @@
 """Stack VM runtime for Nodus."""
 
+import math as _math
 import os
 import sys
 import time
@@ -348,6 +349,17 @@ class VM:
     def make_err(self, kind: str, message: str, payload=None) -> "Record":
         """Return an err record value (does not throw)."""
         return Record({"kind": kind, "message": message, "payload": payload}, kind="error")
+
+    def _make_vm_err(self, kind: str, message: str, payload=None) -> "Record":
+        """Return an err record with VM location fields (origin='vm')."""
+        path, line, col = self.current_loc()
+        path = path or self.source_path or "<repl>"
+        stack = self._build_error_stack(path, line, col)
+        return Record({
+            "kind": kind, "message": message, "payload": payload,
+            "path": path, "line": line, "column": col,
+            "stack": stack, "origin": "vm",
+        }, kind="error")
 
     def emit_runtime_error(self, err: LangRuntimeError) -> None:
         if getattr(err, "_event_emitted", False):
@@ -1826,23 +1838,55 @@ class VM:
     def _op_div(self, instr):
         b = self.pop()
         a = self.pop()
-        try:
-            self.stack.append(a / b)
-        except ZeroDivisionError:
-            self.runtime_error("runtime", "Division by zero")
-        except TypeError:
+        a_int = isinstance(a, int) and not isinstance(a, bool)
+        b_int = isinstance(b, int) and not isinstance(b, bool)
+        if a_int and b_int:
+            if b == 0:
+                self.stack.append(self._make_vm_err(
+                    "math_error", "Integer division by zero",
+                    payload={"category": "division_by_zero", "operation": "div",
+                             "numerator": a, "denominator": b}
+                ))
+            else:
+                self.stack.append(a / b)
+        elif not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
             self._binary_type_error("divide", a, b)
+        else:
+            fa, fb = float(a), float(b)
+            if fb == 0.0:
+                if fa == 0.0:
+                    self.stack.append(float('nan'))
+                else:
+                    self.stack.append(_math.copysign(
+                        float('inf'),
+                        _math.copysign(1.0, fa) * _math.copysign(1.0, fb)
+                    ))
+            else:
+                self.stack.append(fa / fb)
         self.ip += 1
 
     def _op_mod(self, instr):
         b = self.pop()
         a = self.pop()
-        try:
-            self.stack.append(a % b)
-        except ZeroDivisionError:
-            self.runtime_error("runtime", "Modulo by zero")
-        except TypeError:
+        a_int = isinstance(a, int) and not isinstance(a, bool)
+        b_int = isinstance(b, int) and not isinstance(b, bool)
+        if a_int and b_int:
+            if b == 0:
+                self.stack.append(self._make_vm_err(
+                    "math_error", "Integer modulo by zero",
+                    payload={"category": "division_by_zero", "operation": "mod",
+                             "numerator": a, "denominator": b}
+                ))
+            else:
+                self.stack.append(a % b)
+        elif not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
             self._binary_type_error("modulo", a, b)
+        else:
+            fb = float(b)
+            if fb == 0.0:
+                self.stack.append(float('nan'))
+            else:
+                self.stack.append(float(a) % fb)
         self.ip += 1
 
     def _op_eq(self, instr):

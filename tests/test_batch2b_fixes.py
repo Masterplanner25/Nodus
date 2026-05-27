@@ -167,7 +167,7 @@ class ErrFieldsTests(unittest.TestCase):
     def test_err_has_path_field(self):
         src = """
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch err {
     print(type(err.path))
 }
@@ -178,7 +178,7 @@ try {
     def test_err_has_line_field(self):
         src = """
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch err {
     print(type(err.line))
 }
@@ -190,7 +190,7 @@ try {
     def test_err_has_column_field(self):
         src = """
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch err {
     print(type(err.column))
 }
@@ -202,7 +202,7 @@ try {
     def test_err_has_stack_field(self):
         src = """
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch err {
     print(type(err.stack))
 }

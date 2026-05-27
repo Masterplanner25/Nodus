@@ -101,6 +101,33 @@ def register(vm, registry) -> None:
             result = -result
         return result
 
+    def builtin_math_is_nan(x):
+        vm.ensure_number(x, "math.is_nan(x)")
+        if isinstance(x, int) and not isinstance(x, bool):
+            return False
+        return _math.isnan(x)
+
+    def builtin_math_is_inf(x):
+        vm.ensure_number(x, "math.is_inf(x)")
+        if isinstance(x, int) and not isinstance(x, bool):
+            return False
+        return _math.isinf(x)
+
+    def builtin_math_is_finite(x):
+        vm.ensure_number(x, "math.is_finite(x)")
+        if isinstance(x, int) and not isinstance(x, bool):
+            return True
+        return _math.isfinite(x)
+
+    def builtin_math_nan():
+        return float('nan')
+
+    def builtin_math_infinity():
+        return float('inf')
+
+    def builtin_math_neg_infinity():
+        return float('-inf')
+
     registry.add("math_abs", 1, builtin_math_abs)
     registry.add("math_min", 2, builtin_math_min)
     registry.add("math_max", 2, builtin_math_max)
@@ -115,3 +142,9 @@ def register(vm, registry) -> None:
     registry.add("math_to_float", 1, builtin_math_to_float)
     registry.add("math_is_int", 1, builtin_math_is_int)
     registry.add("math_idiv", 2, builtin_math_idiv)
+    registry.add("math_is_nan", 1, builtin_math_is_nan)
+    registry.add("math_is_inf", 1, builtin_math_is_inf)
+    registry.add("math_is_finite", 1, builtin_math_is_finite)
+    registry.add("math_nan", 0, builtin_math_nan)
+    registry.add("math_infinity", 0, builtin_math_infinity)
+    registry.add("math_neg_infinity", 0, builtin_math_neg_infinity)

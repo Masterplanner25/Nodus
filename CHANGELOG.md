@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Doc 09:** Float division by zero now returns IEEE 754 `inf`/`nan` instead
+  of throwing. `0.0 / 0.0` → `nan`; `1.0 / 0.0` → `inf`; `-1.0 / 0.0` →
+  `-inf`. Float modulo by zero returns `nan`. Integer division or modulo by
+  zero returns an err record (`kind: "math_error"`, `origin: "vm"`). New
+  `math.is_nan(x)`, `math.is_inf(x)`, `math.is_finite(x)` functions and
+  `math.nan`, `math.infinity`, `math.neg_infinity` constants added to
+  `std:math`.
+
 - **Doc 13 (#78):** All err records now carry five location fields: `path`,
   `line`, `column`, `stack`, and `origin`. Stdlib-returned errs are augmented
   in `call_builtin()` with `origin="stdlib"` and the call-site location.

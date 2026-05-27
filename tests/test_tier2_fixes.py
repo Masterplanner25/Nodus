@@ -29,7 +29,7 @@ class RunSourceOkFalseTests(unittest.TestCase):
     def test_runtime_error_returns_ok_false(self):
         from nodus.runtime.embedding import NodusRuntime
         rt = NodusRuntime()
-        result = rt.run_source("let x = 1 / 0")
+        result = rt.run_source('let x = 1.0 + "x"')
         self.assertIsInstance(result, dict)
         self.assertFalse(result["ok"])
 
@@ -50,7 +50,7 @@ class RunSourceOkFalseTests(unittest.TestCase):
     def test_stdout_captured_on_runtime_error(self):
         from nodus.runtime.embedding import NodusRuntime
         rt = NodusRuntime()
-        result = rt.run_source('print("before")\nlet x = 1/0')
+        result = rt.run_source('print("before")\nlet x = 1.0 + "x"')
         self.assertFalse(result["ok"])
         self.assertIn("before", result["stdout"])
 

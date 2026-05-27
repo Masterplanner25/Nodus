@@ -151,7 +151,7 @@ class ReplErrorDeduplicationTests(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stdout(buf):
             with self.assertRaises(Exception):
-                _execute_source(state, loader, "let x = 1 / 0\n")
+                _execute_source(state, loader, 'let x = 1.0 + "x"\n')
         self.assertEqual(buf.getvalue(), "", "error was printed inside _execute_source instead of raised")
 
 

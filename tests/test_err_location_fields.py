@@ -85,10 +85,10 @@ check()
 
 
 def test_vm_thrown_err_has_origin_vm():
-    """VM-thrown err (division by zero) has origin: vm."""
+    """VM-thrown err (type error) has origin: vm."""
     stdout, stderr, rc = run_nodus("""
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch e {
     print("origin:" + e.origin)
 }
@@ -157,7 +157,7 @@ def test_vm_err_has_all_fields():
     """VM-thrown err has all six location fields present."""
     stdout, stderr, rc = run_nodus("""
 try {
-    let x = 1 / 0
+    let x = 1.0 + "x"
 } catch e {
     print("path:" + str(e.path != nil))
     print("line:" + str(e.line != nil))

@@ -24,10 +24,11 @@ class ModuloOperatorTests(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertIn("0", r["stdout"])
 
-    def test_modulo_by_zero_is_runtime_error(self):
+    def test_modulo_by_zero_returns_nan(self):
+        # v4.0: float modulo by zero returns NaN (IEEE 754), not a runtime error.
         r = _run("print(5 % 0)")
-        self.assertFalse(r["ok"])
-        self.assertEqual(r.get("error", {}).get("kind"), "runtime")
+        self.assertTrue(r["ok"], r)
+        self.assertIn("nan", r["stdout"])
 
     def test_modulo_in_expression(self):
         r = _run("let x = 17 % 5\nprint(x)")

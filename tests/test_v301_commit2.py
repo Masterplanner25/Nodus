@@ -69,7 +69,7 @@ class HostGlobalsTests(unittest.TestCase):
     def test_nodus_side_error_still_returns_err_dict(self):
         """Nodus runtime errors (not from host functions) must still return error dict."""
         rt = NodusRuntime()
-        result = rt.run_source('1 / 0')
+        result = rt.run_source('1.0 + "x"')
         self.assertFalse(result["ok"])
         self.assertIn("error", result)
 
@@ -113,9 +113,9 @@ class HostExceptionPropagationTests(unittest.TestCase):
         self.assertIn("custom app error", str(ctx.exception))
 
     def test_nodus_error_not_confused_with_host_error(self):
-        """A Nodus-side division-by-zero should NOT propagate as a Python exception."""
+        """A Nodus-side type error should NOT propagate as a Python exception."""
         rt = NodusRuntime()
-        result = rt.run_source("1 / 0")
+        result = rt.run_source('1.0 + "x"')
         self.assertIsInstance(result, dict)
         self.assertFalse(result["ok"])
 

@@ -104,14 +104,14 @@ try {
     def test_finally_runs_after_runtime_error_caught(self):
         src = """
 try {
-    let bad = 1 / 0
+    let bad = 1.0 + "x"
 } catch err {
-    print("div error caught")
+    print("error caught")
 } finally {
     print("cleanup done")
 }
 """
-        self.assertEqual(run_program(src), ["div error caught", "cleanup done"])
+        self.assertEqual(run_program(src), ["error caught", "cleanup done"])
 
 
 class FinallyReturnInsideTryTests(unittest.TestCase):

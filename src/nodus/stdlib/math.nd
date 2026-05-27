@@ -56,3 +56,19 @@ fn log(n, base) {
 fn pow(base_val, exp) {
     return math_pow(base_val, exp)
 }
+
+fn is_nan(x) {
+    return math_is_nan(x)
+}
+
+fn is_inf(x) {
+    return math_is_inf(x)
+}
+
+fn is_finite(x) {
+    return math_is_finite(x)
+}
+
+let nan = math_nan()
+let infinity = math_infinity()
+let neg_infinity = math_neg_infinity()
