@@ -1442,6 +1442,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         flags_with_values = {"--project-root"}
         if cmd_args and cmd_args[0] == "run":
+            if len(cmd_args) > 1 and cmd_args[1] in ("--help", "-h"):
+                print("Usage: nodus graph run <script.nd> [--project-root PATH]")
+                return 0
             positional, flags = _parse_flags(cmd_args[1:], flags_with_values, set())
             if not positional:
                 _print_stderr("Usage: nodus graph run <script.nd> [--project-root PATH]")
@@ -1568,6 +1571,9 @@ def main(argv: list[str] | None = None) -> int:
         subcommand = cmd_args[0]
         sub_args = cmd_args[1:]
         if subcommand == "run":
+            if sub_args and sub_args[0] in ("--help", "-h"):
+                print("Usage: nodus workflow run <script.nd> [--workflow NAME] [--project-root PATH]")
+                return 0
             flags_with_values = {"--workflow", "--project-root"}
             positional, flags = _parse_flags(sub_args, flags_with_values, set())
             if not positional:

@@ -806,3 +806,27 @@ they do not affect the API surface (which is locked by
    closed-issues requires the wheel to be built first. Tentative:
    parallelize static + runtime; gate closed-issues on wheel
    availability.
+
+---
+
+## Phase 2 verification results
+
+### finally-after-catch-return (verified 2026-05-26)
+
+All 5 verification tests pass against v3.0.2 source. The v3.0.1 eval's
+suggestion that this behavior works correctly is confirmed. No Phase 3
+work required. Test file at `tests/test_finally_after_catch_return.py`
+serves as a regression guard.
+
+**Syntax observations recorded during verification (not bugs):**
+- `try` is a statement, not an expression; `let r = try {...}` is a
+  syntax error ("Unexpected 'try' in expression")
+- `try { } finally { }` without a `catch` clause is a syntax error
+  ("Expected 'catch', got 'finally'"); catch is required with finally
+- `catch (e)` with parentheses is invalid; `catch e` is the correct form
+
+All three are consistent with the language spec. The test file was
+corrected to use valid syntax (try/catch/finally inside functions).
+
+The existing `tests/test_finally.py` `FinallyCatchReturnTests` class
+already covers this behavior comprehensively via the `run_program` API.

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **BUG-V31E-03 (#77):** `nodus workflow run --help` and `nodus graph run --help`
+  now display help text instead of treating `--help` as a script filename and
+  producing "File not found: --help".
+
 ## [3.0.2] - 2026-05-25
 
 Patch release fixing two issues surfaced by the v3.0.1 independent stress-test
