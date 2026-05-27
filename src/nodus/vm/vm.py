@@ -285,12 +285,12 @@ class VM:
             return f"{line}:{col}"
         return "<unknown>"
 
-    def runtime_error(self, kind: str, message: str, payload: object = None):
-        err = self.build_runtime_error(kind, message, payload=payload)
+    def runtime_error(self, kind: str, message: str, payload: object = None, origin: str = "vm"):
+        err = self.build_runtime_error(kind, message, payload=payload, origin=origin)
         self.emit_runtime_error(err)
         raise err
 
-    def build_runtime_error(self, kind: str, message: str, payload: object = None) -> LangRuntimeError:
+    def build_runtime_error(self, kind: str, message: str, payload: object = None, origin: str = "vm") -> LangRuntimeError:
         path, line, col = self.current_loc()
         if _is_stdlib_path(path):
             promoted = False
@@ -307,9 +307,12 @@ class VM:
                     caller_path, caller_line, caller_col = caller_vm.current_loc()
                     if caller_line is not None and not _is_stdlib_path(caller_path):
                         path, line, col = caller_path or "<repl>", caller_line, caller_col
+        stack = self._build_error_stack(path, line, col)
+        return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload, origin=origin)
+
+    def _build_error_stack(self, path, line, col) -> list:
         current_fn = self.frames[-1].fn_name if self.frames else "<main>"
         stack = [f"at {self.display_name(current_fn)} ({self.format_loc((path, line, col))})"]
-
         for i in range(len(self.frames) - 1, -1, -1):
             frame = self.frames[i]
             caller = self.frames[i - 1].fn_name if i - 1 >= 0 else "<main>"
@@ -318,8 +321,29 @@ class VM:
                 stack.append(
                     f"called from {self.display_name(caller)} ({self.format_loc((call_path, frame.call_line, frame.call_col))})"
                 )
+        return stack
 
-        return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload)
+    def _augment_stdlib_err(self, result: "Record") -> "Record":
+        """Add path/line/column/stack/origin to a stdlib-returned err record."""
+        path, line, col = self.current_loc()
+        if _is_stdlib_path(path):
+            for frame in reversed(self.frames):
+                if frame.call_line is not None and frame.call_col is not None:
+                    candidate = frame.call_path or self.source_path or "<repl>"
+                    if not _is_stdlib_path(candidate):
+                        path, line, col = candidate, frame.call_line, frame.call_col
+                        break
+        path = path or self.source_path or "<repl>"
+        stack = self._build_error_stack(path, line, col)
+        new_fields = dict(result.fields)
+        new_fields["path"] = path
+        new_fields["line"] = line
+        new_fields["column"] = col
+        new_fields["stack"] = stack
+        new_fields["origin"] = "stdlib"
+        if "payload" not in new_fields:
+            new_fields["payload"] = None
+        return Record(new_fields, kind="error")
 
     def make_err(self, kind: str, message: str, payload=None) -> "Record":
         """Return an err record value (does not throw)."""
@@ -365,6 +389,7 @@ class VM:
                 "line": err.line,
                 "column": err.col,
                 "stack": list(err.stack) if err.stack else [],
+                "origin": getattr(err, "origin", "vm"),
             }
             err_fields["payload"] = err.payload  # always present; nil when no payload
             err_record = Record(err_fields, kind="error")
@@ -1511,6 +1536,8 @@ class VM:
             return ("yield", {SLEEP_KEY: result.ms})
         if isinstance(result, ChannelRecvRequest):
             return ("yield", {CHANNEL_WAIT_KEY: True})
+        if isinstance(result, Record) and result.kind == "error":
+            result = self._augment_stdlib_err(result)
         self.stack.append(result)
         return None
 
@@ -2252,15 +2279,15 @@ class VM:
         # See TECH_DEBT.md — was previously always stringifying.
         value = self.pop()
         if isinstance(value, str):
-            self.runtime_error("thrown", value)
+            self.runtime_error("thrown", value, origin="user")
         elif isinstance(value, (int, float, bool)):
-            self.runtime_error("thrown", self.value_to_string(value))
+            self.runtime_error("thrown", self.value_to_string(value), origin="user")
         else:
             # Structured throw (Record, list, etc.): preserve as payload.
             # The catch block receives err where err.kind == "thrown",
             # err.message is the string form, and err.payload is the original value.
             message = self.value_to_string(value, quote_strings=False)
-            self.runtime_error("thrown", message, payload=value)
+            self.runtime_error("thrown", message, payload=value, origin="user")
 
     def _op_yield(self, instr):
         value = self.pop()

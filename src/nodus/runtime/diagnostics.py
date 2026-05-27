@@ -101,6 +101,7 @@ class LangRuntimeError(RuntimeError):
         path: str | None = None,
         stack: list[str] | None = None,
         payload: object = None,
+        origin: str = "vm",
     ):
         super().__init__(message)
         self.kind = kind
@@ -109,6 +110,7 @@ class LangRuntimeError(RuntimeError):
         self.path = path
         self.stack = stack or []
         self.payload = payload
+        self.origin = origin
 
 
 class HostFunctionError(Exception):

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Doc 13 (#78):** All err records now carry five location fields: `path`,
+  `line`, `column`, `stack`, and `origin`. Stdlib-returned errs are augmented
+  in `call_builtin()` with `origin="stdlib"` and the call-site location.
+  VM-thrown errs get `origin="vm"` via `build_runtime_error()`. User-thrown
+  errs get `origin="user"` via `_op_throw()`.
+
 ### Fixed
 
 - **BUG-V31E-03 (#77):** `nodus workflow run --help` and `nodus graph run --help`
