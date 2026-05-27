@@ -766,3 +766,43 @@ implementation questions for Phase 3B". These are resolved during Phase
    compilation adds time. Tentative: only parse coverage comments when
    the compiler is invoked with coverage support enabled; falls back to
    non-coverage mode for production compilation.
+
+---
+
+## Phase 3B Open Implementation Questions: doc-vs-code gate (doc 12)
+
+From `docs/design/v4/12-doc-vs-code-gate.md` § "Open implementation
+questions for Phase 3B". These are resolved during Phase 3B execution;
+they do not affect the API surface (which is locked by
+12-doc-vs-code-gate.md).
+
+1. **Markdown parser choice.** `mistune` is fast and well-maintained;
+   `markdown-it-py` is more spec-compliant. Tentative: start with
+   `mistune`; switch if compliance issues surface.
+
+2. **Symbol extractor sophistication.** Initial implementation uses
+   regex-based patterns. May surface false positives or miss valid
+   symbols. Tentative: ship with simple patterns; iterate based on
+   real-world feedback in Phase 3B and beyond.
+
+3. **Sandbox implementation.** Disabling network and subprocess in the
+   Nodus VM during runtime-phase execution requires sandbox support that
+   doesn't fully exist in v3.x. Tentative: use process-level isolation
+   (run the example in a subprocess with restricted permissions)
+   initially; in-process sandbox in v4.x.
+
+4. **Wheel cache invalidation precision.** Git tree hash is coarse —
+   any source change invalidates cache, even changes that don't affect
+   the wheel. More precise tracking is possible but complex. Tentative:
+   coarse invalidation initially; optimize if cache misses become a
+   bottleneck.
+
+5. **Output matching for non-deterministic outputs.** Some examples
+   print timestamps, UUIDs, or other variable values. Tentative: gate
+   supports a `nondeterministic` annotation that lets expected output
+   include placeholders like `<TIMESTAMP>` that match any value.
+
+6. **Parallel phase execution.** Static and runtime can run in parallel;
+   closed-issues requires the wheel to be built first. Tentative:
+   parallelize static + runtime; gate closed-issues on wheel
+   availability.
