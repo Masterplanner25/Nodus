@@ -324,6 +324,37 @@ def _merge_resume_state(state: dict | None, checkpoint: dict | None) -> dict | N
     return merged
 
 
+def _detect_cycle_task_ids(tasks: list, results: dict) -> list[str] | None:
+    adj = {t.task_id: [dep.task_id for dep in t.dependencies] for t in tasks}
+    visited: set[str] = set()
+    path: list[str] = []
+    path_set: set[str] = set()
+
+    def dfs(node: str) -> list[str] | None:
+        if node in path_set:
+            start = path.index(node)
+            return path[start:]
+        if node in visited:
+            return None
+        visited.add(node)
+        path.append(node)
+        path_set.add(node)
+        for dep in adj.get(node, []):
+            found = dfs(dep)
+            if found is not None:
+                return found
+        path.pop()
+        path_set.discard(node)
+        return None
+
+    for task in tasks:
+        if task.task_id not in results:
+            found = dfs(task.task_id)
+            if found is not None:
+                return found
+    return None
+
+
 def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> dict:
     tasks = list(graph.tasks)
     graph = register_graph(graph)
@@ -869,18 +900,26 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return failed
 
     if pending:
-        payload = {
-            "tasks": task_values,
-            "steps": step_results(),
-            "error": "Dependency cycle or missing tasks",
-            "timings": timings,
-            "attempts": attempts,
-            "failed": [],
-            "cache_hits": cache_hits,
-            "graph_id": graph.graph_id,
-        }
-        payload.update(workflow_result_payload())
-        return payload
+        cycle_ids = _detect_cycle_task_ids(tasks, results)
+        task_to_step = (graph.metadata or {}).get("task_to_step", {}) if isinstance(graph.metadata, dict) else {}
+        if cycle_ids:
+            cycle_names = [task_to_step.get(tid, tid) for tid in cycle_ids]
+            cycle_str = " -> ".join(cycle_names + [cycle_names[0]])
+            message = f"Dependency cycle detected: {cycle_str}"
+            err_payload = {
+                "category": "cyclic_workflow",
+                "cycle": cycle_names,
+                "workflow_name": workflow_name,
+            }
+        else:
+            pending_names = [task_to_step.get(tid, tid) for tid in pending]
+            message = f"Missing task dependencies: {', '.join(sorted(pending_names))}"
+            err_payload = {
+                "category": "missing_tasks",
+                "pending": pending_names,
+                "workflow_name": workflow_name,
+            }
+        return vm.make_err("workflow_error", message, payload=err_payload)
 
     _persist_graph_state(
         graph,

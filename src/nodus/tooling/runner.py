@@ -13,7 +13,7 @@ from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.debugger import Debugger, DebuggerQuit
 from nodus.frontend.parser import Parser
 from nodus.frontend.lexer import tokenize
-from nodus.vm.vm import VM
+from nodus.vm.vm import VM, Record
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
@@ -842,6 +842,11 @@ def run_workflow_code(
         try:
             workflow = _resolve_workflow_from_vm(vm, workflow_name)
             workflow_result = vm.builtin_run_workflow(workflow)
+            if isinstance(workflow_result, Record) and workflow_result.kind == "error":
+                raise NodusRuntimeError(
+                    workflow_result.fields.get("message", "workflow error"),
+                    filename=normalize_filename(filename),
+                )
             if isinstance(workflow_result, dict) and "error" in workflow_result:
                 raise NodusRuntimeError(
                     workflow_result["error"],

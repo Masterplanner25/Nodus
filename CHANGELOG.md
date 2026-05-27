@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Doc 15:** Cyclic workflow dependency detection now returns an err record
+  (`kind: "workflow_error"`, `origin: "stdlib"`) instead of a plain dict.
+  The payload contains `category: "cyclic_workflow"`, `cycle` (ordered list
+  of step names forming the cycle), and `workflow_name`. The DFS cycle
+  detector extracts the actual cycle path; ambiguous "missing tasks" cases
+  return `category: "missing_tasks"`. `run_workflow_code` runner translates
+  err-record returns to `ok: false` for CLI/API consumers.
+
 - **Doc 14:** `len()`, `count()`, `index_of()`, `last_index_of()`, and `range()`
   now return `int`. `math.floor()`, `math.ceil()`, and new `math.round()` return
   `int`. `index_of()` and `last_index_of()` return `nil` when not found (was
