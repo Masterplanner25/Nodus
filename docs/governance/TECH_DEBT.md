@@ -465,7 +465,7 @@ they do not affect the API surface (which is locked by 03-crypto-hashing-api.md)
 
 ---
 
-## Phase 1 process improvement: bytecode-impact sections
+## Phase 1 process improvement: bytecode-impact sections — RESOLVED 2026-05-27
 
 **Surfaced by:** v4.0 Phase 1 design conversation for `05-string-
 interpolation.md`. The frozen-bytecode constraint (`BYTECODE_VERSION = 4`
@@ -495,8 +495,10 @@ design to confront the frozen-bytecode contract rather than implicitly
 assuming new opcodes are free. The four prior docs happened to not
 require opcodes, but the omission was lucky rather than designed.
 
-**Follow-up:** PLAYBOOK_MAJOR.md Phase 1 guidance updated in a
-separate follow-up commit.
+**Follow-up:** RESOLVED. PLAYBOOK_MAJOR.md Phase 1 guidance updated in
+Phase 2 Session 2B (2026-05-27). The "Required sections in every Phase 1
+design doc" block is now in the playbook's Phase 1 section. Requirement
+enforced for all future Phase 1 design docs.
 
 ---
 

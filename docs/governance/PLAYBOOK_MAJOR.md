@@ -287,6 +287,40 @@ revision, lock. The pushback is the work; the drafting is the easy part.
 - After each design doc, update the plan document's §1.A to mark it
   complete. The plan is the index; the design docs are the contents.
 
+### Required sections in every Phase 1 design doc
+
+Every Phase 1 design doc MUST include the following sections (in
+addition to whatever else the design needs):
+
+1. **Problem statement** — what's being designed and why
+2. **What Phase 0 already settled** — explicit reference to which
+   Phase 0 decisions this doc implements
+3. **Bytecode impact** — explicit statement of whether the feature
+   requires new opcodes
+   - If NO: state that explicitly. Example: "No new opcodes required.
+     `BYTECODE_VERSION` stays at N. [Feature] is implemented through
+     [existing infrastructure]."
+   - If YES: enumerate the new opcodes, the new `BYTECODE_VERSION`,
+     and the compatibility implications for pre-existing `.ndbc`
+     files.
+4. **API surface or implementation specification** — the actual
+   design content
+5. **Migration impact** — how users (and existing code) migrate
+6. **Open Phase 3B implementation questions** — concerns that surface
+   during design but are resolved during implementation
+7. **Cross-references** — to sibling design docs, governance docs,
+   Phase 0 decisions
+
+The bytecode-impact section (item 3) is critical for preserving the
+frozen-bytecode contract from v1.0. Adding new opcodes is allowed (per
+LANGUAGE_VISION.md principle #4) but architecturally significant and
+must be explicit. The default in Phase 1 design is "no new opcodes";
+features that require them must justify the cost.
+
+This requirement was added retroactively to v4.0 Phase 1 (the first
+four design docs were drafted before the requirement was formalized;
+those docs gained bytecode-impact sections in commit a1e8538).
+
 **Exit condition:** every design doc is complete and the linked GitHub
 issues are updated with the design doc paths.
 
