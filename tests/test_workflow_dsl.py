@@ -174,7 +174,7 @@ print(len(plan["parallel_groups"][1]))
 print(plan["parallel_groups"][1][0] == "b" || plan["parallel_groups"][1][1] == "b")
 """
         _vm, out, _err = run_program(src)
-        self.assertEqual(out[0], "2.0")
+        self.assertEqual(out[0], "2")
         self.assertEqual(out[1], "true")
 
     def test_merge_workflow_injects_dependency_values(self):

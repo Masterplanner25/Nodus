@@ -21,10 +21,13 @@ def register(vm, registry) -> None:
         return max(a, b)
 
     def builtin_math_floor(value):
-        return float(_math.floor(vm.ensure_number(value, "math_floor(x)")))
+        return _math.floor(vm.ensure_number(value, "math_floor(x)"))
 
     def builtin_math_ceil(value):
-        return float(_math.ceil(vm.ensure_number(value, "math_ceil(x)")))
+        return _math.ceil(vm.ensure_number(value, "math_ceil(x)"))
+
+    def builtin_math_round(value):
+        return round(vm.ensure_number(value, "math_round(x)"))
 
     def builtin_math_sqrt(value):
         number = vm.ensure_number(value, "math_sqrt(x)")
@@ -142,6 +145,7 @@ def register(vm, registry) -> None:
     registry.add("math_to_float", 1, builtin_math_to_float)
     registry.add("math_is_int", 1, builtin_math_is_int)
     registry.add("math_idiv", 2, builtin_math_idiv)
+    registry.add("math_round", 1, builtin_math_round)
     registry.add("math_is_nan", 1, builtin_math_is_nan)
     registry.add("math_is_inf", 1, builtin_math_is_inf)
     registry.add("math_is_finite", 1, builtin_math_is_finite)

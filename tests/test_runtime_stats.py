@@ -36,7 +36,7 @@ run_loop()
 let stats = runtime_scheduler_stats()
 print(stats["completed"])
 """
-        self.assertEqual(run_program(src, source_path="main.nd"), ["2.0", "2.0"])
+        self.assertEqual(run_program(src, source_path="main.nd"), ["2", "2.0"])
 
     def test_resume_count_increments(self):
         src = """

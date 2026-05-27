@@ -47,7 +47,7 @@ print(nums)
 """
         self.assertEqual(
             run_program(src, source_path="main.nd"),
-            ["3.0", "[2.0, 4.0, 6.0]", "[2.0, 3.0]", "6.0", "[1.0, 2.0, 3.0, 4.0]", "4.0", "[1.0, 2.0, 3.0]"],
+            ["3", "[2.0, 4.0, 6.0]", "[2.0, 3.0]", "6.0", "[1.0, 2.0, 3.0, 4.0]", "4.0", "[1.0, 2.0, 3.0]"],
         )
 
     def test_std_json(self):
@@ -76,7 +76,7 @@ print(type(m.random()))
 """
         self.assertEqual(
             run_program(src, source_path="main.nd"),
-            ["4.0", "2.0", "5.0", "2.0", "3.0", "3.0", "number"],
+            ["4.0", "2.0", "5.0", "2", "3", "3.0", "number"],
         )
 
     def test_std_fs(self):

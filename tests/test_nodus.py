@@ -181,7 +181,7 @@ print(type(z))
         self.assertEqual(
             run_program(src, input_values=["sam"]),
             [
-                "2.0",
+                "2",
                 "[\"a\", \"b\"]",
                 "[1.0, 2.0]",
                 "sam",

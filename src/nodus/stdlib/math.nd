@@ -57,6 +57,10 @@ fn pow(base_val, exp) {
     return math_pow(base_val, exp)
 }
 
+fn round(x) {
+    return math_round(x)
+}
+
 fn is_nan(x) {
     return math_is_nan(x)
 }

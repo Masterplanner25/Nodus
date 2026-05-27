@@ -150,7 +150,7 @@ print(plan["goal"])
 print(len(plan["parallel_groups"][1]))
 """
         _vm, out, _err = run_program(src)
-        self.assertEqual(out, ["demo", "2.0"])
+        self.assertEqual(out, ["demo", "2"])
 
     def test_resume_goal(self):
         src = """

@@ -11,7 +11,7 @@ def register(vm, registry) -> None:
 
     def builtin_len(value):
         if isinstance(value, (str, list, dict)):
-            return float(len(value))
+            return len(value)
         vm.runtime_error("type", "len(x) expects string, list, or map")
 
     def builtin_upper(value):
@@ -145,9 +145,61 @@ def register(vm, registry) -> None:
         except ValueError:
             return vm.make_err("parse_error", f'not a valid integer: "{s}"')
 
+    def builtin_count(haystack, needle):
+        if isinstance(haystack, str):
+            vm.ensure_string(needle, "count(string, substring)")
+            return haystack.count(needle)
+        if isinstance(haystack, list):
+            return sum(1 for item in haystack if item == needle)
+        vm.runtime_error("type", "count(x, value) expects a string or list")
+
+    def builtin_index_of(haystack, needle):
+        if isinstance(haystack, str):
+            vm.ensure_string(needle, "index_of(string, substring)")
+            idx = haystack.find(needle)
+            return idx if idx >= 0 else None
+        if isinstance(haystack, list):
+            try:
+                return haystack.index(needle)
+            except ValueError:
+                return None
+        vm.runtime_error("type", "index_of(x, value) expects a string or list")
+
+    def builtin_last_index_of(haystack, needle):
+        if isinstance(haystack, str):
+            vm.ensure_string(needle, "last_index_of(string, substring)")
+            idx = haystack.rfind(needle)
+            return idx if idx >= 0 else None
+        if isinstance(haystack, list):
+            for i in range(len(haystack) - 1, -1, -1):
+                if haystack[i] == needle:
+                    return i
+            return None
+        vm.runtime_error("type", "last_index_of(x, value) expects a string or list")
+
+    def builtin_range(start_or_n, end=None, step=None):
+        if end is None:
+            n = start_or_n if isinstance(start_or_n, int) else int(float(start_or_n))
+            return list(range(n))
+        elif step is None:
+            s = start_or_n if isinstance(start_or_n, int) else int(float(start_or_n))
+            e = end if isinstance(end, int) else int(float(end))
+            return list(range(s, e))
+        else:
+            s = start_or_n if isinstance(start_or_n, int) else int(float(start_or_n))
+            e = end if isinstance(end, int) else int(float(end))
+            st = step if isinstance(step, int) else int(float(step))
+            if st == 0:
+                return vm.make_err("value_error", "range() step cannot be zero")
+            return list(range(s, e, st))
+
     registry.add("str", 1, lambda x: vm.value_to_string(x, quote_strings=False))
     registry.add("len", 1, builtin_len)
     registry.add("collection_len", 1, builtin_len)
+    registry.add("count", 2, builtin_count)
+    registry.add("index_of", 2, builtin_index_of)
+    registry.add("last_index_of", 2, builtin_last_index_of)
+    registry.add("range", (1, 2, 3), builtin_range)
     registry.add("str_upper", 1, builtin_upper)
     registry.add("str_lower", 1, builtin_lower)
     registry.add("str_trim", 1, builtin_trim)

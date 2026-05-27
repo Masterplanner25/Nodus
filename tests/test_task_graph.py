@@ -186,7 +186,7 @@ let plan = plan_graph([A, B, C])
 print(len(plan["levels"]))
 """
         _vm, out, _err = run_program(src, source_path="main.nd")
-        self.assertEqual(out, ["3.0"])
+        self.assertEqual(out, ["3"])
 
     def test_graph_plan_branching(self):
         src = """
@@ -197,7 +197,7 @@ let plan = plan_graph([A, B, C])
 print(len(plan["parallel_groups"][1]))
 """
         _vm, out, _err = run_program(src, source_path="main.nd")
-        self.assertEqual(out, ["2.0"])
+        self.assertEqual(out, ["2"])
 
     def test_graph_persistence_and_resume(self):
         src = """

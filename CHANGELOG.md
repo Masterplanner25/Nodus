@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Doc 14:** `len()`, `count()`, `index_of()`, `last_index_of()`, and `range()`
+  now return `int`. `math.floor()`, `math.ceil()`, and new `math.round()` return
+  `int`. `index_of()` and `last_index_of()` return `nil` when not found (was
+  `-1`). New top-level builtins `count`, `index_of`, `last_index_of`, `range`
+  (1–3 args) added.
+
 - **Doc 09:** Float division by zero now returns IEEE 754 `inf`/`nan` instead
   of throwing. `0.0 / 0.0` → `nan`; `1.0 / 0.0` → `inf`; `-1.0 / 0.0` →
   `-inf`. Float modulo by zero returns `nan`. Integer division or modulo by
