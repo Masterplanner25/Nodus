@@ -190,6 +190,10 @@ BUILTIN_NAMES = {
     "http_get_async", "http_post_async", "http_put_async", "http_delete_async",
     "http_patch_async", "http_head_async", "http_options_async", "http_request_async",
     "http_stream", "http_sse",
+    "subprocess_run", "subprocess_run_async",
+    "subprocess_shell", "subprocess_shell_async",
+    "subprocess_spawn", "subprocess_spawn_shell",
+    "subprocess_shell_quote",
 }
 
 

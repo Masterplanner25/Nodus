@@ -4,6 +4,29 @@
 
 ### Added
 
+- **3B.5 — std:subprocess:** New `std:subprocess` namespace with 7 public
+  functions: `run(argv, options?)`, `run_async(argv, options?)`,
+  `shell(command, options?)`, `shell_async(command, options?)`,
+  `spawn(argv, options?)`, `spawn_shell(command, options?)`,
+  `shell_quote(string)`. `run`/`shell` block until process exit and
+  return a result record (`stdout`, `stderr`, `exit_code`, `duration_ms`,
+  `command`) or err record (`kind: "subprocess_error"`, five `category`
+  values: `exit_code`, `timeout`, `signal`, `spawn_error`, `io_error`).
+  `spawn`/`spawn_shell` return a process handle with `stdout`/`stderr`
+  Channels (background-thread pumped, registered on root-VM scheduler's
+  `_io_channels`), a `stdin` record with `send`/`close` BuiltinMethods,
+  and lifecycle methods (`wait`, `wait_async`, `is_alive`, `terminate`,
+  `kill`, `interrupt`, `signal`). Options: `output`, `stdout`, `stderr`
+  (per-stream override including file-path redirect with `>>` prefix),
+  `output_encoding` (`"utf-8"` or `"bytes"`), `stdin`, `env`/
+  `env_inherit`/`env_passthrough` for environment merging, `cwd`,
+  `timeout_ms`/`kill_grace_ms`, `check` (default true), `process_group`,
+  `chunk_mode` (`"lines"` default or `"bytes"`) for spawn streams.
+  `_async` variants are Phase 3B synchronous under the hood (true async
+  bridging deferred to Phase 3C). `shell_quote` uses
+  `subprocess.list2cmdline` on Windows and `shlex.quote` on Unix.
+  No new dependencies (Python stdlib only). 48 new tests, 1186 total passing.
+
 - **3B.4 — std:http:** New `std:http` namespace with 19 public functions:
   8 sync verbs (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`,
   `request`), 8 `_async` counterparts (Phase 3B: synchronous at I/O level;

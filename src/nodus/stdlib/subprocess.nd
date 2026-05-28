@@ -1,0 +1,27 @@
+fn run(argv, options) {
+    if (options == nil) { return subprocess_run(argv) }
+    return subprocess_run(argv, options)
+}
+fn run_async(argv, options) {
+    if (options == nil) { return subprocess_run_async(argv) }
+    return subprocess_run_async(argv, options)
+}
+fn shell(command, options) {
+    if (options == nil) { return subprocess_shell(command) }
+    return subprocess_shell(command, options)
+}
+fn shell_async(command, options) {
+    if (options == nil) { return subprocess_shell_async(command) }
+    return subprocess_shell_async(command, options)
+}
+fn spawn(argv, options) {
+    if (options == nil) { return subprocess_spawn(argv) }
+    return subprocess_spawn(argv, options)
+}
+fn spawn_shell(command, options) {
+    if (options == nil) { return subprocess_spawn_shell(command) }
+    return subprocess_spawn_shell(command, options)
+}
+fn shell_quote(s) {
+    return subprocess_shell_quote(s)
+}

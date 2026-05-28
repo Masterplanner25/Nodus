@@ -52,3 +52,5 @@ class BuiltinRegistry:
         _secrets.register(vm, self)
         from nodus.builtins import http_module as _http
         _http.register(vm, self)
+        from nodus.builtins import subprocess_module as _subprocess
+        _subprocess.register(vm, self)
