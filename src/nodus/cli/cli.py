@@ -1152,6 +1152,7 @@ def main(argv: list[str] | None = None) -> int:
         "dis",
         "debug",
         "profile",
+        "test",
         "test-examples",
         "repl",
         "graph",
@@ -1825,6 +1826,10 @@ def main(argv: list[str] | None = None) -> int:
             print(_COMMAND_HELP["status"])
             return 0
         return _nodus_status()
+
+    if command == "test":
+        from nodus.testing.cli import run_test_command
+        return run_test_command(cmd_args)
 
     _print_stderr(f"Unknown command: {command}")
     return 1

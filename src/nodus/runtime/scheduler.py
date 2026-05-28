@@ -36,6 +36,8 @@ class Scheduler:
         self.current_task: object | None = None
         self._next_id = 1
         self.trace = trace
+        # clock_fn returns current time in ms; overridden in test mode for virtual time
+        self.clock_fn = runtime_time_ms
         self.trace_output = trace_output
         self._counter = 0
         self.task_ages: dict[int, int] = {}
@@ -96,7 +98,7 @@ class Scheduler:
     def _schedule_sleep(self, coroutine, ms: float) -> None:
         delay = max(0.0, ms) / 1000.0
         self._counter += 1
-        heapq.heappush(self.timers, (runtime_time_ms() + delay * 1000.0, self._counter, coroutine))
+        heapq.heappush(self.timers, (self.clock_fn() + delay * 1000.0, self._counter, coroutine))
         if coroutine.id is not None:
             self.sleeping_tasks.add(coroutine.id)
 
@@ -107,7 +109,7 @@ class Scheduler:
         self._schedule_sleep(coroutine, ms)
 
     def _drain_timers(self) -> None:
-        now = runtime_time_ms()
+        now = self.clock_fn()
         while self.timers and self.timers[0][0] <= now:
             _wake, _seq, coroutine = heapq.heappop(self.timers)
             if coroutine.state != "finished":
@@ -170,7 +172,7 @@ class Scheduler:
                     break
                 if self.timers:
                     wake_time = self.timers[0][0]
-                    now = runtime_time_ms()
+                    now = self.clock_fn()
                     if wake_time > now:
                         poll = 0.001 if self._io_channels else (wake_time - now) / 1000.0
                         time.sleep(min(poll, (wake_time - now) / 1000.0))

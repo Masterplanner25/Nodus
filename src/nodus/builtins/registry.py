@@ -56,3 +56,5 @@ class BuiltinRegistry:
         _subprocess.register(vm, self)
         from nodus.builtins import tool_module as _tool
         _tool.register(vm, self)
+        from nodus.builtins import test_module as _test
+        _test.register(vm, self)

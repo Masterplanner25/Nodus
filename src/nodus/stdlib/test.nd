@@ -1,0 +1,117 @@
+fn assert(condition, msg) {
+    if (msg == nil) {
+        return test_assert(condition)
+    }
+    return test_assert(condition, msg)
+}
+
+fn assert_eq(actual, expected, msg) {
+    if (msg == nil) {
+        return test_assert_eq(actual, expected)
+    }
+    return test_assert_eq(actual, expected, msg)
+}
+
+fn assert_neq(actual, expected, msg) {
+    if (msg == nil) {
+        return test_assert_neq(actual, expected)
+    }
+    return test_assert_neq(actual, expected, msg)
+}
+
+fn assert_err(value, msg) {
+    if (msg == nil) {
+        return test_assert_err(value)
+    }
+    return test_assert_err(value, msg)
+}
+
+fn assert_ok(value, msg) {
+    if (msg == nil) {
+        return test_assert_ok(value)
+    }
+    return test_assert_ok(value, msg)
+}
+
+fn assert_kind(err, kind_str, msg) {
+    if (msg == nil) {
+        return test_assert_kind(err, kind_str)
+    }
+    return test_assert_kind(err, kind_str, msg)
+}
+
+fn assert_throws(thunk, msg) {
+    if (msg == nil) {
+        return test_assert_throws(thunk)
+    }
+    return test_assert_throws(thunk, msg)
+}
+
+fn assert_close(actual, expected, epsilon, msg) {
+    if (msg == nil) {
+        return test_assert_close(actual, expected, epsilon)
+    }
+    return test_assert_close(actual, expected, epsilon, msg)
+}
+
+fn assert_contains(collection, item, msg) {
+    if (msg == nil) {
+        return test_assert_contains(collection, item)
+    }
+    return test_assert_contains(collection, item, msg)
+}
+
+fn assert_has_key(map_or_record, key, msg) {
+    if (msg == nil) {
+        return test_assert_has_key(map_or_record, key)
+    }
+    return test_assert_has_key(map_or_record, key, msg)
+}
+
+fn assert_in_range(actual, min_val, max_val, msg) {
+    if (msg == nil) {
+        return test_assert_in_range(actual, min_val, max_val)
+    }
+    return test_assert_in_range(actual, min_val, max_val, msg)
+}
+
+fn suite(name, body, opts) {
+    if (opts == nil) {
+        return test_suite(name, body)
+    }
+    return test_suite(name, body, opts)
+}
+
+fn case(name, body) {
+    return test_case(name, body)
+}
+
+fn case_async(name, body) {
+    return test_case_async(name, body)
+}
+
+fn skip(reason) {
+    if (reason == nil) {
+        return test_skip()
+    }
+    return test_skip(reason)
+}
+
+fn before_all(body) { return test_before_all(body) }
+fn after_all(body) { return test_after_all(body) }
+fn before_each(body) { return test_before_each(body) }
+fn after_each(body) { return test_after_each(body) }
+
+fn fixture(name, body, scope) {
+    if (scope == nil) {
+        return test_fixture(name, body)
+    }
+    return test_fixture(name, body, scope)
+}
+
+fn cleanup(body) { return test_cleanup(body) }
+
+fn parameterize(rows, body) { return test_parameterize(rows, body) }
+
+fn advance_clock(duration) { return test_advance_clock(duration) }
+fn flush_async() { return test_flush_async() }

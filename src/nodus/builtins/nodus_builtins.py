@@ -196,6 +196,15 @@ BUILTIN_NAMES = {
     "subprocess_shell_quote",
     "tool_register", "tool_unregister", "tool_invoke",
     "tool_lookup", "tool_list", "tool_has",
+    "test_assert", "test_assert_eq", "test_assert_neq",
+    "test_assert_err", "test_assert_ok", "test_assert_kind",
+    "test_assert_throws", "test_assert_close",
+    "test_assert_contains", "test_assert_has_key", "test_assert_in_range",
+    "test_suite", "test_case", "test_case_async", "test_skip",
+    "test_before_all", "test_after_all", "test_before_each", "test_after_each",
+    "test_fixture", "test_cleanup",
+    "test_parameterize",
+    "test_advance_clock", "test_flush_async",
 }
 
 

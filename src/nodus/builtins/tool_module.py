@@ -148,7 +148,15 @@ def _to_runtime_value(value):
 
 
 def _root_vm(vm):
-    """Follow the _caller_vm chain to the root VM (where tool_registry lives)."""
+    """Follow the _caller_vm chain to the root VM (where tool_registry lives).
+
+    NodusModule.invoke_function() creates a fresh child VM per call and sets
+    child._caller_vm = caller_vm.  Stdlib builtins (tool, test, …) close over
+    whichever VM was current at registration time.  Since stdlib methods are
+    always called via invoke_function, the closing vm is a child VM, not the
+    root.  This traversal ensures builtins always mutate the root VM's shared
+    registry, not a discarded per-call child VM.
+    """
     root = vm
     while True:
         parent = getattr(root, "_caller_vm", None)

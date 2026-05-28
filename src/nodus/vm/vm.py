@@ -242,6 +242,7 @@ class VM:
         self.tool_registry: dict = {}
         self._tool_deprecated_warned: set = set()
         self._tool_registry_lock = threading.RLock()
+        self.test_state: dict = {}
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
             "type": BuiltinInfo("type", 1, self.builtin_type),
