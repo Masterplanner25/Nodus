@@ -557,18 +557,41 @@ otherwise vary.
 
 ```nodus
 test.case_async("retry logic", fn() {
-    let attempt_counter = 0
-    spawn(fn() {
-        await time.sleep(time.seconds(5))  // virtual time
-        attempt_counter += 1
+    let state = {attempt_count: 0i}
+    let task = coroutine(fn() {
+        sleep(5000)   // virtual 5 seconds (5000ms)
+        state.attempt_count = state.attempt_count + 1i
     })
+    spawn(task)
 
-    test.advance_clock(time.seconds(10))  // jump forward 10s
-    await test.flush_async()              // let scheduled tasks complete
+    test.flush_async()        // step 1: runs task's first step → sleep(5000)
+    test.advance_clock(10000) // step 2: advance clock 10s; task is now overdue
+    test.flush_async()        // step 3: task wakes, increments attempt_count
 
-    test.assert_eq(attempt_counter, 1)
+    test.assert_eq(state.attempt_count, 1i)
 })
 ```
+
+**Important implementation notes (deviations from this doc's original design):**
+
+1. `flush_async()` is **synchronous** — there is no `await` keyword in Nodus.
+   Call it as a plain statement: `test.flush_async()`.
+2. The first argument to `spawn` must be a **coroutine value**, not a function
+   literal. Use `coroutine(fn() {...})` to create one first, then `spawn(coro)`.
+3. Closures cannot mutate outer local variables declared with `let` — use a
+   **map field** (`state.count = state.count + 1i`) to share mutable state
+   between the coroutine and the test body.
+4. `sleep(N)` takes **milliseconds** as a plain number. `advance_clock(N)` also
+   takes milliseconds.
+
+**The two-flush pattern** is always required when testing code that sleeps:
+
+1. First `flush_async()` — runs each spawned coroutine one step. A coroutine
+   that immediately calls `sleep(N)` suspends here and schedules its wakeup at
+   `current_virtual_time + N`.
+2. `advance_clock(M)` — moves the virtual clock forward by M ms. Any coroutine
+   whose wakeup time is now in the past is moved to the ready queue.
+3. Second `flush_async()` — runs the newly-woken coroutines.
 
 The `test.advance_clock(duration)` and `test.flush_async()` functions
 control the virtual clock and scheduler. They're test-mode-only; using
