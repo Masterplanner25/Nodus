@@ -4,6 +4,19 @@
 
 ### Added
 
+- **3B.3 — std:hash, std:encoding, std:secrets:** Three new namespaces
+  using Python stdlib only (no new dependencies).
+  `std:hash`: 15 hash functions (5 algorithms × one-shot/builder/file),
+  5 HMAC functions, constant-time `compare`. Hash records have `to_hex`,
+  `to_hex_upper`, `to_base64`, `to_base64_url`, `to_bytes` method fields
+  (via `BuiltinMethod`) plus `algorithm` and `length`. Builder pattern
+  is single-use; reuse after `finalize` returns err
+  (`kind: "state_error"`). `std:encoding`: base64 standard/URL-safe
+  encode/decode, hex lower/upper encode, hex decode, URL RFC 3986
+  percent-encode, URL form-encode/decode. `std:secrets`: `random_bytes`,
+  `random_int` (rejection sampling), `token_hex/base64/urlsafe/
+  alphanumeric`, `uuid_v4`, `uuid_v7` (RFC 9562 manual implementation).
+
 - **3B.2 — std:time:** New `std:time` namespace with 7 datetime constructors
   (`now`, `now_in`, `at`, `from_epoch_ms`, `from_iso8601`, `from_http_date`,
   `parse`), 6 duration constructors plus `duration_between`, 12 calendar

@@ -44,3 +44,9 @@ class BuiltinRegistry:
         _env.register(vm, self)
         from nodus.builtins import time_module as _time
         _time.register(vm, self)
+        from nodus.builtins import hash_module as _hash
+        _hash.register(vm, self)
+        from nodus.builtins import encoding_module as _encoding
+        _encoding.register(vm, self)
+        from nodus.builtins import secrets_module as _secrets
+        _secrets.register(vm, self)

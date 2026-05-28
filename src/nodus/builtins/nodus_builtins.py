@@ -168,6 +168,23 @@ BUILTIN_NAMES = {
     "time_to_iso8601",
     "time_to_http_date",
     "time_to_epoch_ms",
+    "hash_sha256", "hash_sha256_builder", "hash_sha256_file",
+    "hash_sha512", "hash_sha512_builder", "hash_sha512_file",
+    "hash_blake2b", "hash_blake2b_builder", "hash_blake2b_file",
+    "hash_sha1", "hash_sha1_builder", "hash_sha1_file",
+    "hash_md5", "hash_md5_builder", "hash_md5_file",
+    "hash_hmac_sha256", "hash_hmac_sha512", "hash_hmac_blake2b",
+    "hash_hmac_sha1", "hash_hmac_md5",
+    "hash_compare",
+    "encoding_base64_encode", "encoding_base64_decode",
+    "encoding_base64_url_encode", "encoding_base64_url_decode",
+    "encoding_hex_encode", "encoding_hex_encode_upper", "encoding_hex_decode",
+    "encoding_url_encode", "encoding_url_decode",
+    "encoding_url_encode_form", "encoding_url_decode_form",
+    "secrets_random_bytes", "secrets_random_int",
+    "secrets_token_hex", "secrets_token_base64",
+    "secrets_token_urlsafe", "secrets_token_alphanumeric",
+    "secrets_uuid_v4", "secrets_uuid_v7",
 }
 
 
