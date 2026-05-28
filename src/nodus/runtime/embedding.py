@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import threading
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
@@ -12,7 +13,173 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFun
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
-from nodus.vm.vm import VM, Record
+from nodus.vm.vm import VM, Record, Closure
+
+
+class ToolRegistry:
+    """Python-side view of the Nodus tool registry for a ``NodusRuntime`` instance.
+
+    Provides register/unregister/invoke/lookup/list_tools/has methods that
+    mirror the Nodus ``std:tool`` API.  Python-registered tools persist across
+    ``run_source()`` calls; Nodus-registered tools are ephemeral (per VM).
+    """
+
+    def __init__(self, runtime: "NodusRuntime") -> None:
+        self._runtime = runtime
+        self._lock = threading.RLock()
+
+    def register(self, metadata: dict) -> None:
+        """Register a Python callable as a tool visible to Nodus scripts.
+
+        Parameters
+        ----------
+        metadata:
+            Dict with required keys ``name``, ``handler``, ``description``
+            and optional keys ``schema``, ``version``, ``tags``,
+            ``deprecated``, ``metadata``.  ``handler`` must be a Python
+            callable.
+
+        Raises
+        ------
+        ValueError:
+            If required fields are missing, the name is already registered,
+            or the schema is invalid.
+        """
+        from nodus.builtins.tool_module import _normalize_schema, _validate_tool_name
+
+        name = metadata.get("name")
+        name_err = _validate_tool_name(name)
+        if name_err:
+            raise ValueError(f"tool.register: {name_err}")
+        handler = metadata.get("handler")
+        if handler is None:
+            raise ValueError("tool.register: 'handler' is required")
+        if not callable(handler):
+            raise ValueError("tool.register: 'handler' must be a callable")
+        desc = metadata.get("description")
+        if not isinstance(desc, str) or not desc:
+            raise ValueError("tool.register: 'description' must be a non-empty string")
+        schema_raw = metadata.get("schema") or {}
+        schema, schema_err = _normalize_schema(schema_raw)
+        if schema_err:
+            raise ValueError(f"tool.register: invalid schema: {schema_err}")
+        tags_raw = metadata.get("tags")
+        tags = list(tags_raw) if isinstance(tags_raw, list) else []
+        meta_raw = metadata.get("metadata") or {}
+        entry = {
+            "name": name,
+            "handler": handler,
+            "description": desc,
+            "schema": schema,
+            "version": metadata.get("version") or "1.0.0",
+            "tags": tags,
+            "deprecated": bool(metadata.get("deprecated", False)),
+            "metadata": meta_raw,
+        }
+        with self._lock:
+            if name in self._runtime._python_registered_tools:
+                raise ValueError(f"Tool '{name}' is already registered")
+            self._runtime._python_registered_tools[name] = entry
+
+    def unregister(self, name: str) -> dict:
+        """Remove a Python-registered tool and return its metadata.
+
+        Raises
+        ------
+        KeyError:
+            If the tool is not registered.
+        """
+        with self._lock:
+            entry = self._runtime._python_registered_tools.pop(name, None)
+        if entry is None:
+            raise KeyError(f"Tool '{name}' is not registered")
+        return {k: v for k, v in entry.items() if not k.startswith("_")}
+
+    def invoke(self, name: str, args: dict | None = None) -> object:
+        """Invoke a registered tool and return the result as a Python value.
+
+        Prefers the live VM registry (includes Nodus-ephemeral tools) when
+        a VM is active; falls back to Python-registered tools otherwise.
+
+        Parameters
+        ----------
+        name:
+            Tool name to invoke.
+        args:
+            Python dict of arguments (translated to Nodus values before
+            the call; result is translated back).
+
+        Raises
+        ------
+        KeyError:
+            If the tool is not registered.
+        RuntimeError:
+            If a Nodus-closure handler is requested but no VM is active.
+        """
+        vm = self._runtime.last_vm
+        if vm is not None:
+            with vm._tool_registry_lock:
+                entry = vm.tool_registry.get(name)
+            if entry is None:
+                raise KeyError(f"Tool '{name}' is not registered")
+            handler = entry["handler"]
+            if isinstance(handler, Closure):
+                # Convert Python dict → Nodus Record so handler can use dot access
+                raw = args or {}
+                nodus_args = Record({str(k): self._runtime._to_runtime_value(v) for k, v in raw.items()})
+                nodus_result = vm.run_closure(handler, [nodus_args])
+                return self._runtime._to_host_value(nodus_result)
+            if callable(handler):
+                return handler(args or {})
+            raise RuntimeError(f"Tool '{name}': handler is not callable")
+        # No active VM — use Python-registered tools only
+        entry = self._runtime._python_registered_tools.get(name)
+        if entry is None:
+            raise KeyError(f"Tool '{name}' is not registered")
+        handler = entry["handler"]
+        if not callable(handler):
+            raise RuntimeError(f"Tool '{name}': handler is not callable")
+        return handler(args or {})
+
+    def lookup(self, name: str) -> dict | None:
+        """Return a tool's metadata dict, or ``None`` if not registered."""
+        vm = self._runtime.last_vm
+        if vm is not None:
+            with vm._tool_registry_lock:
+                entry = vm.tool_registry.get(name)
+            if entry is not None:
+                return {k: v for k, v in entry.items() if not k.startswith("_")}
+        entry = self._runtime._python_registered_tools.get(name)
+        if entry is None:
+            return None
+        return {k: v for k, v in entry.items() if not k.startswith("_")}
+
+    def list_tools(self) -> list:
+        """Return a list of all registered tool metadata dicts.
+
+        Merges persistent Python-registered tools with any Nodus-registered
+        tools from the most recent VM run.
+        """
+        result: dict[str, dict] = {}
+        for name, entry in self._runtime._python_registered_tools.items():
+            result[name] = {k: v for k, v in entry.items() if not k.startswith("_")}
+        vm = self._runtime.last_vm
+        if vm is not None:
+            with vm._tool_registry_lock:
+                vm_entries = dict(vm.tool_registry)
+            for name, entry in vm_entries.items():
+                result[name] = {k: v for k, v in entry.items() if not k.startswith("_")}
+        return list(result.values())
+
+    def has(self, name: str) -> bool:
+        """Return ``True`` if a tool with this name is registered."""
+        if name in self._runtime._python_registered_tools:
+            return True
+        vm = self._runtime.last_vm
+        if vm is not None:
+            with vm._tool_registry_lock:
+                return name in vm.tool_registry
+        return False
 
 
 class NodusRuntime:
@@ -86,7 +253,9 @@ class NodusRuntime:
         self.allow_input = allow_input
         self.max_frames = max_frames
         self._host_functions: dict[str, BuiltinInfo] = {}
+        self._python_registered_tools: dict[str, dict] = {}
         self.last_vm: VM | None = None
+        self._tool_registry: ToolRegistry = ToolRegistry(self)
 
     def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None) -> None:
         """Register a Python callable as a host function available to Nodus scripts.
@@ -130,6 +299,16 @@ class NodusRuntime:
             raise ValueError(f"Cannot override built-in function: {name}")
         resolved_arity = self._resolve_arity(fn, arity)
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
+
+    @property
+    def tool_registry(self) -> ToolRegistry:
+        """The tool registry for this runtime.
+
+        Use this to register Python callables as Nodus-callable tools, invoke
+        Nodus-registered tools from Python, or enumerate registered tools.
+        Python-registered tools persist across ``run_source()`` calls.
+        """
+        return self._tool_registry
 
     def reset(self) -> None:
         """Clear the reference to the last VM instance.
@@ -295,6 +474,8 @@ class NodusRuntime:
         if debugger is not None:
             vm.debugger = debugger
             vm.debug = True
+        if self._python_registered_tools:
+            vm.tool_registry.update(self._python_registered_tools)
         self.last_vm = vm
         host_builtins = {
             name: BuiltinInfo(

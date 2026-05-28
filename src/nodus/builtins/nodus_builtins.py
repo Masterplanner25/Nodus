@@ -194,6 +194,8 @@ BUILTIN_NAMES = {
     "subprocess_shell", "subprocess_shell_async",
     "subprocess_spawn", "subprocess_spawn_shell",
     "subprocess_shell_quote",
+    "tool_register", "tool_unregister", "tool_invoke",
+    "tool_lookup", "tool_list", "tool_has",
 }
 
 

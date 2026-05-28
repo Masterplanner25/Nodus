@@ -3,6 +3,7 @@
 import math as _math
 import os
 import sys
+import threading
 import time
 from dataclasses import dataclass
 
@@ -238,6 +239,9 @@ class VM:
         self.scheduler_output = scheduler_output
         self._task_counter = 0
         self.last_graph_plan: dict | None = None
+        self.tool_registry: dict = {}
+        self._tool_deprecated_warned: set = set()
+        self._tool_registry_lock = threading.RLock()
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
             "type": BuiltinInfo("type", 1, self.builtin_type),

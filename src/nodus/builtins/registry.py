@@ -54,3 +54,5 @@ class BuiltinRegistry:
         _http.register(vm, self)
         from nodus.builtins import subprocess_module as _subprocess
         _subprocess.register(vm, self)
+        from nodus.builtins import tool_module as _tool
+        _tool.register(vm, self)

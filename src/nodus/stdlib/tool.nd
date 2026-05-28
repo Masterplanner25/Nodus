@@ -1,0 +1,26 @@
+fn register(meta) {
+    return tool_register(meta)
+}
+
+fn unregister(name) {
+    return tool_unregister(name)
+}
+
+fn invoke(name, args) {
+    return tool_invoke(name, args)
+}
+
+fn lookup(name) {
+    return tool_lookup(name)
+}
+
+fn list_tools(filter) {
+    if (filter == nil) {
+        return tool_list()
+    }
+    return tool_list(filter)
+}
+
+fn has(name) {
+    return tool_has(name)
+}
