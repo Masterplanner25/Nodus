@@ -50,3 +50,5 @@ class BuiltinRegistry:
         _encoding.register(vm, self)
         from nodus.builtins import secrets_module as _secrets
         _secrets.register(vm, self)
+        from nodus.builtins import http_module as _http
+        _http.register(vm, self)

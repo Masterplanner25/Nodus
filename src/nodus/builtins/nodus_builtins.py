@@ -185,6 +185,11 @@ BUILTIN_NAMES = {
     "secrets_token_hex", "secrets_token_base64",
     "secrets_token_urlsafe", "secrets_token_alphanumeric",
     "secrets_uuid_v4", "secrets_uuid_v7",
+    "http_get", "http_post", "http_put", "http_delete",
+    "http_patch", "http_head", "http_options_verb", "http_request",
+    "http_get_async", "http_post_async", "http_put_async", "http_delete_async",
+    "http_patch_async", "http_head_async", "http_options_async", "http_request_async",
+    "http_stream", "http_sse",
 }
 
 

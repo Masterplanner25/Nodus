@@ -39,6 +39,7 @@ class Scheduler:
         self.trace_output = trace_output
         self._counter = 0
         self.task_ages: dict[int, int] = {}
+        self._io_channels: list = []
 
     def _trace(self, message: str) -> None:
         if self.trace:
@@ -133,18 +134,50 @@ class Scheduler:
         self._completed_ids.add(coroutine.id)
         self.completed_tasks.append(coroutine)
 
+    def _drain_io_channels(self) -> None:
+        """Wake coroutines blocked on thread-backed channels that now have data."""
+        if not self._io_channels:
+            return
+        for ch in list(self._io_channels):
+            while ch.queue and ch.waiting_receivers:
+                value = ch.queue.popleft()
+                receiver = ch.waiting_receivers.popleft()
+                if getattr(receiver, "state", None) != "suspended":
+                    continue
+                if receiver.stack:
+                    receiver.stack[-1] = value
+                receiver.blocked_on = None
+                receiver.blocked_reason = None
+                self.ready_queue.append(receiver)
+            if ch.closed:
+                while ch.waiting_receivers:
+                    r = ch.waiting_receivers.popleft()
+                    if getattr(r, "state", None) == "suspended":
+                        if r.stack:
+                            r.stack[-1] = None
+                        r.blocked_on = None
+                        r.blocked_reason = None
+                        self.ready_queue.append(r)
+                self._io_channels.remove(ch)
+
     def run_loop(self, on_complete=None, on_error=None) -> None:
         stop = False
-        while self.ready_queue or self.timers:
+        while self.ready_queue or self.timers or self._io_channels:
             self._drain_timers()
+            self._drain_io_channels()
             if not self.ready_queue:
-                if not self.timers:
+                if not self.timers and not self._io_channels:
                     break
-                wake_time = self.timers[0][0]
-                now = runtime_time_ms()
-                if wake_time > now:
-                    time.sleep((wake_time - now) / 1000.0)
+                if self.timers:
+                    wake_time = self.timers[0][0]
+                    now = runtime_time_ms()
+                    if wake_time > now:
+                        poll = 0.001 if self._io_channels else (wake_time - now) / 1000.0
+                        time.sleep(min(poll, (wake_time - now) / 1000.0))
+                elif self._io_channels:
+                    time.sleep(0.001)
                 self._drain_timers()
+                self._drain_io_channels()
                 if not self.ready_queue:
                     continue
 

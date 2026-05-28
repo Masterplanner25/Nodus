@@ -4,6 +4,27 @@
 
 ### Added
 
+- **3B.4 — std:http:** New `std:http` namespace with 19 public functions:
+  8 sync verbs (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`,
+  `request`), 8 `_async` counterparts (Phase 3B: synchronous at I/O level;
+  parallelism via Nodus scheduler), `stream`, and `sse`. Buffered response
+  records have `status`, `headers`, `body`, `url`, `method`, `ok`,
+  `is_redirect`, `is_client_error`, `is_server_error` fields plus
+  `json()`, `header(name)`, `headers_all(name)` method fields.
+  Options: `json`, `form`, `text`, `bytes`, `multipart` body keys
+  (mutually exclusive); `headers`, `query`, `auth_bearer`, `auth_basic`
+  shortcuts; `timeout_ms`, `connect_timeout_ms`, `read_timeout_ms`;
+  `follow_redirects`, `verify_tls`, `proxy`. Stream responses carry a
+  `chunks` channel filled by a background thread; scheduler's new
+  `_io_channels` list is polled by `run_loop` to wake blocked coroutines.
+  SSE responses carry an `events` channel with parsed event dicts
+  (`event`, `data`, `id`, `retry` fields). `r.as_sse()` converts a stream
+  to an SSE channel. Err records use `kind: "http_error"` with six
+  `category` values (`network`, `timeout`, `client_error`, `server_error`,
+  `decode_error`, `redirect_error`). Requires `httpx>=0.27,<1` (already
+  in `pyproject.toml`). Scheduler extended with `_io_channels` polling
+  for thread-backed Channel wakeup.
+
 - **3B.3 — std:hash, std:encoding, std:secrets:** Three new namespaces
   using Python stdlib only (no new dependencies).
   `std:hash`: 15 hash functions (5 algorithms × one-shot/builder/file),
