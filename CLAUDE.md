@@ -127,6 +127,14 @@ Two rules come up repeatedly:
   Suppress with `# noqa: E402` on each affected import line. Do not
   restructure the path manipulation to avoid it.
 
+**Pre-existing violations:** `ruff check src/` always shows ~33 pre-existing
+errors in `src/nodus/vm/vm.py` (E702), `src/nodus/builtins/time_module.py`
+(E701, F841), `src/nodus/builtins/encoding_module.py` (F401), and
+`src/nodus/builtins/secrets_module.py` (F401). These pre-date Phase 3C and
+are known. Do not introduce them into new code, but do not treat them as a
+blocker for your own changes. When verifying a commit, run ruff scoped to the
+files you actually changed rather than the whole `src/` tree.
+
 ## Git commit syntax (PowerShell)
 
 Multi-line commit messages require a PowerShell here-string — bash `<<EOF`
