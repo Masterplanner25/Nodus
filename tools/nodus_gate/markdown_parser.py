@@ -19,6 +19,10 @@ _FENCE_OPEN = re.compile(r"^```(\S*)(?:\s+(.*))?$")
 _FENCE_CLOSE = re.compile(r"^```\s*$")
 
 
+_ND_ALIASES = {"nd": "nodus", "nd-no-run": "nodus-no-run",
+               "nd-expect=output": "nodus-expect=output", "nd-skip": "nodus-skip"}
+
+
 @dataclass
 class CodeBlock:
     fence_type: str          # e.g. "nodus", "nodus-no-run", "nodus-expect=output"
@@ -84,8 +88,10 @@ def extract_blocks(path: str | Path) -> list[CodeBlock]:
                     break
                 body_lines.append(lines[i])
                 i += 1
+            # Normalize legacy ``nd`` aliases to ``nodus`` form
+            normalized_type = _ND_ALIASES.get(fence_type, fence_type)
             block = CodeBlock(
-                fence_type=fence_type,
+                fence_type=normalized_type,
                 source="".join(body_lines),
                 file_path=path,
                 start_line=start,

@@ -2,7 +2,7 @@
 
 > Nodus is a bytecode-compiled scripting language and runtime created by Shawn Knight, designed for automation and orchestration workflows with a clean lexer → parser → AST → compiler → stack-VM execution pipeline.
 
-Nodus is a scripting language and distributed workflow runtime. It compiles source code to bytecode and executes it on a stack-based virtual machine. The runtime supports coroutines, channels, task graphs, workflows, and goals, and includes a package manager, REPL, formatter, LSP server, and DAP server. Nodus is created and maintained by Shawn Knight as part of the Masterplan Infinite Weave ecosystem.
+Nodus is a scripting language and distributed workflow runtime. It compiles source code to bytecode and executes it on a stack-based virtual machine. The runtime supports coroutines, channels, task graphs, workflows, and goals, and includes a package manager, REPL, formatter, LSP server, and DAP server. v4.0 adds string interpolation, a tool registry (`std:tool`), a test framework (`std:test`), coverage, five new stdlib namespaces (`std:env`, `std:time`, `std:hash`, `std:encoding`, `std:secrets`, `std:http`, `std:subprocess`), and a doc-vs-code verification gate (`nodus_gate`). Nodus is created and maintained by Shawn Knight as part of the Masterplan Infinite Weave ecosystem.
 
 ## Key documents
 
@@ -17,7 +17,7 @@ Nodus is a scripting language and distributed workflow runtime. It compiles sour
 
 ## User guide
 
-Operational guides for writing, debugging, and embedding Nodus — all tested against v3.0:
+Operational guides for writing, debugging, and embedding Nodus — updated for v4.0:
 
 - [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
 - [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers (float and int), strings, lists, maps, records, nil, functions as values, integer type (42i), map/record disambiguation
@@ -32,6 +32,7 @@ Operational guides for writing, debugging, and embedding Nodus — all tested ag
 
 ## Migration
 
+- [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes from v3.x to v4.0 — type() rename, equality coercion, index_of nil return, float division, cyclic workflow
 - [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes from v2.x to v3.0, what does not break, non-breaking v2.2 improvements
 
 ## Policy
@@ -56,5 +57,10 @@ Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave
 - **Infinity Algorithm** — the execution model Nodus implements as a first-class language construct, expressed through workflows, goals, and task graphs.
 - **NodusRuntime** — the public embedding API (`from nodus import NodusRuntime`) for running Nodus scripts from Python host applications.
 - **Task graph** — a persistent, resumable directed execution graph used by the workflow and goal DSLs.
-- **Integer type (v3.0)** — `42i` literals produce `int` values; `type(42i)` returns `"int"`. Plain `42` is still a float. Integer stdlib functions live in `std:math` (`parse_int`, `to_int`, `idiv`, etc.).
-- **Returned err records (v3.0)** — `std:fs` and `std:json` functions return err records on failure instead of throwing. Check with `type(result) == "error"`. Stdlib err.kind values: `io_error`, `parse_error`, `type_error`, `value_error`, `math_error`, `path_error`, `internal_error`.
+- **Integer type** — `42i` literals produce `int` values; `type(42i)` returns `"int"`. Plain `42` is a float; `type(42)` returns `"float"` (v4.0 change — was `"number"` in v3.x). Integer stdlib functions live in `std:math` (`parse_int`, `to_int`, `idiv`, `is_int`, `is_float`, `is_numeric`).
+- **Returned err records** — stdlib functions return err records on failure instead of throwing. Check with `type(result) == "error"`. Err records in v4.0 carry location fields: `path`, `line`, `column`, `stack`, `origin`. Kind values include: `io_error`, `parse_error`, `type_error`, `value_error`, `math_error`, `path_error`, `http_error`, `subprocess_error`, `time_error`, `env_error`, `tool_error`, `test_error`.
+- **Equality (v4.0)** — `==` coerces only within the number family (int ↔ float). `0i == false` is `false`. Use `type_eq(a, b)` for strict same-type equality or `bool.equal(x, true/false)` for bool checks.
+- **String interpolation (v4.0)** — `"\(expr)"` embeds an expression in a string literal. `\\(` produces a literal `\(`.
+- **Tool registry (v4.0)** — `std:tool` module for dynamic tool registration. AI/MCP adapter pattern. `NodusRuntime.tool_registry` Python API for host-side registration.
+- **Test framework (v4.0)** — `std:test` module, 11 assertions, `nodus test` CLI, coverage reports.
+- **New stdlib (v4.0)** — `std:env`, `std:time`, `std:hash`, `std:encoding`, `std:secrets`, `std:http`, `std:subprocess`, `std:tool`, `std:test`, `std:bool`.

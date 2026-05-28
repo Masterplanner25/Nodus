@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-_ISSUE_REF_RE = re.compile(r'(?:closes?\s+|#|\()#?(\d+)\)?', re.IGNORECASE)
+# Match explicit issue references only: "closes #N", "(#N)", or bare "#N"
+# Requires the # sign before digits to avoid matching plain numbers
+_ISSUE_REF_RE = re.compile(r'(?:closes?\s+#|(?<!\w)#)(\d+)', re.IGNORECASE)
 _CLOSES_MARKER_RE = re.compile(r'#\s*closes:\s*#?(\d+)', re.IGNORECASE)
 
 

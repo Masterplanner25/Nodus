@@ -90,16 +90,16 @@ def format_closed_issues(result, root: str, *, use_color: bool, verbose: bool, q
     for iss in result.issues:
         if iss.test_path is None:
             sym = _c("?", _YELLOW, use_color=use_color)
-            lines.append(f"  {sym} #{iss.issue_number} → no test found")
+            lines.append(f"  {sym} #{iss.issue_number}: no test found")
             lines.append(f"    {iss.error_msg}")
         elif iss.passed is True:
-            sym = _c("✓", _GREEN, use_color=use_color) if use_color else "PASS"
+            sym = _c("PASS", _GREEN, use_color=use_color)
             rel = _rel(iss.test_path, root)
-            lines.append(f"  {sym} #{iss.issue_number} → {rel}")
+            lines.append(f"  {sym} #{iss.issue_number}: {rel}")
         elif iss.passed is False:
-            sym = _c("✗", _RED, use_color=use_color) if use_color else "FAIL"
+            sym = _c("FAIL", _RED, use_color=use_color)
             rel = _rel(iss.test_path, root)
-            lines.append(f"  {sym} #{iss.issue_number} → {rel}")
+            lines.append(f"  {sym} #{iss.issue_number}: {rel}")
             for err_line in iss.error_msg.splitlines()[:5]:
                 lines.append(f"    {err_line}")
         lines.append("")

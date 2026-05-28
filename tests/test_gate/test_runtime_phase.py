@@ -101,7 +101,7 @@ class RuntimePhaseTests(unittest.TestCase):
         try:
             rel_path = os.path.relpath(
                 os.path.join(root, "docs", "language", "test.md"), root
-            )
+            ).replace("\\", "/")
             allowlist = {f"block:{rel_path}:1"}
             result = run_runtime_phase(root, allowlist=allowlist)
             self.assertEqual(len(result.findings), 0)

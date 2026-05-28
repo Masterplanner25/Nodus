@@ -1,0 +1,55 @@
+# .nodusgate-allow — nodus_gate suppression list
+# Format: block:<relative-path>:<line> or symbol:<name>
+# Only suppress findings that are intentional (multi-file examples,
+# context-dependent snippets, intentional error demos).
+
+# modules-and-imports.md — all multi-file examples; requires companion files
+block:docs/guide/modules-and-imports.md:29
+block:docs/guide/modules-and-imports.md:59
+block:docs/guide/modules-and-imports.md:71
+block:docs/guide/modules-and-imports.md:105
+block:docs/guide/modules-and-imports.md:136
+block:docs/guide/modules-and-imports.md:232
+block:docs/guide/modules-and-imports.md:243
+block:docs/guide/modules-and-imports.md:273
+block:docs/guide/modules-and-imports.md:283
+block:docs/guide/modules-and-imports.md:296
+block:docs/guide/modules-and-imports.md:364
+
+# getting-started.md — multi-file example and context-dependent snippet
+block:docs/guide/getting-started.md:250
+block:docs/guide/getting-started.md:294
+
+# debugging.md — intentional error demonstrations (missing key, non-top-level import)
+block:docs/guide/debugging.md:23
+block:docs/guide/debugging.md:329
+
+# error-handling.md — illustrative pseudo-code using reserved identifier 'and'
+block:docs/guide/error-handling.md:264
+
+# error-surfaces.md — illustrative snippet showing return-outside-function pattern
+block:docs/policy/error-surfaces.md:177
+
+# types-and-values.md — intentional type-error demo and missing-key demo
+block:docs/guide/types-and-values.md:639
+block:docs/guide/types-and-values.md:654
+
+# workflows-and-tasks.md — context-dependent workflow examples
+block:docs/guide/workflows-and-tasks.md:81
+block:docs/guide/workflows-and-tasks.md:158
+block:docs/guide/workflows-and-tasks.md:179
+block:docs/guide/workflows-and-tasks.md:242
+block:docs/guide/workflows-and-tasks.md:333
+
+# working-with-json.md — context-dependent snippets
+block:docs/guide/working-with-json.md:241
+block:docs/guide/working-with-json.md:266
+block:docs/guide/working-with-json.md:277
+
+# LANGUAGE_SPEC.md — illustrative pattern code with implicit context
+block:docs/language/LANGUAGE_SPEC.md:543
+block:docs/language/LANGUAGE_SPEC.md:553
+
+# Runtime reference docs — context-dependent examples
+block:docs/runtime/TASK_GRAPHS.md:48
+block:docs/runtime/WORKFLOWS.md:44

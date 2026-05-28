@@ -111,7 +111,7 @@ def run_runtime_phase(
             if not block.should_run:
                 continue
             result.total_blocks += 1
-            allow_key = f"block:{os.path.relpath(block.file_path, root)}:{block.start_line}"
+            allow_key = "block:" + os.path.relpath(block.file_path, root).replace("\\", "/") + f":{block.start_line}"
             if allow_key in allowlist:
                 result.passed += 1
                 continue

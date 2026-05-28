@@ -4,6 +4,60 @@
 
 ### Added
 
+- **3D.2 — Equality coercion narrowing (Doc 11):** `==` now performs numeric-only
+  coercion (int ↔ float) and rejects cross-family coercions. `0i == false` is
+  `false` in v4.0 (was `true`). `1i == true`, `"" == false`, `"1" == 1i` are
+  all `false`. Number-family coercion preserved: `1i == 1.0` is still `true`.
+  `!=` updated for consistency. New builtins: `type_eq(a, b)` (strict same-type
+  equality), `bool_equal(value, bool_value)`. New `std:bool` module exposing
+  `bool.equal(x, bool_value)`. Breaking change for code relying on `0 == false`
+  or `1 == true`.
+
+- **3D.1 — type() naming reconciliation (Doc 10):** `type(1.0)` now returns
+  `"float"` (was `"number"`). `type(42)` (unadorned literal) also returns
+  `"float"`. `type(1i)` unchanged (`"int"`). New math helpers: `math.is_float(x)`,
+  `math.is_numeric(x)` (joins existing `math.is_int`). Breaking change for code
+  comparing `type(x) == "number"` — update to `math.is_float(x)` or `"float"`.
+
+- **3C.4 — nodus_gate doc-vs-code reconciliation gate (Doc 12):** New
+  `tools/nodus_gate/` Python tool implementing the three-phase verification gate.
+  `python -m tools.nodus_gate.cli --static` verifies every `import "std:*"` and
+  `nodus <cmd>` in docs exists in the codebase. `--runtime` executes all
+  ` ```nodus ` and ` ```nodus-expect=output ` code blocks in documentation and
+  verifies they run clean / produce expected output. `--closed-issues` parses
+  `CHANGELOG.md [Unreleased]` for issue references, locates tests by file
+  convention or `# closes: #N` marker, and runs them. `--all` runs all three.
+  Supports `.nodusgate-allow` allowlist, `--verbose`/`--quiet`/`--format` flags.
+  Mandatory pre-release step per the PLAYBOOK_MAJOR.md Phase 4 exit criterion.
+
+- **3C.3 — std:test framework (Doc 07 + Doc 08):** New `std:test` namespace
+  implementing a full pytest/jest-equivalent test framework. 11 assertions
+  (`assert`, `assert_eq`, `assert_neq`, `assert_err`, `assert_ok`, `assert_kind`,
+  `assert_throws`, `assert_close`, `assert_contains`, `assert_has_key`,
+  `assert_in_range`). Suite/case API: `test.suite`, `test.case`, `test.case_async`,
+  `test.skip`. Lifecycle hooks: `before_all`, `after_all`, `before_each`,
+  `after_each`. Fixtures with test/suite scopes and `test.cleanup` teardown.
+  Parameterized tests via `test.parameterize` (list and map row forms). Async
+  tests with virtual clock: `test.advance_clock`, `test.flush_async`. Test
+  isolation by default (env, cwd, tool registry reverted between tests).
+  CLI: `nodus test [path] [--filter] [--format] [--coverage] [--bail]
+  [--verbose] [--quiet]`. Output formats: pretty, plain, JSON, JUnit XML.
+  Coverage: line-hit collection via event bus; JSON + HTML reports written
+  to `./coverage/` with `--coverage` flag. Doc 08 coverage integration.
+
+- **3C.2 — Tool registry library-side handlers (Doc 06):** New `std:tool`
+  namespace for dynamic tool registration. `tool.register({name, handler,
+  description, schema?, version?, tags?, deprecated?, metadata?})` — conflict
+  on duplicate name returns err (`category: "registration_conflict"`). Schema
+  supports simple flat map form (auto-normalized to JSON Schema) and full JSON
+  Schema. `tool.unregister(name)`, `tool.invoke(name, args)`,
+  `tool.lookup(name)`, `tool.list_tools(filter?)`, `tool.has(name)`. Deprecated
+  tools emit a warning once per VM instance on first invocation.
+  `NodusRuntime.tool_registry` property exposes a Python-side `ToolRegistry`
+  wrapper with the same API; Python-registered tools persist across `run_source`
+  calls and are pre-populated into each VM. Value translation (Nodus ↔ Python)
+  for Python callable handlers. `threading.RLock` for concurrent host access.
+
 - **3C.1 — String interpolation:** Swift-style `"\(expr)"` syntax for inline
   expression embedding in string literals. Lexer uses a character-by-character
   mode-stack (`_lex_string` / `_lex_interp`) replacing the prior regex-based
@@ -126,6 +180,32 @@
   in `call_builtin()` with `origin="stdlib"` and the call-site location.
   VM-thrown errs get `origin="vm"` via `build_runtime_error()`. User-thrown
   errs get `origin="user"` via `_op_throw()`.
+
+### Breaking Changes
+
+- **`type(float)` returns `"float"` not `"number"`** (Doc 10). Code checking
+  `type(x) == "number"` will silently stop matching. Migrate: use
+  `math.is_float(x)` or `type(x) == "float"`. Grep for `"number"` in type
+  comparisons.
+
+- **`==` no longer coerces across type families** (Doc 11). `0 == false`,
+  `1 == true`, `"" == false`, `"1" == 1` are all `false` in v4.0. Number-family
+  coercion (`1i == 1.0`) is preserved. Migrate: use `bool.equal(x, true/false)`,
+  `type_eq(a, b)`, or explicit type-checked comparisons.
+
+- **`index_of()` and `last_index_of()` return `nil` for not-found** (Doc 14,
+  v4.0). Was `-1` in v3.x. Migrate: check `result == nil` instead of `== -1`.
+
+- **Float division by zero returns `inf`/`nan`** instead of throwing (Doc 09).
+  Code catching `RuntimeError: Division by zero` will silently get `inf`/`nan`.
+  Migrate: use `math.is_nan(x)` or `math.is_inf(x)` to check results.
+
+- **Cyclic workflow returns err record** instead of a plain dict (Doc 15).
+  Migrate: check `type(result) == "error"` for cyclic workflow detection.
+
+- **Err records now carry location fields** (`path`, `line`, `column`, `stack`,
+  `origin`) in v4.0 (Doc 13). Code pattern-matching err record fields must
+  allow for the new fields.
 
 ### Fixed
 
