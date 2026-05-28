@@ -74,6 +74,12 @@ class Record:
         return f"Record({{{inner}}})"
 
 
+class BuiltinMethod:
+    """Wraps a Python callable for use as a method field on a Record."""
+    def __init__(self, fn):
+        self._fn = fn
+
+
 class ListIterator:
     def __init__(self, values: list):
         self.values = values
@@ -609,6 +615,8 @@ class VM:
             return "task"
         if isinstance(value, TaskGraph):
             return "graph"
+        if isinstance(value, bytes):
+            return "bytes"
         return "unknown"
 
     def builtin_runtime_typeof(self, value):
@@ -1471,6 +1479,10 @@ class VM:
             return f"<task {value.task_id} {value.status}>"
         if isinstance(value, TaskGraph):
             return f"<graph {len(value.tasks)} tasks>"
+        if isinstance(value, bytes):
+            return value.hex()
+        if isinstance(value, BuiltinMethod):
+            return "<builtin-method>"
         return str(value)
 
     def to_list_index(self, value):
@@ -2300,6 +2312,10 @@ class VM:
             self.runtime_error("key", f"Missing record field: {name}")
         method = obj.fields[name]
         self.record_vm_call(name, "call_method")
+        if isinstance(method, BuiltinMethod):
+            self.stack.append(method._fn(*args))
+            self.ip += 1
+            return None
         if isinstance(method, ModuleFunction):
             self.stack.append(method(*args))
             self.ip += 1

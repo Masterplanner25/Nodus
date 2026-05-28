@@ -40,3 +40,5 @@ class BuiltinRegistry:
         _coroutine.register(vm, self)
         from nodus.builtins import collections as _collections
         _collections.register(vm, self)
+        from nodus.builtins import env as _env
+        _env.register(vm, self)

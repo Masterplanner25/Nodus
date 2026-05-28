@@ -132,6 +132,12 @@ BUILTIN_NAMES = {
     "fs_delete",
     "path_relative",
     "path_absolute",
+    "env_get",
+    "env_set",
+    "env_unset",
+    "env_has",
+    "env_list",
+    "env_list_keys",
 }
 
 

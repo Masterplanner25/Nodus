@@ -4,6 +4,12 @@
 
 ### Added
 
+- **3B.1 — std:env:** New `std:env` namespace with `get`, `set`, `unset`,
+  `has`, `list`, `list_keys`. All values are strings; `env.get` accepts an
+  optional default; `env.set` with an invalid name (contains `=` or null byte)
+  returns an err record (`kind: "env_error"`, `category: "invalid_name"`).
+  Modifications affect the current process only.
+
 - **Doc 15:** Cyclic workflow dependency detection now returns an err record
   (`kind: "workflow_error"`, `origin: "stdlib"`) instead of a plain dict.
   The payload contains `category: "cyclic_workflow"`, `cycle` (ordered list
