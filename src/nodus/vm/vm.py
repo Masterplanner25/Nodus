@@ -73,6 +73,30 @@ class Record:
         inner = ", ".join(f"{k}: {v!r}" for k, v in self.fields.items())
         return f"Record({{{inner}}})"
 
+    def __eq__(self, other):
+        if not isinstance(other, Record):
+            return NotImplemented
+        if self.kind == "datetime" and other.kind == "datetime":
+            return self.fields["epoch_ms"] == other.fields["epoch_ms"]
+        if self.kind == "duration" and other.kind == "duration":
+            return self.fields["total_ms"] == other.fields["total_ms"]
+        return self is other
+
+    def __hash__(self):
+        return id(self)
+
+    def _cmp_key(self, other):
+        if self.kind == "datetime" and isinstance(other, Record) and other.kind == "datetime":
+            return self.fields["epoch_ms"], other.fields["epoch_ms"]
+        if self.kind == "duration" and isinstance(other, Record) and other.kind == "duration":
+            return self.fields["total_ms"], other.fields["total_ms"]
+        raise TypeError(f"unorderable types: {self.kind} and {getattr(other, 'kind', type(other).__name__)}")
+
+    def __lt__(self, other): a, b = self._cmp_key(other); return a < b
+    def __le__(self, other): a, b = self._cmp_key(other); return a <= b
+    def __gt__(self, other): a, b = self._cmp_key(other); return a > b
+    def __ge__(self, other): a, b = self._cmp_key(other); return a >= b
+
 
 class BuiltinMethod:
     """Wraps a Python callable for use as a method field on a Record."""

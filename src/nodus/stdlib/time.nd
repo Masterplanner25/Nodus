@@ -1,0 +1,128 @@
+fn now() {
+    return time_now()
+}
+
+fn now_in(zone) {
+    return time_now_in(zone)
+}
+
+fn from_epoch_ms(ms, zone) {
+    if (zone == nil) {
+        return time_from_epoch_ms(ms)
+    }
+    return time_from_epoch_ms(ms, zone)
+}
+
+fn at(year, month, day, hour, minute, second, ms, zone, options) {
+    return time_at(year, month, day, hour, minute, second, ms, zone, options)
+}
+
+fn from_iso8601(s) {
+    return time_from_iso8601(s)
+}
+
+fn from_http_date(s) {
+    return time_from_http_date(s)
+}
+
+fn parse(s, fmt, zone, options) {
+    if (zone == nil && options == nil) {
+        return time_parse(s, fmt)
+    }
+    if (options == nil) {
+        return time_parse(s, fmt, zone)
+    }
+    return time_parse(s, fmt, zone, options)
+}
+
+fn ms(n) {
+    return time_ms(n)
+}
+
+fn seconds(n) {
+    return time_seconds(n)
+}
+
+fn minutes(n) {
+    return time_minutes(n)
+}
+
+fn hours(n) {
+    return time_hours(n)
+}
+
+fn days(n) {
+    return time_days(n)
+}
+
+fn weeks(n) {
+    return time_weeks(n)
+}
+
+fn duration_between(dt1, dt2) {
+    return time_duration_between(dt1, dt2)
+}
+
+fn add(dt, dur) {
+    return time_add(dt, dur)
+}
+
+fn subtract(dt, dur) {
+    return time_subtract(dt, dur)
+}
+
+fn add_days(dt, n) {
+    return time_add_days(dt, n)
+}
+
+fn add_months(dt, n) {
+    return time_add_months(dt, n)
+}
+
+fn add_years(dt, n) {
+    return time_add_years(dt, n)
+}
+
+fn start_of_day(dt) {
+    return time_start_of_day(dt)
+}
+
+fn end_of_day(dt) {
+    return time_end_of_day(dt)
+}
+
+fn start_of_week(dt) {
+    return time_start_of_week(dt)
+}
+
+fn start_of_month(dt) {
+    return time_start_of_month(dt)
+}
+
+fn start_of_year(dt) {
+    return time_start_of_year(dt)
+}
+
+fn to_zone(dt, zone) {
+    return time_to_zone(dt, zone)
+}
+
+fn to_utc(dt) {
+    return time_to_utc(dt)
+}
+
+fn format(dt, fmt) {
+    return time_format(dt, fmt)
+}
+
+fn to_iso8601(dt) {
+    return time_to_iso8601(dt)
+}
+
+fn to_http_date(dt) {
+    return time_to_http_date(dt)
+}
+
+fn to_epoch_ms(dt) {
+    return time_to_epoch_ms(dt)
+}

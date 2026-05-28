@@ -42,3 +42,5 @@ class BuiltinRegistry:
         _collections.register(vm, self)
         from nodus.builtins import env as _env
         _env.register(vm, self)
+        from nodus.builtins import time_module as _time
+        _time.register(vm, self)

@@ -4,6 +4,17 @@
 
 ### Added
 
+- **3B.2 — std:time:** New `std:time` namespace with 7 datetime constructors
+  (`now`, `now_in`, `at`, `from_epoch_ms`, `from_iso8601`, `from_http_date`,
+  `parse`), 6 duration constructors plus `duration_between`, 12 calendar
+  operations, chrono-style format engine, and serialization helpers
+  (`to_iso8601`, `to_http_date`, `to_epoch_ms`). Datetimes store
+  `epoch_ms + zone`; durations store `total_ms`. DST gap/fold detection
+  with `on_invalid`/`on_ambiguous` options. Err records use
+  `kind: "time_error"` with four categories. `datetime` and `duration`
+  Records support comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`).
+  Requires `tzdata>=2024.1` (added to `pyproject.toml`).
+
 - **3B.1 — std:env:** New `std:env` namespace with `get`, `set`, `unset`,
   `has`, `list`, `list_keys`. All values are strings; `env.get` accepts an
   optional default; `env.set` with an invalid name (contains `=` or null byte)
