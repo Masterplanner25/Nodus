@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+try:
+    from importlib.metadata import entry_points as _importlib_entry_points
+except ImportError:  # Python < 3.9 fallback (not expected but guard anyway)
+    _importlib_entry_points = None  # type: ignore[assignment]
+
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.compiler.compiler import Compiler, wrap_bytecode
 from nodus.frontend.lexer import Tok, tokenize
@@ -745,11 +750,40 @@ def resolve_import_path(
             import_error("Invalid package import: use package:module", tok, module_id)
         if package_name.startswith(".") or package_name.startswith(("/", "\\")):
             import_error("Invalid package import: package name is invalid", tok, module_id)
-        package_base = os.path.normpath(os.path.join(modules_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
+        package_path_norm = package_path.replace("/", os.sep).replace("\\", os.sep)
+        package_base = os.path.normpath(os.path.join(modules_dir, package_name, package_path_norm))
         package_root = os.path.normpath(os.path.join(modules_dir, package_name))
         if not package_base.startswith(package_root):
             import_error("Invalid package import: path escapes dependency directory", tok, module_id)
-        return resolve_with_extensions(package_base, import_path, tok, module_id)
+        # Try .nodus/modules/ first (local package manager wins over installed).
+        resolved = try_resolve_with_extensions(package_base)
+        if resolved is not None:
+            return resolved
+        # Fallback: pip-installed package via nodus.nd entry-point group.
+        ep_root = _resolve_installed_package(package_name)
+        if ep_root is not None:
+            ep_base = os.path.normpath(os.path.join(ep_root, package_path_norm))
+            ep_root_norm = os.path.normpath(ep_root)
+            if ep_base.startswith(ep_root_norm):  # guard: no path traversal outside ep_root
+                resolved = try_resolve_with_extensions(ep_base)
+                if resolved is not None:
+                    return resolved
+        # Build error listing everything tried.
+        _pkg_tried: list[str] = []
+        for _sfx in (".nd", ".tl"):
+            _pkg_tried.append(os.path.abspath(package_base + _sfx))
+        _pkg_tried.append(os.path.abspath(os.path.join(package_base, "index.nd")))
+        if ep_root is not None:
+            _ep_base = os.path.normpath(os.path.join(ep_root, package_path_norm))
+            for _sfx in (".nd", ".tl"):
+                _pkg_tried.append(os.path.abspath(_ep_base + _sfx))
+            _pkg_tried.append(os.path.abspath(os.path.join(_ep_base, "index.nd")))
+        else:
+            _pkg_tried.append(f"<no nodus.nd entry-point for '{package_name}'>")
+        import_error(
+            f"Import not found: {import_path} (tried {', '.join(_pkg_tried)})",
+            tok, module_id,
+        )
 
     if import_path.startswith("std:"):
         name = import_path[4:]
@@ -794,8 +828,19 @@ def resolve_import_path(
     if resolved is not None:
         return resolved
 
+    # Fourth lookup: pip-installed packages via nodus.nd entry-point group.
+    # Fires only after project-root, .nodus/modules/, and stdlib all miss.
+    # Local always wins; installed is last resort before ImportError.
+    _ep_root = _resolve_installed_package(import_path)
+    if _ep_root is not None:
+        _ep_base = os.path.normpath(_ep_root)
+        resolved = try_resolve_with_extensions(_ep_base)
+        if resolved is not None:
+            return resolved
+
     # Build a comprehensive error listing every path that was attempted.
     _all_tried: list[str] = []
+    # 1. Project-root attempts
     _base_noext = base
     if _base_noext.endswith(".nd") or _base_noext.endswith(".tl"):
         _base_noext = _base_noext[:-3]
@@ -803,6 +848,15 @@ def resolve_import_path(
         _all_tried.append(os.path.abspath(_base_noext + _sfx))
     _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.nd")))
     _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.tl")))
+    # 2. .nodus/modules/ attempts (was previously omitted from error output)
+    _modules_noext = os.path.normpath(os.path.join(modules_dir, import_path))
+    if _modules_noext.endswith(".nd") or _modules_noext.endswith(".tl"):
+        _modules_noext = _modules_noext[:-3]
+    for _sfx in (".nd", ".tl"):
+        _all_tried.append(os.path.abspath(_modules_noext + _sfx))
+    _all_tried.append(os.path.abspath(os.path.join(_modules_noext, "index.nd")))
+    _all_tried.append(os.path.abspath(os.path.join(_modules_noext, "index.tl")))
+    # 3. stdlib attempts
     try:
         _std_b = _resolve_std_base(import_path, tok, module_id)
         if _std_b.endswith(".nd") or _std_b.endswith(".tl"):
@@ -811,6 +865,15 @@ def resolve_import_path(
             _all_tried.append(os.path.abspath(_std_b + _sfx))
     except Exception:
         pass
+    # 4. Entry-point attempts
+    if _ep_root is not None:
+        _ep_noext = os.path.normpath(_ep_root)
+        for _sfx in (".nd", ".tl"):
+            _all_tried.append(os.path.abspath(_ep_noext + _sfx))
+        _all_tried.append(os.path.abspath(os.path.join(_ep_noext, "index.nd")))
+        _all_tried.append(os.path.abspath(os.path.join(_ep_noext, "index.tl")))
+    else:
+        _all_tried.append(f"<no nodus.nd entry-point for '{import_path}'>")
     _line = tok.line if tok is not None else None
     _col = tok.col if tok is not None else None
     raise LangRuntimeError(
@@ -976,3 +1039,48 @@ def _resolve_std_base(import_path: str, tok: Tok | None, module_id: str) -> str:
     if not base.startswith(os.path.normpath(std_dir)):
         import_error("Invalid std import: path escapes std directory", tok, module_id)
     return base
+
+
+def _resolve_installed_package(name: str) -> str | None:
+    """Look up a pip-installed Nodus package via the ``nodus.nd`` entry-point group.
+
+    Third-party packages (e.g. ``nodus-mcp``) declare themselves importable by
+    registering an entry point in the ``nodus.nd`` group::
+
+        [project.entry-points."nodus.nd"]
+        nodus-mcp = "nodus_mcp.nd:get_nd_root"
+
+    The entry-point value MUST be a ``module:callable`` reference.  The callable
+    is invoked with no arguments and MUST return the absolute path to the
+    directory that contains the package's ``.nd`` source files (its *nd root*).
+
+    Convention: the nd root directory contains an ``index.nd`` file (the module's
+    top-level export, resolved by ``import "nodus-mcp"``) and optionally
+    sub-module files (``client.nd`` → ``import "nodus-mcp:client"``).
+
+    The function form is required (not a static string) because the installed
+    location is only known at runtime; a static path cannot be computed at
+    package-author time.
+
+    Returns the nd root directory path on success, or ``None`` if:
+    - no entry point is registered for the name,
+    - the callable raises, or
+    - the returned path does not exist.
+
+    Callers are responsible for the subsequent ``try_resolve_with_extensions``
+    call and for any path-traversal validation in the colon-form case.
+    """
+    try:
+        if _importlib_entry_points is None:
+            return None
+        eps = _importlib_entry_points(group="nodus.nd", name=name)
+        for ep in eps:
+            fn = ep.load()
+            if not callable(fn):
+                continue
+            path = fn()
+            if isinstance(path, str) and os.path.isdir(path):
+                return path
+    except Exception:
+        pass
+    return None

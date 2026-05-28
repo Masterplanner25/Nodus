@@ -4,6 +4,21 @@
 
 ### Added
 
+- **Third-party .nd module resolution via `nodus.nd` entry-point group:** Pip-installed
+  Nodus libraries can now be imported with a bare `import "library-name"` after
+  `pip install library-name`, with no additional setup steps. Libraries declare
+  a `[project.entry-points."nodus.nd"]` entry in their `pyproject.toml`; the
+  value is a `module:callable` reference where the callable returns the absolute
+  path to the package's `.nd` source root directory. The resolver fires this
+  check as the fourth lookup tier, after project-root, `.nodus/modules/`, and
+  stdlib — local always wins, installed is last resort. The colon form
+  `import "library-name:submodule"` resolves `submodule.nd` within the nd root.
+  Import failure errors now list all attempted paths including `.nodus/modules/`
+  (previously omitted) and the entry-point check result. See
+  `docs/guide/library-entry-points.md` for the full contract and library-author
+  checklist. This is the final v4.0 language-complete piece; nodus-mcp and
+  nodus-a2a can now scaffold with `pip install` as the sole install step.
+
 - **3D.2 — Equality coercion narrowing (Doc 11):** `==` now performs numeric-only
   coercion (int ↔ float) and rejects cross-family coercions. `0i == false` is
   `false` in v4.0 (was `true`). `1i == true`, `"" == false`, `"1" == 1i` are
