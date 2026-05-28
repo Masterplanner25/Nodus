@@ -252,5 +252,97 @@ workflow cyclic {
             server.server_close()
 
 
+    def test_missing_tasks_returns_err_record(self):
+        """missing_tasks via Python API: task depends on a node not in the graph."""
+        from nodus.orchestration.task_graph import TaskGraph, TaskNode, run_task_graph
+        import nodus as lang
+
+        ghost = TaskNode(task_id="ghost", function=lambda: 1)
+        dependent = TaskNode(
+            task_id="dependent",
+            step_name="a",
+            function=lambda: 1,
+            dependencies=[ghost],
+        )
+        graph = TaskGraph(
+            tasks=[dependent],
+            metadata={"workflow_name": "broken", "task_to_step": {"dependent": "a"}},
+        )
+        vm = lang.VM([], {}, code_locs=[], source_path=None)
+        result = run_task_graph(vm, graph)
+        self.assertIsInstance(result, Record)
+        self.assertEqual(result.kind, "error")
+        self.assertEqual(result.fields["kind"], "workflow_error")
+        self.assertEqual(result.fields["payload"]["category"], "missing_tasks")
+
+    def test_missing_tasks_payload_has_tasks_field(self):
+        """missing_tasks payload uses field name 'tasks', not 'pending'."""
+        from nodus.orchestration.task_graph import TaskGraph, TaskNode, run_task_graph
+        import nodus as lang
+
+        ghost = TaskNode(task_id="ghost", function=lambda: 1)
+        dependent = TaskNode(
+            task_id="dependent",
+            step_name="a",
+            function=lambda: 1,
+            dependencies=[ghost],
+        )
+        graph = TaskGraph(
+            tasks=[dependent],
+            metadata={"workflow_name": "broken", "task_to_step": {"dependent": "a"}},
+        )
+        vm = lang.VM([], {}, code_locs=[], source_path=None)
+        result = run_task_graph(vm, graph)
+        payload = result.fields["payload"]
+        self.assertIn("tasks", payload)
+        self.assertNotIn("pending", payload)
+        self.assertIn("a", payload["tasks"])
+
+    def test_missing_tasks_payload_workflow_name(self):
+        from nodus.orchestration.task_graph import TaskGraph, TaskNode, run_task_graph
+        import nodus as lang
+
+        ghost = TaskNode(task_id="ghost", function=lambda: 1)
+        dependent = TaskNode(
+            task_id="dependent",
+            step_name="a",
+            function=lambda: 1,
+            dependencies=[ghost],
+        )
+        graph = TaskGraph(
+            tasks=[dependent],
+            metadata={"workflow_name": "broken", "task_to_step": {"dependent": "a"}},
+        )
+        vm = lang.VM([], {}, code_locs=[], source_path=None)
+        result = run_task_graph(vm, graph)
+        self.assertEqual(result.fields["payload"]["workflow_name"], "broken")
+
+    def test_self_cycle_detected(self):
+        """Step depending on itself is detected as a cycle (open question #2 from doc 15)."""
+        src = """
+workflow self_cycle {
+    step a after a { return 1 }
+}
+let result = run_workflow(self_cycle)
+"""
+        result = self._cyclic_result(src)
+        self.assertIsInstance(result, Record)
+        self.assertEqual(result.kind, "error")
+        self.assertEqual(result.fields["payload"]["category"], "cyclic_workflow")
+        cycle = result.fields["payload"]["cycle"]
+        self.assertEqual(cycle, ["a"])
+
+    def test_self_cycle_message_format(self):
+        src = """
+workflow self_cycle {
+    step a after a { return 1 }
+}
+let result = run_workflow(self_cycle)
+"""
+        result = self._cyclic_result(src)
+        msg = result.fields["message"]
+        self.assertIn("a -> a", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

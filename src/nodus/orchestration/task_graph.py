@@ -916,7 +916,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             message = f"Missing task dependencies: {', '.join(sorted(pending_names))}"
             err_payload = {
                 "category": "missing_tasks",
-                "pending": pending_names,
+                "tasks": pending_names,
                 "workflow_name": workflow_name,
             }
         return vm.make_err("workflow_error", message, payload=err_payload)

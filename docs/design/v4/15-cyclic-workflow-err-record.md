@@ -175,26 +175,47 @@ can exit any code.
 
 ## Other workflow error categories
 
-`kind: "workflow_error"` is a new kind that covers cyclic workflows
-in v4.0. Other categories may apply to workflow execution but are
-NOT designed in this doc:
+`kind: "workflow_error"` covers two implemented categories and two
+reserved categories:
 
 | Category | What it covers | Status in v4.0 |
 |---|---|---|
-| `"cyclic_workflow"` | Dependency cycle | Designed here |
-| `"missing_step"` | Workflow references undefined step | Reserved; currently handled differently |
+| `"cyclic_workflow"` | Dependency cycle in workflow graph | **Implemented** (this doc) |
+| `"missing_tasks"` | Tasks stuck with unresolvable dependencies (Python API only) | **Implemented** (Phase 3A amendment) |
 | `"step_failed"` | Step raised err during execution | Reserved; currently handled differently |
 | `"max_depth_exceeded"` | Workflow nesting too deep | Reserved; may not exist yet |
 
-The decision: design `cyclic_workflow` specifically (it's the actual
-bug being fixed); document the other categories as reserved in
-`docs/policy/error-surfaces.md`. Other workflow error scenarios may
-already have working error patterns; standardizing them all is
-broader scope than this doc warrants.
+### `missing_tasks` category
 
-Future v4.x or v5.x design docs may address the other categories if
-real demand surfaces or other workflow bugs surface that need similar
-err record treatment.
+Implemented during Phase 3A when the `if pending:` fallback path was
+converted from a plain dict to an err record. This category fires
+when the task graph scheduler completes but tasks remain pending
+because their declared dependencies were never added to the graph.
+
+**Reachability:** Not reachable via Nodus workflow syntax — the
+parser validates all `after` dependency names at compile time and
+raises `LangSyntaxError: Unknown workflow dependency: <name>` for any
+reference to an undefined step. `missing_tasks` is reachable only
+via the Python `task_graph` embedding API when a `TaskNode` lists a
+dependency that is absent from the `TaskGraph.tasks` list.
+
+**Payload shape:**
+
+```python
+{
+    "category": "missing_tasks",
+    "tasks": ["step_name_1", "step_name_2"],  # list of stuck step names
+    "workflow_name": "my_workflow"             # or None
+}
+```
+
+`tasks` lists the step names (resolved via `task_to_step` metadata;
+falls back to raw task IDs) of all tasks that were stuck. Unlike
+`cyclic_workflow`, there is no `cycle` field — the stuck tasks are
+the artifact, not an ordered cycle path.
+
+Future v4.x or v5.x design docs may address `step_failed` and
+`max_depth_exceeded` if real demand surfaces.
 
 ---
 
@@ -374,9 +395,11 @@ change). The change is in what happens when a cycle is found.
    detection produces deterministic step ordering within a cycle.
    If non-deterministic, fix to ensure same output across runs.
 
-2. **Self-cycle detection.** A step depending on itself (`step A
-   after A`). Verify this is detected and reported with
-   `cycle = ["A"]`.
+2. **Self-cycle detection.** ✅ RESOLVED. `step a after a` passes the
+   parser (the step name exists; the parser validates name presence,
+   not cycle absence). The DFS detector catches it at runtime:
+   `cycle = ["a"]`, message `"Dependency cycle detected: a -> a"`.
+   Covered by `test_self_cycle_detected` and `test_self_cycle_message_format`.
 
 3. **`workflow_name` for anonymous workflows.** What goes in the
    `workflow_name` field for workflows without explicit names?
