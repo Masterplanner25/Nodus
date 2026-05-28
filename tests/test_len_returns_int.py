@@ -169,4 +169,4 @@ def test_len_arithmetic_with_float_literal():
     """len(x) / 2.0 produces float (mixed int+float division)."""
     stdout, stderr, rc = run_nodus('print(type(len([1,2,3,4]) / 2.0))\n')
     assert rc == 0, f"stderr={stderr!r}"
-    assert "number" in stdout
+    assert "float" in stdout

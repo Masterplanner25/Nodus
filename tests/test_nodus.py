@@ -90,7 +90,7 @@ print(type(clock()))
 print(str(nil))
 print(str(true))
 """
-        self.assertEqual(run_program(src), ["number", "nil", "true"])
+        self.assertEqual(run_program(src), ["float", "nil", "true"])
 
     def test_user_defined_function_can_override_builtin(self):
         src = """

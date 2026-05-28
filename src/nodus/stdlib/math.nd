@@ -42,6 +42,14 @@ fn is_int(n) {
     return math_is_int(n)
 }
 
+fn is_float(n) {
+    return math_is_float(n)
+}
+
+fn is_numeric(n) {
+    return math_is_numeric(n)
+}
+
 fn idiv(a, b) {
     return math_idiv(a, b)
 }

@@ -76,7 +76,7 @@ print(type(m.random()))
 """
         self.assertEqual(
             run_program(src, source_path="main.nd"),
-            ["4.0", "2.0", "5.0", "2", "3", "3.0", "number"],
+            ["4.0", "2.0", "5.0", "2", "3", "3.0", "float"],
         )
 
     def test_std_fs(self):

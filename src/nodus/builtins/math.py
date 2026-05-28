@@ -87,6 +87,31 @@ def register(vm, registry) -> None:
             return False
         return isinstance(n, int)
 
+    def builtin_math_is_float(n):
+        return isinstance(n, float)
+
+    def builtin_math_is_numeric(n):
+        if isinstance(n, bool):
+            return False
+        return isinstance(n, (int, float))
+
+    def builtin_type_eq(a, b):
+        """Strict equality: same type AND equal value, no coercion at all."""
+        if type(a) is not type(b):
+            return False
+        return a == b
+
+    def builtin_bool_equal(value, bool_value):
+        """Test whether value is exactly the bool bool_value (no coercion)."""
+        if not isinstance(bool_value, bool):
+            return vm.make_err(
+                "type_error",
+                "bool.equal: second argument must be a boolean",
+                payload={"category": "type_error", "expected": "bool",
+                         "got": vm.builtin_type(bool_value)},
+            )
+        return isinstance(value, bool) and value == bool_value
+
     def builtin_math_idiv(a, b):
         a_is_int = isinstance(a, int) and not isinstance(a, bool)
         b_is_int = isinstance(b, int) and not isinstance(b, bool)
@@ -144,6 +169,10 @@ def register(vm, registry) -> None:
     registry.add("math_to_int", 1, builtin_math_to_int)
     registry.add("math_to_float", 1, builtin_math_to_float)
     registry.add("math_is_int", 1, builtin_math_is_int)
+    registry.add("math_is_float", 1, builtin_math_is_float)
+    registry.add("math_is_numeric", 1, builtin_math_is_numeric)
+    registry.add("type_eq", 2, builtin_type_eq)
+    registry.add("bool_equal", 2, builtin_bool_equal)
     registry.add("math_idiv", 2, builtin_math_idiv)
     registry.add("math_round", 1, builtin_math_round)
     registry.add("math_is_nan", 1, builtin_math_is_nan)

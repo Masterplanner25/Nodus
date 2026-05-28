@@ -64,10 +64,10 @@ class IntTypeTagTests(unittest.TestCase):
         self.assertEqual(run_program('print(type(42i))'), ["int"])
 
     def test_type_of_float_literal(self):
-        self.assertEqual(run_program('print(type(42.0))'), ["number"])
+        self.assertEqual(run_program('print(type(42.0))'), ["float"])
 
     def test_type_of_plain_number(self):
-        self.assertEqual(run_program('print(type(42))'), ["number"])
+        self.assertEqual(run_program('print(type(42))'), ["float"])
 
     def test_type_of_zero_int(self):
         self.assertEqual(run_program('print(type(0i))'), ["int"])
@@ -217,7 +217,7 @@ class MathToFloatTests(unittest.TestCase):
 
     def test_int_to_float_returns_number_type(self):
         src = 'import "std:math" as m\nprint(type(m.to_float(3i)))'
-        self.assertEqual(run_program(src), ["number"])
+        self.assertEqual(run_program(src), ["float"])
 
 
 class MathIsIntTests(unittest.TestCase):
@@ -303,7 +303,7 @@ class JsonParseIntTests(unittest.TestCase):
     def test_json_parse_unchanged(self):
         # json.parse must still return float for numeric values
         src = 'import "std:json" as j\nlet v = j.parse("42")\nprint(type(v))'
-        self.assertEqual(run_program(src), ["number"])
+        self.assertEqual(run_program(src), ["float"])
 
 
 class IntInCollectionTests(unittest.TestCase):

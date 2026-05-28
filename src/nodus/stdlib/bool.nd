@@ -1,0 +1,3 @@
+fn equal(value, bool_value) {
+    return bool_equal(value, bool_value)
+}

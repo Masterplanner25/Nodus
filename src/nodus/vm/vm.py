@@ -625,7 +625,7 @@ class VM:
         if isinstance(value, int) and not isinstance(value, bool):
             return "int"
         if isinstance(value, float):
-            return "number"
+            return "float"
         if isinstance(value, str):
             return "string"
         if isinstance(value, list):
@@ -1930,16 +1930,29 @@ class VM:
                 self.stack.append(float(a) % fb)
         self.ip += 1
 
+    @staticmethod
+    def _nodus_eq(a, b) -> bool:
+        """v4.0 equality: numeric coercion (int↔float) only; no bool/str coercions."""
+        # Number family: int or float (not bool) — coerce to float for comparison
+        a_num = isinstance(a, (int, float)) and not isinstance(a, bool)
+        b_num = isinstance(b, (int, float)) and not isinstance(b, bool)
+        if a_num and b_num:
+            return float(a) == float(b)
+        # All other types: exact Python __eq__ — but guard against bool/int subclass
+        if isinstance(a, bool) or isinstance(b, bool):
+            return type(a) is type(b) and a == b
+        return a == b
+
     def _op_eq(self, instr):
         b = self.pop()
         a = self.pop()
-        self.stack.append(a == b)
+        self.stack.append(self._nodus_eq(a, b))
         self.ip += 1
 
     def _op_ne(self, instr):
         b = self.pop()
         a = self.pop()
-        self.stack.append(a != b)
+        self.stack.append(not self._nodus_eq(a, b))
         self.ip += 1
 
     def _op_lt(self, instr):

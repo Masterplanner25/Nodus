@@ -88,7 +88,7 @@ class MathSqrtErrorTests(unittest.TestCase):
 class MathLogTests(unittest.TestCase):
     def test_log_positive_returns_float(self):
         src = 'import "std:math" as m\nprint(type(m.log(1.0)))'
-        self.assertEqual(run(src), ["number"])
+        self.assertEqual(run(src), ["float"])
 
     def test_log_one_is_zero(self):
         src = 'import "std:math" as m\nprint(m.log(1.0))'

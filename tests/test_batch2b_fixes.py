@@ -217,11 +217,11 @@ class TypeVsTypeofTests(unittest.TestCase):
 
     def test_type_returns_number_for_int(self):
         out = run_program("print(type(42))")
-        self.assertEqual(out, ["number"])
+        self.assertEqual(out, ["float"])
 
     def test_type_returns_number_for_float(self):
         out = run_program("print(type(3.14))")
-        self.assertEqual(out, ["number"])
+        self.assertEqual(out, ["float"])
 
     def test_typeof_returns_int_for_whole(self):
         src = 'import "std:runtime" as rt\nprint(rt.typeof(42))'
