@@ -51,6 +51,21 @@ class Str(Base):
 
 
 @dataclass
+class StringLiteralPart:
+    text: str
+
+
+@dataclass
+class InterpolationPart:
+    expression: object
+
+
+@dataclass
+class InterpolatedString(Base):
+    parts: list
+
+
+@dataclass
 class Nil(Base):
     pass
 

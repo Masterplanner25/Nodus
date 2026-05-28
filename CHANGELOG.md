@@ -4,6 +4,27 @@
 
 ### Added
 
+- **3C.1 — String interpolation:** Swift-style `"\(expr)"` syntax for inline
+  expression embedding in string literals. Lexer uses a character-by-character
+  mode-stack (`_lex_string` / `_lex_interp`) replacing the prior regex-based
+  string match; plain strings (no `\(`) still emit the classic `STR` token for
+  full backward compatibility. Interpolated strings emit a token sequence:
+  `STRING_START`, zero or more `STRING_LITERAL` / (`INTERP_START` expr-tokens
+  `INTERP_END`) interleaved parts, `STRING_END`. Parser builds an
+  `InterpolatedString(parts)` AST node where each part is `StringLiteralPart`
+  or `InterpolationPart`. Compiler lowers to existing opcodes: each literal
+  part becomes `PUSH_CONST`, each interpolated expression is compiled then
+  coerced with `CALL str 1`; all parts are joined with N−1 `ADD` ops. No new
+  bytecode opcodes (BYTECODE_VERSION stays at 4). Escape sequences (`\n`,
+  `\t`, `\r`, `\0`, `\"`, `\\`, `\xHH`, `\uXXXX`) decoded inline in the lexer
+  so they work correctly in both literal and interpolated segments. Literal
+  `\(` is written `\\(` in source. Empty interpolations (`"\()"`) and format
+  specifiers (`"\(x:.2f)"`) are parse errors with descriptive messages. Nesting
+  depth capped at 32 levels. Formatter round-trips interpolated strings
+  correctly. Analyzer treats `InterpolatedString` as `STRING` type. AST printer
+  handles the new nodes. 39 new tests added (`tests/test_string_interpolation.py`).
+  1227 total tests passing.
+
 - **3B.5 — std:subprocess:** New `std:subprocess` namespace with 7 public
   functions: `run(argv, options?)`, `run_async(argv, options?)`,
   `shell(command, options?)`, `shell_async(command, options?)`,

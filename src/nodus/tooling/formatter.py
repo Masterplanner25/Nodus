@@ -35,6 +35,9 @@ from nodus.frontend.ast.ast_nodes import (
     Print,
     RecordLiteral,
     RecordPattern,
+    InterpolatedString,
+    InterpolationPart,
+    StringLiteralPart,
     Return,
     Str,
     Throw,
@@ -324,6 +327,21 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         return "true" if expr.v else "false"
     if isinstance(expr, Str):
         return format_string(expr.v)
+    if isinstance(expr, InterpolatedString):
+        parts_str = ""
+        for part in expr.parts:
+            if isinstance(part, StringLiteralPart):
+                # Re-escape the literal text for display (without surrounding quotes)
+                escaped = (
+                    part.text.replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\t", "\\t")
+                    .replace('"', '\\"')
+                )
+                parts_str += escaped
+            elif isinstance(part, InterpolationPart):
+                parts_str += f"\\({format_expr(part.expression)})"
+        return f'"{parts_str}"'
     if isinstance(expr, Nil):
         return "nil"
     if isinstance(expr, Var):

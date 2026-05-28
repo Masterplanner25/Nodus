@@ -29,7 +29,8 @@ class IsBlankTests(unittest.TestCase):
         self.assertEqual(out, ["true"])
 
     def test_tabs_and_newlines_are_blank(self):
-        out = run_program('import "std:strings" as s\nprint(s.is_blank("\t\n"))')
+        # Use Nodus escape sequences \t and \n, not literal tab/newline in the source
+        out = run_program('import "std:strings" as s\nprint(s.is_blank("\\t\\n"))')
         self.assertEqual(out, ["true"])
 
     def test_non_blank_is_false(self):

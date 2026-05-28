@@ -37,6 +37,9 @@ from nodus.frontend.ast.ast_nodes import (
     Print,
     Return,
     Yield,
+    InterpolatedString,
+    InterpolationPart,
+    StringLiteralPart,
     Str,
     Throw,
     TryCatch,
@@ -604,6 +607,20 @@ class Compiler:
 
         if isinstance(expr, Str):
             self.emit("PUSH_CONST", expr.v)
+            return
+
+        if isinstance(expr, InterpolatedString):
+            push_count = 0
+            for part in expr.parts:
+                if isinstance(part, StringLiteralPart):
+                    self.emit("PUSH_CONST", part.text)
+                    push_count += 1
+                elif isinstance(part, InterpolationPart):
+                    self.compile_expr(part.expression)
+                    self.emit("CALL", "str", 1)
+                    push_count += 1
+            for _ in range(push_count - 1):
+                self.emit("ADD")
             return
 
         if isinstance(expr, Nil):

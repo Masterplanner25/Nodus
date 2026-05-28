@@ -29,6 +29,7 @@ from nodus.frontend.ast.ast_nodes import (
     Print,
     RecordLiteral,
     Return,
+    InterpolatedString,
     Str,
     Throw,
     TryCatch,
@@ -173,7 +174,7 @@ class Analyzer(NodeVisitor):
             return ANY
         if isinstance(expr, Bool):
             return BOOL
-        if isinstance(expr, Str):
+        if isinstance(expr, (Str, InterpolatedString)):
             return STRING
         if isinstance(expr, Nil):
             return NIL

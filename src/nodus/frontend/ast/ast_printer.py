@@ -34,6 +34,9 @@ from nodus.frontend.ast.ast_nodes import (
     Param,
     Print,
     Return,
+    InterpolatedString,
+    InterpolationPart,
+    StringLiteralPart,
     Str,
     Unary,
     Var,
@@ -81,6 +84,15 @@ class AstPrinter:
             return
         if isinstance(node, Str):
             self.emit(f"String {self.format_string(node.v)}", indent)
+            return
+        if isinstance(node, InterpolatedString):
+            self.emit("InterpolatedString", indent)
+            for part in node.parts:
+                if isinstance(part, StringLiteralPart):
+                    self.emit(f"  Literal {self.format_string(part.text)}", indent)
+                elif isinstance(part, InterpolationPart):
+                    self.emit("  Interpolation", indent)
+                    self.print_node(part.expression, indent + 4)
             return
         if isinstance(node, Nil):
             self.emit("Nil", indent)

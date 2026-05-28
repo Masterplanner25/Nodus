@@ -23,6 +23,9 @@ from nodus.frontend.ast.ast_nodes import (
     Import,
     Index,
     IndexAssign,
+    InterpolatedString,
+    InterpolationPart,
+    StringLiteralPart,
     Let,
     ListLit,
     ListPattern,
@@ -57,6 +60,7 @@ from nodus.orchestration.workflow_lowering import STEP_OPTION_KEYS
 _TOKEN_DISPLAY: dict[str, str] = {
     "ID": "identifier",
     "STR": "string literal",
+    "STRING_START": "interpolated string",
     "NUM": "number",
     "NUM_INT": "integer literal",
     "SEP": "end of statement",
@@ -782,6 +786,9 @@ class Parser:
             tok = self.eat("STR")
             return self.mark(Str(tok.val), tok)
 
+        if self.at("STRING_START"):
+            return self.parse_interpolated_string()
+
         if self.at("ID"):
             tok = self.eat("ID")
             return self.mark(Var(tok.val), tok)
@@ -877,6 +884,34 @@ class Parser:
             payload = self.parse_named_map_literal()
             return self.mark(ActionStmt(kind, target, payload), start)
         self.error(f"Unsupported action kind: {kind}", kind_tok)
+
+    def parse_interpolated_string(self):
+        start = self.eat("STRING_START")
+        parts = []
+        while not self.at("STRING_END"):
+            if self.at("STRING_LITERAL"):
+                tok = self.eat("STRING_LITERAL")
+                parts.append(StringLiteralPart(tok.val))
+            elif self.at("INTERP_START"):
+                interp_tok = self.eat("INTERP_START")
+                if self.at("INTERP_END"):
+                    self.error(
+                        f"Empty interpolation expression at line {interp_tok.line} column {interp_tok.col}",
+                        interp_tok,
+                    )
+                self.skip_seps()
+                expr = self.expr()
+                self.skip_seps()
+                self.eat("INTERP_END")
+                parts.append(InterpolationPart(expr))
+            elif self.at("EOF"):
+                self.error("Unclosed interpolated string", start)
+            else:
+                self.error(
+                    f"Unexpected token {self.peek().kind!r} inside interpolated string"
+                )
+        self.eat("STRING_END")
+        return self.mark(InterpolatedString(parts), start)
 
     def parse_named_map_literal(self, *, error_keys: set[str] | None = None, error_template: str | None = None):
         tok = self.eat("{")
