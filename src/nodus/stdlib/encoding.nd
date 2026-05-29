@@ -1,13 +1,43 @@
-fn base64_encode(data) { return encoding_base64_encode(data) }
-fn base64_decode(s) { return encoding_base64_decode(s) }
-fn base64_url_encode(data) { return encoding_base64_url_encode(data) }
-fn base64_url_decode(s) { return encoding_base64_url_decode(s) }
+fn base64_encode(data) {
+    return encoding_base64_encode(data)
+}
 
-fn hex_encode(data) { return encoding_hex_encode(data) }
-fn hex_encode_upper(data) { return encoding_hex_encode_upper(data) }
-fn hex_decode(s) { return encoding_hex_decode(s) }
+fn base64_decode(s) {
+    return encoding_base64_decode(s)
+}
 
-fn url_encode(s) { return encoding_url_encode(s) }
-fn url_decode(s) { return encoding_url_decode(s) }
-fn url_encode_form(m) { return encoding_url_encode_form(m) }
-fn url_decode_form(s) { return encoding_url_decode_form(s) }
+fn base64_url_encode(data) {
+    return encoding_base64_url_encode(data)
+}
+
+fn base64_url_decode(s) {
+    return encoding_base64_url_decode(s)
+}
+
+fn hex_encode(data) {
+    return encoding_hex_encode(data)
+}
+
+fn hex_encode_upper(data) {
+    return encoding_hex_encode_upper(data)
+}
+
+fn hex_decode(s) {
+    return encoding_hex_decode(s)
+}
+
+fn url_encode(s) {
+    return encoding_url_encode(s)
+}
+
+fn url_decode(s) {
+    return encoding_url_decode(s)
+}
+
+fn url_encode_form(m) {
+    return encoding_url_encode_form(m)
+}
+
+fn url_decode_form(s) {
+    return encoding_url_decode_form(s)
+}
