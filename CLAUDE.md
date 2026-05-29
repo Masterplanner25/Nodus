@@ -190,16 +190,22 @@ allowlist OR are fixed before release.
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- Phase 0 decisions: all 16 settled, in `docs/design/00-decisions.md`
-- Phase 1 design pass next (5 design docs), then Phase A implementation
-- Dev install: `pip install -e . --no-deps` (nodus-lang 4.0.0 not on PyPI yet)
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  All 14 phases done (Phase 1 design docs + Phases A–N implementation).
+  280 tests pass. BYTECODE_VERSION 4, no new opcodes.
+  Publication waits for nodus-a2a v0.1.0 (coordinated three-artifact launch).
+- Dev install: `pip install -e . --no-deps`
+- Run tests: `cd C:\dev\nodus-mcp && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
 - Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
   absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
-
-Key nodus-mcp decisions for reference: stdio+HTTP only (RC collapsed
-Streamable HTTP), Roots+Sampling in v0.1, Tasks/MCP Apps/Logging deferred,
-bearer-only auth, 5min elicitation timeout, std:tools is a separate domain
-(no conflict, no v0.1 deprecation).
+- Key documented contracts (see `docs/governance/TECH_DEBT.md`):
+  - TD-007: server-initiated requests over HTTP are stdio-only (no SSE/push)
+  - TD-008: `_validate_args` is top-level type checking only (not full JSON Schema)
+  - TD-009: resource read handler must raise `KeyError` for unknown URI → -32601
+  - TD-010: `requestState` is on the wire; never checkpoint secrets in sentinel state
+- **Next: nodus-a2a v0.1.0** — will follow nodus-mcp's pattern (Phase 0 decisions
+  → Phase 1 design docs → Phases A–N). The `/nodus-mcp-phase` skill can be adapted
+  for a2a once a2a's repo scaffold exists.
 
 ## Nodus language quirks (relevant when writing test .nd code)
 
