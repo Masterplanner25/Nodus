@@ -1,24 +1,28 @@
+<!-- Reconciled 2026-05-29: updated to current CLI commands and added doc-vs-code gate. Needs review before repo commit and push. -->
+
 # Nodus Release Checklist
 
-Use this checklist to cut a clean, repeatable release.
+Use this checklist to cut a clean, repeatable release. For the authoritative gate
+definitions and passing criteria, see `docs/governance/RELEASE_GATES.md`.
+For the full release playbook, see `docs/governance/RELEASE_PLAYBOOK.md`.
 
 ## Pre-release checks
-- [ ] Verify no unformatted .nd files exist:
-  ```bash
-  find . -name "*.nd" \
-    -not -path "./.git/*" \
-    -not -path "./.venv/*" \
-    -not -path "./tmp_demo/*" \
-    -not -path "./tests/fixtures/fmt/*" \
-    | xargs -I {} python nodus.py fmt --check {}
+- [ ] Verify no lint violations in changed files:
+  ```powershell
+  & "C:/dev/Coding Language/.venv/Scripts/python.exe" -m ruff check src/ tests/
   ```
-  (CI auto-formats all `.nd` files in the repo (excluding `.git`, `.venv`, `tmp_demo`, and
-  `tests/fixtures/fmt`) before the check runs and commits any changes back with `[skip ci]`,
-  so manual pre-formatting is not required — but running it locally catches issues before push.)
-- Run validation on key examples: `nodus check examples/import_demo.nd` (and other representative examples)
-- Run unit tests: `python -m unittest discover -s tests -v`
-- Run example suite (non-interactive): `nodus test-examples`
-- Confirm CI passes on the release branch before tagging
+- [ ] Run full test suite:
+  ```powershell
+  PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q
+  ```
+- [ ] Run doc-vs-code gate (mandatory before release):
+  ```powershell
+  PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+    "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+    -m tools.nodus_gate.cli --all
+  ```
+- [ ] Validate representative examples: `nodus check examples/import_demo.nd`
+- [ ] Confirm CI passes on the release branch before tagging
 
 ## Release prep
 - Update `CHANGELOG.md` (move items from Unreleased into a new version section)

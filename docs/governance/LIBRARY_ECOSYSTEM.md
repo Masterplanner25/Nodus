@@ -1,10 +1,18 @@
+<!-- Reconciled 2026-05-29: nodus-a2a and nodus-mcp Tier 3 entries corrected to reflect v0.1 scope. Needs review before repo commit and push. -->
+
 # Nodus — Library Ecosystem
 
 **Status:** Architectural reference. Updated alongside major release cycles.
 **Created:** 2026-05-25 (v4.0 cycle, Phase 0)
+**Last reconciled:** 2026-05-29 (Tier 3 companion library scope corrected)
 **Companion to:** `docs/design/v4/00-phase-0-decisions.md`,
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
+
+> **Current state note (2026-05-29):** nodus-lang is at 3.0.2. nodus-mcp 0.1.0
+> and nodus-a2a 0.1.0 are prepared but not yet published. All three await the
+> coordinated launch. The Tier 3 descriptions below reflect v0.1.0 scope, not
+> the v0.2+ targets. For honest current-state: `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
 
 ---
 
@@ -93,19 +101,23 @@ abstractions.
 **Shipping with v4.0 launch (registry, parallel to PyPI release):**
 
 - `nodus-mcp` — Model Context Protocol library. Bidirectional (client +
-  server). All three transports (stdio, HTTP, Streamable HTTP). All current
-  MCP capabilities including the 2025-11-25 spec revision (Resources,
-  Prompts, Tools, Sampling, Roots, Elicitation, Logging, Progress,
-  Completion). See Decision 16 in
-  `docs/design/v4/00-phase-0-decisions.md`.
+  server). **v0.1.0 scope:** stdio and HTTP transports; core MCP capabilities
+  (Resources, Prompts, Tools, Sampling, Roots, Elicitation, Logging, Progress,
+  Completion); bearer-token auth; spec target 2026-07-28 RC. **Deferred to
+  v0.2+:** OAuth 2.0 / OIDC, Streamable HTTP transport, `resources/subscribe`
+  server-push, server-initiated requests over HTTP. See Decision 16 in
+  `docs/design/v4/00-phase-0-decisions.md` and `nodus-mcp/README.md` for
+  current limitations.
 
-- `nodus-a2a` — Agent2Agent Protocol library. Bidirectional (client + server).
-  All three protocol bindings (JSON-RPC, gRPC, HTTP+JSON/REST). Full A2A
-  v1.0.0 spec support (Task lifecycle, Message/Artifact/Part data model,
-  AgentCard discovery, streaming via SSE, push notifications via webhooks,
-  multi-turn via contextId/taskId, Extensions mechanism, bearer-token auth
-  for v0.1). See Decision 17 in
-  `docs/design/v4/00-phase-0-decisions.md`.
+- `nodus-a2a` — Agent2Agent Protocol library. **v0.1.0 scope:** HTTP+JSON/REST
+  transport only; message-only (server never creates A2A Tasks — D5 decision);
+  AgentCard discovery; DataPart-based tool dispatch; bearer-token auth. **Full
+  A2A 1.0.0 spec coverage and multi-binding support are v0.2+ targets.**
+  Deferred to v0.2+: Task lifecycle and state machine, SSE streaming, push
+  notification webhooks, JSON-RPC binding, gRPC binding, OAuth/OIDC/mTLS,
+  extended Agent Card, multi-part responses, tenant routing. See Decision 17 in
+  `docs/design/v4/00-phase-0-decisions.md` and `nodus-a2a/README.md` for
+  current limitations.
 
 **Tracked for v5.0 milestone (post-v4.0 work):**
 

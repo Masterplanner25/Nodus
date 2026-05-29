@@ -1,4 +1,12 @@
-﻿# Nodus Stability Policy
+﻿<!-- Reconciled 2026-05-29. Needs review before repo commit and push. -->
+
+# Nodus Stability Policy
+
+> **Governing document:** `docs/governance/LANGUAGE_STABILITY_INDEX.md` is the
+> surface-by-surface stability index and supersedes the flat lists below for detail.
+> This document remains as a quick-reference summary.
+
+
 
 > **v1.0 (2026-03-15): The Nodus opcode set is frozen. All 47 active opcodes are stable.**
 > This document reflects stability classifications as of the v1.0 release.

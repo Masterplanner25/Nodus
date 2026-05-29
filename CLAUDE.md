@@ -99,8 +99,17 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Changelog | `CHANGELOG.md` |
 | Bug/issue list | GitHub Issues (Masterplanner25/Nodus) |
 | Semver policy | `docs/release.md#semantic-versioning` |
+| Compatibility policy | `docs/governance/COMPATIBILITY_MODEL.md` |
 | Deprecation timeline | `docs/governance/COMPATIBILITY.md` |
+| Stability index (surface-by-surface) | `docs/governance/LANGUAGE_STABILITY_INDEX.md` |
+| Security posture | `docs/governance/SECURITY_POSTURE.md` |
+| Release gates | `docs/governance/RELEASE_GATES.md` |
 | Tech debt | `docs/governance/TECH_DEBT.md` |
+| Docset index (reader entry point) | `docs/governance/DOCSET_INDEX.md` |
+| Ecosystem maturity | `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` |
+| Runtime invariants | `docs/runtime/EXECUTION_INVARIANTS.md` |
+| Failure model | `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md` |
+| Embedder runbook | `docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md` |
 | Guide files | `docs/guide/` |
 | Runtime reference docs | `docs/runtime/` |
 | Governance docs | `docs/governance/` |
@@ -109,6 +118,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | nodus-mcp companion repo | `C:\dev\nodus-mcp` / github.com/Masterplanner25/nodus-mcp |
+| nodus-a2a companion repo | `C:\dev\nodus-a2a` / github.com/Masterplanner25/nodus-a2a |
 
 ## Test suite
 
@@ -158,7 +168,7 @@ Subject line here
 
 Body paragraph here.
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 '@
 ```
 
@@ -203,9 +213,36 @@ allowlist OR are fixed before release.
   - TD-008: `_validate_args` is top-level type checking only (not full JSON Schema)
   - TD-009: resource read handler must raise `KeyError` for unknown URI → -32601
   - TD-010: `requestState` is on the wire; never checkpoint secrets in sentinel state
-- **Next: nodus-a2a v0.1.0** — will follow nodus-mcp's pattern (Phase 0 decisions
-  → Phase 1 design docs → Phases A–N). The `/nodus-mcp-phase` skill can be adapted
-  for a2a once a2a's repo scaffold exists.
+- **Next: coordinated three-artifact publication** — all three are prepared; push
+  and publish nodus-lang 4.0.0 + nodus-mcp 0.1.0 + nodus-a2a 0.1.0 together.
+
+## nodus-a2a companion library
+
+- Repo: `C:\dev\nodus-a2a` / `github.com/Masterplanner25/nodus-a2a`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  All 10 phases done (Phase 1 design docs + Phases A–J implementation).
+  169 tests pass. BYTECODE_VERSION 4, no new opcodes.
+  Publication waits for coordinated three-artifact launch with nodus-lang 4.0.0
+  and nodus-mcp 0.1.0.
+- Run tests: `cd C:\dev\nodus-a2a && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
+- Coverage: 93% (gate: ≥80%). `pyproject.toml` has `pythonpath = ["src"]` so
+  only nodus-lang needs to be in PYTHONPATH when running tests.
+- Skill: `/nodus-a2a-phase` — start or continue a design doc or implementation phase.
+- **A2A protocol facts** (verified during Phase 1 protocol audit):
+  - Spec repo: `a2aproject/A2A` (transferred from `google/A2A`)
+  - Proto: `specification/a2a.proto` (not `spec/a2a.proto`)
+  - Well-known URI: `/.well-known/agent-card.json` (not `agent.json` — that's 0.3)
+  - Content-Type: `application/a2a+json` (not `application/json`)
+  - HTTP transport only — A2A has no stdio binding anywhere
+  - Flask is NOT in the shared venv — transport uses stdlib `ThreadingHTTPServer`
+- **D5 (message-only):** server never emits a Task. All task-management paths
+  return `UnsupportedOperationError` HTTP 501.
+- **D6 inversion (critical for v0.2):** A2A `INPUT_REQUIRED` is park-and-resume
+  by design — the OPPOSITE of nodus-mcp's no-thread-parks rule. Do NOT import
+  that rule into a2a. See `docs/design/05-deferred-features.md §2`.
+- **`BYTECODE_VERSION`** lives at `nodus.compiler.compiler` (not `nodus.vm.vm`).
+- Tool dispatch: clients send `DataPart(data={"tool":"<name>","args":{...}})`;
+  single-tool agents accept any Message as a fallback.
 
 ## Nodus language quirks (relevant when writing test .nd code)
 
@@ -228,3 +265,24 @@ Any fix for a security boundary (path traversal, sandbox escape, allowed_paths
 enforcement, resource limits) must have tests covering BOTH CLI mode and
 `NodusRuntime` embedded mode. The enforcement code path can differ between
 contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
+
+## Documentation governance
+
+The governing docset layer was established in a 2026-05-29 sweep. Key rules:
+
+- **`docs/governance/DOCSET_INDEX.md`** — the reader entry point and precedence list.
+  When docs conflict, DOCSET_INDEX.md defines which wins.
+- **`docs/governance/DOCSET_ALIGNMENT_AUDIT.md`** — 14 findings from the sweep;
+  tracks what still needs fixing.
+- **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — ranked list
+  of still-unresolved doc conflicts.
+
+High-priority remaining doc tasks (as of 2026-05-29):
+1. nodus-a2a `pyproject.toml` missing authors/classifiers/license — fix before publish
+2. `RELEASE_CHECKLIST.md` post-release section still has old commands
+3. `LIBRARY_ECOSYSTEM.md` still references `STDLIB_PHILOSOPHY.md` in two cross-ref
+   lines — the stub now exists but the philosophy content should be expanded for v4.0
+
+nodus-mcp spec version note: CLAUDE.md previously said "MCP 2025-11-25 spec" but
+`nodus-mcp/README.md` says "2026-07-28 RC". The README is authoritative — the spec
+target was updated during implementation. Verify `nodus-mcp/CHANGELOG.md` reflects this.

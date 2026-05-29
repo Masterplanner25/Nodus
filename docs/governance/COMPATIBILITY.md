@@ -1,4 +1,13 @@
-﻿# Nodus Compatibility & Deprecation Timeline
+﻿<!-- Reconciled 2026-05-29. Needs review before repo commit and push. -->
+
+# Nodus Compatibility & Deprecation Timeline
+
+> **This document is a deprecation timeline record, not a compatibility policy.**
+> For the compatibility policy (what counts as breaking, semver rules, bytecode
+> compatibility, embedding API commitment), see:
+> **`docs/governance/COMPATIBILITY_MODEL.md`**
+
+
 
 Nodus keeps legacy compatibility for now, but the following items are deprecated and will be revisited in future releases.
 
