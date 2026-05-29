@@ -122,11 +122,38 @@ semver. A registry library's compatibility with `nodus-lang` is declared via its
 
 ### 4.3 Companion library dependency on nodus-lang 4.0.0
 
-Both `nodus-mcp` and `nodus-a2a` declare `nodus-lang>=4.0.0` as a dependency. This means:
+Both `nodus-mcp` and `nodus-a2a` declare `nodus-lang>=4.0.0,<5.0.0` as a dependency. This means:
 - Neither library can be used with nodus-lang 3.0.2
 - Both libraries wait for the coordinated three-artifact launch (nodus-lang 4.0.0 + nodus-mcp
   0.1.0 + nodus-a2a 0.1.0) before being published
 - Until the launch, both libraries are development-only (not on PyPI)
+
+### 4.3a Decision record — F0-07: cap companion library nodus-lang dependency at `<5.0.0`
+
+**Question:** Should the nodus-lang dependency in nodus-mcp and nodus-a2a be open-ended
+(`>=4.0.0`) or capped (`>=4.0.0,<5.0.0`)?
+
+**Chosen option:** Cap at `<5.0.0`.
+
+**Rationale:** A v0.1 adapter validated only against nodus-lang 4.x must not claim
+forward-compatibility with an unreleased major it has never been tested against. nodus-lang
+breaks deliberately at major versions — the frozen-bytecode contract (`BYTECODE_VERSION`)
+is designed to be incompatible across majors. An open bound (`>=4.0.0`) would silently
+satisfy a future `pip install` that resolves nodus-lang 5.0.0, causing failures that surface
+on someone else's machine after publish rather than as a visible integration failure.
+Capping at `<5.0.0` turns the eventual 5.x bump into a deliberate re-validation point.
+
+**Rejected option cost:** Open bound (`>=4.0.0`) means a user who installs nodus-mcp or
+nodus-a2a after nodus-lang 5.0.0 ships could receive 5.0.0 automatically. If 5.0.0 changes
+the embedding API, stdlib module contracts, or bytecode version, the companion lib breaks
+silently — no pip error, just a runtime failure. The failure mode is maximally unhelpful.
+
+**Revisit trigger:** Widen the cap to `<6.0.0` in a companion library release (v0.1.x or
+v0.2.0) once that library has been verified against nodus-lang 5.x. Do not widen it
+speculatively. The cap per major is the default posture.
+
+**Decision date:** 2026-05-29 (breakage gate, F0-07)
+**Applied in:** nodus-mcp `pyproject.toml`, nodus-a2a `pyproject.toml`
 
 ---
 
