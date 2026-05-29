@@ -22,8 +22,17 @@ Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
 ## GitHub API
 
-The `gh` CLI is not installed. File issues, create releases, and make other
-GitHub API calls using `urllib.request` directly with a token retrieved from:
+The `gh` CLI **is installed** and authenticated as `Masterplanner25`. Use it
+directly for issue/PR/release operations:
+
+```powershell
+gh issue create --title "..." --body "..."
+gh repo create Masterplanner25/name --public
+gh release create vX.Y.Z --notes "..."
+```
+
+For raw API calls not covered by `gh`, use `urllib.request` with a token
+retrieved from:
 
 ```bash
 git credential fill <<< $'protocol=https\nhost=github.com'
@@ -97,6 +106,9 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Governance docs | `docs/governance/` |
 | Release playbook | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Skills | `.claude/commands/` |
+| Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
+| Library entry-point contract | `docs/guide/library-entry-points.md` |
+| nodus-mcp companion repo | `C:\dev\nodus-mcp` / github.com/Masterplanner25/nodus-mcp |
 
 ## Test suite
 
@@ -154,6 +166,55 @@ The closing `'@` must be at column 0 with no leading whitespace. For commits
 that need a file (e.g. cross-repo where stdin is awkward), write the message
 to `.git\COMMIT_MSG_TEMP` with `Out-File -Encoding utf8` then use
 `git commit -F ".git\COMMIT_MSG_TEMP"`.
+
+## Doc-vs-code gate (nodus_gate)
+
+The gate is mandatory before any release. Run from the nodus-lang root:
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --all
+```
+
+- `--static`: verifies documented symbols exist in the codebase (76 symbols)
+- `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
+  in docs (180 blocks); expects 0 failures with the `.nodusgate-allow`
+  allowlist in place
+- `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
+
+The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
+doc blocks (multi-file examples, error demos). New failing blocks go in the
+allowlist OR are fixed before release.
+
+## nodus-mcp companion library
+
+- Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
+- Phase 0 decisions: all 16 settled, in `docs/design/00-decisions.md`
+- Phase 1 design pass next (5 design docs), then Phase A implementation
+- Dev install: `pip install -e . --no-deps` (nodus-lang 4.0.0 not on PyPI yet)
+- Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
+  absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
+
+Key nodus-mcp decisions for reference: stdio+HTTP only (RC collapsed
+Streamable HTTP), Roots+Sampling in v0.1, Tasks/MCP Apps/Logging deferred,
+bearer-only auth, 5min elicitation timeout, std:tools is a separate domain
+(no conflict, no v0.1 deprecation).
+
+## Nodus language quirks (relevant when writing test .nd code)
+
+These burn time when forgotten:
+
+- **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
+- **No `+=` operator.** Use `x = x + 1i`. In closures, you can't assign
+  outer `let` variables at all — use a map and mutate a field: `state.count = state.count + 1i`.
+- **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
+  Skipping either flush or the advance causes the test to pass vacuously.
+- **`spawn()` takes a coroutine value**, not a function literal. Use
+  `let c = coroutine(fn() {...})` then `spawn(c)`.
+- **`fn` is a reserved keyword** — can't use as a parameter name in `.nd` files.
+- **Multiline function calls across newlines** may fail parsing — keep
+  args on the same line as the opening paren where possible.
 
 ## Security boundary test rule
 
