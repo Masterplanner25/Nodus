@@ -1,72 +1,125 @@
 fn get(url, options) {
-    if (options == nil) { return http_get(url) }
+    if (options == nil) {
+        return http_get(url)
+    }
     return http_get(url, options)
 }
+
 fn post(url, options) {
-    if (options == nil) { return http_post(url) }
+    if (options == nil) {
+        return http_post(url)
+    }
     return http_post(url, options)
 }
+
 fn put(url, options) {
-    if (options == nil) { return http_put(url) }
+    if (options == nil) {
+        return http_put(url)
+    }
     return http_put(url, options)
 }
+
 fn delete(url, options) {
-    if (options == nil) { return http_delete(url) }
+    if (options == nil) {
+        return http_delete(url)
+    }
     return http_delete(url, options)
 }
+
 fn patch(url, options) {
-    if (options == nil) { return http_patch(url) }
+    if (options == nil) {
+        return http_patch(url)
+    }
     return http_patch(url, options)
 }
+
 fn head(url, options) {
-    if (options == nil) { return http_head(url) }
+    if (options == nil) {
+        return http_head(url)
+    }
     return http_head(url, options)
 }
+
 fn options(url, opts) {
-    if (opts == nil) { return http_options_verb(url) }
+    if (opts == nil) {
+        return http_options_verb(url)
+    }
     return http_options_verb(url, opts)
 }
+
 fn request(method, url, options) {
-    if (options == nil) { return http_request(method, url) }
+    if (options == nil) {
+        return http_request(method, url)
+    }
     return http_request(method, url, options)
 }
+
 fn get_async(url, options) {
-    if (options == nil) { return http_get_async(url) }
+    if (options == nil) {
+        return http_get_async(url)
+    }
     return http_get_async(url, options)
 }
+
 fn post_async(url, options) {
-    if (options == nil) { return http_post_async(url) }
+    if (options == nil) {
+        return http_post_async(url)
+    }
     return http_post_async(url, options)
 }
+
 fn put_async(url, options) {
-    if (options == nil) { return http_put_async(url) }
+    if (options == nil) {
+        return http_put_async(url)
+    }
     return http_put_async(url, options)
 }
+
 fn delete_async(url, options) {
-    if (options == nil) { return http_delete_async(url) }
+    if (options == nil) {
+        return http_delete_async(url)
+    }
     return http_delete_async(url, options)
 }
+
 fn patch_async(url, options) {
-    if (options == nil) { return http_patch_async(url) }
+    if (options == nil) {
+        return http_patch_async(url)
+    }
     return http_patch_async(url, options)
 }
+
 fn head_async(url, options) {
-    if (options == nil) { return http_head_async(url) }
+    if (options == nil) {
+        return http_head_async(url)
+    }
     return http_head_async(url, options)
 }
+
 fn options_async(url, opts) {
-    if (opts == nil) { return http_options_async(url) }
+    if (opts == nil) {
+        return http_options_async(url)
+    }
     return http_options_async(url, opts)
 }
+
 fn request_async(method, url, options) {
-    if (options == nil) { return http_request_async(method, url) }
+    if (options == nil) {
+        return http_request_async(method, url)
+    }
     return http_request_async(method, url, options)
 }
+
 fn stream(url, options) {
-    if (options == nil) { return http_stream(url) }
+    if (options == nil) {
+        return http_stream(url)
+    }
     return http_stream(url, options)
 }
+
 fn sse(url, options) {
-    if (options == nil) { return http_sse(url) }
+    if (options == nil) {
+        return http_sse(url)
+    }
     return http_sse(url, options)
 }
