@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodus-lang"
-version = "3.0.2"
+version = "4.0.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   { name = "Shawn Knight" }
@@ -17,8 +17,10 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Interpreters",
   "Topic :: Software Development :: Compilers",
 ]
