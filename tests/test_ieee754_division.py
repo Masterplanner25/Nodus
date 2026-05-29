@@ -95,7 +95,7 @@ print(str(math.is_inf(1i / 0.0)))
 print(str(math.is_inf(1.0 / 0i)))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "true"
     assert lines[1] == "true"
 
@@ -107,7 +107,7 @@ print(str(math.nan == math.nan))
 print(str(math.nan != math.nan))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "false"
     assert lines[1] == "true"
 
@@ -121,7 +121,7 @@ print(str(math.is_inf(math.neg_infinity)))
 print(str(math.infinity > 1000000000.0))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "true"
     assert lines[1] == "true"
     assert lines[2] == "true"
@@ -138,7 +138,7 @@ print(str(math.is_finite(math.infinity)))
 print(str(math.is_finite(math.nan)))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "false"
     assert lines[1] == "false"
     assert lines[2] == "true"
@@ -154,7 +154,7 @@ print(str(math.nan < 1.0))
 print(str(math.nan == 1.0))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "false"
     assert lines[1] == "false"
     assert lines[2] == "false"
@@ -168,7 +168,7 @@ print(str(math.is_nan(math.infinity - math.infinity)))
 print(str(math.is_nan(math.nan + 1.0)))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "true"
     assert lines[1] == "true"
     assert lines[2] == "true"
@@ -199,7 +199,7 @@ print(str(math.is_inf(5i)))
 print(str(math.is_finite(5i)))
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [l for l in stdout.splitlines() if l.strip()]
+    lines = [line for line in stdout.splitlines() if line.strip()]
     assert lines[0] == "false"
     assert lines[1] == "false"
     assert lines[2] == "true"

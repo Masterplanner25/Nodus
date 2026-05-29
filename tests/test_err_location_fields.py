@@ -147,7 +147,7 @@ check()
 """)
     assert rc == 0, f"exit {rc}; stderr={stderr!r}"
     assert "stack_len:" in stdout, f"stdout={stdout!r}"
-    parts = [l for l in stdout.splitlines() if l.startswith("stack_len:")]
+    parts = [line for line in stdout.splitlines() if line.startswith("stack_len:")]
     assert parts, f"no stack_len line in stdout={stdout!r}"
     n = int(float(parts[0].split(":")[1]))
     assert n > 0, f"expected non-empty stack, got {n}"

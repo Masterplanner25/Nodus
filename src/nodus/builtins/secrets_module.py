@@ -1,6 +1,5 @@
 """std:secrets — CSPRNG, token, UUID builtins for Nodus VM."""
 
-import os
 import secrets as _sec
 import struct
 import uuid as _uuid

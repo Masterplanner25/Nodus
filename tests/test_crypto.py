@@ -2,13 +2,11 @@
 
 import hashlib
 import io
-import re
 import unittest
 from contextlib import redirect_stdout
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.vm.vm import Record
 
 _HDRS = (
     'import "std:hash" as hash\n'
@@ -37,22 +35,22 @@ class HashOneShotTests(unittest.TestCase):
 
     def test_sha256_to_hex(self):
         expected = self._expected_hex("sha256", "hello world")
-        self.assertEqual(first(f'let h = hash.sha256("hello world")\nprint(h.to_hex())'), expected)
+        self.assertEqual(first('let h = hash.sha256("hello world")\nprint(h.to_hex())'), expected)
 
     def test_sha256_to_hex_upper(self):
         expected = self._expected_hex("sha256", "hello world").upper()
-        self.assertEqual(first(f'let h = hash.sha256("hello world")\nprint(h.to_hex_upper())'), expected)
+        self.assertEqual(first('let h = hash.sha256("hello world")\nprint(h.to_hex_upper())'), expected)
 
     def test_sha256_to_base64(self):
         import base64
         expected = base64.b64encode(hashlib.sha256(b"hello world").digest()).decode()
-        self.assertEqual(first(f'let h = hash.sha256("hello world")\nprint(h.to_base64())'), expected)
+        self.assertEqual(first('let h = hash.sha256("hello world")\nprint(h.to_base64())'), expected)
 
     def test_sha256_to_base64_url(self):
         import base64
         raw = hashlib.sha256(b"hello world").digest()
         expected = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-        self.assertEqual(first(f'let h = hash.sha256("hello world")\nprint(h.to_base64_url())'), expected)
+        self.assertEqual(first('let h = hash.sha256("hello world")\nprint(h.to_base64_url())'), expected)
 
     def test_sha256_algorithm_field(self):
         self.assertEqual(first('let h = hash.sha256("x")\nprint(h.algorithm)'), "sha256")
@@ -160,7 +158,7 @@ class Base64Tests(unittest.TestCase):
     def test_base64_encode_string(self):
         import base64
         expected = base64.b64encode(b"hello").decode()
-        self.assertEqual(first(f'print(encoding.base64_encode("hello"))'), expected)
+        self.assertEqual(first('print(encoding.base64_encode("hello"))'), expected)
 
     def test_base64_decode_roundtrip(self):
         src = ('let encoded = encoding.base64_encode("hello world")\n'

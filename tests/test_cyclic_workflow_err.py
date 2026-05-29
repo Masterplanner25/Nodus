@@ -1,7 +1,6 @@
 """Doc 15: cyclic workflow returns err record, not plain dict."""
 
 import io
-import task_graph
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 

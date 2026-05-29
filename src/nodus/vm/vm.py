@@ -93,10 +93,21 @@ class Record:
             return self.fields["total_ms"], other.fields["total_ms"]
         raise TypeError(f"unorderable types: {self.kind} and {getattr(other, 'kind', type(other).__name__)}")
 
-    def __lt__(self, other): a, b = self._cmp_key(other); return a < b
-    def __le__(self, other): a, b = self._cmp_key(other); return a <= b
-    def __gt__(self, other): a, b = self._cmp_key(other); return a > b
-    def __ge__(self, other): a, b = self._cmp_key(other); return a >= b
+    def __lt__(self, other):
+        a, b = self._cmp_key(other)
+        return a < b
+
+    def __le__(self, other):
+        a, b = self._cmp_key(other)
+        return a <= b
+
+    def __gt__(self, other):
+        a, b = self._cmp_key(other)
+        return a > b
+
+    def __ge__(self, other):
+        a, b = self._cmp_key(other)
+        return a >= b
 
 
 class BuiltinMethod:

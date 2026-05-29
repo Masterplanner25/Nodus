@@ -1,7 +1,6 @@
 """std:encoding — base64, hex, URL encoding builtins for Nodus VM."""
 
 import base64 as _b64
-import binascii
 import urllib.parse as _urlparse
 
 

@@ -49,6 +49,13 @@ where = ["src"]
 [tool.setuptools.package-data]
 nodus = ["stdlib/*.nd", "stdlib/*.tl"]
 
+[tool.ruff]
+exclude = ["Tempnodus-smoke-210"]
+
+[tool.ruff.lint.per-file-ignores]
+# _token_parse_regex uses intentional single-line dispatch-table ifs.
+"src/nodus/builtins/time_module.py" = ["E701"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true

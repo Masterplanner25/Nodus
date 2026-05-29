@@ -399,13 +399,11 @@ def register(vm, registry) -> None:
             ms_val = int((frac_str + "000")[:3])  # truncate to ms
         tz_str = m.group(8)
         if tz_str == "Z":
-            zone_name = "UTC"
             utc_off = 0
         else:
             sign = 1 if tz_str[0] == "+" else -1
             t = tz_str[1:].replace(":", "")
             utc_off = sign * (int(t[:2]) * 3600 + int(t[2:4]) * 60)
-            zone_name = "UTC"  # store as UTC; apply offset below
 
         if not (_YEAR_MIN <= year <= _YEAR_MAX):
             return _time_err("out_of_range", f"year {year} out of range", input=s, field="year")
@@ -525,12 +523,6 @@ def register(vm, registry) -> None:
                     return _make_dt(epoch_ms, zn)
                 except ValueError as exc:
                     return _time_err("parse_error", str(exc), input=s, fmt=fmt)
-
-        on_invalid = None
-        on_ambiguous = None
-        if isinstance(options, dict):
-            on_invalid = options.get("on_invalid")
-            on_ambiguous = options.get("on_ambiguous")
 
         return _construct_aware(year, month, day, hour, minute, second, ms_val, parse_zone_name,
                                 options)

@@ -367,7 +367,6 @@ class AsyncVerbTests(unittest.TestCase):
         self.assertEqual(self._run_async_src(src)[0], "POST")
 
     def test_async_parallel_two_requests(self):
-        results = []
         src = (
             'let co1 = coroutine(fn() { let r = http.get_async("http://t/hello")\n print(r.status) })\n'
             'let co2 = coroutine(fn() { let r = http.get_async("http://t/json")\n print(r.status) })\n'

@@ -7,7 +7,6 @@ from contextlib import redirect_stdout
 
 import nodus as lang
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.vm.vm import Record
 
 
 def run_program(src: str, source_path: str = "main.nd"):
