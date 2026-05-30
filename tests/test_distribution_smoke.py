@@ -26,7 +26,7 @@ class DistributionSmokeTests(unittest.TestCase):
             python_exe = self._python_executable(venv_dir)
             env = self._clean_env()
 
-            self._run([str(python_exe), "-m", "pip", "install", "--no-deps", str(wheel_path)], cwd=temp_root, env=env)
+            self._run([str(python_exe), "-m", "pip", "install", str(wheel_path)], cwd=temp_root, env=env)
             nodus_exe = self._nodus_executable(venv_dir)
             env = self._clean_env(nodus_exe.parent)
 
