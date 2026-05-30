@@ -119,6 +119,11 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | nodus-mcp companion repo | `C:\dev\nodus-mcp` / github.com/Masterplanner25/nodus-mcp |
 | nodus-a2a companion repo | `C:\dev\nodus-a2a` / github.com/Masterplanner25/nodus-a2a |
+| nodus-memory companion repo | `C:\dev\nodus-memory` / github.com/Masterplanner25/nodus-memory |
+| nodus-native-memory-engine repo | `C:\dev\nodus-native-memory-engine` / github.com/Masterplanner25/nodus-native-memory-engine |
+| nodus-extension companion repo | `C:\dev\nodus-extension` / github.com/Masterplanner25/nodus-extension |
+| Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
+| Ecosystem incubator scaffolds | `packages/` — Python-first scaffolds for planned libraries |
 
 ## Test suite
 
@@ -228,10 +233,20 @@ allowlist OR are fixed before release.
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
 - **Status: v0.1.0 COMPLETE — prepared, not yet published.**
   All 14 phases done (Phase 1 design docs + Phases A–N implementation).
-  280 tests pass. BYTECODE_VERSION 4, no new opcodes.
+  361 tests pass (Phase A–N nodus-lang adapter + aindy bridge adapter tests).
+  BYTECODE_VERSION 4, no new opcodes.
   Publication waits for nodus-a2a v0.1.0 (coordinated three-artifact launch).
+- **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
+  `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
+  The pyproject.toml `where = ["src"]` installs the Phase A–N library; the aindy
+  adapter is importable as `nodus_mcp_aindy` but is not the primary package.
 - Dev install: `pip install -e . --no-deps`
 - Run tests: `cd C:\dev\nodus-mcp && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
+- **egg-info pitfall**: If `nodus_mcp.egg-info/` appears in the repo root (generated
+  by old `setup.py develop` runs), pytest adds the rootdir to sys.path and
+  `importlib.metadata` finds the stale egg-info instead of the site-packages dist-info.
+  This breaks entry-point discovery. Fix: `rm -rf nodus_mcp.egg-info && pip install -e . --no-deps`.
+  The `*.egg-info/` is in `.gitignore`.
 - Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
   absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
 - Key documented contracts (see `docs/governance/TECH_DEBT.md`):
@@ -323,6 +338,89 @@ Remaining doc tasks before Phase 5 publish:
 4. nodus-a2a #2 (exception str verbatim to client) — add doc note or accept as known gap
 
 nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHANGELOG reflects it.
+
+## nodus-memory companion library
+
+- Repo: `C:\dev\nodus-memory` / `github.com/Masterplanner25/nodus-memory`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  Phases A–K done. 192 tests, 97% coverage. BYTECODE_VERSION 4, no new opcodes.
+  Publication follows the three-artifact launch as a separate, later release.
+- **Python API:** `MemoryStore`, `MemoryConfig`, `attach_to_runtime(runtime, store)`
+- **Nodus bindings:** `import "nodus-memory"` → `share(k,v)`, `recall_from(k)`,
+  `forget(k)`, `recall_all(tag)`, `tag(k,tags)`, `link(child,parent)`
+- **Host functions use `_ext_` naming** — no, `nm_` prefix: `nm_recall_from`, `nm_share`, etc.
+  (The .nd wrappers are named `recall_from`, `share` etc; the host functions are `nm_*`)
+- **nodus-native-memory-engine** auto-detected: if installed, `cosine_similarity()`
+  and `ScoreTracker.compute_weight()` route to Rust automatically.
+- Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-memory`)
+- Run tests: `cd C:\dev\nodus-memory && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
+- SQLAlchemy is an optional `[db]` extra; installed in shared venv for tests.
+
+## nodus-native-memory-engine companion library
+
+- Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  PyO3/Maturin Rust extension. 76 tests. Pure-Python fallback for all 9 operations.
+  Publication follows nodus-memory.
+- **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
+  Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
+- **9 operations:** `cosine_similarity`, `batch_cosine_similarity`, `compute_weight`,
+  `batch_compute_weights`, `argsort_by_weight`, `traverse_chain`, `would_create_cycle`,
+  `rank_by_similarity`, `rank_blended`
+- `is_native()` → True when Rust extension loaded; falls back to pure Python silently.
+- Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
+
+## nodus-extension companion library
+
+- Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  Phases A–J done. 126 tests, 93% coverage. BYTECODE_VERSION 4, no new opcodes.
+  Publication follows nodus-memory.
+- **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
+  write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
+- **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
+- **Nodus bindings:** `import "nodus-extension"` → `ext_load(path)`, `ext_list()`,
+  `ext_invoke(name, tool, args_json)`, `ext_describe(name)`
+- **Host functions use `_ext_` prefix** (not `ext_`): `_ext_load`, `_ext_list`, etc.
+  The .nd wrappers are named `ext_load`, `ext_list` etc. (same split as nodus-memory)
+- **ext_invoke takes args as JSON string** — not a Nodus map. Caller must pass e.g.
+  `ext_invoke("myext", "tool.name", "{\"key\": \"value\"}")`.
+- **Sandbox tier 1 only** (subprocess, insecure-dev). OCI/VM deferred to v0.2.
+- **Capability gate:** extension must declare `"tool.invoke"` to call tools.
+- Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-extension`)
+- Run tests: `cd C:\dev\nodus-extension && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
+
+## Aindy-derived standalone packages (at `C:\dev\`)
+
+These were extracted from the aindy-runtime codebase. They have no git repos and
+do not depend on nodus-lang. Test command for each: `cd C:\dev\<pkg> && python -m pytest -q`.
+
+| Package | Tests | Key deps | Notes |
+|---------|-------|----------|-------|
+| nodus-circuit-breaker | 24 | none | Three-state CB, sync+async, optional Prometheus |
+| nodus-auth | 36 | python-jose, passlib, bcrypt<5.0, pydantic | **bcrypt must be <5.0** — passlib 1.7.4 breaks with bcrypt 5.x |
+| nodus-observability | 27 | python-json-logger (otel/prometheus optional) | Structured logging + tracing bootstrap |
+| nodus-queue | 53 | tenacity (redis optional) | DLQ, delayed jobs. Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
+| nodus-state | 73 | none | FlowStatus, AgentStatus, ExecutionContext, ResumeSpec |
+| nodus-observability-framework | 43 | nodus-observability, fastapi optional | RequestMetricWriter, middleware, health router |
+| nodus-mcp (aindy bridge) | see nodus-mcp section | mcp>=1.0.0 | Bridge adapter lives at `nodus_mcp_aindy/` in the nodus-mcp repo |
+
+## Ecosystem incubators (`packages/` in this repo)
+
+Eight Python-first scaffold packages live at `C:\dev\Coding Language\packages\`.
+They are **design references / API contracts**, not production implementations.
+
+- `nodus-a2a-spec`, `nodus-agent`, `nodus-event`, `nodus-events`, `nodus-http`,
+  `nodus-memory-spec`, `nodus-retry`, `nodus-store-sql`
+- **Never pip-install the `-spec` packages alongside the production packages** —
+  `nodus-memory-spec` and `nodus-a2a-spec` share Python module names with the
+  production packages in `C:\dev\`. Installing both in the same venv causes import conflicts.
+- Run incubator tests from within each package directory:
+  ```powershell
+  cd "C:\dev\Coding Language\packages\nodus-memory" && python -m pytest -q
+  ```
+  The `pythonpath = ["src"]` in each package's pytest config provides the import path.
+- Spec docs live at `docs/ecosystem/` (NODUS_HTTP.md, NODUS_RETRY.md, etc.)
 
 ## Phase 5 publish status (as of 2026-05-30)
 
