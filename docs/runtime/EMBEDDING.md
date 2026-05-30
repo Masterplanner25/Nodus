@@ -54,6 +54,25 @@ runtime = NodusRuntime(
 )
 result = runtime.run_source(source_code)
 
+**Long-lived embedding (servers, loops, MCP/A2A hosts):**
+
+The default ``timeout_ms=200`` is designed for short sandboxed script executions
+(matching ``nodus run``).  Any session whose coroutines sleep for more than 200 ms
+cumulatively — including workflow steps, async I/O loops, or MCP/A2A request handlers
+— must disable the deadline explicitly::
+
+  # For servers, event loops, or any coroutine-heavy long-lived host:
+  runtime = NodusRuntime(
+      timeout_ms=None,    # no wall-clock deadline
+      max_steps=None,     # no instruction ceiling
+      project_root="/my/project",
+  )
+
+With the default, a coroutine sleeping 4 × 100 ms is killed after 200 ms total,
+even though it consumed no excessive compute.  This is EMBED-001 (#97); the fix
+is always to set ``timeout_ms=None`` for long-lived sessions.  Use per-task timeouts
+in your Nodus workflow code instead of a session-level VM deadline.
+
 # Optional: inject initial globals or host globals
 # (useful for passing host-owned context to scripts)
 result = runtime.run_source(

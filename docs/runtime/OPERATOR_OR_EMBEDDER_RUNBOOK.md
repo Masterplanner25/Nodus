@@ -57,7 +57,7 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | Parameter | Type | Default | When to change |
 |-----------|------|---------|----------------|
 | `max_steps` | `int \| None` | `MAX_STEPS` (~10M) | Lower for untrusted/short-running scripts |
-| `timeout_ms` | `int \| None` | `5000` | Match expected script duration; lower for user-facing latency |
+| `timeout_ms` | `int \| None` | **200 ms** | **Set `None` for servers/loops/MCP hosts.** The default 200 ms matches `nodus run` and kills coroutines that sleep > 200 ms cumulatively. For latency-bounded batch scripts, keep it short; for long-lived embedding, always pass `timeout_ms=None`. (EMBED-001 / #97) |
 | `max_stdout_chars` | `int \| None` | `MAX_STDOUT_CHARS` | Lower for log-constrained environments |
 | `project_root` | `str \| None` | `None` | Set to project directory when scripts use imports |
 | `allowed_paths` | `list[str] \| None` | `None` (unrestricted) | Set for untrusted scripts; restrict to needed directories |

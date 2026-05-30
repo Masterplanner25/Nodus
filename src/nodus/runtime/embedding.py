@@ -224,7 +224,17 @@ class NodusRuntime:
         timeout_ms:
             Wall-clock timeout in milliseconds per execution.  Raises
             ``RuntimeLimitExceeded`` when exceeded.  ``None`` means no timeout.
-            Defaults to ``EXECUTION_TIMEOUT_MS`` from ``support/config.py``.
+            Defaults to ``EXECUTION_TIMEOUT_MS`` (200 ms) from ``support/config.py``.
+
+            .. warning::
+                The 200 ms default is designed for short, sandboxed script
+                executions (the same budget as ``nodus run``).  **Long-lived
+                sessions — MCP/A2A servers, workflow hosts, event loops,
+                anything that runs coroutines with cumulative sleep > 200 ms —
+                must set** ``timeout_ms=None`` **explicitly.**  With the
+                default, a coroutine sleeping 4 × 100 ms is killed after the
+                200 ms wall-clock budget is consumed, even though it did no
+                excessive compute.  See EMBED-001 (#97).
         max_stdout_chars:
             Maximum number of stdout characters captured per execution.  Output
             beyond this limit is silently truncated.  ``None`` means unlimited.
