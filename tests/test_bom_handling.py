@@ -15,8 +15,10 @@ class BomHandlingTests(unittest.TestCase):
             # Write file with UTF-8 BOM prefix
             with open(path, "wb") as f:
                 f.write(b"\xef\xbb\xbfprint(\"hello\")\n")
+            with open(path, "r", encoding="utf-8-sig") as _f:
+                _src = _f.read()
             result, _vm = run_source(
-                open(path, "r", encoding="utf-8-sig").read(),
+                _src,
                 filename=path,
                 max_steps=10_000,
                 timeout_ms=5_000,

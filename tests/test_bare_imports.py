@@ -40,7 +40,8 @@ class BareImportTests(unittest.TestCase):
                 f.write("export let pi = 3\n")
             with open(main_nd, "w", encoding="utf-8") as f:
                 f.write('import { pi } from "lib/math"\nprint(pi)\n')
-            src = open(main_nd, encoding="utf-8").read()
+            with open(main_nd, encoding="utf-8") as f:
+                src = f.read()
             result = _run(src, main_nd)
         self.assertEqual(result, ["3.0"])
 
@@ -53,7 +54,8 @@ class BareImportTests(unittest.TestCase):
                 f.write("export let v = 42\n")
             with open(main_nd, "w", encoding="utf-8") as f:
                 f.write('import { v } from "utils"\nprint(v)\n')
-            src = open(main_nd, encoding="utf-8").read()
+            with open(main_nd, encoding="utf-8") as f:
+                src = f.read()
             result = _run(src, main_nd)
         self.assertEqual(result, ["42.0"])
 
@@ -63,7 +65,8 @@ class BareImportTests(unittest.TestCase):
             main_nd = os.path.join(td, "main.nd")
             with open(main_nd, "w", encoding="utf-8") as f:
                 f.write('import { x } from "totally/missing"\n')
-            src = open(main_nd, encoding="utf-8").read()
+            with open(main_nd, encoding="utf-8") as f:
+                src = f.read()
             with self.assertRaises(lang.LangRuntimeError) as cm:
                 _run(src, main_nd)
         msg = str(cm.exception)
@@ -86,7 +89,8 @@ class BareImportTests(unittest.TestCase):
                 f.write("export let answer = 99\n")
             with open(main_nd, "w", encoding="utf-8") as f:
                 f.write('import { answer } from "lib"\nprint(answer)\n')
-            src = open(main_nd, encoding="utf-8").read()
+            with open(main_nd, encoding="utf-8") as f:
+                src = f.read()
             result = _run(src, main_nd)
         self.assertEqual(result, ["99.0"])
 
@@ -104,6 +108,7 @@ class BareImportTests(unittest.TestCase):
                 f.write("export let v = 9\n")
             with open(main_nd, "w", encoding="utf-8") as f:
                 f.write('import { v } from "lib"\nprint(v)\n')
-            src = open(main_nd, encoding="utf-8").read()
+            with open(main_nd, encoding="utf-8") as f:
+                src = f.read()
             result = _run(src, main_nd)
         self.assertEqual(result, ["1.0"])

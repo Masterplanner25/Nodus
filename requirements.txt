@@ -4,5 +4,6 @@ mypy==2.1.0
 fastapi==0.136.1
 starlette==1.0.1
 uvicorn==0.30.0
+httpx>=0.27,<1
 certifi==2026.5.20
 idna==3.16
