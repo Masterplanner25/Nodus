@@ -394,6 +394,22 @@ nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHAN
 - Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-extension`)
 - Run tests: `cd C:\dev\nodus-extension && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
 
+## OpenClaw-derived standalone packages (at `C:\dev\`)
+
+These were extracted from the OpenClaw codebase. They have GitHub repos under Masterplanner25
+and do not depend on nodus-lang. Test command for each: `cd C:\dev\<pkg> && python -m pytest -q`.
+
+| Package | Tests | Key deps | GitHub | Key abstraction |
+|---------|-------|----------|--------|----------------|
+| nodus-context | 29 | none | github.com/Masterplanner25/nodus-context | `ContextWindow` with `compact()`, `guard_tool_results()`, `SummarizeStrategy`, `DropToolInternalsStrategy` |
+| nodus-approvals | 32 | none | github.com/Masterplanner25/nodus-approvals | `ApprovalGate` (check/approve/deny/poll), `ApprovalPolicy` (fnmatch rules), `PairingStore` (6-digit codes) |
+| nodus-channels | 24 | none | github.com/Masterplanner25/nodus-channels | `ChannelAdapter` protocol, `ChannelRegistry`, `HealthMonitor` (CONNECTED→DEGRADED→DISCONNECTED) |
+| nodus-llm | 24 | nodus-circuit-breaker | github.com/Masterplanner25/nodus-llm | `CredentialStore` + `FailoverClient` (5m→10m→20m→40m→1h backoff per profile) |
+| nodus-delivery | 27 | nodus-channels | github.com/Masterplanner25/nodus-delivery | `SizeChunker`, `ParagraphChunker`, `MarkdownBlockChunker`, `DeliveryRouter` |
+
+**Dependency note for nodus-delivery:** requires nodus-channels installed (`pip install -e C:\dev\nodus-channels --no-deps`).
+**Dependency note for nodus-llm:** requires nodus-circuit-breaker installed.
+
 ## Aindy-derived standalone packages (at `C:\dev\`)
 
 These were extracted from the aindy-runtime codebase. They have no git repos and
@@ -405,8 +421,8 @@ do not depend on nodus-lang. Test command for each: `cd C:\dev\<pkg> && python -
 | nodus-auth | 36 | python-jose, passlib, bcrypt<5.0, pydantic | **bcrypt must be <5.0** — passlib 1.7.4 breaks with bcrypt 5.x |
 | nodus-observability | 27 | python-json-logger (otel/prometheus optional) | Structured logging + tracing bootstrap |
 | nodus-queue | 53 | tenacity (redis optional) | DLQ, delayed jobs. Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
-| nodus-state | 73 | none | FlowStatus, AgentStatus, ExecutionContext, ResumeSpec |
-| nodus-observability-framework | 43 | nodus-observability, fastapi optional | RequestMetricWriter, middleware, health router |
+| nodus-state | 73 | none | FlowStatus, AgentStatus, ExecutionContext, ResumeSpec, SessionKey |
+| nodus-observability-framework | 43 | nodus-observability, fastapi optional | RequestMetricWriter, middleware, health router, ExecutionBlock streaming |
 | nodus-mcp (aindy bridge) | see nodus-mcp section | mcp>=1.0.0 | Bridge adapter lives at `nodus_mcp_aindy/` in the nodus-mcp repo |
 
 ## Ecosystem incubators (`packages/` in this repo)
