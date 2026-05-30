@@ -426,6 +426,36 @@ They are **design references / API contracts**, not production implementations.
   The `pythonpath = ["src"]` in each package's pytest config provides the import path.
 - Spec docs live at `docs/ecosystem/` (NODUS_HTTP.md, NODUS_RETRY.md, etc.)
 
+## nodus-workflow (in-tree framework)
+
+- **Location:** `src/nodus_workflow/` (in this repo, not a separate package yet)
+- **Status:** Near-runtime-complete. Core semantics complete; production hardening
+  and packaging documented in `plans/nodus-workflow-framework.md`.
+- **Test file:** `tests/test_nodus_workflow_framework.py` (30 tests)
+- **7 run states:** `pending → running → waiting → retry_scheduled → completed / failed / dead_lettered`
+- **Backends:** `LocalWorkflowStore` (file-backed) and `SQLiteWorkflowStore` (cross-process)
+- **VM builtins added:** `workflow_wait(event_type, ...)`, `resume_workflow(id, checkpoint, payload)`,
+  `workflow_resume_payload()` — delegate to `get_default_workflow_runner()`
+- **CLI:** `nodus workflow runs|inspect|dead-letters|replay|migrate-state`
+- **HTTP:** `GET /workflow/runs`, `GET /workflow/runs/{id}`, `GET /workflow/dead-letters`, `POST /workflow/replay`
+- **Server flags:** `--workflow-store-backend {local|sqlite}`, `--workflow-store-path PATH`
+
+**Operational gotcha — local store scan performance:**
+The `LocalWorkflowStore` scans all `.nodus/workflow_framework/runs/*.json` on every sweep.
+670+ accumulated files cause >2s per sweep, breaking the `test_worker_death_detected_by_sweeper`
+test (500ms deadline). Fix: use SQLite temp store in tests, OR clean `.nodus/workflow_framework/runs/`
+(safe — test artifacts only).
+
+**Circular import:** `nodus.vm.vm` imports `get_default_workflow_runner` from `nodus_workflow.runner`
+at top level. Works at runtime (nodus initializes first) but fails if `nodus_workflow` is imported
+before `nodus` in a fresh process.
+
+## nodus_schema (in-tree package)
+
+- **Location:** `src/nodus_schema/` (in this repo, not a separate package yet)
+- **Exports:** `SyscallSpec`, `parse_syscall_name()`, `resolve_version()`,
+  `validate_input()`, `validate_output()`, `validate_payload()`, extension ABI models.
+
 ## Phase 5 publish status (as of 2026-05-30)
 
 All pre-ship gates passed. The only remaining step is the coordinated publish:
