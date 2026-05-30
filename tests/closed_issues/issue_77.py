@@ -1,20 +1,17 @@
 """Closed-issue test for #77: nodus workflow run --help shows help (BUG-V31E-03)."""
 
 import subprocess
+import sys
 from pathlib import Path
 
-
-def _nodus_exe():
-    return str(Path("C:/dev/Coding Language/.venv/Scripts/nodus.exe"))
+_REPO_ROOT = Path(__file__).parent.parent.parent
+_NODUS_PY = str(_REPO_ROOT / "nodus.py")
 
 
 def _run_nodus(*args):
-    env = {"PYTHONPATH": "C:/dev/Coding Language/src"}
-    import os
-    env.update(os.environ)
     result = subprocess.run(
-        [_nodus_exe()] + list(args),
-        capture_output=True, text=True, env=env
+        [sys.executable, _NODUS_PY] + list(args),
+        capture_output=True, text=True,
     )
     return result.returncode, result.stdout, result.stderr
 

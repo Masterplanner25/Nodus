@@ -5,17 +5,17 @@ nodus graph run --help were treating --help as a script filename and
 producing "File not found: --help" instead of help text.
 """
 import subprocess
-import os
+import sys
+from pathlib import Path
 
-NODUS_BIN = "C:/dev/Coding Language/.venv/Scripts/nodus.exe"
-SRC_PATH = "C:/dev/Coding Language/src"
+_REPO_ROOT = Path(__file__).parent.parent
+_NODUS_PY = str(_REPO_ROOT / "nodus.py")
 
 
 def run_cli(*args):
-    env = os.environ.copy()
-    env["PYTHONPATH"] = SRC_PATH
     return subprocess.run(
-        [NODUS_BIN, *args], capture_output=True, text=True, env=env, timeout=5
+        [sys.executable, _NODUS_PY, *args],
+        capture_output=True, text=True, timeout=5,
     )
 
 

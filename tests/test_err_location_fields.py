@@ -6,12 +6,12 @@ All err records now have path, line, column, stack, and origin fields.
 - User-thrown errs: origin="user" set in _op_throw
 """
 import subprocess
+import sys
 import tempfile
-import os
 from pathlib import Path
 
-NODUS_BIN = "C:/dev/Coding Language/.venv/Scripts/nodus.exe"
-SRC_PATH = "C:/dev/Coding Language/src"
+_REPO_ROOT = Path(__file__).parent.parent
+_NODUS_PY = str(_REPO_ROOT / "nodus.py")
 
 
 def run_nodus(script_content):
@@ -21,11 +21,9 @@ def run_nodus(script_content):
         f.write(script_content)
         script_path = f.name
     try:
-        env = os.environ.copy()
-        env["PYTHONPATH"] = SRC_PATH
         result = subprocess.run(
-            [NODUS_BIN, "run", script_path],
-            capture_output=True, text=True, env=env, timeout=10
+            [sys.executable, _NODUS_PY, "run", script_path],
+            capture_output=True, text=True, timeout=10,
         )
         return result.stdout, result.stderr, result.returncode
     finally:
