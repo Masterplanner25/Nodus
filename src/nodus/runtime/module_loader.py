@@ -1073,6 +1073,8 @@ def _resolve_installed_package(name: str) -> str | None:
     try:
         if _importlib_entry_points is None:
             return None
+        import importlib
+        importlib.invalidate_caches()
         eps = _importlib_entry_points(group="nodus.nd", name=name)
         for ep in eps:
             fn = ep.load()
