@@ -1,27 +1,83 @@
-fn sha256(data) { return hash_sha256(data) }
-fn sha256_builder() { return hash_sha256_builder() }
-fn sha256_file(path) { return hash_sha256_file(path) }
+fn sha256(data) {
+    return hash_sha256(data)
+}
 
-fn sha512(data) { return hash_sha512(data) }
-fn sha512_builder() { return hash_sha512_builder() }
-fn sha512_file(path) { return hash_sha512_file(path) }
+fn sha256_builder() {
+    return hash_sha256_builder()
+}
 
-fn blake2b(data) { return hash_blake2b(data) }
-fn blake2b_builder() { return hash_blake2b_builder() }
-fn blake2b_file(path) { return hash_blake2b_file(path) }
+fn sha256_file(path) {
+    return hash_sha256_file(path)
+}
 
-fn sha1(data) { return hash_sha1(data) }
-fn sha1_builder() { return hash_sha1_builder() }
-fn sha1_file(path) { return hash_sha1_file(path) }
+fn sha512(data) {
+    return hash_sha512(data)
+}
 
-fn md5(data) { return hash_md5(data) }
-fn md5_builder() { return hash_md5_builder() }
-fn md5_file(path) { return hash_md5_file(path) }
+fn sha512_builder() {
+    return hash_sha512_builder()
+}
 
-fn hmac_sha256(key, message) { return hash_hmac_sha256(key, message) }
-fn hmac_sha512(key, message) { return hash_hmac_sha512(key, message) }
-fn hmac_blake2b(key, message) { return hash_hmac_blake2b(key, message) }
-fn hmac_sha1(key, message) { return hash_hmac_sha1(key, message) }
-fn hmac_md5(key, message) { return hash_hmac_md5(key, message) }
+fn sha512_file(path) {
+    return hash_sha512_file(path)
+}
 
-fn compare(a, b) { return hash_compare(a, b) }
+fn blake2b(data) {
+    return hash_blake2b(data)
+}
+
+fn blake2b_builder() {
+    return hash_blake2b_builder()
+}
+
+fn blake2b_file(path) {
+    return hash_blake2b_file(path)
+}
+
+fn sha1(data) {
+    return hash_sha1(data)
+}
+
+fn sha1_builder() {
+    return hash_sha1_builder()
+}
+
+fn sha1_file(path) {
+    return hash_sha1_file(path)
+}
+
+fn md5(data) {
+    return hash_md5(data)
+}
+
+fn md5_builder() {
+    return hash_md5_builder()
+}
+
+fn md5_file(path) {
+    return hash_md5_file(path)
+}
+
+fn hmac_sha256(key, message) {
+    return hash_hmac_sha256(key, message)
+}
+
+fn hmac_sha512(key, message) {
+    return hash_hmac_sha512(key, message)
+}
+
+fn hmac_blake2b(key, message) {
+    return hash_hmac_blake2b(key, message)
+}
+
+fn hmac_sha1(key, message) {
+    return hash_hmac_sha1(key, message)
+}
+
+fn hmac_md5(key, message) {
+    return hash_hmac_md5(key, message)
+}
+
+fn compare(a, b) {
+    return hash_compare(a, b)
+}

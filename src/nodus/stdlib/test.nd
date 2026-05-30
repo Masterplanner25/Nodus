@@ -97,10 +97,21 @@ fn skip(reason) {
     return test_skip(reason)
 }
 
-fn before_all(body) { return test_before_all(body) }
-fn after_all(body) { return test_after_all(body) }
-fn before_each(body) { return test_before_each(body) }
-fn after_each(body) { return test_after_each(body) }
+fn before_all(body) {
+    return test_before_all(body)
+}
+
+fn after_all(body) {
+    return test_after_all(body)
+}
+
+fn before_each(body) {
+    return test_before_each(body)
+}
+
+fn after_each(body) {
+    return test_after_each(body)
+}
 
 fn fixture(name, body, scope) {
     if (scope == nil) {
@@ -109,9 +120,18 @@ fn fixture(name, body, scope) {
     return test_fixture(name, body, scope)
 }
 
-fn cleanup(body) { return test_cleanup(body) }
+fn cleanup(body) {
+    return test_cleanup(body)
+}
 
-fn parameterize(rows, body) { return test_parameterize(rows, body) }
+fn parameterize(rows, body) {
+    return test_parameterize(rows, body)
+}
 
-fn advance_clock(duration) { return test_advance_clock(duration) }
-fn flush_async() { return test_flush_async() }
+fn advance_clock(duration) {
+    return test_advance_clock(duration)
+}
+
+fn flush_async() {
+    return test_flush_async()
+}

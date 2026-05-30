@@ -133,6 +133,32 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Coverage baseline: 77% overall. Gate: 60%. See `docs/governance/TECH_DEBT.md`
 for the per-module breakdown and the three deselected flaky tests.
 
+## .nd file formatting — authoritative command
+
+**Always use `python nodus.py fmt` — never `nodus.exe` or bare `nodus fmt`.**
+
+`nodus.exe` in `.venv` is the stale installed package (e.g. old release). CI runs
+`python nodus.py fmt --check {}` which loads from `src/` (the dev source). Using
+`nodus.exe` writes a format that diverges from what CI checks → commits pass locally
+but fail CI. This is the writer-vs-checker split that broke the stdlib format gate
+repeatedly across multiple pushes.
+
+To format .nd files correctly (matches CI exactly):
+```powershell
+# Format one file
+python nodus.py fmt src/nodus/stdlib/hash.nd
+
+# Format all stdlib .nd files
+python nodus.py fmt src/nodus/stdlib/*.nd
+
+# Verify (verbatim CI check):
+find . -name "*.nd" -not -path "./.git/*" -not -path "./.venv/*" -not -path "./tmp_demo/*" -not -path "./tests/fixtures/fmt/*" | xargs -I {} python nodus.py fmt --check {}
+```
+
+A pre-commit hook enforces this: if staged `.nd` files fail `python nodus.py fmt --check`,
+the commit is blocked and the exact fix command is printed. Hook lives at `.git/hooks/pre-commit`
+(not tracked by git — reinstall after fresh clone with `chmod +x .git/hooks/pre-commit`).
+
 ## Lint gate (ruff)
 
 Ruff runs in CI and blocks merges. Check locally before pushing:
