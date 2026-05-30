@@ -138,6 +138,10 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Coverage baseline: 77% overall. Gate: 60%. See `docs/governance/TECH_DEBT.md`
 for the per-module breakdown and the three deselected flaky tests.
 
+**Known pre-existing failure:** `tests/test_goal_dsl.py::GoalDslTests::test_resume_goal`
+fails with `KeyError: 'goal'`. This is a regression from before Phase 3 and is unrelated
+to any recent work. Do not investigate it unless goal DSL work is explicitly in scope.
+
 ## .nd file formatting — authoritative command
 
 **Always use `python nodus.py fmt` — never `nodus.exe` or bare `nodus fmt`.**
