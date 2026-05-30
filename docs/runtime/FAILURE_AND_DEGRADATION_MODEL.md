@@ -131,6 +131,13 @@ Resource limits are **not catchable** by script code. They kill the execution un
 **Degradation behavior:** Execution stops. Stdout captured before the limit is available.
 No cleanup code (finally blocks) runs after a resource limit fires — the VM is terminated.
 
+> **4.0.0 caveat — cooperative/coroutine code:** Execution-limit enforcement in
+> cooperative scheduling code is best-effort. A limit breach is reported to the host
+> (`ok=False`, nonzero exit) but may not preempt mid-sleep: `timeout_ms` counts
+> wall-clock time including time a coroutine spends cooperatively suspended. A
+> coroutine that is asleep when the deadline passes is killed on its next instruction
+> after waking. SCHED-001 (deferred to 4.0.1); see `docs/governance/TECH_DEBT.md`.
+
 > **Important for embedders:** If scripts use `finally` blocks for cleanup (closing handles,
 > releasing resources), those `finally` blocks will NOT run if a resource limit fires. Design
 > host-side cleanup that does not depend on script `finally` blocks.

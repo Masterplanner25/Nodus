@@ -961,3 +961,238 @@ F14: coalesce evaluates both args eagerly. Use utils.get(map, key, default) for
      safe map access with a default (fixed BUG-034: get() added to std:utils).
 F15: std:utils is not documented in LANGUAGE_SPEC.md.
 -->
+
+---
+
+## 12. v4.0 Standard Library (New in 4.0.0)
+
+The following modules ship with nodus-lang 4.0.0 and are not covered in the
+v3.0 sections above. For all modules, import with `import "std:<name>" as <alias>`.
+
+> **Note:** The standard-library.md was written for v3.0. Full per-function docs
+> for v4.0 modules are in progress. The key API shapes and non-obvious behaviors
+> are documented here; the machine-readable index in `llms.txt` covers the rest.
+
+---
+
+### std:http
+
+HTTP client (sync and async). Returns `http_response` records on success,
+`error` records on failure — never throws.
+
+```nd
+import "std:http" as http
+
+let resp = http.get("https://example.com/api/data")
+if (type(resp) == "error") {
+    print(resp.message)
+} else {
+    print(resp.status)      // integer status code
+    print(resp.body)        // response body as string
+}
+```
+
+Key functions: `http.get(url)`, `http.post(url, body)`, `http.put(url, body)`,
+`http.delete(url)`, `http.patch(url, body)`. Each accepts an optional options map:
+`{headers: {"Authorization": "Bearer tok"}, timeout_ms: 5000}`.
+
+---
+
+### std:hash
+
+Hashing (SHA-256, SHA-512, BLAKE2b, SHA-1, MD5), HMAC, constant-time comparison.
+**Important:** `hash.sha256(data)` returns a **hash record**, not a hex string.
+Call `.to_hex()` on the result:
+
+```nd
+import "std:hash" as hash
+
+let digest = hash.sha256("hello world")
+// digest is a hash record — NOT a plain string
+print(digest.to_hex())          // lowercase hex
+print(digest.to_hex_upper())    // uppercase hex
+print(digest.to_base64())       // base64
+print(digest.algorithm)         // "sha256"
+print(digest.length)            // 32  (bytes)
+```
+
+Other functions: `hash.sha512(data)`, `hash.blake2b(data)`, `hash.sha1(data)`,
+`hash.md5(data)`, `hash.hmac_sha256(key, message)`, `hash.compare(a, b)`.
+
+---
+
+### std:encoding
+
+Base64, hex, and URL encoding.
+
+```nd
+import "std:encoding" as enc
+
+let b64 = enc.base64_encode("hello world")   // "aGVsbG8gd29ybGQ="
+let raw = enc.base64_decode(b64)             // "hello world"
+let hex = enc.hex_encode("AB")               // "4142"
+let url = enc.url_encode("hello world")      // "hello+world"
+```
+
+---
+
+### std:secrets
+
+Cryptographically secure random values.
+
+```nd
+import "std:secrets" as secrets
+
+let tok = secrets.token_hex(16)      // 32-char hex string (16 random bytes)
+let b64 = secrets.token_base64(16)   // base64url random token
+let n   = secrets.randbelow(100)     // secure random int [0, 100)
+```
+
+---
+
+### std:subprocess
+
+Process execution. No shell by default; opt in with `shell_run`.
+
+```nd
+import "std:subprocess" as sp
+
+let result = sp.run(["echo", "hello"])
+print(result.stdout)      // "hello\n"
+print(result.exit_code)   // 0
+
+// With shell (opt-in):
+let r2 = sp.shell("echo hello && echo world")
+print(r2.stdout)
+```
+
+Returns a record with `stdout`, `stderr`, `exit_code`. Errors (process not found,
+permission denied) return an error record instead of throwing.
+
+---
+
+### std:env
+
+Environment variables.
+
+```nd
+import "std:env" as env
+
+let home = env.get("HOME")           // nil if not set
+let path = env.get_or("PATH", "")    // default if not set
+env.set("MY_VAR", "value")
+env.delete("MY_VAR")
+let all = env.list()                 // map of all env vars
+```
+
+---
+
+### std:time
+
+Datetime, durations, and timezones.
+
+```nd
+import "std:time" as time
+
+let now = time.now()                  // datetime record
+print(now.year)
+print(now.month)
+print(now.day)
+print(now.hour)
+print(now.unix)                       // Unix timestamp (float)
+
+let dt = time.parse("2026-01-15", "YYYY-MM-DD")
+let diff = time.diff(dt, now)         // duration in ms
+```
+
+---
+
+### std:tool
+
+Dynamic tool registry. AI/MCP adapter pattern. **Tool names must use dotted
+namespacing** — `"myapp.tool_name"`, not `"tool_name"` — or `register` returns
+an error record.
+
+```nd
+import "std:tool" as tool
+
+let reg = tool.register({
+    name: "myapp.greet",
+    description: "Greet someone",
+    handler: fn(args) { return "Hello " + args.name }
+})
+if (type(reg) == "error") {
+    print(reg.message)    // e.g., "tool name must use dotted namespacing"
+}
+
+print(tool.has("myapp.greet"))          // true
+let result = tool.invoke("myapp.greet", {name: "World"})
+print(result)                           // "Hello World"
+let all = tool.list_tools({})           // list of tool records
+```
+
+---
+
+### std:test
+
+Test framework. Test files must end in `_test.nd`. Run with `nodus test <path>`.
+
+```nd
+import "std:test" as test
+
+test.suite("my feature", fn() {
+    test.case("basic addition", fn() {
+        test.assert_eq(1 + 1, 2)
+    })
+    test.case("string interpolation", fn() {
+        let x = 42i
+        test.assert_eq("\(x)", "42")
+    })
+})
+```
+
+11 assertions: `assert`, `assert_eq`, `assert_neq`, `assert_err`, `assert_ok`,
+`assert_kind`, `assert_throws`, `assert_close`, `assert_contains`,
+`assert_has_key`, `assert_in_range`.
+
+CLI: `nodus test [path] [--filter pattern] [--coverage] [--bail]`.
+
+> **Note:** `nodus test` does not appear in `nodus --help`; this is a known gap
+> (BUG-EVAL-14, batched to 4.0.1).
+
+---
+
+### std:bool
+
+Boolean helpers for strict equality comparisons.
+
+```nd
+import "std:bool" as b
+
+// In v4.0, 0i == false is false (equality coercion narrowed).
+// Use bool.equal() for explicit bool checks:
+let is_true = b.equal(some_value, true)
+let is_false = b.equal(some_value, false)
+```
+
+Also available as the top-level `bool_equal(value, bool_value)` builtin.
+
+---
+
+### Python-side: NodusRuntime.tool_registry
+
+When embedding Nodus in Python, register tools via `runtime.tool_registry`:
+
+```python
+from nodus import NodusRuntime
+
+runtime = NodusRuntime()
+runtime.tool_registry.register({
+    "name": "myapp.greet",          # dotted namespace required
+    "description": "Greet someone",
+    "handler": lambda args: f"Hello, {args.get('name', 'world')}!",
+})
+```
+
+`tool_registry` methods: `register({...})`, `unregister(name)`, `invoke(name, args)`,
+`lookup(name)`, `list_tools(filter?)`, `has(name)`.

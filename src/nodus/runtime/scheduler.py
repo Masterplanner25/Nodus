@@ -7,7 +7,7 @@ import sys
 import time
 from collections import deque
 
-from nodus.runtime.diagnostics import LangRuntimeError, format_error
+from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, format_error
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.runtime_events import RuntimeEvent
 
@@ -210,6 +210,12 @@ class Scheduler:
                 self.vm.task_step_budget = TASK_STEP_BUDGET
                 self.vm._budget_exceeded = False
                 result = self.vm.builtin_coroutine_resume(coroutine)
+            except RuntimeLimitExceeded:
+                # Execution-limit breaches (deadline, step-limit) are not recoverable
+                # per-coroutine errors — they must propagate so the host (run_source /
+                # run_file / CLI) can return ok=False and a nonzero exit code.
+                # Do NOT swallow with the broad except below.
+                raise
             except Exception as err:
                 print(format_error(err, path=self.vm.source_path), file=sys.stderr)
                 self._mark_completed(coroutine)

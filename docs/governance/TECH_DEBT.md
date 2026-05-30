@@ -76,6 +76,29 @@ to `_op_return`. `BYTECODE_VERSION` bumped to 4.
 `SETUP_TRY` / `POP_TRY` / `FINALLY_END` / `THROW` promoted to **stable** at v1.0
 freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 
+## Scheduler / coroutine execution-limit behavior (v4.0.0 known limitations)
+
+These items are deferred to 4.0.1. They affect the experimental coroutine/scheduler
+tier — the stable embedding API contract is not violated (limit breaches now correctly
+surface as ok=False after the SCHED-002 fix).
+
+- **SCHED-001** (deferred to 4.0.1, experimental scheduler timing): The execution
+  deadline (`timeout_ms`) counts wall-clock time including time a coroutine spends
+  cooperatively suspended in the scheduler timer heap (sleeping). A coroutine that
+  calls `sleep(1000)` four times will be killed after 200ms total wall time even
+  though it consumed no CPU. Workaround: `nodus run --time-limit N` (documented
+  in `nodus run --help`). GitHub: #94.
+
+- **SCHED-002 session-scope** (deferred to 4.0.1, experimental scheduler): A limit
+  breach kills only the coroutine that tripped it; other coroutines continue running.
+  The host correctly sees ok=False (fixed in 4.0.0 via `except RuntimeLimitExceeded:
+  raise` in scheduler.py), but the session is not fully terminated — other coroutines
+  drain. Full session termination on limit breach is a 4.0.1 fix. GitHub: #95.
+
+- **SCHED-003** (covered in 4.0.0): Tests added in `test_scheduler.py::SchedulerSandboxLimitTests`
+  to cover the `run_source` (sandbox-active) path. Pre-existing tests used raw VM
+  with no limits. GitHub: #96.
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.

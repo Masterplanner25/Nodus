@@ -15,7 +15,7 @@ pip install nodus-lang
 nodus --version
 ```
 
-Expected output: `nodus 2.1.1`.
+Expected output: `Nodus 4.0.0`.
 
 For the optional FastAPI/Uvicorn HTTP server:
 
@@ -70,9 +70,14 @@ Nodus
 2.0
 ```
 
-All numbers in Nodus are floats. `2` stores and prints as `2.0`. See
+Plain numeric literals like `2` are floats. `2` stores and prints as `2.0`. See
 [types-and-values.md — Numbers are floats](types-and-values.md#numbers-are-floats)
 for what this means in practice.
+
+> **v4.0 note:** Nodus also has an integer type. Write `2i` (with the `i` suffix)
+> to get an exact integer. `type(2)` returns `"float"`; `type(2i)` returns `"int"`.
+> String interpolation lets you embed values inline: `"\(name) \(count)"` — no
+> multi-argument `print()` needed.
 
 ### Functions
 
