@@ -245,11 +245,14 @@ allowlist OR are fixed before release.
 ## nodus-a2a companion library
 
 - Repo: `C:\dev\nodus-a2a` / `github.com/Masterplanner25/nodus-a2a`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+- **Status: v0.1.0 COMPLETE — all pre-Phase-5 gates passed. Waiting for publish.**
   All 10 phases done (Phase 1 design docs + Phases A–J implementation).
-  169 tests pass. BYTECODE_VERSION 4, no new opcodes.
+  180 tests pass (includes breakage-gate additions). BYTECODE_VERSION 4, no new opcodes.
   Publication waits for coordinated three-artifact launch with nodus-lang 4.0.0
   and nodus-mcp 0.1.0.
+- **Python API:** `runtime.tool_registry.register({...})` — NOT `runtime.register_tool()` (doesn't exist).
+- **nodus-a2a issues:** #1 (non-dict args coerced to {}), #2 (exception str verbatim to client).
+  Both filed; #2 needs doc note before Phase 5 (or accept as known gap).
 - Run tests: `cd C:\dev\nodus-a2a && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
 - Coverage: 93% (gate: ≥80%). `pyproject.toml` has `pythonpath = ["src"]` so
   only nodus-lang needs to be in PYTHONPATH when running tests.
@@ -282,8 +285,18 @@ These burn time when forgotten:
 - **`spawn()` takes a coroutine value**, not a function literal. Use
   `let c = coroutine(fn() {...})` then `spawn(c)`.
 - **`fn` is a reserved keyword** — can't use as a parameter name in `.nd` files.
-- **Multiline function calls across newlines** may fail parsing — keep
-  args on the same line as the opening paren where possible.
+- **Multiline list literals and function calls cannot span newlines.** Both
+  `[1,\n2]` and `len(\n"hi"\n)` give "Unexpected end of statement". Keep on one line.
+- **`print()` is single-argument.** `print("label:", value)` → syntax error.
+  Use string interpolation: `print("\(label): \(value)")`.
+- **`std:hash` returns a hash record, not a string.** `hash.sha256(data)` returns
+  a record with methods; call `.to_hex()` to get hex: `hash.sha256(data).to_hex()`.
+- **`std:tool` names must be dotted.** `tool.register({name:"greet",...})` silently
+  returns an error. Use `"myapp.greet"`. Error message says "must use dotted namespacing".
+- **Coroutine execution limits (scheduler quirk):** The default 200ms deadline
+  (`EXECUTION_TIMEOUT_MS=200`) counts wall-clock time including cooperative sleep.
+  A coroutine that sleeps 4 × 100ms will be killed after 200ms total even though it
+  consumed no CPU. Workaround: `nodus run --time-limit N`. SCHED-001, deferred to 4.0.1.
 
 ## Security boundary test rule
 
@@ -303,12 +316,35 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 - **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — ranked list
   of still-unresolved doc conflicts.
 
-High-priority remaining doc tasks (as of 2026-05-29):
-1. nodus-a2a `pyproject.toml` missing authors/classifiers/license — fix before publish
-2. `RELEASE_CHECKLIST.md` post-release section still has old commands
-3. `LIBRARY_ECOSYSTEM.md` still references `STDLIB_PHILOSOPHY.md` in two cross-ref
-   lines — the stub now exists but the philosophy content should be expanded for v4.0
+Remaining doc tasks before Phase 5 publish:
+1. ~~nodus-a2a `pyproject.toml` metadata~~ — DONE (added in breakage gate prep)
+2. `RELEASE_CHECKLIST.md` post-release section still has old commands — batch to 4.0.1
+3. `LIBRARY_ECOSYSTEM.md` STDLIB_PHILOSOPHY.md cross-refs — stub exists; expand post-launch
+4. nodus-a2a #2 (exception str verbatim to client) — add doc note or accept as known gap
 
-nodus-mcp spec version note: CLAUDE.md previously said "MCP 2025-11-25 spec" but
-`nodus-mcp/README.md` says "2026-07-28 RC". The README is authoritative — the spec
-target was updated during implementation. Verify `nodus-mcp/CHANGELOG.md` reflects this.
+nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHANGELOG reflects it.
+
+## Phase 5 publish status (as of 2026-05-30)
+
+All pre-ship gates passed. The only remaining step is the coordinated publish:
+
+**Pre-Phase-5 verification completed:**
+- TestPyPI full three-artifact roundtrip: all three from index, site-packages, 14/14 invariants
+- Adversarial gate (SCHED-002 fixed, BUG-A2A-001/002 filed)
+- Pre-ship eval: 5 fix-before-publish items resolved (BUG-EVAL-01–05)
+- Full nodus-lang test suite: 1455 passed
+
+**Rebuild state (2026-05-30):**
+- nodus-lang 4.0.0: rebuilt (scheduler.py SCHED-002 fix in wheel)
+- nodus-a2a 0.1.0: rebuilt (README quick-start fix in wheel)
+- nodus-mcp 0.1.0: prior wheel still valid (no code changes)
+- All twine check: PASSED
+
+**Phase 5 publish sequence** (do NOT run until explicitly asked):
+1. `git tag v4.0.0 && git push origin main --tags` (nodus-lang)
+2. Upload nodus-lang 4.0.0 to real PyPI (token from user at upload time)
+3. Confirm `pip install nodus-lang==4.0.0` succeeds
+4. Rebuild nodus-mcp and nodus-a2a against the published nodus-lang 4.0.0
+5. Upload nodus-mcp 0.1.0 and nodus-a2a 0.1.0 (need per-project PyPI tokens)
+6. Create GitHub releases for all three
+7. Update ECOSYSTEM_READINESS_ASSESSMENT.md to reflect published status
