@@ -32,6 +32,7 @@ from nodus.tooling.runner import (
     plan_goal_code,
     resume_graph_in_vm,
     resume_goal_in_vm,
+    replay_workflow_in_vm,
     resume_workflow_in_vm,
     run_workflow_code,
     plan_workflow_code,
@@ -47,6 +48,7 @@ from nodus.runtime.snapshots import SnapshotManager
 from nodus.vm.vm import VM
 import time
 from nodus.orchestration.task_graph import set_default_dispatcher
+from nodus_workflow.runner import configure_default_workflow_runner, get_default_workflow_runner
 
 
 class WorkerManager:
@@ -313,6 +315,17 @@ except Exception:
     UVICORN_AVAILABLE = False
 
 
+def _parse_optional_bool(value) -> bool | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
 class RuntimeService:
     def __init__(
         self,
@@ -324,6 +337,8 @@ class RuntimeService:
         allowed_paths: list[str] | None = None,
         allow_input: bool = False,
         auth_token: str | None = None,
+        workflow_store_backend: str | None = None,
+        workflow_store_path: str | None = None,
     ):
         self.trace = trace
         self.last_vm = None
@@ -332,15 +347,30 @@ class RuntimeService:
         self.workers = WorkerManager()
         set_default_dispatcher(self.workers)
         self._worker_sweep_interval_ms = worker_sweep_interval_ms
+        self._stop_event = threading.Event()
+        if workflow_store_backend is not None or workflow_store_path is not None:
+            self.workflow_runner = configure_default_workflow_runner(
+                backend=workflow_store_backend,
+                path=workflow_store_path,
+            )
+        else:
+            self.workflow_runner = get_default_workflow_runner()
+        self._last_workflow_sweep: dict[str, object] = {
+            "expired_waits": [],
+            "resumed_retries": [],
+            "rehydrated_runs": [],
+        }
         self.allowed_paths = allowed_paths
         self.allow_input = allow_input
         self.auth_token = auth_token
+        self._run_workflow_sweep_once()
         self._sweeper_thread = threading.Thread(target=self._worker_sweeper_loop, daemon=True)
         self._sweeper_thread.start()
 
     def _worker_sweeper_loop(self):
-        while True:
+        while not self._stop_event.is_set():
             self.workers.sweep()
+            self._run_workflow_sweep_once()
             interval = self._worker_sweep_interval_ms / 1000.0
             timeout_ms = getattr(self.workers, "_worker_heartbeat_timeout_ms", None)
             if timeout_ms is not None:
@@ -349,8 +379,36 @@ class RuntimeService:
             with self.workers._cond:
                 self.workers._cond.wait(timeout=interval)
 
+    def close(self) -> None:
+        self._stop_event.set()
+        with self.workers._cond:
+            self.workers._cond.notify_all()
+
+    def _workflow_vm_factory(self, _record=None) -> VM:
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
+        vm.worker_dispatcher = self.workers
+        return vm
+
+    def _run_workflow_sweep_once(self) -> dict[str, object]:
+        try:
+            self._last_workflow_sweep = self.workflow_runner.sweep(self._workflow_vm_factory)
+        except OSError as err:
+            self._last_workflow_sweep = {
+                "expired_waits": [],
+                "resumed_retries": [],
+                "rehydrated_runs": [],
+                "error": str(err),
+            }
+        return self._last_workflow_sweep
+
     def health(self):
-        return {"status": "ok", "runtime": "nodus", "version": VERSION}
+        return {
+            "status": "ok",
+            "runtime": "nodus",
+            "version": VERSION,
+            "workflow_store": self.workflow_runner.store_info(),
+        }
 
     def _session_error(self, message: str, *, stage: str = "execute") -> dict:
         err = NodusRuntimeError(message, filename=normalize_filename(None))
@@ -606,6 +664,9 @@ class RuntimeService:
     def workflow_resume(self, payload: dict):
         graph_id = payload.get("graph_id")
         checkpoint = payload.get("checkpoint")
+        resume_payload = payload.get("resume_payload")
+        event_type = payload.get("event_type")
+        correlation_key = payload.get("correlation_key")
         if not graph_id:
             err = NodusRuntimeError("Missing graph_id", filename=normalize_filename(None))
             legacy = {"type": "graph", "message": "Missing graph_id", "path": None}
@@ -623,7 +684,14 @@ class RuntimeService:
             if session is None:
                 return self._session_error("Unknown session", stage="resume_workflow")
             self._apply_runtime_policies(session.vm)
-            result, vm = resume_workflow_in_vm(session.vm, graph_id, checkpoint)
+            result, vm = resume_workflow_in_vm(
+                session.vm,
+                graph_id,
+                checkpoint,
+                resume_payload=resume_payload,
+                event_type=event_type,
+                correlation_key=correlation_key,
+            )
             session.vm = vm
             self.sessions.record_execution(session)
             self.last_vm = vm
@@ -632,7 +700,114 @@ class RuntimeService:
             return result
         vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
         self._apply_runtime_policies(vm)
-        result, vm = resume_workflow_in_vm(vm, graph_id, checkpoint)
+        result, vm = resume_workflow_in_vm(
+            vm,
+            graph_id,
+            checkpoint,
+            resume_payload=resume_payload,
+            event_type=event_type,
+            correlation_key=correlation_key,
+        )
+        if vm is not None:
+            self.last_vm = vm
+        if result.get("ok"):
+            result.update(self._graph_metadata(vm, graph_id))
+        return result
+
+    def workflow_dead_letters(self):
+        runs = [record.to_dict() for record in self.workflow_runner.list_dead_lettered_runs()]
+        return {"ok": True, "runs": runs}
+
+    def workflow_runs(
+        self,
+        statuses: list[str] | None = None,
+        *,
+        workflow_name: str | None = None,
+        execution_kind: str | None = None,
+        updated_after_ms: float | None = None,
+        updated_before_ms: float | None = None,
+        has_retry: bool | None = None,
+        has_wait: bool | None = None,
+        replay_count_min: int | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+        cursor: str | None = None,
+    ):
+        normalized = None
+        if isinstance(statuses, list):
+            normalized = {str(status).strip() for status in statuses if str(status).strip()}
+        payload = self.workflow_runner.run_inventory(
+            statuses=normalized,
+            workflow_name=workflow_name,
+            execution_kind=execution_kind,
+            updated_after_ms=updated_after_ms,
+            updated_before_ms=updated_before_ms,
+            has_retry=has_retry,
+            has_wait=has_wait,
+            replay_count_min=replay_count_min,
+            limit=limit,
+            offset=offset,
+            cursor=cursor,
+        )
+        payload["ok"] = True
+        return payload
+
+    def workflow_run_record(self, graph_id: str):
+        record = self.workflow_runner.get_run(graph_id)
+        if record is None:
+            return {"ok": False, "error": f"Workflow run '{graph_id}' not found"}
+        return {"ok": True, "run": record.to_dict()}
+
+    def workflow_replay(self, payload: dict):
+        graph_id = payload.get("graph_id")
+        checkpoint = payload.get("checkpoint")
+        resume_payload = payload.get("resume_payload")
+        event_type = payload.get("event_type")
+        correlation_key = payload.get("correlation_key")
+        rearm_only = bool(payload.get("rearm_only", False))
+        if not graph_id:
+            err = NodusRuntimeError("Missing graph_id", filename=normalize_filename(None))
+            legacy = {"type": "graph", "message": "Missing graph_id", "path": None}
+            return Result.failure(
+                stage="replay_workflow",
+                filename=normalize_filename(None),
+                stdout="",
+                stderr="",
+                errors=[err.to_dict()],
+                error=legacy,
+            ).to_dict()
+        session_id = payload.get("session")
+        if session_id:
+            session = self.sessions.get(session_id)
+            if session is None:
+                return self._session_error("Unknown session", stage="replay_workflow")
+            self._apply_runtime_policies(session.vm)
+            result, vm = replay_workflow_in_vm(
+                session.vm,
+                graph_id,
+                checkpoint,
+                resume_payload=resume_payload,
+                event_type=event_type,
+                correlation_key=correlation_key,
+                rearm_only=rearm_only,
+            )
+            session.vm = vm
+            self.sessions.record_execution(session)
+            self.last_vm = vm
+            if result.get("ok"):
+                result.update(self._graph_metadata(vm, graph_id))
+            return result
+        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        self._apply_runtime_policies(vm)
+        result, vm = replay_workflow_in_vm(
+            vm,
+            graph_id,
+            checkpoint,
+            resume_payload=resume_payload,
+            event_type=event_type,
+            correlation_key=correlation_key,
+            rearm_only=rearm_only,
+        )
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -779,15 +954,19 @@ class RuntimeService:
                     "resumes": 0.0,
                     "ready_queue": [],
                     "sleeping_tasks": [],
-                    "completed_tasks": [],
-                },
-                "tasks": [],
-                "event_count": 0.0,
-            }
+                "completed_tasks": [],
+            },
+            "tasks": [],
+            "event_count": 0.0,
+            "workflow_sweep": self._last_workflow_sweep,
+            "workflow_store": self.workflow_runner.store_info(),
+        }
         return {
             "scheduler": vm.builtin_runtime_scheduler_stats(),
             "tasks": vm.builtin_runtime_tasks(),
             "event_count": vm.builtin_runtime_event_count(),
+            "workflow_sweep": self._last_workflow_sweep,
+            "workflow_store": self.workflow_runner.store_info(),
         }
 
     def runtime_events(self):
@@ -879,6 +1058,7 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
                 _unauthorized(self)
                 return
             parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
             if parsed.path == "/health":
                 _write_json(self, service.health())
                 return
@@ -895,13 +1075,75 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
                 _write_json(self, service.runtime_events())
                 return
             if parsed.path == "/memory":
-                query = parse_qs(parsed.query)
                 key = query.get("key", [None])[0]
                 _write_json(self, service.memory_get(key))
                 return
             if parsed.path.startswith("/workflow/checkpoints/"):
                 graph_id = parsed.path.split("/", 3)[3]
                 _write_json(self, service.workflow_checkpoints(graph_id))
+                return
+            if parsed.path == "/workflow/dead-letters":
+                _write_json(self, service.workflow_dead_letters())
+                return
+            if parsed.path == "/workflow/runs":
+                raw_statuses = query.get("status", [])
+                statuses: list[str] = []
+                for raw in raw_statuses:
+                    statuses.extend([part.strip() for part in str(raw).split(",") if part.strip()])
+                workflow_name = query.get("workflow", [None])[0]
+                if not isinstance(workflow_name, str) or not workflow_name:
+                    workflow_name = None
+                execution_kind = query.get("execution_kind", [None])[0]
+                if not isinstance(execution_kind, str) or not execution_kind:
+                    execution_kind = None
+                updated_after = query.get("updated_after_ms", [None])[0]
+                updated_before = query.get("updated_before_ms", [None])[0]
+                has_retry = _parse_optional_bool(query.get("has_retry", [None])[0])
+                has_wait = _parse_optional_bool(query.get("has_wait", [None])[0])
+                replay_count_min = query.get("replay_count_min", [None])[0]
+                limit = query.get("limit", [None])[0]
+                offset = query.get("offset", [None])[0]
+                cursor = query.get("cursor", [None])[0]
+                try:
+                    updated_after_value = float(updated_after) if updated_after is not None else None
+                except (TypeError, ValueError):
+                    updated_after_value = None
+                try:
+                    updated_before_value = float(updated_before) if updated_before is not None else None
+                except (TypeError, ValueError):
+                    updated_before_value = None
+                try:
+                    replay_count_min_value = int(replay_count_min) if replay_count_min is not None else None
+                except (TypeError, ValueError):
+                    replay_count_min_value = None
+                try:
+                    limit_value = int(limit) if limit is not None else None
+                except (TypeError, ValueError):
+                    limit_value = None
+                try:
+                    offset_value = int(offset) if offset is not None else 0
+                except (TypeError, ValueError):
+                    offset_value = 0
+                _write_json(
+                    self,
+                    service.workflow_runs(
+                        statuses=statuses or None,
+                        workflow_name=workflow_name,
+                        execution_kind=execution_kind,
+                        updated_after_ms=updated_after_value,
+                        updated_before_ms=updated_before_value,
+                        has_retry=has_retry,
+                        has_wait=has_wait,
+                        replay_count_min=replay_count_min_value,
+                        limit=limit_value,
+                        offset=offset_value,
+                        cursor=cursor if isinstance(cursor, str) and cursor else None,
+                    ),
+                )
+                return
+            if parsed.path.startswith("/workflow/runs/"):
+                graph_id = parsed.path.split("/", 3)[3]
+                _write_json(self, service.workflow_run_record(graph_id))
                 return
             _write_json(self, {"error": "not found"}, status=404)
 
@@ -943,6 +1185,9 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
                 return
             if self.path == "/workflow/resume":
                 _write_json(self, service.workflow_resume(payload))
+                return
+            if self.path == "/workflow/replay":
+                _write_json(self, service.workflow_replay(payload))
                 return
             if self.path == "/goal/run":
                 _write_json(self, service.goal_run(payload))
@@ -1014,6 +1259,13 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
 
     server = ThreadingHTTPServer((host, port), Handler)
     server.service = service
+    _server_close = server.server_close
+
+    def _server_close_with_service_shutdown():
+        service.close()
+        _server_close()
+
+    server.server_close = _server_close_with_service_shutdown
     return server
 
 
@@ -1048,6 +1300,47 @@ def create_fastapi_app(service: RuntimeService):
     @app.get("/workflow/checkpoints/{graph_id}")
     def workflow_checkpoints(graph_id: str):
         return JSONResponse(service.workflow_checkpoints(graph_id))
+
+    @app.get("/workflow/dead-letters")
+    def workflow_dead_letters():
+        return JSONResponse(service.workflow_dead_letters())
+
+    @app.get("/workflow/runs")
+    def workflow_runs(
+        status: str | None = None,
+        workflow: str | None = None,
+        execution_kind: str | None = None,
+        updated_after_ms: float | None = None,
+        updated_before_ms: float | None = None,
+        has_retry: bool | None = None,
+        has_wait: bool | None = None,
+        replay_count_min: int | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+        cursor: str | None = None,
+    ):
+        statuses = None
+        if status:
+            statuses = [part.strip() for part in status.split(",") if part.strip()]
+        return JSONResponse(
+            service.workflow_runs(
+                statuses=statuses,
+                workflow_name=workflow,
+                execution_kind=execution_kind,
+                updated_after_ms=updated_after_ms,
+                updated_before_ms=updated_before_ms,
+                has_retry=has_retry,
+                has_wait=has_wait,
+                replay_count_min=replay_count_min,
+                limit=limit,
+                offset=offset,
+                cursor=cursor,
+            )
+        )
+
+    @app.get("/workflow/runs/{graph_id}")
+    def workflow_run_record(graph_id: str):
+        return JSONResponse(service.workflow_run_record(graph_id))
 
     @app.get("/sessions")
     def sessions():
@@ -1115,6 +1408,11 @@ def create_fastapi_app(service: RuntimeService):
     async def workflow_resume(request: Request):
         payload = await request.json()
         return JSONResponse(service.workflow_resume(payload))
+
+    @app.post("/workflow/replay")
+    async def workflow_replay(request: Request):
+        payload = await request.json()
+        return JSONResponse(service.workflow_replay(payload))
 
     @app.post("/goal/run")
     async def goal_run(request: Request):
@@ -1218,6 +1516,8 @@ def serve(
     allowed_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
+    workflow_store_backend: str | None = None,
+    workflow_store_path: str | None = None,
 ) -> None:
     if not _is_local_host(host) and not auth_token:
         raise ValueError("Refusing to bind to non-local host without an auth token.")
@@ -1227,6 +1527,8 @@ def serve(
         allowed_paths=allowed_paths,
         allow_input=allow_input,
         auth_token=auth_token,
+        workflow_store_backend=workflow_store_backend,
+        workflow_store_path=workflow_store_path,
     )
     if FASTAPI_AVAILABLE and UVICORN_AVAILABLE:
         app = create_fastapi_app(service)
@@ -1247,6 +1549,8 @@ def run_in_thread(
     allowed_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
+    workflow_store_backend: str | None = None,
+    workflow_store_path: str | None = None,
 ):
     if not _is_local_host(host) and not auth_token:
         raise ValueError("Refusing to bind to non-local host without an auth token.")
@@ -1258,6 +1562,8 @@ def run_in_thread(
         allowed_paths=allowed_paths,
         allow_input=allow_input,
         auth_token=auth_token,
+        workflow_store_backend=workflow_store_backend,
+        workflow_store_path=workflow_store_path,
     )
     server = start_http_server(service, host, port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

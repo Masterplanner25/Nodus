@@ -460,13 +460,25 @@ print(result["tasks"]["task_1"])
         self.assertEqual(requeued[0].data.get("task_id"), "task_1")
 
     def test_worker_death_detected_by_sweeper(self):
+        import tempfile, os
         from nodus.services.server import RuntimeService
-        service = RuntimeService()
+        # Use a temp SQLite store so the sweep stays fast — accumulated local
+        # store JSON files (670+ from test runs) add >2s per scan, causing the
+        # 500ms sweep interval to be exceeded and the test to time out.
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        try:
+            service = RuntimeService(
+                workflow_store_backend="sqlite",
+                workflow_store_path=tmp.name,
+            )
+        finally:
+            pass  # keep the file alive until after the test
         service.workers.event_bus = RuntimeEventBus()
         service.workers._worker_heartbeat_timeout_ms = 10
         worker_id = service.workers.register(["cpu"])
         dead_event = None
-        deadline = time.time() + 0.5
+        deadline = time.time() + 2.0
         while time.time() < deadline:
             dead_events = [e for e in service.workers.event_bus.events() if e.type == "worker_dead"]
             if dead_events:

@@ -9,6 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import http.client
 
 import nodus as lang
+from nodus.cli import cli as nodus_cli
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.services.server import run_in_thread
 from nodus.orchestration.workflow_lowering import find_workflow_value
@@ -132,6 +133,12 @@ print(result["checkpoints"][0]["step"])
         _vm, out, err = run_program(src)
         self.assertEqual(out, ["after_a", "a"])
         self.assertEqual(err.strip(), "")
+        _loader = ModuleLoader(project_root=None)
+        code, functions, code_locs = _loader.compile_only(src, module_name="checkpoint_recorded.nd")
+        vm = lang.VM(code, functions, code_locs=code_locs, source_path="checkpoint_recorded.nd")
+        vm.run()
+        result = vm.globals["result"]
+        self.assertNotIn("state", result["checkpoints"][0])
 
     def test_workflow_checkpoint_rollback(self):
         src = """
@@ -206,13 +213,25 @@ workflow demo {
         return 5
     }
 }
-
-let result = run_workflow(demo)
-print(result["steps"]["flaky"])
-print(result["attempts"]["task_1"])
 """
-        _vm, out, _err = run_program(src)
-        self.assertEqual(out, ["5.0", "2.0"])
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "retry_workflow.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(src)
+            _loader = ModuleLoader(project_root=None)
+            code, functions, code_locs = _loader.compile_only(src, module_name=path)
+            vm = lang.VM(code, functions, code_locs=code_locs, source_path=path)
+            with nodus_cli._project_root_context(td):
+                vm.run()
+                workflow = find_workflow_value(vm.globals, "demo")
+                first = vm.builtin_run_workflow(workflow)
+                self.assertEqual(first["status"], "retry_scheduled")
+                self.assertEqual(first["retry"]["step"], "flaky")
+                self.assertEqual(first["retry"]["attempt"], 1.0)
+                time.sleep(0.01)
+                resumed = vm.builtin_resume_workflow(first["graph_id"])
+            self.assertEqual(resumed["steps"]["flaky"], 5)
+            self.assertEqual(resumed["attempts"]["task_1"], 2.0)
 
     def test_workflow_resume(self):
         src = """
@@ -310,6 +329,106 @@ run_workflow(demo)
         self.assertIn("workflow_step_start", event_types)
         self.assertIn("workflow_step_complete", event_types)
         self.assertIn("workflow_complete", event_types)
+
+    def test_workflow_wait_returns_waiting_and_resume_continues(self):
+        src = """
+workflow demo {
+    step gate {
+        return workflow_wait("approval.granted", "req-1", {kind: "approval"})
+    }
+
+    step finish after gate {
+        return "done"
+    }
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "wait.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(src)
+            _loader = ModuleLoader(project_root=None)
+            code, functions, code_locs = _loader.compile_only(src, module_name=path)
+            vm = lang.VM(code, functions, code_locs=code_locs, source_path=path)
+            with nodus_cli._project_root_context(td):
+                vm.run()
+                workflow = find_workflow_value(vm.globals, "demo")
+                first = vm.builtin_run_workflow(workflow)
+                self.assertEqual(first["status"], "waiting")
+                self.assertEqual(first["wait"]["event_type"], "approval.granted")
+                graph_id = first["graph_id"]
+                resumed = vm.builtin_resume_workflow(graph_id)
+            self.assertEqual(resumed["steps"]["finish"], "done")
+
+    def test_workflow_resume_payload_is_available_after_wait(self):
+        src = """
+workflow demo {
+    step gate {
+        return workflow_wait("approval.granted", "req-2", {kind: "approval"})
+    }
+
+    step finish after gate {
+        let payload = workflow_resume_payload()
+        if (payload == nil) {
+            return "missing"
+        }
+        if (payload["approved"]) {
+            return payload["reviewer"]
+        }
+        return "denied"
+    }
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "resume_payload.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(src)
+            _loader = ModuleLoader(project_root=None)
+            code, functions, code_locs = _loader.compile_only(src, module_name=path)
+            vm = lang.VM(code, functions, code_locs=code_locs, source_path=path)
+            with nodus_cli._project_root_context(td):
+                vm.run()
+                workflow = find_workflow_value(vm.globals, "demo")
+                first = vm.builtin_run_workflow(workflow)
+                self.assertEqual(first["status"], "waiting")
+                graph_id = first["graph_id"]
+                resumed = vm.builtin_resume_workflow(
+                    graph_id,
+                    {"approved": True, "reviewer": "alice"},
+                )
+        self.assertEqual(resumed["steps"]["finish"], "alice")
+
+    def test_workflow_resume_api_accepts_payload_and_event_metadata(self):
+        code = """
+workflow demo {
+    step gate {
+        return workflow_wait("approval.granted", "req-api", {kind: "approval"})
+    }
+
+    step finish after gate {
+        let payload = workflow_resume_payload()
+        return payload["reviewer"]
+    }
+}
+"""
+        status, payload = self.request("POST", "/workflow/run", {"code": code, "filename": "wait_api.nd"})
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "waiting")
+        graph_id = payload["result"]["graph_id"]
+
+        status, payload = self.request(
+            "POST",
+            "/workflow/resume",
+            {
+                "graph_id": graph_id,
+                "resume_payload": {"reviewer": "api-user"},
+                "event_type": "approval.granted",
+                "correlation_key": "req-api",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["steps"]["finish"], "api-user")
 
     def test_workflow_api_endpoints(self):
         code = """

@@ -24,6 +24,7 @@ from nodus.orchestration.workflow_state import checkpoints_public
 from nodus.services.tool_runtime import call_tool
 from nodus.services.agent_runtime import call_agent
 from nodus.services.memory_runtime import delete_value, export_memory, get_value, list_keys, put_value
+from nodus_workflow.runner import get_default_workflow_runner
 
 
 def _resolve_import_state(import_state: dict | None, project_root: str | None) -> dict | None:
@@ -666,14 +667,37 @@ def resume_workflow_in_vm(
     graph_id: str,
     checkpoint: str | None = None,
     *,
+    resume_payload: dict | None = None,
+    event_type: str | None = None,
+    correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
 ):
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
-            if checkpoint is None:
+            if checkpoint is None and resume_payload is None:
                 result = vm.builtin_resume_workflow(graph_id)
-            else:
+            elif checkpoint is None:
+                result = get_default_workflow_runner().resume_workflow(
+                    vm,
+                    graph_id,
+                    None,
+                    resume_payload=resume_payload,
+                    event_type=event_type,
+                    correlation_key=correlation_key,
+                    rebuild_graph=vm._rebuild_workflow_graph,
+                )
+            elif resume_payload is None:
                 result = vm.builtin_resume_workflow(graph_id, checkpoint)
+            else:
+                result = get_default_workflow_runner().resume_workflow(
+                    vm,
+                    graph_id,
+                    checkpoint,
+                    resume_payload=resume_payload,
+                    event_type=event_type,
+                    correlation_key=correlation_key,
+                    rebuild_graph=vm._rebuild_workflow_graph,
+                )
         except Exception as err:
             return (
                 _error_result(
@@ -688,6 +712,52 @@ def resume_workflow_in_vm(
     return (
         _success_result(
             stage="resume_workflow",
+            filename=vm.source_path,
+            stdout=stdout.getvalue(),
+            stderr=stderr.getvalue(),
+            result=result,
+        ),
+        vm,
+    )
+
+
+def replay_workflow_in_vm(
+    vm: VM,
+    graph_id: str,
+    checkpoint: str | None = None,
+    *,
+    resume_payload: dict | None = None,
+    event_type: str | None = None,
+    correlation_key: str | None = None,
+    rearm_only: bool = False,
+    max_stdout_chars: int = MAX_STDOUT_CHARS,
+):
+    with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
+        try:
+            result = get_default_workflow_runner().replay_workflow(
+                vm,
+                graph_id,
+                checkpoint,
+                resume_payload=resume_payload,
+                event_type=event_type,
+                correlation_key=correlation_key,
+                rearm_only=rearm_only,
+                rebuild_graph=vm._rebuild_workflow_graph,
+            )
+        except Exception as err:
+            return (
+                _error_result(
+                    stage="replay_workflow",
+                    filename=vm.source_path,
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    err=err,
+                ),
+                vm,
+            )
+    return (
+        _success_result(
+            stage="replay_workflow",
             filename=vm.source_path,
             stdout=stdout.getvalue(),
             stderr=stderr.getvalue(),
@@ -1083,10 +1153,44 @@ def resume_workflow(
     graph_id: str,
     checkpoint: str | None = None,
     *,
+    resume_payload: dict | None = None,
+    event_type: str | None = None,
+    correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
 ):
     vm = get_registered_vm(graph_id) or VM([], {}, code_locs=[], source_path=None)
-    return resume_workflow_in_vm(vm, graph_id, checkpoint, max_stdout_chars=max_stdout_chars)
+    return resume_workflow_in_vm(
+        vm,
+        graph_id,
+        checkpoint,
+        resume_payload=resume_payload,
+        event_type=event_type,
+        correlation_key=correlation_key,
+        max_stdout_chars=max_stdout_chars,
+    )
+
+
+def replay_workflow(
+    graph_id: str,
+    checkpoint: str | None = None,
+    *,
+    resume_payload: dict | None = None,
+    event_type: str | None = None,
+    correlation_key: str | None = None,
+    rearm_only: bool = False,
+    max_stdout_chars: int = MAX_STDOUT_CHARS,
+):
+    vm = get_registered_vm(graph_id) or VM([], {}, code_locs=[], source_path=None)
+    return replay_workflow_in_vm(
+        vm,
+        graph_id,
+        checkpoint,
+        resume_payload=resume_payload,
+        event_type=event_type,
+        correlation_key=correlation_key,
+        rearm_only=rearm_only,
+        max_stdout_chars=max_stdout_chars,
+    )
 
 
 def resume_goal(
@@ -1104,8 +1208,6 @@ def workflow_checkpoints(graph_id: str) -> dict:
     if state is None:
         return {"ok": False, "error": "Graph state not found", "checkpoints": []}
     checkpoints = state.get("checkpoints")
-    if not isinstance(checkpoints, list) and isinstance(state.get("metadata"), dict):
-        checkpoints = state["metadata"].get("checkpoints")
     return {"ok": True, "checkpoints": checkpoints_public(checkpoints or [])}
 
 

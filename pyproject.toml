@@ -44,6 +44,9 @@ server = [
   "fastapi>=0.136.0,<1",
   "uvicorn>=0.30.0,<1",
 ]
+schema = [
+  "pydantic>=2,<3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

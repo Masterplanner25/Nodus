@@ -15,6 +15,8 @@ Nodus is a bytecode-compiled scripting language and runtime created by **Shawn K
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
+Incubator package scaffolds for proposed Nodus ecosystem components live under `packages/`.
+
 ## Install
 
 Requires **Python 3.10+**.
@@ -93,6 +95,7 @@ print(math.abs(-4))
 ## Documentation
 
 - [Language Specification](docs/language/LANGUAGE_SPEC.md) — full syntax, types, control flow, imports, coroutines
+- [Ecosystem Specs](docs/ecosystem/README.md) - implementation specs for proposed Nodus libraries and frameworks
 - [Architecture](docs/runtime/ARCHITECTURE.md) — runtime pipeline and module system
 - [Changelog](CHANGELOG.md) — version history
 - [Contributing](CONTRIBUTING.md) — development setup, code style, and contribution process

@@ -34,6 +34,8 @@ class TaskNode:
     max_retries: int = 0
     retry_delay_ms: float = 0.0
     last_error: str | None = None
+    next_retry_at: float | None = None
+    retry_classification: str | None = None
     cache: bool = False
     cache_key: str | None = None
 
@@ -146,6 +148,7 @@ def _persist_graph_state(
     task_values: dict[str, object],
     workflow_state: object | None,
     checkpoints: list[dict] | None,
+    engine_checkpoints: list[dict] | None,
     vm,
 ) -> dict:
     metadata = graph.metadata
@@ -162,6 +165,7 @@ def _persist_graph_state(
         "results": {tid: results.get(tid) for tid in results},
         "workflow_state": workflow_state,
         "checkpoints": checkpoints,
+        "engine_checkpoints": engine_checkpoints,
         "updated_at": runtime_time_ms(),
     }
     if isinstance(graph.metadata, dict):
@@ -187,6 +191,14 @@ def _persist_graph_state(
             task_state["finished_at"] = task.finished_at
         if task.timeout_ms is not None:
             task_state["timeout_ms"] = task.timeout_ms
+        if task.max_retries:
+            task_state["max_retries"] = float(task.max_retries)
+        if task.retry_delay_ms:
+            task_state["retry_delay_ms"] = float(task.retry_delay_ms)
+        if task.next_retry_at is not None:
+            task_state["next_retry_at"] = task.next_retry_at
+        if task.retry_classification is not None:
+            task_state["retry_classification"] = task.retry_classification
         if task.cache:
             task_state["cache"] = True
         if task.cache_key is not None:
@@ -204,7 +216,7 @@ def _load_graph_state(graph_id: str) -> dict | None:
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return _normalize_workflow_snapshot(json.load(f))
 
 
 def load_checkpoint(graph_id: str) -> dict | None:
@@ -212,7 +224,64 @@ def load_checkpoint(graph_id: str) -> dict | None:
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return _normalize_workflow_snapshot(json.load(f))
+
+
+def _normalize_checkpoint_lists(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        return payload
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        payload["metadata"] = metadata
+    raw_top_level_checkpoints = payload.get("checkpoints")
+    public_checkpoints = raw_top_level_checkpoints
+    engine_checkpoints = payload.get("engine_checkpoints")
+    legacy_meta_checkpoints = metadata.get("checkpoints")
+    legacy_meta_public = metadata.get("workflow_checkpoints")
+    legacy_meta_engine = metadata.get("engine_checkpoints")
+
+    if not isinstance(public_checkpoints, list):
+        if isinstance(legacy_meta_public, list):
+            public_checkpoints = checkpoints_public(legacy_meta_public)
+        elif isinstance(legacy_meta_checkpoints, list):
+            public_checkpoints = checkpoints_public(legacy_meta_checkpoints)
+        else:
+            public_checkpoints = []
+        payload["checkpoints"] = public_checkpoints
+    else:
+        public_checkpoints = checkpoints_public(public_checkpoints)
+        payload["checkpoints"] = public_checkpoints
+
+    if not isinstance(engine_checkpoints, list):
+        if isinstance(legacy_meta_engine, list):
+            engine_checkpoints = copy.deepcopy(legacy_meta_engine)
+        elif isinstance(legacy_meta_checkpoints, list):
+            engine_checkpoints = copy.deepcopy(legacy_meta_checkpoints)
+        elif isinstance(raw_top_level_checkpoints, list) and any("state" in entry for entry in raw_top_level_checkpoints if isinstance(entry, dict)):
+            engine_checkpoints = copy.deepcopy(raw_top_level_checkpoints)
+        else:
+            engine_checkpoints = []
+        payload["engine_checkpoints"] = engine_checkpoints
+
+    metadata["workflow_checkpoints"] = checkpoints_public(public_checkpoints)
+    metadata["engine_checkpoints"] = copy.deepcopy(engine_checkpoints)
+    metadata["checkpoints"] = metadata["workflow_checkpoints"]
+    return payload
+
+
+def _normalize_workflow_snapshot(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return payload
+    return _normalize_checkpoint_lists(payload)
+
+
+def _load_raw_json(path: str) -> dict | None:
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return payload if isinstance(payload, dict) else None
 
 
 def delete_checkpoint(graph_id: str) -> None:
@@ -233,6 +302,42 @@ def delete_graph_state(graph_id: str) -> None:
 
 def load_graph_state(graph_id: str) -> dict | None:
     return _load_graph_state(graph_id)
+
+
+def migrate_graph_snapshot(graph_id: str) -> dict:
+    graph_path = _graph_state_path(graph_id)
+    checkpoint_path = _checkpoint_path(graph_id)
+    graph_state_updated = False
+    checkpoint_updated = False
+
+    raw_graph_state = _load_raw_json(graph_path)
+    if isinstance(raw_graph_state, dict):
+        normalized_graph_state = _normalize_workflow_snapshot(copy.deepcopy(raw_graph_state))
+        if normalized_graph_state != raw_graph_state:
+            with _STATE_LOCK:
+                _atomic_write_json(graph_path, normalized_graph_state)
+            graph_state_updated = True
+
+    raw_checkpoint = _load_raw_json(checkpoint_path)
+    if isinstance(raw_checkpoint, dict):
+        normalized_checkpoint = _normalize_workflow_snapshot(copy.deepcopy(raw_checkpoint))
+        if normalized_checkpoint != raw_checkpoint:
+            with _STATE_LOCK:
+                _atomic_write_json(checkpoint_path, normalized_checkpoint)
+            checkpoint_updated = True
+
+    return {
+        "graph_id": graph_id,
+        "graph_state_exists": isinstance(raw_graph_state, dict),
+        "checkpoint_exists": isinstance(raw_checkpoint, dict),
+        "graph_state_updated": graph_state_updated,
+        "checkpoint_updated": checkpoint_updated,
+        "updated": graph_state_updated or checkpoint_updated,
+    }
+
+
+def migrate_all_graph_snapshots() -> list[dict]:
+    return [migrate_graph_snapshot(graph_id) for graph_id in list_graph_ids()]
 
 
 def latest_graph_state() -> tuple[str | None, dict | None]:
@@ -300,6 +405,7 @@ def persist_checkpoint_snapshot(graph_id: str, snapshot: dict, label: str | None
         "workflow_state": snapshot.get("workflow_state"),
         "metadata": snapshot.get("metadata"),
         "checkpoints": snapshot.get("checkpoints"),
+        "engine_checkpoints": snapshot.get("engine_checkpoints"),
     }
     with _STATE_LOCK:
         _atomic_write_json(_checkpoint_path(graph_id), checkpoint)
@@ -316,12 +422,37 @@ def _merge_resume_state(state: dict | None, checkpoint: dict | None) -> dict | N
         if isinstance(checkpoint_tasks, dict):
             merged_tasks.update(checkpoint_tasks)
         merged["tasks"] = merged_tasks
-        for key in ("pending", "scheduler_queue", "workflow_state", "metadata", "results", "task_outputs"):
+        for key in ("pending", "scheduler_queue", "workflow_state", "metadata", "results", "task_outputs", "engine_checkpoints"):
             if key in checkpoint:
                 merged[key] = checkpoint[key]
         if "label" in checkpoint:
             merged["checkpoint_label"] = checkpoint["label"]
     return merged
+
+
+def _workflow_wait_info(value) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    if value.get("__workflow_wait__") is not True:
+        return None
+    event_type = value.get("event_type")
+    if not isinstance(event_type, str) or not event_type:
+        return None
+    correlation_key = value.get("correlation_key")
+    if not isinstance(correlation_key, str):
+        correlation_key = None
+    payload = value.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+    deadline_ms = value.get("deadline_ms")
+    if not isinstance(deadline_ms, (int, float)):
+        deadline_ms = None
+    return {
+        "event_type": event_type,
+        "correlation_key": correlation_key,
+        "payload": payload,
+        "deadline_ms": float(deadline_ms) if deadline_ms is not None else None,
+    }
 
 
 def _detect_cycle_task_ids(tasks: list, results: dict) -> list[str] | None:
@@ -386,6 +517,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     task_values: dict[str, object] = {}
     running: dict[int, TaskNode] = {}
     failed: dict | None = None
+    waiting: dict | None = None
+    retry_scheduled: dict | None = None
     cache_hits: list[str] = []
     if not hasattr(vm, "task_cache"):
         vm.task_cache = {}
@@ -403,9 +536,16 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     goal_name = graph.metadata.get("goal_name") if isinstance(graph.metadata, dict) else None
     workflow_state = None
     checkpoints = None
+    engine_checkpoints = None
     if workflow_name is not None and isinstance(graph.metadata, dict):
         workflow_state = graph.metadata.get("workflow_state")
-        checkpoints = graph.metadata.get("checkpoints")
+        checkpoints = graph.metadata.get("workflow_checkpoints")
+        legacy_checkpoints = graph.metadata.get("checkpoints")
+        if checkpoints is None and isinstance(legacy_checkpoints, list):
+            checkpoints = checkpoints_public(legacy_checkpoints)
+        engine_checkpoints = graph.metadata.get("engine_checkpoints")
+        if engine_checkpoints is None and isinstance(legacy_checkpoints, list):
+            engine_checkpoints = copy.deepcopy(legacy_checkpoints)
         if resume_state:
             resume_meta = resume_state.get("metadata") if isinstance(resume_state.get("metadata"), dict) else {}
             if "workflow_state" in resume_state:
@@ -414,13 +554,27 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 workflow_state = resume_meta.get("workflow_state")
             if "checkpoints" in resume_state:
                 checkpoints = resume_state.get("checkpoints")
+            elif "workflow_checkpoints" in resume_meta:
+                checkpoints = resume_meta.get("workflow_checkpoints")
             elif "checkpoints" in resume_meta:
-                checkpoints = resume_meta.get("checkpoints")
+                checkpoints = checkpoints_public(resume_meta.get("checkpoints") or [])
+            if "engine_checkpoints" in resume_state:
+                engine_checkpoints = resume_state.get("engine_checkpoints")
+            elif "engine_checkpoints" in resume_meta:
+                engine_checkpoints = resume_meta.get("engine_checkpoints")
+            elif engine_checkpoints is None and "checkpoints" in resume_state:
+                engine_checkpoints = copy.deepcopy(resume_state.get("checkpoints") or [])
+            elif engine_checkpoints is None and "checkpoints" in resume_meta:
+                engine_checkpoints = copy.deepcopy(resume_meta.get("checkpoints") or [])
         if workflow_state is None:
             workflow_state = {}
         if checkpoints is None:
             checkpoints = []
+        if engine_checkpoints is None:
+            engine_checkpoints = []
         graph.metadata["workflow_state"] = workflow_state
+        graph.metadata["workflow_checkpoints"] = checkpoints
+        graph.metadata["engine_checkpoints"] = engine_checkpoints
         graph.metadata["checkpoints"] = checkpoints
     if resume_state:
         stored_pending = resume_state.get("pending")
@@ -496,6 +650,52 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             payload["goal"] = goal_name
         return payload
 
+    def waiting_result_payload(wait_info: dict, task: TaskNode) -> dict:
+        payload = {
+            "status": "waiting",
+            "wait": {
+                "event_type": wait_info.get("event_type"),
+                "correlation_key": wait_info.get("correlation_key"),
+                "payload": wait_info.get("payload") or {},
+                "deadline_ms": wait_info.get("deadline_ms"),
+                "step": task.step_name,
+                "task_id": task.task_id,
+            },
+            "tasks": task_values,
+            "steps": step_results(),
+            "timings": timings,
+            "attempts": attempts,
+            "failed": [],
+            "cache_hits": cache_hits,
+            "graph_id": graph.graph_id,
+        }
+        payload.update(workflow_result_payload())
+        return payload
+
+    def retry_result_payload(task: TaskNode, retry_info: dict) -> dict:
+        payload = {
+            "status": "retry_scheduled",
+            "retry": {
+                "task_id": task.task_id,
+                "step": task.step_name,
+                "attempt": float(task.attempts),
+                "max_retries": float(task.max_retries),
+                "delay_ms": float(task.retry_delay_ms),
+                "next_attempt_at": retry_info.get("next_attempt_at"),
+                "classification": retry_info.get("classification"),
+                "last_error": retry_info.get("last_error"),
+            },
+            "tasks": task_values,
+            "steps": step_results(),
+            "timings": timings,
+            "attempts": attempts,
+            "failed": [],
+            "cache_hits": cache_hits,
+            "graph_id": graph.graph_id,
+        }
+        payload.update(workflow_result_payload())
+        return payload
+
     def failed_id(task: TaskNode) -> str:
         if execution_kind == "goal" and task.step_name is not None:
             return task.step_name
@@ -553,7 +753,16 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if isinstance(workflow_state, dict):
             entry["state"] = clone_state(workflow_state)
         if isinstance(checkpoints, list):
-            checkpoints.append(entry)
+            checkpoints.append(
+                {
+                    "label": entry["label"],
+                    "step": entry["step"],
+                    "task_id": entry["task_id"],
+                    "timestamp": entry["timestamp"],
+                }
+            )
+        if isinstance(engine_checkpoints, list):
+            engine_checkpoints.append(entry)
         snapshot = _persist_graph_state(
             graph,
             tasks,
@@ -564,6 +773,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             task_values,
             workflow_state,
             checkpoints,
+            engine_checkpoints,
             vm,
         )
         persist_checkpoint_snapshot(graph.graph_id, snapshot, label)
@@ -572,6 +782,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     def _workflow_context(task: TaskNode) -> dict | None:
         if workflow_name is None:
             return None
+        resume_payload = None
+        if isinstance(graph.metadata, dict):
+            candidate = graph.metadata.get("resume_payload")
+            if isinstance(candidate, dict):
+                resume_payload = candidate
         context = {
             "graph": graph,
             "graph_id": graph.graph_id,
@@ -581,15 +796,57 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "state": workflow_state,
             "checkpoints": checkpoints,
             "checkpoint": lambda label: _record_checkpoint(task, label),
+            "resume_payload": resume_payload,
         }
         if execution_kind == "goal" and isinstance(goal_name, str):
             context["goal"] = goal_name
         return context
 
+    def _pause_for_wait(task: TaskNode, wait_info: dict) -> bool:
+        nonlocal waiting
+        task.result = None
+        task.status = "done"
+        task.finished_at = runtime_time_ms()
+        results[task.task_id] = None
+        task_values[task.task_id] = None
+        timings[task.task_id] = {
+            "started_at": task.started_at,
+            "finished_at": task.finished_at,
+        }
+        if isinstance(graph.metadata, dict):
+            graph.metadata["wait"] = dict(wait_info)
+        snapshot = _persist_graph_state(
+            graph,
+            tasks,
+            attempts,
+            results,
+            "waiting",
+            pending_queue,
+            task_values,
+            workflow_state,
+            checkpoints,
+            engine_checkpoints,
+            vm,
+        )
+        snapshot["wait"] = dict(wait_info)
+        waiting = waiting_result_payload(wait_info, task)
+        vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
+        workflow_data = workflow_event_payload(task)
+        if workflow_data is not None:
+            wait_data = dict(workflow_data)
+            wait_data.update(wait_info)
+            vm.event_bus.emit_event("workflow_waiting", name=task.step_name, data=wait_data)
+        goal_data = goal_event_payload(task)
+        if goal_data is not None:
+            wait_data = dict(goal_data)
+            wait_data.update(wait_info)
+            vm.event_bus.emit_event("goal_waiting", name=task.step_name, data=wait_data)
+        return True
+
     def spawn_task(task: TaskNode, delay_ms: float = 0.0) -> None:
-        nonlocal failed, active_workers, worker_mode
+        nonlocal failed, waiting, active_workers, worker_mode
         with worker_lock:
-            if failed is not None:
+            if failed is not None or waiting is not None:
                 return
             _remove_task_from_pending(task.task_id)
             task.status = "running"
@@ -631,6 +888,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                         task_values,
                         workflow_state,
                         checkpoints,
+                        engine_checkpoints,
                         vm,
                     )
                     vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
@@ -667,6 +925,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                         if isinstance(result, Exception):
                             _fail_task(task, result)
                         else:
+                            wait_info = _workflow_wait_info(result)
+                            if wait_info is not None:
+                                _pause_for_wait(task, wait_info)
+                                return
                             task.result = result
                             task.status = "done"
                             task.finished_at = runtime_time_ms()
@@ -690,6 +952,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                                 task_values,
                                 workflow_state,
                                 checkpoints,
+                                engine_checkpoints,
                                 vm,
                             )
                             vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
@@ -721,9 +984,13 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             vm.scheduler.spawn(coroutine)
 
     def on_complete(coroutine: Coroutine):
+        nonlocal waiting
         task = running.pop(id(coroutine), None)
         if task is None:
             return False
+        wait_info = _workflow_wait_info(coroutine.last_result)
+        if wait_info is not None:
+            return _pause_for_wait(task, wait_info)
         task.result = coroutine.last_result
         task.status = "done"
         task.finished_at = runtime_time_ms()
@@ -747,6 +1014,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             task_values,
             workflow_state,
             checkpoints,
+            engine_checkpoints,
             vm,
         )
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
@@ -762,7 +1030,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return False
 
     def _fail_task(task: TaskNode, err: Exception):
-        nonlocal failed
+        nonlocal failed, retry_scheduled
         task.last_error = str(err)
         worker_requirement = getattr(err, "worker_requirement", None)
         worker_timeout_ms = getattr(err, "worker_timeout_ms", None)
@@ -789,6 +1057,37 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             vm.event_bus.emit_event("goal_step_fail", name=task.step_name, data=fail_data)
         if task.attempts <= task.max_retries:
             vm.event_bus.emit_event("task_retry", name=task.task_id, data={"attempt": float(task.attempts + 1)})
+            if execution_kind == "workflow":
+                task.status = "retry_scheduled"
+                task.finished_at = runtime_time_ms()
+                task.retry_classification = "retryable"
+                task.next_retry_at = runtime_time_ms() + float(task.retry_delay_ms)
+                _mark_task_pending(task.task_id)
+                retry_info = {
+                    "next_attempt_at": task.next_retry_at,
+                    "classification": task.retry_classification,
+                    "last_error": str(err),
+                }
+                retry_scheduled = retry_result_payload(task, retry_info)
+                _persist_graph_state(
+                    graph,
+                    tasks,
+                    attempts,
+                    results,
+                    "retry_scheduled",
+                    pending_queue,
+                    task_values,
+                    workflow_state,
+                    checkpoints,
+                    engine_checkpoints,
+                    vm,
+                )
+                vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
+                if workflow_data is not None:
+                    retry_data = dict(workflow_data)
+                    retry_data.update(retry_info)
+                    vm.event_bus.emit_event("workflow_retry_scheduled", name=task.step_name, data=retry_data)
+                return True
             task.status = "retrying"
             _mark_task_pending(task.task_id)
             _persist_graph_state(
@@ -801,6 +1100,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 task_values,
                 workflow_state,
                 checkpoints,
+                engine_checkpoints,
                 vm,
             )
             vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
@@ -809,6 +1109,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task.status = "failed"
         task.finished_at = runtime_time_ms()
         task.error = str(err)
+        task.retry_classification = "exhausted" if task.max_retries > 0 else "non_retryable"
         failed = {
             "tasks": task_values,
             "steps": step_results(),
@@ -818,6 +1119,15 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "attempts": attempts,
             "cache_hits": cache_hits,
             "graph_id": graph.graph_id,
+            "retry": {
+                "task_id": task.task_id,
+                "step": task.step_name,
+                "attempt": float(task.attempts),
+                "max_retries": float(task.max_retries),
+                "delay_ms": float(task.retry_delay_ms),
+                "classification": task.retry_classification,
+                "last_error": str(err),
+            },
         }
         _persist_graph_state(
             graph,
@@ -829,6 +1139,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             task_values,
             workflow_state,
             checkpoints,
+            engine_checkpoints,
             vm,
         )
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
@@ -857,6 +1168,12 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 continue
             task.attempts = int(saved.get("attempts", 0))
             attempts[task.task_id] = float(task.attempts)
+            next_retry_at = saved.get("next_retry_at")
+            if isinstance(next_retry_at, (int, float)):
+                task.next_retry_at = float(next_retry_at)
+            retry_classification = saved.get("retry_classification")
+            if isinstance(retry_classification, str):
+                task.retry_classification = retry_classification
             if saved.get("state") in {"completed", "done"}:
                 results[task.task_id] = saved.get("result")
                 task_values[task.task_id] = saved.get("result")
@@ -888,9 +1205,15 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         failed.update(workflow_result_payload())
         return failed
 
+    if waiting is not None:
+        return waiting
+
+    if retry_scheduled is not None:
+        return retry_scheduled
+
     if worker_mode:
         with worker_cond:
-            while failed is None and (pending or active_workers > 0):
+            while failed is None and waiting is None and (pending or active_workers > 0):
                 worker_cond.wait(timeout=0.05)
     else:
         vm.scheduler.run_loop(on_complete=on_complete, on_error=on_error)
@@ -898,6 +1221,12 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     if failed is not None:
         failed.update(workflow_result_payload())
         return failed
+
+    if waiting is not None:
+        return waiting
+
+    if retry_scheduled is not None:
+        return retry_scheduled
 
     if pending:
         cycle_ids = _detect_cycle_task_ids(tasks, results)
@@ -931,6 +1260,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task_values,
         workflow_state,
         checkpoints,
+        engine_checkpoints,
         vm,
     )
     vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})

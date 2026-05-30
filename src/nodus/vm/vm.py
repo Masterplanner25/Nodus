@@ -25,6 +25,7 @@ from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
+from nodus_workflow.runner import get_default_workflow_runner
 
 
 _DEFERRED_NONE = object()  # sentinel: no deferred return pending
@@ -280,11 +281,13 @@ class VM:
             "resume_graph": BuiltinInfo("resume_graph", 1, self.builtin_resume_graph),
             "run_workflow": BuiltinInfo("run_workflow", 1, self.builtin_run_workflow),
             "plan_workflow": BuiltinInfo("plan_workflow", 1, self.builtin_plan_workflow),
-            "resume_workflow": BuiltinInfo("resume_workflow", (1, 2), self.builtin_resume_workflow),
+            "resume_workflow": BuiltinInfo("resume_workflow", (1, 2, 3), self.builtin_resume_workflow),
             "run_goal": BuiltinInfo("run_goal", 1, self.builtin_run_goal),
             "plan_goal": BuiltinInfo("plan_goal", 1, self.builtin_plan_goal),
             "resume_goal": BuiltinInfo("resume_goal", (1, 2), self.builtin_resume_goal),
             "workflow_state": BuiltinInfo("workflow_state", 0, self.builtin_workflow_state),
+            "workflow_resume_payload": BuiltinInfo("workflow_resume_payload", 0, self.builtin_workflow_resume_payload),
+            "workflow_wait": BuiltinInfo("workflow_wait", (1, 2, 3, 4), self.builtin_workflow_wait),
             "workflow_checkpoints": BuiltinInfo("workflow_checkpoints", 1, self.builtin_workflow_checkpoints),
             "current_workflow_id": BuiltinInfo("current_workflow_id", 0, self.builtin_current_workflow_id),
             "emit": BuiltinInfo("emit", (1, 2), self.builtin_emit),
@@ -1059,7 +1062,8 @@ class VM:
     def builtin_run_workflow(self, workflow):
         if not is_workflow_value(workflow):
             self.runtime_error("type", "run_workflow(workflow) expects a workflow")
-        return run_task_graph(self, workflow_to_graph(self, workflow, init_state=True))
+        graph = workflow_to_graph(self, workflow, init_state=True)
+        return get_default_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_workflow(self, workflow):
         if not is_workflow_value(workflow):
@@ -1073,37 +1077,28 @@ class VM:
         )
         return step_plan
 
-    def builtin_resume_workflow(self, graph_id, checkpoint=None):
+    def builtin_resume_workflow(self, graph_id, checkpoint=None, resume_payload=None):
         if not isinstance(graph_id, str):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint) expects graph_id as string")
-        if checkpoint is None:
-            return self.builtin_resume_graph(graph_id)
-        if not isinstance(checkpoint, str):
-            self.runtime_error("type", "resume_workflow(graph_id, checkpoint) expects checkpoint as string")
-        state = load_graph_state(graph_id)
-        if state is None:
-            return {"ok": False, "error": "Graph state not found"}
-        graph = get_registered_graph(graph_id)
-        if graph is None:
-            graph = self._rebuild_workflow_graph(graph_id, state)
-        if graph is None:
-            return {"ok": False, "error": "Unknown graph"}
-        checkpoints = state.get("checkpoints")
-        if not isinstance(checkpoints, list) and isinstance(state.get("metadata"), dict):
-            checkpoints = state["metadata"].get("checkpoints")
-        entry = None
-        if isinstance(checkpoints, list):
-            for item in reversed(checkpoints):
-                if isinstance(item, dict) and item.get("label") == checkpoint:
-                    entry = item
-                    break
-        if entry is None:
-            return {"ok": False, "error": f"Checkpoint not found: {checkpoint}"}
-        if "state" in entry:
-            state["workflow_state"] = entry.get("state")
-        self._rollback_to_checkpoint(graph, state, entry)
-        self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id, "checkpoint": checkpoint})
-        return run_task_graph(self, graph, resume_state=state)
+        if isinstance(checkpoint, Record) and resume_payload is None:
+            resume_payload = dict(checkpoint.fields)
+            checkpoint = None
+        elif isinstance(checkpoint, dict) and resume_payload is None:
+            resume_payload = dict(checkpoint)
+            checkpoint = None
+        if isinstance(resume_payload, Record):
+            resume_payload = dict(resume_payload.fields)
+        if checkpoint is not None and not isinstance(checkpoint, str):
+            self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects checkpoint as string or nil")
+        if resume_payload is not None and not isinstance(resume_payload, dict):
+            self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects payload as map or nil")
+        return get_default_workflow_runner().resume_workflow(
+            self,
+            graph_id,
+            checkpoint,
+            resume_payload=resume_payload,
+            rebuild_graph=self._rebuild_workflow_graph,
+        )
 
     def builtin_run_goal(self, goal):
         if not is_goal_value(goal):
@@ -1245,6 +1240,33 @@ class VM:
             return None
         return ctx.get("state")
 
+    def builtin_workflow_resume_payload(self):
+        ctx = self.current_workflow_context()
+        if ctx is None:
+            return None
+        return ctx.get("resume_payload")
+
+    def builtin_workflow_wait(self, event_type, correlation_key=None, payload=None, deadline_ms=None):
+        if not isinstance(event_type, str) or not event_type:
+            self.runtime_error("type", "workflow_wait(event_type, ...) expects event_type as non-empty string")
+        if correlation_key is not None and not isinstance(correlation_key, str):
+            self.runtime_error("type", "workflow_wait(..., correlation_key, ...) expects correlation_key as string or nil")
+        if isinstance(payload, Record):
+            payload = dict(payload.fields)
+        if payload is not None and not isinstance(payload, dict):
+            self.runtime_error("type", "workflow_wait(..., payload, ...) expects payload as map or nil")
+        if deadline_ms is not None:
+            if isinstance(deadline_ms, bool) or not isinstance(deadline_ms, (int, float)):
+                self.runtime_error("type", "workflow_wait(..., deadline_ms) expects deadline_ms as number or nil")
+            deadline_ms = float(deadline_ms)
+        return {
+            "__workflow_wait__": True,
+            "event_type": event_type,
+            "correlation_key": correlation_key,
+            "payload": payload or {},
+            "deadline_ms": deadline_ms,
+        }
+
     def builtin_current_workflow_id(self):
         ctx = self.current_workflow_context()
         if ctx is None:
@@ -1303,10 +1325,7 @@ class VM:
             state = load_graph_state(graph_id)
             if state is None:
                 return []
-            if isinstance(state.get("checkpoints"), list):
-                checkpoints = state.get("checkpoints")
-            elif isinstance(state.get("metadata"), dict):
-                checkpoints = state["metadata"].get("checkpoints")
+            checkpoints = state.get("checkpoints")
         return checkpoints_public(checkpoints or [])
 
     def builtin_workflow_checkpoint(self, label):

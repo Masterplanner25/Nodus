@@ -52,6 +52,8 @@ BUILTIN_NAMES = {
     "plan_goal",
     "resume_goal",
     "workflow_state",
+    "workflow_resume_payload",
+    "workflow_wait",
     "workflow_checkpoints",
     "current_workflow_id",
     "emit",

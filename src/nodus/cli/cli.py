@@ -37,6 +37,7 @@ from nodus.tooling.runner import (
     plan_graph_code,
     plan_goal_code,
     plan_workflow_code,
+    replay_workflow,
     resume_goal,
     resume_workflow,
     run_goal_code,
@@ -49,6 +50,7 @@ from nodus.services.server import serve, snapshot_session, restore_snapshot, lis
 from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
+from nodus_workflow.runner import get_default_workflow_runner
 
 
 def _read_file(path: str) -> str:
@@ -92,6 +94,16 @@ def _resolve_allowed_paths(value: object | None) -> list[str] | None:
 
 def _server_auth_token_from_env() -> str | None:
     value = os.environ.get("NODUS_SERVER_TOKEN")
+    return value if value else None
+
+
+def _workflow_store_backend_from_env() -> str | None:
+    value = os.environ.get("NODUS_WORKFLOW_STORE_BACKEND")
+    return value if value else None
+
+
+def _workflow_store_path_from_env() -> str | None:
+    value = os.environ.get("NODUS_WORKFLOW_STORE_PATH")
     return value if value else None
 
 
@@ -166,6 +178,22 @@ def _parse_int(value: str, flag: str) -> int:
         return int(value)
     except ValueError as exc:
         raise ValueError(f"Invalid integer for {flag}: {value}") from exc
+
+
+def _parse_float(value: str, flag: str) -> float:
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid number for {flag}: {value}") from exc
+
+
+def _parse_bool_flag(value: str, flag: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean for {flag}: {value}")
 
 
 def _render_help() -> str:
@@ -762,6 +790,84 @@ def _workflow_resume_cli(graph_id: str, checkpoint: str | None, project_root: st
         return _run_resume_workflow(graph_id, checkpoint)
 
 
+def _workflow_dead_letters(project_root: str | None) -> int:
+    with _project_root_context(project_root):
+        runs = [record.to_dict() for record in get_default_workflow_runner().list_dead_lettered_runs()]
+    _json_print(runs)
+    return 0
+
+
+def _workflow_runs(
+    project_root: str | None,
+    statuses: list[str] | None = None,
+    *,
+    workflow_name: str | None = None,
+    execution_kind: str | None = None,
+    updated_after_ms: float | None = None,
+    updated_before_ms: float | None = None,
+    has_retry: bool | None = None,
+    has_wait: bool | None = None,
+    replay_count_min: int | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    cursor: str | None = None,
+) -> int:
+    with _project_root_context(project_root):
+        normalized = {status.strip() for status in (statuses or []) if isinstance(status, str) and status.strip()}
+        runner = get_default_workflow_runner()
+        payload = runner.run_inventory(
+            statuses=normalized or None,
+            workflow_name=workflow_name,
+            execution_kind=execution_kind,
+            updated_after_ms=updated_after_ms,
+            updated_before_ms=updated_before_ms,
+            has_retry=has_retry,
+            has_wait=has_wait,
+            replay_count_min=replay_count_min,
+            limit=limit,
+            offset=offset,
+            cursor=cursor,
+        )
+    _json_print(payload)
+    return 0
+
+
+def _workflow_inspect(graph_id: str, project_root: str | None) -> int:
+    with _project_root_context(project_root):
+        record = get_default_workflow_runner().get_run(graph_id)
+    if record is None:
+        _print_stderr(f"Workflow run not found: {graph_id}")
+        return 1
+    _json_print(record.to_dict())
+    return 0
+
+
+def _workflow_replay_cli(
+    graph_id: str,
+    checkpoint: str | None,
+    project_root: str | None,
+    *,
+    rearm_only: bool = False,
+) -> int:
+    with _project_root_context(project_root):
+        result, _vm = replay_workflow(graph_id, checkpoint, rearm_only=rearm_only)
+    if not result.get("ok", False):
+        _print_error(result)
+        return 1
+    _json_print(result.get("result"))
+    return 0
+
+
+def _workflow_migrate_state(project_root: str | None, graph_id: str | None = None) -> int:
+    with _project_root_context(project_root):
+        if graph_id:
+            payload = _task_graph.migrate_graph_snapshot(graph_id)
+        else:
+            payload = _task_graph.migrate_all_graph_snapshots()
+    _json_print(payload)
+    return 0
+
+
 def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, force: bool) -> int:
     now_ms = int(time.time() * 1000)
     threshold = retention_seconds if retention_seconds is not None else _default_retention_seconds()
@@ -822,6 +928,8 @@ def _run_server(
     allowed_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
+    workflow_store_backend: str | None = None,
+    workflow_store_path: str | None = None,
 ) -> int:
     try:
         serve(
@@ -832,6 +940,8 @@ def _run_server(
             allowed_paths=allowed_paths,
             allow_input=allow_input,
             auth_token=auth_token,
+            workflow_store_backend=workflow_store_backend,
+            workflow_store_path=workflow_store_path,
         )
     except ValueError as err:
         _print_stderr(str(err))
@@ -1466,7 +1576,15 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_graph_file(positional[0], project_root=project_root)
 
     if command == "serve":
-        flags_with_values = {"--host", "--port", "--worker-sweep-interval-ms", "--allow-paths", "--auth-token"}
+        flags_with_values = {
+            "--host",
+            "--port",
+            "--worker-sweep-interval-ms",
+            "--allow-paths",
+            "--auth-token",
+            "--workflow-store-backend",
+            "--workflow-store-path",
+        }
         flags_no_values = {"--trace", "--allow-input"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         host, port = _resolve_server_host_port(flags)
@@ -1482,6 +1600,16 @@ def main(argv: list[str] | None = None) -> int:
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
         auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
         allow_input = "--allow-input" in flags or _server_allow_input_from_env()
+        workflow_store_backend = (
+            str(flags["--workflow-store-backend"])
+            if "--workflow-store-backend" in flags
+            else _workflow_store_backend_from_env()
+        )
+        workflow_store_path = (
+            str(flags["--workflow-store-path"])
+            if "--workflow-store-path" in flags
+            else _workflow_store_path_from_env()
+        )
         return _run_server(
             host=host,
             port=port,
@@ -1490,6 +1618,8 @@ def main(argv: list[str] | None = None) -> int:
             allowed_paths=allowed_paths,
             allow_input=allow_input,
             auth_token=auth_token,
+            workflow_store_backend=workflow_store_backend,
+            workflow_store_path=workflow_store_path,
         )
 
     if command == "lsp":
@@ -1559,6 +1689,16 @@ def main(argv: list[str] | None = None) -> int:
                 "             List saved workflow graph snapshots.",
                 "  resume <graph_id> [--checkpoint LABEL] [--project-root PATH]",
                 "             Resume a previously saved workflow.",
+                "  dead-letters [--project-root PATH]",
+                "             List dead-lettered workflow runs.",
+                "  runs [--status STATUS] [--workflow NAME] [--execution-kind KIND] [--cursor CURSOR] [--project-root PATH]",
+                "             List workflow framework runs with optional filtering.",
+                "  inspect <graph_id> [--project-root PATH]",
+                "             Show a workflow framework run record.",
+                "  replay <graph_id> [--checkpoint LABEL] [--rearm-only] [--project-root PATH]",
+                "             Replay or rearm a dead-lettered workflow run.",
+                "  migrate-state [--graph-id ID] [--project-root PATH]",
+                "             Rewrite persisted workflow state into the normalized format.",
                 "  cleanup [--retention-seconds N] [--force] [--project-root PATH]",
                 "             Remove old workflow snapshots.",
                 "",
@@ -1567,6 +1707,12 @@ def main(argv: list[str] | None = None) -> int:
                 "  nodus workflow run pipeline.nd --workflow publish",
                 "  nodus workflow list",
                 "  nodus workflow resume g_abc123 --checkpoint step2",
+                "  nodus workflow dead-letters",
+                "  nodus workflow runs --status waiting,retry_scheduled",
+                "  nodus workflow runs --workflow demo --limit 10",
+                "  nodus workflow runs --has-wait true --updated-after-ms 0 --cursor o:10",
+                "  nodus workflow replay g_abc123 --rearm-only",
+                "  nodus workflow migrate-state --graph-id g_abc123",
             ]))
             return 0
         subcommand = cmd_args[0]
@@ -1606,6 +1752,150 @@ def main(argv: list[str] | None = None) -> int:
                 _print_stderr(err)
                 return 1
             return _workflow_resume_cli(positional[0], flags.get("--checkpoint"), project_root)
+        if subcommand == "dead-letters":
+            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_dead_letters(project_root)
+        if subcommand == "runs":
+            positional, flags = _parse_flags(
+                sub_args,
+                {
+                    "--status",
+                    "--workflow",
+                    "--execution-kind",
+                    "--updated-after-ms",
+                    "--updated-before-ms",
+                    "--has-retry",
+                    "--has-wait",
+                    "--replay-count-min",
+                    "--limit",
+                    "--offset",
+                    "--cursor",
+                    "--path",
+                    "--project-root",
+                },
+                set(),
+            )
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            statuses = None
+            if "--status" in flags:
+                statuses = [part.strip() for part in str(flags["--status"]).split(",") if part.strip()]
+            limit = None
+            if "--limit" in flags:
+                try:
+                    limit = _parse_int(str(flags["--limit"]), "--limit")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            offset = 0
+            if "--offset" in flags:
+                try:
+                    offset = _parse_int(str(flags["--offset"]), "--offset")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            updated_after_ms = None
+            if "--updated-after-ms" in flags:
+                try:
+                    updated_after_ms = _parse_float(str(flags["--updated-after-ms"]), "--updated-after-ms")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            updated_before_ms = None
+            if "--updated-before-ms" in flags:
+                try:
+                    updated_before_ms = _parse_float(str(flags["--updated-before-ms"]), "--updated-before-ms")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            has_retry = None
+            if "--has-retry" in flags:
+                try:
+                    has_retry = _parse_bool_flag(str(flags["--has-retry"]), "--has-retry")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            has_wait = None
+            if "--has-wait" in flags:
+                try:
+                    has_wait = _parse_bool_flag(str(flags["--has-wait"]), "--has-wait")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            replay_count_min = None
+            if "--replay-count-min" in flags:
+                try:
+                    replay_count_min = _parse_int(str(flags["--replay-count-min"]), "--replay-count-min")
+                except ValueError as err:
+                    _print_stderr(str(err))
+                    return 1
+            workflow_name = str(flags["--workflow"]) if "--workflow" in flags else None
+            execution_kind = str(flags["--execution-kind"]) if "--execution-kind" in flags else None
+            cursor = str(flags["--cursor"]) if "--cursor" in flags else None
+            return _workflow_runs(
+                project_root,
+                statuses=statuses,
+                workflow_name=workflow_name,
+                execution_kind=execution_kind,
+                updated_after_ms=updated_after_ms,
+                updated_before_ms=updated_before_ms,
+                has_retry=has_retry,
+                has_wait=has_wait,
+                replay_count_min=replay_count_min,
+                limit=limit,
+                offset=offset,
+                cursor=cursor,
+            )
+        if subcommand == "inspect":
+            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            if not positional:
+                _print_stderr("Usage: nodus workflow inspect <graph_id> [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_inspect(positional[0], project_root)
+        if subcommand == "replay":
+            positional, flags = _parse_flags(
+                sub_args,
+                {"--checkpoint", "--path", "--project-root"},
+                {"--rearm-only"},
+            )
+            if not positional:
+                _print_stderr("Usage: nodus workflow replay <graph_id> [--checkpoint <label>] [--rearm-only] [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_replay_cli(
+                positional[0],
+                flags.get("--checkpoint"),
+                project_root,
+                rearm_only="--rearm-only" in flags,
+            )
+        if subcommand == "migrate-state":
+            positional, flags = _parse_flags(
+                sub_args,
+                {"--graph-id", "--path", "--project-root"},
+                set(),
+            )
+            if positional:
+                _print_stderr("Usage: nodus workflow migrate-state [--graph-id <id>] [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            graph_id = str(flags["--graph-id"]) if "--graph-id" in flags else None
+            return _workflow_migrate_state(project_root, graph_id)
         if subcommand == "cleanup":
             flags_with_values = {"--retention-seconds", "--path", "--project-root"}
             flags_no_values = {"--force"}
