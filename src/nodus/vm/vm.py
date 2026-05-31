@@ -4,7 +4,35 @@ import math as _math
 import os
 import secrets
 import sys
-from nodus_retry.effect import InMemoryEffectStore
+try:
+    from nodus_retry.effect import InMemoryEffectStore
+except ImportError:
+    import threading as _threading
+    from typing import Optional as _Optional
+
+    class InMemoryEffectStore:  # type: ignore[no-redef]
+        """Minimal fallback used when nodus-retry is not installed."""
+
+        def __init__(self) -> None:
+            self._records: dict = {}
+            self._lock = _threading.Lock()
+
+        def resolve(self, action_id: str) -> tuple[bool, _Optional[dict]]:
+            with self._lock:
+                rec = self._records.get(action_id)
+            if rec is not None and rec.get("status") == "success":
+                return True, rec.get("result")
+            return False, None
+
+        def pending(self, action_id: str, input_hash: str) -> None:
+            with self._lock:
+                if action_id not in self._records:
+                    self._records[action_id] = {"status": "pending", "input_hash": input_hash}
+
+        def complete(self, action_id: str, status: str, result: _Optional[dict]) -> None:
+            with self._lock:
+                if action_id in self._records:
+                    self._records[action_id].update({"status": status, "result": result})
 import threading
 import time
 from dataclasses import dataclass

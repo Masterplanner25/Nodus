@@ -81,7 +81,7 @@ def run_contracts_phase(root: str) -> ContractsResult:
     expected = {"pure", "reads_state", "writes_state", "network", "filesystem", "spawns_task"}
     if set(VALID_EFFECTS) != expected:
         result.findings.append(ContractsFinding(
-            message=f"VALID_EFFECTS vocabulary mismatch",
+            message="VALID_EFFECTS vocabulary mismatch",
             detail=f"got {sorted(VALID_EFFECTS)!r}, expected {sorted(expected)!r}",
         ))
 

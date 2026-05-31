@@ -87,8 +87,6 @@ run_loop()
         self.assertIn("oops", errors[0])
 
     def test_on_error_stop_halts_scheduler(self):
-        results = []
-
         def stop_on_error(coroutine, err):
             return True  # stop the scheduler
 

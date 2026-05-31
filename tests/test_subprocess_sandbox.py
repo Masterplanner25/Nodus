@@ -13,7 +13,6 @@ import tempfile
 import unittest
 
 from nodus import NodusRuntime
-from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.tooling.runner import run_source
 
 _PY = sys.executable.replace("\\", "/")

@@ -5,7 +5,6 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
-import pytest  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

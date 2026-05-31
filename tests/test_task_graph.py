@@ -460,7 +460,7 @@ print(result["tasks"]["task_1"])
         self.assertEqual(requeued[0].data.get("task_id"), "task_1")
 
     def test_worker_death_detected_by_sweeper(self):
-        import tempfile, os
+        import tempfile
         from nodus.services.server import RuntimeService
         # Use a temp SQLite store so the sweep stays fast — accumulated local
         # store JSON files (670+ from test runs) add >2s per scan, causing the

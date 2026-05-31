@@ -5,7 +5,6 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
-import pytest  # noqa: E402
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
 
