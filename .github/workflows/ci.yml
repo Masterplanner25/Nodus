@@ -53,7 +53,7 @@ jobs:
           python -m pytest -q \
             --cov=src/nodus \
             --cov-report=term-missing \
-            --cov-fail-under=60 \
+            --cov-fail-under=70 \
             --deselect=tests/test_scheduler_fairness.py::test_multiple_tasks_progress \
             --deselect=tests/test_scheduler_fairness.py::test_long_running_task_rotates_with_budget \
             --deselect="tests/test_task_graph.py::TaskGraphTests::test_worker_death_detection"

@@ -184,12 +184,12 @@ surface as ok=False after the SCHED-002 fix).
   (emit EffectStore wrapper code). Estimated 4-5 days of frontend work.
   `effects.nd` provides the runtime primitives; the sugar is the outstanding piece.
 
-- **Coverage baseline (pytest-cov 7.1.0, 2026-05-23):** Overall: 77% (14,232 stmts). Gate: `--cov-fail-under=60`. Three timing-sensitive tests deselected from the coverage run (they pass in the regular pytest step but fail under instrumentation overhead: `test_scheduler_fairness.py::test_multiple_tasks_progress`, `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`, `test_task_graph.py::TaskGraphTests::test_worker_death_detection`). Modules below 60%:
+- **Coverage baseline (pytest-cov 7.1.0, 2026-05-31):** Overall: 76% (19,126 stmts, 1638 tests). Gate raised to `--cov-fail-under=70` (was 60%; actual coverage 76% makes 70% a meaningful safety net). Three timing-sensitive tests deselected from the coverage run (they pass in the regular pytest step but fail under instrumentation overhead: `test_scheduler_fairness.py::test_multiple_tasks_progress`, `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`, `test_task_graph.py::TaskGraphTests::test_worker_death_detection`). Modules below 60%:
   - `src/nodus/__main__.py`: 0% (3 stmts — trivial entry point, not exercised by test suite)
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
 
-- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C+D: ZERO ERRORS):** CI gate promoted to blocking-ready. Total: **0 errors across 114 source files** (down from 260 over 4 phases). Phase breakdown: A −70 (except-as-err, module-callable), B −42 (task_graph.py), C −60 (AST nodes, formatter, loader, dap, vm), D −88 (scatter across 37 files: scheduler, server/api, repl, lsp, optimizer, module_loader, module, workflow_lowering, testing/cli, ast_printer, 13 small files). See `pyproject.toml [tool.mypy]` — change `continue-on-error: false` in CI to promote to blocking.
+- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C+D: ZERO ERRORS):** CI gate is **blocking** (`continue-on-error` removed from ci.yml). Total: **0 errors across 114 source files** (down from 260 over 4 phases). Phase breakdown: A −70 (except-as-err, module-callable), B −42 (task_graph.py), C −60 (AST nodes, formatter, loader, dap, vm), D −88 (scatter across 37 files: scheduler, server/api, repl, lsp, optimizer, module_loader, module, workflow_lowering, testing/cli, ast_printer, 13 small files).
 
   | Module | Errors |
   |--------|--------|
