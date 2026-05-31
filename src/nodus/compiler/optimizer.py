@@ -1,5 +1,7 @@
 """Bytecode optimizer for Nodus."""
 
+from typing import Any
+
 from nodus.compiler.compiler import FunctionInfo
 
 
@@ -9,7 +11,7 @@ from nodus.compiler.compiler import FunctionInfo
 # boolean-operand check on arithmetic opcodes, we strip bool to int before
 # applying arithmetic operations.  Comparison and logical ops intentionally
 # keep their Python bool results unchanged.
-def _to_num(v: object) -> object:
+def _to_num(v: object) -> Any:
     """Convert bool to int so arithmetic folds match VM numeric semantics."""
     return int(v) if isinstance(v, bool) else v
 

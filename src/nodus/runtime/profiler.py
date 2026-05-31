@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import cast
 
 
 class Profiler:
@@ -64,7 +65,7 @@ class Profiler:
             calls = self.function_calls.get(name, 0)
             time_ms = self.function_time.get(name, 0.0) * 1000.0
             functions.append({"name": name, "calls": calls, "time_ms": time_ms})
-        functions.sort(key=lambda item: (-item["time_ms"], -item["calls"], item["name"]))
+        functions.sort(key=lambda item: (-cast(float, item["time_ms"]), -cast(int, item["calls"]), cast(str, item["name"])))
 
         return {
             "total_time_ms": total_ms,

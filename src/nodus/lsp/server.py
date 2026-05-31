@@ -8,7 +8,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 from urllib.parse import unquote, urlparse
 
 from nodus.frontend.ast.ast_nodes import (
@@ -17,6 +17,7 @@ from nodus.frontend.ast.ast_nodes import (
     Bin,
     Block,
     Call,
+    ExportFrom,
     ExprStmt,
     FnDef,
     FnExpr,
@@ -297,7 +298,7 @@ class _DocumentIndexer:
         self.module_aliases: dict[str, ModuleRecord] = {}
         self.scope_stack: list[dict[str, DefinitionRecord]] = [{}]
         self.type_env = _TypeEnv()
-        self.import_state = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}}
+        self.import_state: dict[str, Any] = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}}
         ensure_project_root(self.import_state, os.path.dirname(self.path), self.path)
 
     def build(self) -> DocumentState:
@@ -739,7 +740,7 @@ class LanguageServer:
                 return {"isIncomplete": False, "items": items}
         prefix_match = IDENTIFIER_RE.search(before)
         prefix = prefix_match.group(0) if prefix_match else ""
-        items: list[dict] = []
+        items = []
         seen: set[str] = set()
         for keyword in sorted(KEYWORDS):
             if not prefix or keyword.startswith(prefix):
@@ -895,9 +896,9 @@ class LanguageServer:
         for stale in sorted(stale_paths):
             self._publish_diagnostics(stale, [])
             self.current_diagnostics.pop(stale, None)
-        for file_path, diagnostics in sorted(merged.items()):
-            self._publish_diagnostics(file_path, diagnostics)
-            self.current_diagnostics[file_path] = diagnostics
+        for file_path, diag_list in sorted(merged.items()):
+            self._publish_diagnostics(file_path, diag_list)
+            self.current_diagnostics[file_path] = diag_list
 
     def _collect_affected_paths(self, changed_path: str) -> set[str]:
         normalized = os.path.abspath(changed_path)
@@ -945,11 +946,11 @@ class LanguageServer:
         except Exception:
             exported_names = set()
         top_level: dict[str, object] = {}
-        export_from: list[object] = []
+        export_from: list[ExportFrom] = []
         for stmt in ast:
             if isinstance(stmt, (Let, FnDef, WorkflowDef, GoalDef)):
                 top_level[stmt.name] = stmt
-            elif stmt.__class__.__name__ == "ExportFrom":
+            elif isinstance(stmt, ExportFrom):
                 export_from.append(stmt)
         exports: dict[str, DefinitionRecord] = {}
         lines = text.splitlines() or [""]

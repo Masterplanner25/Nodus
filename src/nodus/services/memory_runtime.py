@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from nodus.vm.runtime_values import clone_json_value, is_json_safe, payload_keys
 
 
@@ -145,7 +147,7 @@ def _validate_namespace(ns) -> None:
 def _emit(vm, event_type: str, *, key: str, value=None, found: bool | None = None) -> None:
     if vm is None or getattr(vm, "event_bus", None) is None:
         return
-    data = {"key": key, "payload_keys": payload_keys(value)}
+    data: dict[str, Any] = {"key": key, "payload_keys": payload_keys(value)}
     if found is not None:
         data["found"] = bool(found)
     if hasattr(vm, "runtime_adapter_event_data"):

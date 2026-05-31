@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import metadata
 import os
+from typing import Any
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 from nodus.compiler.compiler import Compiler, format_bytecode, wrap_bytecode
@@ -36,10 +37,11 @@ from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.project import load_project_from
 from nodus.vm.vm import Closure, Record, VM
 
+readline: Any = None
 try:
-    import readline
+    import readline as readline  # noqa: F811
 except ImportError:  # pragma: no cover - platform dependent
-    readline = None
+    pass
 
 
 HISTORY_FILE = os.path.expanduser("~/.nodus_history")
@@ -179,10 +181,10 @@ def _format_expr_node(node, indent: int, lines: list[str]) -> None:
         return
     if isinstance(node, MapLit):
         lines.append(f"{prefix}Map")
-        for key, value in node.items:
+        for map_key, map_val in node.items:
             lines.append(f"{prefix}  Entry")
-            _format_expr_node(key, indent + 2, lines)
-            _format_expr_node(value, indent + 2, lines)
+            _format_expr_node(map_key, indent + 2, lines)
+            _format_expr_node(map_val, indent + 2, lines)
         return
     if isinstance(node, Attr):
         lines.append(f"{prefix}Attr({node.name})")
@@ -203,12 +205,12 @@ def _format_expr_node(node, indent: int, lines: list[str]) -> None:
 
 
 def _build_compiler() -> Compiler:
-    return Compiler(module_infos={"<repl>": None}, module_defs_index={}, builtin_names=BUILTIN_NAMES)
+    return Compiler(module_infos=None, module_defs_index={}, builtin_names=BUILTIN_NAMES)
 
 
 def _compile_repl_program(state: ReplState, stmts: list):
     program = list(state.fn_defs.values()) + stmts
-    compiler = Compiler(module_infos={"<repl>": None}, module_defs_index={}, builtin_names=BUILTIN_NAMES)
+    compiler = Compiler(module_infos=None, module_defs_index={}, builtin_names=BUILTIN_NAMES)
     code, functions, code_locs = compiler.compile_program(program)
     return wrap_bytecode(code, module_name="<repl>"), functions, code_locs
 
@@ -401,7 +403,7 @@ def run_repl(version: str):
 
     try:
         while True:
-            lines = []
+            lines: list[str] = []
             active_prompt = prompt
 
             while True:

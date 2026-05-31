@@ -40,7 +40,7 @@ from nodus.frontend.ast.ast_nodes import (
     CheckpointStmt,
     While,
 )
-from nodus.frontend.type_system import ANY, BOOL, FLOAT, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types, is_assignable, parse_type_name
+from nodus.frontend.type_system import ANY, BOOL, FLOAT, INT, LIST, NIL, RECORD, STRING, FunctionType, NodusType, combine_types, is_assignable, parse_type_name
 from nodus.frontend.visitor import NodeVisitor
 
 
@@ -145,7 +145,7 @@ class Analyzer(NodeVisitor):
             return
         if isinstance(stmt, Return):
             actual = NIL if stmt.expr is None else self.infer_expr(stmt.expr)
-            if self.current_return != ANY and not is_assignable(self.current_return, actual):
+            if self.current_return != ANY and isinstance(self.current_return, NodusType) and not is_assignable(self.current_return, actual):
                 self.type_error(f"expected {self.current_return.name} but got {actual.name}", stmt)
             return
         if isinstance(stmt, TryCatch):

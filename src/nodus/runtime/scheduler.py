@@ -6,7 +6,9 @@ import heapq
 import sys
 import time
 from collections import deque
+from typing import Any
 
+from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, format_error
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.runtime_events import RuntimeEvent
@@ -24,9 +26,9 @@ class SleepRequest:
 class Scheduler:
     def __init__(self, vm, *, trace: bool = False, trace_output=print):
         self.vm = vm
-        self.ready_queue = deque()
+        self.ready_queue: deque[Any] = deque()
         self.queue = self.ready_queue
-        self.timers: list[tuple[float, int, object]] = []
+        self.timers: list[tuple[float, int, Coroutine]] = []
         self.sleeping_tasks: set[int] = set()
         self.completed_tasks: list[object] = []
         self._completed_ids: set[int] = set()
@@ -216,13 +218,13 @@ class Scheduler:
                 # run_file / CLI) can return ok=False and a nonzero exit code.
                 # Do NOT swallow with the broad except below.
                 raise
-            except Exception as err:
-                print(format_error(err, path=self.vm.source_path), file=sys.stderr)
+            except Exception as _e:
+                print(format_error(_e, path=self.vm.source_path), file=sys.stderr)
                 self._mark_completed(coroutine)
                 if coroutine.id is not None:
                     self.sleeping_tasks.discard(coroutine.id)
                 if on_error is not None:
-                    stop = bool(on_error(coroutine, err))
+                    stop = bool(on_error(coroutine, _e))
                 if stop:
                     break
                 continue

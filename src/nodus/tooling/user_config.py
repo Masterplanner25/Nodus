@@ -13,7 +13,7 @@ from pathlib import Path
 try:
     import tomllib
 except ImportError:
-    import tomli as tomllib  # type: ignore[no-reuse-import]
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 _NODUS_DIR = Path.home() / ".nodus"

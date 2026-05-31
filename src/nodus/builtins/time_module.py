@@ -87,6 +87,8 @@ def _local_from_epoch_ms(epoch_ms: int, tz) -> _dt:
 
 def _utc_offset_parts(local: _dt):
     off = local.utcoffset()
+    if off is None:
+        return "+", 0, 0
     total_s = int(off.total_seconds())
     sign = "+" if total_s >= 0 else "-"
     total_s = abs(total_s)

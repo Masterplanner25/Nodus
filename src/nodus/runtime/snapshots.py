@@ -66,7 +66,7 @@ class SnapshotManager:
         return True
 
     def list_snapshots(self) -> list[dict]:
-        entries = []
+        entries: list[dict] = []
         if not os.path.isdir(self.snapshot_dir):
             return entries
         for name in os.listdir(self.snapshot_dir):

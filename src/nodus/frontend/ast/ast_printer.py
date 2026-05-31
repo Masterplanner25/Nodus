@@ -92,7 +92,7 @@ class AstPrinter:
                     self.emit(f"  Literal {self.format_string(part.text)}", indent)
                 elif isinstance(part, InterpolationPart):
                     self.emit("  Interpolation", indent)
-                    self.print_node(part.expression, indent + 4)
+                    self.visit(part.expression, indent + 4)
             return
         if isinstance(node, Nil):
             self.emit("Nil", indent)
@@ -311,8 +311,8 @@ class AstPrinter:
                 self.emit("states:", indent + 1)
                 for state in node.states:
                     self.visit(state, indent + 2)
-            for step in node.steps:
-                self.visit(step, indent + 1)
+            for wf_step in node.steps:
+                self.visit(wf_step, indent + 1)
             return
         if isinstance(node, WorkflowStateDecl):
             self.emit(f"WorkflowStateDecl name={node.name}", indent)

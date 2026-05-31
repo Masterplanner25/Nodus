@@ -4,6 +4,7 @@ import base64
 import json
 import threading
 import time as _time
+from typing import Any
 
 import httpx
 
@@ -46,7 +47,7 @@ def _decode_response_body(resp: httpx.Response) -> object:
 
 
 def _build_headers_map(resp: httpx.Response) -> dict:
-    result = {}
+    result: dict[str, Any] = {}
     for k, v in resp.headers.multi_items():
         key = k.lower()
         if key not in result:
@@ -208,7 +209,7 @@ def _pump_sse(chunks_ch: Channel, sse_ch: Channel) -> None:
                 break
             if isinstance(chunk, bytes):
                 chunk = chunk.decode("utf-8", errors="replace")
-            buf += chunk
+            buf += str(chunk)
             while "\n\n" in buf:
                 event_text, buf = buf.split("\n\n", 1)
                 event = _parse_sse_event(event_text)

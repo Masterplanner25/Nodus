@@ -184,7 +184,7 @@ surface as ok=False after the SCHED-002 fix).
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
 
-- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **88 errors across 29 files** (down from 260: A −70, B −42, C −60). Per-module counts:
+- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C+D: ZERO ERRORS):** CI gate promoted to blocking-ready. Total: **0 errors across 114 source files** (down from 260 over 4 phases). Phase breakdown: A −70 (except-as-err, module-callable), B −42 (task_graph.py), C −60 (AST nodes, formatter, loader, dap, vm), D −88 (scatter across 37 files: scheduler, server/api, repl, lsp, optimizer, module_loader, module, workflow_lowering, testing/cli, ast_printer, 13 small files). See `pyproject.toml [tool.mypy]` — change `continue-on-error: false` in CI to promote to blocking.
 
   | Module | Errors |
   |--------|--------|

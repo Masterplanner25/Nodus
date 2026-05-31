@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import NoReturn
 
 try:
     from importlib.metadata import entry_points as _importlib_entry_points
@@ -496,10 +497,10 @@ class ModuleLoader:
                 resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
                 import_specs.append(ImportSpec(path=stmt.path, names=list(stmt.names or []), alias=stmt.alias, resolved_path=resolved))
 
-            for stmt in parsed.export_from:
-                tok = getattr(stmt, "_tok", None)
-                resolved = self.resolve_import(stmt.path, parsed.base_dir, tok, parsed.module_id)
-                export_from_specs.append(ExportFromSpec(path=stmt.path, names=list(stmt.names or []), resolved_path=resolved))
+            for ef_stmt in parsed.export_from:
+                tok = getattr(ef_stmt, "_tok", None)
+                resolved = self.resolve_import(ef_stmt.path, parsed.base_dir, tok, parsed.module_id)
+                export_from_specs.append(ExportFromSpec(path=ef_stmt.path, names=list(ef_stmt.names or []), resolved_path=resolved))
 
             for stmt, spec in zip(parsed.imports, import_specs):
                 dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
@@ -522,19 +523,19 @@ class ModuleLoader:
                 else:
                     import_names.update(dep_meta.exports)
 
-            for stmt, spec in zip(parsed.export_from, export_from_specs):
-                dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
-                missing = [name for name in spec.names if name not in dep_meta.exports]
+            for ef_stmt, ef_spec in zip(parsed.export_from, export_from_specs):
+                dep_meta = self._build_metadata(ef_spec.resolved_path, base_dir=os.path.dirname(ef_spec.resolved_path), source_path=ef_spec.resolved_path)
+                missing = [name for name in ef_spec.names if name not in dep_meta.exports]
                 if missing:
-                    tok = getattr(stmt, "_tok", None)
+                    tok = getattr(ef_stmt, "_tok", None)
                     line = tok.line if tok is not None else None
                     col = tok.col if tok is not None else None
                     raise LangRuntimeError(
                         "import",
-                        f"Re-export failed: {spec.resolved_path} does not export {', '.join(missing)}",
+                        f"Re-export failed: {ef_spec.resolved_path} does not export {', '.join(missing)}",
                         line=line,
                         col=col,
-                        path=spec.resolved_path,
+                        path=ef_spec.resolved_path,
                     )
 
             metadata = ModuleMetadata(
@@ -885,7 +886,7 @@ def resolve_import_path(
     )
 
 
-def import_error(message: str, tok: Tok | None, module_id: str):
+def import_error(message: str, tok: Tok | None, module_id: str) -> NoReturn:
     line = tok.line if tok is not None else None
     col = tok.col if tok is not None else None
     raise LangRuntimeError("import", message, line=line, col=col, path=module_id)

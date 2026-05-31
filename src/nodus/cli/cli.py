@@ -10,7 +10,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.bytecode_cache import clear_bytecode_cache
@@ -860,6 +860,7 @@ def _workflow_replay_cli(
 
 def _workflow_migrate_state(project_root: str | None, graph_id: str | None = None) -> int:
     with _project_root_context(project_root):
+        payload: Any
         if graph_id:
             payload = _task_graph.migrate_graph_snapshot(graph_id)
         else:
@@ -1420,6 +1421,9 @@ def main(argv: list[str] | None = None) -> int:
             if script is None and err == "Usage: nodus run <script.nd | project-dir>":
                 err = "Usage: nodus check [<script.nd | project-dir>]"
             _print_stderr(err)
+            return 1
+        if script is None:
+            _print_stderr("Usage: nodus check [<script.nd | project-dir>]")
             return 1
         return check_file(script, project_root=project_root)
 

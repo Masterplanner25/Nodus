@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 from dataclasses import dataclass, field
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
@@ -389,7 +390,7 @@ class WorkspaceDiagnosticEngine:
         overlay_map = {os.path.abspath(path): text for path, text in (overlays or {}).items()}
         diagnostics_by_file: dict[str, list[RuntimeDiagnostic]] = {}
         module_cache: dict[str, ParsedDiagnosticModule] = {}
-        import_state = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": self.project_root}
+        import_state: dict[str, Any] = {"loaded": set(), "loading": set(), "exports": {}, "modules": {}, "module_ids": {}, "project_root": self.project_root}
         ensure_project_root(import_state, os.path.dirname(normalized_entry), normalized_entry)
         graph = dependency_graph or DependencyGraph.load(import_state.get("project_root"))
 

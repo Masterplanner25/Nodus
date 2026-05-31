@@ -125,7 +125,7 @@ def _is_truthy(value) -> bool:
         return False
     if isinstance(value, list) and len(value) == 0:
         return False
-    if isinstance(value, (dict, Record)) and len(getattr(value, "fields", value) if isinstance(value, Record) else value) == 0:
+    if isinstance(value, (dict, Record)) and len(getattr(value, "fields", value) if isinstance(value, Record) else value) == 0:  # type: ignore[arg-type]
         return False
     return True
 
@@ -517,5 +517,5 @@ def _duration_to_ms(value) -> float:
         # std:time duration record has total_ms field
         total = value.fields.get("total_ms")
         if total is not None:
-            return float(total)
+            return float(str(total))
     return 0.0

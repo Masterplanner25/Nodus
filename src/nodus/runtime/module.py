@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nodus.compiler.compiler import FunctionInfo
@@ -14,12 +14,12 @@ NODUS_BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode ad
 
 @dataclass
 class ModuleBytecode:
-    code: dict
+    code: Any
     functions: dict[str, "FunctionInfo"]
     constants: list[object] = field(default_factory=list)
     code_locs: list[tuple[str | None, int | None, int | None]] = field(default_factory=list)
     symbol_table: dict[str, object] = field(default_factory=dict)
-    module_metadata: dict[str, object] = field(default_factory=dict)
+    module_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_cache_payload(self) -> dict[str, object]:
         return {
@@ -49,7 +49,7 @@ class ModuleBytecode:
         }
 
     @classmethod
-    def from_cache_payload(cls, payload: dict[str, object]) -> "ModuleBytecode":
+    def from_cache_payload(cls, payload: dict[str, Any]) -> "ModuleBytecode":
         from nodus.compiler.compiler import FunctionInfo
         from nodus.compiler.symbol_table import Upvalue
 
@@ -123,7 +123,7 @@ class LiveBinding:
 class NodusModule:
     name: str
     path: str
-    bytecode: dict
+    bytecode: Any
     functions: dict[str, "FunctionInfo"]
     code_locs: list
     bytecode_unit: ModuleBytecode | None = None
@@ -224,7 +224,7 @@ class NodusModule:
         # 2. Store a reference to the caller VM so that reflection builtins
         #    (stack_frame, fn_module, etc.) can access the caller's context.
         if caller_vm is not None:
-            vm._caller_vm = caller_vm
+            setattr(vm, "_caller_vm", caller_vm)
             args = [
                 _ClosureProxy(arg, caller_vm) if isinstance(arg, Closure) and not isinstance(arg, _ClosureProxy) else arg
                 for arg in args

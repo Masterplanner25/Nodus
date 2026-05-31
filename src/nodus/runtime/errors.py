@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 
@@ -36,7 +37,7 @@ class NodusError(Exception):
         self.details = details or None
 
     def to_dict(self) -> dict:
-        payload = {
+        payload: dict[str, Any] = {
             "type": self.error_type,
             "message": self.message,
             "line": self.line,

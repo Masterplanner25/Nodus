@@ -915,7 +915,7 @@ class Parser:
 
     def parse_named_map_literal(self, *, error_keys: set[str] | None = None, error_template: str | None = None):
         tok = self.eat("{")
-        items = []
+        items: list[tuple[object, object]] = []
         self.skip_seps()
         if not self.at("}"):
             while True:

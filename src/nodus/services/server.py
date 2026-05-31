@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 from nodus.support.version import VERSION
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -861,34 +862,34 @@ class RuntimeService:
             capabilities = []
         return {"worker_id": self.workers.register(capabilities)}
 
-    def worker_poll(self, payload: dict):
-        worker_id = payload.get("worker_id")
+    def worker_poll(self, payload: dict[str, Any]):
+        worker_id: str = str(payload.get("worker_id", ""))
         return self.workers.poll(worker_id)
 
-    def worker_heartbeat(self, payload: dict):
-        worker_id = payload.get("worker_id")
+    def worker_heartbeat(self, payload: dict[str, Any]):
+        worker_id: str = str(payload.get("worker_id", ""))
         return self.workers.heartbeat(worker_id)
 
-    def worker_result(self, payload: dict):
-        worker_id = payload.get("worker_id")
-        job_id = payload.get("job_id")
+    def worker_result(self, payload: dict[str, Any]):
+        worker_id: str = str(payload.get("worker_id", ""))
+        job_id: str = str(payload.get("job_id", ""))
         status = payload.get("status", "ok")
         result = payload.get("result")
         return self.workers.result(worker_id, job_id, status, result)
 
-    def tool_call(self, payload: dict):
-        return tool_call_result(payload.get("name"), payload.get("args", {}), vm=self.last_vm)
+    def tool_call(self, payload: dict[str, Any]):
+        return tool_call_result(str(payload.get("name", "")), payload.get("args", {}), vm=self.last_vm)
 
-    def agent_call(self, payload: dict):
-        return agent_call_result(payload.get("name"), payload.get("payload"), vm=self.last_vm)
+    def agent_call(self, payload: dict[str, Any]):
+        return agent_call_result(str(payload.get("name", "")), payload.get("payload"), vm=self.last_vm)
 
     def memory_get(self, key: str | None = None):
         if key is None:
             return memory_keys_result(vm=self.last_vm)
         return memory_get_result(key, vm=self.last_vm)
 
-    def memory_put(self, payload: dict):
-        return memory_put_result(payload.get("key"), payload.get("value"), vm=self.last_vm)
+    def memory_put(self, payload: dict[str, Any]):
+        return memory_put_result(str(payload.get("key", "")), payload.get("value"), vm=self.last_vm)
 
     def memory_delete(self, key: str):
         return memory_delete_result(key, vm=self.last_vm)
@@ -1258,14 +1259,14 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             _write_json(self, {"error": "not found"}, status=404)
 
     server = ThreadingHTTPServer((host, port), Handler)
-    server.service = service
+    setattr(server, "service", service)
     _server_close = server.server_close
 
     def _server_close_with_service_shutdown():
         service.close()
         _server_close()
 
-    server.server_close = _server_close_with_service_shutdown
+    setattr(server, "server_close", _server_close_with_service_shutdown)
     return server
 
 

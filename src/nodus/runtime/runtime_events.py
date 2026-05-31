@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from nodus.runtime.runtime_stats import runtime_time_ms
 
@@ -50,7 +51,7 @@ class RuntimeEventBus:
     def __init__(self, enabled: bool = True):
         self._enabled = enabled
         self._events: list[RuntimeEvent] = []
-        self._sinks: list[object] = []
+        self._sinks: list[Any] = []
 
     def emit(self, event: RuntimeEvent) -> None:
         if not self._enabled:

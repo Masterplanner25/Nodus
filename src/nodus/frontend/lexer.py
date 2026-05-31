@@ -367,7 +367,7 @@ def _lex_interp(
             )
 
         kind = m.lastgroup
-        text = m.group(kind)
+        text = m.group(kind or 0)
         tok_line, tok_col = line, col
 
         if kind == "WS":
@@ -457,7 +457,7 @@ def tokenize(src: str) -> list[Tok]:
             raise LangSyntaxError(f"Unexpected character {ch!r}", line=start_line, col=start_col)
 
         kind = m.lastgroup
-        text = m.group(kind)
+        text = m.group(kind or 0)
         pos = m.end()
 
         if kind in {"WS"}:

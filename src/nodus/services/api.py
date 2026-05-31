@@ -8,6 +8,7 @@ helper for embedding/experimentation with a smaller runner-oriented surface.
 
 from __future__ import annotations
 
+from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -78,8 +79,8 @@ class ExecutionState:
             result.update(self._graph_metadata(vm, result.get("plan", {}).get("graph_id")))
         return result
 
-    def resume_graph(self, payload: dict) -> dict:
-        graph_id = payload.get("graph_id")
+    def resume_graph(self, payload: dict[str, Any]) -> dict:
+        graph_id: str = str(payload.get("graph_id", ""))
         if self.last_vm is not None:
             from nodus.tooling.runner import resume_graph_in_vm
             result, vm = resume_graph_in_vm(self.last_vm, graph_id)
@@ -109,19 +110,19 @@ class ExecutionState:
         events = [event.to_dict() for event in vm.event_bus.events()] if vm is not None else []
         return {"ok": True, "events": events}
 
-    def tool_call(self, payload: dict) -> dict:
-        return tool_call_result(payload.get("name"), payload.get("args", {}), vm=self.last_vm)
+    def tool_call(self, payload: dict[str, Any]) -> dict:
+        return tool_call_result(str(payload.get("name", "")), payload.get("args", {}), vm=self.last_vm)
 
-    def agent_call(self, payload: dict) -> dict:
-        return agent_call_result(payload.get("name"), payload.get("payload"), vm=self.last_vm)
+    def agent_call(self, payload: dict[str, Any]) -> dict:
+        return agent_call_result(str(payload.get("name", "")), payload.get("payload"), vm=self.last_vm)
 
     def memory_get(self, key: str | None = None) -> dict:
         if key is None:
             return memory_keys_result(vm=self.last_vm)
         return memory_get_result(key, vm=self.last_vm)
 
-    def memory_put(self, payload: dict) -> dict:
-        return memory_put_result(payload.get("key"), payload.get("value"), vm=self.last_vm)
+    def memory_put(self, payload: dict[str, Any]) -> dict:
+        return memory_put_result(str(payload.get("key", "")), payload.get("value"), vm=self.last_vm)
 
     def memory_delete(self, key: str) -> dict:
         return memory_delete_result(key, vm=self.last_vm)

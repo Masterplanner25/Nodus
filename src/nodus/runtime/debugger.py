@@ -280,6 +280,7 @@ class Debugger:
         if len(parts) != 2:
             return False
         target = parts[1].strip()
+        line_no: int | None = None
         if target.isdigit():
             line_no = int(target)
             module = self._current_module(vm)

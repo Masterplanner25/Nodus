@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import os
 import threading
+from typing import Any
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
@@ -28,7 +29,7 @@ class ToolRegistry:
         self._runtime = runtime
         self._lock = threading.RLock()
 
-    def register(self, metadata: dict) -> None:
+    def register(self, metadata: dict[str, Any]) -> None:
         """Register a Python callable as a tool visible to Nodus scripts.
 
         Parameters
@@ -47,7 +48,7 @@ class ToolRegistry:
         """
         from nodus.builtins.tool_module import _normalize_schema, _validate_tool_name
 
-        name = metadata.get("name")
+        name = metadata.get("name", "")
         name_err = _validate_tool_name(name)
         if name_err:
             raise ValueError(f"tool.register: {name_err}")

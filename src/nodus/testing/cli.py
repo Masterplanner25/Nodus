@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import cast
 
 from nodus.testing.discovery import discover_test_files, matches_filter
 from nodus.testing.runner import TestResult, TestRunner
@@ -33,10 +34,10 @@ def run_test_command(cmd_args: list[str]) -> int:
     do_coverage = "--coverage" in flags
     coverage_output = flags.get("--coverage-output", "./coverage")
     coverage_min = float(flags.get("--coverage-min", 0))
-    coverage_formats_str = flags.get("--coverage-format", "json,html")
+    coverage_formats_str = str(flags.get("--coverage-format", "json,html"))
     coverage_formats = [f.strip() for f in coverage_formats_str.split(",")]
-    coverage_exclude = flags.get("--coverage-exclude", "")
-    coverage_include = flags.get("--coverage-include", "")
+    coverage_exclude: str = str(flags.get("--coverage-exclude", ""))
+    coverage_include: str = str(flags.get("--coverage-include", ""))
 
     # Discover test files
     test_files = discover_test_files(test_path)
@@ -63,7 +64,7 @@ def run_test_command(cmd_args: list[str]) -> int:
             break
         file_results = _run_one_file(
             test_file,
-            filter_pattern=filter_pattern,
+            filter_pattern=cast(str, filter_pattern),
             coverage_collector=coverage_collector,
         )
         all_results.extend(file_results)
@@ -93,7 +94,7 @@ def run_test_command(cmd_args: list[str]) -> int:
         )
         summary_text = coverage_collector.format_summary(cov_data)
         sys.stdout.write(summary_text)
-        coverage_collector.write_reports(cov_data, output_dir=coverage_output,
+        coverage_collector.write_reports(cov_data, output_dir=cast(str, coverage_output),
                                          formats=coverage_formats)
         print(f"\nCoverage reports written to: {coverage_output}", file=sys.stderr)
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from nodus.frontend.ast.ast_nodes import (
     ActionStmt,
     Assign,
@@ -74,7 +76,7 @@ def lower_goal_ast(goal: GoalDef) -> MapLit:
 def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     state_init = _lower_state_init(flow)
     state_names = [state.name for state in flow.states]
-    items = [
+    items: list[tuple[object, object]] = [
         (Str(marker), Str(execution_kind)),
         (Str("name"), Str(flow.name)),
         (Str("execution_kind"), Str(execution_kind)),
@@ -96,7 +98,7 @@ def _lower_state_init(flow: WorkflowDef | GoalDef) -> FnExpr | None:
     state_var = "__workflow_state"
     state_names = {state.name for state in flow.states}
     rewriter = _StateRewriter(state_names, state_var, initial_locals={state_var})
-    stmts = [Let(state_var, MapLit([]))]
+    stmts: list[Any] = [Let(state_var, MapLit([]))]
     for state in flow.states:
         expr = rewriter.rewrite_expr(state.value)
         assign = IndexAssign(Var(state_var), Str(state.name), expr)
@@ -285,7 +287,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         deps = step.get("deps", [])
         if not isinstance(deps, list):
             vm.runtime_error("type", f"Workflow step '{step_name}' deps must be a list")
-        dep_nodes = []
+        dep_nodes: list[Any] = []
         for dep in deps:
             if not isinstance(dep, str):
                 vm.runtime_error("type", f"Workflow step '{step_name}' dependency names must be strings")

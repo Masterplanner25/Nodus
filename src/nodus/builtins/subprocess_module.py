@@ -295,7 +295,7 @@ def _pump_stream(pipe, ch: Channel, chunk_mode: str, encoding: str) -> None:
         pass  # pipe closed or broken — stop pumping
 
 
-_UNIX_SIGNALS = {}
+_UNIX_SIGNALS: dict[str, int] = {}
 if sys.platform != "win32":
     for _sname in ("SIGHUP", "SIGUSR1", "SIGUSR2", "SIGQUIT"):
         if hasattr(_signal, _sname):

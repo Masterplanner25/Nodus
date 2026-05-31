@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from nodus.frontend.ast.ast_printer import format_ast
 from nodus.frontend.ast.ast_serializer import ast_to_dict
@@ -232,7 +233,7 @@ def run_source(
             None,
         )
 
-    extras = {}
+    extras: dict[str, Any] = {}
     if disassembly is not None:
         extras["disassembly"] = disassembly
         extras["disassembly_lines"] = disassembly_lines
@@ -914,7 +915,7 @@ def run_workflow_code(
             workflow_result = vm.builtin_run_workflow(workflow)
             if isinstance(workflow_result, Record) and workflow_result.kind == "error":
                 raise NodusRuntimeError(
-                    workflow_result.fields.get("message", "workflow error"),
+                    str(workflow_result.fields.get("message", "workflow error")),
                     filename=normalize_filename(filename),
                 )
             if isinstance(workflow_result, dict) and "error" in workflow_result:
