@@ -1138,10 +1138,8 @@ class VM:
     def builtin_resume_goal(self, graph_id, checkpoint=None):
         if not isinstance(graph_id, str):
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects graph_id as string")
-        if checkpoint is not None:
-            if not isinstance(checkpoint, str):
-                self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
-            return self.builtin_resume_workflow(graph_id, checkpoint)
+        if checkpoint is not None and not isinstance(checkpoint, str):
+            self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
         state = load_graph_state(graph_id)
         if state is None:
             return {"ok": False, "error": "Graph state not found"}
@@ -1150,7 +1148,32 @@ class VM:
             graph = self._rebuild_workflow_graph(graph_id, state)
         if graph is None:
             return {"ok": False, "error": "Unknown graph"}
-        self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id})
+        if checkpoint is not None:
+            # Roll back to the named checkpoint directly from persisted state.
+            # Do NOT delegate to builtin_resume_workflow: run_goal uses run_task_graph
+            # directly, so runs started with run_goal are not in the WorkflowFrameworkRunner
+            # store and would fail the claim_run check with a misleading "already claimed" error.
+            checkpoints = state.get("engine_checkpoints")
+            if not isinstance(checkpoints, list):
+                meta = state.get("metadata")
+                if isinstance(meta, dict):
+                    checkpoints = meta.get("engine_checkpoints") or meta.get("checkpoints")
+            if not isinstance(checkpoints, list):
+                checkpoints = state.get("checkpoints")
+            entry = None
+            if isinstance(checkpoints, list):
+                for item in reversed(checkpoints):
+                    if isinstance(item, dict) and item.get("label") == checkpoint:
+                        entry = item
+                        break
+            if entry is None:
+                return {"ok": False, "error": f"Checkpoint not found: {checkpoint}"}
+            if "state" in entry:
+                state["workflow_state"] = entry.get("state")
+            self._rollback_to_checkpoint(graph, state, entry)
+            self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id, "checkpoint": checkpoint})
+        else:
+            self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id})
         return run_task_graph(self, graph, resume_state=state)
 
     def _step_plan_from_graph(self, graph: TaskGraph, *, label: str) -> dict:
