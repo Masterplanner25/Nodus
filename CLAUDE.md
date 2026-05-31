@@ -117,6 +117,14 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Skills | `.claude/commands/` |
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
+| Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
+| Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
+| Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval |
+| Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
+| Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
+| Issue response policy | `docs/governance/ISSUE_RESPONSE_POLICY.md` |
+| AI discoverability (canonical map) | `llms.txt` |
+| AI discoverability (rich summaries) | `llms-full.txt` |
 | nodus-mcp companion repo | `C:\dev\nodus-mcp` / github.com/Masterplanner25/nodus-mcp |
 | nodus-a2a companion repo | `C:\dev\nodus-a2a` / github.com/Masterplanner25/nodus-a2a |
 | nodus-memory companion repo | `C:\dev\nodus-memory` / github.com/Masterplanner25/nodus-memory |
@@ -132,15 +140,18 @@ Guide files live in `docs/guide/`. The full guide index is in
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q
 
 # Coverage (excludes 3 timing-sensitive tests)
-PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=60 --ignore=tests/test_scheduler_fairness.py -q
+PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-Coverage baseline: 77% overall. Gate: 60%. See `docs/governance/TECH_DEBT.md`
-for the per-module breakdown and the three deselected flaky tests.
+Coverage baseline: 76% overall (19,126 stmts, 1,645 tests). Gate: 70% (raised from 60% on 2026-05-31).
+See `docs/governance/TECH_DEBT.md` for the per-module breakdown and the three deselected flaky tests.
 
-**Known pre-existing failure:** `tests/test_goal_dsl.py::GoalDslTests::test_resume_goal`
-fails with `KeyError: 'goal'`. This is a regression from before Phase 3 and is unrelated
-to any recent work. Do not investigate it unless goal DSL work is explicitly in scope.
+**Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
+- `test_task_graph.py::TaskGraphTests::test_worker_death_detection`
+- `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
+
+Note: `test_resume_goal` was fixed on 2026-05-31 (WorkflowFrameworkRunner bypass — see commit history).
+It should now pass. If it fails, investigate the WorkflowFrameworkRunner store registration path.
 
 ## .nd file formatting — authoritative command
 
@@ -655,9 +666,9 @@ a close-ordering race. Do not use it directly.
 nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented
 beyond original scope). Last published PyPI release: **v3.0.2**.
 
-**Current test count:** 1,612 passing (nodus-lang), 2 pre-existing failures
-(`test_resume_goal` — KeyError 'goal', pre-Phase-3 regression;
-`test_worker_death_detection` — timing-sensitive sweeper test).
+**Current test count:** 1,645 passing (nodus-lang), 0 pre-existing failures
+(test_resume_goal fixed 2026-05-31; test_worker_death_detection is flaky/timing-sensitive
+but passes individually; mypy: 0 errors across 114 files, gate is blocking).
 
 **Wheels to rebuild before publish:** nodus-lang 4.0.0 wheel must be rebuilt
 (Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp wheel remains
