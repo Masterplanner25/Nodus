@@ -1386,10 +1386,10 @@ class VM:
             self.event_bus.emit_event("goal_action_start", name=target, data=meta)
         try:
             result = fn()
-        except Exception as err:
+        except Exception as _e:
             if meta is not None:
                 fail = dict(meta)
-                fail["message"] = str(err)
+                fail["message"] = str(_e)
                 self.event_bus.emit_event("goal_action_fail", name=target, data=fail)
             raise
         ok = not (isinstance(result, dict) and result.get("ok") is False)
@@ -1428,20 +1428,20 @@ class VM:
     def builtin_memory_get(self, key):
         try:
             return get_value(key, vm=self)
-        except ValueError as err:
-            self.runtime_error("type", str(err))
+        except ValueError as _e:
+            self.runtime_error("type", str(_e))
 
     def builtin_memory_put(self, key, value):
         try:
             return put_value(key, value, vm=self)
-        except ValueError as err:
-            self.runtime_error("type", str(err))
+        except ValueError as _e:
+            self.runtime_error("type", str(_e))
 
     def builtin_memory_delete(self, key):
         try:
             return delete_value(key, vm=self)
-        except ValueError as err:
-            self.runtime_error("type", str(err))
+        except ValueError as _e:
+            self.runtime_error("type", str(_e))
 
     def builtin_memory_keys(self):
         return list_keys(vm=self)
@@ -1449,8 +1449,8 @@ class VM:
     def builtin_memory_has(self, key):
         try:
             return has_value(key, vm=self)
-        except ValueError as err:
-            self.runtime_error("type", str(err))
+        except ValueError as _e:
+            self.runtime_error("type", str(_e))
 
     def builtin_agent_call(self, name, payload):
         return call_agent(name, payload, vm=self)
@@ -2624,17 +2624,17 @@ class VM:
                     pending_after = instr
                 else:
                     return rv  # (status, result) from YIELD / RETURN / HALT
-            except LangRuntimeError as err:
-                self.record_vm_exception(err)
-                self.emit_runtime_error(err)
-                if self.handle_exception(err):
+            except LangRuntimeError as _e:
+                self.record_vm_exception(_e)
+                self.emit_runtime_error(_e)
+                if self.handle_exception(_e):
                     continue
                 raise
             except HostFunctionError:
                 raise
-            except Exception as err:
-                self.record_vm_exception(err)
-                wrapped = self.build_runtime_error("runtime", str(err))
+            except Exception as _e:
+                self.record_vm_exception(_e)
+                wrapped = self.build_runtime_error("runtime", str(_e))
                 self.emit_runtime_error(wrapped)
                 if self.handle_exception(wrapped):
                     continue

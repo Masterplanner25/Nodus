@@ -146,8 +146,8 @@ def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str
     if os.path.isdir(path):
         try:
             project = load_project(path)
-        except Exception as err:
-            return None, project_root, str(err)
+        except Exception as _e:
+            return None, project_root, str(_e)
         return project_entry_path(project), project_root or project.root, None
     return path, project_root, None
 
@@ -943,8 +943,8 @@ def _run_server(
             workflow_store_backend=workflow_store_backend,
             workflow_store_path=workflow_store_path,
         )
-    except ValueError as err:
-        _print_stderr(str(err))
+    except ValueError as _e:
+        _print_stderr(str(_e))
         return 1
     return 0
 
@@ -995,8 +995,8 @@ def _run_worker(host: str, port: int, *, poll_interval: float = 0.1, token: str 
 def _tool_call(name: str, args_json: str) -> int:
     try:
         args = _json_load(args_json)
-    except json.JSONDecodeError as err:
-        _print_stderr(f"Invalid JSON payload: {err}")
+    except json.JSONDecodeError as _e:
+        _print_stderr(f"Invalid JSON payload: {_e}")
         return 1
     result = tool_call_result(name, args)
     _json_print(result)
@@ -1006,8 +1006,8 @@ def _tool_call(name: str, args_json: str) -> int:
 def _agent_call(name: str, payload_json: str) -> int:
     try:
         payload = _json_load(payload_json)
-    except json.JSONDecodeError as err:
-        _print_stderr(f"Invalid JSON payload: {err}")
+    except json.JSONDecodeError as _e:
+        _print_stderr(f"Invalid JSON payload: {_e}")
         return 1
     result = agent_call_result(name, payload)
     _json_print(result)
@@ -1026,8 +1026,8 @@ def _memory_get(key: str) -> int:
 def _memory_put(key: str, value_json: str) -> int:
     try:
         value = _json_load(value_json)
-    except json.JSONDecodeError as err:
-        _print_stderr(f"Invalid JSON value: {err}")
+    except json.JSONDecodeError as _e:
+        _print_stderr(f"Invalid JSON value: {_e}")
         return 1
     result = memory_put_result(key, value)
     if not result.get("ok", False):
@@ -1129,8 +1129,8 @@ def _package_init(path: str | None) -> int:
     root = path or os.getcwd()
     try:
         _package_manager.init_project(root)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     print(f"Initialized Nodus project at {os.path.abspath(root)}/")
     return 0
@@ -1140,8 +1140,8 @@ def _package_install(path: str | None, *, registry_url: str | None = None, regis
     root = path or os.getcwd()
     try:
         _package_manager.install_dependencies_for_project(root, update=False, registry_url=registry_url, cli_token=registry_token)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     return 0
 
@@ -1150,8 +1150,8 @@ def _package_update(path: str | None) -> int:
     root = path or os.getcwd()
     try:
         _package_manager.install_dependencies_for_project(root, update=True)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     return 0
 
@@ -1160,8 +1160,8 @@ def _package_list(path: str | None) -> int:
     root = path or os.getcwd()
     try:
         deps = _package_manager.list_dependencies(root)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     for name, status in deps:
         print(f"{name}: {status}")
@@ -1172,8 +1172,8 @@ def _package_add(package_name: str, path: str | None) -> int:
     root = path or os.getcwd()
     try:
         _package_manager.add_dependency(root, package_name)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     return 0
 
@@ -1182,8 +1182,8 @@ def _package_remove(package_name: str, path: str | None) -> int:
     root = path or os.getcwd()
     try:
         _package_manager.remove_dependency(root, package_name)
-    except Exception as err:
-        _print_stderr(str(err))
+    except Exception as _e:
+        _print_stderr(str(_e))
         return 1
     return 0
 
@@ -1349,29 +1349,29 @@ def main(argv: list[str] | None = None) -> int:
         if "--trace-limit" in flags:
             try:
                 trace_limit = _parse_int(str(flags["--trace-limit"]), "--trace-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         step_limit = None
         if "--step-limit" in flags:
             try:
                 step_limit = _parse_int(str(flags["--step-limit"]), "--step-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         time_limit = None
         if "--time-limit" in flags:
             try:
                 time_limit = _parse_int(str(flags["--time-limit"]), "--time-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         output_limit = None
         if "--output-limit" in flags:
             try:
                 output_limit = _parse_int(str(flags["--output-limit"]), "--output-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         project_root, err = _resolve_project_root(flags.get("--project-root"))
         if err:
@@ -1496,22 +1496,22 @@ def main(argv: list[str] | None = None) -> int:
         if "--step-limit" in flags:
             try:
                 step_limit = _parse_int(str(flags["--step-limit"]), "--step-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         time_limit = None
         if "--time-limit" in flags:
             try:
                 time_limit = _parse_int(str(flags["--time-limit"]), "--time-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         output_limit = None
         if "--output-limit" in flags:
             try:
                 output_limit = _parse_int(str(flags["--output-limit"]), "--output-limit")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         project_root, err = _resolve_project_root(flags.get("--project-root"))
         if err:
@@ -1594,8 +1594,8 @@ def main(argv: list[str] | None = None) -> int:
         if "--worker-sweep-interval-ms" in flags:
             try:
                 sweep_ms = _parse_int(str(flags["--worker-sweep-interval-ms"]), "--worker-sweep-interval-ms")
-            except ValueError as err:
-                _print_stderr(str(err))
+            except ValueError as _e:
+                _print_stderr(str(_e))
                 return 1
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
         auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
@@ -1790,50 +1790,50 @@ def main(argv: list[str] | None = None) -> int:
             if "--limit" in flags:
                 try:
                     limit = _parse_int(str(flags["--limit"]), "--limit")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             offset = 0
             if "--offset" in flags:
                 try:
                     offset = _parse_int(str(flags["--offset"]), "--offset")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             updated_after_ms = None
             if "--updated-after-ms" in flags:
                 try:
                     updated_after_ms = _parse_float(str(flags["--updated-after-ms"]), "--updated-after-ms")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             updated_before_ms = None
             if "--updated-before-ms" in flags:
                 try:
                     updated_before_ms = _parse_float(str(flags["--updated-before-ms"]), "--updated-before-ms")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             has_retry = None
             if "--has-retry" in flags:
                 try:
                     has_retry = _parse_bool_flag(str(flags["--has-retry"]), "--has-retry")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             has_wait = None
             if "--has-wait" in flags:
                 try:
                     has_wait = _parse_bool_flag(str(flags["--has-wait"]), "--has-wait")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             replay_count_min = None
             if "--replay-count-min" in flags:
                 try:
                     replay_count_min = _parse_int(str(flags["--replay-count-min"]), "--replay-count-min")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             workflow_name = str(flags["--workflow"]) if "--workflow" in flags else None
             execution_kind = str(flags["--execution-kind"]) if "--execution-kind" in flags else None
@@ -1908,8 +1908,8 @@ def main(argv: list[str] | None = None) -> int:
             if "--retention-seconds" in flags:
                 try:
                     retention = _parse_int(str(flags["--retention-seconds"]), "--retention-seconds")
-                except ValueError as err:
-                    _print_stderr(str(err))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
                     return 1
             force = "--force" in flags
             return _workflow_cleanup(project_root, retention, force)

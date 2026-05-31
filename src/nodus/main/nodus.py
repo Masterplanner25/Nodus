@@ -1,6 +1,6 @@
 """Primary Nodus entrypoint (module form)."""
 
-from nodus import main
+from nodus.cli.cli import main
 
 
 if __name__ == "__main__":

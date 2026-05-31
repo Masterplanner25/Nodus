@@ -4,6 +4,6 @@ from nodus import *  # noqa: F401,F403
 
 
 if __name__ == "__main__":
-    from nodus import main
+    from nodus.cli.cli import main
 
     raise SystemExit(main())

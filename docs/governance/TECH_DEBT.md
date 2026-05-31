@@ -184,40 +184,35 @@ surface as ok=False after the SCHED-002 fix).
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
 
-- **mypy baseline (mypy 2.1.0, 2026-05-23):** Non-blocking step added to CI (`continue-on-error: true`). Total: 208 errors across 29 modules. Per-module counts:
+- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **190 errors across 34 files** (down from 260 after Phase A: `except ... as err` → `_e` rename + module-callable fixes). Per-module counts:
 
   | Module | Errors |
   |--------|--------|
-  | `cli/cli.py` | 49 |
-  | `vm/vm.py` | 24 |
-  | `frontend/formatter.py` | 18 |
-  | `runtime/task_graph.py` | 18 |
+  | `orchestration/task_graph.py` | 38 |
+  | `vm/vm.py` | 20 |
+  | `tooling/formatter.py` | 18 |
   | `dap/server.py` | 14 |
   | `tooling/loader.py` | 12 |
-  | `repl/repl.py` | 8 |
-  | `services/server.py` | 8 |
+  | `services/server.py` | 9 |
+  | `tooling/repl.py` | 8 |
   | `runtime/module_loader.py` | 7 |
   | `lsp/server.py` | 7 |
   | `runtime/scheduler.py` | 6 |
-  | `services/api.py` | 5 |
-  | `runtime/module.py` | 5 |
   | `compiler/optimizer.py` | 5 |
+  | `runtime/module.py` | 5 |
+  | `services/api.py` | 5 |
+  | `testing/cli.py` | 5 |
   | `orchestration/workflow_lowering.py` | 4 |
-  | `tooling/diagnostics.py` | 2 |
   | `tooling/analyzer.py` | 2 |
+  | `frontend/ast/ast_printer.py` | 2 |
+  | `frontend/lexer.py` | 2 |
+  | `builtins/test_module.py` | 2 |
+  | `builtins/http_module.py` | 2 |
+  | `tooling/runner.py` | 2 |
+  | `tooling/diagnostics.py` | 2 |
+  | `cli/cli.py` | 2 |
   | `tooling/user_config.py` | 1 |
-  | `tooling/tiny_vm_lang_functions.py` | 1 |
-  | `tooling/runner.py` | 1 |
-  | `runtime/snapshots.py` | 1 |
-  | `runtime/runtime_events.py` | 1 |
   | `runtime/profiler.py` | 1 |
-  | `runtime/errors.py` | 1 |
-  | `runtime/debugger.py` | 1 |
-  | `main/nodus.py` | 1 |
-  | `frontend/parser.py` | 1 |
-  | `frontend/lexer.py` | 1 |
-  | `frontend/ast/ast_printer.py` | 1 |
-  | `__main__.py` | 1 |
 
 ## Patch closure verification gap (surfaced 2026-05-25 by v3.0.1 eval)
 
@@ -260,7 +255,7 @@ This will be incorporated into `docs/governance/PLAYBOOK_PATCH_MINOR.md` Stage 3
 in the next playbook revision. See GitHub issue filed as follow-up in v3.1
 milestone.
 
-  Top priority: `cli/cli.py` (49), `vm/vm.py` (24), `frontend/formatter.py` (18), `runtime/task_graph.py` (18). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
+  **Phase A complete (2026-05-31):** except-as-err renames + module-callable fixes cleared 70 errors. **Next priorities:** `orchestration/task_graph.py` (38 — `_persist_graph_state` signature + None guards), `vm/vm.py` (20 — mixed narrowing), `tooling/formatter.py` (18). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 
@@ -351,6 +346,34 @@ just the validator.
 - **Duplicate BUG-NNN:** BUG-029 was filed twice — [#27](https://github.com/Masterplanner25/Nodus/issues/27) (CLI `--help` grouping, no milestone, not in v3.0 scope) and [#30](https://github.com/Masterplanner25/Nodus/issues/30) (else-if syntax, v3.0 `phase:2-fix`). Root cause: the v2.1.1 handoff assigned the number from a running counter without checking existing issues. **Playbook action:** bug filing checklist must include a uniqueness check against open+closed issues before assigning a BUG-NNN. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
 
 - **Missing rubric eval for v2.1.0:** v2.1.0 shipped without a formal rubric eval. Guide-writing surfaced 23 issues but produced no composite score, leaving v2.0.0 (5.52) as the only comparable data point going into v3.0. **Playbook action:** every major/minor release must run the formal rubric eval and record the composite score before close. Guide-writing is supplementary, not a substitute. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
+
+## v4.0 Pre-publish Decisions (must resolve before shipping)
+
+These items were surfaced during the 2026-05-30 ecosystem verification pass and are
+not blocking current development but **must be decided before v4.0.0 publishes**.
+Each has a GitHub issue for scope discussion.
+
+- **WF-SCAN-001** (open, severity: medium, GitHub: #102): `LocalWorkflowStore` scans
+  all `.nodus/workflow_framework/runs/*.json` on every sweeper iteration — O(n) over
+  total historical runs. At 670+ accumulated test artifacts the sweep takes >2s,
+  breaking the `test_worker_death_detected_by_sweeper` 500ms deadline. Short-term
+  fix: default tests to `SQLiteWorkflowStore`. Medium-term fix: cap `_list_runs()` to
+  a time-window or add a run-count ceiling. Affects `src/nodus_workflow/store.py`.
+
+- **CIRC-001** (open, severity: medium, GitHub: #103): `nodus.vm.vm` imports
+  `get_default_workflow_runner` from `nodus_workflow.runner` at module level
+  (unconditional top-level import). Works at runtime because nodus initialises first,
+  but any embedder or test that imports `nodus_workflow` before `nodus` in a fresh
+  process hits a circular import. Fix: lazy import inside the function body (low risk),
+  or dependency-inversion registry pattern (architecturally correct). Affects
+  `src/nodus/vm/vm.py`.
+
+- **NAME-COL-001** (open, severity: high, GitHub: #104): `nodus_schema` and
+  `nodus_workflow` each exist as both an in-tree `src/` module (part of nodus-lang)
+  and a separate standalone package in the publish sequence. Once both are on PyPI,
+  install order silently determines which is imported. Must be resolved before publish:
+  rename the standalone packages, move the in-tree modules under `nodus.*` namespace,
+  or consolidate. Decision required before v4.0.0 tag.
 
 ## Phase 4 Deferred Content: STDLIB_PHILOSOPHY.md
 
