@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 import copy
 import dataclasses
 import hashlib
@@ -44,7 +45,7 @@ class TaskNode:
 class TaskGraph:
     tasks: list[TaskNode]
     graph_id: str | None = None
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
@@ -154,7 +155,7 @@ def _persist_graph_state(
     metadata = graph.metadata
     if isinstance(metadata, dict):
         metadata = copy.deepcopy(metadata)
-    state: dict[str, object] = {
+    state: dict[str, Any] = {
         "graph_id": graph.graph_id,
         "status": status,
         "tasks": {},
@@ -206,6 +207,7 @@ def _persist_graph_state(
         if task.last_error:
             task_state["last_error"] = task.last_error
         state["tasks"][task.task_id] = task_state
+    assert graph.graph_id is not None
     with _STATE_LOCK:
         _atomic_write_json(_graph_state_path(graph.graph_id), state)
     return state
@@ -313,6 +315,7 @@ def migrate_graph_snapshot(graph_id: str) -> dict:
     raw_graph_state = _load_raw_json(graph_path)
     if isinstance(raw_graph_state, dict):
         normalized_graph_state = _normalize_workflow_snapshot(copy.deepcopy(raw_graph_state))
+        assert isinstance(normalized_graph_state, dict)
         if normalized_graph_state != raw_graph_state:
             with _STATE_LOCK:
                 _atomic_write_json(graph_path, normalized_graph_state)
@@ -321,6 +324,7 @@ def migrate_graph_snapshot(graph_id: str) -> dict:
     raw_checkpoint = _load_raw_json(checkpoint_path)
     if isinstance(raw_checkpoint, dict):
         normalized_checkpoint = _normalize_workflow_snapshot(copy.deepcopy(raw_checkpoint))
+        assert isinstance(normalized_checkpoint, dict)
         if normalized_checkpoint != raw_checkpoint:
             with _STATE_LOCK:
                 _atomic_write_json(checkpoint_path, normalized_checkpoint)
@@ -373,7 +377,8 @@ def list_graph_snapshots_info() -> list[dict]:
         if not isinstance(state, dict):
             continue
         checkpoint = load_checkpoint(graph_id)
-        metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
+        _meta_raw = state.get("metadata")
+        metadata: dict[str, Any] = _meta_raw if isinstance(_meta_raw, dict) else {}
         info = {
             "graph_id": graph_id,
             "status": state.get("status"),
@@ -489,6 +494,7 @@ def _detect_cycle_task_ids(tasks: list, results: dict) -> list[str] | None:
 def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> dict:
     tasks = list(graph.tasks)
     graph = register_graph(graph)
+    assert graph.graph_id is not None
     register_graph_vm(graph.graph_id, vm)
     for idx, task in enumerate(tasks, 1):
         task.task_id = task.task_id or f"task_{idx}"
@@ -534,38 +540,39 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     workflow_name = graph.metadata.get("workflow_name") if isinstance(graph.metadata, dict) else None
     execution_kind = graph.metadata.get("execution_kind") if isinstance(graph.metadata, dict) else None
     goal_name = graph.metadata.get("goal_name") if isinstance(graph.metadata, dict) else None
-    workflow_state = None
-    checkpoints = None
-    engine_checkpoints = None
+    workflow_state: dict | None = None
+    checkpoints: list[dict] | None = None
+    engine_checkpoints: list[dict] | None = None
     if workflow_name is not None and isinstance(graph.metadata, dict):
-        workflow_state = graph.metadata.get("workflow_state")
-        checkpoints = graph.metadata.get("workflow_checkpoints")
+        workflow_state = cast("dict | None", graph.metadata.get("workflow_state"))
+        checkpoints = cast("list[dict] | None", graph.metadata.get("workflow_checkpoints"))
         legacy_checkpoints = graph.metadata.get("checkpoints")
         if checkpoints is None and isinstance(legacy_checkpoints, list):
             checkpoints = checkpoints_public(legacy_checkpoints)
-        engine_checkpoints = graph.metadata.get("engine_checkpoints")
+        engine_checkpoints = cast("list[dict] | None", graph.metadata.get("engine_checkpoints"))
         if engine_checkpoints is None and isinstance(legacy_checkpoints, list):
             engine_checkpoints = copy.deepcopy(legacy_checkpoints)
         if resume_state:
-            resume_meta = resume_state.get("metadata") if isinstance(resume_state.get("metadata"), dict) else {}
+            _resume_meta_raw = resume_state.get("metadata")
+            resume_meta: dict[str, Any] = _resume_meta_raw if isinstance(_resume_meta_raw, dict) else {}
             if "workflow_state" in resume_state:
-                workflow_state = resume_state.get("workflow_state")
+                workflow_state = cast("dict | None", resume_state.get("workflow_state"))
             elif "workflow_state" in resume_meta:
-                workflow_state = resume_meta.get("workflow_state")
+                workflow_state = cast("dict | None", resume_meta.get("workflow_state"))
             if "checkpoints" in resume_state:
-                checkpoints = resume_state.get("checkpoints")
+                checkpoints = cast("list[dict] | None", resume_state.get("checkpoints"))
             elif "workflow_checkpoints" in resume_meta:
-                checkpoints = resume_meta.get("workflow_checkpoints")
+                checkpoints = cast("list[dict] | None", resume_meta.get("workflow_checkpoints"))
             elif "checkpoints" in resume_meta:
-                checkpoints = checkpoints_public(resume_meta.get("checkpoints") or [])
+                checkpoints = checkpoints_public(cast(list, resume_meta.get("checkpoints") or []))
             if "engine_checkpoints" in resume_state:
-                engine_checkpoints = resume_state.get("engine_checkpoints")
+                engine_checkpoints = cast("list[dict] | None", resume_state.get("engine_checkpoints"))
             elif "engine_checkpoints" in resume_meta:
-                engine_checkpoints = resume_meta.get("engine_checkpoints")
+                engine_checkpoints = cast("list[dict] | None", resume_meta.get("engine_checkpoints"))
             elif engine_checkpoints is None and "checkpoints" in resume_state:
-                engine_checkpoints = copy.deepcopy(resume_state.get("checkpoints") or [])
+                engine_checkpoints = copy.deepcopy(cast(list, resume_state.get("checkpoints") or []))
             elif engine_checkpoints is None and "checkpoints" in resume_meta:
-                engine_checkpoints = copy.deepcopy(resume_meta.get("checkpoints") or [])
+                engine_checkpoints = copy.deepcopy(cast(list, resume_meta.get("checkpoints") or []))
         if workflow_state is None:
             workflow_state = {}
         if checkpoints is None:
@@ -776,7 +783,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             engine_checkpoints,
             vm,
         )
-        persist_checkpoint_snapshot(graph.graph_id, snapshot, label)
+        persist_checkpoint_snapshot(cast(str, graph.graph_id), snapshot, label)
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
 
     def _workflow_context(task: TaskNode) -> dict | None:
@@ -1230,7 +1237,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
 
     if pending:
         cycle_ids = _detect_cycle_task_ids(tasks, results)
-        task_to_step = (graph.metadata or {}).get("task_to_step", {}) if isinstance(graph.metadata, dict) else {}
+        _ts_raw = graph.metadata.get("task_to_step") if isinstance(graph.metadata, dict) else None
+        task_to_step: dict[str, str] = _ts_raw if isinstance(_ts_raw, dict) else {}
         if cycle_ids:
             cycle_names = [task_to_step.get(tid, tid) for tid in cycle_ids]
             cycle_str = " -> ".join(cycle_names + [cycle_names[0]])

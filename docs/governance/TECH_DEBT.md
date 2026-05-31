@@ -184,13 +184,12 @@ surface as ok=False after the SCHED-002 fix).
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
 
-- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **190 errors across 34 files** (down from 260 after Phase A: `except ... as err` → `_e` rename + module-callable fixes). Per-module counts:
+- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **148 errors across 33 files** (down from 260: Phase A −70, Phase B −42). Per-module counts:
 
   | Module | Errors |
   |--------|--------|
-  | `orchestration/task_graph.py` | 38 |
-  | `vm/vm.py` | 20 |
   | `tooling/formatter.py` | 18 |
+  | `vm/vm.py` | 16 |
   | `dap/server.py` | 14 |
   | `tooling/loader.py` | 12 |
   | `services/server.py` | 9 |
@@ -213,6 +212,7 @@ surface as ok=False after the SCHED-002 fix).
   | `cli/cli.py` | 2 |
   | `tooling/user_config.py` | 1 |
   | `runtime/profiler.py` | 1 |
+  | `runtime/snapshots.py` | 1 |
 
 ## Patch closure verification gap (surfaced 2026-05-25 by v3.0.1 eval)
 
@@ -255,7 +255,9 @@ This will be incorporated into `docs/governance/PLAYBOOK_PATCH_MINOR.md` Stage 3
 in the next playbook revision. See GitHub issue filed as follow-up in v3.1
 milestone.
 
-  **Phase A complete (2026-05-31):** except-as-err renames + module-callable fixes cleared 70 errors. **Next priorities:** `orchestration/task_graph.py` (38 — `_persist_graph_state` signature + None guards), `vm/vm.py` (20 — mixed narrowing), `tooling/formatter.py` (18). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
+  **Phase A (2026-05-31):** except-as-err renames + module-callable fixes, −70 errors.
+  **Phase B (2026-05-31):** `task_graph.py` — `TaskGraph.metadata: dict[str, Any]`, declared checkpoint types, assert graph_id, cast resume_state. −42 errors, `task_graph.py` now 0.
+  **Next:** `tooling/formatter.py` (18), `vm/vm.py` (16), `dap/server.py` (14), `tooling/loader.py` (12). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 
