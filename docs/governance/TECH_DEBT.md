@@ -116,6 +116,14 @@ describe the workaround patterns used until these are fixed.
   pop on RETURN. Skill: `/nodus-async-module-yield`.
   GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001 tracking issue).
 
+- **DAP-001** (open, severity: high, GitHub #106): The DAP server does not implement
+  the `evaluate` command. When paused at a breakpoint, users cannot evaluate
+  expressions in the debug console — VS Code and other DAP clients show an error.
+  `evaluate` is the most-used debugger feature in interactive sessions. Fix direction:
+  compile the expression string as a Nodus expression (via `Parser` + compiler),
+  execute in the current frame's local/global context, return DAP `EvaluateResponse`.
+  Skill: `/nodus-dap-evaluate`. GitHub: #106.
+
 - **CHAN-001** (open, related to EMBED-003): A coroutine blocked on `recv()` of an
   empty channel is silently orphaned — `run_loop` exits when it sees no pending work,
   even if the host intends to feed data later. The only scheduler mechanism that

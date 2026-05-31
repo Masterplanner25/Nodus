@@ -150,8 +150,23 @@ in CHANGELOG.md and the relevant eval reports.
 | Surface | Tier | Notes |
 |---------|------|-------|
 | LSP server (language server protocol) | Experimental | Implements LSP 3.17; feature coverage partial |
-| DAP server (debug adapter protocol) | Experimental | Breakpoints, stepping, variable inspection; feature coverage partial |
+| DAP server (debug adapter protocol) | Experimental | Breakpoints, stepping, variable inspection; `evaluate` not implemented (GitHub #106) |
 | Server mode (HTTP/FastAPI) | Experimental | Requires `nodus-lang[server]`; protocol not frozen |
+
+**Tooling drift policy:** The formatter has a CI gate that catches formatting
+regressions automatically. The LSP and DAP do not have equivalent gates —
+both implement AST visitor patterns that must be manually updated when new
+syntax constructs are added to the language.
+
+**Rule:** Any PR that adds new AST node types (new syntax) must update the
+following tooling surfaces in the same PR or explicitly defer with a filed issue:
+1. `src/nodus/tooling/formatter.py` — new node types in `format_stmt`/`format_expr`
+2. `src/nodus/lsp/server.py` — new node types in the analysis visitor
+3. `src/nodus/dap/server.py` — new control flow nodes that affect stepping behavior
+
+The formatter CI gate (`find . -name "*.nd" | xargs python nodus.py fmt --check`)
+catches formatter drift on every commit. LSP and DAP have no equivalent gate.
+Until gated tests exist for those, this rule is the process guard against drift.
 
 ---
 
