@@ -76,6 +76,47 @@ to `_op_return`. `BYTECODE_VERSION` bumped to 4.
 `SETUP_TRY` / `POP_TRY` / `FINALLY_END` / `THROW` promoted to **stable** at v1.0
 freeze declaration (2026-03-15). See `FREEZE_PROPOSAL.md § "FREEZE DECLARED"`.
 
+## Embedding API known limitations (v4.0.0, filed issues)
+
+These were identified by a raw-path readiness probe before the MCP/A2A launch.
+The nodus-mcp Phase 1 design decisions in `C:\dev\nodus-mcp\docs\design\06-embedding-runtime-blockers.md`
+describe the workaround patterns used until these are fixed.
+
+- **EMBED-001** (documented, workaround in EMBEDDING.md): `NodusRuntime()` defaults
+  to a 200ms wall-clock deadline (`EXECUTION_TIMEOUT_MS=200`). Every long-lived
+  embedder (MCP servers, A2A servers, workflow hosts, any coroutine that sleeps >
+  200ms cumulatively) must pass `timeout_ms=None, max_steps=None` explicitly. The
+  default matches `nodus run` (sandboxed scripts), not server embedding. GitHub: #97.
+
+- **EMBED-002** (open, severity: high): `Scheduler.run_loop` accepts `on_error` but
+  `NodusRuntime` never exposes or passes it. After `run_source()` returns, an errored
+  coroutine and a normally-completed one are indistinguishable — both have
+  `state="finished"`, `last_result=None`. The host cannot programmatically detect that
+  a request handler died. Workaround: require handlers to catch their own errors and
+  write structured error records to result channels. GitHub: #98.
+
+- **EMBED-003** (open, severity: medium): `subprocess_spawn` leaks two daemon pump
+  threads per spawn when `run_loop` exits before the subprocess terminates (e.g. if
+  the output channel is never consumed). Threads are `daemon=True` so they don't block
+  process exit, but they accumulate per session. Fix: `NodusRuntime` or `VM` needs
+  an explicit shutdown method that kills tracked subprocesses and joins their threads.
+  Currently `NodusRuntime.reset()` only clears `last_vm = None`. GitHub: #99.
+
+- **EMBED-004** (open, severity: medium): `subprocess_run_async`, `http_get_async`,
+  and related `*_async` builtins are fully serial under the GIL. Five concurrent
+  200ms HTTP calls take ~1s, not 200ms. The genuine concurrency path is
+  `subprocess_spawn` + channel reads via `_io_channels` daemon threads. Code that
+  calls `http_get` inside a spawned coroutine blocks all other in-flight coroutines
+  for the full duration of the HTTP call. GitHub: #100.
+
+- **CHAN-001** (open, related to EMBED-003): A coroutine blocked on `recv()` of an
+  empty channel is silently orphaned — `run_loop` exits when it sees no pending work,
+  even if the host intends to feed data later. The only scheduler mechanism that
+  prevents this exit (`scheduler._io_channels`) is a private internal attribute with
+  no public API. Workaround: pre-populate the channel before `run_loop`, or use the
+  subprocess-pipe pattern (daemon thread writes continuously). No GitHub issue yet —
+  fix tracked under EMBED-003.
+
 ## Scheduler / coroutine execution-limit behavior (v4.0.0 known limitations)
 
 These items are deferred to 4.0.1. They affect the experimental coroutine/scheduler
