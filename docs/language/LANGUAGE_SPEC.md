@@ -1,4 +1,32 @@
-﻿# Nodus Language Spec (Working)
+﻿# Nodus Language Spec
+
+## Language Identity
+
+Nodus is an **orchestration DSL**. Every feature in this spec exists to serve one
+primary use case: expressing workflows, goals, coroutines, and tool chains as
+first-class language constructs.
+
+The core language — types, functions, control flow, closures — is deliberately
+minimal and conventional. It is not trying to be novel. Its job is to be a
+familiar, reliable host for the orchestration primitives (coroutines, channels,
+task graphs, workflows, goals, tools) that are the actual reason Nodus exists.
+
+A Nodus script that does nothing but print strings and do arithmetic is valid
+Nodus but not idiomatic Nodus. Idiomatic Nodus uses coroutines, spawns tasks,
+wires tool calls, and expresses business logic as workflow steps with checkpoints.
+
+**Design positions that will not change without a major version:**
+- No implicit returns. All functions return nil unless `return expr` is used.
+- No operator overloading.
+- `{key: value}` is a record; `{"key": value}` is a map. This is intentional and
+  unambiguous (disambiguated by key syntax, not value content).
+- `42i` is an integer; `42` is a float. No automatic promotion from integer context.
+- Type annotations are hints for tooling and documentation. They do not change
+  runtime behavior. This is a deliberate design position — Nodus is dynamically
+  typed at runtime, and a `--strict` type-checking mode is the forward direction
+  for static analysis, not enforcement baked into the language.
+
+---
 
 ## Values
 Stability: Stable (v3.0).
@@ -82,19 +110,31 @@ Stability: Experimental.
 - Close: `close(ch)` stops future sends. `recv(ch)` on a closed empty channel returns `nil`. Any coroutines blocked in `recv(ch)` at the time of the close are woken and receive `nil`; only coroutines in `suspended` state are eligible to be woken.
 
 ## Static Types
-Stability: Experimental (tooling-only, likely to evolve).
-- Type annotations are optional and do not change runtime behavior.
-- Supported type names:
-  - `int`
-  - `float`
-  - `string`
-  - `bool`
-  - `list`
-  - `record`
-  - `function`
-  - `any`
-- `nodus check` parses the file and reports syntax errors only; it does not perform type checking or detect undefined names.
-- Programs without annotations continue to run as before.
+Stability: Experimental (syntax accepted; enforcement not yet implemented).
+
+Type annotations are optional hints for tooling and human readers. They do not
+change runtime behavior — this is intentional. Nodus is dynamically typed at
+runtime. The type system is designed to add value progressively:
+
+- **Today:** Annotations are parsed and preserved in the AST. `nodus check`
+  validates syntax but not types. The LSP can use annotations for hover and
+  completion hints.
+- **Forward direction:** `nodus check --strict` will enable type inference and
+  flag assignments that violate declared types. This is tooling-layer enforcement,
+  not language-layer enforcement — the same model as TypeScript or Python `mypy`.
+
+Supported type names:
+- `int`, `float`, `string`, `bool`, `list`, `record`, `function`, `any`
+
+```nd
+fn greet(name: string) -> string {
+    return "Hello, " + name
+}
+```
+
+Programs without annotations are fully valid and run identically to annotated
+programs. The annotation syntax is stable; the enforcement semantics will be
+specified in a design doc before `--strict` ships.
 
 ## Iteration Protocol
 Stability: Mostly stable (protocol details may evolve).

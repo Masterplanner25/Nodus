@@ -67,15 +67,21 @@ in CHANGELOG.md and the relevant eval reports.
 | `std:collections` | Mostly Stable | Map/list ops stable; additions possible |
 | `std:fs` | Mostly Stable | Sandbox enforcement added in v2.1.1; API stable |
 | `std:path` | Mostly Stable | |
-| `std:http` | Experimental (v4.0 planned) | Not yet in 3.0.2; shipping in v4.0 |
-| `std:env` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:time` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:hash` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:encoding` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:secrets` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:subprocess` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:test` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
-| `std:tool` | Experimental (v4.0 planned) | Not yet in 3.0.2 |
+| `std:http` | Experimental | Shipping in v4.0; async variants + SSE streaming |
+| `std:env` | Experimental | Shipping in v4.0 |
+| `std:time` | Experimental | Shipping in v4.0 |
+| `std:hash` | Experimental | Shipping in v4.0; returns hash record with `.to_hex()` |
+| `std:encoding` | Experimental | Shipping in v4.0; base64, URL encode/decode |
+| `std:secrets` | Experimental | Shipping in v4.0; cryptographic random tokens |
+| `std:subprocess` | Experimental | Shipping in v4.0; run, shell, spawn with async variants |
+| `std:test` | Experimental | Shipping in v4.0; built-in assertion framework |
+| `std:tool` | Experimental | Shipping in v4.0; MCP-compatible tool registry |
+| `std:identity` | Experimental | Shipping in v4.0; trace_id, session_id propagation |
+| `std:effects` | Experimental | Shipping in v4.0; EXACTLY_ONCE idempotency |
+| `std:sys` | Experimental | Shipping in v4.0; versioned syscall dispatch |
+| `std:memory` | Experimental | Shipping in v4.0; share/recall/forget across namespaces |
+| `std:retry` | Experimental | Shipping in v4.0; configurable retry policies |
+| `std:circuit_breaker` | Experimental | Shipping in v4.0; three-state breaker |
 | Legacy `.tl` extension | Deprecated | Warned on use; no removal date set |
 
 ---
@@ -85,14 +91,18 @@ in CHANGELOG.md and the relevant eval reports.
 | Surface | Tier | Notes |
 |---------|------|-------|
 | `from nodus import NodusRuntime` | Stable | Added to `nodus.__all__` in v1.0 |
-| `NodusRuntime(...)` constructor params | Stable | All params stable: `max_steps`, `timeout_ms`, `max_stdout_chars`, `project_root`, `allowed_paths`, `allow_input`, `max_frames` |
+| `NodusRuntime(...)` constructor params | Stable | Stable: `max_steps`, `timeout_ms`, `max_stdout_chars`, `project_root`, `allowed_paths`, `allow_input`, `max_frames`. Added v4.0: `on_error` (coroutine error hook) |
 | `run_source(source, ...)` | Stable | Returns `{"ok", "stdout", "stderr", "error"}` |
 | `run_file(path, ...)` | Stable | |
 | `register_function(name, fn, arity)` | Stable | |
 | `reset()` | Stable | |
+| `shutdown()` | Stable | Added v4.0; clears last_vm, host functions, tools |
+| `set_trace_id(id)` | Mostly Stable | Added v4.0 |
+| `set_effect_store(store)` | Mostly Stable | Added v4.0 |
 | `run_source()` result shape | Stable | `ok`, `stdout`, `stderr`, `error` keys |
-| Event subscription API | Experimental | Not yet implemented in 3.0.2 |
-| Module loading hooks | Experimental | Not yet implemented in 3.0.2 |
+| `run_file()` result shape | Stable | Now consistent with run_source (ok=False for missing files, v4.0) |
+| Event subscription API | Experimental | Not yet implemented |
+| Module loading hooks | Experimental | Not yet implemented |
 | `host_globals` parameter | Mostly Stable | |
 | `initial_globals` parameter | Mostly Stable | |
 | `nodus.tooling.loader.run_source()` | Internal | Low-level; no sandbox controls; prefer `NodusRuntime` |
