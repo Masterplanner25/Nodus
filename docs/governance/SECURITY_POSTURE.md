@@ -86,8 +86,10 @@ The Nodus sandbox is not a full security sandbox. It does not protect against:
 - **Memory exhaustion** — No limit on heap allocation. A script that builds a large
   list or map can exhaust host memory. No equivalent of `max_memory`.
 - **Subprocess execution** — `std:subprocess` (v4.0+) allows arbitrary process execution.
-  In untrusted contexts, do not allow subprocess access. There is no `allow_subprocess`
-  flag in v3.0.2; if subprocess stdlib is available, it is available.
+  The process itself is not sandboxed (no `allow_subprocess` flag; if the stdlib is
+  available, it is available). However, `stdout`/`stderr` file redirect paths and the
+  `cwd` option are validated against `allowed_paths`/`fs_root` — a script cannot use
+  subprocess redirection to write files outside the sandbox.
 - **Network access** — `std:http` (v4.0+) allows arbitrary outbound HTTP. There is no
   `allowed_hosts` restriction in v3.0.2.
 - **Information leakage via timing** — The scheduler does not provide timing isolation
