@@ -302,6 +302,32 @@ just the validator.
 - ✅ `builtin_close` guards receiver wake-up with `state == "suspended"` check to prevent waking non-suspended coroutines (`src/nodus/vm/vm.py`).
 - ✅ `resolve_imports` now enforces a configurable import chain depth limit (default 100, env `NODUS_MAX_IMPORT_DEPTH`) and raises `LangSyntaxError` instead of `RecursionError` (`src/nodus/tooling/loader.py`).
 
+## Release Process Methodology (v4.0 additions)
+
+Two new process documents address the class of problems where a bug either
+reaches users before the maintainer knows about it, or sits unresolved:
+
+- **`docs/governance/RELEASE_GATES.md §Gate 10`** — Pre-publish creator validation.
+  Before every PyPI upload, the maintainer runs an adversarial validation session
+  against the built wheel: writes programs targeting known complexity areas, triggers
+  error categories, verifies every language quirk from `CLAUDE.md`. Any fixable bug
+  gets fixed before the upload; any non-fixable bug gets filed immediately.
+  This replaces the prior model where language bugs were discovered post-publish by
+  the independent eval (Stage 5 / Playbook A).
+
+- **`docs/governance/ISSUE_RESPONSE_POLICY.md`** — Issue response commitment.
+  CRITICAL/HIGH bugs: response within 24h–1 week, fix within 1–2 weeks.
+  AI-assisted development makes these timelines realistic (most clear-repro fixes
+  take a single session). This policy is public and applies to all filed issues.
+
+The specific incident that informed Gate 4 (closed-issue regression test gate) —
+v3.0.1 shipping without a fix that was in source but not in the wheel — is already
+documented in `RELEASE_GATES.md §Gate 4`. Gate 10 addresses the broader pattern
+beyond that specific incident: catching unknown bugs before users encounter them,
+not just verifying known fixes are present.
+
+---
+
 ## Process Gaps (surfaced during v3.0 Phase 0, 2026-05-25)
 
 - **Duplicate BUG-NNN:** BUG-029 was filed twice — [#27](https://github.com/Masterplanner25/Nodus/issues/27) (CLI `--help` grouping, no milestone, not in v3.0 scope) and [#30](https://github.com/Masterplanner25/Nodus/issues/30) (else-if syntax, v3.0 `phase:2-fix`). Root cause: the v2.1.1 handoff assigned the number from a running counter without checking existing issues. **Playbook action:** bug filing checklist must include a uniqueness check against open+closed issues before assigning a BUG-NNN. Capture in `RELEASE_PLAYBOOK.md` Phase 5.

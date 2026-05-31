@@ -160,6 +160,60 @@ This catches spec changes between implementation and release.
 
 ---
 
+## Gate 10: Pre-publish creator validation
+
+**When:** after the wheel is built (Gate 4 artifacts), before `twine upload` to PyPI.
+
+**Purpose:** the maintainer actively tries to break the language against a real installed
+wheel — not dev source — with the explicit goal of finding bugs before users do. This is
+adversarial by design. It is different from the post-publish independent eval (Stage 5 /
+Gate 4): that stage evaluates "does this work as a new user would expect?" This gate asks
+"what can I personally make fail?"
+
+**Protocol:**
+
+1. Build the wheel: `python -m build`
+2. Install in a **clean virtualenv** (not the dev venv):
+   ```powershell
+   python -m venv .venv-validation
+   .venv-validation/Scripts/pip install dist/nodus_lang-X.Y.Z-py3-none-any.whl
+   ```
+3. Write 8–12 Nodus programs targeting the highest-complexity surfaces. Required
+   categories:
+   - **Closures and upvalue capture** — nested closures, mutation through outer scope
+   - **Coroutines and channels** — spawn/yield/recv sequences, closed-channel behavior
+   - **Error handling** — try/catch/finally interaction, throw inside finally, rethrow
+   - **Import system** — multi-file imports, circular import detection, alias resolution
+   - **Operator and type edge cases** — division by zero, nil coercion, integer vs float arithmetic
+   - **Error messages** — are they user-legible or internal garbage? Trigger each error category
+   - **The documented quirks** from `CLAUDE.md §"Nodus language quirks"` — every quirk must
+     behave exactly as documented; any deviation is a bug
+   - **At least one workflow or goal execution** if the release touches the orchestration layer
+4. For each failure found, apply the disposition:
+   - **Fixable before publish** (clear root cause, low regression risk) → fix it now; it ships
+     in this version; add a regression test; add to CHANGELOG
+   - **Not fixable before publish** (requires design, risky, or too large) → file a GitHub issue
+     immediately with full repro; note it as a known issue in the release announcement; commit
+     to a fast turnaround (see `docs/governance/ISSUE_RESPONSE_POLICY.md`)
+5. Record findings in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` — even if everything passes.
+   A clean run is evidence, not silence.
+
+**Passing criteria:**
+- No unfiled bugs. Every failure either has a fix committed or a filed issue with a severity label.
+- At least 8 programs executed to completion or to expected failures.
+- No regressions introduced by any fix made during this stage (Gate 1 reruns after each fix).
+
+**Exemptions:**
+- Emergency security patches may run an abbreviated version scoped to the patched code path only.
+- Pure doc-only releases are exempt.
+
+**Why this gate exists:** prior to v4.0.0, discovery of language bugs happened post-publish via
+the independent eval (Stage 5). This placed bugs in front of users before the maintainer knew
+about them. Creator validation closes that window by moving adversarial testing to before the
+upload, when fixes are still cheap.
+
+---
+
 ## Gate failure handling
 
 A failed gate blocks the release. The options are:
@@ -188,6 +242,7 @@ doc-vs-code failures cannot be deferred.
 | README version sync | Major releases | No |
 | Companion library tests | Coordinated release | No |
 | Spec version verification | Companion library releases | No |
+| **Pre-publish creator validation** | All releases (abbreviated for security patches) | No |
 
 ---
 

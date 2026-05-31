@@ -84,14 +84,16 @@ With this discipline:
 
 ## Overview
 
-Five stages in order. Stage 4 (eval) is optional for targeted security
-patches; mandatory for all other releases.
+Six stages in order. Stage 5 (independent eval) is optional for targeted security
+patches; mandatory for all other releases. Stage 3 (creator validation) is required
+for all releases; the abbreviated security-patch variant is documented in Stage 3.
 
 1. **Docs audit** — catches drift before it ships
 2. **Tiered fixes** — P0 blockers → P1 release-ready → P2 quality → P3 polish
-3. **PyPI publish** — TestPyPI dry-run gate, then real PyPI
-4. **Independent stress-test eval** — researcher mode, adversarial
-5. **Issue filing and next-version planning** — eval findings become next cycle's input
+3. **Pre-publish creator validation** — maintainer actively tries to break the language against a real wheel; fix everything fixable before uploading
+4. **PyPI publish** — TestPyPI dry-run gate, then real PyPI
+5. **Independent stress-test eval** — researcher mode, adversarial
+6. **Issue filing and next-version planning** — eval findings become next cycle's input
 
 ---
 
@@ -175,7 +177,63 @@ green; `CHANGELOG.md [Unreleased]` accurately describes what shipped.
 
 ---
 
-## Stage 3 — PyPI publish
+## Stage 3 — Pre-publish creator validation
+
+**When to run:** after Stage 2 is complete and the test suite is green, before
+building the release wheel. This stage runs against a built wheel, not dev source.
+
+**Why it exists:** the independent stress-test eval (Stage 5) catches bugs after
+users already have access to the broken version. Creator validation moves adversarial
+testing to before the upload, when fixes are still cheap and the version number hasn't
+been stamped on anything irreversible.
+
+**Mode:** adversarial. The maintainer is not evaluating usability — they are actively
+trying to find failures. The goal is to find every fixable bug before users encounter it.
+
+**Protocol:**
+
+1. Build the release candidate wheel: `python -m build`
+2. Install it in a clean virtualenv:
+   ```powershell
+   python -m venv .venv-validation
+   .venv-validation/Scripts/pip install dist/nodus_lang-X.Y.Z-py3-none-any.whl
+   ```
+3. Write 8–12 Nodus programs targeting the highest-complexity surfaces. Required
+   categories (at minimum):
+   - Closures and upvalue capture — nested closures, mutation through outer scope
+   - Coroutines and channels — spawn/yield/recv sequences, closed-channel behavior
+   - Error handling — try/catch/finally interactions, throw inside finally
+   - Import system — multi-file imports, circular import detection, alias resolution
+   - Operator and type edge cases — division by zero, nil coercion, integer vs float
+   - Error messages — trigger each error category and verify the message is user-legible
+   - Every quirk documented in `CLAUDE.md §"Nodus language quirks"` — any deviation
+     from the documented behavior is a bug
+   - At minimum one workflow or goal execution if the release touches orchestration
+4. For each failure, apply the disposition rule:
+   - **Fix it now** if: the root cause is clear, the fix is low regression risk, and
+     it can be committed, tested, and the wheel rebuilt within the validation session.
+     The fix ships in this version; add a regression test and CHANGELOG entry.
+   - **File it now** if: it requires design work, carries regression risk, or is too
+     large for the current release window. File a GitHub issue immediately with full
+     repro, add `found-in:vX.Y.Z` label, and note it in the release announcement.
+     See `docs/governance/ISSUE_RESPONSE_POLICY.md` for the response commitment.
+5. Record results in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` — a short file,
+   even if everything passes. A clean run is documented evidence, not silence.
+
+**For security patches (abbreviated variant):**
+Scope the validation to the patched code path only. Write 3–5 programs specifically
+targeting the security fix and any adjacent code paths it touches. Skip the full
+category sweep. Record results in `CREATOR_VALIDATION.md` with the scope noted.
+
+**Exit condition:**
+- Every failure found is either committed-and-fixed or filed-as-an-issue. No
+  undocumented failures.
+- At least 8 programs executed (3 for security patches).
+- Gate 1 (test suite) reruns and passes after any fix made in this stage.
+
+---
+
+## Stage 4 — PyPI publish
 
 **When to run:** when P0 + P1 are committed and the test suite is green.
 P2 and P3 may still be in flight; they ship in the next cycle if not
@@ -246,7 +304,7 @@ matches; GitHub release published with the matching tag.
 
 ---
 
-## Stage 4 — Independent stress-test eval
+## Stage 5 — Independent stress-test eval
 
 **When to run:** within 1 week of PyPI publish, before any community
 announcement of the new release.
@@ -292,12 +350,12 @@ release's changes.
   the right granularity for tracking cycle-over-cycle improvement. Don't
   obsess about absolute number, watch the trend.
 
-**Exit condition:** all four deliverables produced; bugs filed (Stage 5);
+**Exit condition:** all four deliverables produced; bugs filed (Stage 6);
 eval directory moved to `docs/evals/vX.Y.Z/`.
 
 ---
 
-## Stage 5 — Issue filing and next-version planning
+## Stage 6 — Issue filing and next-version planning
 
 **When to run:** same week as the eval.
 
@@ -359,22 +417,23 @@ These have been hit and corrected; they should not be hit again:
 
 **Routine patch (vX.Y.Z+1):**
 - Stage 1 (audit) → Stage 2 (P0 + P1, skip P2/P3 if no docs changes)
-  → Stage 3 (PyPI, can skip TestPyPI for pure bug-fix patches)
-  → Stage 4 (focused eval on patched surfaces)
-  → Stage 5 (file findings)
+  → Stage 3 (creator validation, abbreviated to patched surfaces)
+  → Stage 4 (PyPI, can skip TestPyPI for pure bug-fix patches)
+  → Stage 5 (focused eval on patched surfaces)
+  → Stage 6 (file findings)
 
 **Feature release (vX.Y+1.0):**
-- Full Stage 1-5 sequence. TestPyPI mandatory if new dependencies or
+- Full Stage 1-6 sequence. TestPyPI mandatory if new dependencies or
   packaging changes.
 
 **Emergency security patch (e.g., v2.0.0 → v2.0.1):**
 - Skip Stage 1 unless the security fix touches docs
-- Stage 2 is the security fix only (and any closely-related test
-  coverage)
-- Stage 3 with TestPyPI gate
-- Stage 4 is a focused eval: only the patched code path and the security
+- Stage 2 is the security fix only (and any closely-related test coverage)
+- Stage 3 abbreviated: validate the patched code path only (3 programs minimum)
+- Stage 4 with TestPyPI gate
+- Stage 5 is a focused eval: only the patched code path and the security
   invariant. The full eval can wait for the next release.
-- Stage 5 files any related findings the focused eval surfaces (this is
+- Stage 6 files any related findings the focused eval surfaces (this is
   how BUG-046 was caught for v2.1.1 after the v2.0.1 fix shipped).
 
 ---

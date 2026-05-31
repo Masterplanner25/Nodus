@@ -491,9 +491,33 @@ CHANGELOG accurately describes shipped behavior.
 
 **When to run:** after Phase 4 closes.
 
-**Why it exists:** ship to PyPI. Same procedure as Playbook A Stage 3.
+**Two sub-phases:** creator validation (5A) then PyPI publish (5B).
+For a major release both are mandatory; neither can be skipped.
 
-**Inputs:** clean working tree, test suite green, CHANGELOG ready.
+### Phase 5A — Pre-publish creator validation
+
+**Same protocol as Playbook A Stage 3**, but scoped to the full language
+surface rather than a targeted patch. For a major release, the validation
+is broader:
+
+- All 8+ required categories (see Stage 3 in Playbook A)
+- Additional category: **each breaking change from this release** — write at
+  least one program per breaking change that would have worked in vN-1 and
+  verify the migration path works in vN
+- Additional category: **each new feature** — at least one program exercising
+  the happy path and one exercising a failure mode
+- **Failure disposition rule** for major releases: higher bar for "fix it now"
+  because major-release regressions are expensive. If a fix requires more than
+  one session, prefer filing and patch-releasing immediately after v(N+0) ships.
+
+Record results in `docs/evals/vX.0.0/CREATOR_VALIDATION.md`.
+
+### Phase 5B — PyPI publish
+
+**Why it exists:** ship to PyPI. Same procedure as Playbook A Stage 4.
+
+**Inputs:** Phase 5A complete (validation clean or all findings filed),
+clean working tree, test suite green, CHANGELOG ready.
 
 **Outputs:** version bumped, tagged, pushed, built, uploaded, GitHub
 release published.
@@ -506,11 +530,11 @@ sequence. Maintainer reviews each step's output before proceeding.
   procedure-reading to ~10 minutes of confirming each step.
 - For a major release, TestPyPI is mandatory regardless of packaging
   changes. The release is too consequential to skip the dry-run.
-- After PyPI publish, post-release eval starts immediately. Stage 4 of
+- After PyPI publish, post-release eval starts immediately. Stage 5 of
   Playbook A applies here — adapt for major release scope.
 
-**Exit condition:** PyPI shows new version; install + smoke test passes;
-GitHub release published.
+**Exit condition:** Phase 5A complete; PyPI shows new version; install +
+smoke test passes; GitHub release published.
 
 ---
 
@@ -521,7 +545,7 @@ eval and any patches the eval surfaces. v3.0.0 followed this exact path:
 Phase 5 shipped v3.0.0, the eval found 22 issues, and Playbook A
 shipped v3.0.1 within 24 hours of the eval landing.
 
-The eval itself is Playbook A Stage 4 with adaptations for the major
+The eval itself is Playbook A Stage 5 with adaptations for the major
 release:
 - The stress-test prompt is the v3.0.0 template (capture pending at
   `docs/governance/release-prompts/major/04_stress_test_eval.md`)
