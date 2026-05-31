@@ -616,12 +616,116 @@ def is_limit_exceeded(result: dict) -> bool:
 
 ---
 
-## 11. See also
+## 11. Advanced host API
+
+### Detecting coroutine errors with `on_error`
+
+By default, a coroutine that dies with an uncaught exception prints to stderr and
+execution continues. To detect and react to those errors from Python:
+
+```python
+errors = []
+
+def handle_error(coroutine, err) -> bool:
+    errors.append({"coroutine_id": coroutine.id, "error": str(err)})
+    return False  # False = continue running other coroutines; True = stop
+
+rt = NodusRuntime(timeout_ms=None, on_error=handle_error)
+result = rt.run_source("""
+spawn(coroutine(fn() { throw "oops" }))
+spawn(coroutine(fn() { print("I still run") }))
+run_loop()
+""")
+
+print("Errors caught:", errors)
+# Errors caught: [{'coroutine_id': ..., 'error': '...'}]
+```
+
+Per-call override: `rt.run_source(source, on_error=my_fn)` overrides the
+instance-level `on_error` for that call only.
+
+---
+
+### Releasing resources with `shutdown()`
+
+When a `NodusRuntime` is no longer needed, call `shutdown()` to release its
+reference to the last VM and clear registered tools and host functions:
+
+```python
+rt = NodusRuntime(...)
+rt.register_function("fetch", my_fetch_fn, arity=1)
+# ... use rt ...
+rt.shutdown()
+# rt should not be used after this point
+```
+
+**Note on subprocess threads:** Daemon threads created by `subprocess_spawn`
+accumulate until their subprocesses exit. `shutdown()` does not forcibly
+terminate running subprocesses. Call `shutdown()` after all spawned
+subprocesses have completed, or accept that daemon threads will exit with the
+host process.
+
+---
+
+### Concurrent async I/O in spawned coroutines
+
+The `subprocess_run_async`, `subprocess_shell_async`, and `http_*_async`
+builtins run concurrently when called **directly** (not via the `std:subprocess`
+or `std:http` module wrappers) from within spawned coroutines:
+
+```python
+import sys
+PY = sys.executable
+
+rt = NodusRuntime(timeout_ms=None, max_steps=1_000_000)
+result = rt.run_source(f"""
+fn fetch(label) {{
+    let r = subprocess_run_async(["{PY}", "-c", "import time; time.sleep(1)"])
+    print(label)
+}}
+spawn(coroutine(fn() {{ fetch("a") }}))
+spawn(coroutine(fn() {{ fetch("b") }}))
+spawn(coroutine(fn() {{ fetch("c") }}))
+run_loop()
+""")
+# Three 1-second subprocesses complete in ~1s total, not ~3s
+```
+
+**Limitation:** calling `subprocess.run_async(...)` via `import "std:subprocess" as sp`
+uses a module-function calling path that does not support yielding — it falls back to
+synchronous execution. Direct builtin calls (`subprocess_run_async(...)` without
+the module import) achieve true concurrency.
+
+---
+
+### Trace IDs and effect stores
+
+For distributed tracing, inject a trace ID before each run:
+
+```python
+import uuid
+rt.set_trace_id(str(uuid.uuid4()))
+result = rt.run_source(source)
+# Nodus scripts can call trace_id() from std:identity to read it
+```
+
+For EXACTLY_ONCE idempotency (prevents duplicate side effects on retry):
+
+```python
+from nodus_retry.effect import InMemoryEffectStore
+store = InMemoryEffectStore()
+rt.set_effect_store(store)
+# Scripts using std:effects will dedup against this store across runs
+```
+
+---
+
+## 12. See also
 
 - [EMBEDDING.md](../runtime/EMBEDDING.md) — full constructor and method reference
+- [OPERATOR_OR_EMBEDDER_RUNBOOK.md](../runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md) — production runbook for embedders
 - [error-handling.md](error-handling.md) — `err.kind` reference and throw patterns
 - [standard-library.md](standard-library.md) — stdlib functions and their error behavior
-- [BUG-046 #47](https://github.com/Masterplanner25/Nodus/issues/47) — `allowed_paths` bypass via `std:fs`
 
 ---
 
