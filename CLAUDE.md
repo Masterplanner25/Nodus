@@ -496,16 +496,25 @@ contain hundreds of files that should never be committed.
 - nodus-queue redis tests need a live Redis server — always run with `--ignore=tests/test_redis_backend.py` in dev
 - **nodus-mcp** test_phase_m.py has 2 port-conflict-sensitive tests — they pass individually but fail in full suite runs (pre-existing race condition, not a code bug)
 
-### Dual-implementation names (same name, different scope)
+### In-tree framework modules (namespace-qualified to avoid collision)
 
-Two pairs of packages share names but are NOT the same package:
+The in-tree workflow and schema modules were renamed in 2026-05-31 (NAME-COL-001 Option A)
+to avoid install-order collisions with the same-named standalone PyPI packages. The
+install-order collision is now resolved.
 
-| Name | In-tree (src/nodus_X/) | Standalone (C:\dev\nodus-X) |
-|------|----------------------|---------------------------|
-| **nodus_schema** | `src/nodus_lang_schema/` — runtime ABI contracts for syscalls and extension surfaces; used by nodus-lang internally | `C:\dev\nodus-schema` — general schema validation library (SchemaRegistry, parse_versioned_name); standalone |
-| **nodus_workflow** | `src/nodus_lang_workflow/` — full workflow orchestration layer wired into the nodus-lang server (HTTP/CLI surfaces, 7-state lifecycle, SQLite store) | `C:\dev\nodus-workflow` — standalone workflow primitives (FlowDefinition, SchedulerEngine); lighter, no server wiring |
+| In-tree module | Python import | Standalone package | Python import |
+|----------------|---------------|--------------------|---------------|
+| `src/nodus_lang_schema/` | `nodus_lang_schema` | `C:\dev\nodus-schema` | `nodus_schema` |
+| `src/nodus_lang_workflow/` | `nodus_lang_workflow` | `C:\dev\nodus-workflow` | `nodus_workflow` |
 
-Importing `nodus_schema` or `nodus_workflow` in a Python script may find either version depending on install order. Always check `import nodus_schema; print(nodus_schema.__file__)` before working on these.
+**In-tree vs standalone — different scope, different content:**
+- `nodus_lang_schema` = runtime ABI contracts for syscalls and extension surfaces (used by nodus-lang internally)
+- `nodus_schema` (standalone) = general schema validation library (SchemaRegistry, parse_versioned_name)
+- `nodus_lang_workflow` = full orchestration framework wired into the nodus-lang server (7-state lifecycle, SQLite store, HTTP/CLI)
+- `nodus_workflow` (standalone) = lightweight workflow primitives (FlowDefinition, SchedulerEngine, no server wiring)
+
+**Option C consolidation** (post-publish): make standalone packages canonical, remove in-tree
+modules, have nodus-lang depend on them. Tracked in GitHub #104 and skill `/nodus-name-col-consolidation`.
 
 ## Ecosystem incubators (`packages/` in this repo)
 
@@ -546,15 +555,18 @@ The `LocalWorkflowStore` scans all `.nodus/workflow_framework/runs/*.json` on ev
 test (500ms deadline). Fix: use SQLite temp store in tests, OR clean `.nodus/workflow_framework/runs/`
 (safe — test artifacts only).
 
-**Circular import:** `nodus.vm.vm` imports `get_default_workflow_runner` from `nodus_workflow.runner`
-at top level. Works at runtime (nodus initializes first) but fails if `nodus_workflow` is imported
-before `nodus` in a fresh process.
+**Circular import:** `nodus.vm.vm` imports `get_default_workflow_runner` from `nodus_lang_workflow.runner`
+at top level. Works at runtime (nodus initializes first) but fails if `nodus_lang_workflow` is imported
+before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus-scheduler-freeze` Phase A.
 
-## nodus_schema (in-tree package)
+## nodus_lang_schema (in-tree ABI contracts package)
 
-- **Location:** `src/nodus_lang_schema/` (in this repo, not a separate package yet)
+- **Location:** `src/nodus_lang_schema/` — renamed from `nodus_schema` (NAME-COL-001, 2026-05-31)
+- **Python import:** `from nodus_lang_schema.syscalls import SyscallSpec`
 - **Exports:** `SyscallSpec`, `parse_syscall_name()`, `resolve_version()`,
   `validate_input()`, `validate_output()`, `validate_payload()`, extension ABI models.
+- **Note:** Not the same as the standalone `nodus-schema` package (`C:\dev\nodus-schema`).
+  Option C post-launch will consolidate these. Skill: `/nodus-name-col-consolidation`.
 
 ## nodus-sdk companion package
 
