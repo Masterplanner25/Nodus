@@ -1,8 +1,13 @@
 ﻿# Changelog
 
-## [4.1.0] - 2026-05-30
+## [4.0.0] - 2026-05-30 (pre-release additions — not yet published to PyPI)
 
-### Added
+> **SemVer note:** The following additions were implemented during the v4.0.0
+> pre-release hold while the language matures to the creator/maintainer's
+> satisfaction. They are part of v4.0.0, not a separate minor version.
+> The last published PyPI release remains v3.0.2.
+
+### Added (Phase 6 — AI-native primitives)
 
 - **Phase 6A — Execution identity auto-propagation:** VM gains `execution_unit_id`
   (always set, `secrets.token_hex(8)`, unique per VM instance) and injectable `trace_id`
@@ -86,9 +91,7 @@
   / `AsyncEventStore` / `AsyncJobStore` via `sqlalchemy.ext.asyncio`. 47 tests (31 sync +
   16 async). Closes the last gap in both ecosystem audits.
 
-## [4.0.0] - 2026-05-30
-
-### Added
+### Added (original 4.0.0 scope)
 
 - **Third-party .nd module resolution via `nodus.nd` entry-point group:** Pip-installed
   Nodus libraries can now be imported with a bare `import "library-name"` after

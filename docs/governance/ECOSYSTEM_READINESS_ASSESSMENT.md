@@ -4,7 +4,7 @@
 
 **Date:** 2026-05-30 (updated from 2026-05-29)
 **Status:** Current-state assessment — update at each library release
-**Assessor:** Codex (documentation maturity sweep) / updated for v4.1.0
+**Assessor:** Codex (documentation maturity sweep) / updated for v4.0.0
 **Rubric:** `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md`
 
 ---
@@ -13,12 +13,12 @@
 
 The Nodus ecosystem is **real, architecturally coherent, and prepared for a coordinated
 launch** — but it is **not yet production-credible and not yet proven in real systems.**
-nodus-lang is at **4.1.0** (unpublished). The ecosystem now spans **29 standalone packages**
+nodus-lang is at **4.0.0** (unpublished). The ecosystem now spans **29 standalone packages**
 (27 Nodus packages + nodus-sdk v0.1.0 + nodus-store-sql v0.1.0), all with GitHub repos
 under Masterplanner25. None are published to PyPI. None have been used in a real
 production system.
 
-v4.1.0 additions: 6 new AI-native stdlib modules (std:identity, std:effects, std:sys,
+v4.0.0 additions: 6 new AI-native stdlib modules (std:identity, std:effects, std:sys,
 extended std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure
 in nodus_schema, nodus-sdk (unified SDK), and nodus-store-sql (SQLAlchemy persistence).
 1,612 tests pass in nodus-lang. Both ecosystem audits (A.I.N.D.Y. and OpenClaw) are
@@ -28,7 +28,7 @@ now fully covered.
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 4.1.0 (prepared, not yet published)
+**Current version:** 4.0.0 (prepared, not yet published)
 **Published on PyPI:** 3.0.2 (last published release)
 
 | Dimension | Level |
@@ -123,7 +123,7 @@ fully covered by implemented packages.
 
 **Is the Nodus ecosystem mature?** No. None of the packages have been published to PyPI.
 None have been proven in production. The core language (3.0.2) is the only published
-artifact. nodus-lang 4.1.0 and the companion libraries await coordinated publication.
+artifact. nodus-lang 4.0.0 and the companion libraries await coordinated publication.
 
 **Is the ecosystem architected well?** Yes. The protocols-are-adapters commitment is
 sound. The three-tier ecosystem model is clear. The AI-native primitives (Phase 6)

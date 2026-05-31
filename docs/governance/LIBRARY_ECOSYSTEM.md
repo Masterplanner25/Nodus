@@ -4,12 +4,12 @@
 
 **Status:** Architectural reference. Updated alongside major release cycles.
 **Created:** 2026-05-25 (v4.0 cycle, Phase 0)
-**Last reconciled:** 2026-05-30 (v4.1.0 — Phase 6 stdlib additions, nodus-sdk, nodus-store-sql)
+**Last reconciled:** 2026-05-30 (v4.0.0 — Phase 6 stdlib additions, nodus-sdk, nodus-store-sql)
 **Companion to:** `docs/design/v4/00-phase-0-decisions.md`,
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-> **Current state note (2026-05-30):** nodus-lang is at **4.1.0** (unpublished; awaiting
+> **Current state note (2026-05-30):** nodus-lang is at **4.0.0** (unpublished; awaiting
 > coordinated launch with nodus-mcp 0.1.0). The standalone ecosystem now has 29 packages:
 > 27 standalone Nodus packages + nodus-sdk v0.1.0 + nodus-store-sql v0.1.0. All packages
 > have GitHub repos under Masterplanner25. For honest current-state per package:
@@ -148,12 +148,12 @@ abstractions.
   EmbeddingProvider) + `nodus-native-memory-engine` (76 tests, PyO3/Maturin Rust).
 - `nodus-tooling` — Tool schemas, capability declarations, syscall boundaries.
   **Partially covered** by `nodus-schema` (Group 3, 30 tests) and the HandlerContract
-  infrastructure (Phase A-D in v4.1.0).
+  infrastructure (Phase A-D in v4.0.0).
 - `nodus-workflow-ai` — Workflow primitives for AI-driven planning. **Built:**
   in-tree `src/nodus_workflow/` (30 tests) + standalone `C:\dev\nodus-workflow`
   (17 tests, FlowDefinition, SchedulerEngine, FlowExecutor).
 
-**Ecosystem SDK (v4.1.0, built alongside Phase 6):**
+**Ecosystem SDK (v4.0.0, built alongside Phase 6):**
 
 - `nodus-sdk v0.1.0` — Unified platform SDK at `C:\dev\nodus-sdk`. Single install story:
   `pip install nodus-sdk[agent,sql,fastapi]`. Provides `NodusSDKRuntime` (fluent

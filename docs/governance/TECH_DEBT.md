@@ -114,7 +114,7 @@ surface as ok=False after the SCHED-002 fix).
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
 - ✅ `NodusRuntime` added to `__all__`: `src/nodus/__init__.py` now imports and exports `NodusRuntime` directly. `from nodus import NodusRuntime` works as of v1.0. EMBEDDING.md updated. Fixed in v1.0.
 - ✅ `LOAD_LOCAL` compiler fallbacks: audited and fixed in v1.0. All three paths (compiler.py lines 584, 619, 731) confirmed unreachable — `SymbolTable.define()` always assigns `symbol.index` when `in_function_scope()` is True, making "local + in_function + index is None" a logical contradiction. Fallback emissions replaced with `assert symbol.index is not None` guards. See DEPRECATIONS.md.
-- `vm.py` line count: ~2,500 lines as of v4.1.0 (Phase 6 added `secrets` import,
+- `vm.py` line count: ~2,500 lines as of v4.0.0 (Phase 6 added `secrets` import,
   `execution_unit_id`/`trace_id` attrs, `effect_store`, `circuit_breakers`, `builtin_syscall`,
   `builtin_syscall_list`, `_dict_to_record()`, and inlined 5 memory builtins were moved
   to `memory_module.py`). Further extraction of workflow/goal builtins and scheduler

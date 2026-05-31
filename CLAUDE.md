@@ -582,21 +582,21 @@ before `nodus` in a fresh process.
 
 ## Phase 5/6 publish status (as of 2026-05-30)
 
-nodus-lang is at **4.1.0** (not yet published). The full coordinated publish sequence:
+nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented beyond original scope). The full coordinated publish sequence:
 
 **Current test count:** 1,612 passing (nodus-lang), 2 pre-existing failures
 (`test_resume_goal` — KeyError 'goal', pre-Phase-3 regression;
 `test_worker_death_detection` — timing-sensitive sweeper test).
 
-**Wheels to rebuild before publish:** nodus-lang 4.1.0 wheel must be rebuilt
+**Wheels to rebuild before publish:** nodus-lang 4.0.0 wheel must be rebuilt
 (Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp and nodus-a2a
 wheels remain valid (no code changes in those repos).
 
 **Publish sequence** (do NOT run until explicitly asked):
-1. `git tag v4.1.0 && git push origin main --tags` (nodus-lang)
+1. `git tag v4.0.0 && git push origin main --tags` (nodus-lang)
 2. Build fresh wheel: `python -m build`
-3. Upload nodus-lang 4.1.0 to real PyPI (token from user at upload time)
-4. Confirm `pip install nodus-lang==4.1.0` succeeds
+3. Upload nodus-lang 4.0.0 to real PyPI (token from user at upload time)
+4. Confirm `pip install nodus-lang==4.0.0` succeeds
 5. Upload nodus-mcp 0.1.0 and nodus-sdk 0.1.0 and nodus-store-sql 0.1.0
    (nodus-mcp and nodus-a2a are separate repos with their own PyPI tokens)
 6. Create GitHub releases for all published packages

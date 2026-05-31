@@ -1469,7 +1469,7 @@ working on either — import order determines which version loads.
 
 ---
 
-### Phase 6 — AI-Native Language Primitives (v4.1.0)
+### Phase 6 — AI-Native Language Primitives (v4.0.0 pre-release cycle)
 
 **Decision:** After completing v4.0, a further phase of work adds AI-agent-oriented
 primitives directly to the nodus-lang stdlib and VM. These close the gap between the
@@ -1481,7 +1481,7 @@ a second design space: an AI agent as the primary developer of .nd code. That fr
 produced different design requirements (automatic identity propagation, first-class
 idempotency, enumerable syscall surface, declarative reliability).
 
-**Five sub-phases implemented (v4.1.0, prepared, not yet published):**
+**Five sub-phases implemented (prepared, not yet published — part of v4.0.0 pre-release cycle):**
 - **6A — Execution identity:** `trace_id`, `execution_unit_id` on every VM + event.
   `std:identity`, `NodusRuntime.set_trace_id()`. All module VMs propagate identity.
 - **6B — Namespaced memory:** `recall_from`, `recall_all`, `share` in `std:memory`.
@@ -1497,11 +1497,11 @@ idempotency, enumerable syscall surface, declarative reliability).
 lexer/parser/compiler changes). The runtime primitives (6D) provide the semantics;
 Phase 7 adds the syntactic sugar.
 
-**Version:** 4.0.0 → **4.1.0**. BYTECODE_VERSION stays at 4 (no new opcodes).
+**Version:** Still 4.0.0 (additions implemented during v4.0.0 pre-release hold). BYTECODE_VERSION stays at 4 (no new opcodes).
 
 ---
 
-### Phase A–D — HandlerContract infrastructure (v4.1.0)
+### Phase A–D — HandlerContract infrastructure (v4.0.0 pre-release cycle)
 
 **Decision:** Add a formal contract type (`HandlerContract`) to `nodus_schema` for
 documenting handler surfaces (tools, syscalls, extension tools) and enforce contracts

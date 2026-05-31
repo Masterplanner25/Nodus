@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodus-lang"
-version = "4.1.0"
+version = "4.0.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   { name = "Shawn Knight" }
