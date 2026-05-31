@@ -638,24 +638,75 @@ exits when it sees no pending work. The only workaround is:
 The `_io_channels` workaround requires touching a private scheduler attribute and has
 a close-ordering race. Do not use it directly.
 
-## Phase 5/6 publish status (as of 2026-05-30)
+## Phase 5/6 publish status (as of 2026-05-31)
 
-nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented beyond original scope). The full coordinated publish sequence:
+nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented
+beyond original scope). Last published PyPI release: **v3.0.2**.
 
 **Current test count:** 1,612 passing (nodus-lang), 2 pre-existing failures
 (`test_resume_goal` — KeyError 'goal', pre-Phase-3 regression;
 `test_worker_death_detection` — timing-sensitive sweeper test).
 
 **Wheels to rebuild before publish:** nodus-lang 4.0.0 wheel must be rebuilt
-(Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp and nodus-a2a
-wheels remain valid (no code changes in those repos).
+(Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp wheel remains
+valid (no code changes). All other packages need initial wheels.
 
 **Publish sequence** (do NOT run until explicitly asked):
-1. `git tag v4.0.0 && git push origin main --tags` (nodus-lang)
-2. Build fresh wheel: `python -m build`
+
+Round 1 — Zero-dep standalone packages (publish first; no install-order risk):
+```
+nodus-circuit-breaker 0.1.0   nodus-retry 0.1.0 ← MUST be before nodus-lang!
+nodus-channels 0.1.0           nodus-protocol 0.1.0
+nodus-schema (standalone) 0.1.0  nodus-approvals 0.1.0
+nodus-context 0.1.0            nodus-state 0.1.0
+nodus-session 0.1.0            nodus-governance 0.1.0
+nodus-agent 0.1.0              nodus-workflow (standalone) 0.1.0
+nodus-a2a (AgentCoordinator) 0.1.0  nodus-extensions 0.1.0
+nodus-store-sql 0.1.0
+```
+
+Round 2 — Packages with external-only deps (PyPI already has them):
+```
+nodus-auth 0.1.0        (python-jose, passlib, bcrypt, pydantic)
+nodus-observability 0.1.0   (python-json-logger optional)
+nodus-queue 0.1.0       (tenacity; redis optional)
+nodus-events 0.1.0      (redis optional)
+nodus-router 0.1.0      (nodus-session optional)
+nodus-delivery 0.1.0    (nodus-channels)
+nodus-http 0.1.0        (httpx)
+nodus-llm 0.1.0         (openai/anthropic optional)
+nodus-adapters-base 0.1.0  (nodus-channels)
+nodus-gateway 0.1.0     (websockets optional)
+nodus-observability-framework 0.1.0  (nodus-observability)
+```
+
+Round 3 — nodus-lang itself (after nodus-retry is on PyPI):
+```
+1. git tag v4.0.0 && git push origin main --tags
+2. python -m build   (from C:\dev\Coding Language)
 3. Upload nodus-lang 4.0.0 to real PyPI (token from user at upload time)
-4. Confirm `pip install nodus-lang==4.0.0` succeeds
-5. Upload nodus-mcp 0.1.0 and nodus-sdk 0.1.0 and nodus-store-sql 0.1.0
-   (nodus-mcp and nodus-a2a are separate repos with their own PyPI tokens)
-6. Create GitHub releases for all published packages
-7. Update ECOSYSTEM_READINESS_ASSESSMENT.md to reflect published status
+4. Confirm: pip install nodus-lang==4.0.0
+```
+
+Round 4 — nodus-lang companion packages (require nodus-lang on PyPI):
+```
+nodus-extension 0.1.0      (nodus-lang, pydantic)
+nodus-memory 0.1.0         (nodus-lang adapter — original, on GitHub)
+nodus-mcp 0.1.0            (nodus-lang, httpx — separate repo, own PyPI token)
+nodus-native-memory-engine 0.1.0   (PyO3/Maturin wheel, no nodus-lang dep)
+```
+
+Round 5 — SDK and high-level packages:
+```
+nodus-sdk 0.1.0   (nodus-lang, nodus-schema, nodus-protocol, nodus-retry)
+```
+
+After all packages are up:
+- Create GitHub releases for all published packages
+- Update ECOSYSTEM_READINESS_ASSESSMENT.md to reflect published status
+- Verify: pip install nodus-sdk[full] pulls in the full ecosystem cleanly
+
+**PyPI token note:** Each package in a separate repo (nodus-mcp, nodus-extension,
+nodus-memory, nodus-native-memory-engine) needs its own project-specific PyPI token.
+nodus-lang packages use the main nodus-lang token. Retrieve from user at upload time —
+never store tokens in any file.
