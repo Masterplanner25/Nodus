@@ -258,39 +258,28 @@ allowlist OR are fixed before release.
   - TD-008: `_validate_args` is top-level type checking only (not full JSON Schema)
   - TD-009: resource read handler must raise `KeyError` for unknown URI → -32601
   - TD-010: `requestState` is on the wire; never checkpoint secrets in sentinel state
-- **Next: coordinated three-artifact publication** — all three are prepared; push
-  and publish nodus-lang 4.0.0 + nodus-mcp 0.1.0 + nodus-a2a 0.1.0 together.
+- **Next: coordinated three-artifact publication** — nodus-lang 4.0.0 + nodus-mcp 0.1.0.
+  ⚠️ **nodus-a2a v0.1.0 (A2A wire protocol adapter) was REPLACED at `C:\dev\nodus-a2a`.**
+  The original 180-test A2A protocol adapter is preserved on GitHub
+  (`github.com/Masterplanner25/nodus-a2a`) but local code is now the Tier 2
+  AgentCoordinator. Treat as a two-artifact coordinated launch (nodus-lang + nodus-mcp).
 
 ## nodus-a2a companion library
 
-- Repo: `C:\dev\nodus-a2a` / `github.com/Masterplanner25/nodus-a2a`
-- **Status: v0.1.0 COMPLETE — all pre-Phase-5 gates passed. Waiting for publish.**
-  All 10 phases done (Phase 1 design docs + Phases A–J implementation).
-  180 tests pass (includes breakage-gate additions). BYTECODE_VERSION 4, no new opcodes.
-  Publication waits for coordinated three-artifact launch with nodus-lang 4.0.0
-  and nodus-mcp 0.1.0.
-- **Python API:** `runtime.tool_registry.register({...})` — NOT `runtime.register_tool()` (doesn't exist).
-- **nodus-a2a issues:** #1 (non-dict args coerced to {}), #2 (exception str verbatim to client).
-  Both filed; #2 needs doc note before Phase 5 (or accept as known gap).
-- Run tests: `cd C:\dev\nodus-a2a && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
-- Coverage: 93% (gate: ≥80%). `pyproject.toml` has `pythonpath = ["src"]` so
-  only nodus-lang needs to be in PYTHONPATH when running tests.
-- Skill: `/nodus-a2a-phase` — start or continue a design doc or implementation phase.
-- **A2A protocol facts** (verified during Phase 1 protocol audit):
-  - Spec repo: `a2aproject/A2A` (transferred from `google/A2A`)
-  - Proto: `specification/a2a.proto` (not `spec/a2a.proto`)
-  - Well-known URI: `/.well-known/agent-card.json` (not `agent.json` — that's 0.3)
-  - Content-Type: `application/a2a+json` (not `application/json`)
-  - HTTP transport only — A2A has no stdio binding anywhere
-  - Flask is NOT in the shared venv — transport uses stdlib `ThreadingHTTPServer`
-- **D5 (message-only):** server never emits a Task. All task-management paths
-  return `UnsupportedOperationError` HTTP 501.
-- **D6 inversion (critical for v0.2):** A2A `INPUT_REQUIRED` is park-and-resume
-  by design — the OPPOSITE of nodus-mcp's no-thread-parks rule. Do NOT import
-  that rule into a2a. See `docs/design/05-deferred-features.md §2`.
-- **`BYTECODE_VERSION`** lives at `nodus.compiler.compiler` (not `nodus.vm.vm`).
-- Tool dispatch: clients send `DataPart(data={"tool":"<name>","args":{...}})`;
-  single-tool agents accept any Message as a fallback.
+⚠️ **LOCAL REPO REPLACED.** The original A2A wire protocol adapter (Phases A–J, 180 tests,
+published-ready) was overwritten at `C:\dev\nodus-a2a` by the Tier 2 AgentCoordinator
+standalone package. The original code is preserved at
+`github.com/Masterplanner25/nodus-a2a` (git history intact).
+
+**Original A2A wire protocol adapter (on GitHub, NOT at local path):**
+- 180 tests, nodus-lang dep, A2A 1.0 spec (message-only, HTTP+JSON/REST)
+- `/.well-known/agent-card.json`, `application/a2a+json`, stdlib `ThreadingHTTPServer`
+- Skill `/nodus-a2a-phase` references this version
+
+**Current local `C:\dev\nodus-a2a` (AgentCoordinator layer, 23 tests):**
+- `AgentRegistry`, `AgentCoordinator` (local/delegate mode), `DelegationRequest`
+- `DeadLetterService`, `StuckRunWatchdog`
+- No nodus-lang dependency; standalone coordination primitives
 
 ## Nodus language quirks (relevant when writing test .nd code)
 
@@ -345,20 +334,22 @@ nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHAN
 
 ## nodus-memory companion library
 
-- Repo: `C:\dev\nodus-memory` / `github.com/Masterplanner25/nodus-memory`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
-  Phases A–K done. 192 tests, 97% coverage. BYTECODE_VERSION 4, no new opcodes.
-  Publication follows the three-artifact launch as a separate, later release.
-- **Python API:** `MemoryStore`, `MemoryConfig`, `attach_to_runtime(runtime, store)`
-- **Nodus bindings:** `import "nodus-memory"` → `share(k,v)`, `recall_from(k)`,
-  `forget(k)`, `recall_all(tag)`, `tag(k,tags)`, `link(child,parent)`
-- **Host functions use `_ext_` naming** — no, `nm_` prefix: `nm_recall_from`, `nm_share`, etc.
-  (The .nd wrappers are named `recall_from`, `share` etc; the host functions are `nm_*`)
-- **nodus-native-memory-engine** auto-detected: if installed, `cosine_similarity()`
-  and `ScoreTracker.compute_weight()` route to Rust automatically.
-- Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-memory`)
-- Run tests: `cd C:\dev\nodus-memory && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
-- SQLAlchemy is an optional `[db]` extra; installed in shared venv for tests.
+⚠️ **LOCAL REPO REPLACED.** The original nodus-lang-integrated memory adapter (Phases A–K,
+192 tests, hatchling, `src/` layout, nodus-lang dep) was overwritten at `C:\dev\nodus-memory`
+by the Tier 2 full memory library. Original preserved on GitHub.
+
+**Original nodus-lang adapter (on GitHub, NOT at local path):**
+- 192 tests, nodus-lang dep, Phases A–K, hatchling build, `src/nodus_memory/` layout
+- `MemoryStore`, `MemoryConfig`, `attach_to_runtime(runtime, store)`, `nm_*` host functions
+- `import "nodus-memory"` → `share`, `recall_from`, `forget`, `tag`, `link`, `recall_all`
+- Skill `/nodus-memory-phase` v0.2 plan targets this architecture
+
+**Current local `C:\dev\nodus-memory` (Tier 2 full library, 28 tests):**
+- `MemoryNode`, `InMemoryStore`, MAS `build_path()`/`glob_match()`
+- `score_nodes()`, `update_feedback()`, `recall()`/`recall_async()`, `EmbeddingProvider` protocol
+- Depends on `nodus-events>=0.1.0`; optional `pgvector` and `openai` extras
+- Flat layout (`nodus_memory/`), setuptools build
+- Run tests: `cd C:\dev\nodus-memory && python -m pytest -q`
 
 ## nodus-native-memory-engine companion library
 
@@ -465,6 +456,17 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 - **nodus-a2a** (Tier 2) is the AgentCoordinator layer — NOT the A2A wire protocol adapter (that was replaced)
 - **nodus-extensions** test fix: use `asyncio.run()` not `asyncio.get_event_loop().run_until_complete()` (Python 3.11+)
 - nodus-queue redis tests need a live Redis server — always run with `--ignore=tests/test_redis_backend.py` in dev
+
+### Dual-implementation names (same name, different scope)
+
+Two pairs of packages share names but are NOT the same package:
+
+| Name | In-tree (src/nodus_X/) | Standalone (C:\dev\nodus-X) |
+|------|----------------------|---------------------------|
+| **nodus_schema** | `src/nodus_schema/` — runtime ABI contracts for syscalls and extension surfaces; used by nodus-lang internally | `C:\dev\nodus-schema` — general schema validation library (SchemaRegistry, parse_versioned_name); standalone |
+| **nodus_workflow** | `src/nodus_workflow/` — full workflow orchestration layer wired into the nodus-lang server (HTTP/CLI surfaces, 7-state lifecycle, SQLite store) | `C:\dev\nodus-workflow` — standalone workflow primitives (FlowDefinition, SchedulerEngine); lighter, no server wiring |
+
+Importing `nodus_schema` or `nodus_workflow` in a Python script may find either version depending on install order. Always check `import nodus_schema; print(nodus_schema.__file__)` before working on these.
 
 ## Ecosystem incubators (`packages/` in this repo)
 
