@@ -394,36 +394,77 @@ nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHAN
 - Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-extension`)
 - Run tests: `cd C:\dev\nodus-extension && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
 
-## OpenClaw-derived standalone packages (at `C:\dev\`)
+## Standalone package ecosystem (at `C:\dev\`)
 
-These were extracted from the OpenClaw codebase. They have GitHub repos under Masterplanner25
-and do not depend on nodus-lang. Test command for each: `cd C:\dev\<pkg> && python -m pytest -q`.
+All packages have GitHub repos under Masterplanner25. No nodus-lang dependency unless noted.
+Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 
-| Package | Tests | Key deps | GitHub | Key abstraction |
-|---------|-------|----------|--------|----------------|
-| nodus-context | 29 | none | github.com/Masterplanner25/nodus-context | `ContextWindow` with `compact()`, `guard_tool_results()`, `SummarizeStrategy`, `DropToolInternalsStrategy` |
-| nodus-approvals | 32 | none | github.com/Masterplanner25/nodus-approvals | `ApprovalGate` (check/approve/deny/poll), `ApprovalPolicy` (fnmatch rules), `PairingStore` (6-digit codes) |
-| nodus-channels | 24 | none | github.com/Masterplanner25/nodus-channels | `ChannelAdapter` protocol, `ChannelRegistry`, `HealthMonitor` (CONNECTED→DEGRADED→DISCONNECTED) |
-| nodus-llm | 24 | nodus-circuit-breaker | github.com/Masterplanner25/nodus-llm | `CredentialStore` + `FailoverClient` (5m→10m→20m→40m→1h backoff per profile) |
-| nodus-delivery | 27 | nodus-channels | github.com/Masterplanner25/nodus-delivery | `SizeChunker`, `ParagraphChunker`, `MarkdownBlockChunker`, `DeliveryRouter` |
+### Group 1 — AINDY-derived (7 packages)
 
-**Dependency note for nodus-delivery:** requires nodus-channels installed (`pip install -e C:\dev\nodus-channels --no-deps`).
-**Dependency note for nodus-llm:** requires nodus-circuit-breaker installed.
-
-## Aindy-derived standalone packages (at `C:\dev\`)
-
-These were extracted from the aindy-runtime codebase. They have no git repos and
-do not depend on nodus-lang. Test command for each: `cd C:\dev\<pkg> && python -m pytest -q`.
-
-| Package | Tests | Key deps | Notes |
-|---------|-------|----------|-------|
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
 | nodus-circuit-breaker | 24 | none | Three-state CB, sync+async, optional Prometheus |
-| nodus-auth | 36 | python-jose, passlib, bcrypt<5.0, pydantic | **bcrypt must be <5.0** — passlib 1.7.4 breaks with bcrypt 5.x |
-| nodus-observability | 27 | python-json-logger (otel/prometheus optional) | Structured logging + tracing bootstrap |
-| nodus-queue | 53 | tenacity (redis optional) | DLQ, delayed jobs. Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
-| nodus-state | 73 | none | FlowStatus, AgentStatus, ExecutionContext, ResumeSpec, SessionKey |
-| nodus-observability-framework | 43 | nodus-observability, fastapi optional | RequestMetricWriter, middleware, health router, ExecutionBlock streaming |
-| nodus-mcp (aindy bridge) | see nodus-mcp section | mcp>=1.0.0 | Bridge adapter lives at `nodus_mcp_aindy/` in the nodus-mcp repo |
+| nodus-auth | 36 | python-jose, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
+| nodus-observability | 27 | python-json-logger (otel/prometheus optional) | Trace ContextVars, init_otel(), create_registry(), configure_logging() |
+| nodus-queue | 53 | tenacity (redis optional) | RedisQueueBackend LPUSH/BRPOP+Lua, DLQ, delayed jobs; Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
+| nodus-state | 117 | none | FlowStatus/UnitStatus/AgentStatus, WaitCondition, ResumeSpec, ExecutionContext, SessionKey |
+| nodus-observability-framework | 57 | nodus-observability, fastapi optional | AIMetrics (8), RequestMetricWriter, middleware, health router, ExecutionBlock streaming, CostAttribution/CostTracker |
+| nodus-mcp (aindy bridge) | 81 | mcp>=1.0.0 | ToolDefinition, ToolRegistry, NodusServer, MCPClientAdapter; flat code at `nodus_mcp_aindy/` in C:\dev\nodus-mcp |
+
+### Group 2 — OpenClaw-derived (5 packages)
+
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
+| nodus-context | 29 | none | ContextBudget, ContextWindow (add/compact/guard_tool_results), DropToolInternalsStrategy, SummarizeStrategy |
+| nodus-approvals | 32 | none | ApprovalGate (check/approve/deny/poll), ApprovalPolicy (fnmatch rules), PairingStore (6-digit codes) |
+| nodus-channels | 24 | none | ChannelAdapter protocol, ChannelRegistry, HealthMonitor (CONNECTED→DEGRADED→DISCONNECTED) |
+| nodus-llm | 24 | nodus-circuit-breaker | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff), OpenAI/Anthropic providers |
+| nodus-delivery | 27 | nodus-channels | DeliveryPlan, SizeChunker, ParagraphChunker, MarkdownBlockChunker, DeliveryRouter |
+
+### Group 3 — Tier 1: Buildable standalone (7 packages)
+
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
+| nodus-retry | 33 | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore, compute_action_id() |
+| nodus-http | 13 | httpx, nodus-circuit-breaker | HttpClient (circuit breaker + retry + trace headers), HttpResponse, RetryConfig; **requires `respx` for tests** |
+| nodus-events | 17 | redis (optional) | EventBus (Redis pub/sub, source-instance dedup, pre-rehydration buffer), AuditStore, publish_event() |
+| nodus-schema | 30 | none | validate_payload(), parse_versioned_name(), resolve_version(), SchemaRegistry, SchemaEntry |
+| nodus-protocol | 13 | none | RequestEnvelope, ResponseEnvelope, EventEnvelope, JSON encode()/decode() with _type discriminator |
+| nodus-session | 15 | none | SessionEntry (transcript, provenance), InMemorySessionStore, SessionPruningPolicy, SessionManager |
+| nodus-router | 18 | none | RouteBinding (fnmatch), RoutingTable (priority-sorted), RouteResolver (default agent fallback) |
+
+### Group 4 — Tier 2: Requires Tier 1 (4 packages + 1 additive)
+
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
+| nodus-memory | 28 | nodus-events; pgvector/openai optional | MemoryNode, InMemoryStore, MAS build_path()/glob_match(), score_nodes(), update_feedback(), recall()/recall_async(), EmbeddingProvider |
+| nodus-workflow | 17 | nodus-state, nodus-events | FlowDefinition/FlowNode/FlowEdge, FlowStatus/FlowRun, SchedulerEngine (priority queue + WAIT/RESUME), FlowExecutor, FlowRehydrator |
+| nodus-a2a | 23 | none | AgentRegistry, AgentCoordinator (local/delegate), DelegationRequest, DeadLetterService, StuckRunWatchdog |
+| nodus-adapters/base | 11 | nodus-channels | BaseChannelAdapter (reconnect backoff, health recording), ConnectionManager; path: `C:\dev\nodus-adapters\base` |
+
+### Group 5 — Tier 3: Requires T1+T2 (2 packages)
+
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
+| nodus-agent | 28 | nodus-state, nodus-retry | AgentRun, CapabilityToken (HMAC-SHA256), mint_token()/validate_token(), LocalPlanner/LLMPlanner, DuplicateSubmissionGuard, AgentExecutor |
+| nodus-gateway | 19 | nodus-protocol, websockets | GatewayServer (WebSocket + handler dispatch + idempotency cache), GatewayClient, HandlerRegistry, EventBroadcaster; **requires nodus-protocol installed** |
+
+### Group 6 — Tier 4: Requires All (2 packages)
+
+| Package | Tests | Key deps | Key abstraction |
+|---------|-------|----------|----------------|
+| nodus-extensions | 35 | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
+| nodus-governance | 28 | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
+
+### Ecosystem dependency notes
+
+- **nodus-gateway** requires `nodus-protocol` installed before tests run
+- **nodus-http** requires `respx` for tests (`pip install respx`)
+- **nodus-delivery** requires `nodus-channels`; **nodus-llm** requires `nodus-circuit-breaker`
+- **nodus-memory** (Tier 2) requires `nodus-events`; replaces v0.1.0 nodus-lang adapter
+- **nodus-a2a** (Tier 2) is the AgentCoordinator layer — NOT the A2A wire protocol adapter (that was replaced)
+- **nodus-extensions** test fix: use `asyncio.run()` not `asyncio.get_event_loop().run_until_complete()` (Python 3.11+)
+- nodus-queue redis tests need a live Redis server — always run with `--ignore=tests/test_redis_backend.py` in dev
 
 ## Ecosystem incubators (`packages/` in this repo)
 
