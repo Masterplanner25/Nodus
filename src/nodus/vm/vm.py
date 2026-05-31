@@ -8,7 +8,7 @@ from nodus_retry.effect import InMemoryEffectStore
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.channel import Channel, ChannelRecvRequest
@@ -273,6 +273,7 @@ class VM:
         self._tool_deprecated_warned: set = set()
         self._tool_registry_lock = threading.RLock()
         self.test_state: dict = {}
+        self.on_error: Callable | None = None
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
             "type": BuiltinInfo("type", 1, self.builtin_type),

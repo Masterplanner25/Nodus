@@ -84,7 +84,8 @@ def register(vm, registry) -> None:
         return None
 
     def builtin_run_loop():
-        vm.scheduler.run_loop()
+        on_error = getattr(vm, "on_error", None)
+        vm.scheduler.run_loop(on_error=on_error)
         return None
 
     def builtin_sleep(value):

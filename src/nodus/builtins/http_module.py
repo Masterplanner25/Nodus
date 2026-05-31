@@ -592,11 +592,50 @@ def _do_sse_request(method: str, url: str, options, vm) -> Record:
 
 
 def _do_async_request(method: str, url: str, options, vm) -> object:
-    # Phase 3B: async variants are synchronous at the I/O level.
-    # Parallelism is achieved by spawning multiple Nodus coroutines via the
-    # scheduler (task step budget) — not by suspending on async I/O here.
-    # True async I/O bridging is a Phase 3C enhancement.
-    return _do_sync_request(method, url, options, vm)
+    """Run the HTTP request in a daemon thread; suspend the calling coroutine.
+
+    When called inside a spawned coroutine (scheduler context), the request
+    runs concurrently on a daemon thread.  The coroutine suspends via the
+    _io_channels mechanism and is woken when the result is ready.  Five
+    concurrent 200ms requests take ~200ms total, not 1s.
+
+    When called outside a coroutine/scheduler context (e.g., top-level
+    synchronous code), falls back to the blocking sync path.
+    """
+    from nodus.runtime.channel import Channel, ChannelRecvRequest
+
+    scheduler = _get_scheduler(vm)
+    coroutine = getattr(vm, "current_coroutine", None)
+
+    # Only take the async path when running inside the scheduler's own coroutine
+    # loop.  Module-function calls use invoke_function → run_closure → execute(),
+    # which does not support yield; the current_task check catches that path and
+    # falls back to sync, preventing "Task yielded during graph execution" errors.
+    if (scheduler is None or coroutine is None or
+            coroutine is not getattr(scheduler, "current_task", None)):
+        return _do_sync_request(method, url, options, vm)
+
+    result_ch: Channel = Channel()
+
+    def _worker() -> None:
+        result = _do_sync_request(method, url, options, vm)
+        result_ch.queue.append(result)
+        result_ch.closed = True
+
+    threading.Thread(target=_worker, daemon=True).start()
+    scheduler._io_channels.append(result_ch)
+
+    # Suspend the current coroutine until the thread delivers the result.
+    # This mirrors the recv() builtin pattern in coroutine.py.
+    assert coroutine is not None  # guard above ensures this
+    coroutine.state = "suspended"
+    coroutine.blocked_on = result_ch
+    coroutine.blocked_reason = "http_async"
+    vm.stack.append(None)  # placeholder — replaced by _drain_io_channels
+    vm.save_current_coroutine_state(vm.ip + 1)
+    result_ch.waiting_receivers.append(coroutine)
+
+    return ChannelRecvRequest(result_ch)
 
 
 def register(vm, registry) -> None:

@@ -88,26 +88,31 @@ describe the workaround patterns used until these are fixed.
   200ms cumulatively) must pass `timeout_ms=None, max_steps=None` explicitly. The
   default matches `nodus run` (sandboxed scripts), not server embedding. GitHub: #97.
 
-- **EMBED-002** (open, severity: high): `Scheduler.run_loop` accepts `on_error` but
-  `NodusRuntime` never exposes or passes it. After `run_source()` returns, an errored
-  coroutine and a normally-completed one are indistinguishable — both have
-  `state="finished"`, `last_result=None`. The host cannot programmatically detect that
-  a request handler died. Workaround: require handlers to catch their own errors and
-  write structured error records to result channels. GitHub: #98.
+- **EMBED-002** (FIXED): `NodusRuntime` now exposes `on_error` as an `__init__`
+  parameter and a `run_source()` per-call override. The callback is wired to
+  `Scheduler.run_loop(on_error=...)` via `builtin_run_loop` and the VM's new
+  `on_error` attribute. Callers can now detect and stop on coroutine errors.
+  GitHub: #98.
 
-- **EMBED-003** (open, severity: medium): `subprocess_spawn` leaks two daemon pump
-  threads per spawn when `run_loop` exits before the subprocess terminates (e.g. if
-  the output channel is never consumed). Threads are `daemon=True` so they don't block
-  process exit, but they accumulate per session. Fix: `NodusRuntime` or `VM` needs
-  an explicit shutdown method that kills tracked subprocesses and joins their threads.
-  Currently `NodusRuntime.reset()` only clears `last_vm = None`. GitHub: #99.
+- **EMBED-003** (FIXED — minimal): `NodusRuntime.shutdown()` added; clears
+  `last_vm`, host functions, and registered tools. Daemon pump threads from
+  `subprocess_spawn` still accumulate until their subprocesses exit (process
+  tracking not yet implemented), but the public API surface now exists.
+  GitHub: #99.
 
-- **EMBED-004** (open, severity: medium): `subprocess_run_async`, `http_get_async`,
-  and related `*_async` builtins are fully serial under the GIL. Five concurrent
-  200ms HTTP calls take ~1s, not 200ms. The genuine concurrency path is
-  `subprocess_spawn` + channel reads via `_io_channels` daemon threads. Code that
-  calls `http_get` inside a spawned coroutine blocks all other in-flight coroutines
-  for the full duration of the HTTP call. GitHub: #100.
+- **EMBED-004** (FIXED for direct builtin path): `http_get_async`, `http_post_async`
+  and all `http_*_async` variants now run the HTTP request in a daemon thread and
+  suspend the calling coroutine via the `_io_channels` mechanism (same pattern as
+  `subprocess_spawn`). `subprocess_run_async` and `subprocess_shell_async` use the
+  same thread+channel approach. Verified 3.3x speedup for 3 parallel 1s subprocesses
+  (sequential: ~4.3s, async: ~1.3s).
+  **Remaining limitation:** when called via the stdlib module wrapper
+  (`subprocess.run_async(...)`, `http.get_async(...)` via `import "std:subprocess"`),
+  the `invoke_function` path doesn't support yield — falls back to sync. Direct
+  builtin calls (`subprocess_run_async(...)`) within spawned coroutines are fully
+  async. Fixing the module-wrapper path requires module functions to carry a
+  reference to their code segment so `call_closure` can use the right bytecode.
+  GitHub: #100.
 
 - **CHAN-001** (open, related to EMBED-003): A coroutine blocked on `recv()` of an
   empty channel is silently orphaned — `run_loop` exits when it sees no pending work,

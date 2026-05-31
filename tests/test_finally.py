@@ -347,3 +347,89 @@ fn f() {
 print(f())
 """
         self.assertEqual(run_program(src), ["finally", "try-return"])
+
+
+class FinallyExceptionEdgeCaseTests(unittest.TestCase):
+    """Edge cases: exception thrown inside the finally block itself."""
+
+    def test_throw_in_finally_overrides_deferred_return(self):
+        """Exception thrown in finally overrides a pending deferred return."""
+        src = """
+fn f() {
+    try {
+        return "from-try"
+    } catch e {
+        return "from-catch"
+    } finally {
+        throw "from-finally"
+    }
+}
+f()
+"""
+        with self.assertRaises(lang.LangRuntimeError) as ctx:
+            run_program(src)
+        self.assertEqual(ctx.exception.kind, "thrown")
+        self.assertIn("from-finally", str(ctx.exception))
+
+    def test_throw_in_finally_after_catch_return_overrides(self):
+        """Exception in finally overrides a catch-block return."""
+        src = """
+fn f() {
+    try {
+        throw "original"
+    } catch e {
+        return "caught"
+    } finally {
+        throw "from-finally"
+    }
+}
+f()
+"""
+        with self.assertRaises(lang.LangRuntimeError) as ctx:
+            run_program(src)
+        self.assertIn("from-finally", str(ctx.exception))
+
+    def test_throw_in_finally_is_catchable_by_outer_try(self):
+        """An exception from finally can be caught by an enclosing try/catch."""
+        src = """
+fn f() {
+    try {
+        try {
+            return "inner"
+        } catch e {
+            return "inner-catch"
+        } finally {
+            throw "finally-exc"
+        }
+    } catch outer {
+        print("outer: " + outer.message)
+    }
+}
+f()
+"""
+        self.assertEqual(run_program(src), ["outer: finally-exc"])
+
+    def test_nested_finally_both_run_on_exception(self):
+        """Both inner and outer finally blocks run when no exception occurs."""
+        src = """
+fn f() {
+    try {
+        try {
+            print("try")
+        } catch e {
+            print("catch")
+        } finally {
+            print("inner-finally")
+        }
+        print("after-inner")
+    } catch outer {
+        print("outer-catch")
+    } finally {
+        print("outer-finally")
+    }
+}
+f()
+"""
+        self.assertEqual(run_program(src), [
+            "try", "inner-finally", "after-inner", "outer-finally"
+        ])

@@ -510,6 +510,45 @@ def _do_shell_quote(s, vm):
     return shlex.quote(s)
 
 
+def _do_async_run(argv_or_cmd, opts, vm, is_shell=False):
+    """Run subprocess in a daemon thread; suspend calling coroutine until done.
+
+    Same thread+channel pattern as http_module._do_async_request.  Falls back
+    to blocking _do_run when called outside a coroutine/scheduler context.
+    """
+    from nodus.runtime.channel import Channel, ChannelRecvRequest
+
+    scheduler = _get_scheduler(vm)
+    coroutine = getattr(vm, "current_coroutine", None)
+
+    # Only take the async path when running inside the scheduler's own coroutine
+    # loop.  Module-function calls use invoke_function → run_closure → execute(),
+    # which does not support yield; the current_task check catches that path and
+    # falls back to sync, preventing "Task yielded during graph execution" errors.
+    if (scheduler is None or coroutine is None or
+            coroutine is not getattr(scheduler, "current_task", None)):
+        return _do_run(argv_or_cmd, opts, vm, is_shell=is_shell)
+
+    result_ch: Channel = Channel()
+
+    def _worker() -> None:
+        result = _do_run(argv_or_cmd, opts, vm, is_shell=is_shell)
+        result_ch.queue.append(result)
+        result_ch.closed = True
+
+    threading.Thread(target=_worker, daemon=True).start()
+    scheduler._io_channels.append(result_ch)
+
+    coroutine.state = "suspended"
+    coroutine.blocked_on = result_ch
+    coroutine.blocked_reason = "subprocess_async"
+    vm.stack.append(None)
+    vm.save_current_coroutine_state(vm.ip + 1)
+    result_ch.waiting_receivers.append(coroutine)
+
+    return ChannelRecvRequest(result_ch)
+
+
 def register(vm, registry) -> None:
     """Register subprocess_* builtins onto the registry."""
 
@@ -521,8 +560,11 @@ def register(vm, registry) -> None:
         return _do_run(argv, opts, vm)
 
     def subprocess_run_async(argv, options=None):
-        # Phase 3B: sync under the hood; parallelism via Nodus scheduler
-        return subprocess_run(argv, options)
+        opts = _opts_dict(options)
+        if not isinstance(argv, list):
+            return _make_subprocess_err(vm, "argv must be a list",
+                                        category="spawn_error", command=argv)
+        return _do_async_run(argv, opts, vm)
 
     def subprocess_shell(command, options=None):
         opts = _opts_dict(options)
@@ -532,8 +574,11 @@ def register(vm, registry) -> None:
         return _do_run(command, opts, vm, is_shell=True)
 
     def subprocess_shell_async(command, options=None):
-        # Phase 3B: sync under the hood
-        return subprocess_shell(command, options)
+        opts = _opts_dict(options)
+        if not isinstance(command, str):
+            return _make_subprocess_err(vm, "shell command must be a string",
+                                        category="spawn_error", command=command)
+        return _do_async_run(command, opts, vm, is_shell=True)
 
     def subprocess_spawn(argv, options=None):
         opts = _opts_dict(options)

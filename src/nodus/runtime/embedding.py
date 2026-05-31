@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import os
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
@@ -213,6 +213,7 @@ class NodusRuntime:
         allowed_paths: list[str] | None = None,
         allow_input: bool = False,
         max_frames: int | None = None,
+        on_error: Callable | None = None,
     ) -> None:
         """Create a new embedded Nodus runtime.
 
@@ -255,6 +256,17 @@ class NodusRuntime:
         max_frames:
             Maximum call stack depth.  Raises a sandbox error on overflow.  ``None``
             means the VM default (``MAX_STACK_DEPTH``).
+        on_error:
+            Optional callable invoked when a spawned coroutine dies with an uncaught
+            exception.  Signature: ``on_error(coroutine, error) -> bool``.  Return
+            ``True`` to stop the scheduler after the error; ``False`` (default) to
+            continue running remaining coroutines.
+
+            Without this hook, coroutine errors are printed to stderr and execution
+            continues — a completed coroutine and an errored coroutine are
+            indistinguishable from the ``run_source()`` return value.  See EMBED-002.
+
+            Per-call overrides are supported via ``run_source(on_error=...)``.
         """
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
@@ -263,6 +275,7 @@ class NodusRuntime:
         self.allowed_paths = allowed_paths
         self.allow_input = allow_input
         self.max_frames = max_frames
+        self.on_error = on_error
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._python_registered_tools: dict[str, dict] = {}
         self.last_vm: VM | None = None
@@ -358,6 +371,22 @@ class NodusRuntime:
         """
         self.last_vm = None
 
+    def shutdown(self) -> None:
+        """Release all runtime resources held by this instance.
+
+        Clears the last VM reference, registered host functions, and registered
+        Python tools.  After calling ``shutdown()``, this runtime instance should
+        not be used again.
+
+        Daemon threads created by ``subprocess_spawn`` are not forcibly terminated;
+        they will exit when their subprocesses complete or when the host Python
+        process exits.  See EMBED-003 in TECH_DEBT.md for the full thread-lifecycle
+        analysis.
+        """
+        self.last_vm = None
+        self._host_functions.clear()
+        self._python_registered_tools.clear()
+
     def run_file(
         self,
         path: str,
@@ -434,6 +463,7 @@ class NodusRuntime:
         max_frames: int | None = None,
         initial_globals: dict | None = None,
         host_globals: dict | None = None,
+        on_error: Callable | None = None,
     ) -> dict:
         """Compile and execute a Nodus source string.
 
@@ -520,6 +550,9 @@ class NodusRuntime:
         pending_effect_store = getattr(self, "_pending_effect_store", None)
         if pending_effect_store is not None:
             vm.effect_store = pending_effect_store
+        resolved_on_error = on_error if on_error is not None else self.on_error
+        if resolved_on_error is not None:
+            vm.on_error = resolved_on_error
         self.last_vm = vm
         host_builtins = {
             name: BuiltinInfo(
