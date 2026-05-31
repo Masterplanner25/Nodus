@@ -276,7 +276,7 @@ def _metadata_from_graph(graph: TaskGraph, vm) -> dict[str, object]:
     metadata = dict(graph.metadata) if isinstance(graph.metadata, dict) else {}
     metadata.setdefault("source_path", getattr(vm, "source_path", None))
     metadata.setdefault("coordination_mode", "local_only")
-    metadata.setdefault("framework", "nodus_workflow")
+    metadata.setdefault("framework", "nodus_lang_workflow")
     metadata.setdefault("framework_created_at", runtime_time_ms())
     return metadata
 

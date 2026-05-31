@@ -25,7 +25,7 @@ from nodus.orchestration.workflow_state import checkpoints_public
 from nodus.services.tool_runtime import call_tool
 from nodus.services.agent_runtime import call_agent
 from nodus.services.memory_runtime import delete_value, export_memory, get_value, list_keys, put_value
-from nodus_workflow.runner import get_default_workflow_runner
+from nodus_lang_workflow.runner import get_default_workflow_runner
 
 
 def _resolve_import_state(import_state: dict | None, project_root: str | None) -> dict | None:

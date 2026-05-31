@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from nodus_schema.syscalls import SyscallSpec, parse_syscall_name, validate_input
-from nodus_schema.validation import normalize_schema
+from nodus_lang_schema.syscalls import SyscallSpec, parse_syscall_name, validate_input
+from nodus_lang_schema.validation import normalize_schema
 
 # ---------------------------------------------------------------------------
 # Envelope helpers

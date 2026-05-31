@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa
 
 import nodus  # noqa: E402
 from nodus.runtime.module_loader import ModuleLoader  # noqa: E402
-from nodus_schema import HandlerContract, VALID_EFFECTS  # noqa: E402
+from nodus_lang_schema import HandlerContract, VALID_EFFECTS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

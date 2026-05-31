@@ -10,15 +10,15 @@ from nodus.cli import cli as nodus_cli  # noqa: E402
 from nodus.orchestration import task_graph  # noqa: E402
 from nodus.tooling.runner import resume_workflow, run_workflow_code  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
-from nodus_workflow.models import (  # noqa: E402
+from nodus_lang_workflow.models import (  # noqa: E402
     RUN_STATUS_COMPLETED,
     RUN_STATUS_DEAD_LETTERED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RETRY_SCHEDULED,
     RUN_STATUS_WAITING,
 )
-from nodus_workflow.runner import WorkflowFrameworkRunner  # noqa: E402
-from nodus_workflow.store import LocalWorkflowStore, SQLiteWorkflowStore, WorkflowStore, create_workflow_store  # noqa: E402
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner  # noqa: E402
+from nodus_lang_workflow.store import LocalWorkflowStore, SQLiteWorkflowStore, WorkflowStore, create_workflow_store  # noqa: E402
 
 
 WORKFLOW_SOURCE = """

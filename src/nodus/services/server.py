@@ -49,7 +49,7 @@ from nodus.runtime.snapshots import SnapshotManager
 from nodus.vm.vm import VM
 import time
 from nodus.orchestration.task_graph import set_default_dispatcher
-from nodus_workflow.runner import configure_default_workflow_runner, get_default_workflow_runner
+from nodus_lang_workflow.runner import configure_default_workflow_runner, get_default_workflow_runner
 
 
 class WorkerManager:

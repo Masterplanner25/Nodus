@@ -3,7 +3,7 @@ import unittest
 
 sys.path.insert(0, "C:/dev/Coding Language/src")
 
-from nodus_schema.syscalls import (  # noqa: E402
+from nodus_lang_schema.syscalls import (  # noqa: E402
     SyscallSpec,
     parse_syscall_name,
     resolve_version,

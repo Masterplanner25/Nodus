@@ -5,7 +5,7 @@ sys.path.insert(0, "C:/dev/Coding Language/src")
 
 from pydantic import ValidationError  # noqa: E402
 
-from nodus_schema.extensions import (  # noqa: E402
+from nodus_lang_schema.extensions import (  # noqa: E402
     LEGACY_UNVERSIONED_MANIFEST,
     MANIFEST_ABI_V1,
     MANIFEST_KIND,
@@ -18,7 +18,7 @@ from nodus_schema.extensions import (  # noqa: E402
     validate_extension_abi_version,
     validate_extension_manifest_document,
 )
-from nodus_schema.extensions.models import (  # noqa: E402
+from nodus_lang_schema.extensions.models import (  # noqa: E402
     ManifestDeclarativeNodeEntry,
 )
 

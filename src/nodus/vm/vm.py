@@ -28,7 +28,7 @@ from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
-from nodus_workflow.runner import get_default_workflow_runner
+from nodus_lang_workflow.runner import get_default_workflow_runner
 
 
 _DEFERRED_NONE = object()  # sentinel: no deferred return pending

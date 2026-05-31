@@ -502,8 +502,8 @@ Two pairs of packages share names but are NOT the same package:
 
 | Name | In-tree (src/nodus_X/) | Standalone (C:\dev\nodus-X) |
 |------|----------------------|---------------------------|
-| **nodus_schema** | `src/nodus_schema/` — runtime ABI contracts for syscalls and extension surfaces; used by nodus-lang internally | `C:\dev\nodus-schema` — general schema validation library (SchemaRegistry, parse_versioned_name); standalone |
-| **nodus_workflow** | `src/nodus_workflow/` — full workflow orchestration layer wired into the nodus-lang server (HTTP/CLI surfaces, 7-state lifecycle, SQLite store) | `C:\dev\nodus-workflow` — standalone workflow primitives (FlowDefinition, SchedulerEngine); lighter, no server wiring |
+| **nodus_schema** | `src/nodus_lang_schema/` — runtime ABI contracts for syscalls and extension surfaces; used by nodus-lang internally | `C:\dev\nodus-schema` — general schema validation library (SchemaRegistry, parse_versioned_name); standalone |
+| **nodus_workflow** | `src/nodus_lang_workflow/` — full workflow orchestration layer wired into the nodus-lang server (HTTP/CLI surfaces, 7-state lifecycle, SQLite store) | `C:\dev\nodus-workflow` — standalone workflow primitives (FlowDefinition, SchedulerEngine); lighter, no server wiring |
 
 Importing `nodus_schema` or `nodus_workflow` in a Python script may find either version depending on install order. Always check `import nodus_schema; print(nodus_schema.__file__)` before working on these.
 
@@ -528,7 +528,7 @@ They are **design references / API contracts**, not production implementations.
 
 ## nodus-workflow (in-tree framework)
 
-- **Location:** `src/nodus_workflow/` (in this repo, not a separate package yet)
+- **Location:** `src/nodus_lang_workflow/` (in this repo, not a separate package yet)
 - **Status:** Near-runtime-complete. Core semantics complete; production hardening
   and packaging documented in `plans/nodus-workflow-framework.md`.
 - **Test file:** `tests/test_nodus_workflow_framework.py` (30 tests)
@@ -552,7 +552,7 @@ before `nodus` in a fresh process.
 
 ## nodus_schema (in-tree package)
 
-- **Location:** `src/nodus_schema/` (in this repo, not a separate package yet)
+- **Location:** `src/nodus_lang_schema/` (in this repo, not a separate package yet)
 - **Exports:** `SyscallSpec`, `parse_syscall_name()`, `resolve_version()`,
   `validate_input()`, `validate_output()`, `validate_payload()`, extension ABI models.
 

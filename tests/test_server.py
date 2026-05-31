@@ -6,7 +6,7 @@ import time
 import unittest
 
 from nodus.services.server import run_in_thread
-from nodus_workflow.store import SQLiteWorkflowStore
+from nodus_lang_workflow.store import SQLiteWorkflowStore
 
 
 class ServerTests(unittest.TestCase):

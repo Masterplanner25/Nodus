@@ -50,7 +50,7 @@ from nodus.services.server import serve, snapshot_session, restore_snapshot, lis
 from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
-from nodus_workflow.runner import get_default_workflow_runner
+from nodus_lang_workflow.runner import get_default_workflow_runner
 
 
 def _read_file(path: str) -> str:
