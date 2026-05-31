@@ -18,6 +18,10 @@ _NODUS_TO_JSON_TYPE = {
     "nil": "null",
 }
 
+_VALID_EFFECTS = frozenset({
+    "pure", "reads_state", "writes_state", "network", "filesystem", "spawns_task",
+})
+
 
 def _as_dict(value):
     if isinstance(value, Record):
@@ -165,6 +169,42 @@ def _root_vm(vm):
         root = parent
 
 
+def _validate_effects(effects_raw):
+    """Return (normalized_list, error_msg_or_None)."""
+    if effects_raw is None:
+        return ["pure"], None
+    if not isinstance(effects_raw, list):
+        return None, "effects must be a list"
+    if not effects_raw:
+        return ["pure"], None
+    for e in effects_raw:
+        if not isinstance(e, str):
+            return None, "each effect must be a string"
+        if e not in _VALID_EFFECTS:
+            allowed = ", ".join(sorted(_VALID_EFFECTS))
+            return None, f"unknown effect {e!r} (allowed: {allowed})"
+    if "pure" in effects_raw and len(effects_raw) > 1:
+        return None, "'pure' cannot be combined with other effects"
+    return list(effects_raw), None
+
+
+def _validate_return(result, schema: dict):
+    """Return error message if result fails returns_schema, else None.
+
+    Only validates object-type schemas (type: object). Returns None if the
+    schema is empty or non-object — those cases are not enforced in Phase A.
+    """
+    if not schema or schema.get("type") != "object":
+        return None
+    if isinstance(result, Record):
+        result_d = dict(result.fields)
+    elif isinstance(result, dict):
+        result_d = result
+    else:
+        return f"expected a map return value, got {type(result).__name__!r}"
+    return _validate_args(result_d, schema)
+
+
 def _entry_for_nodus(entry: dict) -> Record:
     """Return entry as a Record safe to return to Nodus (excludes internal-only keys)."""
     fields = {k: v for k, v in entry.items() if not k.startswith("_")}
@@ -210,6 +250,20 @@ def register(vm, registry) -> None:
             return rvm.make_err("tool_error", f"tool.register: invalid schema: {schema_err}", payload={
                 "category": "invalid_metadata", "name": name, "details": schema_err,
             })
+        returns_raw = _as_dict(d.get("returns_schema")) or {}
+        returns_schema, returns_err = _normalize_schema(returns_raw)
+        if returns_err:
+            return rvm.make_err("tool_error", f"tool.register: invalid returns_schema: {returns_err}", payload={
+                "category": "invalid_metadata", "name": name, "details": returns_err,
+            })
+        effects_raw = d.get("effects")
+        if isinstance(effects_raw, list):
+            effects_raw = [e for e in effects_raw]
+        effects, effects_err = _validate_effects(effects_raw)
+        if effects_err:
+            return rvm.make_err("tool_error", f"tool.register: invalid effects: {effects_err}", payload={
+                "category": "invalid_metadata", "name": name, "details": effects_err,
+            })
         if len(name) > _TOOL_NAME_MAX_LEN:
             print(
                 f"Warning: tool name exceeds {_TOOL_NAME_MAX_LEN} characters.",
@@ -223,6 +277,8 @@ def register(vm, registry) -> None:
             "handler": handler,
             "description": desc,
             "schema": schema,
+            "returns_schema": returns_schema,
+            "effects": effects,
             "version": d.get("version") or "1.0.0",
             "tags": tags,
             "deprecated": bool(d.get("deprecated", False)),
@@ -295,14 +351,29 @@ def register(vm, registry) -> None:
             )
         handler = entry["handler"]
         if isinstance(handler, Closure):
-            return rvm.run_closure(handler, [args])
-        if callable(handler):
+            result = rvm.run_closure(handler, [args])
+        elif callable(handler):
             host_args = _to_host_value(args)
             result = handler(host_args)
-            return _to_runtime_value(result)
-        return rvm.make_err("tool_error", f"Tool '{name}': handler is not callable", payload={
-            "category": "handler_error", "name": name, "details": "handler is not callable",
-        })
+            result = _to_runtime_value(result)
+        else:
+            return rvm.make_err("tool_error", f"Tool '{name}': handler is not callable", payload={
+                "category": "handler_error", "name": name, "details": "handler is not callable",
+            })
+        returns_schema = entry.get("returns_schema") or {}
+        if returns_schema:
+            return_err = _validate_return(result, returns_schema)
+            if return_err:
+                return rvm.make_err(
+                    "tool_error",
+                    f"Tool '{name}': contract violation: {return_err}",
+                    payload={
+                        "category": "contract_violation",
+                        "name": name,
+                        "details": return_err,
+                    },
+                )
+        return result
 
     def builtin_tool_lookup(name):
         rvm = _root_vm(vm)

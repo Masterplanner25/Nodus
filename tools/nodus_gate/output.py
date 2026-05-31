@@ -118,8 +118,27 @@ def format_closed_issues(result, root: str, *, use_color: bool, verbose: bool, q
     return "\n".join(lines)
 
 
+def format_contracts(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    lines = []
+    if not quiet:
+        lines.append(f"Ran {result.checks_run} contract infrastructure check(s)")
+        lines.append("")
+
+    for f in result.findings:
+        lines.append(_c(f"FAIL {f.message}", _RED, use_color=use_color))
+        if f.detail:
+            lines.append(f"  {f.detail}")
+        lines.append("")
+
+    if not quiet:
+        n_fail = len(result.findings)
+        status = _c("PASS", _GREEN, use_color=use_color) if n_fail == 0 else _c("FAIL", _RED, use_color=use_color)
+        lines.append(f"Contracts: {status} — {result.passed}/{result.checks_run} checks passed")
+    return "\n".join(lines)
+
+
 def format_json_results(
-    static=None, runtime=None, closed=None
+    static=None, runtime=None, closed=None, contracts=None
 ) -> str:
     obj: dict[str, Any] = {"phases": {}}
 
@@ -163,10 +182,22 @@ def format_json_results(
             ],
         }
 
+    if contracts is not None:
+        obj["phases"]["contracts"] = {
+            "checks_run": contracts.checks_run,
+            "passed": contracts.passed,
+            "failures": len(contracts.findings),
+            "findings": [
+                {"message": f.message, "detail": f.detail}
+                for f in contracts.findings
+            ],
+        }
+
     total_failures = sum([
         len(static.findings) if static else 0,
         len(runtime.findings) if runtime else 0,
         (closed.failed + closed.missing_tests) if closed else 0,
+        len(contracts.findings) if contracts else 0,
     ])
     obj["total_failures"] = total_failures
     obj["passed"] = total_failures == 0

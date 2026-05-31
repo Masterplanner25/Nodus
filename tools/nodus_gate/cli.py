@@ -19,6 +19,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--static": False,
         "--runtime": False,
         "--closed-issues": False,
+        "--contracts": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -70,13 +71,15 @@ def main(argv: list[str] | None = None) -> int:
     run_static = args["--static"] or args["--all"]
     run_runtime = args["--runtime"] or args["--all"]
     run_closed = args["--closed-issues"] or args["--all"]
+    run_contracts = args["--contracts"] or args["--all"]
 
-    if not (run_static or run_runtime or run_closed):
-        print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--all]")
+    if not (run_static or run_runtime or run_closed or run_contracts):
+        print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
-        print("  --all            Run all three phases")
+        print("  --contracts      Verify HandlerContract infrastructure is wired correctly")
+        print("  --all            Run all four phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -99,10 +102,11 @@ def main(argv: list[str] | None = None) -> int:
     allowlist = _load_allowlist(args["--allowlist"])
 
     from tools.nodus_gate.output import (
-        format_static, format_runtime, format_closed_issues, format_json_results
+        format_static, format_runtime, format_closed_issues, format_contracts,
+        format_json_results,
     )
 
-    static_result = runtime_result = closed_result = None
+    static_result = runtime_result = closed_result = contracts_result = None
     any_failure = False
 
     if run_static:
@@ -133,8 +137,18 @@ def main(argv: list[str] | None = None) -> int:
         if closed_result.missing_tests or closed_result.failed:
             any_failure = True
 
+    if run_contracts:
+        from tools.nodus_gate.contracts_phase import run_contracts_phase
+        contracts_result = run_contracts_phase(root)
+        if output_fmt != "json":
+            print(format_contracts(contracts_result, use_color=use_color,
+                                   verbose=verbose, quiet=quiet))
+        if contracts_result.findings:
+            any_failure = True
+
     if output_fmt == "json":
-        print(format_json_results(static_result, runtime_result, closed_result))
+        print(format_json_results(static_result, runtime_result, closed_result,
+                                  contracts_result))
 
     if strict and not any_failure:
         # Warnings don't fail in non-strict mode, but may have been printed
