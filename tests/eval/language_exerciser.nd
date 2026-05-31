@@ -1,0 +1,151 @@
+// Nodus v4 Language Exerciser — core feature smoke test
+// -------------------------------------------------------
+// SUCCESS CONTRACT: prints "ALL EXERCISES PASSED" and exits 0.
+//
+// KEY v4 IDIOMS USED (not bugs, documented behavior):
+//   - len() returns int; use 3i for int literals in comparisons
+//   - closures cannot assign outer let — use map field mutation
+//   - str(42) = "42.0"; str(42i) = "42"
+//   - record.method(arg) passes self; use fn extraction for non-self fns
+import "std:json" as json
+
+let state = record {failures: 0}
+
+fn check(label, got, want) {
+    if (got == want) {
+        print("  ok: " + label)
+    } else {
+        print("  FAIL: " + label + " got=" + str(got) + " want=" + str(want))
+        state.failures = state.failures + 1
+    }
+}
+
+fn fib(n) {
+    if (n <= 1) {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn section_functions() {
+    print("[1] functions / recursion / control flow")
+    check("fib(10)", fib(10), 55)
+    let loop_state = record {total: 0}
+    let i = 0
+    while (i < 5) {
+        loop_state.total = loop_state.total + i
+        i = i + 1
+    }
+    check("while-loop sum 0..4", loop_state.total, 10)
+    let r = range(4)
+    check("range(4) len", len(r), 4i)
+    check("range(4)[2]", r[2], 2)
+    let r2 = range(2, 5)
+    check("range(2,5)[0]", r2[0], 2)
+}
+
+fn section_math() {
+    print("[2] math builtins")
+    check("math_abs(-7.0)", math_abs(-7.0), 7.0)
+    check("math_min", math_min(3.0, 8.0), 3.0)
+    check("math_max", math_max(3.0, 8.0), 8.0)
+    check("math_floor(3.9)", math_floor(3.9), 3.0)
+    check("math_sqrt(16.0)", math_sqrt(16.0), 4.0)
+    check("math_pow(2.0,10.0)", math_pow(2.0, 10.0), 1024.0)
+    check("math_idiv(17i,5i)", math_idiv(17i, 5i), 3i)
+    check("math_is_int(5i)", math_is_int(5i), true)
+    check("math_is_float(5.0)", math_is_float(5.0), true)
+}
+
+fn section_strings() {
+    print("[3] strings / interpolation")
+    check("upper", str_upper("nodus"), "NODUS")
+    check("lower", str_lower("ABC"), "abc")
+    check("contains", str_contains("hello world", "world"), true)
+    check("replace", str_replace("a-b-c", "-", "_"), "a_b_c")
+    check("trim", str_trim("  hi  "), "hi")
+    let ni = 3i
+    let msg = "count is \(ni) and double is \(ni + ni)"
+    check("interpolation (int)", msg, "count is 3 and double is 6")
+    let parts = str_split("x,y,z", ",")
+    check("split len", len(parts), 3i)
+    check("split[1]", parts[1], "y")
+    check("concat str(int)", "item-" + str(42i), "item-42")
+}
+
+fn section_lists() {
+    print("[4] lists")
+    let xs = []
+    xs = list_push(xs, 10)
+    xs = list_push(xs, 20)
+    xs = list_push(xs, 30)
+    check("push then len", len(xs), 3i)
+    check("index 0", xs[0], 10)
+    check("index 2", xs[2], 30)
+    list_pop(xs)
+    check("len after pop", len(xs), 2i)
+    let loop_s = record {total: 0}
+    let i = 0
+    while (i < len(xs)) {
+        loop_s.total = loop_s.total + xs[i]
+        i = i + 1
+    }
+    check("iterate-sum", loop_s.total, 30)
+}
+
+// Functions stored in maps — extract before calling (non-self fn pattern)
+fn section_maps() {
+    print("[5] maps")
+    let m = {"a": 1, "b": 2}
+    m["c"] = 3
+    check("map get", m["a"], 1)
+    check("map set new key", m["c"], 3)
+    check("has_key present", has_key(m, "b"), true)
+    check("has_key absent", has_key(m, "zzz"), false)
+    check("keys len", len(keys(m)), 3i)
+    let dispatch = {"double": fn(x) { return x * 2 }}
+    let f = dispatch["double"]
+    check("fn-in-map call", f(21), 42)
+}
+
+// Use x=5, y=4 so mag()=sqrt(25+16)... actually use a Pythagorean triple:
+// x=5, y=12 -> sqrt(25+144) = sqrt(169) = 13.0
+fn section_records() {
+    print("[6] records")
+    let p = record {x: 5, y: 12, mag: fn(self) { return math_sqrt(self.x * self.x + self.y * self.y) }}
+    check("record field x", p.x, 5)
+    check("record field y", p.y, 12)
+    check("record method mag (self)", p.mag(), 13.0)
+    p.x = 0
+    check("record mutate x=0", p.x, 0)
+    check("mag after mutate", p.mag(), 12.0)
+}
+
+fn section_json() {
+    print("[7] json round-trip")
+    let obj = {"name": "nodus", "tags": ["lang", "vm"]}
+    let serialized = json.stringify(obj)
+    check("stringify contains name", str_contains(serialized, "nodus"), true)
+    let back = json.parse(serialized)
+    check("roundtrip name", back["name"], "nodus")
+    check("roundtrip nested", back["tags"][0], "lang")
+}
+
+fn main() {
+    print("=== Nodus v4 Language Exerciser ===")
+    section_functions()
+    section_math()
+    section_strings()
+    section_lists()
+    section_maps()
+    section_records()
+    section_json()
+    print("---")
+    if (state.failures == 0) {
+        print("ALL EXERCISES PASSED")
+    } else {
+        print("EXERCISER FAILURES: " + str(state.failures) + " — language regression, investigate")
+    }
+}
+
+main()

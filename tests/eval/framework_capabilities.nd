@@ -1,0 +1,218 @@
+// Nodus v4 Framework Capability Probes
+// -------------------------------------------------------
+// Tests the primitive capabilities required by real frameworks.
+// Each probe is a micro-implementation proving one pattern works.
+//
+// SUCCESS CONTRACT: prints "ALL FRAMEWORK PROBES PASSED".
+let state = record {failures: 0}
+
+fn check(label, got, want) {
+    if (got == want) {
+        print("  ok: " + label)
+    } else {
+        print("  FAIL: " + label + " got=" + str(got) + " want=" + str(want))
+        state.failures = state.failures + 1
+    }
+}
+
+// P1: Router — maps as dispatch tables
+fn probe_router() {
+    print("[P1] Router")
+    let routes = {}
+    routes["/"] = fn() { return "home" }
+    routes["/about"] = fn() { return "about" }
+    check("route /", routes["/"](), "home")
+    check("route /about", routes["/about"](), "about")
+    check("missing route absent", has_key(routes, "/404"), false)
+}
+
+// P2: Event Bus — callbacks stored and iterated
+fn probe_event_bus() {
+    print("[P2] Event Bus")
+    let handlers = []
+    let received = []
+    fn subscribe(h) {
+        handlers = list_push(handlers, h)
+    }
+    fn emit(value) {
+        let i = 0
+        while (i < len(handlers)) {
+            handlers[i](value)
+            i = i + 1
+        }
+    }
+    subscribe(fn(msg) { received = list_push(received, "A:" + msg) })
+    subscribe(fn(msg) { received = list_push(received, "B:" + msg) })
+    emit("hello")
+    check("two handlers called", len(received), 2i)
+    check("first handler", received[0], "A:hello")
+    check("second handler", received[1], "B:hello")
+}
+
+// P3: Middleware Chain — higher-order functions
+fn probe_middleware() {
+    print("[P3] Middleware")
+    let log_calls = []
+    fn logged(next_fn, value) {
+        log_calls = list_push(log_calls, "before")
+        let result = next_fn(value)
+        log_calls = list_push(log_calls, "after")
+        return result
+    }
+    fn double(x) {
+        return x * 2
+    }
+    let result = logged(double, 5)
+    check("middleware result", result, 10)
+    check("before logged", log_calls[0], "before")
+    check("after logged", log_calls[1], "after")
+}
+
+// P4: Service Registry (DI pattern)
+fn probe_service_registry() {
+    print("[P4] Service Registry")
+    let services = {}
+    let calls = []
+    services["logger"] = fn(msg) { calls = list_push(calls, msg) }
+    services["counter"] = fn(n) { return n + 1 }
+    services["logger"]("init")
+    check("service lookup + call", calls[0], "init")
+    check("counter service", services["counter"](41), 42)
+}
+
+// P5: State Machine
+fn probe_state_machine() {
+    print("[P5] State Machine")
+    let transitions = {"idle": "running", "running": "done", "done": "idle"}
+    fn transition(s) {
+        if (has_key(transitions, s)) {
+            return transitions[s]
+        }
+        return s
+    }
+    let s = "idle"
+    s = transition(s)
+    check("idle -> running", s, "running")
+    s = transition(s)
+    check("running -> done", s, "done")
+    s = transition(s)
+    check("done -> idle", s, "idle")
+}
+
+// P6: Plugin Registry
+fn probe_plugin_registry() {
+    print("[P6] Plugin Registry")
+    let plugins = {}
+    fn register_plugin(name, fn_impl) {
+        plugins[name] = fn_impl
+    }
+    fn invoke_plugin(name, arg) {
+        if (has_key(plugins, name)) {
+            return plugins[name](arg)
+        }
+        return "not_found"
+    }
+    register_plugin("greet", fn(name) { return "hello, " + name })
+    register_plugin("shout", fn(msg) { return str_upper(msg) })
+    check("greet plugin", invoke_plugin("greet", "nodus"), "hello, nodus")
+    check("shout plugin", invoke_plugin("shout", "quiet"), "QUIET")
+    check("missing plugin", invoke_plugin("missing", "x"), "not_found")
+}
+
+// P7: Pipeline — ordered step chain
+fn probe_pipeline() {
+    print("[P7] Pipeline")
+    let steps = []
+    steps = list_push(steps, fn(x) { return x + 1 })
+    steps = list_push(steps, fn(x) { return x * 2 })
+    steps = list_push(steps, fn(x) { return x - 3 })
+    let value = 5
+    let i = 0
+    while (i < len(steps)) {
+        value = steps[i](value)
+        i = i + 1
+    }
+    check("pipeline (5+1)*2-3 = 9", value, 9)
+}
+
+// P8: Rule Engine — stored predicates
+// Extract fn before calling — record.method(arg) auto-passes self
+fn probe_rule_engine() {
+    print("[P8] Rule Engine")
+    let rules = []
+    rules = list_push(rules, record {name: "positive", pred: fn(x) { return x > 0 }})
+    rules = list_push(rules, record {name: "even", pred: fn(x) { return x % 2 == 0 }})
+    rules = list_push(rules, record {name: "large", pred: fn(x) { return x > 100 }})
+    fn evaluate(value) {
+        let matched = []
+        let i = 0
+        while (i < len(rules)) {
+            let pred_fn = rules[i].pred
+            if (pred_fn(value)) {
+                matched = list_push(matched, rules[i].name)
+            }
+            i = i + 1
+        }
+        return matched
+    }
+    let result = evaluate(42)
+    check("positive matched", result[0], "positive")
+    check("even matched", result[1], "even")
+    check("large NOT matched for 42", len(result), 2i)
+    check("all 3 matched for 200", len(evaluate(200)), 3i)
+}
+
+// P9: Closure-encapsulated counter (correct Nodus idiom)
+// Methods on a record receive self as first arg — declare it even if unused
+fn probe_closure_state() {
+    print("[P9] Closure state")
+    fn make_counter(initial) {
+        let s = record {count: initial}
+        return record {inc: fn(self) { s.count = s.count + 1 }, get: fn(self) { return s.count }}
+    }
+    let c = make_counter(10)
+    c.inc()
+    c.inc()
+    c.inc()
+    check("counter after 3 increments", c.get(), 13)
+}
+
+// P10: Coroutines + channels
+fn probe_coroutines() {
+    print("[P10] Coroutines + channels")
+    let ch = channel()
+    let results = []
+    spawn(coroutine(fn() { send(ch, "a") }))
+    spawn(coroutine(fn() { send(ch, "b") }))
+    spawn(coroutine(fn() {
+    results = list_push(results, recv(ch))
+    results = list_push(results, recv(ch))
+}))
+    run_loop()
+    check("two messages received", len(results), 2i)
+    let both = results[0] + results[1]
+    check("a arrived", str_contains(both, "a"), true)
+    check("b arrived", str_contains(both, "b"), true)
+}
+
+fn main() {
+    print("=== Nodus v4 Framework Capability Probes ===")
+    probe_router()
+    probe_event_bus()
+    probe_middleware()
+    probe_service_registry()
+    probe_state_machine()
+    probe_plugin_registry()
+    probe_pipeline()
+    probe_rule_engine()
+    probe_closure_state()
+    probe_coroutines()
+    print("---")
+    if (state.failures == 0) {
+        print("ALL FRAMEWORK PROBES PASSED")
+    } else {
+        print("FRAMEWORK PROBE FAILURES: " + str(state.failures) + " — framework capability broken")
+    }
+}
+
+main()

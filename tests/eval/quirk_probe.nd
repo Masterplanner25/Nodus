@@ -1,0 +1,144 @@
+// Nodus v4 Quirk Confirmation Probe
+// -------------------------------------------------------
+// SUCCESS CONTRACT: prints "ALL QUIRKS CONFIRMED" and exits 0.
+// TRAP lines are commented — uncomment individually to verify
+// each documented error still fires.
+//
+// NOTE: Q1 reflects v4 behavior (len returns int, not float).
+// If these checks start FAILING, something has changed — investigate.
+import "std:tool" as tool
+import "std:hash" as hash
+
+let s = record {failures: 0}
+
+fn check(label, got, want) {
+    if (got == want) {
+        print("  ok: " + label)
+    } else {
+        print("  FAIL: " + label + " got=" + str(got) + " want=" + str(want))
+        s.failures = s.failures + 1
+    }
+}
+
+// NOTE: If this changes back to float, update the probe AND file an issue.
+fn quirk_len_returns_int() {
+    print("[Q1] len() returns an int in v4 (changed from float in v3)")
+    check("len is int-typed", math_is_int(len([1, 2, 3])), true)
+    check("len is NOT float", math_is_float(len([1, 2, 3])), false)
+    check("len value == 3", len([1, 2, 3]), 3i)
+    check("str(len) is \"3\"", str(len([1, 2, 3])), "3")
+}
+
+// Interpolation follows the same rule:
+fn quirk_number_literals_are_floats() {
+    print("[Q2] bare number literals (e.g. 42) are FLOATS; use 42i for int")
+    check("42 is float", math_is_float(42), true)
+    check("42i is int", math_is_int(42i), true)
+    check("str(42) = .0", str(42), "42.0")
+    check("str(42i) = 3", str(42i), "42")
+    let n_float = 3
+    let n_int = 3i
+    check("interp float shows .0", "\(n_float)", "3.0")
+    check("interp int   shows 3", "\(n_int)", "3")
+}
+
+// TRAP: let bad = "n=" + 5  -- Runtime type error if uncommented
+fn quirk_no_string_number_coercion() {
+    print("[Q3] '+' does NOT coerce number->string — always use str()")
+    check("str(5) concat", "n=" + str(5.0), "n=5.0")
+    check("str(5i) concat", "n=" + str(5i), "n=5")
+    print("  (trap: str+number is commented — uncomment to verify error)")
+}
+
+// TRAPs: xs.append(4) / xs.length() / m.contains("k") — each errors
+fn quirk_no_method_sugar() {
+    print("[Q4] no .append()/.length()/.contains() — use builtins")
+    let xs = list_push([1, 2], 3)
+    check("list_push works", len(xs), 3i)
+    check("has_key works", has_key({"k": 1}, "k"), true)
+    print("  (method-sugar traps commented — uncomment each to verify error)")
+}
+
+// TRAP: x += 1  -- parse error if uncommented
+fn quirk_no_compound_assign() {
+    print("[Q5] no += / -= compound assignment")
+    let x = 10
+    x = x + 5
+    check("manual increment", x, 15)
+    print("  (compound-assign trap commented — uncomment to verify error)")
+}
+
+// TRAP: let count = 0; fn bad_inc() { count = count + 1 }
+// -- assignments to outer let variables are silently ignored or error
+fn quirk_closure_cannot_assign_outer_let() {
+    print("[Q6] closures cannot assign outer let — use map field mutation")
+    let st = record {count: 0}
+    fn inc() {
+        st.count = st.count + 1
+    }
+    inc()
+    inc()
+    check("map-state counter", st.count, 2)
+    print("  (outer-let assignment trap commented — uncomment to verify behavior)")
+}
+
+// Stored fn called as method auto-passes self as first arg:
+// r.get_plain(5) would be called as get_plain(r, 5) -> error (expects 1 arg)
+// Correct idiom: extract first
+// TRAP: r.get_plain(5)  -- "expected 1 args, got 2" if uncommented
+fn quirk_record_method_vs_stored_fn() {
+    print("[Q7] record.method(arg) auto-passes self; stored fn needs extraction")
+    let r = record {val: 10, get_self: fn(self) { return self.val }, get_plain: fn(x) { return x * 2 }}
+    check("method with self", r.get_self(), 10)
+    let f = r.get_plain
+    check("extracted fn call works", f(5), 10)
+    print("  (method-on-stored-fn trap commented — uncomment to verify error)")
+}
+
+fn quirk_int_float_arithmetic() {
+    print("[Q8] int and float are distinct; mixed arithmetic uses float rules")
+    check("5i is int", math_is_int(5i), true)
+    check("5.0 is float", math_is_float(5.0), true)
+    check("math_idiv requires int", math_idiv(7i, 2i), 3i)
+    check("5.0 == 5.0", 5.0 == 5.0, true)
+}
+
+// TRAP: tool.register({name: "nodot", description: "x", handler: fn(){}})
+// -- "must use dotted namespacing"
+fn quirk_tool_name_dotted() {
+    print("[Q9] std:tool names must use dotted namespace")
+    tool.register(record {name: "eval.test", description: "probe", handler: fn(x) { return x }})
+    check("dotted name registered", tool.has("eval.test"), true)
+    print("  (undotted-name trap commented — uncomment to verify error)")
+}
+
+fn quirk_hash_returns_record() {
+    print("[Q10] std:hash returns a record with .to_hex() — not a plain string")
+    let h = hash.sha256("test")
+    check("type is hash record", type(h), "hash")
+    let hex = h.to_hex()
+    check("to_hex is string", type(hex), "string")
+    check("hex has expected prefix", str_contains(hex, "9f86d"), true)
+}
+
+fn main() {
+    print("=== Nodus v4 Quirk Confirmation Probe ===")
+    quirk_len_returns_int()
+    quirk_number_literals_are_floats()
+    quirk_no_string_number_coercion()
+    quirk_no_method_sugar()
+    quirk_no_compound_assign()
+    quirk_closure_cannot_assign_outer_let()
+    quirk_record_method_vs_stored_fn()
+    quirk_int_float_arithmetic()
+    quirk_tool_name_dotted()
+    quirk_hash_returns_record()
+    print("---")
+    if (s.failures == 0) {
+        print("ALL QUIRKS CONFIRMED")
+    } else {
+        print("QUIRK DRIFT: " + str(s.failures) + " checks failed — investigate semantics change")
+    }
+}
+
+main()
