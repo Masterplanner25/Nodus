@@ -424,18 +424,25 @@ class NodusRuntime:
         Returns
         -------
         dict
-            Same shape as ``run_source``: ``{"ok": bool, "stdout": str,
-            "stderr": str, "stage": "execute", "filename": path, ...}``.
+            Same shape as ``run_source``.  On success: ``{"ok": True, ...}``.
+            On file-not-found or permission error: ``{"ok": False, "stage": "load",
+            "error": {"type": "io", "message": ...}, ...}``.
+            On parse/runtime failure: ``{"ok": False, "stage": "parse"|"execute", ...}``.
 
-        Raises
-        ------
-        OSError:
-            If the file cannot be opened.
-        LangSyntaxError / LangRuntimeError:
-            Propagated from the compiler or VM on parse/runtime failure.
+        Unlike earlier versions, ``run_file`` never raises ``OSError`` for missing
+        or unreadable files — those produce an ``ok=False`` result dict, consistent
+        with ``run_source()`` error behaviour.
         """
-        with open(path, "r", encoding="utf-8-sig") as handle:
-            source = handle.read()
+        normalized = normalize_filename(path)
+        try:
+            with open(path, "r", encoding="utf-8-sig") as handle:
+                source = handle.read()
+        except OSError as exc:
+            return Result.failure(
+                stage="load",
+                filename=normalized,
+                error={"type": "io", "kind": "io", "message": str(exc), "path": path},
+            ).to_dict()
         return self.run_source(
             source,
             filename=path,

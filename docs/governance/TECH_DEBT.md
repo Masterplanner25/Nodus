@@ -106,13 +106,15 @@ describe the workaround patterns used until these are fixed.
   `subprocess_spawn`). `subprocess_run_async` and `subprocess_shell_async` use the
   same thread+channel approach. Verified 3.3x speedup for 3 parallel 1s subprocesses
   (sequential: ~4.3s, async: ~1.3s).
-  **Remaining limitation:** when called via the stdlib module wrapper
-  (`subprocess.run_async(...)`, `http.get_async(...)` via `import "std:subprocess"`),
-  the `invoke_function` path doesn't support yield — falls back to sync. Direct
-  builtin calls (`subprocess_run_async(...)`) within spawned coroutines are fully
-  async. Fixing the module-wrapper path requires module functions to carry a
-  reference to their code segment so `call_closure` can use the right bytecode.
-  GitHub: #100.
+  **Remaining limitation (ASYNC-MOD-001, GitHub #105):** when called via the stdlib
+  module wrapper (`subprocess.run_async(...)`, `http.get_async(...)` via
+  `import "std:subprocess"`), the `invoke_function` path doesn't support yield —
+  falls back to sync. Direct builtin calls (`subprocess_run_async(...)`) within
+  spawned coroutines are fully async. Workaround: use direct builtin names.
+  Fix direction: add `_code_stack` to VM; in `_op_call_method` for module functions
+  in scheduler context, push current code, swap to module code, use `call_closure`,
+  pop on RETURN. Skill: `/nodus-async-module-yield`.
+  GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001 tracking issue).
 
 - **CHAN-001** (open, related to EMBED-003): A coroutine blocked on `recv()` of an
   empty channel is silently orphaned — `run_loop` exits when it sees no pending work,
