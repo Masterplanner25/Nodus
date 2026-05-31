@@ -580,6 +580,64 @@ before `nodus` in a fresh process.
 - **No Alembic:** `create_all()` is the dev schema bootstrap; production manages migrations independently
 - Run tests: `cd C:\dev\nodus-store-sql && python -m pytest -q`
 
+## SemVer policy — version only increments on PyPI publication
+
+The version number in `src/nodus/support/version.py` and `pyproject.toml` is **4.0.0**.
+It stays at 4.0.0 until the package is actually published to PyPI.
+
+All additions made after the original v4.0.0 scope (Phase 6 AI-native primitives,
+Phase A-D HandlerContract, nodus-sdk, nodus-store-sql, repo alignment sweep) are part
+of the **v4.0.0 pre-release cycle** — not a new minor version. Do not bump to 4.1.0
+unless 4.0.0 has shipped. The last published release is **v3.0.2**.
+
+Both `version.py` and `pyproject.toml` must stay in sync at all times (Version sync
+section above). If you ever see them at 4.1.0, revert to 4.0.0.
+
+## Embedding API — known blockers and operational traps
+
+These were identified by a raw-path readiness probe and are filed as GitHub issues.
+Full analysis: `C:\dev\nodus-mcp\docs\design\06-embedding-runtime-blockers.md`.
+All entries are also in `docs/governance/TECH_DEBT.md`.
+
+**EMBED-001 (#97) — The 200ms default trap (hits every first-time embedder):**
+`NodusRuntime()` with NO arguments applies a **200ms wall-clock deadline** — the same
+as `nodus run`. Any coroutine sleeping cumulatively more than 200ms (workflows, async
+loops, MCP/A2A request handlers) will be killed silently.
+
+```python
+# WRONG for any long-lived use:
+rt = NodusRuntime()
+
+# CORRECT for servers, MCP hosts, workflow engines, anything with sleep:
+rt = NodusRuntime(timeout_ms=None, max_steps=None)
+```
+
+**EMBED-002 (#98, open) — No `on_error` hook:**
+`NodusRuntime` does not expose `Scheduler.run_loop`'s `on_error` parameter. After
+`run_source()` returns, a coroutine that died from an error and one that completed
+normally are indistinguishable (`state="finished"`, `last_result=None` for both).
+Workaround: require handlers to catch their own errors and write structured error
+records to a result channel (in-Nodus catch pattern).
+
+**EMBED-003 (#99, open) — `subprocess_spawn` thread leak:**
+Two daemon pump threads are created per `subprocess_spawn`. If `run_loop` exits
+before the subprocess terminates (output channel never consumed), threads accumulate.
+They're daemon threads so they don't block exit, but they pile up per session.
+No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
+
+**EMBED-004 (#100, open) — `*_async` builtins are fully serial:**
+`http_get_async`, `subprocess_run_async` etc. block the GIL. Five concurrent 200ms
+HTTP calls take ~1s total, not 200ms. The genuine concurrency path is `subprocess_spawn`
++ channel reads via `_io_channels` daemon threads — not `*_async` builtins.
+
+**CHAN-001 (open) — silent coroutine orphan on empty `recv()`:**
+A coroutine blocked on `recv()` of an empty channel is silently stranded — `run_loop`
+exits when it sees no pending work. The only workaround is:
+(a) pre-populate the channel before `run_loop`, or
+(b) use the subprocess-pipe pattern (daemon thread feeds `ch.queue` continuously).
+The `_io_channels` workaround requires touching a private scheduler attribute and has
+a close-ordering race. Do not use it directly.
+
 ## Phase 5/6 publish status (as of 2026-05-30)
 
 nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented beyond original scope). The full coordinated publish sequence:
