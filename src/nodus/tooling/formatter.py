@@ -151,20 +151,20 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
 
     if isinstance(stmt, WorkflowDef):
         header = f"{prefix}workflow {stmt.name} {{"
-        body_lines: list[str] = []
+        body_lines = []
         for state in stmt.states:
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
-        for step in stmt.steps:
-            body_lines.extend(format_stmt(step, indent + 1, keep_trailing_comments=keep_trailing_comments))
+        for wf_step in stmt.steps:
+            body_lines.extend(format_stmt(wf_step, indent + 1, keep_trailing_comments=keep_trailing_comments))
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, GoalDef):
         header = f"{prefix}goal {stmt.name} {{"
-        body_lines: list[str] = []
+        body_lines = []
         for state in stmt.states:
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
-        for step in stmt.steps:
-            body_lines.extend(format_stmt(step, indent + 1, keep_trailing_comments=keep_trailing_comments))
+        for goal_step in stmt.steps:
+            body_lines.extend(format_stmt(goal_step, indent + 1, keep_trailing_comments=keep_trailing_comments))
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, WorkflowStateDecl):

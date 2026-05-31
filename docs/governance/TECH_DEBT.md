@@ -184,14 +184,10 @@ surface as ok=False after the SCHED-002 fix).
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
 
-- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **148 errors across 33 files** (down from 260: Phase A −70, Phase B −42). Per-module counts:
+- **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C applied):** Non-blocking step in CI (`continue-on-error: true`). Total: **88 errors across 29 files** (down from 260: A −70, B −42, C −60). Per-module counts:
 
   | Module | Errors |
   |--------|--------|
-  | `tooling/formatter.py` | 18 |
-  | `vm/vm.py` | 16 |
-  | `dap/server.py` | 14 |
-  | `tooling/loader.py` | 12 |
   | `services/server.py` | 9 |
   | `tooling/repl.py` | 8 |
   | `runtime/module_loader.py` | 7 |
@@ -210,54 +206,12 @@ surface as ok=False after the SCHED-002 fix).
   | `tooling/runner.py` | 2 |
   | `tooling/diagnostics.py` | 2 |
   | `cli/cli.py` | 2 |
-  | `tooling/user_config.py` | 1 |
-  | `runtime/profiler.py` | 1 |
-  | `runtime/snapshots.py` | 1 |
-
-## Patch closure verification gap (surfaced 2026-05-25 by v3.0.1 eval)
-
-**Status:** OPEN — process gap to address in playbook
-
-The v3.0.1 cycle closed #64 (BUG-E12, 1I uppercase suffix parse error) in the
-CHANGELOG and on GitHub, but the fix did not land in the distributed wheel. The
-v3.0.1 eval (`docs/evals/v3.0.1/`) caught this; it was not caught pre-release.
-
-**Root cause** (determined during v3.0.2 fix work):
-The lexer fix for `1I` was present in `src/nodus/frontend/lexer.py` at the time
-the v3.0.2 regression tests were written. Running the new tests against the dev
-source confirmed ALL six BUG-V31E-01 tests passed without any code change. This
-means the fix was committed to source before the v3.0.1 wheel was built, but
-the wheel was built from a state that did not include the commit — most likely
-a missing `git push` before the PyPI upload step, or the wheel was built from a
-stale local clone rather than from the pushed tag. No regression test for the
-`1I` → parse error behavior existed in the test suite at the time of the v3.0.1
-release, so CI did not catch the gap between source state and wheel contents.
-
-**Process gap:**
-The Playbook A Stage 3 (PyPI publish) procedure includes a "smoke test after
-install" that runs `nodus --version`. It does not run the closed-issue regression
-tests against the installed wheel. A closed issue's regression test should be
-exercised against the installed artifact before the wheel is considered shipped.
-
-**Proposed mitigation for Playbook A Stage 3:**
-Add a "closure verification" sub-step between TestPyPI install and real PyPI
-publish: for each issue closed in the release, run its regression test against
-the installed wheel. If any test fails, the issue's CHANGELOG entry is wrong and
-the release must be held.
-
-Mechanical implementation: a script that reads the CHANGELOG section for the
-release, extracts referenced issue numbers, locates each issue's regression test
-by convention (`grep -r "issue #NN"` or `grep -r "BUG-V31E-NN"` in tests/), and
-runs them against `pip install`'d package in a temp venv. Failing tests block
-the release.
-
-This will be incorporated into `docs/governance/PLAYBOOK_PATCH_MINOR.md` Stage 3
-in the next playbook revision. See GitHub issue filed as follow-up in v3.1
-milestone.
+  | (11 files with 1 error each) | 11 |
 
   **Phase A (2026-05-31):** except-as-err renames + module-callable fixes, −70 errors.
-  **Phase B (2026-05-31):** `task_graph.py` — `TaskGraph.metadata: dict[str, Any]`, declared checkpoint types, assert graph_id, cast resume_state. −42 errors, `task_graph.py` now 0.
-  **Next:** `tooling/formatter.py` (18), `vm/vm.py` (16), `dap/server.py` (14), `tooling/loader.py` (12). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
+  **Phase B (2026-05-31):** `task_graph.py` — dict[str,Any] + checkpoint types + assert graph_id, −42 errors, now 0.
+  **Phase C (2026-05-31):** formatter/dap/loader/vm/ast_nodes — AST `body: Block`, `_tok: Tok|None`, `import_error: NoReturn`, `BuiltinInfo.fn: Callable`, dict narrowing. −60 errors. All these modules now 0.
+  **Next:** `services/server.py` (9), `tooling/repl.py` (8), `lsp/server.py`+`runtime/module_loader.py` (7 each). Goal: zero errors before promoting mypy to blocking. See `pyproject.toml [tool.mypy]` for configuration.
 
 - `.ndignore` support: `nodus publish` currently excludes a hardcoded list (`.nodus/`, `__pycache__/`, `.git/`, `*.pyc`, `nodus.lock`, `.gitignore`). A `.ndignore` file would give package authors control over what is included in the published archive. Target: post-v0.9.
 

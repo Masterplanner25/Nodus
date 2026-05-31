@@ -8,6 +8,7 @@ from nodus_retry.effect import InMemoryEffectStore
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any, cast
 
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.channel import Channel, ChannelRecvRequest
@@ -113,9 +114,9 @@ class Record:
         return a >= b
 
 
-def _dict_to_record(d: dict) -> "Record":
+def _dict_to_record(d: dict[str, Any]) -> "Record":
     """Recursively convert a plain dict to a Nodus Record for field-access."""
-    converted = {}
+    converted: dict[str, object] = {}
     for k, v in d.items():
         if isinstance(v, dict):
             converted[k] = _dict_to_record(v)
@@ -591,7 +592,7 @@ class VM:
                 locals_[name] = value
         else:
             if name in self.module_globals and isinstance(self.module_globals[name], LiveBinding):
-                self.module_globals[name].set(value)
+                cast("LiveBinding", self.module_globals[name]).set(value)
             else:
                 self.module_globals[name] = value
         return value
@@ -602,6 +603,7 @@ class VM:
         closure = self.frames[-1].closure
         if closure is None or index is None or index >= len(closure.upvalues):
             self.runtime_error("runtime", "Invalid upvalue access")
+        assert closure is not None
         return closure.upvalues[index].value
 
     def store_upvalue(self, index: int, value):
@@ -610,6 +612,7 @@ class VM:
         closure = self.frames[-1].closure
         if closure is None or index is None or index >= len(closure.upvalues):
             self.runtime_error("runtime", "Invalid upvalue access")
+        assert closure is not None
         closure.upvalues[index].value = value
         return value
 
@@ -1167,7 +1170,8 @@ class VM:
         return step_plan
 
     def _rebuild_workflow_graph(self, graph_id: str, state: dict) -> TaskGraph | None:
-        metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
+        _meta_raw = state.get("metadata")
+        metadata: dict[str, Any] = _meta_raw if isinstance(_meta_raw, dict) else {}
         workflow_name = metadata.get("workflow_name")
         goal_name = metadata.get("goal_name")
         execution_kind = metadata.get("execution_kind")
@@ -1203,7 +1207,8 @@ class VM:
         workflow = find_goal_value(self.globals, flow_name) if execution_kind == "goal" else find_workflow_value(self.globals, flow_name)
         if workflow is None:
             return None
-        step_to_task = metadata.get("step_to_task") if isinstance(metadata.get("step_to_task"), dict) else None
+        _stt_raw = metadata.get("step_to_task")
+        step_to_task: dict[str, Any] | None = _stt_raw if isinstance(_stt_raw, dict) else None
         graph = workflow_to_graph(self, workflow, init_state=False, task_ids_by_step=step_to_task)
         graph.graph_id = graph_id
         return graph
@@ -1642,6 +1647,7 @@ class VM:
             self.stack.append(None)
             if self.current_coroutine is None:
                 self.runtime_error("runtime", "sleep(ms) outside coroutine")
+            assert self.current_coroutine is not None
             self.current_coroutine.state = "suspended"
             self.save_current_coroutine_state(self.ip + 1)
             return ("yield", {SLEEP_KEY: result.ms})
@@ -1794,7 +1800,7 @@ class VM:
 
     def record_vm_exception(self, err: Exception) -> None:
         self.exceptions += 1
-        data = {"total": float(self.exceptions)}
+        data: dict[str, Any] = {"total": float(self.exceptions)}
         if isinstance(err, LangRuntimeError):
             data["kind"] = err.kind
             data["message"] = str(err)

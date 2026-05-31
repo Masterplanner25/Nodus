@@ -16,6 +16,7 @@
 
 import os
 import warnings
+from typing import NoReturn
 
 from nodus.frontend.visitor import NodeVisitor
 from nodus.frontend.ast.ast_nodes import (
@@ -89,7 +90,7 @@ def get_module_prefix(import_state: dict, module_id: str) -> str:
     return module_ids[module_id]
 
 
-def import_error(message: str, tok: Tok | None, module_id: str):
+def import_error(message: str, tok: Tok | None, module_id: str) -> NoReturn:
     line = tok.line if tok is not None else None
     col = tok.col if tok is not None else None
     raise LangRuntimeError("import", message, line=line, col=col, path=module_id)

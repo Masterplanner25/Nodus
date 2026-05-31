@@ -9,7 +9,7 @@ import sys
 import threading
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from nodus.runtime.debugger import Debugger, DebuggerQuit, PauseState
 from nodus.runtime.errors import format_error_payload
@@ -445,7 +445,7 @@ class DebugAdapterServer:
         if message.get("type") != "request":
             return False
         command = message.get("command")
-        request_seq = message.get("seq")
+        request_seq: int = cast(int, message.get("seq"))
         arguments = message.get("arguments", {})
         try:
             if command == "initialize":

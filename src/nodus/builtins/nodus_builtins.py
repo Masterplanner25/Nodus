@@ -1,13 +1,14 @@
 """Builtin registry definitions."""
 
 from dataclasses import dataclass
+from typing import Any, Callable
 
 
 @dataclass
 class BuiltinInfo:
     name: str
     arity: int | tuple[int, ...]
-    fn: object
+    fn: Callable[..., Any]
 
 
 BUILTIN_NAMES = {

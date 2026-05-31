@@ -1,10 +1,13 @@
 """AST node definitions for Nodus."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from nodus.frontend.lexer import Tok
 
-# Forward reference for Tok (populated by parser; avoids circular import)
-# Tok is defined in nodus.frontend.lexer; we use a string annotation here.
 
 @dataclass(kw_only=True)
 class Base:
@@ -24,7 +27,7 @@ class Base:
     Both fields are excluded from __repr__ and __eq__ comparisons so that
     AST equality checks remain structural.
     """
-    _tok: object = field(default=None, repr=False, compare=False)
+    _tok: Tok | None = field(default=None, repr=False, compare=False)
     _module: str | None = field(default=None, repr=False, compare=False)
 
 
@@ -160,7 +163,7 @@ class FieldAssign(Base):
 class WorkflowStep(Base):
     name: str
     deps: list[str]
-    body: object
+    body: Block
     options: object | None = None
 
 
@@ -193,7 +196,7 @@ class ActionStmt(Base):
 class GoalStep(Base):
     name: str
     deps: list[str]
-    body: object
+    body: Block
     options: object | None = None
 
 
@@ -247,14 +250,14 @@ class Comment(Base):
 @dataclass
 class If(Base):
     cond: object
-    then_branch: object
-    else_branch: object | None
+    then_branch: Block
+    else_branch: Block | None
 
 
 @dataclass
 class While(Base):
     cond: object
-    body: object
+    body: Block
 
 
 @dataclass
@@ -262,21 +265,21 @@ class For(Base):
     init: object | None
     cond: object | None
     inc: object | None
-    body: object
+    body: Block
 
 
 @dataclass
 class ForEach(Base):
     name: str
     iterable: object
-    body: object
+    body: Block
 
 
 @dataclass
 class FnDef(Base):
     name: str
     params: list[Param]
-    body: object
+    body: Block
     return_type: str | None = None
     exported: bool = False
 
@@ -284,7 +287,7 @@ class FnDef(Base):
 @dataclass
 class FnExpr(Base):
     params: list[Param]
-    body: object
+    body: Block
     return_type: str | None = None
 
 
@@ -324,10 +327,10 @@ class ModuleAlias(Base):
 
 @dataclass
 class TryCatch(Base):
-    try_block: object
+    try_block: Block
     catch_var: str
-    catch_block: object
-    finally_block: object = None
+    catch_block: Block
+    finally_block: Block | None = None
 
 
 @dataclass
