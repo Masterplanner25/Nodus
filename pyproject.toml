@@ -5,13 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nodus-lang"
 version = "4.0.0"
-description = "A stack-VM scripting language and distributed workflow runtime"
+description = "An orchestration DSL and embedded runtime for agentic systems"
 authors = [
   { name = "Shawn Knight" }
 ]
 license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = [
+  "AI agent orchestration",
+  "workflow DSL",
+  "embedded runtime",
+  "agentic systems",
+  "MCP",
+  "A2A",
+  "coroutines",
+  "task graph",
+  "scripting language",
+  "Python embedding",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -23,6 +35,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Interpreters",
   "Topic :: Software Development :: Compilers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 dependencies = [

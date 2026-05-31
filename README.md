@@ -11,14 +11,15 @@ nodus run
 nodus repl
 ```
 
-Nodus is a bytecode-compiled scripting language and runtime created by **Shawn Knight** as part of the Masterplan Infinite Weave ecosystem. It implements the Infinity Algorithm's execution model as a first-class language construct, expressed through coroutines, task graphs, workflows, and goals on a deterministic stack-based VM.
+Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight**. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are first-class constructs rather than library conventions layered over Python.
+
+If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A, Nodus is the execution layer.
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
 The Nodus ecosystem spans **29 standalone packages** across 6 tiers, all available at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
-story: `pip install nodus-sdk[agent,sql,fastapi]`. Incubator design scaffolds live under
-`packages/`; production packages live at `C:\dev\`.
+story: `pip install nodus-sdk[agent,sql,fastapi]`.
 
 ## Install
 
@@ -91,20 +92,55 @@ When you provide a file path, Nodus runs only that file. When you run `nodus run
 Import standard library modules with the `std:` prefix:
 
 ```nd
-import "std:math" as math
-print(math.abs(-4))
+import "std:http" as http
+let r = http.get("https://api.example.com/data")
+print(r.body)
 ```
 
-**v4.1 AI-native stdlib additions:**
+The full standard library ships with Nodus — no extra installs required for core modules:
 
-| Module | Purpose |
+**Networking and I/O**
+
+| Module | What it does |
 |---|---|
-| `std:identity` | `trace_id()`, `session_id()`, `execution_unit_id()` — auto-propagated |
-| `std:effects` | EXACTLY_ONCE idempotency: `resolve`, `pending`, `complete`, `action_id` |
-| `std:sys` | `sys.v1.*` versioned syscall dispatch with uniform `{status, data, error, trace_id}` envelope |
-| `std:memory` | Extended: `recall_from(ns, key)`, `recall_all(ns)`, `share(ns, key, val)` |
-| `std:retry` | `retry.call(func, policy_map)` — wraps nodus-retry (optional dep) |
-| `std:circuit_breaker` | `cb.create/call/state/reset` — wraps nodus-circuit-breaker (optional dep) |
+| `std:http` | HTTP client — GET, POST, PUT, DELETE, PATCH; async variants; SSE streaming |
+| `std:subprocess` | Run processes — `sp.run(argv)`, `sp.spawn(argv)` for async + channel output |
+| `std:fs` | Filesystem — read, write, append, exists, listdir, mkdir |
+
+**Data and encoding**
+
+| Module | What it does |
+|---|---|
+| `std:json` | `json.parse(str)` / `json.stringify(val)` |
+| `std:math` | Arithmetic, trig, rounding, min/max |
+| `std:string` | Split, join, trim, replace, starts_with, ends_with, case conversion |
+| `std:encoding` | Base64 encode/decode, URL encode/decode |
+| `std:hash` | SHA-256 / SHA-512 for data and files — returns record with `.to_hex()` |
+
+**Time and system**
+
+| Module | What it does |
+|---|---|
+| `std:time` | `now_ms()`, `sleep(ms)`, UTC offset, format/parse timestamps |
+| `std:secrets` | Cryptographic random tokens and bytes |
+
+**AI-native orchestration (v4.0)**
+
+| Module | What it does |
+|---|---|
+| `std:tool` | Register and dispatch tools — MCP-compatible namespaced registry |
+| `std:identity` | `trace_id()`, `session_id()`, `execution_unit_id()` — propagated automatically |
+| `std:effects` | EXACTLY_ONCE idempotency — `resolve`, `pending`, `complete`, `action_id` |
+| `std:sys` | Versioned syscall dispatch — uniform `{status, data, error, trace_id}` response shape |
+| `std:memory` | `share(ns, key, val)`, `recall_from(ns, key)`, `recall_all(ns)`, `forget(ns, key)` |
+| `std:retry` | `retry.call(func, policy)` — exponential backoff, jitter, max attempts |
+| `std:circuit_breaker` | `cb.create(name, cfg)` / `cb.call(name, func)` — three-state breaker |
+
+**Testing**
+
+| Module | What it does |
+|---|---|
+| `std:test` | `test.assert_eq`, `test.assert_err`, `test.flush_async` — built-in test framework |
 
 ## Documentation
 
@@ -121,13 +157,14 @@ print(math.abs(-4))
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Nodus",
-  "description": "A bytecode-compiled scripting language and distributed workflow runtime implementing the Infinity Algorithm as a first-class language construct.",
+  "description": "An orchestration DSL and embedded runtime for building agentic systems. Coroutines, task graphs, workflows, goals, and MCP/A2A tool chains as first-class language constructs. Embeds in Python via NodusRuntime.",
   "author": {
     "@type": "Person",
     "name": "Shawn Knight",
     "url": "https://github.com/Masterplanner25"
   },
   "applicationCategory": "DeveloperApplication",
+  "keywords": "AI agent orchestration, workflow DSL, embedded scripting runtime, MCP, A2A, coroutines, task graph, agentic systems, Python embedding",
   "programmingLanguage": "Python",
   "operatingSystem": "Linux, macOS, Windows",
   "url": "https://github.com/Masterplanner25/nodus-lang",
