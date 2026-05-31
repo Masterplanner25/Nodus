@@ -58,3 +58,13 @@ class BuiltinRegistry:
         _tool.register(vm, self)
         from nodus.builtins import test_module as _test
         _test.register(vm, self)
+        from nodus.builtins import identity_module as _identity
+        _identity.register(vm, self)
+        from nodus.builtins import memory_module as _memory
+        _memory.register(vm, self)
+        from nodus.builtins import effects_module as _effects
+        _effects.register(vm, self)
+        from nodus.builtins import retry_module as _retry
+        _retry.register(vm, self)
+        from nodus.builtins import circuit_breaker_module as _cb
+        _cb.register(vm, self)

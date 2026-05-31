@@ -1,0 +1,7 @@
+fn available() {
+    return retry_available()
+}
+
+fn call(func, policy) {
+    return retry_call(func, policy)
+}

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodus-lang"
-version = "4.0.0"
+version = "4.1.0"
 description = "A stack-VM scripting language and distributed workflow runtime"
 authors = [
   { name = "Shawn Knight" }
@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "tzdata>=2024.1",
     "httpx>=0.27,<1",
+    "nodus-retry>=0.1.0",
 ]
 
 [project.scripts]

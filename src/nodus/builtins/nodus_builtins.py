@@ -208,6 +208,12 @@ BUILTIN_NAMES = {
     "test_fixture", "test_cleanup",
     "test_parameterize",
     "test_advance_clock", "test_flush_async",
+    "runtime_trace_id", "runtime_session_id", "runtime_execution_unit_id",
+    "memory_recall_from", "memory_recall_all", "memory_share",
+    "syscall", "syscall_list",
+    "effect_resolve", "effect_pending", "effect_complete", "effect_action_id", "effect_store_size",
+    "retry_available", "retry_call",
+    "cb_available", "cb_create", "cb_call", "cb_state", "cb_reset",
 }
 
 

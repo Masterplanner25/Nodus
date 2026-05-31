@@ -320,6 +320,33 @@ class NodusRuntime:
         """
         return self._tool_registry
 
+    def set_effect_store(self, store) -> None:
+        """Inject a custom EffectStore for EXACTLY_ONCE idempotency.
+
+        When set, all calls to ``effect_resolve``, ``effect_pending``, and
+        ``effect_complete`` from .nd code will use this store instead of the
+        default per-VM ``InMemoryEffectStore``.  Must be called before
+        ``run_source`` / ``run_file`` to affect that execution.
+        """
+        self._pending_effect_store = store
+        if self.last_vm is not None:
+            self.last_vm.effect_store = store
+
+    def set_trace_id(self, trace_id: str) -> None:
+        """Inject a distributed trace ID into the next (and current) VM execution.
+
+        When set, ``trace_id`` is included in every ``RuntimeEvent`` emitted
+        during the execution and is readable from .nd code via
+        ``import "std:identity"`` → ``identity.trace_id()``.
+
+        Must be called before ``run_source`` / ``run_file`` to affect that
+        execution.  If a VM is already active (``last_vm`` is set), the ID
+        is applied to it immediately.
+        """
+        self._pending_trace_id: str | None = trace_id
+        if self.last_vm is not None:
+            self.last_vm.trace_id = trace_id
+
     def reset(self) -> None:
         """Clear the reference to the last VM instance.
 
@@ -486,6 +513,12 @@ class NodusRuntime:
             vm.debug = True
         if self._python_registered_tools:
             vm.tool_registry.update(self._python_registered_tools)
+        pending_trace = getattr(self, "_pending_trace_id", None)
+        if pending_trace is not None:
+            vm.trace_id = pending_trace
+        pending_effect_store = getattr(self, "_pending_effect_store", None)
+        if pending_effect_store is not None:
+            vm.effect_store = pending_effect_store
         self.last_vm = vm
         host_builtins = {
             name: BuiltinInfo(

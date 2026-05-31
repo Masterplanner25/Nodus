@@ -31,6 +31,8 @@ class RuntimeEvent:
     coroutine_id: int | None = None
     name: str | None = None
     data: dict | None = None
+    trace_id: str | None = None
+    execution_unit_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +41,8 @@ class RuntimeEvent:
             "coroutine": float(self.coroutine_id) if self.coroutine_id is not None else None,
             "name": self.name,
             "data": _normalize_value(self.data) if self.data is not None else None,
+            "trace_id": self.trace_id,
+            "execution_unit_id": self.execution_unit_id,
         }
 
 
@@ -62,6 +66,8 @@ class RuntimeEventBus:
         coroutine_id: int | None = None,
         name: str | None = None,
         data: dict | None = None,
+        trace_id: str | None = None,
+        execution_unit_id: str | None = None,
     ) -> None:
         self.emit(
             RuntimeEvent(
@@ -70,6 +76,8 @@ class RuntimeEventBus:
                 coroutine_id=coroutine_id,
                 name=name,
                 data=data,
+                trace_id=trace_id,
+                execution_unit_id=execution_unit_id,
             )
         )
 

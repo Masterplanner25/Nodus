@@ -1,0 +1,11 @@
+fn trace_id() {
+    return runtime_trace_id()
+}
+
+fn session_id() {
+    return runtime_session_id()
+}
+
+fn execution_unit_id() {
+    return runtime_execution_unit_id()
+}

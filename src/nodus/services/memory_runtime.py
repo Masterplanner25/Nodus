@@ -93,9 +93,53 @@ def export_memory(*, vm=None) -> dict[str, object]:
     return get_store(vm).items()
 
 
+def recall_from(ns: str, key: str, *, vm=None):
+    _validate_namespace(ns)
+    _validate_key(key)
+    full_key = f"{ns}::{key}"
+    store = get_store(vm)
+    present = full_key in store._values
+    value = store.get(full_key)
+    _emit(vm, "memory_recall_from", key=full_key, value=value, found=present)
+    return value
+
+
+def recall_all(ns: str, *, vm=None) -> list:
+    _validate_namespace(ns)
+    store = get_store(vm)
+    prefix = f"{ns}::"
+    values = [
+        clone_json_value(v)
+        for k, v in sorted(store._values.items())
+        if k.startswith(prefix)
+    ]
+    _emit(vm, "memory_recall_all", key=ns, value=values, found=bool(values))
+    return values
+
+
+def share(ns: str, key: str, value, *, vm=None):
+    _validate_namespace(ns)
+    _validate_key(key)
+    if not is_json_safe(value):
+        raise ValueError("Memory values must be JSON-safe")
+    full_key = f"{ns}::{key}"
+    store = get_store(vm)
+    stored = store.put(full_key, value)
+    _emit(vm, "memory_share", key=full_key, value=stored)
+    return stored
+
+
 def _validate_key(key) -> None:
     if not isinstance(key, str) or not key:
         raise ValueError("Memory keys must be non-empty strings")
+
+
+def _validate_namespace(ns) -> None:
+    if not isinstance(ns, str) or not ns:
+        raise ValueError("Memory namespace must be a non-empty string")
+    if "::" in ns:
+        raise ValueError("Memory namespace must not contain '::'")
+
 
 
 def _emit(vm, event_type: str, *, key: str, value=None, found: bool | None = None) -> None:

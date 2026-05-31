@@ -1,0 +1,19 @@
+fn available() {
+    return cb_available()
+}
+
+fn create(name, failure_threshold, recovery_timeout_secs) {
+    return cb_create(name, failure_threshold, recovery_timeout_secs)
+}
+
+fn call(name, func) {
+    return cb_call(name, func)
+}
+
+fn state(name) {
+    return cb_state(name)
+}
+
+fn reset(name) {
+    return cb_reset(name)
+}

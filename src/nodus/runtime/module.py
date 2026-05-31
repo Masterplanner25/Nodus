@@ -205,6 +205,16 @@ class NodusModule:
         )
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)
+            vm.trace_id = getattr(caller_vm, "trace_id", None)
+            vm.execution_unit_id = getattr(caller_vm, "execution_unit_id", vm.execution_unit_id)
+            if getattr(caller_vm, "event_bus", None) is not None:
+                vm.event_bus = caller_vm.event_bus
+            if getattr(caller_vm, "effect_store", None) is not None:
+                vm.effect_store = caller_vm.effect_store
+            if getattr(caller_vm, "memory_store", None) is not None:
+                vm.memory_store = caller_vm.memory_store
+            if getattr(caller_vm, "circuit_breakers", None) is not None:
+                vm.circuit_breakers = caller_vm.circuit_breakers
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
 

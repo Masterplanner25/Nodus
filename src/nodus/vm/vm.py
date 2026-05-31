@@ -2,7 +2,9 @@
 
 import math as _math
 import os
+import secrets
 import sys
+from nodus_retry.effect import InMemoryEffectStore
 import threading
 import time
 from dataclasses import dataclass
@@ -109,6 +111,17 @@ class Record:
     def __ge__(self, other):
         a, b = self._cmp_key(other)
         return a >= b
+
+
+def _dict_to_record(d: dict) -> "Record":
+    """Recursively convert a plain dict to a Nodus Record for field-access."""
+    converted = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            converted[k] = _dict_to_record(v)
+        else:
+            converted[k] = v
+    return Record(converted)
 
 
 class BuiltinMethod:
@@ -232,7 +245,11 @@ class VM:
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
         self.fs_root = os.path.normcase(os.path.abspath(fs_root)) if fs_root else None
         self.memory_store = GLOBAL_MEMORY_STORE
+        self.effect_store = InMemoryEffectStore()
+        self.circuit_breakers: dict = {}
         self.session_id: str | None = None
+        self.execution_unit_id: str = secrets.token_hex(8)
+        self.trace_id: str | None = None
         self.task_step_budget: int | None = None
         self._budget_exceeded: bool = False
         self.instructions_executed = 0
@@ -294,11 +311,8 @@ class VM:
             "tool_call": BuiltinInfo("tool_call", 2, self.builtin_tool_call),
             "tool_available": BuiltinInfo("tool_available", 0, self.builtin_tool_available),
             "tool_describe": BuiltinInfo("tool_describe", 1, self.builtin_tool_describe),
-            "memory_get": BuiltinInfo("memory_get", 1, self.builtin_memory_get),
-            "memory_put": BuiltinInfo("memory_put", 2, self.builtin_memory_put),
-            "memory_delete": BuiltinInfo("memory_delete", 1, self.builtin_memory_delete),
-            "memory_keys": BuiltinInfo("memory_keys", 0, self.builtin_memory_keys),
-            "memory_has": BuiltinInfo("memory_has", 1, self.builtin_memory_has),
+            "syscall": BuiltinInfo("syscall", 2, self.builtin_syscall),
+            "syscall_list": BuiltinInfo("syscall_list", 0, self.builtin_syscall_list),
             "agent_call": BuiltinInfo("agent_call", 2, self.builtin_agent_call),
             "agent_available": BuiltinInfo("agent_available", 0, self.builtin_agent_available),
             "agent_describe": BuiltinInfo("agent_describe", 1, self.builtin_agent_describe),
@@ -1305,6 +1319,9 @@ class VM:
                 data["step"] = step
         if self.session_id is not None:
             data["session"] = self.session_id
+        if self.trace_id is not None:
+            data["trace_id"] = self.trace_id
+        data["execution_unit_id"] = self.execution_unit_id
         if ok is not None:
             data["ok"] = bool(ok)
         if error is not None:
@@ -1396,6 +1413,17 @@ class VM:
         if not isinstance(name, str):
             self.runtime_error("type", "tool_describe(name) expects a string")
         return describe_tool(name)
+
+    def builtin_syscall(self, name, payload):
+        from nodus.services.syscall_runtime import call_syscall
+        if not isinstance(payload, dict):
+            payload = {}
+        result = call_syscall(name, payload, vm=self)
+        return _dict_to_record(result)
+
+    def builtin_syscall_list(self):
+        from nodus.services.syscall_runtime import list_syscalls
+        return list_syscalls()
 
     def builtin_memory_get(self, key):
         try:

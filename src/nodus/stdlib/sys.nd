@@ -1,0 +1,19 @@
+fn call(name, payload) {
+    return syscall(name, payload)
+}
+
+fn list() {
+    return syscall_list()
+}
+
+fn memory_get(key) {
+    return syscall("sys.v1.memory.get", {"key": key})
+}
+
+fn memory_put(key, value) {
+    return syscall("sys.v1.memory.put", {"key": key, "value": value})
+}
+
+fn memory_delete(key) {
+    return syscall("sys.v1.memory.delete", {"key": key})
+}

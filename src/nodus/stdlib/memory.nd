@@ -18,3 +18,15 @@ fn keys() {
 fn has(key) {
     return memory_has(key)
 }
+
+fn recall_from(ns, key) {
+    return memory_recall_from(ns, key)
+}
+
+fn recall_all(ns) {
+    return memory_recall_all(ns)
+}
+
+fn share(ns, key, value) {
+    return memory_share(ns, key, value)
+}

@@ -1,0 +1,19 @@
+fn resolve(action_id) {
+    return effect_resolve(action_id)
+}
+
+fn pending(action_id, input_hash) {
+    return effect_pending(action_id, input_hash)
+}
+
+fn complete(action_id, status, result) {
+    return effect_complete(action_id, status, result)
+}
+
+fn action_id(action_type, payload, scope) {
+    return effect_action_id(action_type, payload, scope)
+}
+
+fn store_size() {
+    return effect_store_size()
+}
