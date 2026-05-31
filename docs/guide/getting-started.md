@@ -354,18 +354,32 @@ Start with the foundation guides, then pick the topic you need:
 - **[working-with-json.md](working-with-json.md)** — json.parse (returns
   maps since v2.1.0), stringify, traversal, working with nested structures.
 
+**AI-native and agentic patterns**
+
+- **[ai-primitives.md](ai-primitives.md)** — std:tool (MCP-compatible tool
+  registry), std:identity (trace IDs), std:effects (EXACTLY_ONCE
+  idempotency), std:memory, std:retry, std:circuit_breaker.
+
 **Tooling and integration**
 
 - **[debugging.md](debugging.md)** — --trace and filter flags,
   --dump-bytecode, nodus check limitations, the interactive debugger,
   common diagnostic patterns.
 - **[embedding-nodus.md](embedding-nodus.md)** — NodusRuntime API,
-  allowed_paths sandbox, register_function, type marshaling, sandbox limits.
+  allowed_paths sandbox, register_function, on_error hook, shutdown,
+  async concurrency, type marshaling.
 
 **Orchestration**
 
 - **[workflows-and-tasks.md](workflows-and-tasks.md)** — workflow/goal DSL,
-  step dependencies, state, checkpoints, retries, print visibility (BUG-022).
+  step dependencies, state, checkpoints, retries, print visibility.
+
+**Ecosystem and packages**
+
+- **[ecosystem.md](ecosystem.md)** — the 29 companion packages, what each
+  does, install tiers, and the nodus-sdk unified entry point.
+- **[library-entry-points.md](library-entry-points.md)** — how third-party
+  Nodus libraries expose `.nd` files via the `nodus.nd` entry-point group.
 
 **Language reference**
 

@@ -95,8 +95,11 @@ Execution rule:
 
 ## Next Steps
 
+- [Nodus Overview](NODUS.md) — project orientation, architecture, capabilities, and ecosystem
+- [Getting Started Guide](../guide/getting-started.md) — deeper syntax walkthrough, REPL, debugging, and navigation to all topics
+- [AI Primitives](../guide/ai-primitives.md) — std:tool (MCP-compatible tool registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
+- [Ecosystem](../guide/ecosystem.md) — the 29 companion packages and nodus-sdk
 - [Language Specification](../language/LANGUAGE_SPEC.md) — full syntax, types, operators, builtins, and stdlib modules
-- [Nodus Overview](NODUS.md) — project orientation, architecture, and design philosophy
 - Interactive reference: start the REPL and type `:help` to explore available commands
 
 - [User Guide — Getting Started](../guide/getting-started.md) — install, first script, REPL, error handling, two-file project
