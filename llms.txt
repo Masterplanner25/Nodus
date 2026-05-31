@@ -1,66 +1,101 @@
 # Nodus
 
-> Nodus is a bytecode-compiled scripting language and runtime created by Shawn Knight, designed for automation and orchestration workflows with a clean lexer → parser → AST → compiler → stack-VM execution pipeline.
+> An orchestration DSL and embedded runtime for building agentic systems.
+> Created by Shawn Knight — [Masterplan Infinite Weave](https://www.the-master-plan.com/)
 
-Nodus is a scripting language and distributed workflow runtime. It compiles source code to bytecode and executes it on a stack-based virtual machine. The runtime supports coroutines, channels, task graphs, workflows, and goals, and includes a package manager, REPL, formatter, LSP server, and DAP server. v4.0 adds string interpolation, a tool registry (`std:tool`), a test framework (`std:test`), coverage, five new stdlib namespaces (`std:env`, `std:time`, `std:hash`, `std:encoding`, `std:secrets`, `std:http`, `std:subprocess`), and a doc-vs-code verification gate (`nodus_gate`). Nodus is created and maintained by Shawn Knight as part of the Masterplan Infinite Weave ecosystem.
+Nodus is the execution layer of the Masterplan Infinite Weave ecosystem — a bytecode-compiled,
+domain-specific language where coroutines, task graphs, workflows, goals, and MCP-compatible
+tool chains are first-class language constructs. It embeds in Python via `NodusRuntime` and
+ships a 29-package companion ecosystem for AI agent infrastructure.
 
-## Key documents
+## Install
 
-- [README.md](README.md): Getting started, install, quick start, and common commands
-- [docs/language/LANGUAGE_SPEC.md](docs/language/LANGUAGE_SPEC.md): Full language specification — syntax, types, control flow, imports, coroutines, stdlib
-- [docs/runtime/ARCHITECTURE.md](docs/runtime/ARCHITECTURE.md): Runtime architecture and execution pipeline
-- [docs/onboarding/NODUS.md](docs/onboarding/NODUS.md): Concise project overview with capabilities, CLI reference, and current stage
-- [docs/runtime/BYTECODE_REFERENCE.md](docs/runtime/BYTECODE_REFERENCE.md): Complete opcode reference (47 stable opcodes, BYTECODE_VERSION 4)
+```
+pip install nodus-lang
+```
+
+## Core Documentation
+
+- [README.md](README.md): Getting started, install, quick start, stdlib overview, ecosystem
+- [docs/language/LANGUAGE_SPEC.md](docs/language/LANGUAGE_SPEC.md): Full language spec — syntax, types, control flow, coroutines, stdlib, stability labels
+- [docs/runtime/ARCHITECTURE.md](docs/runtime/ARCHITECTURE.md): Runtime architecture, execution pipeline, builtin registry
+- [docs/runtime/EXECUTION_INVARIANTS.md](docs/runtime/EXECUTION_INVARIANTS.md): Documented runtime invariants (VM, scheduler, module, sandbox, coroutine)
+- [docs/governance/LANGUAGE_STABILITY_INDEX.md](docs/governance/LANGUAGE_STABILITY_INDEX.md): Per-surface stability tiers (Stable / Mostly Stable / Experimental)
+- [docs/governance/COMPANION_LIBRARY_CONTRACT.md](docs/governance/COMPANION_LIBRARY_CONTRACT.md): APIs a companion library may depend on; compatibility promises
+- [docs/onboarding/NODUS.md](docs/onboarding/NODUS.md): Project identity, capabilities, ecosystem, embedding API overview
 - [CHANGELOG.md](CHANGELOG.md): Version history
-- [CONTRIBUTING.md](CONTRIBUTING.md): Contributor guide — setup, testing, code style, and language change process
-- [SECURITY.md](SECURITY.md): Vulnerability disclosure policy
+- [llms-full.txt](llms-full.txt): Full content summaries for AI indexers
 
-## User guide
-
-Operational guides for writing, debugging, and embedding Nodus — updated for v4.0:
+## User Guide
 
 - [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
-- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers (float and int), strings, lists, maps, records, nil, functions as values, integer type (42i), map/record disambiguation
-- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference (VM kinds and stdlib kinds), returned-vs-thrown pattern
-- [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, bare vs relative paths, stdlib modules, resolution
-- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete function reference for all std: modules (v3.0)
-- [docs/guide/working-with-maps.md](docs/guide/working-with-maps.md): Map creation, bracket access, has_key, keys/values, accumulation, map vs record
-- [docs/guide/working-with-json.md](docs/guide/working-with-json.md): json.parse (returns maps), stringify, nested access, json.parse_int
-- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check limitations, --dump-bytecode, interactive debugger, --trace-errors for stdlib errors
-- [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, allowed_paths sandbox, register_function, type marshaling
+- [docs/guide/ai-primitives.md](docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
+- [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 29 companion packages — roles, install tiers, nodus-sdk unified entry point
+- [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
+- [docs/guide/library-entry-points.md](docs/guide/library-entry-points.md): How to publish a Nodus companion library via nodus.nd entry-point
+- [docs/guide/build-a-library.md](docs/guide/build-a-library.md): Full guide — two authoring patterns, minimal template, namespacing conventions
+- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers, strings, lists, maps, records, nil, functions as values
+- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, err record shape
+- [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
+- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete stdlib function reference
 - [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
+
+## Runtime Reference
+
+- [docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md](docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md): Failure categories and degradation behavior
+- [docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md](docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md): Production runbook for embedders
+- [docs/architecture/INFINITY_PATTERN_MAPPING.md](docs/architecture/INFINITY_PATTERN_MAPPING.md): How Nodus implements the Infinity Algorithm execution model
+
+## Governance
+
+- [docs/governance/SECURITY_POSTURE.md](docs/governance/SECURITY_POSTURE.md): Security boundaries, enforcement paths, transport-specific trust model
+- [docs/governance/RELEASE_GATES.md](docs/governance/RELEASE_GATES.md): Release gate checklist (10 gates including pre-publish creator validation)
+- [docs/governance/ISSUE_RESPONSE_POLICY.md](docs/governance/ISSUE_RESPONSE_POLICY.md): Bug response timelines and commitments
+- [docs/governance/TECH_DEBT.md](docs/governance/TECH_DEBT.md): Open known issues with fix directions and skills
 
 ## Migration
 
-- [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes from v3.x to v4.0 — type() rename, equality coercion, index_of nil return, float division, cyclic workflow
-- [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes from v2.x to v3.0, what does not break, non-breaking v2.2 improvements
+- [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes v3.x → v4.0
+- [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes v2.x → v3.0
 
-## Policy
+## Ecosystem
 
-- [docs/policy/error-surfaces.md](docs/policy/error-surfaces.md): Which stdlib surfaces replace Python errors with Nodus err records, the Replace contract, --trace-errors escape hatch
+Nodus is the core runtime of the Masterplan Infinite Weave ecosystem.
+
+- [Masterplan Infinite Weave](https://www.the-master-plan.com/) — the broader ecosystem
+- [github.com/Masterplanner25](https://github.com/Masterplanner25) — all 29+ companion packages
+- [nodus-mcp](https://github.com/Masterplanner25/nodus-mcp) — MCP protocol client + server
+- [nodus-extension](https://github.com/Masterplanner25/nodus-extension) — plugin framework
+- [nodus-sdk](https://github.com/Masterplanner25/nodus-sdk) — unified install: `pip install nodus-sdk`
 
 ## Creator
 
-Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave ecosystem.
+Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave.
+
+- Web: [the-master-plan.com](https://www.the-master-plan.com/)
+- GitHub: [Masterplanner25](https://github.com/Masterplanner25)
+- Medium: [Masterplan Infinite Weave](https://medium.com/masterplan-infinite-weave)
+
+## Key Concepts
+
+- **Nodus** — orchestration DSL and embedded runtime. File extension: `.nd`.
+- **Masterplan Infinite Weave** — the AI-native ecosystem Nodus is the execution layer of.
+- **Infinity Algorithm** — the I→T→C→R→O→Feedback execution model Nodus implements as a first-class language construct through workflows, goals, and task graphs.
+- **NodusRuntime** — Python embedding API: `from nodus import NodusRuntime`
+- **Task graph** — persistent, resumable directed execution graph used by workflow/goal DSLs.
+- **std:tool** — MCP-compatible tool registry. Names must be dotted (`"myapp.tool_name"`).
+- **int vs float** — `42i` is int; `42` is float. `type(42i)` = "int", `type(42)` = "float".
+- **String interpolation** — `"\(expr)"` embeds an expression in a string literal.
+- **Stability tiers** — Stable (frozen), Mostly Stable (refinements OK), Experimental (may change). Run `nodus stability` to see the full surface index.
+- **AI-native primitives** — std:identity (trace IDs), std:effects (EXACTLY_ONCE), std:sys (versioned dispatch), std:memory (share/recall), std:retry, std:circuit_breaker.
+- **Coroutines** — cooperative, spawned with `spawn(coroutine(fn))`, scheduled with `run_loop()`. [Experimental]
+- **Channels** — typed message passing via `channel()`, `send()`, `recv()`, `close()`. [Experimental]
+- **Companion Library Contract** — companion libraries may only depend on APIs listed in `docs/governance/COMPANION_LIBRARY_CONTRACT.md`.
 
 ## Package
 
-- PyPI: `nodus-lang`
+- PyPI: `nodus-lang` (v3.0.2 published; v4.0.0 prepared)
 - Install: `pip install nodus-lang`
-- Optional server stack: `pip install "nodus-lang[server]"`
+- Full ecosystem: `pip install nodus-sdk[agent,sql,fastapi]`
 - Requires Python >= 3.10
-
-## Key concepts
-
-- **Nodus** — the language and runtime. File extension: `.nd`.
-- **Masterplan Infinite Weave** — the broader ecosystem in which Nodus operates.
-- **Infinity Algorithm** — the execution model Nodus implements as a first-class language construct, expressed through workflows, goals, and task graphs.
-- **NodusRuntime** — the public embedding API (`from nodus import NodusRuntime`) for running Nodus scripts from Python host applications.
-- **Task graph** — a persistent, resumable directed execution graph used by the workflow and goal DSLs.
-- **Integer type** — `42i` literals produce `int` values; `type(42i)` returns `"int"`. Plain `42` is a float; `type(42)` returns `"float"` (v4.0 change — was `"number"` in v3.x). Integer stdlib functions live in `std:math` (`parse_int`, `to_int`, `idiv`, `is_int`, `is_float`, `is_numeric`).
-- **Returned err records** — stdlib functions return err records on failure instead of throwing. Check with `type(result) == "error"`. Err records in v4.0 carry location fields: `path`, `line`, `column`, `stack`, `origin`. Kind values include: `io_error`, `parse_error`, `type_error`, `value_error`, `math_error`, `path_error`, `http_error`, `subprocess_error`, `time_error`, `env_error`, `tool_error`, `test_error`.
-- **Equality (v4.0)** — `==` coerces only within the number family (int ↔ float). `0i == false` is `false`. Use `type_eq(a, b)` for strict same-type equality or `bool.equal(x, true/false)` for bool checks.
-- **String interpolation (v4.0)** — `"\(expr)"` embeds an expression in a string literal. `\\(` produces a literal `\(`.
-- **Tool registry (v4.0)** — `std:tool` module for dynamic tool registration. AI/MCP adapter pattern. `NodusRuntime.tool_registry` Python API for host-side registration. **Tool names must use dotted namespacing** (`"myapp.tool_name"`, not `"tool_name"`); `tool.register` returns an error record if the name is bare. In Python: `runtime.tool_registry.register({...})` — NOT `runtime.register_tool(...)` (that method does not exist).
-- **Test framework (v4.0)** — `std:test` module, 11 assertions, `nodus test` CLI, coverage reports.
-- **New stdlib (v4.0)** — `std:env`, `std:time`, `std:hash`, `std:encoding`, `std:secrets`, `std:http`, `std:subprocess`, `std:tool`, `std:test`, `std:bool`.

@@ -11,7 +11,7 @@ nodus run
 nodus repl
 ```
 
-Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight**. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are first-class constructs rather than library conventions layered over Python.
+Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. It implements the **Infinity Algorithm**'s execution model as a first-class language construct. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are first-class constructs rather than library conventions layered over Python.
 
 If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A, Nodus is the execution layer.
 
@@ -150,6 +150,19 @@ The full standard library ships with Nodus — no extra installs required for co
 - [Changelog](CHANGELOG.md) — version history
 - [Contributing](CONTRIBUTING.md) — development setup, code style, and contribution process
 - [llms.txt](llms.txt) — machine-readable project index for AI tools
+- [llms-full.txt](llms-full.txt) — full content summaries for AI indexers
+
+## Creator & Ecosystem
+
+Nodus is created and maintained by **Shawn Knight** as part of the
+[Masterplan Infinite Weave](https://www.the-master-plan.com/) — an AI-native execution
+framework built on the Infinity Algorithm. Nodus is the runtime layer that makes the
+Infinity Algorithm's orchestration constructs executable as a first-class language.
+
+**From the creator's writing:**
+- [Why I'm Building A.I.N.D.Y. (Or Any Tool, Really)](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-why-im-building-a-i-n-d-y-or-any-tool-really-a138f7860fba) — the strategic context behind Nodus
+- [Duality of Progress: Master Index](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-master-index-strategic-manifesto-4c96cf98348a) — the Infinity Algorithm framework Nodus executes
+- [AI Search Optimization](https://medium.com/masterplan-infinite-weave/2025-chatgpt-case-study-ai-search-optimization-0f8cd5e78d4f) — the discoverability philosophy this project embodies
 
 <!-- Structured metadata for search engines and AI indexers (schema.org/SoftwareApplication) -->
 <script type="application/ld+json">

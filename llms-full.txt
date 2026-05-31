@@ -1,0 +1,286 @@
+# Nodus — Full Content Summary for AI Indexers
+
+> This file contains rich content summaries intended for AI retrieval systems.
+> For a structured link map see llms.txt. For human-readable docs see README.md.
+> Created by Shawn Knight — Masterplan Infinite Weave (https://www.the-master-plan.com/)
+
+---
+
+## What Nodus Is
+
+Nodus is an orchestration DSL (domain-specific language) and embedded runtime for building
+agentic systems. It is the execution layer of the Masterplan Infinite Weave ecosystem,
+implementing the Infinity Algorithm's I→T→C→R→O→Feedback execution model as a first-class
+language construct.
+
+The key distinction from a general-purpose scripting language: in Nodus, coroutines, task
+graphs, workflows, goals, MCP-compatible tool registries, and agent pipelines are language
+primitives — not library conventions. The core language (types, functions, control flow) is
+minimal and conventional; it exists to serve the orchestration constructs.
+
+Nodus compiles to bytecode and runs on a deterministic stack-based VM with a cooperative
+scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
+limits, and wire tool registries.
+
+---
+
+## Who Nodus Is For
+
+- Developers building multi-step AI agents who need expressive orchestration without the
+  complexity of Python async/await
+- Platform teams embedding a scripting layer in a Python application with controlled execution,
+  sandboxing, and tool injection
+- Anyone wiring together tools via MCP (Model Context Protocol) or A2A (Agent-to-Agent protocol)
+- Engineers who need deterministic coroutine scheduling, checkpoint/resume semantics, or
+  EXACTLY_ONCE idempotency at the language level
+
+---
+
+## Core Language Features
+
+### Types
+- float: `42`, `3.14` — bare numeric literals are floats
+- int: `42i`, `0i` — integer suffix required; `type(42i)` = "int"
+- bool: `true`, `false`
+- string: double-quoted, supports `\(expr)` interpolation
+- nil: the absence of a value
+- list: `[1, 2, 3]`
+- map: `{"key": value}` — quoted string keys
+- record: `{key: value}` or `record { key: value }` — bare identifier keys
+- function: `fn(params) { body }` — first-class values
+
+### Key v4 behaviors (differs from prior versions)
+- `len()` returns int (not float as in v3)
+- `str(42)` = "42.0"; `str(42i)` = "42"
+- Closures cannot assign to outer `let` variables — use map field mutation instead
+- `record.method(arg)` auto-passes `self` as first argument
+- `+` does not coerce number → string — always use `str()` explicitly
+- String interpolation: `"\(expr)"` — the `i` in `\(` is lowercase only
+
+### Control flow
+- `if (cond) { } else { }`
+- `while (cond) { }`
+- `for (init; cond; inc) { }`
+- `for name in iterable { }`
+- `try { } catch var { } finally { }`
+- `throw expr`
+- `return expr`
+
+### Module system
+- `import "std:json" as json` — stdlib (must be at top level)
+- `import "path/to/module"` — relative imports
+- `import "my-library"` — pip-installed companion libraries via nodus.nd entry-point
+- `export fn name() {}` — explicit exports
+
+---
+
+## Standard Library
+
+All modules import via `import "std:module" as alias`.
+
+### Core I/O
+- **std:json** — `json.parse(str)`, `json.stringify(val)` [Stable]
+- **std:fs** — `fs.read(path)`, `fs.write(path, content)`, `fs.exists(path)`, `fs.listdir(path)`, `fs.mkdir(path)` [Mostly Stable]
+- **std:http** — HTTP client: `http.get(url)`, `http.post(url, options)`, async variants, SSE streaming [Experimental]
+- **std:subprocess** — `sp.run(argv)`, `sp.shell(cmd)`, `sp.spawn(argv)` with async variants [Experimental]
+
+### Data
+- **std:math** — arithmetic, trig, `math_idiv(a,b)` (int division), `math_is_int()`, `math_is_float()`
+- **std:string** (accessed via builtins) — `str_upper`, `str_lower`, `str_split`, `str_contains`, `str_replace`, `str_trim`
+- **std:encoding** — base64, URL encode/decode [Experimental]
+- **std:hash** — `hash.sha256(data).to_hex()`, `hash.sha512(data).to_hex()` — returns record with `.to_hex()` [Experimental]
+
+### System
+- **std:time** — `time.now_ms()`, `time.sleep(ms)`, UTC offset, timestamps [Experimental]
+- **std:secrets** — cryptographic random tokens [Experimental]
+- **std:env** — environment variable access [Experimental]
+
+### AI-Native Orchestration (v4.0, all Experimental)
+- **std:tool** — MCP-compatible tool registry. `tool.register({name: "ns.name", handler: fn, description: "..."})`. Names MUST be dotted. `tool.call("ns.name", args)`.
+- **std:identity** — `identity.trace_id()`, `identity.session_id()`, `identity.execution_unit_id()`. Set from Python via `NodusRuntime.set_trace_id(id)`.
+- **std:effects** — EXACTLY_ONCE idempotency. `fx.action_id(label, params)`, `fx.resolve(id)`, `fx.complete(id)`, `fx.pending(id)`. Backed by `InMemoryEffectStore`; swap via `NodusRuntime.set_effect_store(store)`.
+- **std:sys** — Versioned syscall dispatch. `sys.v1.call(name, params)`. Returns `{status, data, error, trace_id}` envelope.
+- **std:memory** — `mem.share(ns, key, val)`, `mem.recall_from(ns, key)`, `mem.recall_all(ns)`, `mem.forget(ns, key)`. Namespace-scoped key-value store.
+- **std:retry** — `retry.call(fn, policy)`. Named policies: "aggressive", "standard", "conservative", "fixed". Wraps nodus-retry package.
+- **std:circuit_breaker** — `cb.create(name, config)`, `cb.call(name, fn)`, `cb.state(name)`, `cb.reset(name)`. Three-state breaker pattern.
+
+### Testing
+- **std:test** — `test.assert_eq(a, b, label)`, `test.assert_err(fn, kind)`, `test.flush_async()`, `test.advance_clock(ms)`. Run via `nodus test`.
+
+---
+
+## Orchestration DSL
+
+### Coroutines [Experimental]
+```nodus
+fn worker() {
+    yield 1
+    yield 2
+}
+let c = coroutine(worker)
+print(resume(c))  // 1
+print(resume(c))  // 2
+
+// Spawned coroutines:
+spawn(coroutine(fn() { print("concurrent") }))
+run_loop()
+```
+
+### Channels [Experimental]
+```nodus
+let ch = channel()
+spawn(coroutine(fn() { send(ch, "hello") }))
+spawn(coroutine(fn() { print(recv(ch)) }))
+run_loop()
+```
+Channels are FIFO. `recv()` blocks the calling coroutine until data is available.
+`close(ch)` marks the channel closed; `recv()` on a closed empty channel returns nil.
+
+### Workflow DSL [Experimental]
+```nodus
+workflow process_order {
+    state status = "pending"
+    step validate after [] {
+        status = "validated"
+        checkpoint "post-validate"
+        return status
+    }
+    step fulfill after validate {
+        status = "fulfilled"
+        return status
+    }
+}
+let result = run_workflow(process_order)
+```
+Workflows lower to task graphs. No workflow-specific VM opcodes.
+Resume: `resume_workflow(graph_id, checkpoint_label)`.
+
+### Goal DSL [Experimental]
+Goals are workflows with a single execution intent.
+`run_goal(goal)`, `resume_goal(graph_id)`, `plan_goal(goal)`.
+
+---
+
+## Python Embedding API
+
+```python
+from nodus import NodusRuntime
+
+rt = NodusRuntime(
+    timeout_ms=None,          # None = unlimited (required for long-lived sessions)
+    max_steps=None,           # None = unlimited
+    allowed_paths=["/safe"],  # filesystem sandbox; None = unrestricted
+    on_error=my_fn,           # fn(coroutine, error) -> bool; True = stop scheduler
+)
+
+# Register Python function callable from Nodus scripts
+rt.register_function("fetch", my_fetch_fn, arity=1)
+
+# Register MCP-style tool
+rt.tool_registry.register({
+    "name": "myapp.search",
+    "handler": search_fn,
+    "description": "Search the knowledge base",
+    "schema": {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]},
+})
+
+# Run a script
+result = rt.run_source('''
+import "std:tool" as tool
+let r = tool.call("myapp.search", {q: "nodus"})
+print(r.results[0])
+''')
+
+print(result["ok"])      # True/False
+print(result["stdout"])  # captured output
+print(result["error"])   # error dict if ok=False
+
+# Set distributed trace ID
+rt.set_trace_id("req-abc123")
+
+# Lifecycle
+rt.shutdown()  # clears last_vm, host functions, registered tools
+```
+
+### Type marshaling (Python ↔ Nodus)
+| Python | Nodus |
+|--------|-------|
+| None | nil |
+| bool | bool |
+| str | string |
+| int | int |
+| float (whole) | int |
+| float (fractional) | float |
+| list | list |
+| dict | map |
+| Record (Nodus) | dict (via .fields) |
+
+---
+
+## Stability Surface
+
+Run `nodus stability` to see the full index. Summary:
+
+**Stable** (frozen, breaking changes require major version bump):
+- Core syntax: let, fn, if/while/for, try/catch/finally, throw, return
+- Types: float, int (42i), string, bool, nil, list, map, record
+- Operators: arithmetic, comparison, logical
+- Error model: err record shape {kind, message, payload, path, line, column, stack}
+- Embedding: NodusRuntime constructor, run_source, run_file, register_function, tool_registry
+- VM: BYTECODE_VERSION=4, opcode set frozen
+- std:json, std:fs
+
+**Mostly Stable** (minor refinements OK):
+- std:math, std:strings, std:collections, std:path
+- yield expr semantics
+
+**Experimental** (may change in any release):
+- Coroutines, channels, run_loop
+- Workflow DSL, Goal DSL
+- All v4.0 stdlib additions (std:tool, std:http, std:subprocess, etc.)
+- AI-native primitives
+- Static type annotations (syntax accepted; no enforcement)
+
+---
+
+## Ecosystem Overview
+
+The Masterplan Infinite Weave ecosystem around Nodus spans 29 standalone packages:
+
+### Language Extension Packages (expose .nd modules)
+- **nodus-mcp** (v0.1.0) — MCP 2026-07-28 RC bidirectional client+server. `import "nodus-mcp"`.
+- **nodus-extension** (v0.1.0) — Typed, versioned, sandboxed plugin framework. `import "nodus-extension"`.
+
+### Infrastructure Packages
+- nodus-sdk — unified SDK: `pip install nodus-sdk[agent,sql,fastapi]`
+- nodus-store-sql — RunStore, EventStore, JobStore (SQLAlchemy, sync+async)
+- nodus-memory — MemoryNode, InMemoryStore, semantic scoring, recall
+- nodus-native-memory-engine — PyO3/Maturin Rust extension, 9 operations, Python fallback
+- nodus-a2a — AgentCoordinator (local/delegate), DeadLetterService
+- nodus-agent, nodus-workflow, nodus-state, nodus-session (agent infrastructure)
+- nodus-retry, nodus-circuit-breaker (reliability)
+- nodus-observability, nodus-observability-framework (telemetry)
+- nodus-http, nodus-channels, nodus-delivery, nodus-gateway (networking)
+- nodus-events, nodus-queue, nodus-protocol, nodus-schema (data)
+- nodus-auth, nodus-approvals, nodus-governance (access)
+- nodus-context, nodus-router, nodus-llm, nodus-adapters (integration)
+
+All packages: github.com/Masterplanner25
+
+---
+
+## Masterplan Infinite Weave Context
+
+Nodus was built as the execution runtime for A.I.N.D.Y. and the Masterplan Infinite Weave
+platform — a framework for AI-driven orchestration built on the Infinity Algorithm.
+
+The Infinity Algorithm is the I→T→C→R→O→Feedback loop that Nodus implements at the
+execution layer: the scheduler's run_loop() IS the R operator; workflow/goal lowering to
+task graphs IS the T operator. The decision layer (A.I.N.D.Y.) evaluates meaning; the
+execution layer (Nodus) evaluates correctness. Together they form a nested Infinity loop.
+
+**Relevant reading from the creator:**
+- [Why I'm Building A.I.N.D.Y.](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-why-im-building-a-i-n-d-y-or-any-tool-really-a138f7860fba) — the strategic context behind the tooling
+- [Duality of Progress: Master Index](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-master-index-strategic-manifesto-4c96cf98348a) — canonical index of the Masterplan framework
+- [AI Search Optimization](https://medium.com/masterplan-infinite-weave/2025-chatgpt-case-study-ai-search-optimization-0f8cd5e78d4f) — the philosophy of discoverability this project embodies
+- [Masterplan Infinite Weave](https://www.the-master-plan.com/) — the broader ecosystem
