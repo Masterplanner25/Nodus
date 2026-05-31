@@ -1,6 +1,6 @@
 # Nodus Architecture
 
-Nodus is a bytecode-compiled scripting runtime implemented in Python for automation and orchestration workloads.
+Nodus is an orchestration DSL and embedded runtime implemented in Python. Its execution model supports coroutines, task graphs, workflows, goals, and MCP-compatible tool dispatch as first-class language constructs.
 
 The architecture is split into two layers:
 
@@ -97,10 +97,10 @@ Snapshots are written atomically (temp file -> fsync -> rename) and are used by 
 Every AST node class inherits from `Base` (defined in `src/nodus/frontend/ast/ast_nodes.py`),
 which declares two optional metadata fields:
 
-| Field     | Type            | Set by                   | Purpose                                              |
-|-----------|-----------------|--------------------------|------------------------------------------------------|
-| `_tok`    | `Tok \| None`   | `Parser.mark()` in parser.py | Source token for error location (line/col)       |
-| `_module` | `str \| None`   | `set_module_on_tree()` in loader.py during import resolution | Absolute file path or `"<memory>"` of the defining module |
+| Field     | Type             | Set by                   | Purpose                                              |
+|-----------|------------------|--------------------------|------------------------------------------------------|
+| `_tok`    | `Tok \| None`    | `Parser.mark()` in parser.py | Source token for error location (line/col). Typed as `Tok \| None` (not `object`) since v4.0. |
+| `_module` | `str \| None`    | `set_module_on_tree()` in loader.py during import resolution | Absolute file path or `"<memory>"` of the defining module |
 
 Both fields are excluded from `__repr__` and `__eq__` so that structural AST equality
 checks (used in tests and the optimizer) are not affected by metadata.
@@ -178,19 +178,31 @@ The LSP server (`lsp/server.py`) provides:
 
 The DAP server (`dap/server.py`) reuses the runtime debugger and provides:
 
-- breakpoints and stepping
-- stack traces
-- variable inspection
+- breakpoints and stepping (stepIn, stepOver, stepOut, continue)
+- stack traces and scope inspection
+- variable inspection (locals and arguments)
 - stdout/stderr forwarding
+
+**Not yet implemented:** `evaluate` — expression evaluation at breakpoint
+(GitHub #106, DAP-001). The debug console cannot evaluate expressions while paused.
+See `/nodus-dap-evaluate` skill for the implementation plan.
 
 ## Runtime Services
 
 The runtime exposes builtins and adapters for:
 
-- tools (`tool_call`, `tool_available`, `tool_describe`)
+**Core services**
+- tools (`tool_call`, `tool_available`, `tool_describe`) — MCP-compatible namespaced tool registry
 - agents (`agent_call`, `agent_available`, `agent_describe`)
 - memory (`memory_get`, `memory_put`, `memory_delete`, `memory_keys`)
 - events (`emit`, runtime event bus)
+
+**AI-native primitives (v4.0)**
+- identity (`trace_id`, `session_id`, `execution_unit_id`) — auto-propagated trace correlation
+- effects (`resolve`, `pending`, `complete`, `action_id`) — EXACTLY_ONCE idempotency
+- sys (`sys.v1.*`) — versioned syscall dispatch with uniform `{status, data, error, trace_id}` envelope
+- retry (`retry.call`) — configurable retry policy (wraps `nodus-retry`)
+- circuit_breaker (`cb.create`, `cb.call`, `cb.state`, `cb.reset`) — three-state breaker (wraps `nodus-circuit-breaker`)
 
 These services are explicit, JSON-safe, and kept separate from the core VM.
 
@@ -198,12 +210,26 @@ These services are explicit, JSON-safe, and kept separate from the core VM.
 
 Builtin functions are organised into category modules under `src/nodus/builtins/`:
 
-| Module          | Contents                                               |
-|-----------------|--------------------------------------------------------|
-| `io.py`         | `print`, `input`, filesystem ops, path helpers         |
-| `math.py`       | `math_abs/min/max/floor/ceil/sqrt/random`               |
-| `coroutine.py`  | `coroutine`, `resume`, `spawn`, `channel`, `send`, `recv`, `close`, `sleep` |
-| `collections.py`| `len`, string ops, `keys`/`values`, `list_push/pop`, `json_parse/stringify` |
+| Module                   | Contents                                                                  |
+|--------------------------|---------------------------------------------------------------------------|
+| `io.py`                  | `print`, `input`, `read_file`, `write_file`, `append_file`, `exists`, `list_dir`, `mkdir` |
+| `math.py`                | `math_abs`, `min`, `max`, `floor`, `ceil`, `sqrt`, `random`              |
+| `coroutine.py`           | `coroutine`, `resume`, `spawn`, `channel`, `send`, `recv`, `close`, `sleep`, `run_loop`, `coroutine_status` |
+| `collections.py`         | `len`, string ops, `keys`/`values`, `list_push`/`pop`, `json_parse`/`stringify` |
+| `http_module.py`         | `http_get`/`post`/`put`/`delete`/`patch`, async variants, SSE streaming  |
+| `subprocess_module.py`   | `subprocess_run`, `subprocess_shell`, `subprocess_spawn`, async variants  |
+| `hash_module.py`         | `hash_sha256`, `hash_sha512`, `hash_file`                                 |
+| `encoding_module.py`     | `base64_encode`/`decode`, `url_encode`/`decode`                          |
+| `time_module.py`         | `time_now_ms`, `time_utc`, `time_format`, `time_parse`                   |
+| `secrets_module.py`      | `secrets_token`, `secrets_token_bytes`                                   |
+| `tool_module.py`         | `tool_register`, `tool_call`, `tool_available`, `tool_describe`, `tool_list` |
+| `identity_module.py`     | `trace_id`, `session_id`, `execution_unit_id`                            |
+| `effects_module.py`      | `effects_resolve`, `effects_pending`, `effects_complete`, `effects_action_id` |
+| `memory_module.py`       | `memory_share`, `memory_recall_from`, `memory_recall_all`, `memory_forget`, `memory_tag` |
+| `retry_module.py`        | `retry_call` — wraps nodus-retry                                         |
+| `circuit_breaker_module.py` | `cb_create`, `cb_call`, `cb_state`, `cb_reset` — wraps nodus-circuit-breaker |
+| `test_module.py`         | `test_assert_eq`, `test_assert_err`, `test_flush_async`, `test_advance_clock` |
+| `env.py`                 | `env_get`, `env_set`                                                     |
 
 `BuiltinRegistry` (defined in `src/nodus/builtins/registry.py`, re-exported from `__init__.py`) is the aggregation point.
 
@@ -274,3 +300,9 @@ Current NodeVisitor subclasses:
 - `ModuleStamper` (loader.py) — recursively stamps `_module` on all nodes
 - `InfoCollector` (loader.py) — collects module definition/export info
 - `Analyzer` (tooling/analyzer.py) — optional static type inference
+
+**Tooling drift policy:** Any PR that adds new AST node types must also update
+`format_stmt`/`format_expr` in the formatter, the LSP analysis visitor, and (for
+new control-flow constructs) the DAP stepping logic. The formatter has a CI gate
+that catches drift automatically; the LSP and DAP rely on this policy rule.
+See `docs/governance/LANGUAGE_STABILITY_INDEX.md §7` for the governing text.
