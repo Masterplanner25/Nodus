@@ -124,13 +124,11 @@ describe the workaround patterns used until these are fixed.
   execute in the current frame's local/global context, return DAP `EvaluateResponse`.
   Skill: `/nodus-dap-evaluate`. GitHub: #106.
 
-- **CHAN-001** (open, related to EMBED-003): A coroutine blocked on `recv()` of an
-  empty channel is silently orphaned — `run_loop` exits when it sees no pending work,
-  even if the host intends to feed data later. The only scheduler mechanism that
-  prevents this exit (`scheduler._io_channels`) is a private internal attribute with
-  no public API. Workaround: pre-populate the channel before `run_loop`, or use the
-  subprocess-pipe pattern (daemon thread writes continuously). No GitHub issue yet —
-  fix tracked under EMBED-003.
+- **CHAN-001** (open, GitHub #107): A coroutine blocked on `recv()` of an empty
+  channel is silently orphaned — `run_loop` exits when it sees no pending work even
+  though the channel has waiting receivers. Fix: `recv()` on an empty channel should
+  register the channel in `scheduler._io_channels` so the scheduler stays alive.
+  Phase B graduation blocker. Skill: `/nodus-scheduler-freeze`.
 
 ## Scheduler / coroutine execution-limit behavior (v4.0.0 known limitations)
 
@@ -138,18 +136,16 @@ These items are deferred to 4.0.1. They affect the experimental coroutine/schedu
 tier — the stable embedding API contract is not violated (limit breaches now correctly
 surface as ok=False after the SCHED-002 fix).
 
-- **SCHED-001** (deferred to 4.0.1, experimental scheduler timing): The execution
-  deadline (`timeout_ms`) counts wall-clock time including time a coroutine spends
-  cooperatively suspended in the scheduler timer heap (sleeping). A coroutine that
-  calls `sleep(1000)` four times will be killed after 200ms total wall time even
-  though it consumed no CPU. Workaround: `nodus run --time-limit N` (documented
-  in `nodus run --help`). GitHub: #94.
+- **SCHED-001** (Phase B graduation blocker): The execution deadline (`timeout_ms`)
+  counts wall-clock time including cooperative sleep. A coroutine that calls
+  `sleep(1000)` four times is killed after 200ms total wall time even though it
+  consumed no CPU. Workaround: `nodus run --time-limit N`. GitHub: #94.
+  Skill: `/nodus-scheduler-freeze`.
 
-- **SCHED-002 session-scope** (deferred to 4.0.1, experimental scheduler): A limit
-  breach kills only the coroutine that tripped it; other coroutines continue running.
-  The host correctly sees ok=False (fixed in 4.0.0 via `except RuntimeLimitExceeded:
-  raise` in scheduler.py), but the session is not fully terminated — other coroutines
-  drain. Full session termination on limit breach is a 4.0.1 fix. GitHub: #95.
+- **SCHED-002** (Phase B graduation blocker): A limit breach kills only the coroutine
+  that tripped it; other coroutines continue running. Full session termination on
+  limit breach is required for correct semantics. GitHub: #95.
+  Skill: `/nodus-scheduler-freeze`.
 
 - **SCHED-003** (covered in 4.0.0): Tests added in `test_scheduler.py::SchedulerSandboxLimitTests`
   to cover the `run_source` (sandbox-active) path. Pre-existing tests used raw VM
@@ -350,27 +346,30 @@ These items were surfaced during the 2026-05-30 ecosystem verification pass and 
 not blocking current development but **must be decided before v4.0.0 publishes**.
 Each has a GitHub issue for scope discussion.
 
-- **WF-SCAN-001** (open, severity: medium, GitHub: #102): `LocalWorkflowStore` scans
-  all `.nodus/workflow_framework/runs/*.json` on every sweeper iteration — O(n) over
-  total historical runs. At 670+ accumulated test artifacts the sweep takes >2s,
-  breaking the `test_worker_death_detected_by_sweeper` 500ms deadline. Short-term
-  fix: default tests to `SQLiteWorkflowStore`. Medium-term fix: cap `_list_runs()` to
-  a time-window or add a run-count ceiling. Affects `src/nodus_workflow/store.py`.
+- **WF-SCAN-001** (Phase D graduation blocker, GitHub: #102): `LocalWorkflowStore`
+  scans all run files on every sweep — O(n) over historical runs. Fix: SQLite default
+  for tests, or cap scan to a time-window. Skill: `/nodus-workflow-freeze`.
 
-- **CIRC-001** (open, severity: medium, GitHub: #103): `nodus.vm.vm` imports
-  `get_default_workflow_runner` from `nodus_workflow.runner` at module level
-  (unconditional top-level import). Works at runtime because nodus initialises first,
-  but any embedder or test that imports `nodus_workflow` before `nodus` in a fresh
-  process hits a circular import. Fix: lazy import inside the function body (low risk),
-  or dependency-inversion registry pattern (architecturally correct). Affects
-  `src/nodus/vm/vm.py`.
+- **CIRC-001** (Phase A, GitHub: #103): `nodus.vm.vm` imports `nodus_workflow.runner`
+  at module level. Fix: lazy import inside the function body. One-liner.
+  Skill: `/nodus-scheduler-freeze` (included as Phase A quick-win).
 
-- **NAME-COL-001** (open, severity: high, GitHub: #104): `nodus_schema` and
-  `nodus_workflow` each exist as both an in-tree `src/` module (part of nodus-lang)
-  and a separate standalone package in the publish sequence. Once both are on PyPI,
-  install order silently determines which is imported. Must be resolved before publish:
-  rename the standalone packages, move the in-tree modules under `nodus.*` namespace,
-  or consolidate. Decision required before v4.0.0 tag.
+- **NAME-COL-001** (pre-publish decision, GitHub: #104): `nodus_schema` and
+  `nodus_workflow` in-tree modules collide with standalone PyPI packages. Must be
+  decided (rename standalone, move in-tree, or consolidate) before v4.0.0 tag.
+
+- **run_goal WorkflowFrameworkRunner bypass** (Phase C graduation blocker, GitHub: #108):
+  `run_goal()` calls `run_task_graph()` directly without registering with
+  `WorkflowFrameworkRunner`. Goals are invisible to the framework's claim/resume/
+  dead-letter machinery. Skill: `/nodus-goal-freeze`.
+
+- **Workflow/goal path unification** (Phase C graduation blocker, GitHub: #109):
+  Goals and workflows use diverging execution paths — goals will silently miss
+  framework capabilities as the runner evolves. Skill: `/nodus-goal-freeze`.
+
+- **Checkpoint API completeness** (Phase D graduation blocker, GitHub: #110):
+  `checkpoints` vs `engine_checkpoints` distinction undocumented; no dedicated
+  checkpoint test file. Skill: `/nodus-workflow-freeze`.
 
 ## Phase 4 Deferred Content: STDLIB_PHILOSOPHY.md
 
