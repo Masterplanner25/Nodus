@@ -251,9 +251,17 @@ def _render_help() -> str:
         "  logout            Remove a saved registry token",
         "  publish           Publish a package to the registry",
         "",
+        "Stability:",
+        "  stability         Show which language surfaces are stable vs experimental",
+        "",
         "Global options:",
         "  --version         Print the Nodus version and exit",
         "  --help            Show this help message",
+        "",
+        "Stability tiers: Stable | Mostly Stable | Experimental",
+        "  Orchestration (workflow, goal, coroutine, channel) — Experimental",
+        "  Core language, embedding API, stdlib I/O                — Stable",
+        "  Run 'nodus stability' for the full surface index.",
         "",
         "Use 'nodus <command> --help' for options and examples.",
     ])
@@ -1110,6 +1118,51 @@ def _run_examples() -> int:
     return 0
 
 
+def _print_stability() -> int:
+    """Print the language stability surface index."""
+    print("\n".join([
+        "Nodus Language Stability Index",
+        "=" * 46,
+        "",
+        "STABLE — frozen behavior; breaking changes require a major version bump",
+        "  Core language:  let, fn, if/while/for, try/catch/finally, throw, return",
+        "  Types:          number, int, string, bool, nil, list, map, record",
+        "  Operators:      all arithmetic, comparison, logical operators",
+        "  Imports/exports: syntax stable; module caching semantics stable",
+        "  Error model:    err record shape {kind, message, payload, path, line, column}",
+        "  VM:             bytecode format (BYTECODE_VERSION=4), opcode set frozen",
+        "  Embedding API:  NodusRuntime constructor, run_source, run_file,",
+        "                  register_function, tool_registry, reset, shutdown",
+        "  Standard I/O:   std:json, std:fs",
+        "",
+        "MOSTLY STABLE — minor refinements may occur; breakage avoided but not guaranteed",
+        "  Standard library: std:math, std:strings, std:collections, std:path",
+        "  Iteration protocol: for name in iterable",
+        "  yield expr",
+        "",
+        "EXPERIMENTAL — behavior may change in any release; track CHANGELOG.md",
+        "  Coroutines:       coroutine(), spawn(), resume(), run_loop()  [Phase B]",
+        "  Channels:         channel(), send(), recv(), close()          [Phase B]",
+        "  Workflow DSL:     workflow, step, state, checkpoint            [Phase D]",
+        "  Goal DSL:         goal, step, run_goal, resume_goal            [Phase C]",
+        "  Static types:     type annotations accepted; no enforcement    [forward: --strict]",
+        "  AI-native stdlib: std:tool, std:identity, std:effects, std:sys,",
+        "                    std:memory, std:retry, std:circuit_breaker",
+        "  Other stdlib:     std:http, std:subprocess, std:time, std:hash,",
+        "                    std:encoding, std:secrets, std:test",
+        "  Projects/packages: nodus.toml, nodus install (git-backed only)",
+        "",
+        "NOT YET IMPLEMENTED",
+        "  break / continue inside loops",
+        "  nodus check --strict (type enforcement)",
+        "",
+        "Full index: docs/governance/LANGUAGE_STABILITY_INDEX.md",
+        "Graduation plan for experimental surfaces: /nodus-scheduler-freeze,",
+        "  /nodus-goal-freeze, /nodus-workflow-freeze (see .claude/commands/)",
+    ]))
+    return 0
+
+
 def _nodus_status() -> int:
     cwd = os.path.abspath(os.getcwd())
     project = load_project_from(cwd)
@@ -1303,6 +1356,7 @@ def main(argv: list[str] | None = None) -> int:
         "logout",
         "publish",
         "status",
+        "stability",
     }
 
     if command not in known_commands:
@@ -2124,6 +2178,9 @@ def main(argv: list[str] | None = None) -> int:
     if command == "test":
         from nodus.testing.cli import run_test_command
         return run_test_command(cmd_args)
+
+    if command == "stability":
+        return _print_stability()
 
     _print_stderr(f"Unknown command: {command}")
     return 1
