@@ -41,7 +41,7 @@ Tier 1 libraries make the language credible as an orchestration DSL. They
 ship with the `nodus-lang` PyPI package and are available without registry
 installation.
 
-**Shipped in v4.0:**
+**Implemented in v4.0 (prepared, not yet published):**
 
 - `std:http` — HTTP client (sync + async, buffered + streaming)
 - `std:env` — Environment variables
@@ -55,7 +55,7 @@ installation.
 - `std:tool` — Tool registry with library-side handler support (v4.1: gains
   `effects` validation and `returns_schema` contract enforcement)
 
-**Shipped in v4.1 (AI-native primitives — Phase 6):**
+**Added in v4.1 (AI-native primitives — Phase 6, prepared, not yet published):**
 
 - `std:identity` — Execution identity: `trace_id()`, `session_id()`, `execution_unit_id()`.
   All three auto-propagate across module boundaries.
@@ -72,7 +72,7 @@ installation.
 - `std:circuit_breaker` — Three-state circuit breaker: `cb.create/call/state/reset`.
   Optional dep (`nodus-circuit-breaker`); returns dependency-error map when absent.
 
-**Already shipped (pre-v4.0):**
+**Previously implemented (in published 3.0.2):**
 
 - `std:json` — JSON parsing and serialization
 - `std:math` — Math operations (extended in v4.0 with `is_numeric`, `is_int`,

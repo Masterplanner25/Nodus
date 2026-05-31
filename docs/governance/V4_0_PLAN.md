@@ -1361,3 +1361,205 @@ own design phase, separate from but informed by v4.0 Phase 1).
 | Migration guide | `docs/migration/v3-to-v4.md` (Phase 4 deliverable) |
 
 Phase 0 complete. Phase 1 begins when ready.
+
+---
+
+## Addendum — Scope added after Phase 0 locked
+
+**Date:** 2026-05-30
+**Status:** Implemented. Decisions below reflect choices made during execution,
+not during the original Phase 0 session. The locked decisions above are unchanged.
+
+---
+
+### A.I.N.D.Y. Ecosystem Audit → 27-package standalone ecosystem
+
+During the v4.0 cycle, a full dependency and capability audit of A.I.N.D.Y.
+(the production AI platform that Nodus targets) produced a second build wave:
+9 library candidates and 7 framework candidates, all independent of the nodus-lang
+core. A second audit (OpenClaw) produced 5 additional net-new libraries.
+
+**Decision:** Build all libraries as standalone Python packages at `C:\dev\`,
+each with its own GitHub repo under Masterplanner25. No nodus-lang dependency
+unless the library provides nodus-lang bindings. Test each independently.
+
+**Reasoning:**
+1. Standalone packages can be installed and used without nodus-lang. This proves
+   the primitives are sound independently.
+2. Individual repos with independent version histories are easier to maintain and
+   publish than a monorepo.
+3. Each package is testable in isolation — no cross-package contamination.
+
+**Resulting packages (27 total across 6 tiers):**
+
+*Group 1 — A.I.N.D.Y.-derived (no nodus-lang dep):*
+`nodus-circuit-breaker` (24 tests), `nodus-auth` (36), `nodus-observability` (27),
+`nodus-queue` (53), `nodus-state` (117), `nodus-observability-framework` (57),
+nodus-mcp aindy bridge (81, in nodus-mcp repo as `nodus_mcp_aindy/`)
+
+*Group 2 — OpenClaw-derived:*
+`nodus-context` (29), `nodus-approvals` (32), `nodus-channels` (24),
+`nodus-llm` (24), `nodus-delivery` (27)
+
+*Group 3 — Tier 1 standalone:*
+`nodus-retry` (33), `nodus-http` (13), `nodus-events` (17), `nodus-schema` (30),
+`nodus-protocol` (13), `nodus-session` (15), `nodus-router` (18)
+
+*Group 4 — Tier 2 (depends on Tier 1):*
+`nodus-memory` (28), `nodus-workflow` (17), `nodus-a2a` (23, AgentCoordinator),
+`nodus-adapters/base` (11)
+
+*Group 5 — Tier 3 (depends on T1+T2):*
+`nodus-agent` (28), `nodus-gateway` (19)
+
+*Group 6 — Tier 4 (depends on all tiers):*
+`nodus-extensions` (35), `nodus-governance` (28)
+
+**Note on nodus-a2a:** The original Decision 17 nodus-a2a (A2A wire protocol adapter,
+180 tests, Phases A–J) was replaced at `C:\dev\nodus-a2a` by the AgentCoordinator
+layer. The original wire protocol adapter is preserved on GitHub
+(`github.com/Masterplanner25/nodus-a2a`, git history intact).
+
+---
+
+### nodus-memory v0.1.0 and nodus-native-memory-engine v0.1.0 — companion repos
+
+**Decision:** Two additional companion repos built alongside the standalone packages.
+`nodus-memory` provides nodus-lang bindings (`attach_to_runtime`, `nm_*` host functions,
+`import "nodus-memory"` in .nd code). `nodus-native-memory-engine` provides a
+PyO3/Maturin Rust extension for 9 hot-path memory operations with pure-Python fallback.
+
+The original Tier 2 LIBRARY_ECOSYSTEM entry for `nodus-memory` tracked it for
+v5.0. It shipped ahead of schedule as a v0.1.0 companion repo.
+
+**Status:** v0.1.0 COMPLETE — prepared, not yet published.
+- nodus-memory: 192 tests, 97% coverage, Phases A–K
+- nodus-native-memory-engine: 76 tests, PyO3/Maturin Rust, 9 operations
+
+---
+
+### nodus-extension v0.1.0 — extension companion repo
+
+**Decision:** Build the extension/plugin framework as a companion repo (not in-tree).
+`nodus-extension` provides typed, versioned, sandboxed plugin loading: extensions
+declare `nodus-extension.json` + `extension.py`; the framework loads them via
+subprocess (sandbox tier 1). Exposes `_ext_*` host functions and `import
+"nodus-extension"` in .nd code.
+
+**Status:** v0.1.0 COMPLETE — prepared, not yet published.
+- 126 tests, 93% coverage, Phases A–J
+
+---
+
+### nodus-workflow and nodus_schema — dual implementations
+
+**Decision:** Both `nodus_workflow` and `nodus_schema` exist in two forms: in-tree
+(wired into nodus-lang's server/CLI, full orchestration surfaces) and standalone
+(lighter packages without server wiring). This duplication is intentional — the in-tree
+versions serve nodus-lang's own orchestration surfaces; the standalone versions serve
+the ecosystem packages that need the primitives without nodus-lang itself.
+
+| Name | In-tree location | Standalone location |
+|---|---|---|
+| `nodus_schema` | `src/nodus_schema/` — syscall ABI contracts | `C:\dev\nodus-schema` — general schema validation |
+| `nodus_workflow` | `src/nodus_workflow/` — HTTP/CLI/SQLite orchestration | `C:\dev\nodus-workflow` — standalone FlowDefinition/SchedulerEngine |
+
+**Rule:** Always check `python -c "import nodus_schema; print(nodus_schema.__file__)"` before
+working on either — import order determines which version loads.
+
+---
+
+### Phase 6 — AI-Native Language Primitives (v4.1.0)
+
+**Decision:** After completing v4.0, a further phase of work adds AI-agent-oriented
+primitives directly to the nodus-lang stdlib and VM. These close the gap between the
+27-package library ecosystem and the language surface.
+
+**Why this wasn't in Phase 0:** Phase 0 focused on the orchestration DSL as a tool
+for human developers. The AI-native analysis (performed against both audits) identified
+a second design space: an AI agent as the primary developer of .nd code. That framing
+produced different design requirements (automatic identity propagation, first-class
+idempotency, enumerable syscall surface, declarative reliability).
+
+**Five sub-phases implemented (v4.1.0, prepared, not yet published):**
+- **6A — Execution identity:** `trace_id`, `execution_unit_id` on every VM + event.
+  `std:identity`, `NodusRuntime.set_trace_id()`. All module VMs propagate identity.
+- **6B — Namespaced memory:** `recall_from`, `recall_all`, `share` in `std:memory`.
+  Memory builtins extracted from `VM.__init__` to `memory_module.py`.
+- **6C — sys.v1.* syscall dispatch:** `syscall_runtime.py`, uniform envelope,
+  4 initial syscalls, `std:sys`.
+- **6D — EffectStore as language primitive:** `nodus-retry` promoted to required dep.
+  `std:effects`. `NodusRuntime.set_effect_store()`.
+- **6E — Retry/CB stdlib bindings:** `std:retry`, `std:circuit_breaker` as optional-dep
+  stdlib modules. `_ClosureProxy`-aware closure execution.
+
+**Deferred to Phase 7:** `@exactly_once` and `@retry(...)` annotation syntax (requires
+lexer/parser/compiler changes). The runtime primitives (6D) provide the semantics;
+Phase 7 adds the syntactic sugar.
+
+**Version:** 4.0.0 → **4.1.0**. BYTECODE_VERSION stays at 4 (no new opcodes).
+
+---
+
+### Phase A–D — HandlerContract infrastructure (v4.1.0)
+
+**Decision:** Add a formal contract type (`HandlerContract`) to `nodus_schema` for
+documenting handler surfaces (tools, syscalls, extension tools) and enforce contracts
+at the `tool.register()` / `tool.invoke()` layer.
+
+**Why this wasn't in Phase 0:** Phase 0's tool registry decision (Decision 12) focused
+on dynamic registration and conflict detection. The contract-enforcement layer
+(effects vocabulary, returns_schema validation) emerged from the A.I.N.D.Y. audit's
+observation that AI-generated tool handlers need machine-verifiable contracts.
+
+**Four sub-phases:**
+- **A — nodus_schema:** `HandlerContract` dataclass + `VALID_EFFECTS` frozenset
+- **B — tool_module.py:** `effects` validation + `returns_schema` at invoke time
+- **C — nodus-extension:** `ToolSurface` gains `returns_schema` and `effects` fields
+- **D — nodus_gate:** `--contracts` flag (6 smoke-test checks) wired into `--all`
+
+---
+
+### nodus-sdk v0.1.0 — unified platform SDK
+
+**Decision:** Build a single unified SDK package (`nodus-sdk`) that provides the
+installation story for the full ecosystem. Extras-based optional deps. A factory
+function (`create_runtime(**kwargs)`) auto-wires available packages. New Python
+bridges (SQLAlchemy, pgvector, APScheduler, FastAPI, webhook) live in the SDK, not
+as additional standalone packages.
+
+**Why one SDK:** The 27-package ecosystem is powerful but requires knowing which 6-8
+packages to combine. A single `pip install nodus-sdk[agent,sql,fastapi]` is the
+production installation story.
+
+**Status:** v0.1.0 COMPLETE — 99 tests, 9 bridge modules.
+Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
+
+---
+
+### nodus-store-sql v0.1.0 — SQLAlchemy persistence adapters
+
+**Decision:** Promote the `packages/nodus-store-sql` incubator scaffold to a
+standalone production package. The scaffold's design (frozen dataclasses + SQLAlchemy
+ORM + store classes) was sound; it needed API completion (4 new methods), async
+support, and test expansion.
+
+**Why this gap existed:** The scaffold was in `packages/` as a design reference —
+both audits listed it as "Done" prematurely. This was the last audit gap.
+
+**Status:** v0.1.0 COMPLETE — 47 tests (31 sync + 16 async).
+Repo: `C:\dev\nodus-store-sql` / `github.com/Masterplanner25/nodus-store-sql`
+
+---
+
+## Updated file index (post-addendum)
+
+| What | Where |
+|---|---|
+| Original Phase 0 decisions | this document (above) |
+| Ecosystem library index | `docs/governance/LIBRARY_ECOSYSTEM.md` |
+| Per-package readiness | `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` |
+| Known tech debt | `docs/governance/TECH_DEBT.md` |
+| Changelog | `CHANGELOG.md` |
+| Standalone packages | `C:\dev\nodus-{package}` (29 packages) |
+| Incubator scaffolds | `packages/` (design references, not production) |
