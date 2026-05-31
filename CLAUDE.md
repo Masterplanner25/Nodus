@@ -447,15 +447,54 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 | nodus-extensions | 35 | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
 | nodus-governance | 28 | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
 
+### Repo alignment status (2026-05-31)
+
+All 29 standalone packages have been aligned to a standard repo structure:
+README, CHANGELOG, LICENSE, CONTRIBUTING, SECURITY, correct `.gitignore`,
+correct `pyproject.toml` (URLs, testpaths, dev extra). All have GitHub repos
+under Masterplanner25. Do not assume new packages are aligned — run a survey
+before working on any new standalone package.
+
+### Dependency audit findings (critical pattern)
+
+During the repo alignment sweep, **many packages declared required deps that
+had zero runtime imports.** The pattern: dep was imported via `TYPE_CHECKING`,
+`try/except ImportError`, or injected as a constructor parameter — all meaning
+the package works without it. Fixed packages and what was removed:
+
+| Package | Wrong deps removed |
+|---|---|
+| nodus-agent | nodus-llm, nodus-memory, nodus-events, nodus-retry, nodus-state, nodus-mcp, nodus-a2a, nodus-approvals (all 8) |
+| nodus-extensions | nodus-schema, nodus-observability (both) |
+| nodus-gateway | nodus-protocol, nodus-session, nodus-router, nodus-channels, nodus-agent, nodus-events (6 of 7; websockets → optional) |
+| nodus-governance | nodus-auth, nodus-approvals, nodus-events (all 3) |
+| nodus-llm | nodus-circuit-breaker (TYPE_CHECKING only) |
+| nodus-memory | nodus-events (Tier 2 has no external imports) |
+| nodus-observability | python-json-logger (try/except ImportError fallback) |
+| nodus-router | nodus-session (try/except ImportError fallback) |
+| nodus-workflow | nodus-events, nodus-queue, nodus-retry, nodus-state (all 4) |
+
+**Rule:** Before adding a dep, check that it has a module-level unconditional
+import with no fallback. `TYPE_CHECKING`, `try/except ImportError`, and
+constructor injection all mean optional.
+
+### `.nodus/` cache in standalone packages
+
+When nodus-lang tests run inside a standalone package directory, nodus may
+write a `.nodus/` cache directory (bytecode cache, graph state). This has been
+added to `.gitignore` in all repos but watch for it in new packages — it can
+contain hundreds of files that should never be committed.
+
 ### Ecosystem dependency notes
 
 - **nodus-gateway** requires `nodus-protocol` installed before tests run
 - **nodus-http** requires `respx` for tests (`pip install respx`)
-- **nodus-delivery** requires `nodus-channels`; **nodus-llm** requires `nodus-circuit-breaker`
-- **nodus-memory** (Tier 2) requires `nodus-events`; replaces v0.1.0 nodus-lang adapter
-- **nodus-a2a** (Tier 2) is the AgentCoordinator layer — NOT the A2A wire protocol adapter (that was replaced)
+- **nodus-delivery** requires `nodus-channels`; **nodus-llm** accepts any `.chat()` client (protocol-based)
+- **nodus-memory** (Tier 2) is pure stdlib — does NOT require nodus-events
+- **nodus-a2a** (Tier 2) is the AgentCoordinator layer (pure stdlib) — NOT the A2A wire protocol adapter
 - **nodus-extensions** test fix: use `asyncio.run()` not `asyncio.get_event_loop().run_until_complete()` (Python 3.11+)
 - nodus-queue redis tests need a live Redis server — always run with `--ignore=tests/test_redis_backend.py` in dev
+- **nodus-mcp** test_phase_m.py has 2 port-conflict-sensitive tests — they pass individually but fail in full suite runs (pre-existing race condition, not a code bug)
 
 ### Dual-implementation names (same name, different scope)
 
@@ -474,7 +513,9 @@ Eight Python-first scaffold packages live at `C:\dev\Coding Language\packages\`.
 They are **design references / API contracts**, not production implementations.
 
 - `nodus-a2a-spec`, `nodus-agent`, `nodus-event`, `nodus-events`, `nodus-http`,
-  `nodus-memory-spec`, `nodus-retry`, `nodus-store-sql`
+  `nodus-memory-spec`, `nodus-retry`
+- **`nodus-store-sql` has been promoted** — no longer an incubator scaffold;
+  production package at `C:\dev\nodus-store-sql` (47 tests, sync+async)
 - **Never pip-install the `-spec` packages alongside the production packages** —
   `nodus-memory-spec` and `nodus-a2a-spec` share Python module names with the
   production packages in `C:\dev\`. Installing both in the same venv causes import conflicts.
