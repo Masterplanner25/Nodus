@@ -25,8 +25,7 @@ jobs:
           pip install ruff
           ruff check .
 
-      - name: Type check (mypy — non-blocking baseline)
-        continue-on-error: true
+      - name: Type check (mypy)
         run: mypy src/nodus/ --ignore-missing-imports --no-error-summary
 
       - name: Check .nd formatting
