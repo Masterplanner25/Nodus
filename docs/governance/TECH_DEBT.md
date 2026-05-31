@@ -114,7 +114,29 @@ surface as ok=False after the SCHED-002 fix).
 - ✅ `BUILD_MODULE` stability declaration: promoted to stable as part of v1.0 module system freeze. Module system feature-complete. Recorded in FREEZE_PROPOSAL.md and ROADMAP.md.
 - ✅ `NodusRuntime` added to `__all__`: `src/nodus/__init__.py` now imports and exports `NodusRuntime` directly. `from nodus import NodusRuntime` works as of v1.0. EMBEDDING.md updated. Fixed in v1.0.
 - ✅ `LOAD_LOCAL` compiler fallbacks: audited and fixed in v1.0. All three paths (compiler.py lines 584, 619, 731) confirmed unreachable — `SymbolTable.define()` always assigns `symbol.index` when `in_function_scope()` is True, making "local + in_function + index is None" a logical contradiction. Fallback emissions replaced with `assert symbol.index is not None` guards. See DEPRECATIONS.md.
-- `vm.py` line count: 2,438 lines as of v1.1.2 (post-Phase 6). Further extraction of workflow/goal builtins and scheduler helpers is possible.
+- `vm.py` line count: ~2,500 lines as of v4.1.0 (Phase 6 added `secrets` import,
+  `execution_unit_id`/`trace_id` attrs, `effect_store`, `circuit_breakers`, `builtin_syscall`,
+  `builtin_syscall_list`, `_dict_to_record()`, and inlined 5 memory builtins were moved
+  to `memory_module.py`). Further extraction of workflow/goal builtins and scheduler
+  helpers is possible.
+
+- **Phase 6 module.py propagation pattern:** `NodusModule.invoke_function` now propagates
+  `trace_id`, `execution_unit_id`, `event_bus`, `effect_store`, `memory_store`, and
+  `circuit_breakers` from caller_vm to each fresh module VM. Any new VM-level shared
+  state added in future phases must also be added to this propagation block
+  (`src/nodus/runtime/module.py:206-220`).
+
+- **Phase 6 bridge return type:** `webhook_send` and `sql_query` host functions (in
+  nodus-sdk) return Python dicts (maps), not Records. `.nd` code must use `r["key"]`
+  not `r.key`. This is because `NodusRuntime._to_runtime_value()` converts dicts to
+  dicts-of-dicts (maps), not Records. Intentional: Records are for host-constructed typed
+  values, maps are for arbitrary JSON-shape returns.
+
+- **@annotation syntax deferred to Phase 7:** `@exactly_once` and `@retry(...)` as
+  language-level function annotations are the highest-DX gap remaining after Phase 6.
+  Requires: lexer (`@` token), parser (annotation-before-fn), AST field, compiler lowering
+  (emit EffectStore wrapper code). Estimated 4-5 days of frontend work.
+  `effects.nd` provides the runtime primitives; the sugar is the outstanding piece.
 
 - **Coverage baseline (pytest-cov 7.1.0, 2026-05-23):** Overall: 77% (14,232 stmts). Gate: `--cov-fail-under=60`. Three timing-sensitive tests deselected from the coverage run (they pass in the regular pytest step but fail under instrumentation overhead: `test_scheduler_fairness.py::test_multiple_tasks_progress`, `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`, `test_task_graph.py::TaskGraphTests::test_worker_death_detection`). Modules below 60%:
   - `src/nodus/__main__.py`: 0% (3 stmts — trivial entry point, not exercised by test suite)

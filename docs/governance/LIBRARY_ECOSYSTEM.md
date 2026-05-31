@@ -4,15 +4,16 @@
 
 **Status:** Architectural reference. Updated alongside major release cycles.
 **Created:** 2026-05-25 (v4.0 cycle, Phase 0)
-**Last reconciled:** 2026-05-29 (Tier 3 companion library scope corrected)
+**Last reconciled:** 2026-05-30 (v4.1.0 — Phase 6 stdlib additions, nodus-sdk, nodus-store-sql)
 **Companion to:** `docs/design/v4/00-phase-0-decisions.md`,
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-> **Current state note (2026-05-29):** nodus-lang is at 3.0.2. nodus-mcp 0.1.0
-> and nodus-a2a 0.1.0 are prepared but not yet published. All three await the
-> coordinated launch. The Tier 3 descriptions below reflect v0.1.0 scope, not
-> the v0.2+ targets. For honest current-state: `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
+> **Current state note (2026-05-30):** nodus-lang is at **4.1.0** (unpublished; awaiting
+> coordinated launch with nodus-mcp 0.1.0). The standalone ecosystem now has 29 packages:
+> 27 standalone Nodus packages + nodus-sdk v0.1.0 + nodus-store-sql v0.1.0. All packages
+> have GitHub repos under Masterplanner25. For honest current-state per package:
+> `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
 
 ---
 
@@ -51,7 +52,25 @@ installation.
 - `std:secrets` — Cryptographically secure random for tokens
 - `std:subprocess` — Process execution (no-shell default, with shell opt-in)
 - `std:test` — Test framework (pytest/jest-equivalent scope)
-- `std:tool` — Tool registry with library-side handler support
+- `std:tool` — Tool registry with library-side handler support (v4.1: gains
+  `effects` validation and `returns_schema` contract enforcement)
+
+**Shipped in v4.1 (AI-native primitives — Phase 6):**
+
+- `std:identity` — Execution identity: `trace_id()`, `session_id()`, `execution_unit_id()`.
+  All three auto-propagate across module boundaries.
+- `std:effects` — EXACTLY_ONCE idempotency: `resolve()`, `pending()`, `complete()`,
+  `action_id()`, `store_size()`. Backed by `InMemoryEffectStore` (now a required dep via
+  `nodus-retry`). Python host can inject a custom `EffectStore`.
+- `std:sys` — Versioned syscall dispatch: `sys.call("sys.v1.domain.action", payload)`.
+  Uniform envelope `{status, data, error, trace_id}`. Four built-in syscalls:
+  `sys.v1.memory.{get,put,delete,recall_from}`.
+- `std:memory` (extended) — Adds `recall_from(ns, key)`, `recall_all(ns)`,
+  `share(ns, key, val)` to the existing KV surface. Namespace-scoped in-process storage.
+- `std:retry` — Retry execution: `retry.call(func, {max_attempts, backoff_ms, ...})`.
+  Optional dep (`nodus-retry`); returns dependency-error map when absent.
+- `std:circuit_breaker` — Three-state circuit breaker: `cb.create/call/state/reset`.
+  Optional dep (`nodus-circuit-breaker`); returns dependency-error map when absent.
 
 **Already shipped (pre-v4.0):**
 
@@ -122,17 +141,31 @@ abstractions.
 **Tracked for v5.0 milestone (post-v4.0 work):**
 
 - `nodus-agent` — Runtime-native agent abstraction. Lifecycle, execution,
-  state, capabilities, workflow participation, permissions. This is the
-  Nodus abstraction layer that protocols adapt to, NOT a protocol-owned
-  concept. See "Architectural commitment: protocols are adapters" below.
-- `nodus-memory` — Memory primitives (store, search, link). Differentiates
-  memory from orchestration from execution, which most current frameworks
-  collapse together.
-- `nodus-tooling` — Tool schemas, capability declarations, syscall
-  boundaries, execution contracts. Foundational for secure tool dispatch
-  across MCP, A2A, and future protocols.
-- `nodus-workflow-ai` — Workflow primitives for AI-driven planning,
-  resumption, and reflection. The "agent-as-workflow" abstraction.
+  state, capabilities, workflow participation, permissions. **Built:** v0.1.0 at
+  `C:\dev\nodus-agent` (28 tests, CapabilityToken, LocalPlanner/LLMPlanner).
+- `nodus-memory` — Memory primitives (store, search, link). **Built:** Tier 2
+  implementation at `C:\dev\nodus-memory` (28 tests, InMemoryStore, MAS,
+  EmbeddingProvider) + `nodus-native-memory-engine` (76 tests, PyO3/Maturin Rust).
+- `nodus-tooling` — Tool schemas, capability declarations, syscall boundaries.
+  **Partially covered** by `nodus-schema` (Group 3, 30 tests) and the HandlerContract
+  infrastructure (Phase A-D in v4.1.0).
+- `nodus-workflow-ai` — Workflow primitives for AI-driven planning. **Built:**
+  in-tree `src/nodus_workflow/` (30 tests) + standalone `C:\dev\nodus-workflow`
+  (17 tests, FlowDefinition, SchedulerEngine, FlowExecutor).
+
+**Ecosystem SDK (v4.1.0, built alongside Phase 6):**
+
+- `nodus-sdk v0.1.0` — Unified platform SDK at `C:\dev\nodus-sdk`. Single install story:
+  `pip install nodus-sdk[agent,sql,fastapi]`. Provides `NodusSDKRuntime` (fluent
+  `attach_*` API), `create_runtime()` factory with auto-wiring, and 9 bridge modules
+  spanning the full 27-package ecosystem plus new Python bridges (SQLAlchemy, pgvector,
+  APScheduler, webhook, FastAPI router). 99 tests.
+
+- `nodus-store-sql v0.1.0` — SQLAlchemy 2.x persistence adapters at
+  `C:\dev\nodus-store-sql`. Promoted from `packages/nodus-store-sql` incubator scaffold.
+  Three stores: `RunStore` (optimistic locking), `EventStore` (append-only audit trail),
+  `JobStore` (atomic claiming). Sync + async (`sqlalchemy.ext.asyncio`). 47 tests.
+  Closes the last gap in both ecosystem audits.
 
 ---
 

@@ -1,5 +1,91 @@
 ﻿# Changelog
 
+## [4.1.0] - 2026-05-30
+
+### Added
+
+- **Phase 6A — Execution identity auto-propagation:** VM gains `execution_unit_id`
+  (always set, `secrets.token_hex(8)`, unique per VM instance) and injectable `trace_id`
+  (nil by default; set via `NodusRuntime.set_trace_id()`). Both fields are automatically
+  injected into every `RuntimeEvent` emitted (memory, tool, workflow, error, syscall).
+  New `std:identity` stdlib module exposes `identity.trace_id()`, `identity.session_id()`,
+  `identity.execution_unit_id()`. Module VM propagation: `NodusModule.invoke_function`
+  now forwards `trace_id`, `execution_unit_id`, `event_bus`, `effect_store`,
+  `memory_store`, and `circuit_breakers` from the caller VM to each cross-module invocation.
+
+- **Phase 6B — Stdlib memory extensions:** `std:memory` gains three namespaced KV
+  operations: `memory.recall_from(ns, key)`, `memory.recall_all(ns)`,
+  `memory.share(ns, key, val)`. Keys are prefixed `{ns}::` in the in-process
+  `MemoryStore`. All three emit dedicated runtime events (`memory_recall_from`,
+  `memory_recall_all`, `memory_share`). Memory builtins extracted from `VM.__init__`
+  inline dict into `builtins/memory_module.py` (pure refactor).
+
+- **Phase 6C — sys.v1.* syscall dispatch:** New `services/syscall_runtime.py` with
+  `SYSCALL_REGISTRY`, `call_syscall(name, payload, vm)`, and a stable uniform envelope:
+  `{status: "ok"|"error", data, error, trace_id}`. Four initial syscalls registered:
+  `sys.v1.memory.get`, `sys.v1.memory.put`, `sys.v1.memory.delete`,
+  `sys.v1.memory.recall_from`. New `syscall(name, payload)` and `syscall_list()`
+  builtins. New `std:sys` stdlib module with ergonomic helpers.
+
+- **Phase 6D — EffectStore as language primitive:** `nodus-retry` promoted from optional
+  to required dependency. VM gains `self.effect_store = InMemoryEffectStore()`. New
+  `builtins/effects_module.py` registers: `effect_resolve(id)`, `effect_pending(id, hash)`,
+  `effect_complete(id, status, result)`, `effect_action_id(type, payload, scope)`,
+  `effect_store_size()`. New `std:effects` stdlib module. `NodusRuntime.set_effect_store()`
+  for Python-host injection.
+
+- **Phase 6E — Retry/circuit-breaker stdlib bindings:** Optional-dep stdlib wrappers for
+  `nodus-retry` (`std:retry` — `retry.call(func, policy_map)`) and `nodus-circuit-breaker`
+  (`std:circuit_breaker` — `cb.create/call/state/reset`). Both packages remain optional;
+  builtins return a `{kind: "dependency_error"}` map when not installed. `VM` gains
+  `self.circuit_breakers: dict` (propagated cross-module). `_ClosureProxy`-aware execution
+  in both bridge builtins.
+
+- **Phase A — HandlerContract in nodus_schema:** New `src/nodus_schema/contracts.py`
+  defines `HandlerContract` dataclass with `name`, `description`, `input_schema`,
+  `returns_schema`, `effects`, `capabilities_required`, `version`, `tags`, `deprecated`.
+  `VALID_EFFECTS` frozenset: `pure | reads_state | writes_state | network | filesystem |
+  spawns_task`. `validate()` returns structural error list. Exported from
+  `nodus_schema.__init__`.
+
+- **Phase B — tool.register() effects and returns_schema enforcement:**
+  `builtins/tool_module.py` adds `_validate_effects()` and `_validate_return()` helpers.
+  `tool.register()` now accepts `effects` (validated against `VALID_EFFECTS`; `pure` is
+  mutually exclusive; unknown effects → `invalid_metadata` error) and `returns_schema`
+  (normalized at registration). `tool.invoke()` validates handler return value against
+  `returns_schema`; violation produces a `contract_violation` error record.
+
+- **Phase C — nodus-extension contract fields:** `nodus-extension`'s `ToolSurface` gains
+  `returns_schema` and `effects` fields with Pydantic validator enforcing the closed effects
+  vocabulary. Bridge passes new fields through to the tool registry entry.
+
+- **Phase D — nodus_gate --contracts flag:** New `tools/nodus_gate/contracts_phase.py`
+  implements 6 smoke-test checks on `HandlerContract` infrastructure. `--contracts` flag
+  added to `nodus_gate` CLI; wired into `--all`. Output formatted via `format_contracts()`
+  in `output.py`.
+
+### Changed
+
+- `nodus-retry>=0.1.0` promoted from optional to required dependency in `pyproject.toml`.
+  `EffectStore` is now always available — agents can rely on it without checking installation.
+
+### New packages (ecosystem)
+
+- **nodus-sdk v0.1.0** — Unified platform SDK at `C:\dev\nodus-sdk`. Single-package
+  installation story: `pip install nodus-sdk[agent,sql,fastapi]`. Provides
+  `NodusSDKRuntime` with fluent `attach_*` bridge methods, `create_runtime(**kwargs)`
+  factory, and 9 bridge modules: redis, http, llm, observability (wrappers over existing
+  packages), sql (SQLAlchemy), vector (pgvector), scheduler (APScheduler), webhook (HMAC
+  signing + retry), api (FastAPI router + `NodusTraceMiddleware`). 99 tests.
+
+- **nodus-store-sql v0.1.0** — Promoted from incubator scaffold at `packages/nodus-store-sql`
+  to standalone production package at `C:\dev\nodus-store-sql`. SQLAlchemy 2.x persistence
+  adapters for three durable state surfaces: `RunStore` (optimistic locking, `list_by_status`,
+  `list_by_owner`), `EventStore` (append-only with `append_batch`, pagination),
+  `JobStore` (atomic `claim_pending`). `[async]` extra adds `AsyncSqlStore` / `AsyncRunStore`
+  / `AsyncEventStore` / `AsyncJobStore` via `sqlalchemy.ext.asyncio`. 47 tests (31 sync +
+  16 async). Closes the last gap in both ecosystem audits.
+
 ## [4.0.0] - 2026-05-30
 
 ### Added

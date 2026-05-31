@@ -15,7 +15,10 @@ Nodus is a bytecode-compiled scripting language and runtime created by **Shawn K
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
-Incubator package scaffolds for proposed Nodus ecosystem components live under `packages/`.
+The Nodus ecosystem spans **29 standalone packages** across 6 tiers, all available at
+`github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
+story: `pip install nodus-sdk[agent,sql,fastapi]`. Incubator design scaffolds live under
+`packages/`; production packages live at `C:\dev\`.
 
 ## Install
 
@@ -92,6 +95,17 @@ import "std:math" as math
 print(math.abs(-4))
 ```
 
+**v4.1 AI-native stdlib additions:**
+
+| Module | Purpose |
+|---|---|
+| `std:identity` | `trace_id()`, `session_id()`, `execution_unit_id()` — auto-propagated |
+| `std:effects` | EXACTLY_ONCE idempotency: `resolve`, `pending`, `complete`, `action_id` |
+| `std:sys` | `sys.v1.*` versioned syscall dispatch with uniform `{status, data, error, trace_id}` envelope |
+| `std:memory` | Extended: `recall_from(ns, key)`, `recall_all(ns)`, `share(ns, key, val)` |
+| `std:retry` | `retry.call(func, policy_map)` — wraps nodus-retry (optional dep) |
+| `std:circuit_breaker` | `cb.create/call/state/reset` — wraps nodus-circuit-breaker (optional dep) |
+
 ## Documentation
 
 - [Language Specification](docs/language/LANGUAGE_SPEC.md) — full syntax, types, control flow, imports, coroutines
@@ -119,7 +133,7 @@ print(math.abs(-4))
   "url": "https://github.com/Masterplanner25/nodus-lang",
   "downloadUrl": "https://pypi.org/project/nodus-lang/",
   "license": "https://spdx.org/licenses/MIT.html",
-  "version": "3.0.2",
+  "version": "4.1.0",
   "softwareRequirements": "Python >= 3.10"
 }
 </script>

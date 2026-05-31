@@ -515,27 +515,48 @@ before `nodus` in a fresh process.
 - **Exports:** `SyscallSpec`, `parse_syscall_name()`, `resolve_version()`,
   `validate_input()`, `validate_output()`, `validate_payload()`, extension ABI models.
 
-## Phase 5 publish status (as of 2026-05-30)
+## nodus-sdk companion package
 
-All pre-ship gates passed. The only remaining step is the coordinated publish:
+- Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  99 tests. Unified platform SDK auto-wiring the 27-package ecosystem.
+- **Install:** `pip install nodus-sdk[agent,sql,fastapi]` (extras-based)
+- **Key exports:** `NodusSDKRuntime`, `create_runtime(**kwargs)`, `detect_available()`
+- **9 bridges:** redis, http, llm, observability (wrappers), sql, vector, scheduler, webhook, api (new)
+- **Bridge return type:** host functions return maps not Records — `.nd` must use `r["key"]` not `r.key`
+- **FastAPI bridge:** `create_nodus_router(rt)` → POST /run, GET /health, GET /syscalls, memory CRUD
+- **NodusTraceMiddleware:** reads X-Trace-ID header → `runtime.set_trace_id()`
+- Run tests: `cd C:\dev\nodus-sdk && PYTHONPATH="C:/dev/Coding Language/src" python -m pytest -q`
 
-**Pre-Phase-5 verification completed:**
-- TestPyPI full three-artifact roundtrip: all three from index, site-packages, 14/14 invariants
-- Adversarial gate (SCHED-002 fixed, BUG-A2A-001/002 filed)
-- Pre-ship eval: 5 fix-before-publish items resolved (BUG-EVAL-01–05)
-- Full nodus-lang test suite: 1455 passed
+## nodus-store-sql companion package
 
-**Rebuild state (2026-05-30):**
-- nodus-lang 4.0.0: rebuilt (scheduler.py SCHED-002 fix in wheel)
-- nodus-a2a 0.1.0: rebuilt (README quick-start fix in wheel)
-- nodus-mcp 0.1.0: prior wheel still valid (no code changes)
-- All twine check: PASSED
+- Repo: `C:\dev\nodus-store-sql` / `github.com/Masterplanner25/nodus-store-sql`
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+  47 tests (31 sync + 16 async). Promoted from `packages/nodus-store-sql` incubator scaffold.
+- **Three stores:** `RunStore` (optimistic locking), `EventStore` (append-only), `JobStore` (atomic claiming)
+- **Async:** `AsyncSqlStore` via `sqlalchemy.ext.asyncio`; test with `sqlite+aiosqlite:///:memory:`
+- **Tables:** `nodus_runs`, `nodus_events`, `nodus_jobs`
+- **No Alembic:** `create_all()` is the dev schema bootstrap; production manages migrations independently
+- Run tests: `cd C:\dev\nodus-store-sql && python -m pytest -q`
 
-**Phase 5 publish sequence** (do NOT run until explicitly asked):
-1. `git tag v4.0.0 && git push origin main --tags` (nodus-lang)
-2. Upload nodus-lang 4.0.0 to real PyPI (token from user at upload time)
-3. Confirm `pip install nodus-lang==4.0.0` succeeds
-4. Rebuild nodus-mcp and nodus-a2a against the published nodus-lang 4.0.0
-5. Upload nodus-mcp 0.1.0 and nodus-a2a 0.1.0 (need per-project PyPI tokens)
-6. Create GitHub releases for all three
+## Phase 5/6 publish status (as of 2026-05-30)
+
+nodus-lang is at **4.1.0** (not yet published). The full coordinated publish sequence:
+
+**Current test count:** 1,612 passing (nodus-lang), 2 pre-existing failures
+(`test_resume_goal` — KeyError 'goal', pre-Phase-3 regression;
+`test_worker_death_detection` — timing-sensitive sweeper test).
+
+**Wheels to rebuild before publish:** nodus-lang 4.1.0 wheel must be rebuilt
+(Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp and nodus-a2a
+wheels remain valid (no code changes in those repos).
+
+**Publish sequence** (do NOT run until explicitly asked):
+1. `git tag v4.1.0 && git push origin main --tags` (nodus-lang)
+2. Build fresh wheel: `python -m build`
+3. Upload nodus-lang 4.1.0 to real PyPI (token from user at upload time)
+4. Confirm `pip install nodus-lang==4.1.0` succeeds
+5. Upload nodus-mcp 0.1.0 and nodus-sdk 0.1.0 and nodus-store-sql 0.1.0
+   (nodus-mcp and nodus-a2a are separate repos with their own PyPI tokens)
+6. Create GitHub releases for all published packages
 7. Update ECOSYSTEM_READINESS_ASSESSMENT.md to reflect published status
