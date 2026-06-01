@@ -620,7 +620,11 @@ a close-ordering race. Do not use it directly.
 
 ## Publish sequence (do NOT run until explicitly asked)
 
-Open pre-publish item: **#115** (formatter raw traceback on syntax errors — low severity, fix or defer to 4.0.1). Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
+**PyPI new-project rate limit (learned 2026-05-31):** PyPI enforces a hard cap on new project creation — separate from upload limits. Creating 4+ projects in rapid succession triggers a 429 "Too many new projects created" error with no Retry-After header. Reset window appears to be several hours. Strategy: upload **max 3-4 new packages per session**, wait several hours between sessions. Do NOT batch-upload all 29 at once. All dist/ artifacts can be pre-built without hitting any limit; only the upload step is rate-limited.
+
+**Current publish status (as of 2026-05-31):** nodus-circuit-breaker ✅ nodus-retry ✅ nodus-channels ✅ nodus-protocol ✅ — all others pending. nodus-native-memory-engine blocked by Windows Application Control policy (Rust build step) — needs admin/policy-relaxed context.
+
+Open pre-publish item: ~~#115~~ FIXED. Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
 Round 1 — Zero-dep standalone packages (publish first; no install-order risk):
 ```
