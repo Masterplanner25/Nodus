@@ -41,7 +41,6 @@ classifiers = [
 dependencies = [
     "tzdata>=2024.1",
     "httpx>=0.27,<1",
-    "nodus-retry>=0.1.0",
 ]
 
 [project.scripts]
@@ -60,6 +59,9 @@ server = [
 ]
 schema = [
   "pydantic>=2,<3",
+]
+retry = [
+  "nodus-retry>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]
