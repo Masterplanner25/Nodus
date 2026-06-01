@@ -226,12 +226,16 @@ def _mark_wait_from_result(
     wait = result.get("wait")
     if not isinstance(wait, dict):
         return
+    _et = wait.get("event_type")
+    _ck = wait.get("correlation_key")
+    _pl = wait.get("payload")
+    _dl = wait.get("deadline_ms")
     runner.mark_waiting(
         graph_id,
-        event_type=wait.get("event_type") if isinstance(wait.get("event_type"), str) else "workflow.wait",
-        correlation_key=wait.get("correlation_key") if isinstance(wait.get("correlation_key"), str) else None,
-        payload=wait.get("payload") if isinstance(wait.get("payload"), dict) else {},
-        deadline_ms=wait.get("deadline_ms") if isinstance(wait.get("deadline_ms"), (int, float)) else None,
+        event_type=_et if isinstance(_et, str) else "workflow.wait",
+        correlation_key=_ck if isinstance(_ck, str) else None,
+        payload=_pl if isinstance(_pl, dict) else {},
+        deadline_ms=_dl if isinstance(_dl, (int, float)) else None,
     )
 
 
@@ -247,16 +251,24 @@ def _mark_retry_from_result(
     retry = result.get("retry")
     if not isinstance(retry, dict):
         return
+    _tid = retry.get("task_id")
+    _step = retry.get("step")
+    _att = retry.get("attempt")
+    _mr = retry.get("max_retries")
+    _dl = retry.get("delay_ms")
+    _na = retry.get("next_attempt_at")
+    _cls = retry.get("classification")
+    _le = retry.get("last_error")
     runner.store.schedule_retry(
         graph_id,
-        task_id=retry.get("task_id") if isinstance(retry.get("task_id"), str) else None,
-        step_name=retry.get("step") if isinstance(retry.get("step"), str) else None,
-        attempt=float(retry.get("attempt")) if isinstance(retry.get("attempt"), (int, float)) else None,
-        max_retries=float(retry.get("max_retries")) if isinstance(retry.get("max_retries"), (int, float)) else None,
-        delay_ms=float(retry.get("delay_ms")) if isinstance(retry.get("delay_ms"), (int, float)) else None,
-        next_attempt_at=float(retry.get("next_attempt_at")) if isinstance(retry.get("next_attempt_at"), (int, float)) else None,
-        classification=retry.get("classification") if isinstance(retry.get("classification"), str) else None,
-        last_error=retry.get("last_error") if isinstance(retry.get("last_error"), str) else None,
+        task_id=_tid if isinstance(_tid, str) else None,
+        step_name=_step if isinstance(_step, str) else None,
+        attempt=float(_att) if isinstance(_att, (int, float)) else None,
+        max_retries=float(_mr) if isinstance(_mr, (int, float)) else None,
+        delay_ms=float(_dl) if isinstance(_dl, (int, float)) else None,
+        next_attempt_at=float(_na) if isinstance(_na, (int, float)) else None,
+        classification=_cls if isinstance(_cls, str) else None,
+        last_error=_le if isinstance(_le, str) else None,
     )
 
 
@@ -521,7 +533,8 @@ class WorkflowFrameworkRunner:
             }
         )
         record.metadata["replay_history"] = replay_history
-        record.metadata["replay_count"] = int(record.metadata.get("replay_count", 0) or 0) + 1
+        _rc = record.metadata.get("replay_count")
+        record.metadata["replay_count"] = (int(_rc) if isinstance(_rc, (int, str)) else 0) + 1
         record.metadata["last_replayed_at"] = revived_at
         record.metadata.pop("wait_timeout", None)
         record.status = next_status
@@ -533,7 +546,11 @@ class WorkflowFrameworkRunner:
 
     def start_graph(self, vm, graph: TaskGraph):
         graph = register_graph(graph)
-        register_graph_vm(graph.graph_id, vm)
+        _gid = graph.graph_id
+        if not isinstance(_gid, str):
+            return vm.make_err("workflow_error", "Workflow graph has no ID")
+        graph_id: str = _gid
+        register_graph_vm(graph_id, vm)
         metadata = _metadata_from_graph(graph, vm)
         workflow_name = metadata.get("workflow_name")
         if not isinstance(workflow_name, str):
@@ -542,21 +559,21 @@ class WorkflowFrameworkRunner:
         if not isinstance(execution_kind, str):
             execution_kind = None
         self.store.create_run(
-            run_id=graph.graph_id,
-            graph_id=graph.graph_id,
+            run_id=graph_id,
+            graph_id=graph_id,
             workflow_name=workflow_name,
             execution_kind=execution_kind,
             metadata=metadata,
         )
         owner = f"vm:{id(vm)}"
-        claim = self.store.claim_run(graph.graph_id, owner=owner)
+        claim = self.store.claim_run(graph_id, owner=owner)
         if claim is None:
             return vm.make_err(
                 "workflow_error",
-                f"Workflow run '{graph.graph_id}' is already claimed",
-                payload={"category": "workflow_claim_conflict", "graph_id": graph.graph_id},
+                f"Workflow run '{graph_id}' is already claimed",
+                payload={"category": "workflow_claim_conflict", "graph_id": graph_id},
             )
-        record = self.store.get_run(graph.graph_id)
+        record = self.store.get_run(graph_id)
         if record is not None:
             record.status = RUN_STATUS_RUNNING
             record.claim = claim
@@ -565,7 +582,7 @@ class WorkflowFrameworkRunner:
         try:
             result = run_task_graph(vm, graph)
             status, last_error = _result_status(result)
-            record = self.store.get_run(graph.graph_id)
+            record = self.store.get_run(graph_id)
             if record is not None:
                 record.status = status
                 record.last_error = last_error
@@ -576,12 +593,12 @@ class WorkflowFrameworkRunner:
                     _mark_terminal_retry_from_result(record, result)
                 self.store.save_run(record)
             if status == RUN_STATUS_WAITING:
-                _mark_wait_from_result(self, graph.graph_id, result)
+                _mark_wait_from_result(self, graph_id, result)
             if status == RUN_STATUS_RETRY_SCHEDULED:
-                _mark_retry_from_result(self, graph.graph_id, result)
+                _mark_retry_from_result(self, graph_id, result)
             return result
         finally:
-            self.store.release_claim(graph.graph_id, claim.token)
+            self.store.release_claim(graph_id, claim.token)
 
     def resume_workflow(
         self,

@@ -4,7 +4,19 @@ from __future__ import annotations
 
 import json
 
-from nodus_retry.effect import compute_action_id
+try:
+    from nodus_retry.effect import compute_action_id
+except ImportError:
+    import hashlib as _hashlib
+    import json as _json
+
+    def compute_action_id(action_type: str, input_payload: dict, *, scope: str) -> str:  # type: ignore[misc]
+        payload_bytes = _json.dumps(
+            {"action_type": action_type, "payload": input_payload, "scope": scope},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return _hashlib.sha256(payload_bytes).hexdigest()
 from nodus.vm.vm import Record
 
 
