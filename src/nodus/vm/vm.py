@@ -61,8 +61,6 @@ from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
-from nodus_lang_workflow.runner import get_default_workflow_runner
-
 
 _DEFERRED_NONE = object()  # sentinel: no deferred return pending
 _FINALLY_GATE = -1         # handler_ip sentinel: RETURN defers to finally; exception propagates past
@@ -1114,6 +1112,7 @@ class VM:
         if not is_workflow_value(workflow):
             self.runtime_error("type", "run_workflow(workflow) expects a workflow")
         graph = workflow_to_graph(self, workflow, init_state=True)
+        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_workflow(self, workflow):
@@ -1143,6 +1142,7 @@ class VM:
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects checkpoint as string or nil")
         if resume_payload is not None and not isinstance(resume_payload, dict):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects payload as map or nil")
+        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().resume_workflow(
             self,
             graph_id,

@@ -56,6 +56,9 @@ When two documents make conflicting claims, the document higher in this list win
 → `docs/runtime/ARCHITECTURE.md` (compiler and VM pipeline)
 → `docs/runtime/RUNTIME.md` (VM internals)
 
+### "Why is Nodus the right execution substrate for the Infinity Algorithm?"
+→ `docs/architecture/INFINITY_PATTERN_MAPPING.md`
+
 ### "How do workflows and coroutines work?"
 → `docs/runtime/WORKFLOWS.md`
 → `docs/runtime/ARCHITECTURE.md §Workflow Orchestration`
@@ -123,6 +126,14 @@ When two documents make conflicting claims, the document higher in this list win
 | `docs/language/DESIGN.md` | Design decisions and principles |
 | `docs/language/STYLE_GUIDE.md` | Nodus style guide |
 | `docs/language/FORMAT.md` | Formatter behavior |
+
+---
+
+## Architecture documents
+
+| Document | Role |
+|----------|------|
+| `docs/architecture/INFINITY_PATTERN_MAPPING.md` | Verified structural mapping of the Nodus runtime to the Infinity Algorithm pattern (execution layer vs. decision layer) |
 
 ---
 

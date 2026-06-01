@@ -274,3 +274,4 @@ Most of these invariants have direct test coverage. Known test gaps:
 - `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md` — what happens when invariants are violated
 - `docs/governance/TECH_DEBT.md` — open items that may affect invariants
 - `docs/governance/TEST_GAP_BACKLOG.md` — invariant test gaps
+- `docs/architecture/INFINITY_PATTERN_MAPPING.md` — structural analysis: `scheduler.run_loop()` is the execution-layer instantiation of the Infinity recurrence operator R; the full runtime maps to I→T→C→R→O→Feedback

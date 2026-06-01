@@ -1,11 +1,5 @@
 # Nodus — Claude Instructions
 
-## Project identity
-
-Nodus (`nodus-lang` on PyPI) is a bytecode-compiled scripting language and
-runtime implemented in Python. Working directory: `C:\dev\Coding Language`.
-Source lives under `src/nodus/`. Tests under `tests/`.
-
 ## Running code during development
 
 The project `.venv` has an older PyPI install that takes precedence over
@@ -248,11 +242,7 @@ allowlist OR are fixed before release.
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
-  All 14 phases done (Phase 1 design docs + Phases A–N implementation).
-  361 tests pass (Phase A–N nodus-lang adapter + aindy bridge adapter tests).
-  BYTECODE_VERSION 4, no new opcodes.
-  Publication waits for nodus-a2a v0.1.0 (coordinated three-artifact launch).
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.** BYTECODE_VERSION 4, no new opcodes.
 - **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
   `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
   The pyproject.toml `where = ["src"]` installs the Phase A–N library; the aindy
@@ -271,23 +261,11 @@ allowlist OR are fixed before release.
   - TD-008: `_validate_args` is top-level type checking only (not full JSON Schema)
   - TD-009: resource read handler must raise `KeyError` for unknown URI → -32601
   - TD-010: `requestState` is on the wire; never checkpoint secrets in sentinel state
-- **Next: coordinated three-artifact publication** — nodus-lang 4.0.0 + nodus-mcp 0.1.0.
-  ⚠️ **nodus-a2a v0.1.0 (A2A wire protocol adapter) was REPLACED at `C:\dev\nodus-a2a`.**
-  The original 180-test A2A protocol adapter is preserved on GitHub
-  (`github.com/Masterplanner25/nodus-a2a`) but local code is now the Tier 2
-  AgentCoordinator. Treat as a two-artifact coordinated launch (nodus-lang + nodus-mcp).
+- **Next: two-artifact coordinated launch** — nodus-lang 4.0.0 + nodus-mcp 0.1.0.
 
 ## nodus-a2a companion library
 
-⚠️ **LOCAL REPO REPLACED.** The original A2A wire protocol adapter (Phases A–J, 180 tests,
-published-ready) was overwritten at `C:\dev\nodus-a2a` by the Tier 2 AgentCoordinator
-standalone package. The original code is preserved at
-`github.com/Masterplanner25/nodus-a2a` (git history intact).
-
-**Original A2A wire protocol adapter (on GitHub, NOT at local path):**
-- 180 tests, nodus-lang dep, A2A 1.0 spec (message-only, HTTP+JSON/REST)
-- `/.well-known/agent-card.json`, `application/a2a+json`, stdlib `ThreadingHTTPServer`
-- Skill `/nodus-a2a-phase` references this version
+⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-a2a` is the Tier 2 AgentCoordinator (23 tests, no nodus-lang dep). Original A2A wire protocol adapter (180 tests, nodus-lang dep) is preserved at `github.com/Masterplanner25/nodus-a2a`.
 
 **Current local `C:\dev\nodus-a2a` (AgentCoordinator layer, 23 tests):**
 - `AgentRegistry`, `AgentCoordinator` (local/delegate mode), `DelegationRequest`
@@ -368,15 +346,7 @@ nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHAN
 
 ## nodus-memory companion library
 
-⚠️ **LOCAL REPO REPLACED.** The original nodus-lang-integrated memory adapter (Phases A–K,
-192 tests, hatchling, `src/` layout, nodus-lang dep) was overwritten at `C:\dev\nodus-memory`
-by the Tier 2 full memory library. Original preserved on GitHub.
-
-**Original nodus-lang adapter (on GitHub, NOT at local path):**
-- 192 tests, nodus-lang dep, Phases A–K, hatchling build, `src/nodus_memory/` layout
-- `MemoryStore`, `MemoryConfig`, `attach_to_runtime(runtime, store)`, `nm_*` host functions
-- `import "nodus-memory"` → `share`, `recall_from`, `forget`, `tag`, `link`, `recall_all`
-- Skill `/nodus-memory-phase` v0.2 plan targets this architecture
+⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-memory` is the Tier 2 full memory library (28 tests). Original nodus-lang adapter (192 tests, `attach_to_runtime`, `nm_*` host functions, `import "nodus-memory"`) is preserved at `github.com/Masterplanner25/nodus-memory`.
 
 **Current local `C:\dev\nodus-memory` (Tier 2 full library, 28 tests):**
 - `MemoryNode`, `InMemoryStore`, MAS `build_path()`/`glob_match()`
@@ -388,23 +358,15 @@ by the Tier 2 full memory library. Original preserved on GitHub.
 ## nodus-native-memory-engine companion library
 
 - Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
-  PyO3/Maturin Rust extension. 76 tests. Pure-Python fallback for all 9 operations.
-  Publication follows nodus-memory.
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
 - **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
   Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
-- **9 operations:** `cosine_similarity`, `batch_cosine_similarity`, `compute_weight`,
-  `batch_compute_weights`, `argsort_by_weight`, `traverse_chain`, `would_create_cycle`,
-  `rank_by_similarity`, `rank_blended`
-- `is_native()` → True when Rust extension loaded; falls back to pure Python silently.
 - Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
 
 ## nodus-extension companion library
 
 - Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
-  Phases A–J done. 126 tests, 93% coverage. BYTECODE_VERSION 4, no new opcodes.
-  Publication follows nodus-memory.
+- **Status: v0.1.0 COMPLETE — prepared, not yet published.** BYTECODE_VERSION 4, no new opcodes.
 - **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
   write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
 - **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
@@ -481,36 +443,9 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 | nodus-extensions | 35 | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
 | nodus-governance | 28 | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
 
-### Repo alignment status (2026-05-31)
+### Dependency audit (critical pattern)
 
-All 29 standalone packages have been aligned to a standard repo structure:
-README, CHANGELOG, LICENSE, CONTRIBUTING, SECURITY, correct `.gitignore`,
-correct `pyproject.toml` (URLs, testpaths, dev extra). All have GitHub repos
-under Masterplanner25. Do not assume new packages are aligned — run a survey
-before working on any new standalone package.
-
-### Dependency audit findings (critical pattern)
-
-During the repo alignment sweep, **many packages declared required deps that
-had zero runtime imports.** The pattern: dep was imported via `TYPE_CHECKING`,
-`try/except ImportError`, or injected as a constructor parameter — all meaning
-the package works without it. Fixed packages and what was removed:
-
-| Package | Wrong deps removed |
-|---|---|
-| nodus-agent | nodus-llm, nodus-memory, nodus-events, nodus-retry, nodus-state, nodus-mcp, nodus-a2a, nodus-approvals (all 8) |
-| nodus-extensions | nodus-schema, nodus-observability (both) |
-| nodus-gateway | nodus-protocol, nodus-session, nodus-router, nodus-channels, nodus-agent, nodus-events (6 of 7; websockets → optional) |
-| nodus-governance | nodus-auth, nodus-approvals, nodus-events (all 3) |
-| nodus-llm | nodus-circuit-breaker (TYPE_CHECKING only) |
-| nodus-memory | nodus-events (Tier 2 has no external imports) |
-| nodus-observability | python-json-logger (try/except ImportError fallback) |
-| nodus-router | nodus-session (try/except ImportError fallback) |
-| nodus-workflow | nodus-events, nodus-queue, nodus-retry, nodus-state (all 4) |
-
-**Rule:** Before adding a dep, check that it has a module-level unconditional
-import with no fallback. `TYPE_CHECKING`, `try/except ImportError`, and
-constructor injection all mean optional.
+**Rule — before adding a dep:** Check that it has a module-level unconditional import with no fallback. `TYPE_CHECKING`, `try/except ImportError`, and constructor injection all mean optional.
 
 ### `.nodus/` cache in standalone packages
 
@@ -658,22 +593,22 @@ rt = NodusRuntime()
 rt = NodusRuntime(timeout_ms=None, max_steps=None)
 ```
 
-**EMBED-002 (#98, CLOSED — false alarm) — `on_error` hook IS functional:**
-`NodusRuntime` exposes `on_error` as a constructor parameter. It works correctly:
-`NodusRuntime(timeout_ms=None, on_error=lambda co, e: errors.append(str(e)))`.
-When a coroutine throws, the hook fires, other coroutines continue, and the caller
-can distinguish error-death from normal completion. Issue #98 was filed in error.
-
 **EMBED-003 (#99, open) — `subprocess_spawn` thread leak:**
 Two daemon pump threads are created per `subprocess_spawn`. If `run_loop` exits
 before the subprocess terminates (output channel never consumed), threads accumulate.
 They're daemon threads so they don't block exit, but they pile up per session.
 No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
 
-**EMBED-004 (#100, open) — `*_async` builtins are fully serial:**
-`http_get_async`, `subprocess_run_async` etc. block the GIL. Five concurrent 200ms
-HTTP calls take ~1s total, not 200ms. The genuine concurrency path is `subprocess_spawn`
-+ channel reads via `_io_channels` daemon threads — not `*_async` builtins.
+**EMBED-004 (#100, RESOLVED) — `*_async` builtins and stdlib wrappers are truly concurrent:**
+`http_get_async`, `subprocess_run_async` and all `std:http` / `std:subprocess` async
+wrappers use the thread+channel suspension pattern — they suspend the calling coroutine
+and resume it when the I/O completes. Five concurrent calls run in parallel, not serial.
+
+**SPAWN-001 (#116, open) — `spawn().wait_async()` is sync:**
+The `wait_async()` method on a spawned process record is a direct alias for `wait()` —
+it blocks the scheduler thread instead of suspending the coroutine. Fix: apply the same
+thread+channel pattern used by `_do_async_run`. Falls back to `wait()` outside a
+scheduler context. Low severity; does not affect `subprocess_run_async`.
 
 **CHAN-001 (open) — silent coroutine orphan on empty `recv()`:**
 A coroutine blocked on `recv()` of an empty channel is silently stranded — `run_loop`
@@ -683,31 +618,9 @@ exits when it sees no pending work. The only workaround is:
 The `_io_channels` workaround requires touching a private scheduler attribute and has
 a close-ordering race. Do not use it directly.
 
-## Phase 5/6 publish status (as of 2026-06-01)
+## Publish sequence (do NOT run until explicitly asked)
 
-nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented
-beyond original scope). Last published PyPI release: **v3.0.2**.
-
-**Gate 10 creator validation: COMPLETE** (2026-06-01, commit `aaa8662`).
-Results in `docs/evals/v4.0.0/CREATOR_VALIDATION.md`. All 8 adversarial
-categories passed. One open pre-publish item: **#115** (formatter raw
-traceback on syntax errors — low severity, decide to fix or defer to 4.0.1).
-
-**Current test count:** 1,645 passing (nodus-lang), 0 pre-existing failures
-(test_resume_goal fixed 2026-05-31; test_worker_death_detection is flaky/timing-sensitive
-but passes individually; mypy: 0 errors across 114 files, gate is blocking).
-
-**nodus-retry is now an optional dependency** — declared under
-`[project.optional-dependencies] retry`. Install with `nodus-lang[retry]`
-to get the real nodus-retry implementation; the runtime falls back to a
-built-in `InMemoryEffectStore` when nodus-retry is absent.
-
-**Wheel status:** nodus-lang 4.0.0 wheel is built and validated against the
-Gate 10 creator validation. Rebuild is only needed if new source changes are
-made before publish. nodus-mcp wheel remains valid. All other packages need
-initial wheels.
-
-**Publish sequence** (do NOT run until explicitly asked):
+Open pre-publish item: **#115** (formatter raw traceback on syntax errors — low severity, fix or defer to 4.0.1). Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
 Round 1 — Zero-dep standalone packages (publish first; no install-order risk):
 ```

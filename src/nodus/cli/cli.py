@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
+from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.bytecode_cache import clear_bytecode_cache
 from nodus.runtime.dependency_graph import DependencyGraph
@@ -1069,7 +1070,16 @@ def _format_file(path: str, *, check_only: bool = False, keep_trailing: bool = F
         _print_stderr(f"File not found: {path}")
         return 1
     original = _read_file(path)
-    formatted = format_source(original, keep_trailing_comments=keep_trailing)
+    try:
+        formatted = format_source(original, keep_trailing_comments=keep_trailing)
+    except LangSyntaxError as e:
+        location = path
+        if e.line is not None and e.col is not None:
+            location = f"{path}:{e.line}:{e.col}"
+        elif e.line is not None:
+            location = f"{path}:{e.line}"
+        _print_stderr(f"Syntax error at {location}: {e}")
+        return 1
     if check_only:
         if formatted != original.replace("\r\n", "\n").replace("\r", "\n"):
             _print_stderr(f"File not formatted: {path}")
