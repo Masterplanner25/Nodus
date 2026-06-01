@@ -2,7 +2,7 @@ Prepare and execute a Nodus release. Walks through every step in order,
 verifying state before proceeding.
 
 Arguments: $ARGUMENTS
-(Pass the target version, e.g. `2.2.0` or `2.1.2`. If omitted, determine
+(Pass the target version, e.g. `4.0.0`. If omitted, determine
 from context or ask.)
 
 ## Pre-flight checks
@@ -18,6 +18,9 @@ Before touching any files:
 4. Read `src/nodus/support/version.py` — note current version
 5. Read `[Unreleased]` section of `CHANGELOG.md` — confirm there is
    content to release
+6. Check `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` exists — Gate 10 must
+   be complete before publishing. If it doesn't exist, run the Gate 10
+   protocol from `docs/governance/EVAL_PREPUBLISH.md` first.
 
 ## Step 1 — Determine version bump type
 
@@ -84,20 +87,24 @@ Remove-Item -Recurse -Force dist, build -ErrorAction SilentlyContinue
 
 Expected: `PASSED` for both the `.tar.gz` and `.whl`.
 
-## Step 7 — Runtime validation
+## Step 7 — Gate 10 creator validation (against the built wheel)
 
-```
-PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/nodus.exe" --version
+Build a fresh validation venv and run all 3 standard eval scripts:
+
+```powershell
+python -m venv .venv-validation
+.venv-validation/Scripts/pip install dist/nodus_lang-X.Y.Z-py3-none-any.whl
+.venv-validation/Scripts/nodus --version   # must match X.Y.Z
+.venv-validation/Scripts/nodus run tests/eval/quirk_probe.nd
+.venv-validation/Scripts/nodus run tests/eval/language_exerciser.nd
+.venv-validation/Scripts/nodus run tests/eval/framework_capabilities.nd
 ```
 
-Then reinstall from the built wheel and verify again:
+All three must print their success message (`ALL QUIRKS CONFIRMED` etc.).
+Any failure is a regression — stop and investigate before uploading.
 
-```
-"C:/dev/Coding Language/.venv/Scripts/pip.exe" install dist/*.whl --force-reinstall
-nodus --version
-```
-
-Both should report `nodus X.Y.Z`.
+See `docs/governance/EVAL_PREPUBLISH.md` for the full 8-category adversarial
+protocol. Results go in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`.
 
 ## Step 8 — Upload to PyPI
 
@@ -112,36 +119,15 @@ After upload, confirm the new version appears on PyPI.
 
 ## Step 9 — GitHub release
 
-Create a release via the GitHub API (gh CLI not installed):
+`gh` CLI is installed and authenticated as Masterplanner25. Use it directly:
 
-```python
-import urllib.request, json
+```powershell
+gh release create vX.Y.Z --title "Nodus vX.Y.Z" --notes "<release notes from CHANGELOG>"
+```
 
-token = '<token from git credential fill>'
-headers = {
-    'Accept': 'application/vnd.github+json',
-    'Authorization': f'Bearer {token}',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'nodus-dev',
-    'Content-Type': 'application/json'
-}
-
-payload = {
-    'tag_name': 'vX.Y.Z',
-    'name': 'Nodus vX.Y.Z',
-    'body': '<release notes from CHANGELOG>',
-    'draft': False,
-    'prerelease': False
-}
-
-body = json.dumps(payload).encode()
-req = urllib.request.Request(
-    'https://api.github.com/repos/Masterplanner25/Nodus/releases',
-    data=body, headers=headers, method='POST'
-)
-with urllib.request.urlopen(req) as r:
-    result = json.loads(r.read())
-    print(result['html_url'])
+Or to use a notes file:
+```powershell
+gh release create vX.Y.Z --title "Nodus vX.Y.Z" --notes-file /tmp/release_notes.md
 ```
 
 ## Post-release checklist
@@ -151,3 +137,4 @@ with urllib.request.urlopen(req) as r:
 - [ ] GitHub release is published with correct tag
 - [ ] `COMPATIBILITY.md` updated
 - [ ] `CHANGELOG.md` has `[Unreleased]` section ready for next cycle
+- [ ] `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` committed and pushed

@@ -121,6 +121,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
 | Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
+| Eval results (per-version) | `docs/evals/` — e.g. `docs/evals/v4.0.0/CREATOR_VALIDATION.md` |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
 | Issue response policy | `docs/governance/ISSUE_RESPONSE_POLICY.md` |
 | AI discoverability (canonical map) | `llms.txt` |
@@ -298,7 +299,24 @@ These burn time when forgotten:
 
 - **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
 - **No `+=` operator.** Use `x = x + 1i`. In closures, you can't assign
-  outer `let` variables at all — use a map and mutate a field: `state.count = state.count + 1i`.
+  outer `let` variables at all — use a **map** with quoted keys and mutate via
+  bracket notation: `state["count"] = state["count"] + 1i`.
+  (The pattern uses `{"count": 0i}` — quoted-key map — NOT `{count: 0i}` record.)
+- **Maps vs Records — dot vs bracket notation:**
+  - `{"key": val}` (quoted keys) → **map** → access with `state["key"]`
+  - `{key: val}` (unquoted keys) → **record** → access with `state.key`
+  - Mixing them causes "Field access is only supported on records" or
+    "Indexing is only supported on lists and maps". Never use dot on a map.
+- **`run_workflow()` and `run_goal()` return maps** — use bracket notation:
+  `result["steps"]`, `result["failed"]`, `result["goal"]`. NOT `result.steps`.
+- **Channels are built-in functions, NOT a stdlib module.** `import "std:channel"`
+  fails with "Import not found". Use built-ins directly: `channel()`, `send(ch, val)`,
+  `recv(ch)`, `close(ch)`. No import needed.
+- **Workflow step dependencies use `after` keyword:**
+  `step b after a { ... }` — not `depends_on`, not any other syntax.
+- **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
+  `step a { checkpoint "mid"; return "done" }` — correct.
+  `workflow w { checkpoint "mid"; step a { ... } }` — syntax error.
 - **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
   Skipping either flush or the advance causes the test to pass vacuously.
 - **`spawn()` takes a coroutine value**, not a function literal. Use
@@ -312,6 +330,10 @@ These burn time when forgotten:
   a record with methods; call `.to_hex()` to get hex: `hash.sha256(data).to_hex()`.
 - **`std:tool` names must be dotted.** `tool.register({name:"greet",...})` silently
   returns an error. Use `"myapp.greet"`. Error message says "must use dotted namespacing".
+- **`http.get()` and `subprocess.run()` return records** — use dot notation:
+  `result.status`, `result.body`, `result.ok` (http); `result.stdout`, `result.exit_code` (subprocess).
+- **CLI sandbox flag is `--allow-paths`** (not `--allowed-paths`). Relative paths
+  resolve against CWD. To block a specific subdir, pass an explicit absolute path.
 - **Coroutine execution limits (scheduler quirk):** The default 200ms deadline
   (`EXECUTION_TIMEOUT_MS=200`) counts wall-clock time including cooperative sleep.
   A coroutine that sleeps 4 × 100ms will be killed after 200ms total even though it
@@ -635,12 +657,11 @@ rt = NodusRuntime()
 rt = NodusRuntime(timeout_ms=None, max_steps=None)
 ```
 
-**EMBED-002 (#98, open) — No `on_error` hook:**
-`NodusRuntime` does not expose `Scheduler.run_loop`'s `on_error` parameter. After
-`run_source()` returns, a coroutine that died from an error and one that completed
-normally are indistinguishable (`state="finished"`, `last_result=None` for both).
-Workaround: require handlers to catch their own errors and write structured error
-records to a result channel (in-Nodus catch pattern).
+**EMBED-002 (#98, CLOSED — false alarm) — `on_error` hook IS functional:**
+`NodusRuntime` exposes `on_error` as a constructor parameter. It works correctly:
+`NodusRuntime(timeout_ms=None, on_error=lambda co, e: errors.append(str(e)))`.
+When a coroutine throws, the hook fires, other coroutines continue, and the caller
+can distinguish error-death from normal completion. Issue #98 was filed in error.
 
 **EMBED-003 (#99, open) — `subprocess_spawn` thread leak:**
 Two daemon pump threads are created per `subprocess_spawn`. If `run_loop` exits
@@ -661,18 +682,29 @@ exits when it sees no pending work. The only workaround is:
 The `_io_channels` workaround requires touching a private scheduler attribute and has
 a close-ordering race. Do not use it directly.
 
-## Phase 5/6 publish status (as of 2026-05-31)
+## Phase 5/6 publish status (as of 2026-06-01)
 
 nodus-lang is at **4.0.0** (not yet published; pre-release additions implemented
 beyond original scope). Last published PyPI release: **v3.0.2**.
+
+**Gate 10 creator validation: COMPLETE** (2026-06-01, commit `aaa8662`).
+Results in `docs/evals/v4.0.0/CREATOR_VALIDATION.md`. All 8 adversarial
+categories passed. One open pre-publish item: **#115** (formatter raw
+traceback on syntax errors — low severity, decide to fix or defer to 4.0.1).
 
 **Current test count:** 1,645 passing (nodus-lang), 0 pre-existing failures
 (test_resume_goal fixed 2026-05-31; test_worker_death_detection is flaky/timing-sensitive
 but passes individually; mypy: 0 errors across 114 files, gate is blocking).
 
-**Wheels to rebuild before publish:** nodus-lang 4.0.0 wheel must be rebuilt
-(Phase 6 + Phase A-D changes since the 4.0.0 wheel). nodus-mcp wheel remains
-valid (no code changes). All other packages need initial wheels.
+**nodus-retry is now an optional dependency** — declared under
+`[project.optional-dependencies] retry`. Install with `nodus-lang[retry]`
+to get the real nodus-retry implementation; the runtime falls back to a
+built-in `InMemoryEffectStore` when nodus-retry is absent.
+
+**Wheel status:** nodus-lang 4.0.0 wheel is built and validated against the
+Gate 10 creator validation. Rebuild is only needed if new source changes are
+made before publish. nodus-mcp wheel remains valid. All other packages need
+initial wheels.
 
 **Publish sequence** (do NOT run until explicitly asked):
 
