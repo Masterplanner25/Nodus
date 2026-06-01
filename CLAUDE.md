@@ -604,7 +604,7 @@ No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
 wrappers use the thread+channel suspension pattern — they suspend the calling coroutine
 and resume it when the I/O completes. Five concurrent calls run in parallel, not serial.
 
-**SPAWN-001 (#116, open) — `spawn().wait_async()` is sync:**
+**SPAWN-001 (#117, open) — `spawn().wait_async()` is sync:**
 The `wait_async()` method on a spawned process record is a direct alias for `wait()` —
 it blocks the scheduler thread instead of suspending the coroutine. Fix: apply the same
 thread+channel pattern used by `_do_async_run`. Falls back to `wait()` outside a
