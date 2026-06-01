@@ -33,6 +33,11 @@ except ImportError:
             with self._lock:
                 if action_id in self._records:
                     self._records[action_id].update({"status": status, "result": result})
+
+        def __len__(self) -> int:
+            with self._lock:
+                return len(self._records)
+
 import threading
 import time
 from dataclasses import dataclass

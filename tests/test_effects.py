@@ -3,6 +3,8 @@
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
@@ -23,6 +25,7 @@ def _run(rt, src):
 # ---------------------------------------------------------------------------
 
 def test_vm_has_effect_store():
+    pytest.importorskip("nodus_retry")
     vm = VM([], {}, code_locs=[])
     from nodus_retry.effect import InMemoryEffectStore
     assert isinstance(vm.effect_store, InMemoryEffectStore)
@@ -36,6 +39,7 @@ def test_effect_store_resolve_unseen_is_not_done():
 
 
 def test_effect_store_pending_then_complete_success():
+    pytest.importorskip("nodus_retry")
     vm = VM([], {}, code_locs=[])
     from nodus_retry.effect import compute_action_id
     aid = compute_action_id("test.op", {"x": 1}, scope="run-1")
@@ -47,6 +51,7 @@ def test_effect_store_pending_then_complete_success():
 
 
 def test_effect_store_failed_not_cached():
+    pytest.importorskip("nodus_retry")
     vm = VM([], {}, code_locs=[])
     from nodus_retry.effect import compute_action_id
     aid = compute_action_id("test.op", {}, scope="run-fail")
@@ -174,6 +179,7 @@ safe_write("idem_key", "second", "run-001")
 
 
 def test_set_effect_store_python_host():
+    pytest.importorskip("nodus_retry")
     from nodus_retry.effect import InMemoryEffectStore
     custom_store = InMemoryEffectStore()
     rt = _rt()

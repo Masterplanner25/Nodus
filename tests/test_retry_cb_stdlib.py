@@ -4,6 +4,8 @@ import sys
 import os
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
@@ -31,11 +33,13 @@ def test_cb_available_false_when_not_installed():
 
 
 def test_retry_available_returns_true():
+    pytest.importorskip("nodus_retry")
     out, _ = _run('import "std:retry" as retry\nprint(retry.available())')
     assert out == "true"
 
 
 def test_cb_available_returns_true():
+    pytest.importorskip("nodus_circuit_breaker")
     out, _ = _run('import "std:circuit_breaker" as cb\nprint(cb.available())')
     assert out == "true"
 
@@ -45,6 +49,7 @@ def test_cb_available_returns_true():
 # ---------------------------------------------------------------------------
 
 def test_cb_create_and_state():
+    pytest.importorskip("nodus_circuit_breaker")
     out, _ = _run('''
 import "std:circuit_breaker" as cb
 cb.create("test_cb1", 3i, 60i)
@@ -54,6 +59,7 @@ print(cb.state("test_cb1"))
 
 
 def test_cb_opens_after_threshold():
+    pytest.importorskip("nodus_circuit_breaker")
     out, _ = _run('''
 import "std:circuit_breaker" as cb
 cb.create("fail_cb1", 2i, 60i)
@@ -67,6 +73,7 @@ print(cb.state("fail_cb1"))
 
 
 def test_cb_reset_closes_open_cb():
+    pytest.importorskip("nodus_circuit_breaker")
     out, _ = _run('''
 import "std:circuit_breaker" as cb
 cb.create("reset_cb1", 1i, 60i)
@@ -86,6 +93,7 @@ print(cb.state("reset_cb1"))
 # ---------------------------------------------------------------------------
 
 def test_retry_call_success():
+    pytest.importorskip("nodus_retry")
     out, _ = _run('''
 import "std:retry" as retry
 let f = fn() { return "done" }
@@ -96,6 +104,7 @@ print(result)
 
 
 def test_retry_call_retries_on_transient_failure():
+    pytest.importorskip("nodus_retry")
     rt = _rt()
     result = rt.run_source('''
 import "std:retry" as retry
