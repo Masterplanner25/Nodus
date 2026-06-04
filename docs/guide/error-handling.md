@@ -72,6 +72,24 @@ Missing map key: "missing"
 ["at <main> (script.nd:3:5)"]
 ```
 
+**Stdlib-returned err records.** Some stdlib functions return err records as values
+instead of throwing — for example `json.parse` returns an err record on invalid JSON,
+and `math.sqrt(-1)` returns an err record for a domain error. These have the same shape
+as caught errors. The `kind`, `message`, and `payload` fields are always reliable.
+The `path`, `line`, and `column` fields are present but may point to stdlib internals
+rather than your call site. Treat them as diagnostic hints rather than authoritative
+locations. Use `type(result) == "error"` to detect returned err records.
+
+```nd
+import "std:json" as json
+
+let result = json.parse("{bad")
+if (type(result) == "error") {
+    print(result.kind)    // "parse_error"
+    print(result.message) // "invalid JSON at line 1 column 2: ..."
+}
+```
+
 ### finally semantics
 
 `finally` runs after `try` completes (with or without an error) and after

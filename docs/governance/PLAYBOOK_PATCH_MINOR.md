@@ -198,7 +198,20 @@ trying to find failures. The goal is to find every fixable bug before users enco
    python -m venv .venv-validation
    .venv-validation/Scripts/pip install dist/nodus_lang-X.Y.Z-py3-none-any.whl
    ```
-3. Write 8–12 Nodus programs targeting the highest-complexity surfaces. Required
+3. **Closure verification** — for each issue marked closed in the `CHANGELOG.md
+   [Unreleased]` section, locate its regression test(s) (search `tests/` for the
+   issue number or BUG-ID string), then run those tests against the installed wheel
+   in the temp venv — not against dev source via `PYTHONPATH`:
+   ```powershell
+   .venv-validation/Scripts/python -m pytest tests/test_relevant.py::test_name -v
+   ```
+   A failing test here means the CHANGELOG entry is wrong: the fix is not in the
+   wheel. Hold the release, identify the root cause (stale build, pre-commit state,
+   unreachable code path), fix it, rebuild, and repeat from step 2.
+   This gate was added after v3.0.1 shipped a wheel that did not contain a fix
+   listed in its CHANGELOG (BUG-E12 / issue #75).
+
+4. Write 8–12 Nodus programs targeting the highest-complexity surfaces. Required
    categories (at minimum):
    - Closures and upvalue capture — nested closures, mutation through outer scope
    - Coroutines and channels — spawn/yield/recv sequences, closed-channel behavior
@@ -209,7 +222,7 @@ trying to find failures. The goal is to find every fixable bug before users enco
    - Every quirk documented in `CLAUDE.md §"Nodus language quirks"` — any deviation
      from the documented behavior is a bug
    - At minimum one workflow or goal execution if the release touches orchestration
-4. For each failure, apply the disposition rule:
+5. For each failure, apply the disposition rule:
    - **Fix it now** if: the root cause is clear, the fix is low regression risk, and
      it can be committed, tested, and the wheel rebuilt within the validation session.
      The fix ships in this version; add a regression test and CHANGELOG entry.
@@ -217,7 +230,7 @@ trying to find failures. The goal is to find every fixable bug before users enco
      large for the current release window. File a GitHub issue immediately with full
      repro, add `found-in:vX.Y.Z` label, and note it in the release announcement.
      See `docs/governance/ISSUE_RESPONSE_POLICY.md` for the response commitment.
-5. Record results in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` — a short file,
+6. Record results in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` — a short file,
    even if everything passes. A clean run is documented evidence, not silence.
 
 **For security patches (abbreviated variant):**
@@ -226,9 +239,11 @@ targeting the security fix and any adjacent code paths it touches. Skip the full
 category sweep. Record results in `CREATOR_VALIDATION.md` with the scope noted.
 
 **Exit condition:**
-- Every failure found is either committed-and-fixed or filed-as-an-issue. No
-  undocumented failures.
-- At least 8 programs executed (3 for security patches).
+- Closure verification (step 3) passes: all closed-issue regression tests pass
+  against the installed wheel.
+- Every failure found in adversarial programs is either committed-and-fixed or
+  filed-as-an-issue. No undocumented failures.
+- At least 8 adversarial programs executed (3 for security patches).
 - Gate 1 (test suite) reruns and passes after any fix made in this stage.
 
 ---

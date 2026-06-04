@@ -774,6 +774,16 @@ The difference is in `err.payload`:
 - String throw (`throw "msg"`): `err.message` contains the string; `err.payload` is `nil`.
 - Non-string throw (`throw record { ... }`): `err.message` is a generic description; `err.payload` contains the original value.
 
+**Stdlib-returned vs VM-thrown err records.** The table above describes err records
+caught inside a `try/catch` block (VM-thrown errors). Stdlib functions like
+`json.parse`, `math.sqrt`, and `fs.read` can also *return* err records as values
+rather than throwing them — these can be inspected without `try/catch`. Returned err
+records have the same `kind`, `message`, and `payload` fields and are always reliable.
+The `path`, `line`, `column`, and `stack` fields are also present on returned err
+records, but they may point to stdlib internals rather than the user call site. Use
+`err.kind` and `err.message` as the primary error-handling signal; treat `path`/`line`
+on returned err records as best-effort diagnostic information.
+
 ```nd
 try {
     throw record { code: 404, reason: "not found" }
