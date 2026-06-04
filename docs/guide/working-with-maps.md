@@ -127,7 +127,7 @@ b = 2.0
 
 ## 5. Removing entries
 
-There is no `delete` operator in v2.1.0. Setting a key to `nil` keeps it
+There is no `delete` operator. Setting a key to `nil` keeps it
 present — `has_key` still returns `true` and it still appears in `keys`.
 To exclude a key, rebuild the map by iterating `keys` and copying only
 what you want to keep.

@@ -160,8 +160,8 @@ item 2.0: 30.0 (number)
 item 3.0: 40.0 (number)
 ```
 
-`type()` returns one of: `"string"`, `"number"`, `"bool"`, `"nil"`, `"list"`,
-`"map"`, `"record"`, `"function"`.
+`type()` returns one of: `"string"`, `"number"`, `"int"`, `"bool"`, `"nil"`,
+`"list"`, `"map"`, `"record"`, `"function"`, `"error"`.
 
 For map inspection, `keys(m)` and `values(m)` let you dump the structure of
 an unknown map without accessing specific fields.

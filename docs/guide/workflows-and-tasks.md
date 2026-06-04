@@ -90,9 +90,9 @@ print(plan["levels"])
 Syntax error at bad.nd:2:5: Unknown workflow dependency: nonexistent
 ```
 
-**Cyclic dependency** — caught at runtime, silent. The result dict has
-`error: "Dependency cycle or missing tasks"` and an empty `tasks` map;
-exit code is 0. Check `r["error"]` programmatically.
+**Cyclic dependency** — caught at runtime. `run_workflow()` returns an err
+record with `kind = "workflow_error"`. Check with `type(r) == "error"`.
+`nodus workflow run` exits 1.
 
 ---
 
@@ -263,9 +263,9 @@ run_goal(release)
 `goal` is a naming convention for "desired end states" rather than
 pipelines. The distinction is semantic, not technical.
 
-CLI commands mirror the keyword: `nodus workflow-run` / `nodus workflow-plan` /
-`nodus workflow-resume` for workflows; `nodus goal-run` / `nodus goal-plan` /
-`nodus goal-resume` for goals. `nodus workflow-run` prints step stdout then
+CLI commands mirror the keyword: `nodus workflow run` / `nodus workflow plan` /
+`nodus workflow resume` for workflows; `nodus goal run` / `nodus goal plan` /
+`nodus goal resume` for goals. `nodus workflow run` prints step stdout then
 a JSON result payload. Using `nodus run` with `run_workflow()` in the script
 gives you control over what to print.
 
@@ -297,8 +297,8 @@ print(r["checkpoints"])
 To resume after a partial failure, completed steps are skipped:
 
 ```
-$ nodus workflow-resume <graph_id>
-$ nodus workflow-resume <graph_id> --checkpoint after-phase1
+$ nodus workflow resume <graph_id>
+$ nodus workflow resume <graph_id> --checkpoint after-phase1
 ```
 
 ---
@@ -348,7 +348,7 @@ Workflows run normally under `NodusRuntime`. Step print output appears in
 
 ```python
 from nodus import NodusRuntime
-rt = NodusRuntime()
+rt = NodusRuntime(timeout_ms=None, max_steps=None)
 result = rt.run_source('''
 workflow hello {
     state name = "world"
@@ -375,9 +375,9 @@ script including the `run_workflow()` call.
 **No dynamic graph structure** — steps are fixed at compile time. Use
 `task()` / `run_graph()` for graphs built at runtime.
 
-**Cyclic dependency is silent** — no stderr, exit 0, `r["error"]` has the
-message. Check `r["error"]` programmatically; a zero exit doesn't mean all
-steps ran.
+**Cyclic dependency returns an err record** — `run_workflow()` returns an err
+record with `kind = "workflow_error"`. Check `type(r) == "error"`.
+`nodus workflow run` exits 1.
 
 **Retry state is not isolated** — state mutations from a failed attempt
 persist into the next retry. See section 5.

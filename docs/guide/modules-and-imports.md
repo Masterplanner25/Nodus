@@ -310,7 +310,7 @@ name
 Undefined variable: h
 ```
 
-This is a known v3.1 bug. See
+This is a known limitation. See
 [error-handling.md §6](error-handling.md#6-what-is-not-catchable).
 
 ### Cyclic imports are an error

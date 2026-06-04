@@ -192,8 +192,8 @@ construction time and overridden per call.
 | Output size | `max_stdout_chars` | 20,000 chars |
 
 > **Watch the default timeout.** 200 ms is short enough to fire on legitimate
-> computation-heavy scripts. For long-running tasks, pass `timeout_ms=0` to
-> disable it or raise it explicitly at construction time.
+> computation-heavy scripts. For long-running tasks or servers, pass
+> `timeout_ms=None` to disable it or raise it explicitly at construction time.
 
 ```python
 # test_04_limits.py

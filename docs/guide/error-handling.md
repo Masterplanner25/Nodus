@@ -361,7 +361,7 @@ These abort at load time before any `try` block can execute.
 **Import errors**: `import "./missing_module"` inside a `try` block does not
 raise a catchable error — the import silently fails, leaving the module name
 undefined. Accessing the undefined name later raises `"name"`. This is a known
-v3.1 bug: import errors inside try blocks should be catchable.
+limitation: import errors inside try blocks are not catchable.
 
 **Execution limits**: When `--step-limit` or `--time-limit` is exceeded, the
 runtime terminates the script from the outside. The `catch` block never runs.

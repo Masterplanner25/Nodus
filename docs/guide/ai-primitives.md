@@ -28,7 +28,7 @@ tool.register({
     }
 })
 
-let result = tool.call("myapp.search", { query: "nodus coroutines" })
+let result = tool.invoke("myapp.search", { query: "nodus coroutines" })
 ```
 
 **Tool names must be dotted** (`"myapp.search"`, not `"search"`). The dotted

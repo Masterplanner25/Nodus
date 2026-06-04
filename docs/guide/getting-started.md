@@ -75,7 +75,7 @@ Plain numeric literals like `2` are floats. `2` stores and prints as `2.0`. See
 for what this means in practice.
 
 > **v4.0 note:** Nodus also has an integer type. Write `2i` (with the `i` suffix)
-> to get an exact integer. `type(2)` returns `"float"`; `type(2i)` returns `"int"`.
+> to get an exact integer. `type(2)` returns `"number"`; `type(2i)` returns `"int"`.
 > String interpolation lets you embed values inline: `"\(name) \(count)"` — no
 > multi-argument `print()` needed.
 
@@ -122,7 +122,7 @@ Output:
 B
 ```
 
-Nodus does not have `else if`. Use a nested `if` inside the `else` block.
+Nodus supports `else if` directly (added in v3.0). The nested-`if`-in-`else` form shown above also works and is equivalent.
 
 ### Loops
 

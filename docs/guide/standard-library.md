@@ -1,7 +1,7 @@
 # Standard Library Reference
 
 This file covers every built-in function and every `std:` module available
-in Nodus v3.0. Built-ins require no import. Standard modules are imported
+in Nodus v4.0. Built-ins require no import. Standard modules are imported
 with `import "std:<name>" as <alias>`.
 
 If you haven't read [types-and-values.md](types-and-values.md) yet, do that
@@ -66,13 +66,11 @@ list
 `type(x)` returns `"error"` for err records returned by stdlib functions.
 
 > **Naming note:** `type()` returns `"number"` for floats and `"int"` for
-> integers. The asymmetry (`"number"` vs `"float"`) is a known inconsistency;
-> renaming `"number"` to `"float"` is a v3.1 design candidate. See
-> `docs/governance/V3_1_PLAN.md §2`.
+> integers. The asymmetry (`"number"` vs `"float"`) is a known inconsistency
+> tracked for a future release.
 
 `len` always returns a float (e.g., `len([1, 2, 3])` → `3.0`). This is a
-known inconsistency; returning an `int` is a v3.1 candidate. See
-`docs/governance/V3_1_PLAN.md §1`. `str(42i)` returns `"42"` (no `.0`);
+known inconsistency; returning an `int` is tracked for a future release. `str(42i)` returns `"42"` (no `.0`);
 `str(10.0)` returns `"10.0"`. Use integer literals or `math.to_int` to get
 whole-number output without the `.0`.
 
@@ -847,9 +845,9 @@ floats (including `42.0`) and `"int"` for integer values.
 
 ## 11. Experimental modules
 
-The following modules are available in v2.1.0 but are classified as
-**experimental** in the [stability policy](../governance/STABILITY.md).
-Their APIs may change before they are stabilized.
+The following modules are classified as **experimental** in the
+[stability policy](../governance/STABILITY.md). Their APIs may change
+before they are stabilized.
 
 ### std:async
 
