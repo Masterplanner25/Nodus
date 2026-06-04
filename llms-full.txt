@@ -22,6 +22,8 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
+**Current version:** v4.0.0 (pre-release — language feature-complete, publishing to PyPI shortly). Last published: v3.0.2.
+
 ---
 
 ## Who Nodus Is For

@@ -4,6 +4,8 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+> **v4.0.0 pre-release** — Language feature-complete. Publishing to PyPI shortly. Last published release: v3.0.2.
+
 ```bash
 pip install nodus-lang
 nodus init
