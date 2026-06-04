@@ -59,6 +59,18 @@ pip install nodus-lang
 - [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes v3.x → v4.0
 - [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes v2.x → v3.0
 
+## Wiki
+
+- [Nodus Wiki](https://github.com/Masterplanner25/Nodus/wiki) — complete language reference wiki (24 pages covering syntax, stdlib, workflows, embedding, roadmap, changelog)
+  - [Getting Started](https://github.com/Masterplanner25/Nodus/wiki/Getting-Started)
+  - [Language Overview](https://github.com/Masterplanner25/Nodus/wiki/Language-Overview)
+  - [Syntax Reference](https://github.com/Masterplanner25/Nodus/wiki/Syntax-Reference)
+  - [Standard Library](https://github.com/Masterplanner25/Nodus/wiki/Standard-Library)
+  - [Embedding API](https://github.com/Masterplanner25/Nodus/wiki/Embedding-API)
+  - [Workflows and Task Graphs](https://github.com/Masterplanner25/Nodus/wiki/Workflows-and-Task-Graphs)
+  - [Type System](https://github.com/Masterplanner25/Nodus/wiki/Type-System)
+  - [Error Handling](https://github.com/Masterplanner25/Nodus/wiki/Error-Handling)
+
 ## Ecosystem
 
 Nodus is the core runtime of the Masterplan Infinite Weave ecosystem.
