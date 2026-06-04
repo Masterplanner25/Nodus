@@ -57,7 +57,7 @@ The scheduler is cooperative: coroutines yield explicitly, enabling deterministi
 - `std:http` — HTTP client with async variants and SSE streaming
 - `std:subprocess` — process execution with async concurrency
 - `std:fs` — full filesystem access
-- `std:json`, `std:math`, `std:string`, `std:encoding`, `std:hash`
+- `std:json`, `std:math`, `std:strings`, `std:encoding`, `std:hash`
 - `std:time`, `std:secrets`
 
 **Testing**
@@ -111,7 +111,7 @@ nodus serve            Start the HTTP API server
 nodus lsp              Start the Language Server
 nodus dap              Start the Debug Adapter
 nodus workflow <cmd>   Manage workflow runs
-nodus goal-run <file>  Run a goal
+nodus goal run <file>  Run a goal
 nodus dis <file>       Disassemble to bytecode
 nodus ast <file>       Print the AST
 nodus profile <file>   Profile execution

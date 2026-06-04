@@ -101,5 +101,3 @@ Execution rule:
 - [Ecosystem](../guide/ecosystem.md) — the 29 companion packages and nodus-sdk
 - [Language Specification](../language/LANGUAGE_SPEC.md) — full syntax, types, operators, builtins, and stdlib modules
 - Interactive reference: start the REPL and type `:help` to explore available commands
-
-- [User Guide — Getting Started](../guide/getting-started.md) — install, first script, REPL, error handling, two-file project
