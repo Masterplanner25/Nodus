@@ -1,3 +1,5 @@
+// C-style for loop demo.
+// Note: input() reads from stdin — run this interactively, not in CI.
 let total = 0
 for (let i = 0; i < 5; i = i + 1) {
     total = total + i

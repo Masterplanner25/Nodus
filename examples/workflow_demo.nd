@@ -1,0 +1,19 @@
+// Workflow demo — sequential steps with after-dependencies.
+// Each step runs only after its declared dependencies complete.
+// run_workflow() returns a map; access results with bracket notation.
+workflow build {
+    step lint {
+        print("linting...")
+        return "ok"
+    }
+    step test after lint {
+        print("testing...")
+        return "ok"
+    }
+    step package after test {
+        print("packaging...")
+        return "v1.0.0"
+    }
+}
+let result = run_workflow(build)
+print(result["steps"])

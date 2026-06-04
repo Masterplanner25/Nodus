@@ -1,7 +1,10 @@
+// Compute benchmark — tight arithmetic loop.
+// The default sandbox deadline is 200ms; 5,000 iterations comfortably fits.
+// For larger workloads use: nodus run --time-limit 5000 benchmark.nd
 fn compute() {
     let i = 0
     let sum = 0
-    while (i < 100000) {
+    while (i < 5000) {
         sum = sum + i
         i = i + 1
     }

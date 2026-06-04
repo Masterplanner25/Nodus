@@ -1,0 +1,31 @@
+// Error handling demo.
+// Pattern 1: catch a VM runtime error.
+// Pattern 2: throw and catch a custom error.
+// Pattern 3: check a stdlib-returned err record with type().
+import "std:json" as json
+
+fn divide(a, b) {
+    if (b == 0) {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+try {
+    let x = [1, 2, 3]
+    print(x[10])
+} catch err {
+    print(err.kind)
+    print(err.message)
+}
+try {
+    divide(10, 0)
+} catch err {
+    print(err.kind)
+    print(err.message)
+}
+let parsed = json.parse("{invalid")
+if (type(parsed) == "error") {
+    print(parsed.kind)
+    print(parsed.message)
+}
