@@ -977,6 +977,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                                 vm.event_bus.emit_event("goal_step_complete", name=task.step_name, data=goal_data)
                             for next_task in ready_tasks():
                                 spawn_task(next_task)
+                    except Exception as _exc:
+                        try:
+                            _fail_task(task, _exc)
+                        except Exception:
+                            pass
                     finally:
                         active_workers -= 1
                         worker_cond.notify_all()
