@@ -6,17 +6,8 @@ import unittest
 from nodus.services.server import run_in_thread
 
 
-class SessionTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, session_timeout_ms=50, allowed_paths=["."])
-        cls.port = cls.server.server_address[1]
-        time.sleep(0.05)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+class _ServerMixin:
+    """Shared HTTP helper for session tests."""
 
     def request(self, method: str, path: str, payload: dict | None = None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
@@ -30,6 +21,21 @@ class SessionTests(unittest.TestCase):
         data = resp.read().decode("utf-8")
         conn.close()
         return resp.status, json.loads(data) if data else {}
+
+
+class SessionTests(_ServerMixin, unittest.TestCase):
+    """Persistence and isolation tests — long session timeout to survive full-suite load."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, session_timeout_ms=2000, allowed_paths=["."])
+        cls.port = cls.server.server_address[1]
+        time.sleep(0.05)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
 
     def test_session_persistence(self):
         status, payload = self.request("POST", "/session")
@@ -52,6 +58,21 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(payload["stdout"], "1.0\n")
         _status, payload = self.request("POST", "/execute", {"session": session_b, "code": "print(x)", "filename": "inline.nd"})
         self.assertEqual(payload["stdout"], "2.0\n")
+
+
+class SessionExpirationTests(_ServerMixin, unittest.TestCase):
+    """Expiration test — short session timeout on its own server instance."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, session_timeout_ms=50, allowed_paths=["."])
+        cls.port = cls.server.server_address[1]
+        time.sleep(0.05)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
 
     def test_expiration(self):
         status, payload = self.request("POST", "/session")

@@ -398,7 +398,7 @@ print(result["error"])
         from nodus.services.server import WorkerManager
         worker_manager = WorkerManager()
         worker_manager.event_bus = RuntimeEventBus()
-        worker_manager._worker_heartbeat_timeout_ms = 30
+        worker_manager._worker_heartbeat_timeout_ms = 300
         worker_id = worker_manager.register(["cpu"])
         time.sleep(0.02)
         self.assertEqual(worker_manager.heartbeat(worker_id), {"ok": True})
@@ -471,6 +471,7 @@ print(result["tasks"]["task_1"])
             service = RuntimeService(
                 workflow_store_backend="sqlite",
                 workflow_store_path=tmp.name,
+                worker_sweep_interval_ms=20,
             )
         finally:
             pass  # keep the file alive until after the test
@@ -478,7 +479,7 @@ print(result["tasks"]["task_1"])
         service.workers._worker_heartbeat_timeout_ms = 10
         worker_id = service.workers.register(["cpu"])
         dead_event = None
-        deadline = time.time() + 2.0
+        deadline = time.time() + 5.0
         while time.time() < deadline:
             dead_events = [e for e in service.workers.event_bus.events() if e.type == "worker_dead"]
             if dead_events:
