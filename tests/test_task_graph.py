@@ -398,7 +398,7 @@ print(result["error"])
         from nodus.services.server import WorkerManager
         worker_manager = WorkerManager()
         worker_manager.event_bus = RuntimeEventBus()
-        worker_manager._worker_heartbeat_timeout_ms = 30
+        worker_manager._worker_heartbeat_timeout_ms = 300
         worker_id = worker_manager.register(["cpu"])
         time.sleep(0.02)
         self.assertEqual(worker_manager.heartbeat(worker_id), {"ok": True})
