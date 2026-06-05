@@ -39,14 +39,25 @@ Standard issue shape:
 ```python
 {
     'title': 'BUG-NNN: short description',
-    'body': '## Summary\n\n...\n\n## Reproduction\n\n...\n\n## Expected behavior\n\n...\n\n## Fix direction\n\n...\n\n## Affected versions\n\nv2.1.1 (current).',
+    'body': '## Summary\n\n...\n\n## Reproduction\n\n...\n\n## Expected behavior\n\n...\n\n## Fix direction\n\n...\n\n## Affected versions\n\nv4.0.0 (current).',
     'labels': ['bug', 'subsystem:X', 'severity:low|medium|high|critical'],
-    'milestone': 3   # v2.2 milestone
+    'milestone': None   # check current milestone on GitHub
 }
 ```
 
 Write the script to a temp file and run it — inline heredocs with
 triple-quoted strings cause PowerShell/Bash quoting issues.
+
+## GitHub release immutability — permanent gotcha
+
+**Once a release is created against a protected tag, the tag's immutable state is permanent.**
+Deleting the release does NOT clear it. Disabling the branch/tag ruleset does NOT clear it.
+`gh release create <same-tag>` after deletion returns: "tag_name was used by an immutable release".
+
+Consequences:
+- Never create a GitHub release until you are certain the tag points to the right commit
+- Artifact swaps (delete + re-upload) are **impossible** for immutable releases
+- The only recovery is a new tag (`v4.0.0-fix1`, etc.) — accept the name change or accept the mismatch
 
 ## Version sync — must keep in step
 
@@ -97,6 +108,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Deprecation timeline | `docs/governance/COMPATIBILITY.md` |
 | Stability index (surface-by-surface) | `docs/governance/LANGUAGE_STABILITY_INDEX.md` |
 | Security posture | `docs/governance/SECURITY_POSTURE.md` |
+| Security test matrix | `docs/security/SECURITY_MATRIX.md` |
 | Release gates | `docs/governance/RELEASE_GATES.md` |
 | Tech debt | `docs/governance/TECH_DEBT.md` |
 | Docset index (reader entry point) | `docs/governance/DOCSET_INDEX.md` |
@@ -144,11 +156,23 @@ Coverage baseline: 76% overall (19,126 stmts, 1,645 tests). Gate: 70% (raised fr
 See `docs/governance/TECH_DEBT.md` for the per-module breakdown and the three deselected flaky tests.
 
 **Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
-- `test_task_graph.py::TaskGraphTests::test_worker_death_detection`
 - `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
 
-Note: `test_resume_goal` was fixed on 2026-05-31 (WorkflowFrameworkRunner bypass — see commit history).
-It should now pass. If it fails, investigate the WorkflowFrameworkRunner store registration path.
+Fixed 2026-06-04 (no longer flaky): `test_worker_death_detection` (sleep 20ms→100ms), `test_worker_heartbeat_updates_health` (timeout 30ms→300ms), `test_isolation`/`test_expiration` (split into two classes with separate server instances), `test_worker_death_detected_by_sweeper` (added `worker_sweep_interval_ms=20`, deadline 2s→5s).
+
+**Flaky test fix pattern — timing headroom:**
+Tests that race a sleep against a timeout need **5–10x headroom**, not 2x. Under full-suite parallel
+load, a 20ms sleep takes longer than 20ms wall-clock. Rule: if the test sleeps N ms and the code
+times out at M ms, ensure M ≥ 5N.
+
+Two classes can't share incompatible timeout requirements. If a test needs `session_timeout_ms=50`
+(to observe expiry quickly) and another needs `session_timeout_ms=2000` (to survive load without
+expiring), split them into two classes with separate server instances — one per `setUpClass`.
+
+**Sweeper startup race:** `RuntimeService` starts the sweeper thread in `__init__` with the default
+interval. If you set `_worker_heartbeat_timeout_ms` after construction, the sweeper sleeps the
+default interval (500ms) before adopting the new value. Fix: pass `worker_sweep_interval_ms=N`
+directly to the constructor.
 
 ## .nd file formatting — authoritative command
 
@@ -219,6 +243,19 @@ The closing `'@` must be at column 0 with no leading whitespace. For commits
 that need a file (e.g. cross-repo where stdin is awkward), write the message
 to `.git\COMMIT_MSG_TEMP` with `Out-File -Encoding utf8` then use
 `git commit -F ".git\COMMIT_MSG_TEMP"`.
+
+## PR workflow — required (enforce_admins is ON)
+
+`enforce_admins` is enabled on the `main` branch. **Direct pushes to `main` are rejected for
+everyone, including the repo owner.** All changes must go through a branch + PR + CI.
+
+Workflow:
+1. `git checkout -b <branch-name>` — create a branch
+2. Commit and push: `git push -u origin <branch-name>`
+3. `gh pr create --title "..." --body "..."` — open the PR
+4. Wait for CI to pass, then merge via `gh pr merge --squash` (or GitHub UI)
+
+Never attempt `git push origin main` directly — it will be rejected.
 
 ## Doc-vs-code gate (nodus_gate)
 
@@ -336,12 +373,6 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
   tracks what still needs fixing.
 - **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — ranked list
   of still-unresolved doc conflicts.
-
-Remaining doc tasks before Phase 5 publish:
-1. ~~nodus-a2a `pyproject.toml` metadata~~ — DONE (added in breakage gate prep)
-2. `RELEASE_CHECKLIST.md` post-release section still has old commands — batch to 4.0.1
-3. `LIBRARY_ECOSYSTEM.md` STDLIB_PHILOSOPHY.md cross-refs — stub exists; expand post-launch
-4. nodus-a2a #2 (exception str verbatim to client) — add doc note or accept as known gap
 
 nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHANGELOG reflects it.
 
@@ -600,10 +631,7 @@ before the subprocess terminates (output channel never consumed), threads accumu
 They're daemon threads so they don't block exit, but they pile up per session.
 No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
 
-**EMBED-004 (#100, RESOLVED) — `*_async` builtins and stdlib wrappers are truly concurrent:**
-`http_get_async`, `subprocess_run_async` and all `std:http` / `std:subprocess` async
-wrappers use the thread+channel suspension pattern — they suspend the calling coroutine
-and resume it when the I/O completes. Five concurrent calls run in parallel, not serial.
+**EMBED-004 (#100, RESOLVED)** — `*_async` builtins are truly concurrent (thread+channel pattern), not serial.
 
 **SPAWN-001 (#117, open) — `spawn().wait_async()` is sync:**
 The `wait_async()` method on a spawned process record is a direct alias for `wait()` —
@@ -623,7 +651,7 @@ a close-ordering race. Do not use it directly.
 
 **PyPI new-project rate limit (learned 2026-05-31):** PyPI enforces a hard cap on new project creation — separate from upload limits. Creating 4+ projects in rapid succession triggers a 429 "Too many new projects created" error with no Retry-After header. **Reset window is ~48 hours** (hit limit 2026-05-31, cleared 2026-06-02). Strategy: upload **max 2-3 new packages per session**, wait ~1 hour between sessions. Do NOT batch-upload all 29 at once. All dist/ artifacts can be pre-built without hitting any limit; only the upload step is rate-limited.
 
-**Current publish status (as of 2026-06-02):** nodus-circuit-breaker ✅ nodus-retry ✅ nodus-channels ✅ nodus-protocol ✅ nodus-schema ✅ nodus-approvals ✅ nodus-context ✅ nodus-state ✅ — all others pending. nodus-native-memory-engine blocked by Windows Application Control policy (Rust build step) — needs admin/policy-relaxed context.
+**Current publish status (as of 2026-06-05):** Round 1 COMPLETE — 16 packages live: nodus-lang ✅ nodus-circuit-breaker ✅ nodus-retry ✅ nodus-channels ✅ nodus-protocol ✅ nodus-schema ✅ nodus-approvals ✅ nodus-context ✅ nodus-state ✅ nodus-session ✅ nodus-governance ✅ nodus-agent ✅ nodus-workflow ✅ nodus-a2a ✅ nodus-extensions ✅ nodus-store-sql ✅. nodus-native-memory-engine blocked by Windows Application Control policy (Rust build step). Next: Round 2 (11 packages with external-only deps).
 
 Open pre-publish item: ~~#115~~ FIXED. Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 

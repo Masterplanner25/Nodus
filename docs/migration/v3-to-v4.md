@@ -5,6 +5,69 @@ requires updates to existing v3.x code.
 
 ---
 
+## Two most common silent breaks
+
+These two changes affect virtually every v3 program and produce **no error** —
+the code runs but behaves differently. Fix these first before anything else.
+
+### 0a. Bare numeric literals are now floats — add the `i` suffix for integers
+
+**What changed:** In v3, `3` behaved like an integer in most contexts.
+In v4, `3` is a `float` (`3.0`). Integer arithmetic requires the `i` suffix.
+
+```nd
+// v3.x — worked
+let count = 3
+let doubled = count * 2   // 6
+
+// v4.0 — silent behavior change
+print(type(3))      // float  (not "int")
+print(3 / 2)        // 1.5   (not 1)
+print(type(3))      // float
+
+// v4.0 — correct
+let count = 3i
+let doubled = count * 2i  // 6i  (int)
+print(3i / 2i)            // 1i  (integer division)
+```
+
+**How to find it:** grep for bare integer literals in arithmetic expressions.
+Any `count + 1`, `i < 10`, loop counters, list indices using plain numbers.
+
+**How to fix:** Add the `i` suffix to all integer literals: `3` → `3i`,
+`0` → `0i`, `100` → `100i`. Mixed `int + float` promotes to float.
+
+---
+
+### 0b. `json.parse()` returns a map — use bracket notation, not dot
+
+**What changed:** `json.parse()` returns a **map** (`{"key": val}` style),
+not a record. Maps require bracket notation; dot notation throws.
+
+```nd
+import "std:json" as json
+
+let data = json.parse("{\"name\": \"Alice\", \"age\": 30}")
+
+// v3.x — worked
+print(data.name)   // Alice
+
+// v4.0 — throws: "Field access is only supported on records"
+print(data.name)
+
+// v4.0 — correct
+print(data["name"])   // Alice
+print(data["age"])    // 30.0
+```
+
+**How to find it:** grep for `.fieldname` accesses on values that come from
+`json.parse`, any HTTP response body, or any other API that returns a map.
+
+**How to fix:** Replace dot access with bracket access on parsed JSON:
+`data.field` → `data["field"]`.
+
+---
+
 ## Breaking changes
 
 ### 1. `type(float)` returns `"float"` not `"number"`
@@ -191,6 +254,10 @@ Use `nodus test` to run test files matching `*_test.nd`. See
 
 ## Quick migration checklist
 
+0. [ ] **Add `i` suffix to all integer literals** (`3` → `3i`, `0` → `0i`) —
+       bare numbers are floats and will silently change arithmetic results
+0. [ ] **Replace dot access on `json.parse()` results with bracket access**
+       (`data.field` → `data["field"]`) — json.parse returns a map, not a record
 1. [ ] Grep for `"number"` in type comparisons → update to `"float"` or
        `math.is_float(x)`
 2. [ ] Grep for `== false`, `== true`, `!= false`, `!= true` → review for
@@ -198,6 +265,7 @@ Use `nodus test` to run test files matching `*_test.nd`. See
 3. [ ] Grep for `== -1` after `index_of` / `last_index_of` → update to
        `== nil`
 4. [ ] Check any code that caught "division by zero" runtime errors →
-       add `math.is_nan`/`math.is_inf` guards if needed
+       integer div-by-zero is now an err-value (not thrown); float div-by-zero
+       returns `inf`/`nan`. Add `type(result) == "error"` guards.
 5. [ ] Check any workflow error handling → update to check for err record
        with `category: "cyclic_workflow"`

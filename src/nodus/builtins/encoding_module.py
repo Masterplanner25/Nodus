@@ -30,9 +30,16 @@ def register(vm, registry) -> None:
         if not isinstance(s, str):
             vm.runtime_error("type", "encoding.base64_decode: expected a string")
         try:
-            return _b64.b64decode(s)
+            raw = _b64.b64decode(s)
         except Exception:
             return _enc_err(f"invalid base64: {s[:40]!r}", input=s[:40])
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return _enc_err(
+                "base64 decoded to non-UTF-8 bytes; use encoding.hex_encode for binary data",
+                input=s[:40],
+            )
 
     def builtin_encoding_base64_url_encode(data):
         b = _to_bytes_enc(data, "encoding.base64_url_encode")
@@ -44,9 +51,16 @@ def register(vm, registry) -> None:
         try:
             # Add padding back
             padded = s + "=" * (-len(s) % 4)
-            return _b64.urlsafe_b64decode(padded)
+            raw = _b64.urlsafe_b64decode(padded)
         except Exception:
             return _enc_err(f"invalid URL-safe base64: {s[:40]!r}", input=s[:40])
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return _enc_err(
+                "base64url decoded to non-UTF-8 bytes; use encoding.hex_encode for binary data",
+                input=s[:40],
+            )
 
     # ── Hex ──────────────────────────────────────────────────────────
     def builtin_encoding_hex_encode(data):

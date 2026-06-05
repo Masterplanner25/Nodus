@@ -936,6 +936,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                             if wait_info is not None:
                                 _pause_for_wait(task, wait_info)
                                 return
+                            if execution_kind in ("workflow", "goal") and getattr(result, "kind", None) == "error":
+                                err_fields = getattr(result, "fields", {})
+                                err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
+                                _fail_task(task, Exception(err_msg))
+                                return
                             task.result = result
                             task.status = "done"
                             task.finished_at = runtime_time_ms()
@@ -998,6 +1003,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         wait_info = _workflow_wait_info(coroutine.last_result)
         if wait_info is not None:
             return _pause_for_wait(task, wait_info)
+        if execution_kind in ("workflow", "goal") and getattr(coroutine.last_result, "kind", None) == "error":
+            err_fields = getattr(coroutine.last_result, "fields", {})
+            err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
+            return _fail_task(task, Exception(err_msg))
         task.result = coroutine.last_result
         task.status = "done"
         task.finished_at = runtime_time_ms()

@@ -327,6 +327,13 @@ class Parser:
         if self.at("{"):
             return self.block()
 
+        if self.at("ID") and self.peek().val in ("break", "continue"):
+            tok = self.eat("ID")
+            self.error(
+                f'"{tok.val}" is not supported; use a flag variable to exit a loop',
+                tok,
+            )
+
         return ExprStmt(self.expr())
 
     def block(self):
