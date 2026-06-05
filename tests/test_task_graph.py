@@ -414,7 +414,7 @@ print(result["error"])
         worker_manager.event_bus = RuntimeEventBus()
         worker_manager._worker_heartbeat_timeout_ms = 10
         worker_id = worker_manager.register(["cpu"])
-        time.sleep(0.02)
+        time.sleep(0.1)
         worker_manager.poll(worker_id)
         self.assertNotIn(worker_id, worker_manager._workers)
         dead_events = [e for e in worker_manager.event_bus.events() if e.type == "worker_dead"]

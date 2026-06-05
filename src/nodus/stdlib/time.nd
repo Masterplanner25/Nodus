@@ -63,6 +63,10 @@ fn duration_between(dt1, dt2) {
     return time_duration_between(dt1, dt2)
 }
 
+fn diff(dt1, dt2) {
+    return time_duration_between(dt1, dt2)
+}
+
 fn add(dt, dur) {
     return time_add(dt, dur)
 }

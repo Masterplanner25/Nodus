@@ -54,5 +54,6 @@ block:docs/language/LANGUAGE_SPEC.md:553
 block:docs/runtime/TASK_GRAPHS.md:48
 block:docs/runtime/WORKFLOWS.md:44
 
-# FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example
+# FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent
+block:docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md:146
