@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.0.0 released** — [GitHub Release](https://github.com/Masterplanner25/Nodus/releases/tag/v4.0.0) · Install: `pip install https://github.com/Masterplanner25/Nodus/releases/download/v4.0.0/nodus_lang-4.0.0-py3-none-any.whl` · PyPI upload in progress.
+> **v4.0.0 now on PyPI** — `pip install nodus-lang==4.0.0` · The 29-package companion ecosystem is publishing over the next 3–4 weeks; full install via `pip install nodus-sdk[agent,sql,fastapi]` available shortly.
 
 ```bash
 pip install nodus-lang

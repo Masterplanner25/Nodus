@@ -1,11 +1,9 @@
 ﻿# Changelog
 
-## [4.0.0] - 2026-05-30 (pre-release additions — not yet published to PyPI)
+## [4.0.0] - 2026-06-04
 
 > **SemVer note:** The following additions were implemented during the v4.0.0
-> pre-release hold while the language matures to the creator/maintainer's
-> satisfaction. They are part of v4.0.0, not a separate minor version.
-> The last published PyPI release remains v3.0.2.
+> development cycle and are all part of v4.0.0. Published to PyPI 2026-06-04.
 
 ### Added (Phase 6 — AI-native primitives)
 

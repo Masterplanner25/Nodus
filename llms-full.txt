@@ -22,7 +22,7 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
-**Current version:** v4.0.0 — [released on GitHub](https://github.com/Masterplanner25/Nodus/releases/tag/v4.0.0). PyPI upload in progress. Last published to PyPI: v3.0.2.
+**Current version:** v4.0.0 — published to PyPI 2026-06-04. Install: `pip install nodus-lang==4.0.0`. The 29-package companion ecosystem is publishing over 3–4 weeks; 12 packages are already live, with the remainder uploading daily.
 
 ---
 
