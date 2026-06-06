@@ -112,6 +112,8 @@ def register(vm, registry) -> None:
             receiver.blocked_on = None
             receiver.blocked_reason = None
             vm.scheduler.schedule(receiver)
+            if not ch.waiting_receivers:
+                getattr(vm.scheduler, "_recv_channels", set()).discard(ch)
             vm.event_bus.emit_event(
                 "channel_send",
                 coroutine_id=sender_id,
@@ -163,6 +165,9 @@ def register(vm, registry) -> None:
         vm.stack.append(None)
         vm.save_current_coroutine_state(vm.ip + 1)
         ch.waiting_receivers.append(coroutine)
+        sched = getattr(vm, "scheduler", None)
+        if sched is not None:
+            sched._recv_channels.add(ch)
         vm.event_bus.emit_event(
             "channel_block",
             coroutine_id=coroutine.id,
@@ -198,6 +203,7 @@ def register(vm, registry) -> None:
                 name=receiver.name,
                 data={"closed": True},
             )
+        getattr(vm.scheduler, "_recv_channels", set()).discard(ch)
         return None
 
     registry.add("coroutine", 1, builtin_coroutine_create)

@@ -179,5 +179,106 @@ print("after loop")
         )
 
 
+class Chan001OrphanTests(unittest.TestCase):
+    """CHAN-001: coroutine blocked on recv() must not be silently orphaned.
+
+    Uses run_source (sandbox path) so LangRuntimeError propagates through the
+    full exception-handling chain and is captured in result["ok"]/result["error"].
+    """
+
+    def _run(self, src):
+        return run_source(src, filename="chan_test.nd", timeout_ms=5_000)[0]
+
+    def test_recv_with_no_sender_is_ok_false(self):
+        """A coroutine blocked on recv() with no sender must yield ok=False (deadlock),
+        not silently return ok=True."""
+        result = self._run("""
+let ch = channel()
+let co = coroutine(fn() {
+    let v = recv(ch)
+    print(v)
+})
+spawn(co)
+run_loop()
+print("after loop")
+""")
+        self.assertFalse(result["ok"], "Expected ok=False when a recv() coroutine is orphaned (deadlock)")
+        self.assertNotIn("after loop", result.get("stdout", ""))
+
+    def test_recv_with_no_sender_error_says_deadlock(self):
+        """Deadlock error message must mention 'deadlock'."""
+        result = self._run("""
+let ch = channel()
+spawn(coroutine(fn() { recv(ch) }))
+run_loop()
+""")
+        self.assertFalse(result["ok"])
+        err = result.get("error") or {}
+        msg = str(err.get("message", "")) if isinstance(err, dict) else str(err)
+        self.assertIn("deadlock", msg.lower(), f"Expected 'deadlock' in error message, got: {msg!r}")
+
+    def test_send_before_recv_works_normally(self):
+        """If the channel already has a value, recv() returns immediately — no orphan."""
+        result = self._run("""
+let ch = channel()
+send(ch, 42i)
+let co = coroutine(fn() {
+    let v = recv(ch)
+    print(v)
+})
+spawn(co)
+run_loop()
+""")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"].strip(), "42")
+
+    def test_sender_and_receiver_coroutines_rendezvous(self):
+        """Two coroutines — one sends, one recvs — must both complete."""
+        result = self._run("""
+let ch = channel()
+let sender = coroutine(fn() {
+    send(ch, "hello")
+})
+let receiver = coroutine(fn() {
+    let v = recv(ch)
+    print(v)
+})
+spawn(sender)
+spawn(receiver)
+run_loop()
+""")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"].strip(), "hello")
+
+    def test_close_wakes_blocked_receiver(self):
+        """close(ch) must wake a blocked recv() coroutine with nil."""
+        result = self._run("""
+let ch = channel()
+let co = coroutine(fn() {
+    let v = recv(ch)
+    print(type(v))
+})
+spawn(co)
+spawn(coroutine(fn() { close(ch) }))
+run_loop()
+""")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"].strip(), "nil")
+
+    def test_multiple_blocked_receivers_deadlock_counts_correctly(self):
+        """Deadlock message must report the correct number of blocked coroutines."""
+        result = self._run("""
+let ch = channel()
+spawn(coroutine(fn() { recv(ch) }))
+spawn(coroutine(fn() { recv(ch) }))
+run_loop()
+""")
+        self.assertFalse(result["ok"])
+        err = result.get("error") or {}
+        msg = str(err.get("message", "")) if isinstance(err, dict) else str(err)
+        self.assertIn("2", msg, f"Expected '2' in deadlock error, got: {msg!r}")
+        self.assertIn("deadlock", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

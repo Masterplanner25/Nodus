@@ -91,6 +91,16 @@
 
 ### Fixed
 
+- **#107 (CHAN-001): recv() blocked on empty channel no longer orphaned silently.**
+  The scheduler now tracks channels with waiting receivers in `_recv_channels`. When
+  `recv()` blocks, the channel is registered; when `send()` or `close()` wakes receivers,
+  it's deregistered. The scheduler exits its loop only when all pending work is truly
+  exhausted. If only blocked `recv()` calls remain with no possible sender (no runnable
+  coroutines, no timers, no daemon channels), the scheduler raises a `deadlock` runtime
+  error instead of silently returning. Closes #107.
+- **#96 (SCHED-003): scheduler sandbox deadline path now has test coverage.**
+  `SchedulerSandboxLimitTests` exercises the full `run_source` → scheduler → deadline path.
+  `Chan001OrphanTests` covers the `_recv_channels` deadlock detection path. Closes #96.
 - **#83 (BUG-NEW-01): `1ii` now gives a parse error with a suggestion.** The lexer detects
   integer literals followed immediately by identifier characters (e.g. `1ii`, `5ib`) and
   raises `LangSyntaxError` with a "did you mean `1i`?" message instead of a confusing

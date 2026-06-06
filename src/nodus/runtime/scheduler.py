@@ -44,6 +44,7 @@ class Scheduler:
         self._counter = 0
         self.task_ages: dict[int, int] = {}
         self._io_channels: list = []
+        self._recv_channels: set = set()
 
     def _trace(self, message: str) -> None:
         if self.trace:
@@ -163,14 +164,17 @@ class Scheduler:
                         r.blocked_reason = None
                         self.ready_queue.append(r)
                 self._io_channels.remove(ch)
+                self._recv_channels.discard(ch)
+            elif not ch.waiting_receivers:
+                self._recv_channels.discard(ch)
 
     def run_loop(self, on_complete=None, on_error=None) -> None:
         stop = False
-        while self.ready_queue or self.timers or self._io_channels:
+        while self.ready_queue or self.timers or self._io_channels or self._recv_channels:
             self._drain_timers()
             self._drain_io_channels()
             if not self.ready_queue:
-                if not self.timers and not self._io_channels:
+                if not self.timers and not self._io_channels and not self._recv_channels:
                     break
                 if self.timers:
                     wake_time = self.timers[0][0]
@@ -180,6 +184,24 @@ class Scheduler:
                         time.sleep(min(poll, (wake_time - now) / 1000.0))
                 elif self._io_channels:
                     time.sleep(0.001)
+                elif self._recv_channels:
+                    # No runnable coroutines, no timers, no system channels — only blocked
+                    # recv() calls remain. Nothing can ever wake them: deadlock.
+                    blocked = [
+                        c for c in self.tasks.values()
+                        if getattr(c, "state", None) == "suspended"
+                        and getattr(c, "blocked_reason", None) == "channel_recv"
+                    ]
+                    names = [
+                        getattr(c, "name", None) or f"<coroutine #{getattr(c, 'id', '?')}>"
+                        for c in blocked
+                    ]
+                    detail = f": {', '.join(names)}" if names else ""
+                    raise LangRuntimeError(
+                        "deadlock",
+                        f"Deadlock: {len(blocked)} coroutine(s) blocked on recv() with no "
+                        f"possible sender{detail}",
+                    )
                 self._drain_timers()
                 self._drain_io_channels()
                 if not self.ready_queue:
