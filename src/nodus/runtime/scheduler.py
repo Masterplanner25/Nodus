@@ -181,9 +181,15 @@ class Scheduler:
                     now = self.clock_fn()
                     if wake_time > now:
                         poll = 0.001 if self._io_channels else (wake_time - now) / 1000.0
+                        _t0 = time.monotonic()
                         time.sleep(min(poll, (wake_time - now) / 1000.0))
+                        if self.vm.deadline is not None:
+                            self.vm.deadline += time.monotonic() - _t0
                 elif self._io_channels:
+                    _t0 = time.monotonic()
                     time.sleep(0.001)
+                    if self.vm.deadline is not None:
+                        self.vm.deadline += time.monotonic() - _t0
                 elif self._recv_channels:
                     # No runnable coroutines, no timers, no system channels — only blocked
                     # recv() calls remain. Nothing can ever wake them: deadlock.
