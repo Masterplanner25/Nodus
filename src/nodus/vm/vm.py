@@ -45,7 +45,7 @@ from typing import Any, Callable, cast
 
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.channel import Channel, ChannelRecvRequest
-from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state, get_registered_graph
+from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state
 from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
@@ -1169,7 +1169,9 @@ class VM:
     def builtin_run_goal(self, goal):
         if not is_goal_value(goal):
             self.runtime_error("type", "run_goal(goal) expects a goal")
-        return run_task_graph(self, workflow_to_graph(self, goal, init_state=True))
+        graph = workflow_to_graph(self, goal, init_state=True)
+        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
+        return get_default_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_goal(self, goal):
         if not is_goal_value(goal):
@@ -1188,41 +1190,13 @@ class VM:
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects graph_id as string")
         if checkpoint is not None and not isinstance(checkpoint, str):
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
-        state = load_graph_state(graph_id)
-        if state is None:
-            return {"ok": False, "error": "Graph state not found"}
-        graph = get_registered_graph(graph_id)
-        if graph is None:
-            graph = self._rebuild_workflow_graph(graph_id, state)
-        if graph is None:
-            return {"ok": False, "error": "Unknown graph"}
-        if checkpoint is not None:
-            # Roll back to the named checkpoint directly from persisted state.
-            # Do NOT delegate to builtin_resume_workflow: run_goal uses run_task_graph
-            # directly, so runs started with run_goal are not in the WorkflowFrameworkRunner
-            # store and would fail the claim_run check with a misleading "already claimed" error.
-            checkpoints = state.get("engine_checkpoints")
-            if not isinstance(checkpoints, list):
-                meta = state.get("metadata")
-                if isinstance(meta, dict):
-                    checkpoints = meta.get("engine_checkpoints") or meta.get("checkpoints")
-            if not isinstance(checkpoints, list):
-                checkpoints = state.get("checkpoints")
-            entry = None
-            if isinstance(checkpoints, list):
-                for item in reversed(checkpoints):
-                    if isinstance(item, dict) and item.get("label") == checkpoint:
-                        entry = item
-                        break
-            if entry is None:
-                return {"ok": False, "error": f"Checkpoint not found: {checkpoint}"}
-            if "state" in entry:
-                state["workflow_state"] = entry.get("state")
-            self._rollback_to_checkpoint(graph, state, entry)
-            self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id, "checkpoint": checkpoint})
-        else:
-            self.event_bus.emit_event("graph_resume", data={"graph_id": graph_id})
-        return run_task_graph(self, graph, resume_state=state)
+        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
+        return get_default_workflow_runner().resume_workflow(
+            self,
+            graph_id,
+            checkpoint,
+            rebuild_graph=self._rebuild_workflow_graph,
+        )
 
     def _step_plan_from_graph(self, graph: TaskGraph, *, label: str) -> dict:
         plan = plan_graph(graph.tasks, graph=graph)

@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, "C:/dev/Coding Language/src")
@@ -160,6 +161,65 @@ class SQLiteWorkflowStoreTests(unittest.TestCase):
             self.assertIsInstance(sqlite, WorkflowStore)
             self.assertEqual(local.store_info()["backend"], "local")
             self.assertEqual(sqlite.store_info()["backend"], "sqlite")
+
+
+class LocalWorkflowStoreScanTests(unittest.TestCase):
+    """#102: LocalWorkflowStore.list_runs() must skip files older than terminal_max_age_days."""
+
+    def test_old_files_are_excluded_from_list_runs(self):
+        """Files not modified within terminal_max_age_days must not appear in list_runs."""
+        with tempfile.TemporaryDirectory() as td:
+            store = LocalWorkflowStore(root=td, terminal_max_age_days=1)
+            store.create_run(
+                run_id="new-run",
+                graph_id="new-run",
+                workflow_name="demo",
+                execution_kind="workflow",
+            )
+            store.create_run(
+                run_id="old-run",
+                graph_id="old-run",
+                workflow_name="demo",
+                execution_kind="workflow",
+            )
+            # Backdate the old-run file to 2+ days ago
+            old_path = store._run_path("old-run")
+            old_mtime = time.time() - 2 * 86_400
+            os.utime(old_path, (old_mtime, old_mtime))
+
+            runs = store.list_runs()
+            run_ids = {r.run_id for r in runs}
+            self.assertIn("new-run", run_ids)
+            self.assertNotIn("old-run", run_ids, "Files older than terminal_max_age_days must be skipped")
+
+    def test_zero_max_age_disables_filtering(self):
+        """terminal_max_age_days=0 must disable mtime filtering (all files returned)."""
+        with tempfile.TemporaryDirectory() as td:
+            store = LocalWorkflowStore(root=td, terminal_max_age_days=0)
+            store.create_run(
+                run_id="run-a",
+                graph_id="run-a",
+                workflow_name="demo",
+                execution_kind="workflow",
+            )
+            old_path = store._run_path("run-a")
+            os.utime(old_path, (0, 0))  # epoch — oldest possible
+
+            runs = store.list_runs()
+            self.assertTrue(any(r.run_id == "run-a" for r in runs))
+
+    def test_recent_run_always_returned(self):
+        """A run modified just now must always appear regardless of max_age."""
+        with tempfile.TemporaryDirectory() as td:
+            store = LocalWorkflowStore(root=td, terminal_max_age_days=1)
+            store.create_run(
+                run_id="fresh",
+                graph_id="fresh",
+                workflow_name="demo",
+                execution_kind="workflow",
+            )
+            runs = store.list_runs()
+            self.assertTrue(any(r.run_id == "fresh" for r in runs))
 
 
 class WorkflowStoreSharedBehaviorTests(unittest.TestCase):

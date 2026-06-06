@@ -98,6 +98,24 @@
   exhausted. If only blocked `recv()` calls remain with no possible sender (no runnable
   coroutines, no timers, no daemon channels), the scheduler raises a `deadlock` runtime
   error instead of silently returning. Closes #107.
+- **#108/#109: `run_goal()` and `resume_goal()` now route through `WorkflowFrameworkRunner`.**
+  Both functions previously bypassed the framework runner and called the task-graph layer
+  directly. They now call `get_default_workflow_runner().start_graph()` and
+  `get_default_workflow_runner().resume_workflow()` respectively, so every goal execution
+  creates a persisted framework run record with `execution_kind='goal'`, and resumptions
+  increment `resume_count` in the store. The `_rebuild_workflow_graph` callback handles both
+  `goal` and `workflow` kinds transparently. Closes #108, #109.
+- **#110: Checkpoint API documented and tested.** Eight new tests in `tests/test_checkpoints.py`
+  cover checkpoint label creation, multi-checkpoint ordering, resume-from-checkpoint,
+  `resume_count` increment, duplicate-label last-wins semantics, and rollback scope
+  (checkpointed task + dependents only; sibling steps unchanged). Module docstring
+  documents the `checkpoints` (public) vs `engine_checkpoints` (internal snapshot) split.
+  Closes #110.
+- **#102: `LocalWorkflowStore.list_runs()` uses mtime-based scan to skip old files.**
+  Switched from `os.listdir()` full-read to `os.scandir()` with `entry.stat().st_mtime`
+  check. Files older than `terminal_max_age_days` (default 30) are skipped without loading
+  their JSON. New constructor parameter `terminal_max_age_days` (set to 0 to disable).
+  Prevents >2s sweep latency seen in CI with 670+ accumulated run files. Closes #102.
 - **#94 (SCHED-001): cooperative sleep no longer counted against execution deadline.**
   The scheduler now extends `vm.deadline` by the actual wall-clock duration of each
   `time.sleep()` it calls while waiting for timers or I/O channels. Only active

@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 
@@ -345,12 +346,29 @@ def _terminal_run_records(records: list[WorkflowRunRecord]) -> list[WorkflowRunR
 
 
 class LocalWorkflowStore(WorkflowStore):
-    """File-backed local store for workflow runs and claims."""
+    """File-backed local store for workflow runs and claims.
 
-    def __init__(self, root: str | None = None, *, claim_ttl_ms: float = 30_000.0) -> None:
+    Warning: intended for development and single-process use only.
+    ``list_runs()`` scans all run files on every call. Stores with more than
+    a few hundred historical terminal runs will degrade linearly. Set
+    ``terminal_max_age_days`` to skip files not modified in that many days
+    (they are almost certainly old completed/failed runs). Any non-terminal
+    run that goes un-updated for longer than ``terminal_max_age_days`` will
+    be excluded from sweeper queries — use SQLiteWorkflowStore for long-lived
+    or production deployments.
+    """
+
+    def __init__(
+        self,
+        root: str | None = None,
+        *,
+        claim_ttl_ms: float = 30_000.0,
+        terminal_max_age_days: float = 30.0,
+    ) -> None:
         resolved = root or os.path.join(".nodus", "workflow_framework")
         self.root = os.path.abspath(resolved)
         self.claim_ttl_ms = claim_ttl_ms
+        self.terminal_max_age_days = terminal_max_age_days
         self._lock = threading.Lock()
 
     def _ensure_root(self) -> str:
@@ -600,11 +618,16 @@ class LocalWorkflowStore(WorkflowStore):
     def list_runs(self) -> list[WorkflowRunRecord]:
         root = self._runs_root()
         records: list[WorkflowRunRecord] = []
-        for name in os.listdir(root):
-            if not name.endswith(".json"):
+        cutoff_s: float | None = None
+        if self.terminal_max_age_days > 0:
+            cutoff_s = time.time() - self.terminal_max_age_days * 86_400.0
+        for entry in os.scandir(root):
+            if not entry.name.endswith(".json") or entry.name.endswith(".tmp"):
                 continue
-            run_id = name[:-5]
-            record = self.get_run(run_id)
+            if cutoff_s is not None and entry.stat().st_mtime < cutoff_s:
+                continue  # skip files not touched in terminal_max_age_days (old completed runs)
+            run_id = entry.name[:-5]
+            record = self._load_run_unlocked(run_id)
             if record is not None:
                 records.append(record)
         return _sorted_run_records(records)
@@ -967,10 +990,11 @@ def create_workflow_store(
     root: str | None = None,
     path: str | None = None,
     claim_ttl_ms: float = 30_000.0,
+    terminal_max_age_days: float = 30.0,
 ) -> WorkflowStore:
     backend_name = str(backend or "local").strip().lower()
     if backend_name == "local":
-        return LocalWorkflowStore(root=root, claim_ttl_ms=claim_ttl_ms)
+        return LocalWorkflowStore(root=root, claim_ttl_ms=claim_ttl_ms, terminal_max_age_days=terminal_max_age_days)
     if backend_name == "sqlite":
         return SQLiteWorkflowStore(path=path, claim_ttl_ms=claim_ttl_ms)
     raise ValueError(f"Unknown workflow store backend: {backend}")
