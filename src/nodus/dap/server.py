@@ -427,7 +427,7 @@ class DebugSession:
             return "", "", f"Compile error: {exc}"
 
         child_vm = VM(
-            code,
+            cast(list, code),
             functions,
             code_locs=code_locs,
             initial_globals=eval_globals,
