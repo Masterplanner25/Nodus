@@ -280,5 +280,73 @@ run_loop()
         self.assertIn("deadlock", msg.lower())
 
 
+class Sched001CoopSleepTests(unittest.TestCase):
+    """SCHED-001: cooperative sleep must not count against the execution deadline.
+
+    The scheduler calls time.sleep() while waiting for timer-heap entries.
+    Previously that wall-clock time was charged against vm.deadline even though
+    the coroutine was idle.  The fix extends vm.deadline by the actual sleep
+    duration, so only active compute counts.
+    """
+
+    def test_single_sleep_longer_than_deadline_completes(self):
+        """A single sleep(300) with timeout_ms=200 must complete — not be killed."""
+        script = """
+import "std:async"
+let c = coroutine(fn() {
+    sleep(300)
+    print("done")
+})
+spawn(c)
+run_loop()
+"""
+        result, _ = run_source(script, filename="sched001a.nd", timeout_ms=200)
+        self.assertTrue(
+            result["ok"],
+            "SCHED-001: coroutine sleeping 300ms with timeout_ms=200 was killed. "
+            "Cooperative sleep must not count against the deadline.",
+        )
+        self.assertIn("done", result.get("stdout", ""))
+
+    def test_multiple_sleeps_exceeding_deadline_complete(self):
+        """Four 100ms sleeps (400ms total) with timeout_ms=200 must all complete."""
+        script = """
+import "std:async"
+let c = coroutine(fn() {
+    sleep(100)
+    sleep(100)
+    sleep(100)
+    sleep(100)
+    print("done")
+})
+spawn(c)
+run_loop()
+"""
+        result, _ = run_source(script, filename="sched001b.nd", timeout_ms=200)
+        self.assertTrue(
+            result["ok"],
+            "SCHED-001: coroutine with 4×100ms sleeps was killed by 200ms deadline.",
+        )
+        self.assertIn("done", result.get("stdout", ""))
+
+    def test_cpu_tight_loop_still_killed(self):
+        """A CPU tight-loop must still be killed — deadline still fires on compute."""
+        script = """
+let c = coroutine(fn() {
+    let i = 0
+    while (i < 1000000) { i = i + 1 }
+    print("should not reach")
+})
+spawn(c)
+run_loop()
+"""
+        result, _ = run_source(script, filename="sched001c.nd", timeout_ms=1)
+        self.assertFalse(
+            result["ok"],
+            "CPU tight-loop with 1ms deadline should still be killed.",
+        )
+        self.assertNotIn("should not reach", result.get("stdout", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

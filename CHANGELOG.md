@@ -98,6 +98,12 @@
   exhausted. If only blocked `recv()` calls remain with no possible sender (no runnable
   coroutines, no timers, no daemon channels), the scheduler raises a `deadlock` runtime
   error instead of silently returning. Closes #107.
+- **#94 (SCHED-001): cooperative sleep no longer counted against execution deadline.**
+  The scheduler now extends `vm.deadline` by the actual wall-clock duration of each
+  `time.sleep()` it calls while waiting for timers or I/O channels. Only active
+  instruction execution consumes the deadline budget; idle sleep time is excluded.
+  A coroutine sleeping 4×100ms with `timeout_ms=200` now completes cleanly. CPU
+  tight-loops are still killed. Closes #94.
 - **#96 (SCHED-003): scheduler sandbox deadline path now has test coverage.**
   `SchedulerSandboxLimitTests` exercises the full `run_source` → scheduler → deadline path.
   `Chan001OrphanTests` covers the `_recv_channels` deadlock detection path. Closes #96.
