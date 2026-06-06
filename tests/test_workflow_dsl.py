@@ -32,7 +32,6 @@ def run_program(src: str, source_path: str = "workflow.nd"):
 class WorkflowDslTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import os as _os
         import tempfile as _tempfile
         tmp = _tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
