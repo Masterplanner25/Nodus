@@ -303,6 +303,7 @@ class VM:
         self.tool_registry: dict = {}
         self._tool_deprecated_warned: set = set()
         self._tool_registry_lock = threading.RLock()
+        self._spawned_handles: list = []  # (proc, stdout_thread, stderr_thread) per subprocess_spawn
         self.test_state: dict = {}
         self.on_error: Callable | None = None
         self._bare_import_hints: dict[str, str] = {}

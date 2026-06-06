@@ -174,5 +174,46 @@ class ShutdownTests(unittest.TestCase):
         self.assertEqual(len(rt._host_functions), 0)
 
 
+class SpawnThreadLeakTests(unittest.TestCase):
+    """#99 (EMBED-003): subprocess_spawn pump threads must be joined on reset/shutdown."""
+
+    def _spawn_src(self, cmd):
+        if os.name == "nt":
+            return f'let p = subprocess_spawn(["cmd", "/c", "{cmd}"])\np.wait()'
+        return f'let p = subprocess_spawn(["sh", "-c", "{cmd}"])\np.wait()'
+
+    def test_reset_joins_pump_threads(self):
+        """reset() must drain _spawned_handles so threads are not left alive."""
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
+        vm = rt.last_vm
+        self.assertIsNotNone(vm)
+        self.assertIsInstance(vm._spawned_handles, list)
+        rt.reset()
+        self.assertIsNone(rt.last_vm)
+        # After reset, handles list on the (now released) vm should be empty
+        self.assertEqual(len(vm._spawned_handles), 0)
+
+    def test_shutdown_joins_pump_threads(self):
+        """shutdown() must also drain _spawned_handles."""
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
+        vm = rt.last_vm
+        self.assertIsNotNone(vm)
+        rt.shutdown()
+        self.assertIsNone(rt.last_vm)
+        self.assertEqual(len(vm._spawned_handles), 0)
+
+    def test_spawned_handles_populated_after_spawn(self):
+        """_spawned_handles must have one entry per subprocess_spawn call."""
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
+        vm = rt.last_vm
+        self.assertIsNotNone(vm)
+        # wait() is called in the script, so proc is done — but handle is still tracked
+        self.assertGreaterEqual(len(vm._spawned_handles), 1)
+        rt.reset()
+
+
 if __name__ == "__main__":
     unittest.main()

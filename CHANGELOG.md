@@ -98,6 +98,12 @@
   exhausted. If only blocked `recv()` calls remain with no possible sender (no runnable
   coroutines, no timers, no daemon channels), the scheduler raises a `deadlock` runtime
   error instead of silently returning. Closes #107.
+- **#99 (EMBED-003): `subprocess_spawn` pump threads are now joined on `reset()`/`shutdown()`.**
+  Each `subprocess_spawn` call registers its two daemon pump threads (stdout + stderr)
+  in `vm._spawned_handles`. `NodusRuntime.reset()` and `NodusRuntime.shutdown()` now
+  kill any live subprocesses and join their threads (500ms timeout per thread) before
+  releasing the VM reference. The handles list is cleared so no stale references accumulate
+  across calls in long-lived embedded servers. Closes #99.
 - **#108/#109: `run_goal()` and `resume_goal()` now route through `WorkflowFrameworkRunner`.**
   Both functions previously bypassed the framework runner and called the task-graph layer
   directly. They now call `get_default_workflow_runner().start_graph()` and
