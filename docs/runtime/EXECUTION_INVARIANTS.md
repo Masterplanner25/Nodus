@@ -2,7 +2,7 @@
 
 # Execution Invariants
 
-**Version:** 3.0.2
+**Version:** 4.0.0
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -232,6 +232,44 @@ independently.
 
 **Code:** `runtime/task_graph.py`, `runtime/scheduler.py`.
 
+### I-WFLOW-04: Steps do not execute until all declared dependencies are completed
+
+A step is eligible to run only when every step listed in its `after` clause has reached
+`completed` (or `done`) state, meaning its result has been recorded in the `results` map.
+The `ready_tasks()` predicate enforces this:
+
+```
+task in pending AND all(dep.task_id in results for dep in task.dependencies)
+```
+
+No partial satisfaction is accepted. If a dependency fails, the dependent step is never
+spawned and the workflow returns a failure result immediately.
+
+**Code:** `orchestration/task_graph.py::ready_tasks` (~line 719), `spawn_task`.
+
+### I-WFLOW-05: A checkpoint snapshot captures the full workflow state at the moment of the `checkpoint` call
+
+When a step executes `checkpoint "label"`, the runtime records an engine-side entry
+containing: `label`, `step` (step name), `task_id`, `timestamp`, and a deep copy of the
+current `workflow_state` map at that instant. The public API surface
+(`workflow_checkpoints()`) returns the same entry with the internal `state` field stripped.
+The snapshot is atomic: `_record_checkpoint` calls `_persist_graph_state` and
+`persist_checkpoint_snapshot` before returning.
+
+**Code:** `orchestration/task_graph.py::_record_checkpoint` (~line 749),
+`orchestration/workflow_state.py::checkpoint_public`.
+
+### I-WFLOW-06: Resume from a checkpoint does not re-execute already-completed steps
+
+When a workflow is resumed (via `resume_workflow(id)` or `resume_workflow(id, "label")`),
+the engine loads the persisted graph state and marks any step whose saved status is
+`completed` or `done` as already finished — populating `results[task_id]` and removing
+the step from `pending`. Those steps are never spawned again. Only steps still `pending`
+(or not recorded at all) are eligible to run. This guarantees exactly-once execution of
+completed steps across a resume.
+
+**Code:** `orchestration/task_graph.py` (~line 1185–1221), `_normalize_workflow_snapshot`.
+
 ---
 
 ## 7. Coroutine and channel invariants
@@ -265,6 +303,9 @@ Most of these invariants have direct test coverage. Known test gaps:
   TECH_DEBT.md §Security boundary test rule.
 - I-WFLOW-01 (atomic writes): not unit-tested; relies on filesystem semantics.
 - I-WFLOW-03 (step isolation): covered by task graph tests.
+- I-WFLOW-04 (dependency ordering): covered by task graph integration tests.
+- I-WFLOW-05 (checkpoint snapshot): partially covered; state-copy depth not explicitly asserted.
+- I-WFLOW-06 (resume skips completed): covered by workflow resume tests; see also #110.
 
 ---
 
