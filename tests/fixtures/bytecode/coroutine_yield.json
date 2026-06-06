@@ -1,0 +1,20 @@
+[
+  "JUMP",
+  "JUMP",
+  "FRAME_SIZE",
+  "PUSH_CONST",
+  "YIELD",
+  "PUSH_CONST",
+  "YIELD",
+  "PUSH_CONST",
+  "YIELD",
+  "PUSH_CONST",
+  "RETURN",
+  "MAKE_CLOSURE",
+  "CALL",
+  "STORE",
+  "LOAD",
+  "CALL",
+  "STORE",
+  "HALT"
+]

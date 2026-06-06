@@ -1,0 +1,17 @@
+[
+  "JUMP",
+  "FRAME_SIZE",
+  "STORE_ARG",
+  "STORE_ARG",
+  "LOAD_LOCAL_IDX",
+  "LOAD_LOCAL_IDX",
+  "ADD",
+  "RETURN",
+  "PUSH_CONST",
+  "RETURN",
+  "PUSH_CONST",
+  "PUSH_CONST",
+  "CALL",
+  "STORE",
+  "HALT"
+]
