@@ -86,6 +86,8 @@ BUILTIN_NAMES = {
     "str_trim",
     "str_split",
     "str_contains",
+    "str_startswith",
+    "str_endswith",
     "str_replace",
     "has_key",
     "map_has_key",

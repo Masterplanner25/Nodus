@@ -36,6 +36,16 @@ def register(vm, registry) -> None:
         vm.ensure_string(needle, "contains(x, needle)")
         return needle in value
 
+    def builtin_startswith(value, prefix):
+        vm.ensure_string(value, "str_startswith(s, prefix)")
+        vm.ensure_string(prefix, "str_startswith(s, prefix)")
+        return value.startswith(prefix)
+
+    def builtin_endswith(value, suffix):
+        vm.ensure_string(value, "str_endswith(s, suffix)")
+        vm.ensure_string(suffix, "str_endswith(s, suffix)")
+        return value.endswith(suffix)
+
     def builtin_replace(value, old, new):
         vm.ensure_string(value, "str_replace(s, old, new)")
         vm.ensure_string(old, "str_replace(s, old, new)")
@@ -205,6 +215,8 @@ def register(vm, registry) -> None:
     registry.add("str_trim", 1, builtin_trim)
     registry.add("str_split", 2, builtin_split)
     registry.add("str_contains", 2, builtin_contains)
+    registry.add("str_startswith", 2, builtin_startswith)
+    registry.add("str_endswith", 2, builtin_endswith)
     registry.add("str_replace", 3, builtin_replace)
     registry.add("has_key", 2, builtin_has_key)
     registry.add("map_has_key", 2, builtin_has_key)  # internal alias used by std:collections

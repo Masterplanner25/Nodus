@@ -305,6 +305,7 @@ class VM:
         self._tool_registry_lock = threading.RLock()
         self.test_state: dict = {}
         self.on_error: Callable | None = None
+        self._bare_import_hints: dict[str, str] = {}
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
             "type": BuiltinInfo("type", 1, self.builtin_type),
@@ -611,6 +612,20 @@ class VM:
             if isinstance(value, LiveBinding):
                 return value.get()
             return value
+        if name in ("await", "async"):
+            self.runtime_error(
+                "name",
+                f'"{name}" is not a keyword in Nodus; '
+                f"async builtins (http_get_async, subprocess_run_async) return their result directly — no await needed",
+            )
+        if name in self._bare_import_hints:
+            import_path = self._bare_import_hints[name]
+            self.runtime_error(
+                "name",
+                f"Undefined variable: {name!r}. "
+                f"Module '{import_path}' was imported without an alias — "
+                f"add 'as {name}' to the import to use '{name}.method()' syntax",
+            )
         self.runtime_error("name", f"Undefined variable: {name}")
 
     def store_name(self, name: str, value):
@@ -2184,6 +2199,8 @@ class VM:
                 self.stack.append(self._make_record_iterator(value))
                 self.ip += 1
                 return None
+        if isinstance(value, dict):
+            self.runtime_error("type", "maps are not directly iterable; use 'for k in keys(m)' to iterate keys or 'for v in values(m)' for values")
         self.runtime_error("type", "Value is not iterable")
 
     def _op_iter_next(self, instr):
