@@ -18,6 +18,14 @@ fn contains(s, substring) {
     return str_contains(s, substring)
 }
 
+fn starts_with(s, prefix) {
+    return str_startswith(s, prefix)
+}
+
+fn ends_with(s, suffix) {
+    return str_endswith(s, suffix)
+}
+
 fn repeat(s, n) {
     let out = ""
     let i = 0

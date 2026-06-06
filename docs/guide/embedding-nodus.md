@@ -675,7 +675,7 @@ or `std:http` module wrappers) from within spawned coroutines:
 
 ```python
 import sys
-PY = sys.executable
+PY = sys.executable.replace("\\", "/")  # forward slashes work on all platforms
 
 rt = NodusRuntime(timeout_ms=None, max_steps=1_000_000)
 result = rt.run_source(f"""
