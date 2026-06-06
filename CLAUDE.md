@@ -277,6 +277,29 @@ The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the
 allowlist OR are fixed before release.
 
+**Regression test convention for `--closed-issues`:** add a `# closes: #N`
+comment immediately before the test function that verifies a fix. The
+`closed_issues_phase` scanner finds tests by this marker:
+
+```python
+# closes: #99
+def test_spawn_threads_joined_on_reset(self):
+    ...
+```
+
+Without the marker, the gate reports the issue as "no test found" and the
+closure-verification step in `PLAYBOOK_PATCH_MINOR.md` Stage 3 will fail.
+
+**Golden bytecode tests:** `tests/test_bytecode_golden.py` checks opcode
+sequences for core constructs against fixtures in `tests/fixtures/bytecode/`.
+Re-generate after intentional compiler changes:
+
+```powershell
+NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m pytest tests/test_bytecode_golden.py -q
+```
+
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
@@ -625,11 +648,11 @@ rt = NodusRuntime()
 rt = NodusRuntime(timeout_ms=None, max_steps=None)
 ```
 
-**EMBED-003 (#99, open) — `subprocess_spawn` thread leak:**
-Two daemon pump threads are created per `subprocess_spawn`. If `run_loop` exits
-before the subprocess terminates (output channel never consumed), threads accumulate.
-They're daemon threads so they don't block exit, but they pile up per session.
-No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
+**EMBED-003 (#99, RESOLVED) — `subprocess_spawn` thread leak fixed:**
+Each spawn now registers `(proc, t_stdout, t_stderr)` in `vm._spawned_handles`.
+`NodusRuntime.reset()` and `NodusRuntime.shutdown()` call `_drain_spawned()` which
+kills live processes and joins threads (500ms timeout) before releasing the VM.
+PR #140 (merged). No accumulation in long-lived embedded servers.
 
 **EMBED-004 (#100, RESOLVED)** — `*_async` builtins are truly concurrent (thread+channel pattern), not serial.
 
