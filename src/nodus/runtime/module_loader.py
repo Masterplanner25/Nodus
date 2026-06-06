@@ -620,7 +620,7 @@ class ModuleLoader:
                 for name in module.exports:
                     bindings[name] = module.export_binding(name)
                 inferred = spec.path.replace("std:", "").split("/")[-1].split(":")[-1]
-                if inferred and hasattr(self._vm, "_bare_import_hints"):
+                if inferred and self._vm is not None and hasattr(self._vm, "_bare_import_hints"):
                     self._vm._bare_import_hints[inferred] = spec.path
         return bindings, modules
 
