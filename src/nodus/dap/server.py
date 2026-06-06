@@ -408,6 +408,41 @@ class DebugSession:
             for name, value in scope.values
         ]
 
+    def evaluate(self, expression: str, frame_id: int, context: str) -> tuple[str, str, str | None]:
+        vm = self.vm
+        if vm is None:
+            return "", "", "No active debug session"
+
+        # Build evaluation context: module globals + current frame locals, both Cell-unwrapped.
+        eval_globals: dict = {k: getattr(v, "value", v) for k, v in vm.globals.items()}
+        eval_globals.update(self.get_locals(vm))
+
+        try:
+            wrapped = f"let __eval_result__ = ({expression})\n"
+            loader = ModuleLoader(project_root=None)
+            code, functions, code_locs = loader.compile_only(
+                wrapped, module_name="<eval>"
+            )
+        except Exception as exc:
+            return "", "", f"Compile error: {exc}"
+
+        child_vm = VM(
+            code,
+            functions,
+            code_locs=code_locs,
+            initial_globals=eval_globals,
+            host_globals=dict(getattr(vm, "host_globals", {})),
+            allowed_paths=getattr(vm, "allowed_paths", None),
+        )
+        try:
+            child_vm.run()
+            result_val = child_vm.globals.get("__eval_result__")
+            result_str = child_vm.value_to_string(result_val, quote_strings=True)
+            type_name = str(child_vm.builtin_type(result_val))
+            return result_str, type_name, None
+        except Exception as exc:
+            return "", "", str(exc)
+
     def get_locals(self, vm: VM) -> dict:
         values = vm.current_locals()
         if values is None:
@@ -511,6 +546,20 @@ class DebugAdapterServer:
             if command == "variables":
                 variables_reference = int(arguments.get("variablesReference"))
                 self.send_response(request_seq, command, {"variables": self.session.variables(variables_reference)})
+                return False
+            if command == "evaluate":
+                expression = arguments.get("expression", "")
+                frame_id = int(arguments.get("frameId", 0))
+                context = arguments.get("context", "repl")
+                result, type_name, error = self.session.evaluate(expression, frame_id, context)
+                if error is not None:
+                    self.send_error(request_seq, command, error)
+                else:
+                    self.send_response(request_seq, command, {
+                        "result": result,
+                        "type": type_name,
+                        "variablesReference": 0,
+                    })
                 return False
             self.send_error(request_seq, command, f"Unsupported command: {command}")
             return False

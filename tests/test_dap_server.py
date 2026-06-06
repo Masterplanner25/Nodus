@@ -158,5 +158,77 @@ class DapServerTests(unittest.TestCase):
             client.request("disconnect")
 
 
+    def test_evaluate_expression_at_breakpoint(self):
+        """evaluate command returns expression result in the paused VM context."""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "eval.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("let x = 10\nlet y = x + 5\nprint(y)\n")
+
+            client = _Client()
+            client.request("initialize")
+            client.request("launch", {"program": path})
+            client.request("setBreakpoints", {"source": {"path": path}, "lines": [2]})
+
+            debugger = client.server.session.debugger
+            assert debugger is not None
+            previous = debugger.stop_count
+            client.request("continue")
+            self.assertTrue(debugger.wait_for_stop(previous, timeout=1.0))
+            client.drain()
+
+            messages = client.request("evaluate", {"expression": "x + 1", "frameId": 1, "context": "repl"})
+            response = next(m for m in messages if m["type"] == "response")
+            self.assertTrue(response["success"])
+            self.assertEqual(response["body"]["result"], "11.0")
+            self.assertEqual(response["body"]["variablesReference"], 0)
+            self.assertEqual(response["body"]["type"], "float")
+
+            client.request("disconnect")
+
+    def test_evaluate_syntax_error_returns_error_response(self):
+        """evaluate with a parse error sends an error response and does not crash the server."""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "eval_syn.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("let x = 1\nprint(x)\n")
+
+            client = _Client()
+            client.request("initialize")
+            client.request("launch", {"program": path})
+
+            debugger = client.server.session.debugger
+            assert debugger is not None
+            # VM is paused at entry — evaluate an expression that cannot be parsed.
+            messages = client.request("evaluate", {"expression": "1 + * 2", "frameId": 1, "context": "repl"})
+            response = next(m for m in messages if m["type"] == "response")
+            self.assertFalse(response["success"])
+            self.assertIn("error", response.get("message", "").lower())
+
+            # Server must still respond to further requests after the error.
+            disconnect_messages = client.request("disconnect")
+            disconnect_response = next(m for m in disconnect_messages if m["type"] == "response")
+            self.assertTrue(disconnect_response["success"])
+
+    def test_evaluate_undefined_variable_returns_error(self):
+        """evaluate with an undefined variable sends an error response."""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "eval_undef.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("let x = 1\nprint(x)\n")
+
+            client = _Client()
+            client.request("initialize")
+            client.request("launch", {"program": path})
+
+            debugger = client.server.session.debugger
+            assert debugger is not None
+            messages = client.request("evaluate", {"expression": "undefined_var", "frameId": 1, "context": "repl"})
+            response = next(m for m in messages if m["type"] == "response")
+            self.assertFalse(response["success"])
+
+            client.request("disconnect")
+
+
 if __name__ == "__main__":
     unittest.main()
