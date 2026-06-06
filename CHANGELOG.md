@@ -89,6 +89,13 @@
   / `AsyncEventStore` / `AsyncJobStore` via `sqlalchemy.ext.asyncio`. 47 tests (31 sync +
   16 async). Closes the last gap in both ecosystem audits.
 
+### Documentation
+
+- **`EXECUTION_INVARIANTS.md` — added I-WFLOW-04/05/06:** Documents step dependency
+  ordering (steps do not run until all `after` dependencies complete), checkpoint snapshot
+  semantics (state deep-copied at call time, public API strips internal `state` field),
+  and resume idempotency (completed steps are never re-executed). Closes #111.
+
 ### Added (original 4.0.0 scope)
 
 - **Third-party .nd module resolution via `nodus.nd` entry-point group:** Pip-installed
