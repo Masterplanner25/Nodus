@@ -192,7 +192,10 @@ class Scheduler:
                         if getattr(c, "state", None) == "suspended"
                         and getattr(c, "blocked_reason", None) == "channel_recv"
                     ]
-                    names = [c.name or f"<coroutine #{c.id}>" for c in blocked]
+                    names = [
+                        getattr(c, "name", None) or f"<coroutine #{getattr(c, 'id', '?')}>"
+                        for c in blocked
+                    ]
                     detail = f": {', '.join(names)}" if names else ""
                     raise LangRuntimeError(
                         "deadlock",
