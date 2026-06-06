@@ -19,6 +19,27 @@ from nodus.vm.vm import VM, Record, Closure
 _SANDBOX_DEFAULT = object()  # sentinel: allowed_paths not explicitly set by caller
 
 
+def _drain_spawned(vm: "VM | None", join_timeout_s: float = 0.5) -> None:
+    """Kill and join any pump threads registered by subprocess_spawn on *vm*.
+
+    Called by NodusRuntime.reset() and NodusRuntime.shutdown() so that spawned
+    subprocesses and their stdout/stderr pump threads do not accumulate in
+    long-lived embedded servers (EMBED-003/#99).
+    """
+    if vm is None:
+        return
+    handles = getattr(vm, "_spawned_handles", [])
+    for proc, t_out, t_err in handles:
+        try:
+            if proc.poll() is None:
+                proc.kill()
+        except Exception:
+            pass
+        t_out.join(timeout=join_timeout_s)
+        t_err.join(timeout=join_timeout_s)
+    handles.clear()
+
+
 class ToolRegistry:
     """Python-side view of the Nodus tool registry for a ``NodusRuntime`` instance.
 
@@ -368,21 +389,22 @@ class NodusRuntime:
         ``run_source`` / ``run_file`` call.  Calling ``reset()`` releases that
         reference, allowing the VM (and its associated bytecode, stack, and globals)
         to be garbage-collected.
+
+        Any subprocesses started by ``subprocess_spawn`` during the last run are
+        killed and their pump threads joined before the VM reference is released.
         """
+        _drain_spawned(self.last_vm)
         self.last_vm = None
 
     def shutdown(self) -> None:
         """Release all runtime resources held by this instance.
 
-        Clears the last VM reference, registered host functions, and registered
-        Python tools.  After calling ``shutdown()``, this runtime instance should
-        not be used again.
-
-        Daemon threads created by ``subprocess_spawn`` are not forcibly terminated;
-        they will exit when their subprocesses complete or when the host Python
-        process exits.  See EMBED-003 in TECH_DEBT.md for the full thread-lifecycle
-        analysis.
+        Kills any subprocesses started by ``subprocess_spawn`` and joins their
+        pump threads (EMBED-003/#99).  Clears the last VM reference, registered
+        host functions, and registered Python tools.  After calling ``shutdown()``,
+        this runtime instance should not be used again.
         """
+        _drain_spawned(self.last_vm)
         self.last_vm = None
         self._host_functions.clear()
         self._python_registered_tools.clear()

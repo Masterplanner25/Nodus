@@ -516,8 +516,12 @@ def _do_spawn(argv_or_cmd, opts, vm, is_shell=False):
         proc.wait()
         process_record.fields["exit_code"] = proc.returncode
 
-    threading.Thread(target=_pump_stdout_thread, daemon=True).start()
-    threading.Thread(target=_pump_stderr_thread, daemon=True).start()
+    t_out = threading.Thread(target=_pump_stdout_thread, daemon=True)
+    t_err = threading.Thread(target=_pump_stderr_thread, daemon=True)
+    t_out.start()
+    t_err.start()
+    root = _root_vm(vm)
+    root._spawned_handles.append((proc, t_out, t_err))
 
     return process_record
 

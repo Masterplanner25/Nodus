@@ -94,11 +94,11 @@ describe the workaround patterns used until these are fixed.
   `on_error` attribute. Callers can now detect and stop on coroutine errors.
   GitHub: #98.
 
-- **EMBED-003** (FIXED — minimal): `NodusRuntime.shutdown()` added; clears
-  `last_vm`, host functions, and registered tools. Daemon pump threads from
-  `subprocess_spawn` still accumulate until their subprocesses exit (process
-  tracking not yet implemented), but the public API surface now exists.
-  GitHub: #99.
+- **EMBED-003** (FIXED): `subprocess_spawn` now registers each spawned process
+  and its two pump threads in `vm._spawned_handles`. `NodusRuntime.reset()` and
+  `NodusRuntime.shutdown()` kill live processes and join threads (500ms timeout)
+  before releasing the VM reference.  Handles list is cleared after drain so no
+  stale references accumulate.  GitHub: #99.
 
 - **EMBED-004** (FIXED for direct builtin path): `http_get_async`, `http_post_async`
   and all `http_*_async` variants now run the HTTP request in a daemon thread and
