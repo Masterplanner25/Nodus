@@ -164,7 +164,7 @@ class Base64Tests(unittest.TestCase):
         src = ('let encoded = encoding.base64_encode("hello world")\n'
                'let decoded = encoding.base64_decode(encoded)\n'
                'print(type(decoded))')
-        self.assertEqual(first(src), "bytes")
+        self.assertEqual(first(src), "string")
 
     def test_base64_url_encode(self):
         self.assertEqual(first('print(type(encoding.base64_url_encode("test")))'), "string")
@@ -180,7 +180,7 @@ class Base64Tests(unittest.TestCase):
         src = ('let e = encoding.base64_url_encode("hello world")\n'
                'let d = encoding.base64_url_decode(e)\n'
                'print(type(d))')
-        self.assertEqual(first(src), "bytes")
+        self.assertEqual(first(src), "string")
 
 
 class HexTests(unittest.TestCase):

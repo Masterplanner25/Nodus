@@ -936,6 +936,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                             if wait_info is not None:
                                 _pause_for_wait(task, wait_info)
                                 return
+                            if execution_kind in ("workflow", "goal") and getattr(result, "kind", None) == "error":
+                                err_fields = getattr(result, "fields", {})
+                                err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
+                                _fail_task(task, Exception(err_msg))
+                                return
                             task.result = result
                             task.status = "done"
                             task.finished_at = runtime_time_ms()
@@ -972,6 +977,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                                 vm.event_bus.emit_event("goal_step_complete", name=task.step_name, data=goal_data)
                             for next_task in ready_tasks():
                                 spawn_task(next_task)
+                    except Exception as _exc:
+                        try:
+                            _fail_task(task, _exc)
+                        except Exception:
+                            pass
                     finally:
                         active_workers -= 1
                         worker_cond.notify_all()
@@ -998,6 +1008,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         wait_info = _workflow_wait_info(coroutine.last_result)
         if wait_info is not None:
             return _pause_for_wait(task, wait_info)
+        if execution_kind in ("workflow", "goal") and getattr(coroutine.last_result, "kind", None) == "error":
+            err_fields = getattr(coroutine.last_result, "fields", {})
+            err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
+            return _fail_task(task, Exception(err_msg))
         task.result = coroutine.last_result
         task.status = "done"
         task.finished_at = runtime_time_ms()

@@ -32,7 +32,15 @@ def run_program(src: str, source_path: str = "workflow.nd"):
 class WorkflowDslTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server, cls.thread = run_in_thread("127.0.0.1", 0, allowed_paths=["."])
+        import tempfile as _tempfile
+        tmp = _tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        cls._wf_store_path = tmp.name
+        cls.server, cls.thread = run_in_thread(
+            "127.0.0.1", 0, allowed_paths=["."],
+            workflow_store_backend="sqlite",
+            workflow_store_path=cls._wf_store_path,
+        )
         cls.port = cls.server.server_address[1]
         time.sleep(0.05)
 
@@ -40,6 +48,11 @@ class WorkflowDslTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
+        import os as _os
+        try:
+            _os.unlink(cls._wf_store_path)
+        except OSError:
+            pass
 
     def request(self, method: str, path: str, payload: dict | None = None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)

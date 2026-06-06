@@ -14,7 +14,11 @@ reports them. They are not catchable in code — `try/catch` cannot intercept
 a syntax error.
 
 **Runtime errors** happen during execution: missing keys, wrong types, out-of-
-bounds indices, division by zero. These are catchable with `try/catch`.
+bounds indices. These are catchable with `try/catch`.
+
+**Arithmetic errors** (integer division/modulo by zero) are returned as err
+values, not thrown. `try/catch` cannot intercept them — use
+`type(result) == "error"` to detect them. See [Section 6](#6-what-is-not-catchable).
 
 **Thrown errors** are raised deliberately with `throw`. They are catchable
 and carry whatever value you threw.
@@ -230,7 +234,7 @@ value, which is rarely useful. Prefer `err.payload` for structured errors.
 | `"index"` | List index out of range | `List index out of range: 10` |
 | `"name"` | Undefined variable | `Undefined variable: x` |
 | `"call"` | Wrong arity, call a non-function | `add expected 2 args, got 1` |
-| `"runtime"` | Division by zero, VM-level failures | `Division by zero` |
+| `"runtime"` | VM-level failures not covered by other kinds | `Execution limit exceeded` |
 | `"sandbox"` | Call stack overflow, path traversal | `Call stack overflow` |
 | `"thrown"` | Any `throw` statement | the thrown value as string |
 
@@ -248,8 +252,12 @@ value, which is rarely useful. Prefer `err.payload` for structured errors.
 
 **Important distinctions:**
 
-- `"runtime"` is the VM catch-all. Division by zero with `/` produces `"runtime"`,
-  but `math.idiv` division by zero produces `"math_error"`.
+- `"runtime"` is the VM catch-all for failures not covered by a specific kind.
+- **Integer division and modulo by zero** produce a `"math_error"` err record
+  **returned as a value** (not thrown). `1i / 0i` does not raise — it returns an
+  err record. Check with `type(result) == "error"`. Float division by zero
+  returns `inf`/`nan` (not an error). See also
+  [v3-to-v4 migration §4](../migration/v3-to-v4.md#4-float-division-by-zero-returns-infnan).
 - `"type_error"` (from stdlib) is different from `"type"` (from the VM). Both
   describe type mismatches; the VM raises `"type"` for operators like `+`; stdlib
   functions return `"type_error"` err records.
@@ -354,6 +362,17 @@ fn parse_user(raw) {
 ---
 
 ## 6. What is not catchable
+
+**Arithmetic err-values**: `1i / 0i` and `1i % 0i` return an err record as a
+value — they do not throw. `try/catch` never fires for these. The idiomatic
+check is:
+
+```nd
+let result = a / b
+if (type(result) == "error") {
+    print("division by zero: " + result.message)
+}
+```
 
 **Parse errors**: Syntax errors, unterminated strings, invalid escape sequences.
 These abort at load time before any `try` block can execute.
