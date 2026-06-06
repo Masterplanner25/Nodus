@@ -11,10 +11,12 @@ from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
-from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
+from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.vm.vm import VM, Record, Closure
+
+_SANDBOX_DEFAULT = object()  # sentinel: allowed_paths not explicitly set by caller
 
 
 class ToolRegistry:
@@ -207,10 +209,10 @@ class NodusRuntime:
         self,
         *,
         max_steps: int | None = MAX_STEPS,
-        timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
+        timeout_ms: int | None = None,
         max_stdout_chars: int | None = MAX_STDOUT_CHARS,
         project_root: str | None = None,
-        allowed_paths: list[str] | None = None,
+        allowed_paths: list[str] | None = _SANDBOX_DEFAULT,  # type: ignore[assignment]
         allow_input: bool = False,
         max_frames: int | None = None,
         on_error: Callable | None = None,
@@ -226,17 +228,10 @@ class NodusRuntime:
         timeout_ms:
             Wall-clock timeout in milliseconds per execution.  Raises
             ``RuntimeLimitExceeded`` when exceeded.  ``None`` means no timeout.
-            Defaults to ``EXECUTION_TIMEOUT_MS`` (200 ms) from ``support/config.py``.
-
-            .. warning::
-                The 200 ms default is designed for short, sandboxed script
-                executions (the same budget as ``nodus run``).  **Long-lived
-                sessions — MCP/A2A servers, workflow hosts, event loops,
-                anything that runs coroutines with cumulative sleep > 200 ms —
-                must set** ``timeout_ms=None`` **explicitly.**  With the
-                default, a coroutine sleeping 4 × 100 ms is killed after the
-                200 ms wall-clock budget is consumed, even though it did no
-                excessive compute.  See EMBED-001 (#97).
+            Defaults to ``None`` (unlimited), which is correct for long-lived
+            sessions — MCP/A2A servers, workflow hosts, event loops.  Pass an
+            explicit value (e.g. ``timeout_ms=200``) to guard short sandboxed
+            executions the same way ``nodus run`` does.  See EMBED-001 (#97).
         max_stdout_chars:
             Maximum number of stdout characters captured per execution.  Output
             beyond this limit is silently truncated.  ``None`` means unlimited.
@@ -248,7 +243,10 @@ class NodusRuntime:
             List of directory paths the script is allowed to access via filesystem
             builtins (``read_file``, ``write_file``, ``append_file``, ``mkdir``,
             ``list_dir``, ``exists``).  Paths outside this list raise a sandbox error.
-            ``None`` means unrestricted filesystem access.
+            Defaults to ``[os.getcwd()]`` (working directory at construction time),
+            jailing scripts to the project tree — matching the CLI default.  Pass
+            ``allowed_paths=None`` to allow unrestricted filesystem access (explicit
+            opt-in).  See BUG-119.
         allow_input:
             If ``False`` (default), the ``input()`` builtin raises a sandbox error.
             Set to ``True`` only when running in interactive/REPL-like contexts where
@@ -268,6 +266,8 @@ class NodusRuntime:
 
             Per-call overrides are supported via ``run_source(on_error=...)``.
         """
+        if allowed_paths is _SANDBOX_DEFAULT:
+            allowed_paths = [os.getcwd()]
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
         self.max_stdout_chars = max_stdout_chars
