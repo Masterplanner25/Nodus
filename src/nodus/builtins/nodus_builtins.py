@@ -96,6 +96,7 @@ BUILTIN_NAMES = {
     "keys",
     "values",
     "list_push",
+    "push",
     "list_pop",
     "json_parse",
     "json_stringify",

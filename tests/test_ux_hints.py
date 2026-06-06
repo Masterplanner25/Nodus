@@ -1,7 +1,10 @@
-"""UX hint improvements: #123, #127, #129, #130."""
+"""UX hint improvements: #123, #127, #129, #130, #128, #131."""
 
+import io
+import sys
 import unittest
 
+from nodus.cli.cli import main as _cli_main
 from nodus.runtime.embedding import NodusRuntime
 
 
@@ -99,6 +102,45 @@ class StartsWithEndsWithTests(unittest.TestCase):
     def test_str_endswith_builtin_direct(self):
         out = _out('print(str_endswith("nodus", "us"))')
         self.assertEqual(out, "true")
+
+
+class PushAliasTests(unittest.TestCase):
+    """BUG-128: push() should work as a top-level builtin alias for list_push."""
+
+    def test_push_appends_item(self):
+        out = _out("let xs = []\nxs = push(xs, 1i)\nprint(xs[0])")
+        self.assertEqual(out, "1")
+
+    def test_push_and_list_push_same_behavior(self):
+        out1 = _out("let xs = []\nxs = push(xs, 42i)\nprint(xs[0])")
+        out2 = _out("let xs = []\nxs = list_push(xs, 42i)\nprint(xs[0])")
+        self.assertEqual(out1, out2)
+
+    def test_push_multiple_items(self):
+        out = _out("let xs = []\nxs = push(xs, 1i)\nxs = push(xs, 2i)\nprint(len(xs))")
+        self.assertEqual(out, "2")
+
+
+class StabilityOutputTests(unittest.TestCase):
+    """BUG-131: stability output must not contain em-dashes (mojibake on Windows cp1252)."""
+
+    def _stability_output(self):
+        buf = io.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            _cli_main(["nodus", "stability"])
+        finally:
+            sys.stdout = old
+        return buf.getvalue()
+
+    def test_stability_has_no_em_dash(self):
+        self.assertNotIn("—", self._stability_output())
+
+    def test_stable_line_uses_ascii_separator(self):
+        out = self._stability_output()
+        stable_line = next(line for line in out.splitlines() if line.startswith("STABLE"))
+        self.assertIn("--", stable_line)
 
 
 if __name__ == "__main__":

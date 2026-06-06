@@ -8,7 +8,7 @@ import sys
 import threading
 import time as _time
 
-from nodus.runtime.channel import Channel
+from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.vm.vm import BuiltinMethod, Record
 
 _TRUNCATE_LIMIT = 65536  # 64KB per err record field
@@ -373,8 +373,29 @@ def _do_spawn(argv_or_cmd, opts, vm, is_shell=False):
         return rc
 
     def _wait_async():
-        # Phase 3B: sync under the hood; true async bridging is Phase 3C
-        return _wait()
+        scheduler = _get_scheduler(vm)
+        coroutine = getattr(vm, "current_coroutine", None)
+        if (scheduler is None or coroutine is None or
+                coroutine is not getattr(scheduler, "current_task", None)):
+            return _wait()
+        result_ch: Channel = Channel()
+
+        def _worker() -> None:
+            proc.wait()
+            rc = proc.returncode
+            process_record.fields["exit_code"] = rc
+            result_ch.queue.append(rc)
+            result_ch.closed = True
+
+        threading.Thread(target=_worker, daemon=True).start()
+        scheduler._io_channels.append(result_ch)
+        coroutine.state = "suspended"
+        coroutine.blocked_on = result_ch
+        coroutine.blocked_reason = "subprocess_wait_async"
+        vm.stack.append(None)
+        vm.save_current_coroutine_state(vm.ip + 1)
+        result_ch.waiting_receivers.append(coroutine)
+        return ChannelRecvRequest(result_ch)
 
     def _is_alive():
         return proc.poll() is None
