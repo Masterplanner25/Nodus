@@ -198,18 +198,34 @@ trying to find failures. The goal is to find every fixable bug before users enco
    python -m venv .venv-validation
    .venv-validation/Scripts/pip install dist/nodus_lang-X.Y.Z-py3-none-any.whl
    ```
-3. **Closure verification** — for each issue marked closed in the `CHANGELOG.md
-   [Unreleased]` section, locate its regression test(s) (search `tests/` for the
-   issue number or BUG-ID string), then run those tests against the installed wheel
-   in the temp venv — not against dev source via `PYTHONPATH`:
+3. **Closure verification** — run the automated closed-issues gate, then optionally
+   re-run failing tests against the installed wheel to confirm they are present in
+   the artifact (not just in dev source):
+
    ```powershell
+   # Step 3a — automated gate: finds tests by '# closes: #N' markers and runs them
+   PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+     "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+     -m tools.nodus_gate.cli --closed-issues
+
+   # Step 3b — wheel smoke-test: rerun any closed-issue tests against installed wheel
+   # (no PYTHONPATH prefix — uses the .venv-validation install, not dev source)
    .venv-validation/Scripts/python -m pytest tests/test_relevant.py::test_name -v
    ```
-   A failing test here means the CHANGELOG entry is wrong: the fix is not in the
-   wheel. Hold the release, identify the root cause (stale build, pre-commit state,
-   unreachable code path), fix it, rebuild, and repeat from step 2.
-   This gate was added after v3.0.1 shipped a wheel that did not contain a fix
-   listed in its CHANGELOG (BUG-E12 / issue #75).
+
+   **How the tool locates regression tests:** it reads the `[Unreleased]` CHANGELOG
+   section, extracts issue numbers (`#N` or `closes #N`), then searches `tests/` for:
+   - `tests/closed_issues/issue_<N>.py` (dedicated file per issue), or
+   - any test file containing a `# closes: #N` marker immediately before the test
+     function that verifies the fix.
+
+   Add a `# closes: #N` comment before the relevant test function when you add a
+   regression test for a new fix — this is how the tool finds it.
+
+   A passing gate means tests found. Step 3b confirms the fix is in the wheel, not
+   just in dev source (that gap caused BUG-E12 / issue #75 to ship broken in v3.0.1).
+   If step 3b fails, the CHANGELOG entry is wrong: hold the release, identify the root
+   cause (stale build, pre-commit state, unreachable code path), rebuild, and repeat.
 
 4. Write 8–12 Nodus programs targeting the highest-complexity surfaces. Required
    categories (at minimum):
