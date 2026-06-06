@@ -1,0 +1,13 @@
+[
+  "JUMP",
+  "CALL",
+  "STORE",
+  "LOAD",
+  "PUSH_CONST",
+  "CALL",
+  "POP",
+  "LOAD",
+  "CALL",
+  "STORE",
+  "HALT"
+]

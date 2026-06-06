@@ -1,0 +1,21 @@
+[
+  "JUMP",
+  "PUSH_CONST",
+  "STORE",
+  "SETUP_TRY",
+  "PUSH_CONST",
+  "THROW",
+  "POP_TRY",
+  "STORE",
+  "PUSH_CONST",
+  "STORE",
+  "LOAD",
+  "POP",
+  "JUMP",
+  "LOAD",
+  "STORE",
+  "LOAD",
+  "POP",
+  "FINALLY_END",
+  "HALT"
+]
