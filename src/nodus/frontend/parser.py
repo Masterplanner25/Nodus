@@ -3,6 +3,7 @@
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.frontend.lexer import Tok
 from nodus.frontend.ast.ast_nodes import (
+    Annotation,
     Assign,
     ActionStmt,
     Attr,
@@ -211,6 +212,8 @@ class Parser:
             if self.at("LET"):
                 let_tok = self.eat("LET")
                 return self.let_stmt(exported=True, start_tok=let_tok)
+            if self.at("@"):
+                return self.annotated_fn_def(exported=True)
             if self.at("FN"):
                 return self.fn_def(exported=True)
             if self.at("{"):
@@ -270,6 +273,9 @@ class Parser:
             if self.peek_ahead(1).kind == "(":
                 return self.for_stmt()
             return self.for_each_stmt()
+
+        if self.at("@"):
+            return self.annotated_fn_def()
 
         if self.at("FN"):
             return self.fn_def()
@@ -431,6 +437,31 @@ class Parser:
         self.eat("=")
         expr = self.expr()
         return self.mark(Let(name, expr, type_hint=type_hint, exported=exported), start)
+
+    def annotated_fn_def(self, exported: bool = False):
+        annotations = []
+        while self.at("@"):
+            at_tok = self.eat("@")
+            name = self.eat("ID").val
+            args = None
+            if self.at("("):
+                self.eat("(")
+                args = []
+                if not self.at(")"):
+                    while True:
+                        key = self.eat("ID").val
+                        self.eat(":")
+                        val = self.expr()
+                        args.append((key, val))
+                        if not self.at(","):
+                            break
+                        self.eat(",")
+                self.eat(")")
+            annotations.append(self.mark(Annotation(name, args), at_tok))
+            self.skip_seps()
+        fn = self.fn_def(exported=exported)
+        fn.annotations = annotations
+        return fn
 
     def fn_def(self, exported: bool = False):
         start = self.eat("FN")

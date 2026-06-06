@@ -276,12 +276,19 @@ class ForEach(Base):
 
 
 @dataclass
+class Annotation(Base):
+    name: str
+    args: list | None = None  # None = bare annotation; list of (str, expr) = parameterised
+
+
+@dataclass
 class FnDef(Base):
     name: str
     params: list[Param]
     body: Block
     return_type: str | None = None
     exported: bool = False
+    annotations: list = field(default_factory=list)  # list[Annotation]
 
 
 @dataclass
