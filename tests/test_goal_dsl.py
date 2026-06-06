@@ -285,5 +285,100 @@ goal demo {
             self.assertEqual(resume_payload["steps"]["b"], 2)
 
 
+class GoalFrameworkRegistrationTests(unittest.TestCase):
+    """#108/#109: run_goal() and resume_goal() must route through WorkflowFrameworkRunner."""
+
+    def _run_goal(self, src: str, td: str):
+        from nodus.cli import cli as nodus_cli
+        from nodus.tooling.runner import run_goal_code
+        path = os.path.join(td, "goal.nd")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(src)
+        vm = lang.VM([], {}, code_locs=[], source_path=path)
+        with nodus_cli._project_root_context(td):
+            result, vm = run_goal_code(vm, src, filename=path, project_root=td)
+        return result, vm, path
+
+    def test_run_goal_creates_framework_run_record(self):
+        """run_goal() must register the run in the WorkflowFrameworkRunner store."""
+        from nodus_lang_workflow.store import LocalWorkflowStore
+
+        src = """
+goal demo {
+    step a { return 1 }
+    step b after a { return a + 1 }
+}
+let result = run_goal(demo)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            result, _vm, _path = self._run_goal(src, td)
+            self.assertTrue(result.get("ok"), result)
+            graph_id = result["result"]["graph_id"]
+            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            record = store.get_run(graph_id)
+            self.assertIsNotNone(record, "run_goal() should create a WorkflowFrameworkRunner record")
+            self.assertEqual(record.execution_kind, "goal")
+            from nodus_lang_workflow.models import RUN_STATUS_COMPLETED
+            self.assertEqual(record.status, RUN_STATUS_COMPLETED)
+
+    def test_resume_goal_routes_through_framework_and_updates_resume_count(self):
+        """resume_goal() must go through WorkflowFrameworkRunner and update resume_count."""
+        from nodus.cli import cli as nodus_cli
+        from nodus_lang_workflow.store import LocalWorkflowStore
+
+        src = """
+goal demo {
+    state x = 0
+
+    step a {
+        x = x + 1
+        checkpoint "after_a"
+        return x
+    }
+
+    step b after a {
+        x = x + 1
+        return x
+    }
+}
+let result = run_goal(demo)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            result, _vm, path = self._run_goal(src, td)
+            self.assertTrue(result.get("ok"), result)
+            graph_id = result["result"]["graph_id"]
+            task_graph._GRAPH_REGISTRY.pop(graph_id, None)
+            task_graph._GRAPH_VMS.pop(graph_id, None)
+
+            resumed_vm = lang.VM([], {}, code_locs=[], source_path=path)
+            with nodus_cli._project_root_context(td):
+                resumed = resumed_vm.builtin_resume_goal(graph_id, "after_a")
+            self.assertTrue(isinstance(resumed, dict) and resumed.get("goal") == "demo", resumed)
+
+            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            record = store.get_run(graph_id)
+            self.assertIsNotNone(record)
+            self.assertEqual(record.resume_count, 1, "resume_goal() must increment resume_count")
+
+    def test_run_goal_execution_kind_is_goal(self):
+        """execution_kind in the framework record must be 'goal', not 'workflow'."""
+        from nodus_lang_workflow.store import LocalWorkflowStore
+
+        src = """
+goal my_task {
+    step run { return 42 }
+}
+let _ = run_goal(my_task)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            result, _vm, _path = self._run_goal(src, td)
+            self.assertTrue(result.get("ok"), result)
+            graph_id = result["result"]["graph_id"]
+            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            record = store.get_run(graph_id)
+            self.assertIsNotNone(record)
+            self.assertEqual(record.execution_kind, "goal")
+
+
 if __name__ == "__main__":
     unittest.main()
