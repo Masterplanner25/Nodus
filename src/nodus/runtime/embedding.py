@@ -11,7 +11,7 @@ from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
-from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS, MAX_STEPS
+from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.vm.vm import VM, Record, Closure
