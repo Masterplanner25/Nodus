@@ -89,6 +89,20 @@
   / `AsyncEventStore` / `AsyncJobStore` via `sqlalchemy.ext.asyncio`. 47 tests (31 sync +
   16 async). Closes the last gap in both ecosystem audits.
 
+### Fixed
+
+- **#83 (BUG-NEW-01): `1ii` now gives a parse error with a suggestion.** The lexer detects
+  integer literals followed immediately by identifier characters (e.g. `1ii`, `5ib`) and
+  raises `LangSyntaxError` with a "did you mean `1i`?" message instead of a confusing
+  runtime name error.
+- **#116 (BUG-116): `spawn().wait_async()` is now truly async.** Previously a synchronous
+  alias for `wait()`; now uses the same daemon-thread + channel suspension pattern as
+  `subprocess_run_async`, allowing multiple spawned processes to wait concurrently.
+- **#128 (BUG-128): `push()` is now a top-level builtin alias for `list_push()`.** Resolves
+  the naming inconsistency where `push` only worked after `import "std:collections"`.
+- **#131 (BUG-131): Em-dashes in `nodus --help` and `nodus stability` replaced with ASCII
+  `--`.** Prevents mojibake on Windows console (cp1252/cp850).
+
 ### Documentation
 
 - **`EXECUTION_INVARIANTS.md` — added I-WFLOW-04/05/06:** Documents step dependency

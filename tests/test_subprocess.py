@@ -547,5 +547,61 @@ class SpawnShellTests(unittest.TestCase):
         self.assertEqual(_run_src(src)[0], "0")
 
 
+class SpawnWaitAsyncTests(unittest.TestCase):
+    """BUG-116: wait_async() must be truly async (not block the scheduler)."""
+
+    def test_wait_async_returns_exit_code(self):
+        src = (
+            f'let co = coroutine(fn() {{\n'
+            f'  let p = subprocess.spawn([{_PY}, "-c", "pass"])\n'
+            f'  let rc = p.wait_async()\n'
+            f'  print(rc)\n'
+            f'}})\nspawn(co)\nrun_loop()'
+        )
+        lines = _run_src(src)
+        self.assertEqual(lines[0], "0")
+
+    def test_wait_async_exit_code_nonzero(self):
+        src = (
+            f'let co = coroutine(fn() {{\n'
+            f'  let p = subprocess.spawn([{_PY}, "-c", "import sys; sys.exit(3)"])\n'
+            f'  let rc = p.wait_async()\n'
+            f'  print(rc)\n'
+            f'}})\nspawn(co)\nrun_loop()'
+        )
+        lines = _run_src(src)
+        self.assertEqual(lines[0], "3")
+
+    def test_wait_async_updates_exit_code_field(self):
+        src = (
+            f'let co = coroutine(fn() {{\n'
+            f'  let p = subprocess.spawn([{_PY}, "-c", "pass"])\n'
+            f'  p.wait_async()\n'
+            f'  print(p.exit_code)\n'
+            f'}})\nspawn(co)\nrun_loop()'
+        )
+        lines = _run_src(src)
+        self.assertEqual(lines[0], "0")
+
+    def test_two_wait_async_both_complete(self):
+        src = (
+            f'let state = {{"count": 0i}}\n'
+            f'let co1 = coroutine(fn() {{\n'
+            f'  let p = subprocess.spawn([{_PY}, "-c", "pass"])\n'
+            f'  p.wait_async()\n'
+            f'  state["count"] = state["count"] + 1i\n'
+            f'}})\n'
+            f'let co2 = coroutine(fn() {{\n'
+            f'  let p = subprocess.spawn([{_PY}, "-c", "pass"])\n'
+            f'  p.wait_async()\n'
+            f'  state["count"] = state["count"] + 1i\n'
+            f'}})\n'
+            f'spawn(co1)\nspawn(co2)\nrun_loop()\n'
+            f'print(state["count"])'
+        )
+        lines = _run_src(src)
+        self.assertEqual(lines[0], "2")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -223,6 +223,7 @@ def register(vm, registry) -> None:
     registry.add("keys", 1, builtin_keys)
     registry.add("values", 1, builtin_values)
     registry.add("list_push", 2, builtin_list_push)
+    registry.add("push", 2, builtin_list_push)
     registry.add("list_pop", 1, builtin_list_pop)
     registry.add("json_parse", 1, builtin_json_parse)
     registry.add("json_stringify", 1, builtin_json_stringify)

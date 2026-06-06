@@ -21,6 +21,7 @@ TOKEN_RE = re.compile(
   | (?P<COMMENT2>//.*)
   | (?P<NL>\n+)
   | (?P<NUM_INT_BAD>\d+I)
+  | (?P<NUM_INT_DOUBLE>\d+i[A-Za-z_][A-Za-z0-9_]*)
   | (?P<NUM_INT>\d+i)
   | (?P<NUM>\d+(\.\d+)?([eE][+-]?\d+)?)
   | (?P<ID>[A-Za-z_][A-Za-z0-9_]*)
@@ -391,6 +392,17 @@ def _lex_interp(
                 f"Integer suffix must be lowercase 'i', not 'I': use {text[:-1]}i instead of {text}",
                 line=tok_line, col=tok_col,
             )
+        if kind == "NUM_INT_DOUBLE":
+            digits = ""
+            for ch2 in text:
+                if ch2.isdigit():
+                    digits += ch2
+                else:
+                    break
+            raise LangSyntaxError(
+                f"Invalid integer literal {text!r}: did you mean {digits}i?",
+                line=tok_line, col=tok_col,
+            )
         if kind == "NUM_INT":
             tokens.append(Tok("NUM_INT", text[:-1], tok_line, tok_col))
             col += len(text)
@@ -475,6 +487,18 @@ def tokenize(src: str) -> list[Tok]:
         if kind == "NUM_INT_BAD":
             raise LangSyntaxError(
                 f"Integer suffix must be lowercase 'i', not 'I': use {text[:-1]}i instead of {text}",
+                line=start_line,
+                col=start_col,
+            )
+        if kind == "NUM_INT_DOUBLE":
+            digits = ""
+            for ch2 in text:
+                if ch2.isdigit():
+                    digits += ch2
+                else:
+                    break
+            raise LangSyntaxError(
+                f"Invalid integer literal {text!r}: did you mean {digits}i?",
                 line=start_line,
                 col=start_col,
             )
