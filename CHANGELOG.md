@@ -1,5 +1,39 @@
 ﻿# Changelog
 
+## [Unreleased] — 4.0.1
+
+### Added
+
+- **#101 (@annotation syntax): `@exactly_once` and `@retry(...)` function decorators.**
+  Annotations are lowered at compile time — no new opcodes, no BYTECODE_VERSION bump.
+  Lexer: `@` added to the OP token set. AST: new `Annotation(name, args)` node; `FnDef`
+  gains an `annotations` list field. Parser: `annotated_fn_def()` collects one or more
+  `@name` / `@name(k: v, ...)` annotations before `fn`; works in top-level and `export`
+  positions. Compiler lowering:
+  - `@retry(max_attempts: N, backoff_ms: M)` — wraps the original body in a zero-arg
+    closure and calls `retry_call(fn() { body }, policy_map)`. Parameters are captured as
+    upvalues automatically. Requires `nodus-retry`.
+  - `@exactly_once` — generates the full `effect_resolve` wrapper: computes action ID from
+    fn-name + params, checks `effect_resolve().done` (Record field access via `Attr`), calls
+    `effect_pending` on a cache miss, runs the body, calls `effect_complete`, and returns the
+    result. Idempotent across calls with the same arguments.
+  - Unknown annotations raise a compile-time `LangSyntaxError`.
+  Closes #101.
+
+### Fixed
+
+- **#106 (DAP-001): DAP `evaluate` command implemented — expression evaluation at breakpoints.**
+  VS Code debug console and any DAP client can now evaluate Nodus expressions while paused.
+  The server compiles the expression as `let __eval_result__ = (<expr>)`, runs it in a
+  child VM that inherits a Cell-unwrapped copy of the paused VM's globals and current-frame
+  locals (read-only — side effects do not modify the paused session). Returns `result`,
+  `type`, and `variablesReference: 0`. Syntax errors and runtime errors return a DAP error
+  response; the debug server never crashes on a bad expression. `allowed_paths` and
+  `host_globals` are forwarded to the child VM so sandbox integrity is preserved.
+  Closes #106.
+
+---
+
 ## [4.0.0] - 2026-06-04
 
 > **SemVer note:** The following additions were implemented during the v4.0.0
