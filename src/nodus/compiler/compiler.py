@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from nodus.runtime.errors import BytecodeVersionError
 
 from nodus.frontend.ast.ast_nodes import (
+    Annotation,
     Assign,
     Attr,
     Bin,
@@ -309,7 +310,56 @@ class Compiler:
         self.emit("HALT")
         return self.code, self.functions, self.code_locs
 
+    def _lower_retry(self, stmt: FnDef, ann: Annotation) -> FnDef:
+        policy_items: list[tuple[object, object]] = [(Str(k), v) for k, v in (ann.args or [])]
+        policy_map = MapLit(policy_items)
+        inner = FnExpr([], stmt.body)
+        new_body = Block([Return(Call(Var("retry_call"), [inner, policy_map]))])
+        return FnDef(stmt.name, stmt.params, new_body,
+                     return_type=stmt.return_type, exported=stmt.exported,
+                     _tok=stmt._tok, _module=stmt._module)
+
+    def _lower_exactly_once(self, stmt: FnDef) -> FnDef:
+        payload_map = MapLit([(Str(p.name), Var(p.name)) for p in stmt.params])
+        aid_call = Call(Var("effect_action_id"), [Str(stmt.name), payload_map, Str("default")])
+        aid = Var("__nodus_aid")
+        st = Var("__nodus_st")
+        res = Var("__nodus_res")
+        # effect_resolve returns a Record — use Attr (dot) not Index (bracket).
+        done_guard = If(
+            Attr(st, "done"),
+            Block([Return(Attr(st, "cached"))]),
+            None,
+        )
+        inner_call = Call(FnExpr([], stmt.body), [])
+        new_body = Block([
+            Let("__nodus_aid", aid_call),
+            Let("__nodus_st", Call(Var("effect_resolve"), [aid])),
+            done_guard,
+            ExprStmt(Call(Var("effect_pending"), [aid, Str("")])),
+            Let("__nodus_res", inner_call),
+            ExprStmt(Call(Var("effect_complete"), [aid, Str("ok"), MapLit([(Str("result"), res)])])),
+            Return(res),
+        ])
+        return FnDef(stmt.name, stmt.params, new_body,
+                     return_type=stmt.return_type, exported=stmt.exported,
+                     _tok=stmt._tok, _module=stmt._module)
+
+    def _lower_annotations(self, stmt: FnDef) -> FnDef:
+        for ann in stmt.annotations:
+            if ann.name == "retry":
+                stmt = self._lower_retry(stmt, ann)
+            elif ann.name == "exactly_once":
+                stmt = self._lower_exactly_once(stmt)
+            else:
+                self.raise_syntax(f"Unknown annotation: @{ann.name}", node=stmt)
+        return FnDef(stmt.name, stmt.params, stmt.body,
+                     return_type=stmt.return_type, exported=stmt.exported,
+                     _tok=stmt._tok, _module=stmt._module)
+
     def compile_fn_def(self, stmt: FnDef, *, is_nested: bool = False) -> str:
+        if stmt.annotations:
+            stmt = self._lower_annotations(stmt)
         self.set_current_module(stmt)
         self.set_current_loc(stmt)
         if is_nested:

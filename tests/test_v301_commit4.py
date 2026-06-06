@@ -59,8 +59,9 @@ class NonAsciiIdentifierTests(unittest.TestCase):
         self.assertIn("42", result["stdout"])
 
     def test_unexpected_symbol_still_generic_message(self):
+        # Use ~ which is not a valid Nodus token (@ is now valid — annotation syntax).
         with self.assertRaises(LangSyntaxError) as ctx:
-            tokenize("let x = @")
+            tokenize("let x = ~")
         msg = str(ctx.exception)
         self.assertIn("Unexpected character", msg)
         self.assertNotIn("ASCII", msg)
