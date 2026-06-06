@@ -158,8 +158,6 @@ See `docs/governance/TECH_DEBT.md` for the per-module breakdown and the three de
 **Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
 - `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
 
-Fixed 2026-06-04 (no longer flaky): `test_worker_death_detection` (sleep 20ms→100ms), `test_worker_heartbeat_updates_health` (timeout 30ms→300ms), `test_isolation`/`test_expiration` (split into two classes with separate server instances), `test_worker_death_detected_by_sweeper` (added `worker_sweep_interval_ms=20`, deadline 2s→5s).
-
 **Flaky test fix pattern — timing headroom:**
 Tests that race a sleep against a timeout need **5–10x headroom**, not 2x. Under full-suite parallel
 load, a 20ms sleep takes longer than 20ms wall-clock. Rule: if the test sleeps N ms and the code
@@ -277,6 +275,29 @@ The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the
 allowlist OR are fixed before release.
 
+**Regression test convention for `--closed-issues`:** add a `# closes: #N`
+comment immediately before the test function that verifies a fix. The
+`closed_issues_phase` scanner finds tests by this marker:
+
+```python
+# closes: #99
+def test_spawn_threads_joined_on_reset(self):
+    ...
+```
+
+Without the marker, the gate reports the issue as "no test found" and the
+closure-verification step in `PLAYBOOK_PATCH_MINOR.md` Stage 3 will fail.
+
+**Golden bytecode tests:** `tests/test_bytecode_golden.py` checks opcode
+sequences for core constructs against fixtures in `tests/fixtures/bytecode/`.
+Re-generate after intentional compiler changes:
+
+```powershell
+NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m pytest tests/test_bytecode_golden.py -q
+```
+
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
@@ -374,8 +395,6 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 - **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — ranked list
   of still-unresolved doc conflicts.
 
-nodus-mcp spec version: README says "2026-07-28 RC" (authoritative). Verify CHANGELOG reflects it.
-
 ## nodus-memory companion library
 
 ⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-memory` is the Tier 2 full memory library (28 tests). Original nodus-lang adapter (192 tests, `attach_to_runtime`, `nm_*` host functions, `import "nodus-memory"`) is preserved at `github.com/Masterplanner25/nodus-memory`.
@@ -420,60 +439,60 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 
 ### Group 1 — AINDY-derived (7 packages)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-circuit-breaker | 24 | none | Three-state CB, sync+async, optional Prometheus |
-| nodus-auth | 36 | python-jose, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
-| nodus-observability | 27 | python-json-logger (otel/prometheus optional) | Trace ContextVars, init_otel(), create_registry(), configure_logging() |
-| nodus-queue | 53 | tenacity (redis optional) | RedisQueueBackend LPUSH/BRPOP+Lua, DLQ, delayed jobs; Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
-| nodus-state | 117 | none | FlowStatus/UnitStatus/AgentStatus, WaitCondition, ResumeSpec, ExecutionContext, SessionKey |
-| nodus-observability-framework | 57 | nodus-observability, fastapi optional | AIMetrics (8), RequestMetricWriter, middleware, health router, ExecutionBlock streaming, CostAttribution/CostTracker |
-| nodus-mcp (aindy bridge) | 81 | mcp>=1.0.0 | ToolDefinition, ToolRegistry, NodusServer, MCPClientAdapter; flat code at `nodus_mcp_aindy/` in C:\dev\nodus-mcp |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-circuit-breaker | none | Three-state CB, sync+async, optional Prometheus |
+| nodus-auth | python-jose, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
+| nodus-observability | python-json-logger (otel/prometheus optional) | Trace ContextVars, init_otel(), create_registry(), configure_logging() |
+| nodus-queue | tenacity (redis optional) | RedisQueueBackend LPUSH/BRPOP+Lua, DLQ, delayed jobs; Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
+| nodus-state | none | FlowStatus/UnitStatus/AgentStatus, WaitCondition, ResumeSpec, ExecutionContext, SessionKey |
+| nodus-observability-framework | nodus-observability, fastapi optional | AIMetrics (8), RequestMetricWriter, middleware, health router, ExecutionBlock streaming, CostAttribution/CostTracker |
+| nodus-mcp (aindy bridge) | mcp>=1.0.0 | ToolDefinition, ToolRegistry, NodusServer, MCPClientAdapter; flat code at `nodus_mcp_aindy/` in C:\dev\nodus-mcp |
 
 ### Group 2 — OpenClaw-derived (5 packages)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-context | 29 | none | ContextBudget, ContextWindow (add/compact/guard_tool_results), DropToolInternalsStrategy, SummarizeStrategy |
-| nodus-approvals | 32 | none | ApprovalGate (check/approve/deny/poll), ApprovalPolicy (fnmatch rules), PairingStore (6-digit codes) |
-| nodus-channels | 24 | none | ChannelAdapter protocol, ChannelRegistry, HealthMonitor (CONNECTED→DEGRADED→DISCONNECTED) |
-| nodus-llm | 24 | nodus-circuit-breaker | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff), OpenAI/Anthropic providers |
-| nodus-delivery | 27 | nodus-channels | DeliveryPlan, SizeChunker, ParagraphChunker, MarkdownBlockChunker, DeliveryRouter |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-context | none | ContextBudget, ContextWindow (add/compact/guard_tool_results), DropToolInternalsStrategy, SummarizeStrategy |
+| nodus-approvals | none | ApprovalGate (check/approve/deny/poll), ApprovalPolicy (fnmatch rules), PairingStore (6-digit codes) |
+| nodus-channels | none | ChannelAdapter protocol, ChannelRegistry, HealthMonitor (CONNECTED→DEGRADED→DISCONNECTED) |
+| nodus-llm | nodus-circuit-breaker | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff), OpenAI/Anthropic providers |
+| nodus-delivery | nodus-channels | DeliveryPlan, SizeChunker, ParagraphChunker, MarkdownBlockChunker, DeliveryRouter |
 
 ### Group 3 — Tier 1: Buildable standalone (7 packages)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-retry | 33 | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore, compute_action_id() |
-| nodus-http | 13 | httpx, nodus-circuit-breaker | HttpClient (circuit breaker + retry + trace headers), HttpResponse, RetryConfig; **requires `respx` for tests** |
-| nodus-events | 17 | redis (optional) | EventBus (Redis pub/sub, source-instance dedup, pre-rehydration buffer), AuditStore, publish_event() |
-| nodus-schema | 30 | none | validate_payload(), parse_versioned_name(), resolve_version(), SchemaRegistry, SchemaEntry |
-| nodus-protocol | 13 | none | RequestEnvelope, ResponseEnvelope, EventEnvelope, JSON encode()/decode() with _type discriminator |
-| nodus-session | 15 | none | SessionEntry (transcript, provenance), InMemorySessionStore, SessionPruningPolicy, SessionManager |
-| nodus-router | 18 | none | RouteBinding (fnmatch), RoutingTable (priority-sorted), RouteResolver (default agent fallback) |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-retry | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore, compute_action_id() |
+| nodus-http | httpx, nodus-circuit-breaker | HttpClient (circuit breaker + retry + trace headers), HttpResponse, RetryConfig; **requires `respx` for tests** |
+| nodus-events | redis (optional) | EventBus (Redis pub/sub, source-instance dedup, pre-rehydration buffer), AuditStore, publish_event() |
+| nodus-schema | none | validate_payload(), parse_versioned_name(), resolve_version(), SchemaRegistry, SchemaEntry |
+| nodus-protocol | none | RequestEnvelope, ResponseEnvelope, EventEnvelope, JSON encode()/decode() with _type discriminator |
+| nodus-session | none | SessionEntry (transcript, provenance), InMemorySessionStore, SessionPruningPolicy, SessionManager |
+| nodus-router | none | RouteBinding (fnmatch), RoutingTable (priority-sorted), RouteResolver (default agent fallback) |
 
 ### Group 4 — Tier 2: Requires Tier 1 (4 packages + 1 additive)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-memory | 28 | nodus-events; pgvector/openai optional | MemoryNode, InMemoryStore, MAS build_path()/glob_match(), score_nodes(), update_feedback(), recall()/recall_async(), EmbeddingProvider |
-| nodus-workflow | 17 | nodus-state, nodus-events | FlowDefinition/FlowNode/FlowEdge, FlowStatus/FlowRun, SchedulerEngine (priority queue + WAIT/RESUME), FlowExecutor, FlowRehydrator |
-| nodus-a2a | 23 | none | AgentRegistry, AgentCoordinator (local/delegate), DelegationRequest, DeadLetterService, StuckRunWatchdog |
-| nodus-adapters/base | 11 | nodus-channels | BaseChannelAdapter (reconnect backoff, health recording), ConnectionManager; path: `C:\dev\nodus-adapters\base` |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-memory | nodus-events; pgvector/openai optional | MemoryNode, InMemoryStore, MAS build_path()/glob_match(), score_nodes(), update_feedback(), recall()/recall_async(), EmbeddingProvider |
+| nodus-workflow | nodus-state, nodus-events | FlowDefinition/FlowNode/FlowEdge, FlowStatus/FlowRun, SchedulerEngine (priority queue + WAIT/RESUME), FlowExecutor, FlowRehydrator |
+| nodus-a2a | none | AgentRegistry, AgentCoordinator (local/delegate), DelegationRequest, DeadLetterService, StuckRunWatchdog |
+| nodus-adapters/base | nodus-channels | BaseChannelAdapter (reconnect backoff, health recording), ConnectionManager; path: `C:\dev\nodus-adapters\base` |
 
 ### Group 5 — Tier 3: Requires T1+T2 (2 packages)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-agent | 28 | nodus-state, nodus-retry | AgentRun, CapabilityToken (HMAC-SHA256), mint_token()/validate_token(), LocalPlanner/LLMPlanner, DuplicateSubmissionGuard, AgentExecutor |
-| nodus-gateway | 19 | nodus-protocol, websockets | GatewayServer (WebSocket + handler dispatch + idempotency cache), GatewayClient, HandlerRegistry, EventBroadcaster; **requires nodus-protocol installed** |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-agent | nodus-state, nodus-retry | AgentRun, CapabilityToken (HMAC-SHA256), mint_token()/validate_token(), LocalPlanner/LLMPlanner, DuplicateSubmissionGuard, AgentExecutor |
+| nodus-gateway | nodus-protocol, websockets | GatewayServer (WebSocket + handler dispatch + idempotency cache), GatewayClient, HandlerRegistry, EventBroadcaster; **requires nodus-protocol installed** |
 
 ### Group 6 — Tier 4: Requires All (2 packages)
 
-| Package | Tests | Key deps | Key abstraction |
-|---------|-------|----------|----------------|
-| nodus-extensions | 35 | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
-| nodus-governance | 28 | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
+| Package | Key deps | Key abstraction |
+|---------|----------|----------------|
+| nodus-extensions | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
+| nodus-governance | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
 
 ### Dependency audit (critical pattern)
 
@@ -488,11 +507,6 @@ contain hundreds of files that should never be committed.
 
 ### Ecosystem dependency notes
 
-- **nodus-gateway** requires `nodus-protocol` installed before tests run
-- **nodus-http** requires `respx` for tests (`pip install respx`)
-- **nodus-delivery** requires `nodus-channels`; **nodus-llm** accepts any `.chat()` client (protocol-based)
-- **nodus-memory** (Tier 2) is pure stdlib — does NOT require nodus-events
-- **nodus-a2a** (Tier 2) is the AgentCoordinator layer (pure stdlib) — NOT the A2A wire protocol adapter
 - **nodus-extensions** test fix: use `asyncio.run()` not `asyncio.get_event_loop().run_until_complete()` (Python 3.11+)
 - nodus-queue redis tests need a live Redis server — always run with `--ignore=tests/test_redis_backend.py` in dev
 - **nodus-mcp** test_phase_m.py has 2 port-conflict-sensitive tests — they pass individually but fail in full suite runs (pre-existing race condition, not a code bug)
@@ -625,14 +639,6 @@ rt = NodusRuntime()
 rt = NodusRuntime(timeout_ms=None, max_steps=None)
 ```
 
-**EMBED-003 (#99, open) — `subprocess_spawn` thread leak:**
-Two daemon pump threads are created per `subprocess_spawn`. If `run_loop` exits
-before the subprocess terminates (output channel never consumed), threads accumulate.
-They're daemon threads so they don't block exit, but they pile up per session.
-No `NodusRuntime.shutdown()` exists — `reset()` only clears `last_vm`.
-
-**EMBED-004 (#100, RESOLVED)** — `*_async` builtins are truly concurrent (thread+channel pattern), not serial.
-
 **SPAWN-001 (#117, open) — `spawn().wait_async()` is sync:**
 The `wait_async()` method on a spawned process record is a direct alias for `wait()` —
 it blocks the scheduler thread instead of suspending the coroutine. Fix: apply the same
@@ -653,19 +659,7 @@ a close-ordering race. Do not use it directly.
 
 **Current publish status (as of 2026-06-05):** Round 1 COMPLETE — 16 packages live: nodus-lang ✅ nodus-circuit-breaker ✅ nodus-retry ✅ nodus-channels ✅ nodus-protocol ✅ nodus-schema ✅ nodus-approvals ✅ nodus-context ✅ nodus-state ✅ nodus-session ✅ nodus-governance ✅ nodus-agent ✅ nodus-workflow ✅ nodus-a2a ✅ nodus-extensions ✅ nodus-store-sql ✅. nodus-native-memory-engine blocked by Windows Application Control policy (Rust build step). Next: Round 2 (11 packages with external-only deps).
 
-Open pre-publish item: ~~#115~~ FIXED. Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
-
-Round 1 — Zero-dep standalone packages (publish first; no install-order risk):
-```
-nodus-circuit-breaker 0.1.0   nodus-retry 0.1.0 ← MUST be before nodus-lang!
-nodus-channels 0.1.0           nodus-protocol 0.1.0
-nodus-schema (standalone) 0.1.0  nodus-approvals 0.1.0
-nodus-context 0.1.0            nodus-state 0.1.0
-nodus-session 0.1.0            nodus-governance 0.1.0
-nodus-agent 0.1.0              nodus-workflow (standalone) 0.1.0
-nodus-a2a (AgentCoordinator) 0.1.0  nodus-extensions 0.1.0
-nodus-store-sql 0.1.0
-```
+Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
 Round 2 — Packages with external-only deps (PyPI already has them):
 ```
@@ -682,7 +676,7 @@ nodus-gateway 0.1.0     (websockets optional)
 nodus-observability-framework 0.1.0  (nodus-observability)
 ```
 
-Round 3 — nodus-lang itself (after nodus-retry is on PyPI):
+Round 3 — nodus-lang itself:
 ```
 1. git tag v4.0.0 && git push origin main --tags
 2. python -m build   (from C:\dev\Coding Language)
