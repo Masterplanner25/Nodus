@@ -72,7 +72,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
         self.assertEqual((r.get("error") or {}).get("kind"), "sandbox")
 
     def test_no_restriction_when_unrestricted_embedded(self):
-        rt = NodusRuntime(timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=None, timeout_ms=10_000, max_steps=500_000)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "print(\'ok\')"], {{stdout: "{self.allowed_out}", check: false}})'
         r = rt.run_source(src)
         self.assertTrue(r["ok"], "unrestricted mode should allow any path")
@@ -132,7 +132,7 @@ class SubprocessCwdSandboxTests(unittest.TestCase):
         self.assertTrue(r["ok"], f"cwd within allowed_paths should succeed: {r}")
 
     def test_cwd_no_restriction_when_unrestricted_embedded(self):
-        rt = NodusRuntime(timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=None, timeout_ms=10_000, max_steps=500_000)
         outside_fwd = _fwd(self.outside_dir)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "pass"], {{cwd: "{outside_fwd}", check: false}})'
         r = rt.run_source(src)

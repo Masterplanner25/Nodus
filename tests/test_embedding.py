@@ -101,6 +101,62 @@ run_loop()
         # depending on ordering, but at minimum it should not raise)
 
 
+class DefaultSandboxTests(unittest.TestCase):
+    """BUG-119: NodusRuntime() defaults to CWD jail, not open filesystem."""
+
+    def test_default_allows_cwd(self):
+        rt = NodusRuntime()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".nd", delete=False, dir=os.getcwd()) as f:
+            f.write("hello")
+            path = f.name
+        try:
+            result = rt.run_source(f'print(read_file("{path.replace(chr(92), "/")}"))', filename="inline.nd")
+            self.assertTrue(result["ok"])
+        finally:
+            os.unlink(path)
+
+    def test_default_blocks_outside_cwd(self):
+        rt = NodusRuntime()
+        tmp = tempfile.mktemp(suffix=".txt")
+        result = rt.run_source(f'read_file("{tmp.replace(chr(92), "/")}")', filename="inline.nd")
+        self.assertFalse(result["ok"])
+
+    def test_explicit_none_allows_unrestricted(self):
+        rt = NodusRuntime(allowed_paths=None)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("secret")
+            path = f.name
+        try:
+            result = rt.run_source(f'print(read_file("{path.replace(chr(92), "/")}"))', filename="inline.nd")
+            self.assertTrue(result["ok"])
+        finally:
+            os.unlink(path)
+
+
+class DefaultTimeoutTests(unittest.TestCase):
+    """EMBED-001 (#97): NodusRuntime() defaults to no timeout."""
+
+    def test_default_has_no_timeout(self):
+        rt = NodusRuntime()
+        self.assertIsNone(rt.timeout_ms)
+
+    def test_explicit_timeout_is_respected(self):
+        rt = NodusRuntime(timeout_ms=200)
+        self.assertEqual(rt.timeout_ms, 200)
+
+    def test_long_lived_program_runs_without_timeout(self):
+        rt = NodusRuntime()
+        result = rt.run_source("""
+let i = 0i
+while (i < 500i) {
+    i = i + 1i
+}
+print(i)
+""", filename="inline.nd")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"].strip(), "500")
+
+
 class ShutdownTests(unittest.TestCase):
     def test_shutdown_clears_state(self):
         rt = NodusRuntime()
