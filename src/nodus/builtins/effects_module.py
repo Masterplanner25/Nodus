@@ -17,7 +17,7 @@ except ImportError:
             separators=(",", ":"),
         ).encode()
         return _hashlib.sha256(payload_bytes).hexdigest()
-from nodus.vm.vm import Record
+from nodus.vm.types import Record
 
 
 def register(vm, registry) -> None:

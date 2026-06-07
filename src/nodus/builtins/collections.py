@@ -100,7 +100,7 @@ def register(vm, registry) -> None:
             self.nodus_type = nodus_type
 
     def to_json_value(value):
-        from nodus.vm.vm import Record
+        from nodus.vm.types import Record
         if value is None:
             return None
         if isinstance(value, bool):
@@ -245,7 +245,7 @@ def register(vm, registry) -> None:
     registry.add("json_parse_int", 1, builtin_json_parse_int)
 
     def builtin_validate_reduce_fn(fn_value):
-        from nodus.vm.vm import Closure
+        from nodus.vm.types import Closure
         if not isinstance(fn_value, Closure):
             type_name = vm.builtin_type(fn_value)
             vm.runtime_error(

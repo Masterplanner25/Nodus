@@ -8,7 +8,7 @@ from email.utils import parsedate_to_datetime as _parsedate_http
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from nodus.vm.vm import Record
+from nodus.vm.types import Record
 
 _UTC = ZoneInfo("UTC")
 _YEAR_MIN = 1900

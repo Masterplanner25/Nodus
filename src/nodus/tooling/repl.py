@@ -35,7 +35,8 @@ from nodus.runtime.diagnostics import format_error
 from nodus.tooling.loader import set_module_on_tree
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.project import load_project_from
-from nodus.vm.vm import Closure, Record, VM
+from nodus.vm.vm import VM
+from nodus.vm.types import Closure, Record
 
 readline: Any = None
 try:

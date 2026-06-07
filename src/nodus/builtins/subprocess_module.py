@@ -11,7 +11,7 @@ import time as _time
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.runtime.runtime_events import RuntimeEvent
 from nodus.runtime.runtime_stats import runtime_time_ms
-from nodus.vm.vm import BuiltinMethod, Record
+from nodus.vm.types import BuiltinMethod, Record
 
 _TRUNCATE_LIMIT = 65536  # 64KB per err record field
 

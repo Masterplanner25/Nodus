@@ -46,7 +46,8 @@ from nodus.runtime.bytecode_cache import load_cached_bytecode, write_cached_byte
 from nodus.runtime.dependency_graph import DependencyGraph
 from nodus.runtime.module import LiveBinding, ModuleBytecode, NodusModule
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
-from nodus.vm.vm import Closure, VM
+from nodus.vm.vm import VM
+from nodus.vm.types import Closure
 
 
 @dataclass

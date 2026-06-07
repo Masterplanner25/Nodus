@@ -19,7 +19,7 @@ except ImportError:
 from nodus.runtime.channel import Channel
 from nodus.runtime.runtime_events import RuntimeEvent
 from nodus.runtime.runtime_stats import runtime_time_ms
-from nodus.vm.vm import BuiltinMethod, Record
+from nodus.vm.types import BuiltinMethod, Record
 
 _TEXT_CONTENT_TYPES = (
     "text/",

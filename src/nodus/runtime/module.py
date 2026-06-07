@@ -179,7 +179,8 @@ class NodusModule:
         if name not in self.functions:
             raise ValueError(f"Unknown module function: {name}")
         from nodus.runtime.diagnostics import LangRuntimeError
-        from nodus.vm.vm import Closure, _ClosureProxy, VM
+        from nodus.vm.types import Closure, _ClosureProxy
+        from nodus.vm.vm import VM
         fn_info = self.functions[name]
         expected = len(fn_info.params)
         if len(args) > expected:

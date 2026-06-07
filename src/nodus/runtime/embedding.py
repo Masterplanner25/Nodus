@@ -14,7 +14,8 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFun
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
-from nodus.vm.vm import VM, Record, Closure
+from nodus.vm.vm import VM
+from nodus.vm.types import Record, Closure
 
 _SANDBOX_DEFAULT = object()  # sentinel: allowed_paths not explicitly set by caller
 

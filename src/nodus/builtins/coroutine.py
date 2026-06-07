@@ -19,7 +19,7 @@ def register(vm, registry) -> None:
         return coroutine.state
 
     def builtin_coroutine_resume(value):
-        from nodus.vm.vm import Frame
+        from nodus.vm.types import Frame
         coroutine = vm.ensure_coroutine(value, "resume(coroutine)")
         if coroutine.state == "finished":
             vm.runtime_error("runtime", "Cannot resume finished coroutine")
