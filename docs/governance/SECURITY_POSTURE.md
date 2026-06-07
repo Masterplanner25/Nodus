@@ -57,11 +57,13 @@ behalf of users or services. The security controls available are:
 
 | Control | Parameter | Default | Effect |
 |---------|-----------|---------|--------|
-| Filesystem restriction | `allowed_paths` | `None` (unrestricted) | Restricts `read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, `exists` to listed directories |
+| Filesystem restriction | `allowed_paths` | `[os.getcwd()]` | Restricts `read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, `exists` to listed directories |
 | stdin block | `allow_input` | `False` | Blocks `input()` — cannot block on stdin in embedded mode |
+| Subprocess block | `allow_subprocess` | `True` | Set `False` to disable all `subprocess_*` builtins |
+| Network block | `allow_network` | `True` | Set `False` to disable all `http_*` builtins |
 | Call stack cap | `max_frames` | `None` (uses `MAX_STACK_DEPTH`) | Prevents deep recursion from exhausting Python's stack |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
-| Wall-clock limit | `timeout_ms` | `EXECUTION_TIMEOUT_MS` | Prevents long-running scripts from blocking the host |
+| Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |
 
 **Minimum recommended configuration for untrusted code:**
 ```python
@@ -70,6 +72,8 @@ runtime = NodusRuntime(
     timeout_ms=5_000,
     allowed_paths=["/safe/directory"],
     allow_input=False,
+    allow_subprocess=False,
+    allow_network=False,
     max_frames=500,
 )
 ```
@@ -86,12 +90,14 @@ The Nodus sandbox is not a full security sandbox. It does not protect against:
 - **Memory exhaustion** — No limit on heap allocation. A script that builds a large
   list or map can exhaust host memory. No equivalent of `max_memory`.
 - **Subprocess execution** — `std:subprocess` (v4.0+) allows arbitrary process execution.
-  The process itself is not sandboxed (no `allow_subprocess` flag; if the stdlib is
-  available, it is available). However, `stdout`/`stderr` file redirect paths and the
-  `cwd` option are validated against `allowed_paths`/`fs_root` — a script cannot use
-  subprocess redirection to write files outside the sandbox.
-- **Network access** — `std:http` (v4.0+) allows arbitrary outbound HTTP. There is no
-  `allowed_hosts` restriction in v3.0.2.
+  Disable via `allow_subprocess=False` on `NodusRuntime`. When enabled, the subprocess
+  binary and its arguments are unrestricted — only `stdout`/`stderr` redirect paths and
+  `cwd` are validated against `allowed_paths`. A script can run `subprocess_run(["cat",
+  "/etc/passwd"])` regardless of `allowed_paths`. Prefer `allow_subprocess=False` for
+  untrusted code.
+- **Network access** — `std:http` (v4.0+) allows arbitrary outbound HTTP. Disable via
+  `allow_network=False` on `NodusRuntime`. When enabled, there is no `allowed_hosts`
+  restriction — scripts can reach any reachable host.
 - **Information leakage via timing** — The scheduler does not provide timing isolation
   between coroutines.
 - **Bytecode injection** — The runtime only loads `.nd` source files through the normal
@@ -178,6 +184,50 @@ limitation.
 - Production deployments must configure a `token_validator`; dev mode accepts all requests
 - No authentication without `token_validator` — do not expose to the internet without one
 - HTTP+JSON only; no TLS in the stdlib HTTP server; use a reverse proxy for production
+
+---
+
+## 11. CLI vs. embedded default divergence
+
+The CLI (`nodus run`) and the embedding API (`NodusRuntime`) have different security defaults:
+
+| Control | CLI (`nodus run`) | Embedded (`NodusRuntime()`) |
+|---------|-------------------|-----------------------------|
+| Filesystem | Restricted to project root / CWD automatically | Restricted to `[os.getcwd()]` by default |
+| Wall-clock timeout | 200 ms (`EXECUTION_TIMEOUT_MS`) | None — no deadline |
+| Subprocess | Available (no flag) | Available — set `allow_subprocess=False` to disable |
+| Network | Available (no flag) | Available — set `allow_network=False` to disable |
+
+The critical difference: `timeout_ms` defaults to `None` in embedded mode (unlimited).
+Scripts that call `http.get()` or `subprocess.run()` over a slow network or slow process
+will block the host process indefinitely unless the embedder sets `timeout_ms` explicitly.
+See also EMBED-001 (#97).
+
+The filesystem default changed from `None` (unrestricted) to `[os.getcwd()]` in v4.0.0 
+(post-BUG-119 fix). An explicit `allowed_paths=None` still grants unrestricted access.
+
+---
+
+## 12. Multi-tenant isolation
+
+**Process-level singletons are NOT isolated between `NodusRuntime` instances.**
+
+Two scripts running in separate `NodusRuntime` instances in the same process share:
+
+- `GLOBAL_MEMORY_STORE` — all `std:memory` reads/writes go to the same store.
+  Script A writing `mem.put("secret", value)` is readable by Script B.
+- `AGENT_REGISTRY` — agent registrations from one runtime are visible to all others.
+
+`shutdown()` does not clear these stores.
+
+**Consequence:** multi-tenant script execution (one runtime per user/request in the same
+process) is not secure if scripts use `std:memory` or `std:agent`. Any tenant can read
+or overwrite any other tenant's memory keys.
+
+**Workaround:** avoid `std:memory` and `std:agent` in multi-tenant contexts, or run each
+tenant's scripts in a separate OS process.
+
+**Tracking issue:** DESIGN-005 (#155) — per-instance memory store parameter.
 
 ---
 

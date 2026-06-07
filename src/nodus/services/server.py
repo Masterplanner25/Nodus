@@ -9,6 +9,7 @@ FastAPI/Uvicorn path selected at runtime.
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -1522,6 +1523,13 @@ def serve(
 ) -> None:
     if not _is_local_host(host) and not auth_token:
         raise ValueError("Refusing to bind to non-local host without an auth token.")
+    if not auth_token:
+        print(
+            f"Warning: nodus serve is running without authentication — every request to "
+            f"{host}:{port} is accepted without a token. "
+            f"Pass --auth-token TOKEN (or set NODUS_SERVER_TOKEN) to require authentication.",
+            file=sys.stderr,
+        )
     service = RuntimeService(
         trace=trace,
         worker_sweep_interval_ms=worker_sweep_interval_ms,

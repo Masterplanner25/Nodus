@@ -9,6 +9,8 @@ from typing import Any
 import httpx
 
 from nodus.runtime.channel import Channel
+from nodus.runtime.runtime_events import RuntimeEvent
+from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.vm.vm import BuiltinMethod, Record
 
 _TEXT_CONTENT_TYPES = (
@@ -410,6 +412,10 @@ def _do_sync_request(method: str, url: str, options, vm) -> Record:
     if not isinstance(url, str):
         return _make_http_err(vm, f"URL must be a string, got {vm.builtin_type(url)}",
                               url="", method=method, category="client_error")
+    vm.event_bus.emit(RuntimeEvent(
+        "capability_use", runtime_time_ms(),
+        data={"kind": "http_request", "method": method, "url": url},
+    ))
     kwargs = _parse_options(method, url, options, vm)
     if isinstance(kwargs, Record):  # err record
         return kwargs

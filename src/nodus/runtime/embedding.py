@@ -235,6 +235,8 @@ class NodusRuntime:
         project_root: str | None = None,
         allowed_paths: list[str] | None = _SANDBOX_DEFAULT,  # type: ignore[assignment]
         allow_input: bool = False,
+        allow_subprocess: bool = True,
+        allow_network: bool = True,
         max_frames: int | None = None,
         on_error: Callable | None = None,
     ) -> None:
@@ -272,6 +274,14 @@ class NodusRuntime:
             If ``False`` (default), the ``input()`` builtin raises a sandbox error.
             Set to ``True`` only when running in interactive/REPL-like contexts where
             stdin is available.
+        allow_subprocess:
+            If ``False``, all ``subprocess_*`` builtins raise a sandbox error.
+            Defaults to ``True`` (subprocess available).  Set to ``False`` to prevent
+            scripts from invoking OS processes.
+        allow_network:
+            If ``False``, all ``http_*`` builtins raise a sandbox error.
+            Defaults to ``True`` (HTTP available).  Set to ``False`` to prevent
+            scripts from making outbound network requests.
         max_frames:
             Maximum call stack depth.  Raises a sandbox error on overflow.  ``None``
             means the VM default (``MAX_STACK_DEPTH``).
@@ -295,6 +305,8 @@ class NodusRuntime:
         self.project_root = project_root
         self.allowed_paths = allowed_paths
         self.allow_input = allow_input
+        self.allow_subprocess = allow_subprocess
+        self.allow_network = allow_network
         self.max_frames = max_frames
         self.on_error = on_error
         self._host_functions: dict[str, BuiltinInfo] = {}
@@ -563,6 +575,8 @@ class NodusRuntime:
             code_locs=[],
             source_path=filename,
             allowed_paths=self.allowed_paths,
+            allow_subprocess=self.allow_subprocess,
+            allow_network=self.allow_network,
             module_globals=initial_globals,
             host_globals=host_globals,
         )
