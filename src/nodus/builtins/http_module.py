@@ -1,12 +1,19 @@
 """std:http — HTTP client builtins for Nodus VM."""
 
+from __future__ import annotations
+
 import base64
 import json
 import threading
 import time as _time
 from typing import Any
 
-import httpx
+try:
+    import httpx as _httpx
+    _HTTPX_AVAILABLE = True
+except ImportError:
+    _httpx = None  # type: ignore[assignment]
+    _HTTPX_AVAILABLE = False
 
 from nodus.runtime.channel import Channel
 from nodus.runtime.runtime_events import RuntimeEvent
@@ -32,7 +39,7 @@ def _is_text_ct(content_type: str) -> bool:
     return any(ct.startswith(t) or ct == t.rstrip("/") for t in _TEXT_CONTENT_TYPES)
 
 
-def _decode_response_body(resp: httpx.Response) -> object:
+def _decode_response_body(resp: _httpx.Response) -> object:
     ct = resp.headers.get("content-type", "")
     if _is_text_ct(ct):
         charset = "utf-8"
@@ -48,7 +55,7 @@ def _decode_response_body(resp: httpx.Response) -> object:
     return resp.content
 
 
-def _build_headers_map(resp: httpx.Response) -> dict:
+def _build_headers_map(resp: _httpx.Response) -> dict:
     result: dict[str, Any] = {}
     for k, v in resp.headers.multi_items():
         key = k.lower()
@@ -75,7 +82,7 @@ def _make_http_err(vm, message: str, *, status=None, url="", method="", category
     })
 
 
-def _make_response_record(resp: httpx.Response, method: str, vm) -> Record:
+def _make_response_record(resp: _httpx.Response, method: str, vm) -> Record:
     headers_map = _build_headers_map(resp)
     body = _decode_response_body(resp)
     status = resp.status_code
@@ -113,7 +120,7 @@ def _make_response_record(resp: httpx.Response, method: str, vm) -> Record:
     }, kind="http_response")
 
 
-def _make_stream_record(resp: httpx.Response, method: str, chunks_ch: Channel, vm,
+def _make_stream_record(resp: _httpx.Response, method: str, chunks_ch: Channel, vm,
                         close_fn) -> Record:
     headers_map = _build_headers_map(resp)
     status = resp.status_code
@@ -158,7 +165,7 @@ def _make_stream_record(resp: httpx.Response, method: str, chunks_ch: Channel, v
     }, kind="http_stream_response")
 
 
-def _make_sse_record(resp: httpx.Response, method: str, events_ch: Channel, vm,
+def _make_sse_record(resp: _httpx.Response, method: str, events_ch: Channel, vm,
                      close_fn, last_id_box: list) -> Record:
     headers_map = _build_headers_map(resp)
     status = resp.status_code
@@ -360,7 +367,7 @@ def _parse_options(method: str, url: str, options, vm) -> dict | Record:
         total_s = t_total / 1000 if t_total is not None else None
         conn_s = t_conn / 1000 if t_conn is not None else (30.0 if total_s is None else total_s)
         read_s = t_read / 1000 if t_read is not None else total_s
-        kwargs["timeout"] = httpx.Timeout(timeout=total_s, connect=conn_s, read=read_s)
+        kwargs["timeout"] = _httpx.Timeout(timeout=total_s, connect=conn_s, read=read_s)
 
     # Redirects
     follow = options.get("follow_redirects")
@@ -389,14 +396,14 @@ def _root_vm(vm):
         root = parent
 
 
-def _get_or_create_client(vm) -> httpx.Client:
+def _get_or_create_client(vm) -> _httpx.Client:
     # Walk up the _caller_vm chain: module functions run in a fresh sub-VM
     # whose _caller_vm points back to the VM that called it.  Find or create
-    # the shared httpx.Client on the root-most VM in the chain.
+    # the shared _httpx.Client on the root-most VM in the chain.
     root = _root_vm(vm)
     client = getattr(root, "_http_client", None)
     if not client:
-        client = httpx.Client(follow_redirects=True, max_redirects=10)
+        client = _httpx.Client(follow_redirects=True, max_redirects=10)
         root._http_client = client
     if root is not vm:
         vm._http_client = client  # cache on sub-VM for next call
@@ -423,16 +430,16 @@ def _do_sync_request(method: str, url: str, options, vm) -> Record:
     try:
         resp = client.request(method, url, **kwargs)
         return _make_response_record(resp, method, vm)
-    except httpx.TooManyRedirects as exc:
+    except _httpx.TooManyRedirects as exc:
         return _make_http_err(vm, f"Too many redirects: {exc}",
                               url=url, method=method, category="redirect_error")
-    except httpx.TimeoutException as exc:
+    except _httpx.TimeoutException as exc:
         return _make_http_err(vm, f"Request timed out: {exc}",
                               url=url, method=method, category="timeout")
-    except httpx.TransportError as exc:
+    except _httpx.TransportError as exc:
         return _make_http_err(vm, f"Network error: {exc}",
                               url=url, method=method, category="network")
-    except httpx.HTTPError as exc:
+    except _httpx.HTTPError as exc:
         return _make_http_err(vm, f"HTTP error: {exc}",
                               url=url, method=method, category="network")
 
@@ -475,15 +482,15 @@ def _do_stream_request(method: str, url: str, options, vm) -> Record:
                         vm, f"Stream read error: {exc}",
                         status=resp.status_code, url=url, method=method, category="network",
                     ))
-        except httpx.TooManyRedirects as exc:
+        except _httpx.TooManyRedirects as exc:
             err_holder[0] = _make_http_err(vm, f"Too many redirects: {exc}",
                                            url=url, method=method, category="redirect_error")
             ready.set()
-        except httpx.TimeoutException as exc:
+        except _httpx.TimeoutException as exc:
             err_holder[0] = _make_http_err(vm, f"Request timed out: {exc}",
                                            url=url, method=method, category="timeout")
             ready.set()
-        except httpx.TransportError as exc:
+        except _httpx.TransportError as exc:
             err_holder[0] = _make_http_err(vm, f"Network error: {exc}",
                                            url=url, method=method, category="network")
             ready.set()
@@ -556,15 +563,15 @@ def _do_sse_request(method: str, url: str, options, vm) -> Record:
                         vm, f"SSE stream error: {exc}",
                         status=resp.status_code, url=url, method=method, category="network",
                     ))
-        except httpx.TooManyRedirects as exc:
+        except _httpx.TooManyRedirects as exc:
             err_holder[0] = _make_http_err(vm, f"Too many redirects: {exc}",
                                            url=url, method=method, category="redirect_error")
             ready.set()
-        except httpx.TimeoutException as exc:
+        except _httpx.TimeoutException as exc:
             err_holder[0] = _make_http_err(vm, f"Request timed out: {exc}",
                                            url=url, method=method, category="timeout")
             ready.set()
-        except httpx.TransportError as exc:
+        except _httpx.TransportError as exc:
             err_holder[0] = _make_http_err(vm, f"Network error: {exc}",
                                            url=url, method=method, category="network")
             ready.set()
@@ -644,8 +651,28 @@ def _do_async_request(method: str, url: str, options, vm) -> object:
     return ChannelRecvRequest(result_ch)
 
 
+_HTTP_BUILTIN_NAMES = (
+    "http_get", "http_post", "http_put", "http_delete", "http_patch",
+    "http_head", "http_options_verb", "http_request",
+    "http_get_async", "http_post_async", "http_put_async", "http_delete_async",
+    "http_patch_async", "http_head_async", "http_options_async", "http_request_async",
+    "http_stream", "http_sse",
+)
+
+
 def register(vm, registry) -> None:
     """Register http_* builtins onto the registry."""
+
+    if not _HTTPX_AVAILABLE:
+        def _http_not_installed(*_args):
+            vm.runtime_error(
+                "runtime",
+                "std:http requires the httpx package — install it with: "
+                "pip install 'nodus-lang[http]'",
+            )
+        for _name in _HTTP_BUILTIN_NAMES:
+            registry.add(_name, (1, 2, 3), _http_not_installed)
+        return
 
     # Sync verbs
     def http_get(url, options=None): return _do_sync_request("GET", url, options, vm)

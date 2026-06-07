@@ -421,6 +421,40 @@ class NodusRuntime:
         self._host_functions.clear()
         self._python_registered_tools.clear()
 
+    @classmethod
+    def clear_shared_state(cls) -> None:
+        """Reset all process-level shared state left over from prior executions.
+
+        ``NodusRuntime`` instances in the same process share several module-level
+        stores: the global memory store (``std:memory``), the agent registry
+        (``std:agent``), and the task-graph tables used by workflow primitives.
+        These stores are NOT cleared by ``shutdown()`` because clearing them while
+        another instance is still running would corrupt that instance's state.
+
+        Call this method only after **all** ``NodusRuntime`` instances in the
+        current process have been shut down.  It is safe to call before creating a
+        new instance to guarantee a clean slate:
+
+        .. code-block:: python
+
+            rt.shutdown()
+            NodusRuntime.clear_shared_state()
+            rt2 = NodusRuntime(...)   # starts with no prior state
+
+        This does not fix multi-tenant isolation (concurrent instances still share
+        these stores during their lifetimes).  See RUNTIME-001 for the v5 plan.
+        """
+        import nodus.services.memory_runtime as _mr
+        import nodus.services.agent_runtime as _ar
+        _mr.GLOBAL_MEMORY_STORE.load_snapshot({})
+        _ar.AGENT_REGISTRY.clear()
+        try:
+            import nodus.orchestration.task_graph as _tg
+            _tg._GRAPH_REGISTRY.clear()
+            _tg._GRAPH_VMS.clear()
+        except Exception:
+            pass
+
     def run_file(
         self,
         path: str,

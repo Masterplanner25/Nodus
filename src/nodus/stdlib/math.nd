@@ -84,3 +84,27 @@ fn is_finite(x) {
 let nan = math_nan()
 let infinity = math_infinity()
 let neg_infinity = math_neg_infinity()
+
+fn bit_and(a, b) {
+    return math_bit_and(a, b)
+}
+
+fn bit_or(a, b) {
+    return math_bit_or(a, b)
+}
+
+fn bit_xor(a, b) {
+    return math_bit_xor(a, b)
+}
+
+fn bit_not(a) {
+    return math_bit_not(a)
+}
+
+fn bit_lshift(a, n) {
+    return math_bit_lshift(a, n)
+}
+
+fn bit_rshift(a, n) {
+    return math_bit_rshift(a, n)
+}

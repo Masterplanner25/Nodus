@@ -40,7 +40,6 @@ classifiers = [
 
 dependencies = [
     "tzdata>=2024.1",
-    "httpx>=0.27,<1",
 ]
 
 [project.scripts]
@@ -53,9 +52,13 @@ Changelog = "https://github.com/Masterplanner25/Nodus/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/Masterplanner25/Nodus/issues"
 
 [project.optional-dependencies]
+http = [
+  "httpx>=0.27,<1",
+]
 server = [
   "fastapi>=0.136.0,<1",
   "uvicorn>=0.30.0,<1",
+  "httpx>=0.27,<1",
 ]
 schema = [
   "pydantic>=2,<3",
