@@ -2,6 +2,7 @@
 
 from nodus.frontend.ast.ast_nodes import (
     Assign,
+    CompoundAssign,
     ActionStmt,
     Attr,
     Bin,
@@ -348,6 +349,9 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         return expr.name
     if isinstance(expr, Assign):
         text = f"{expr.name} = {format_expr(expr.expr, 1)}"
+        return maybe_paren(text, 1, parent_prec)
+    if isinstance(expr, CompoundAssign):
+        text = f"{expr.name} {expr.op}= {format_expr(expr.expr, 1)}"
         return maybe_paren(text, 1, parent_prec)
     if isinstance(expr, Unary):
         inner = format_expr(expr.expr, 7)

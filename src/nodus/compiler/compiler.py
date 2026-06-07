@@ -7,6 +7,7 @@ from nodus.runtime.errors import BytecodeVersionError
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
     Assign,
+    CompoundAssign,
     Attr,
     Bin,
     Block,
@@ -706,6 +707,10 @@ class Compiler:
                     return
             self.compile_expr(expr.obj)
             self.emit("LOAD_FIELD", expr.name)
+            return
+
+        if isinstance(expr, CompoundAssign):
+            self.compile_expr(Assign(expr.name, Bin(expr.op, Var(expr.name), expr.expr)))
             return
 
         if isinstance(expr, Assign):
