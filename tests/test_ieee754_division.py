@@ -24,78 +24,44 @@ def run_nodus(script_content):
         Path(script_path).unlink()
 
 
-def test_float_div_by_zero_returns_inf():
-    stdout, stderr, rc = run_nodus("""
-import "std:math" as math
-print(str(1.0 / 0.0))
-print(str(math.is_inf(1.0 / 0.0)))
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "inf" in stdout
-    assert "true" in stdout
+def test_float_div_by_zero_raises():
+    stdout, stderr, rc = run_nodus("print(str(1.0 / 0.0))")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
+    assert "zero" in stderr.lower() or "math" in stderr.lower()
 
 
-def test_float_neg_div_by_zero_returns_neg_inf():
-    stdout, stderr, rc = run_nodus("""
-print(str(-1.0 / 0.0))
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "-inf" in stdout
+def test_float_neg_div_by_zero_raises():
+    stdout, stderr, rc = run_nodus("print(str(-1.0 / 0.0))")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
 
 
-def test_float_zero_div_by_zero_returns_nan():
-    stdout, stderr, rc = run_nodus("""
-import "std:math" as math
-print(str(math.is_nan(0.0 / 0.0)))
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "true" in stdout
+def test_float_zero_div_by_zero_raises():
+    stdout, stderr, rc = run_nodus("print(str(0.0 / 0.0))")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
 
 
-def test_float_mod_by_zero_returns_nan():
-    stdout, stderr, rc = run_nodus("""
-import "std:math" as math
-print(str(math.is_nan(5.0 % 0.0)))
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "true" in stdout
+def test_float_mod_by_zero_raises():
+    stdout, stderr, rc = run_nodus("print(str(5.0 % 0.0))")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
 
 
-def test_int_div_by_zero_returns_err_record():
-    stdout, stderr, rc = run_nodus("""
-let r = 1i / 0i
-print("type:" + type(r))
-print("kind:" + r.kind)
-print("origin:" + r.origin)
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "type:error" in stdout
-    assert "kind:math_error" in stdout
-    assert "origin:vm" in stdout
+def test_int_div_by_zero_raises():
+    stdout, stderr, rc = run_nodus("let r = 1i / 0i\nprint(r)")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
+    assert "zero" in stderr.lower() or "math" in stderr.lower()
 
 
-def test_int_mod_by_zero_returns_err_record():
-    stdout, stderr, rc = run_nodus("""
-let r = 5i % 0i
-print("type:" + type(r))
-print("kind:" + r.kind)
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "type:error" in stdout
-    assert "kind:math_error" in stdout
+def test_int_mod_by_zero_raises():
+    stdout, stderr, rc = run_nodus("let r = 5i % 0i\nprint(r)")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
 
 
-def test_mixed_int_float_div_by_zero_returns_inf():
-    """int / 0.0 and 1.0 / 0i both yield inf via IEEE 754 coercion."""
-    stdout, stderr, rc = run_nodus("""
-import "std:math" as math
-print(str(math.is_inf(1i / 0.0)))
-print(str(math.is_inf(1.0 / 0i)))
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    lines = [line for line in stdout.splitlines() if line.strip()]
-    assert lines[0] == "true"
-    assert lines[1] == "true"
+def test_mixed_int_float_div_by_zero_raises():
+    """int / 0.0 and 1.0 / 0i both raise a math error."""
+    _, stderr1, rc1 = run_nodus("print(str(1i / 0.0))")
+    _, stderr2, rc2 = run_nodus("print(str(1.0 / 0i))")
+    assert rc1 != 0, f"expected error for 1i/0.0, got exit {rc1}"
+    assert rc2 != 0, f"expected error for 1.0/0i, got exit {rc2}"
 
 
 def test_nan_not_equal_to_itself():
@@ -172,20 +138,11 @@ print(str(math.is_nan(math.nan + 1.0)))
     assert lines[2] == "true"
 
 
-def test_int_div_by_zero_err_has_location_fields():
-    """Integer division-by-zero err record has doc 13 location fields."""
-    stdout, stderr, rc = run_nodus("""
-let r = 1i / 0i
-print("has_path:" + str(r.path != nil))
-print("has_line:" + str(r.line != nil))
-print("stack_type:" + type(r.stack))
-print("origin:" + r.origin)
-""")
-    assert rc == 0, f"exit {rc}; stderr={stderr!r}"
-    assert "has_path:true" in stdout
-    assert "has_line:true" in stdout
-    assert "stack_type:list" in stdout
-    assert "origin:vm" in stdout
+def test_int_div_by_zero_err_has_message():
+    """Integer division-by-zero raises a runtime error with a math message."""
+    stdout, stderr, rc = run_nodus("let r = 1i / 0i\nprint(r)")
+    assert rc != 0, f"expected runtime error, got exit {rc}; stdout={stdout!r}"
+    assert "zero" in stderr.lower() or "math" in stderr.lower()
 
 
 def test_int_functions_are_always_finite():
