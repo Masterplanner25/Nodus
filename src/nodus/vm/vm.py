@@ -248,6 +248,7 @@ class VM:
         fs_root: str | None = None,
         allow_subprocess: bool = True,
         allow_network: bool = True,
+        allow_env: bool = True,
     ):
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -280,6 +281,7 @@ class VM:
         self.fs_root = os.path.normcase(os.path.abspath(fs_root)) if fs_root else None
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
+        self.allow_env = allow_env
         self.memory_store = GLOBAL_MEMORY_STORE
         self.effect_store = InMemoryEffectStore()
         self.circuit_breakers: dict = {}

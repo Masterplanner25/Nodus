@@ -61,6 +61,7 @@ behalf of users or services. The security controls available are:
 | stdin block | `allow_input` | `False` | Blocks `input()` — cannot block on stdin in embedded mode |
 | Subprocess block | `allow_subprocess` | `True` | Set `False` to disable all `subprocess_*` builtins |
 | Network block | `allow_network` | `True` | Set `False` to disable all `http_*` builtins |
+| Env block | `allow_env` | `True` | Set `False` to disable all `env_*` builtins (read/write/delete of `os.environ`) |
 | Call stack cap | `max_frames` | `None` (uses `MAX_STACK_DEPTH`) | Prevents deep recursion from exhausting Python's stack |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
 | Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |
@@ -74,6 +75,7 @@ runtime = NodusRuntime(
     allow_input=False,
     allow_subprocess=False,
     allow_network=False,
+    allow_env=False,
     max_frames=500,
 )
 ```
@@ -98,6 +100,11 @@ The Nodus sandbox is not a full security sandbox. It does not protect against:
 - **Network access** — `std:http` (v4.0+) allows arbitrary outbound HTTP. Disable via
   `allow_network=False` on `NodusRuntime`. When enabled, there is no `allowed_hosts`
   restriction — scripts can reach any reachable host.
+- **Environment variable access** — `std:env` (v4.0+) exposes full read/write/delete
+  access to `os.environ`. Disable via `allow_env=False` on `NodusRuntime`. When enabled,
+  a script can read any process-level environment variable including credentials
+  (`AWS_SECRET_ACCESS_KEY`, `DATABASE_URL`, API tokens, etc.). Prefer `allow_env=False`
+  for untrusted code running in environments with secrets in the process environment.
 - **Information leakage via timing** — The scheduler does not provide timing isolation
   between coroutines.
 - **Bytecode injection** — The runtime only loads `.nd` source files through the normal
@@ -197,6 +204,7 @@ The CLI (`nodus run`) and the embedding API (`NodusRuntime`) have different secu
 | Wall-clock timeout | 200 ms (`EXECUTION_TIMEOUT_MS`) | None — no deadline |
 | Subprocess | Available (no flag) | Available — set `allow_subprocess=False` to disable |
 | Network | Available (no flag) | Available — set `allow_network=False` to disable |
+| Env vars | Available (no flag) | Available — set `allow_env=False` to disable |
 
 The critical difference: `timeout_ms` defaults to `None` in embedded mode (unlimited).
 Scripts that call `http.get()` or `subprocess.run()` over a slow network or slow process

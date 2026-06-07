@@ -237,6 +237,7 @@ class NodusRuntime:
         allow_input: bool = False,
         allow_subprocess: bool = True,
         allow_network: bool = True,
+        allow_env: bool = True,
         max_frames: int | None = None,
         on_error: Callable | None = None,
     ) -> None:
@@ -282,6 +283,13 @@ class NodusRuntime:
             If ``False``, all ``http_*`` builtins raise a sandbox error.
             Defaults to ``True`` (HTTP available).  Set to ``False`` to prevent
             scripts from making outbound network requests.
+        allow_env:
+            If ``False``, all ``env_*`` builtins (``env_get``, ``env_set``,
+            ``env_unset``, ``env_has``, ``env_list``, ``env_list_keys``) raise
+            a sandbox error.  Defaults to ``True`` (env access available).
+            Set to ``False`` to prevent scripts from reading or writing process
+            environment variables.  Recommended when running untrusted scripts
+            that should not have access to credentials in the host environment.
         max_frames:
             Maximum call stack depth.  Raises a sandbox error on overflow.  ``None``
             means the VM default (``MAX_STACK_DEPTH``).
@@ -307,6 +315,7 @@ class NodusRuntime:
         self.allow_input = allow_input
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
+        self.allow_env = allow_env
         self.max_frames = max_frames
         self.on_error = on_error
         self._host_functions: dict[str, BuiltinInfo] = {}
@@ -644,6 +653,7 @@ class NodusRuntime:
             allowed_paths=self.allowed_paths,
             allow_subprocess=self.allow_subprocess,
             allow_network=self.allow_network,
+            allow_env=self.allow_env,
             module_globals=initial_globals,
             host_globals=host_globals,
         )
