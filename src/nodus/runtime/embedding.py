@@ -313,6 +313,7 @@ class NodusRuntime:
         self._python_registered_tools: dict[str, dict] = {}
         self.last_vm: VM | None = None
         self._tool_registry: ToolRegistry = ToolRegistry(self)
+        self._run_lock = threading.Lock()
 
     def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None) -> None:
         """Register a Python callable as a host function available to Nodus scripts.
@@ -590,6 +591,38 @@ class NodusRuntime:
         LangRuntimeError:
             On uncaught runtime error (re-raised via ``coerce_error``).
         """
+        with self._run_lock:
+            return self._run_source_locked(
+                source,
+                filename=filename,
+                max_steps=max_steps,
+                timeout_ms=timeout_ms,
+                max_stdout_chars=max_stdout_chars,
+                optimize=optimize,
+                import_state=import_state,
+                debugger=debugger,
+                max_frames=max_frames,
+                initial_globals=initial_globals,
+                host_globals=host_globals,
+                on_error=on_error,
+            )
+
+    def _run_source_locked(
+        self,
+        source: str,
+        *,
+        filename: str | None = None,
+        max_steps: int | None = None,
+        timeout_ms: int | None = None,
+        max_stdout_chars: int | None = None,
+        optimize: bool = True,
+        import_state: dict | None = None,
+        debugger=None,
+        max_frames: int | None = None,
+        initial_globals: dict | None = None,
+        host_globals: dict | None = None,
+        on_error=None,
+    ) -> dict:
         normalized = normalize_filename(filename)
         if import_state is None and self.project_root is not None:
             import_state = {

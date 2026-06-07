@@ -574,6 +574,13 @@ class Parser:
             )
         try:
             return self.parse_assignment()
+        except RecursionError:
+            t = self.peek()
+            raise LangSyntaxError(
+                f"Expression too deeply nested (max depth: {_MAX_PARSE_DEPTH})",
+                line=t.line,
+                col=t.col,
+            ) from None
         finally:
             self._parse_depth -= 1
 
