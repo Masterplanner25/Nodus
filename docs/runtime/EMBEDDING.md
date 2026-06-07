@@ -313,6 +313,24 @@ else:
 The result dict always contains `"ok"` (bool), `"stdout"` (str), and `"stderr"` (str).
 On error, `"error"` contains a human-readable description of the failure.
 
+**Spawned coroutine failures:** a script that calls `spawn()` and whose spawned
+coroutine dies with an uncaught error still returns `ok=True` — the main execution
+completed successfully. Spawned coroutine errors are collected separately under
+`result["extras"]["spawned_errors"]` as a list of error dicts. Hosts that want strict
+failure semantics must check both:
+
+```python
+result = rt.run_source(src)
+if not result["ok"]:
+    handle_main_error(result)
+elif result.get("extras", {}).get("spawned_errors"):
+    handle_spawned_errors(result["extras"]["spawned_errors"])
+```
+
+Alternatively, pass `on_error=my_callback` to `run_source()` to receive each spawned
+coroutine failure as it occurs. See GitHub #193 for a planned `fail_on_spawned_errors`
+flag that would fold spawned failures into `ok=False`.
+
 Hosts may also intercept runtime errors to:
 
 log failures
