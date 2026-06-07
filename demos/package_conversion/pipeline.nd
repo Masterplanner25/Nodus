@@ -1,0 +1,33 @@
+// AFTER: the same transform, now an observable, governed unit of work.
+//
+// Run: nodus run pipeline.nd
+//
+// What this adds over bare Python:
+//   - Pre/post condition checks with clear error messages
+//   - Structured exit-code handling (no silent failures)
+//   - All output goes through the runtime event bus (observable)
+//   - Sandbox: filesystem and subprocess governed by NodusRuntime policy
+let in_path = "sample_input.json"
+let out_path = "output.json"
+print("=== pipeline start ===")
+// Step 1: pre-condition
+print("[1/3] checking input...")
+// Step 2: run the Python transform as a governed subprocess
+if (!exists(in_path)) {
+    print("ERROR: input file not found: " + in_path)
+}
+print("[2/3] running transform...")
+// check: false means non-zero exit returns the flat result record (exit_code
+// top-level) rather than an error record — lets us read exit_code uniformly.
+let result = subprocess_run(["python", "transform.py", in_path, out_path, "name", "email"], record {check: false})
+if (result.exit_code != 0i) {
+    print("ERROR: transform failed (exit " + str(result.exit_code) + ")")
+    print(result.stderr)
+}
+print(result.stdout)
+// Step 3: post-condition
+print("[3/3] verifying output...")
+if (!exists(out_path)) {
+    print("ERROR: output file was not created")
+}
+print("=== pipeline done ===")
