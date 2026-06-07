@@ -18,7 +18,7 @@ def _run(rt, src):
 
 
 def _events_of_type(rt, event_type):
-    return [e for e in rt.last_vm.event_bus.events() if e.type == event_type]
+    return [e for e in rt._last_vm.event_bus.events() if e.type == event_type]
 
 
 # ---------------------------------------------------------------------------

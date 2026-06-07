@@ -241,6 +241,8 @@ class Scheduler:
                 now = runtime_time_ms()
                 coroutine.last_resume = now
                 coroutine.last_run_time = now
+                if coroutine.task_timeout_ms is not None and coroutine.task_started_at is None:
+                    coroutine.task_started_at = now
                 self._emit_event("coroutine_resume", coroutine)
                 self._trace(f"resume coroutine #{coroutine.id}")
                 self.vm.task_step_budget = TASK_STEP_BUDGET

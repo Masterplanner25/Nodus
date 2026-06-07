@@ -80,6 +80,9 @@ def register(vm, registry) -> None:
 
     def builtin_spawn(value):
         coroutine = vm.ensure_coroutine(value, "spawn(coroutine)")
+        coro_timeout = getattr(vm, "coroutine_timeout_ms", None)
+        if coro_timeout is not None:
+            coroutine.task_timeout_ms = coro_timeout
         vm.scheduler.spawn(coroutine)
         return None
 

@@ -53,7 +53,7 @@ class TestAllowedCommands:
         rt = NodusRuntime(timeout_ms=None, allowed_commands=["git", "ls"])
         result = rt.run_source("print(42)")
         assert result["ok"]
-        assert rt.last_vm.allowed_commands == ["git", "ls"]
+        assert rt._last_vm.allowed_commands == ["git", "ls"]
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ class TestAllowedHosts:
         rt = NodusRuntime(timeout_ms=None, allowed_hosts=["api.example.com"])
         result = rt.run_source("print(42)")
         assert result["ok"]
-        assert rt.last_vm.allowed_hosts == ["api.example.com"]
+        assert rt._last_vm.allowed_hosts == ["api.example.com"]
 
     def test_none_allowed_hosts_does_not_restrict(self):
         rt = NodusRuntime(timeout_ms=None, allowed_hosts=None)

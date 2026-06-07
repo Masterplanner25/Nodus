@@ -80,7 +80,7 @@ def test_trace_id_propagates_to_events():
     rt = NodusRuntime(timeout_ms=None)
     rt.set_trace_id("trace-event-check")
     rt.run_source('emit("test.event", {})')
-    vm = rt.last_vm
+    vm = rt._last_vm
     events = [e for e in vm.event_bus.events() if e.type == "test.event"]
     assert events, "expected at least one test.event"
     data = events[0].data or {}
@@ -90,7 +90,7 @@ def test_trace_id_propagates_to_events():
 def test_execution_unit_id_in_event_data():
     rt = NodusRuntime(timeout_ms=None)
     rt.run_source('emit("probe.event", {})')
-    vm = rt.last_vm
+    vm = rt._last_vm
     events = [e for e in vm.event_bus.events() if e.type == "probe.event"]
     assert events
     data = events[0].data or {}
