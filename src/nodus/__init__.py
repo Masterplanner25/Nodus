@@ -26,14 +26,10 @@ from nodus.runtime.embedding import NodusRuntime
 def __getattr__(name):
     # Heavy modules are loaded lazily to avoid circular imports and keep
     # startup time low for callers that only use lightweight nodus APIs.
-    if name in ("resolve_imports", "run_source"):
-        from nodus.tooling.loader import (  # noqa: F401
-            resolve_imports as _resolve_imports,
-            run_source as _run_source,
-        )
+    if name == "resolve_imports":
+        from nodus.tooling.loader import resolve_imports as _resolve_imports  # noqa: F401
         globals()["resolve_imports"] = _resolve_imports
-        globals()["run_source"] = _run_source
-        return globals()[name]
+        return _resolve_imports
     if name == "main":
         from nodus.cli.cli import main as _main  # noqa: F401
         globals()["main"] = _main
@@ -56,7 +52,6 @@ __all__ = [
     "Tok",
     "tokenize",
     "resolve_imports",
-    "run_source",
     "Parser",
     "VM",
     "Result",
