@@ -897,6 +897,13 @@ class Parser:
             self.error("Unexpected '}' - check for a missing expression or extra closing brace", t)
         elif kind in ("EOF", "SEP"):
             self.error(f"Unexpected {_tok_name(kind)} - expression is incomplete", t)
+        elif (kind == "=" and self.last_token is not None
+              and self.last_token.kind in ("+", "-", "*", "/")):
+            op = self.last_token.kind
+            self.error(
+                f"Nodus has no '{op}=' operator; use the full form: x = x {op} value",
+                t,
+            )
         else:
             self.error(f"Unexpected {_tok_desc(kind, t.val)} in expression", t)
 

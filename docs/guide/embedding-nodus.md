@@ -482,6 +482,22 @@ print(r2["stdout"])   # name: Undefined variable: counter
 name: Undefined variable: counter
 ```
 
+**Caveat — `std:memory` and agent state persist across calls.** The fresh VM
+guarantee applies only to local script variables. `std:memory` (and
+`std:agent` registrations) use a process-level store shared by every
+`NodusRuntime` instance and every `run_source()` call in the same process.
+Memory written by one execution is readable by the next:
+
+```python
+rt = NodusRuntime()
+rt.run_source('import "std:memory" as mem\nmem.put("key", "value1")')
+r = rt.run_source('import "std:memory" as mem\nprint(mem.get("key"))')
+print(r["stdout"])   # value1   (persisted from previous call)
+```
+
+If you need isolation between executions, avoid `std:memory` across calls, or
+run each execution in a separate process.
+
 Two `NodusRuntime` instances are fully independent — registered functions,
 `allowed_paths`, and limits do not cross:
 

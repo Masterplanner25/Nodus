@@ -614,7 +614,16 @@ class NodusRuntime:
                 else:
                     loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True, initial_globals=initial_globals)
             except HostFunctionError as wrapped:
-                raise wrapped.cause
+                stage = "execute"
+                structured = coerce_error(wrapped.cause, stage=stage, filename=normalized)
+                return Result.failure(
+                    stage=stage,
+                    filename=normalized,
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    errors=[structured.to_dict()],
+                    error=legacy_error_dict(wrapped.cause, filename=normalized),
+                ).to_dict()
             except Exception as err:
                 stage = "parse" if isinstance(err, (LangSyntaxError, SyntaxError)) else "execute"
                 structured = coerce_error(err, stage=stage, filename=normalized)
@@ -627,11 +636,22 @@ class NodusRuntime:
                     error=legacy_error_dict(err, filename=normalized),
                 ).to_dict()
 
+        raw_errors = getattr(vm.scheduler, "_coroutine_errors", [])
+        spawned_errors = [coerce_error(e, stage="execute", filename=normalized).to_dict() for e in raw_errors]
+        unrun = vm.scheduler._spawned_without_loop
+        extra_stderr = stderr.getvalue()
+        if unrun > 0:
+            noun = "task" if unrun == 1 else "tasks"
+            extra_stderr += (
+                f"\nWarning: {unrun} spawned {noun} never executed"
+                " — call run_loop() after spawn() to run them.\n"
+            )
         return Result.success(
             stage="execute",
             filename=normalized,
             stdout=stdout.getvalue(),
-            stderr=stderr.getvalue(),
+            stderr=extra_stderr,
+            extras={"spawned_errors": spawned_errors} if spawned_errors else {},
         ).to_dict()
 
     def _install_host_functions(self, vm: VM) -> None:

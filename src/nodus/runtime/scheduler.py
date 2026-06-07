@@ -45,6 +45,9 @@ class Scheduler:
         self.task_ages: dict[int, int] = {}
         self._io_channels: list = []
         self._recv_channels: set = set()
+        self._run_loop_called: bool = False
+        self._spawned_without_loop: int = 0
+        self._coroutine_errors: list = []
 
     def _trace(self, message: str) -> None:
         if self.trace:
@@ -85,6 +88,7 @@ class Scheduler:
         if coroutine.state == "finished":
             return
         self._ensure_metadata(coroutine)
+        self._spawned_without_loop += 1
         self.ready_queue.append(coroutine)
         self._emit_event("coroutine_spawn", coroutine)
         self._trace(f"spawn coroutine #{coroutine.id} {coroutine.name}")
@@ -169,6 +173,8 @@ class Scheduler:
                 self._recv_channels.discard(ch)
 
     def run_loop(self, on_complete=None, on_error=None) -> None:
+        self._run_loop_called = True
+        self._spawned_without_loop = 0
         stop = False
         while self.ready_queue or self.timers or self._io_channels or self._recv_channels:
             self._drain_timers()
@@ -248,6 +254,7 @@ class Scheduler:
                 raise
             except Exception as _e:
                 print(format_error(_e, path=self.vm.source_path), file=sys.stderr)
+                self._coroutine_errors.append(_e)
                 self._mark_completed(coroutine)
                 if coroutine.id is not None:
                     self.sleeping_tasks.discard(coroutine.id)
