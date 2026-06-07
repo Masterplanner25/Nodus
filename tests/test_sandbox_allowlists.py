@@ -1,6 +1,5 @@
 """Tests for allowed_commands (#161) and allowed_hosts (#162) sandbox params."""
 
-import pytest
 from nodus.runtime.embedding import NodusRuntime
 
 
