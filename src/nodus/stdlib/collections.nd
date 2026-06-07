@@ -58,6 +58,7 @@ fn filter(items, fn_value) {
 }
 
 fn reduce(items, fn_value, initial) {
+    collection_validate_reduce_fn(fn_value)
     let acc = initial
     let i = 0
     while (i < collection_len(items)) {

@@ -157,7 +157,11 @@ def register(vm, registry) -> None:
             )
             return None
         if vm.current_coroutine is None:
-            vm.runtime_error("runtime", "recv(channel) outside coroutine")
+            vm.runtime_error(
+                "runtime",
+                "recv(channel) outside coroutine — "
+                "wrap your code in spawn(coroutine(fn() { ... })) and call run_loop()",
+            )
         coroutine = vm.current_coroutine
         coroutine.state = "suspended"
         coroutine.blocked_on = ch
