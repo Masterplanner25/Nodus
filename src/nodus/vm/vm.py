@@ -248,6 +248,8 @@ class VM:
         allow_subprocess: bool = True,
         allow_network: bool = True,
         allow_env: bool = True,
+        allowed_commands: list[str] | None = None,
+        allowed_hosts: list[str] | None = None,
     ):
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -281,6 +283,8 @@ class VM:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        self.allowed_commands = allowed_commands
+        self.allowed_hosts = allowed_hosts
         self.memory_store = GLOBAL_MEMORY_STORE
         self.effect_store = InMemoryEffectStore()
         self.circuit_breakers: dict = {}
