@@ -315,6 +315,7 @@ class VM:
         self._spawned_handles: list = []  # (proc, stdout_thread, stderr_thread) per subprocess_spawn
         self.test_state: dict = {}
         self.on_error: Callable | None = None
+        self.coroutine_timeout_ms: int | None = None
         self._bare_import_hints: dict[str, str] = {}
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
