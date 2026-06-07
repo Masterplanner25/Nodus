@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nodus"
+  short_description: "Nodus v4 language and workflow DSL guidance"
+  default_prompt: "Use $nodus to help me write or debug this Nodus code."

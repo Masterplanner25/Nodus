@@ -38,6 +38,19 @@ limits, and wire tool registries.
 
 ---
 
+## AI Assistant Assets
+
+Nodus now ships assistant-specific context assets for both Claude Code and Codex.
+
+- `skills/nodus.skill` is the Claude Code skill package. It contains Nodus-specific idioms, error fix classes, stdlib guidance, and verified examples.
+- `skills/project-CLAUDE.md` is the project-root template that should be copied to `CLAUDE.md` in a user project.
+- `skills/nodus/` is the Codex skill folder. `skills/nodus/SKILL.md` is the entrypoint, with smaller reference files loaded on demand.
+- `skills/project-AGENTS.md` is the project-root template that should be copied to `AGENTS.md` in a user project.
+
+These assets exist because general-purpose coding agents frequently miss the same Nodus-specific hazards: map vs record access, closure mutation through maps, one-argument `print()`, top-level-only imports, `spawn()` requiring a coroutine value, workflow results being maps, and the default 200ms execution deadline.
+
+---
+
 ## Core Language Features
 
 ### Types

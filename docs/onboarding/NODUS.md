@@ -117,6 +117,17 @@ nodus ast <file>       Print the AST
 nodus profile <file>   Profile execution
 ```
 
+## AI Assistant Assets
+
+Nodus ships assistant-oriented context files for the two supported coding environments:
+
+- **Claude Code**
+  Use `skills/project-CLAUDE.md` as your project-root `CLAUDE.md` and install `skills/nodus.skill` into `.claude/commands/`.
+- **Codex**
+  Use `skills/project-AGENTS.md` as your project-root `AGENTS.md` and install the `skills/nodus/` folder into `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
+
+The project file provides always-on guardrails for the language. The skill provides deeper reference material and examples on demand.
+
 ## Current Stage
 
 v4.0.0 (prepared, not yet published). Last published: v3.0.2. The v4.0 cycle adds the AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, and the full ecosystem of 29 companion packages. See `CHANGELOG.md` for the complete version history.

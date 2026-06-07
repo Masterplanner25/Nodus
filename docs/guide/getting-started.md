@@ -379,15 +379,35 @@ Start with the foundation guides, then pick the topic you need:
 
 **Ecosystem and packages**
 
-- **[ecosystem.md](ecosystem.md)** — the 29 companion packages, what each
+- **[ecosystem.md](ecosystem.md)** - the 29 companion packages, what each
   does, install tiers, and the nodus-sdk unified entry point.
-- **[library-entry-points.md](library-entry-points.md)** — how third-party
+- **[library-entry-points.md](library-entry-points.md)** - how third-party
   Nodus libraries expose `.nd` files via the `nodus.nd` entry-point group.
 
 **Language reference**
 
 - **[LANGUAGE_SPEC.md](../language/LANGUAGE_SPEC.md)** — the authoritative
   reference for every operator, form, and builtin.
+
+---
+
+## AI Assistant Setup
+
+If you use an AI coding assistant with Nodus, install the project-level context file plus the matching assistant skill:
+
+- **Claude Code**
+  Copy [`skills/project-CLAUDE.md`](../../skills/project-CLAUDE.md) to your project root as `CLAUDE.md`, then place [`skills/nodus.skill`](../../skills/nodus.skill) in `.claude/commands/`.
+- **Codex**
+  Copy [`skills/project-AGENTS.md`](../../skills/project-AGENTS.md) to your project root as `AGENTS.md`, then copy the [`skills/nodus/`](../../skills/nodus/) folder to `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
+
+These assistant assets capture the Nodus-specific rules that general-purpose models commonly miss:
+
+- record vs map access
+- closure mutation through maps instead of outer `let`
+- `spawn()` plus `coroutine()` plus `run_loop()`
+- workflow result bracket notation
+- top-level import requirements
+- the default 200ms execution deadline
 
 ---
 
@@ -413,3 +433,4 @@ F2: In v2.x, `{ name: "Alice" }` tried to evaluate `name` as a variable and
 F3: Imports inside function bodies silently failed in v2.x. RESOLVED in v3.0
     (BUG-031 fix): import errors in function bodies now propagate correctly.
 -->
+

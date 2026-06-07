@@ -88,6 +88,13 @@ nodus repl
 - `nodus check` checks the current project's `src/main.nd` when run inside a project directory.
 - `nodus fmt hello.nd` formats a file.
 
+## AI Assistant Setup
+
+If you want assistant-specific project context for Nodus:
+
+- For **Claude Code**, copy `skills/project-CLAUDE.md` to your project root as `CLAUDE.md`, then place `skills/nodus.skill` in `.claude/commands/`.
+- For **Codex**, copy `skills/project-AGENTS.md` to your project root as `AGENTS.md`, then copy `skills/nodus/` to `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
+
 Execution rule:
 
 - `nodus run <file>` runs only the file you provide.
