@@ -7,7 +7,6 @@ Covers:
   - CLI and embedded modes consistent
 """
 
-import os
 import unittest
 
 from nodus import NodusRuntime
