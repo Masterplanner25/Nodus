@@ -527,9 +527,9 @@ def tokenize(src: str) -> list[Tok]:
                 out.append(Tok("SEP", text, start_line, start_col))
             else:
                 out.append(Tok(text, text, start_line, start_col))
-                if text in ("(", "[", "{"):
+                if text in ("(", "["):
                     _open_depth += 1
-                elif text in (")", "]", "}"):
+                elif text in (")", "]"):
                     _open_depth = max(0, _open_depth - 1)
             col += len(text)
 
