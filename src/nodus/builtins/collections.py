@@ -228,3 +228,15 @@ def register(vm, registry) -> None:
     registry.add("json_parse", 1, builtin_json_parse)
     registry.add("json_stringify", 1, builtin_json_stringify)
     registry.add("json_parse_int", 1, builtin_json_parse_int)
+
+    def builtin_validate_reduce_fn(fn_value):
+        from nodus.vm.vm import Closure
+        if not isinstance(fn_value, Closure):
+            type_name = vm.builtin_type(fn_value)
+            vm.runtime_error(
+                "type",
+                f"reduce() expected a function as argument 2, got {type_name}; "
+                "argument order is reduce(items, fn, initial)",
+            )
+
+    registry.add("collection_validate_reduce_fn", 1, builtin_validate_reduce_fn)

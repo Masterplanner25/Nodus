@@ -1696,7 +1696,11 @@ class VM:
         if isinstance(result, SleepRequest):
             self.stack.append(None)
             if self.current_coroutine is None:
-                self.runtime_error("runtime", "sleep(ms) outside coroutine")
+                self.runtime_error(
+                    "runtime",
+                    "sleep(ms) outside coroutine — "
+                    "wrap your code in spawn(coroutine(fn() { ... })) and call run_loop()",
+                )
             assert self.current_coroutine is not None
             self.current_coroutine.state = "suspended"
             self.save_current_coroutine_state(self.ip + 1)

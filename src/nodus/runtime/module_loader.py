@@ -748,6 +748,16 @@ def resolve_import_path(
     project_root = os.path.abspath(import_state.get("project_root") or base_dir)
     modules_dir = os.path.join(project_root, NODUS_DIRNAME, MODULES_DIRNAME)
 
+    # Special-case imports that look like stdlib modules but are actually built-ins.
+    _BUILTIN_NOT_MODULES: dict[str, str] = {
+        "std:channel": (
+            "channel(), send(), recv(), and close() are built-in functions — "
+            "no import needed; use them directly without importing"
+        ),
+    }
+    if import_path in _BUILTIN_NOT_MODULES:
+        import_error(_BUILTIN_NOT_MODULES[import_path], tok, module_id)
+
     if ":" in import_path and not import_path.startswith("std:"):
         package_name, package_path = import_path.split(":", 1)
         if not package_name or not package_path:
