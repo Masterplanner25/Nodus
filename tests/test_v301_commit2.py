@@ -75,30 +75,32 @@ class HostGlobalsTests(unittest.TestCase):
 
 
 class HostExceptionPropagationTests(unittest.TestCase):
-    """BUG-E04: Python exceptions from host-registered functions propagate to caller."""
+    """Host function Python exceptions now return ok=False instead of escaping run_source()."""
 
-    def test_value_error_propagates(self):
+    def test_value_error_returns_ok_false(self):
         rt = NodusRuntime()
 
         def bad():
             raise ValueError("host value error")
 
         rt.register_function("bad", bad, arity=0)
-        with self.assertRaises(ValueError) as ctx:
-            rt.run_source("bad()")
-        self.assertIn("host value error", str(ctx.exception))
+        result = rt.run_source("bad()")
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result["ok"])
+        self.assertIn("host value error", str(result.get("error", result.get("errors", ""))))
 
-    def test_key_error_propagates(self):
+    def test_key_error_returns_ok_false(self):
         rt = NodusRuntime()
 
         def lookup():
             raise KeyError("missing_key")
 
         rt.register_function("lookup", lookup, arity=0)
-        with self.assertRaises(KeyError):
-            rt.run_source("lookup()")
+        result = rt.run_source("lookup()")
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result["ok"])
 
-    def test_custom_exception_propagates(self):
+    def test_custom_exception_returns_ok_false(self):
         class AppError(Exception):
             pass
 
@@ -108,9 +110,10 @@ class HostExceptionPropagationTests(unittest.TestCase):
             raise AppError("custom app error")
 
         rt.register_function("explode", explode, arity=0)
-        with self.assertRaises(AppError) as ctx:
-            rt.run_source("explode()")
-        self.assertIn("custom app error", str(ctx.exception))
+        result = rt.run_source("explode()")
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result["ok"])
+        self.assertIn("custom app error", str(result.get("error", result.get("errors", ""))))
 
     def test_nodus_error_not_confused_with_host_error(self):
         """A Nodus-side type error should NOT propagate as a Python exception."""

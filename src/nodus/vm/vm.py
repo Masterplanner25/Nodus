@@ -1652,7 +1652,10 @@ class VM:
                 self.runtime_error("key", f"Missing map key: {self.value_to_string(idx, quote_strings=True)}")
             return seq[idx]
 
-        self.runtime_error("type", "Indexing is only supported on lists and maps")
+        hint = ""
+        if isinstance(seq, Record) and seq.kind == "error" and seq.fields.get("kind") == "thrown":
+            hint = "; this is a caught thrown value — access the original via e.payload"
+        self.runtime_error("type", "Indexing is only supported on lists and maps" + hint)
 
     def write_index(self, seq, idx, value):
         if isinstance(seq, list):

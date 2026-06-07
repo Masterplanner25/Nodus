@@ -121,7 +121,7 @@ class HostFunctionError(Exception):
     The VM execute loop re-raises this without wrapping.
     """
 
-    def __init__(self, cause: BaseException) -> None:
+    def __init__(self, cause: Exception) -> None:
         self.cause = cause
         super().__init__(str(cause))
 
