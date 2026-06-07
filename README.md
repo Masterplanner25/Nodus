@@ -159,10 +159,10 @@ The full standard library ships with Nodus — no extra installs required for co
 If you write Nodus with [Claude Code](https://claude.ai/code), a language skill is available
 that teaches Claude the idioms, gotchas, and workflow patterns specific to Nodus v4:
 
-1. Download [`skills/nodus.skill`](skills/nodus.skill) from this repo.
-2. Drop it in your project's `.claude/commands/` folder.
-3. Claude will apply Nodus-specific rules automatically whenever you open a `.nd` file or ask
-   about workflows, coroutines, or the standard library.
+1. Download [`skills/nodus.skill`](skills/nodus.skill) and [`skills/project-CLAUDE.md`](skills/project-CLAUDE.md) from this repo.
+2. Copy `project-CLAUDE.md` to your project root as `CLAUDE.md` (fill in your project name).
+3. Drop `nodus.skill` in your project's `.claude/commands/` folder.
+4. Claude will apply Nodus-specific rules automatically in every session.
 
 The skill covers: record vs map distinction, the closure outer-let pattern, `spawn()` coroutine
 wrapping, workflow result bracket notation, the 200ms default timeout trap, all 19 stdlib modules,
