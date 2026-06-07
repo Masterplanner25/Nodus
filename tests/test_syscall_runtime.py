@@ -165,12 +165,12 @@ def test_syscall_complete_event_emitted():
 import "std:sys" as sys
 sys.memory_put("evkey", "ev")
 ''')
-    events = [e for e in rt.last_vm.event_bus.events() if e.type == "syscall_complete"]
+    events = [e for e in rt._last_vm.event_bus.events() if e.type == "syscall_complete"]
     assert events, "expected syscall_complete event"
 
 
 def test_syscall_error_event_emitted():
     rt = _rt()
     rt.run_source('syscall("sys.v1.bad.op", {})')
-    events = [e for e in rt.last_vm.event_bus.events() if e.type == "syscall_error"]
+    events = [e for e in rt._last_vm.event_bus.events() if e.type == "syscall_error"]
     assert events, "expected syscall_error event for unknown syscall"

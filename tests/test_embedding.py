@@ -162,9 +162,9 @@ class ShutdownTests(unittest.TestCase):
         rt = NodusRuntime()
         rt.register_function("noop", lambda: None, arity=0)
         rt.run_source("noop()")
-        self.assertIsNotNone(rt.last_vm)
+        self.assertIsNotNone(rt._last_vm)
         rt.shutdown()
-        self.assertIsNone(rt.last_vm)
+        self.assertIsNone(rt._last_vm)
 
     def test_shutdown_clears_host_functions(self):
         rt = NodusRuntime()
@@ -186,11 +186,11 @@ class SpawnThreadLeakTests(unittest.TestCase):
         """reset() must drain _spawned_handles so threads are not left alive."""
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt.last_vm
+        vm = rt._last_vm
         self.assertIsNotNone(vm)
         self.assertIsInstance(vm._spawned_handles, list)
         rt.reset()
-        self.assertIsNone(rt.last_vm)
+        self.assertIsNone(rt._last_vm)
         # After reset, handles list on the (now released) vm should be empty
         self.assertEqual(len(vm._spawned_handles), 0)
 
@@ -198,21 +198,97 @@ class SpawnThreadLeakTests(unittest.TestCase):
         """shutdown() must also drain _spawned_handles."""
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt.last_vm
+        vm = rt._last_vm
         self.assertIsNotNone(vm)
         rt.shutdown()
-        self.assertIsNone(rt.last_vm)
+        self.assertIsNone(rt._last_vm)
         self.assertEqual(len(vm._spawned_handles), 0)
 
     def test_spawned_handles_populated_after_spawn(self):
         """_spawned_handles must have one entry per subprocess_spawn call."""
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt.last_vm
+        vm = rt._last_vm
         self.assertIsNotNone(vm)
         # wait() is called in the script, so proc is done — but handle is still tracked
         self.assertGreaterEqual(len(vm._spawned_handles), 1)
         rt.reset()
+
+
+class EventSinksTests(unittest.TestCase):
+    """#190 — event_sinks param attaches sinks before execution."""
+
+    def test_event_sink_receives_events(self):
+        received = []
+
+        class CollectSink:
+            def emit(self, event):
+                received.append(event.type)
+
+        rt = NodusRuntime(timeout_ms=None, event_sinks=[CollectSink()])
+        rt.run_source('print("hello")', filename="inline.nd")
+        self.assertTrue(len(received) > 0, "sink should have received at least one event")
+
+    def test_event_sink_not_required(self):
+        rt = NodusRuntime(timeout_ms=None)
+        result = rt.run_source('print("ok")', filename="inline.nd")
+        self.assertTrue(result["ok"])
+
+
+class CoroutineTimeoutTests(unittest.TestCase):
+    """#191 — coroutine_timeout_ms kills slow coroutines."""
+
+    def test_coroutine_timeout_kills_slow_coroutine(self):
+        src = """
+let c = coroutine(fn() {
+    sleep(5000)
+    print("never")
+})
+spawn(c)
+run_loop()
+"""
+        rt = NodusRuntime(timeout_ms=None, coroutine_timeout_ms=50)
+        result = rt.run_source(src, filename="inline.nd")
+        self.assertNotIn("never", result.get("stdout", ""))
+
+    def test_coroutine_timeout_none_allows_completion(self):
+        src = """
+let c = coroutine(fn() {
+    print("done")
+})
+spawn(c)
+run_loop()
+"""
+        rt = NodusRuntime(timeout_ms=None, coroutine_timeout_ms=None)
+        result = rt.run_source(src, filename="inline.nd")
+        self.assertIn("done", result.get("stdout", ""))
+
+
+class ExecutionStatsTests(unittest.TestCase):
+    """#186 — get_execution_stats() returns post-run metrics."""
+
+    def test_stats_zero_before_any_run(self):
+        rt = NodusRuntime(timeout_ms=None)
+        stats = rt.get_execution_stats()
+        self.assertEqual(stats["instructions_executed"], 0)
+        self.assertEqual(stats["coroutines_spawned"], 0)
+
+    def test_stats_populated_after_run(self):
+        rt = NodusRuntime(timeout_ms=None)
+        rt.run_source('print("hi")', filename="inline.nd")
+        stats = rt.get_execution_stats()
+        self.assertGreater(stats["instructions_executed"], 0)
+
+    def test_coroutines_spawned_counted(self):
+        src = """
+let c = coroutine(fn() { print("x") })
+spawn(c)
+run_loop()
+"""
+        rt = NodusRuntime(timeout_ms=None)
+        rt.run_source(src, filename="inline.nd")
+        stats = rt.get_execution_stats()
+        self.assertEqual(stats["coroutines_spawned"], 1)
 
 
 if __name__ == "__main__":
