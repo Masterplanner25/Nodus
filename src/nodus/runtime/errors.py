@@ -107,33 +107,20 @@ def coerce_error(err: Exception, *, stage: str | None = None, filename: str | No
     return NodusRuntimeError(str(err), filename=filename)
 
 
+_LEGACY_TYPE_MAP = {
+    "SandboxError": "sandbox",
+    "RuntimeError": "runtime",
+    "SyntaxError": "syntax",
+    "CompileError": "error",
+}
+
+
 def legacy_error_dict(err: Exception, *, filename: str | None = None) -> dict:
-    if isinstance(err, LangRuntimeError):
-        return {
-            "type": "sandbox" if err.kind == "sandbox" else "runtime",
-            "kind": err.kind,
-            "message": str(err),
-            "path": err.path or filename,
-            "line": err.line,
-            "column": err.col,
-            "stack": err.stack,
-        }
-    if isinstance(err, LangSyntaxError):
-        return {
-            "type": "syntax",
-            "message": str(err),
-            "path": err.path or filename,
-            "line": err.line,
-            "column": err.col,
-        }
-    if isinstance(err, SyntaxError):
-        return {
-            "type": "syntax",
-            "message": str(err),
-            "path": getattr(err, "filename", None) or filename,
-            "line": getattr(err, "lineno", None),
-            "column": getattr(err, "offset", None),
-        }
+    """Derive the legacy flat error dict from coerce_error (single parsing path).
+
+    TypeError is handled before coerce_error because coerce_error collapses it
+    to RuntimeError and loses the "type" prefix used by format_error_payload.
+    """
     if isinstance(err, TypeError):
         return {
             "type": "type",
@@ -142,11 +129,21 @@ def legacy_error_dict(err: Exception, *, filename: str | None = None) -> dict:
             "line": getattr(err, "line", None),
             "column": getattr(err, "col", None),
         }
-    return {
-        "type": "error",
-        "message": str(err),
-        "path": filename,
+    e = coerce_error(err, filename=filename)
+    d = e.to_dict()
+    out: dict = {
+        "type": _LEGACY_TYPE_MAP.get(d["type"], "error"),
+        "message": d["message"],
+        "path": d["filename"],
+        "line": d["line"],
+        "column": d["column"],
     }
+    if d.get("stack"):
+        out["stack"] = d["stack"]
+    details = d.get("details") or {}
+    if details.get("kind"):
+        out["kind"] = details["kind"]
+    return out
 
 
 def format_error_payload(payload: dict) -> str:
