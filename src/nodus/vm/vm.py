@@ -246,6 +246,8 @@ class VM:
         profiler: Profiler | None = None,
         allowed_paths: list[str] | None = None,
         fs_root: str | None = None,
+        allow_subprocess: bool = True,
+        allow_network: bool = True,
     ):
         version, instructions = normalize_bytecode(code)
         self.bytecode_version = version
@@ -276,6 +278,8 @@ class VM:
         self.profiler = profiler
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
         self.fs_root = os.path.normcase(os.path.abspath(fs_root)) if fs_root else None
+        self.allow_subprocess = allow_subprocess
+        self.allow_network = allow_network
         self.memory_store = GLOBAL_MEMORY_STORE
         self.effect_store = InMemoryEffectStore()
         self.circuit_breakers: dict = {}

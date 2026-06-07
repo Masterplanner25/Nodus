@@ -3,6 +3,13 @@
 from nodus.builtins.nodus_builtins import BuiltinInfo
 
 
+def _make_blocked_stub(vm, reason: str):
+    """Return a callable that raises a sandbox error for any number of args."""
+    def _blocked(*_args):
+        vm.runtime_error("sandbox", f"Blocked: {reason}")
+    return _blocked
+
+
 class BuiltinRegistry:
     """Collects builtin function registrations from category modules.
 
@@ -50,10 +57,31 @@ class BuiltinRegistry:
         _encoding.register(vm, self)
         from nodus.builtins import secrets_module as _secrets
         _secrets.register(vm, self)
-        from nodus.builtins import http_module as _http
-        _http.register(vm, self)
-        from nodus.builtins import subprocess_module as _subprocess
-        _subprocess.register(vm, self)
+        if getattr(vm, "allow_network", True):
+            from nodus.builtins import http_module as _http
+            _http.register(vm, self)
+        else:
+            _blocked = _make_blocked_stub(vm, "network access (allow_network=False)")
+            for _name in (
+                "http_get", "http_post", "http_put", "http_delete", "http_patch",
+                "http_head", "http_options_verb", "http_request",
+                "http_get_async", "http_post_async", "http_put_async",
+                "http_delete_async", "http_patch_async", "http_head_async",
+                "http_options_async", "http_request_async",
+                "http_stream", "http_sse",
+            ):
+                self.add(_name, (1, 2, 3), _blocked)
+        if getattr(vm, "allow_subprocess", True):
+            from nodus.builtins import subprocess_module as _subprocess
+            _subprocess.register(vm, self)
+        else:
+            _blocked = _make_blocked_stub(vm, "subprocess execution (allow_subprocess=False)")
+            for _name in (
+                "subprocess_run", "subprocess_run_async", "subprocess_shell",
+                "subprocess_shell_async", "subprocess_spawn", "subprocess_spawn_shell",
+                "subprocess_shell_quote",
+            ):
+                self.add(_name, (1, 2, 3), _blocked)
         from nodus.builtins import tool_module as _tool
         _tool.register(vm, self)
         from nodus.builtins import test_module as _test

@@ -3,6 +3,8 @@
 import os
 
 from nodus.runtime.error_wrap import print_trace
+from nodus.runtime.runtime_events import RuntimeEvent
+from nodus.runtime.runtime_stats import runtime_time_ms
 
 
 def register(vm, registry) -> None:
@@ -11,6 +13,12 @@ def register(vm, registry) -> None:
     def _ensure_path_string(value, name: str):
         if not isinstance(value, str):
             vm.runtime_error("type", f"{name} expects a string path")
+
+    def _emit_cap(kind: str, path: str) -> None:
+        vm.event_bus.emit(RuntimeEvent(
+            "capability_use", runtime_time_ms(),
+            data={"kind": kind, "path": path},
+        ))
 
     def _trace(func_name: str, exc: BaseException) -> None:
         if getattr(vm, "trace_errors", False):
@@ -27,6 +35,7 @@ def register(vm, registry) -> None:
         if not isinstance(path, str):
             vm.runtime_error("type", "read_file(path) expects a string path")
         vm._ensure_path_allowed(path, "read_file(path)")
+        _emit_cap("fs_read", path)
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
                 return f.read()
@@ -55,6 +64,7 @@ def register(vm, registry) -> None:
         if not isinstance(path, str):
             vm.runtime_error("type", "write_file(path, content) expects string path")
         vm._ensure_path_allowed(path, "write_file(path, content)")
+        _emit_cap("fs_write", path)
         text = vm.value_to_string(content, quote_strings=False)
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -80,6 +90,7 @@ def register(vm, registry) -> None:
         if not isinstance(path, str):
             vm.runtime_error("type", "exists(path) expects a string path")
         vm._ensure_path_allowed(path, "exists(path)")
+        _emit_cap("fs_exists", path)
         try:
             return os.path.exists(path)
         except PermissionError as exc:
@@ -93,6 +104,7 @@ def register(vm, registry) -> None:
         if not isinstance(path, str):
             vm.runtime_error("type", "append_file(path, content) expects string path")
         vm._ensure_path_allowed(path, "append_file(path, content)")
+        _emit_cap("fs_append", path)
         text = vm.value_to_string(content, quote_strings=False)
         try:
             with open(path, "a", encoding="utf-8") as f:
@@ -187,6 +199,7 @@ def register(vm, registry) -> None:
         if not isinstance(path, str):
             vm.runtime_error("type", "list_dir(path) expects a string path")
         vm._ensure_path_allowed(path, "list_dir(path)")
+        _emit_cap("fs_list", path)
         try:
             return sorted(os.listdir(path))
         except FileNotFoundError as exc:

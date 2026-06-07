@@ -9,6 +9,8 @@ import threading
 import time as _time
 
 from nodus.runtime.channel import Channel, ChannelRecvRequest
+from nodus.runtime.runtime_events import RuntimeEvent
+from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.vm.vm import BuiltinMethod, Record
 
 _TRUNCATE_LIMIT = 65536  # 64KB per err record field
@@ -128,6 +130,11 @@ def _open_redirect(path_str):
 
 def _do_run(argv_or_cmd, opts, vm, is_shell=False):
     """Execute subprocess synchronously, return result or err Record."""
+    _cmd_display = argv_or_cmd if isinstance(argv_or_cmd, str) else (argv_or_cmd[0] if argv_or_cmd else "")
+    vm.event_bus.emit(RuntimeEvent(
+        "capability_use", runtime_time_ms(),
+        data={"kind": "subprocess_run", "cmd": _cmd_display, "shell": is_shell},
+    ))
     default_out = opts.get("output", "capture")
     stdout_mode = opts.get("stdout")
     stderr_mode = opts.get("stderr")
