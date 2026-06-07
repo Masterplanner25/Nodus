@@ -238,6 +238,8 @@ class NodusRuntime:
         allow_subprocess: bool = True,
         allow_network: bool = True,
         allow_env: bool = True,
+        allowed_commands: list[str] | None = None,
+        allowed_hosts: list[str] | None = None,
         max_frames: int | None = None,
         on_error: Callable | None = None,
     ) -> None:
@@ -283,6 +285,17 @@ class NodusRuntime:
             If ``False``, all ``http_*`` builtins raise a sandbox error.
             Defaults to ``True`` (HTTP available).  Set to ``False`` to prevent
             scripts from making outbound network requests.
+        allowed_commands:
+            Allowlist of subprocess binary names (or full paths) the script may
+            invoke.  ``None`` (default) means no restriction.  When set, shell
+            mode (``subprocess_shell``) is also blocked.  Example:
+            ``allowed_commands=["git", "ls"]``.  Basename matching is used, so
+            ``"git"`` matches ``/usr/bin/git``.
+        allowed_hosts:
+            Allowlist of hostnames the script may contact via HTTP builtins.
+            ``None`` (default) means no restriction.  Example:
+            ``allowed_hosts=["api.example.com"]``.  Port is not considered —
+            only the hostname portion of the URL is checked.
         allow_env:
             If ``False``, all ``env_*`` builtins (``env_get``, ``env_set``,
             ``env_unset``, ``env_has``, ``env_list``, ``env_list_keys``) raise
@@ -320,6 +333,8 @@ class NodusRuntime:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        self.allowed_commands = allowed_commands
+        self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
         self.on_error = on_error
         self._host_functions: dict[str, BuiltinInfo] = {}
@@ -658,6 +673,8 @@ class NodusRuntime:
             allow_subprocess=self.allow_subprocess,
             allow_network=self.allow_network,
             allow_env=self.allow_env,
+            allowed_commands=self.allowed_commands,
+            allowed_hosts=self.allowed_hosts,
             module_globals=initial_globals,
             host_globals=host_globals,
         )

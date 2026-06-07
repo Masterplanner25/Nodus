@@ -7,6 +7,7 @@ import json
 import threading
 import time as _time
 from typing import Any
+from urllib.parse import urlparse as _urlparse
 
 try:
     import httpx as _httpx
@@ -415,10 +416,20 @@ def _get_scheduler(vm):
     return getattr(_root_vm(vm), "scheduler", None)
 
 
+def _check_allowed_host(url: str, vm) -> None:
+    allowed_hosts = getattr(vm, "allowed_hosts", None)
+    if allowed_hosts is None:
+        return
+    hostname = _urlparse(url).hostname or ""
+    if hostname not in allowed_hosts:
+        vm.runtime_error("sandbox", f"HTTP request blocked: host {hostname!r} not in allowed_hosts")
+
+
 def _do_sync_request(method: str, url: str, options, vm) -> Record:
     if not isinstance(url, str):
         return _make_http_err(vm, f"URL must be a string, got {vm.builtin_type(url)}",
                               url="", method=method, category="client_error")
+    _check_allowed_host(url, vm)
     vm.event_bus.emit(RuntimeEvent(
         "capability_use", runtime_time_ms(),
         data={"kind": "http_request", "method": method, "url": url},
@@ -448,6 +459,7 @@ def _do_stream_request(method: str, url: str, options, vm) -> Record:
     if not isinstance(url, str):
         return _make_http_err(vm, f"URL must be a string, got {vm.builtin_type(url)}",
                               url="", method=method, category="client_error")
+    _check_allowed_host(url, vm)
     kwargs = _parse_options(method, url, options, vm)
     if isinstance(kwargs, Record):
         return kwargs
@@ -527,6 +539,7 @@ def _do_sse_request(method: str, url: str, options, vm) -> Record:
     if not isinstance(url, str):
         return _make_http_err(vm, f"URL must be a string, got {vm.builtin_type(url)}",
                               url="", method=method, category="client_error")
+    _check_allowed_host(url, vm)
     kwargs = _parse_options(method, url, options, vm)
     if isinstance(kwargs, Record):
         return kwargs
@@ -615,6 +628,8 @@ def _do_async_request(method: str, url: str, options, vm) -> object:
     When called outside a coroutine/scheduler context (e.g., top-level
     synchronous code), falls back to the blocking sync path.
     """
+    if isinstance(url, str):
+        _check_allowed_host(url, vm)
     from nodus.runtime.channel import Channel, ChannelRecvRequest
 
     scheduler = _get_scheduler(vm)

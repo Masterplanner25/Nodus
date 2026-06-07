@@ -131,6 +131,14 @@ def _open_redirect(path_str):
 def _do_run(argv_or_cmd, opts, vm, is_shell=False):
     """Execute subprocess synchronously, return result or err Record."""
     _cmd_display = argv_or_cmd if isinstance(argv_or_cmd, str) else (argv_or_cmd[0] if argv_or_cmd else "")
+    allowed_commands = getattr(vm, "allowed_commands", None)
+    if allowed_commands is not None:
+        if is_shell:
+            vm.runtime_error("sandbox", "subprocess shell mode is not permitted when allowed_commands is set")
+        binary = argv_or_cmd[0] if isinstance(argv_or_cmd, list) and argv_or_cmd else str(argv_or_cmd)
+        binary_name = os.path.basename(binary)
+        if binary_name not in allowed_commands and binary not in allowed_commands:
+            vm.runtime_error("sandbox", f"subprocess command not in allowed_commands: {binary_name!r}")
     vm.event_bus.emit(RuntimeEvent(
         "capability_use", runtime_time_ms(),
         data={"kind": "subprocess_run", "cmd": _cmd_display, "shell": is_shell},
