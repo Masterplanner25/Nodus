@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from uuid import uuid4
 
 from .errors import ApprovalRequiredError, CapabilityViolationError, DelegationBlockedError
