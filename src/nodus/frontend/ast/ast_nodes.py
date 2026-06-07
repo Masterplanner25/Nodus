@@ -98,6 +98,13 @@ class Assign(Base):
 
 
 @dataclass
+class CompoundAssign(Base):
+    name: str
+    op: str  # "+", "-", "*", "/"
+    expr: object
+
+
+@dataclass
 class ListLit(Base):
     items: list
 

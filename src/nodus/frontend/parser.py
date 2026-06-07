@@ -5,6 +5,7 @@ from nodus.frontend.lexer import Tok
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
     Assign,
+    CompoundAssign,
     ActionStmt,
     Attr,
     Bin,
@@ -584,6 +585,8 @@ class Parser:
         finally:
             self._parse_depth -= 1
 
+    _COMPOUND_OPS = {"+=": "+", "-=": "-", "*=": "*", "/=": "/"}
+
     def parse_assignment(self):
         node = self.parse_or()
 
@@ -597,6 +600,20 @@ class Parser:
             if isinstance(node, Attr):
                 return self.mark(FieldAssign(node.obj, node.name, rhs), eq_tok)
             self.error("Invalid assignment target", eq_tok)
+
+        for tok_text, bin_op in self._COMPOUND_OPS.items():
+            if self.at(tok_text):
+                op_tok = self.eat(tok_text)
+                rhs = self.parse_assignment()
+                if isinstance(node, Var):
+                    return self.mark(CompoundAssign(node.name, bin_op, rhs), op_tok)
+                if isinstance(node, Index):
+                    new_val = self.mark(Bin(bin_op, node, rhs), op_tok)
+                    return self.mark(IndexAssign(node.seq, node.index, new_val), op_tok)
+                if isinstance(node, Attr):
+                    new_val = self.mark(Bin(bin_op, node, rhs), op_tok)
+                    return self.mark(FieldAssign(node.obj, node.name, new_val), op_tok)
+                self.error(f"Invalid left-hand side for '{tok_text}'", op_tok)
 
         return node
 
