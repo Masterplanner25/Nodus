@@ -106,7 +106,7 @@ def _tok_desc(kind: str, val: str) -> str:
     return name
 
 
-_MAX_PARSE_DEPTH = 50
+_MAX_PARSE_DEPTH = 100
 
 
 class Parser:

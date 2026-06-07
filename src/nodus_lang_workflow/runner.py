@@ -31,6 +31,17 @@ from .store import LocalWorkflowStore, WorkflowStore, create_workflow_store
 _DEFAULT_RUNNER = None
 _DEFAULT_RUNNER_ROOT = None
 _DEFAULT_RUNNER_LOCK = threading.Lock()
+_DEFAULT_SWEEP_THREAD: threading.Thread | None = None
+_DEFAULT_SWEEP_STOP = threading.Event()
+_DEFAULT_SWEEP_INTERVAL_S = 30.0
+
+
+def _auto_sweep_loop(runner_ref: "WorkflowFrameworkRunner") -> None:
+    while not _DEFAULT_SWEEP_STOP.wait(timeout=_DEFAULT_SWEEP_INTERVAL_S):
+        try:
+            runner_ref.expire_wait_timeouts()
+        except Exception:
+            pass
 _REHYDRATABLE_STATUSES = {RUN_STATUS_WAITING, RUN_STATUS_RUNNING, RUN_STATUS_RETRY_SCHEDULED}
 _KNOWN_RUN_STATUSES = {
     "pending",
@@ -771,7 +782,7 @@ class WorkflowFrameworkRunner:
 
 
 def get_default_workflow_runner() -> WorkflowFrameworkRunner:
-    global _DEFAULT_RUNNER, _DEFAULT_RUNNER_ROOT
+    global _DEFAULT_RUNNER, _DEFAULT_RUNNER_ROOT, _DEFAULT_SWEEP_THREAD, _DEFAULT_SWEEP_STOP
     with _DEFAULT_RUNNER_LOCK:
         root = os.path.abspath(os.getcwd())
         if _DEFAULT_RUNNER is None or _DEFAULT_RUNNER_ROOT != root:
@@ -779,6 +790,20 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
                 LocalWorkflowStore(root=os.path.join(".nodus", "workflow_framework"))
             )
             _DEFAULT_RUNNER_ROOT = root
+            # Auto-start a daemon thread that expires wait-timeouts periodically so
+            # embedders who don't call sweep() still get deadline enforcement.
+            # Full retry/rehydration still requires the host to provide a vm_factory
+            # and call sweep() explicitly.
+            if _DEFAULT_SWEEP_THREAD is None or not _DEFAULT_SWEEP_THREAD.is_alive():
+                _DEFAULT_SWEEP_STOP.clear()
+                t = threading.Thread(
+                    target=_auto_sweep_loop,
+                    args=(_DEFAULT_RUNNER,),
+                    daemon=True,
+                    name="nodus-workflow-sweep",
+                )
+                t.start()
+                _DEFAULT_SWEEP_THREAD = t
         return _DEFAULT_RUNNER
 
 

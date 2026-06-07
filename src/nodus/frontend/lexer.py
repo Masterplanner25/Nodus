@@ -446,6 +446,9 @@ def tokenize(src: str) -> list[Tok]:
     line = 1
     col = 1
     out: list[Tok] = []
+    # When _open_depth > 0 we are inside unclosed (, [ or { \u2014 newlines are
+    # whitespace, not statement separators (same rule as Python/JS/Go).
+    _open_depth = 0
 
     while pos < len(src):
         start_line = line
@@ -480,7 +483,8 @@ def tokenize(src: str) -> list[Tok]:
             col += len(text)
             continue
         if kind == "NL":
-            out.append(Tok("SEP", "\n", start_line, start_col))
+            if _open_depth == 0:
+                out.append(Tok("SEP", "\n", start_line, start_col))
             line += len(text)
             col = 1
             continue
@@ -523,6 +527,10 @@ def tokenize(src: str) -> list[Tok]:
                 out.append(Tok("SEP", text, start_line, start_col))
             else:
                 out.append(Tok(text, text, start_line, start_col))
+                if text in ("(", "[", "{"):
+                    _open_depth += 1
+                elif text in (")", "]", "}"):
+                    _open_depth = max(0, _open_depth - 1)
             col += len(text)
 
     out.append(Tok("EOF", "", line, col))
