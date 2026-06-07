@@ -154,6 +154,22 @@ The full standard library ships with Nodus — no extra installs required for co
 - [llms.txt](llms.txt) — machine-readable project index for AI tools
 - [llms-full.txt](llms-full.txt) — full content summaries for AI indexers
 
+## Using with Claude Code
+
+If you write Nodus with [Claude Code](https://claude.ai/code), a language skill is available
+that teaches Claude the idioms, gotchas, and workflow patterns specific to Nodus v4:
+
+1. Download [`skills/nodus.skill`](skills/nodus.skill) from this repo.
+2. Drop it in your project's `.claude/commands/` folder.
+3. Claude will apply Nodus-specific rules automatically whenever you open a `.nd` file or ask
+   about workflows, coroutines, or the standard library.
+
+The skill covers: record vs map distinction, the closure outer-let pattern, `spawn()` coroutine
+wrapping, workflow result bracket notation, the 200ms default timeout trap, all 19 stdlib modules,
+and 15 verified complete example programs.
+
+---
+
 ## Creator & Ecosystem
 
 Nodus is created and maintained by **Shawn Knight** as part of the

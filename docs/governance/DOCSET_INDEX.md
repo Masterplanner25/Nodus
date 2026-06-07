@@ -67,6 +67,10 @@ When two documents make conflicting claims, the document higher in this list win
 → `docs/governance/LIBRARY_ECOSYSTEM.md` (architecture)
 → `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` (honest current state)
 
+### "I want to audit or evaluate this runtime"
+→ `docs/governance/AUDIT_INDEX.md` — six reusable audit prompts (architecture,
+  runtime readiness, boundary integrity, user reality, capability, limits, security)
+
 ### "I want to contribute to Nodus"
 → `CONTRIBUTING.md`
 → `docs/governance/TECH_DEBT.md`
