@@ -204,6 +204,7 @@ class NodusModule:
             fs_root=caller_vm.fs_root if caller_vm is not None else None,
             allow_subprocess=getattr(caller_vm, "allow_subprocess", True) if caller_vm is not None else True,
             allow_network=getattr(caller_vm, "allow_network", True) if caller_vm is not None else True,
+            allow_env=getattr(caller_vm, "allow_env", True) if caller_vm is not None else True,
         )
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)

@@ -47,8 +47,13 @@ class BuiltinRegistry:
         _coroutine.register(vm, self)
         from nodus.builtins import collections as _collections
         _collections.register(vm, self)
-        from nodus.builtins import env as _env
-        _env.register(vm, self)
+        if getattr(vm, "allow_env", True):
+            from nodus.builtins import env as _env
+            _env.register(vm, self)
+        else:
+            _blocked = _make_blocked_stub(vm, "environment variable access (allow_env=False)")
+            for _name in ("env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys"):
+                self.add(_name, (0, 1, 2), _blocked)
         from nodus.builtins import time_module as _time
         _time.register(vm, self)
         from nodus.builtins import hash_module as _hash
