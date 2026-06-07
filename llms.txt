@@ -43,6 +43,13 @@ pip install nodus-lang
 - [examples/webhook_bridge/](examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
 - [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
 
+## AI Assistant Assets
+
+- [skills/nodus.skill](skills/nodus.skill): Claude Code skill for Nodus v4 with language rules, error patterns, stdlib guidance, and verified examples
+- [skills/project-CLAUDE.md](skills/project-CLAUDE.md): Project-root `CLAUDE.md` template for Nodus projects
+- [skills/nodus/SKILL.md](skills/nodus/SKILL.md): Codex skill entrypoint for Nodus v4
+- [skills/project-AGENTS.md](skills/project-AGENTS.md): Project-root `AGENTS.md` template for Codex sessions
+
 ## Runtime Reference
 
 - [docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md](docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md): Failure categories and degradation behavior

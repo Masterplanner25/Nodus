@@ -168,6 +168,18 @@ The skill covers: record vs map distinction, the closure outer-let pattern, `spa
 wrapping, workflow result bracket notation, the 200ms default timeout trap, all 19 stdlib modules,
 and 15 verified complete example programs.
 
+## Using with Codex
+
+If you write Nodus with Codex, a Codex-native skill and project template are available:
+
+1. Copy [`skills/project-AGENTS.md`](skills/project-AGENTS.md) to your project root as `AGENTS.md` and fill in your project name if needed.
+2. Copy the [`skills/nodus/`](skills/nodus/) folder to `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
+3. Start a Codex session in your Nodus project. Codex can auto-trigger the skill, or you can invoke `$nodus` explicitly.
+
+The Codex skill covers the same core language hazards: record vs map distinction, closure outer-`let`
+mutation, `spawn()` coroutine wrapping, workflow result bracket notation, import rules, and the
+200ms default timeout trap, while keeping deeper material in reference files for on-demand loading.
+
 ---
 
 ## Creator & Ecosystem
