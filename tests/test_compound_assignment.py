@@ -1,12 +1,10 @@
 """Tests for compound assignment operators: +=, -=, *=, /=."""
 
-import pytest
 from nodus.runtime.embedding import NodusRuntime
 from nodus.frontend.lexer import tokenize
 from nodus.frontend.parser import Parser
 from nodus.frontend.ast.ast_nodes import CompoundAssign, ExprStmt
 from nodus.tooling.formatter import format_source
-from nodus.runtime.diagnostics import LangSyntaxError
 
 
 def run(src):
