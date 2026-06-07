@@ -203,7 +203,22 @@ def register(vm, registry) -> None:
                 return vm.make_err("value_error", "range() step cannot be zero")
             return list(range(s, e, st))
 
+    def builtin_ord(value):
+        if not isinstance(value, str) or len(value) != 1:
+            vm.runtime_error("type", "ord() expects a single character string")
+        return ord(value)
+
+    def builtin_chr(value):
+        if not (isinstance(value, int) and not isinstance(value, bool)):
+            vm.runtime_error("type", "chr() expects an integer")
+        try:
+            return chr(value)
+        except (ValueError, OverflowError):
+            vm.runtime_error("value", f"chr() argument {value} is out of valid Unicode range")
+
     registry.add("str", 1, lambda x: vm.value_to_string(x, quote_strings=False))
+    registry.add("ord", 1, builtin_ord)
+    registry.add("chr", 1, builtin_chr)
     registry.add("len", 1, builtin_len)
     registry.add("collection_len", 1, builtin_len)
     registry.add("count", 2, builtin_count)

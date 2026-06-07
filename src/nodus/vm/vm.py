@@ -1,6 +1,5 @@
 """Stack VM runtime for Nodus."""
 
-import math as _math
 import os
 import secrets
 import sys
@@ -278,7 +277,7 @@ class VM:
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
-        self.fs_root = os.path.normcase(os.path.abspath(fs_root)) if fs_root else None
+        self.fs_root = os.path.normcase(os.path.realpath(fs_root)) if fs_root else None
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
@@ -538,7 +537,7 @@ class VM:
         for path in allowed_paths:
             if not path:
                 continue
-            roots.append(os.path.normcase(os.path.abspath(path)))
+            roots.append(os.path.normcase(os.path.realpath(path)))
         return roots
 
     def _path_within_root(self, path: str, root: str) -> bool:
@@ -548,7 +547,7 @@ class VM:
             return False
 
     def _ensure_path_allowed(self, path: str, op_name: str) -> None:
-        normalized = os.path.normcase(os.path.abspath(path))
+        normalized = os.path.normcase(os.path.realpath(path))
         if self.allowed_paths is None:
             if self.fs_root is not None and not self._path_within_root(normalized, self.fs_root):
                 self.runtime_error(
@@ -1658,10 +1657,16 @@ class VM:
                 self.runtime_error("key", f"Missing map key: {self.value_to_string(idx, quote_strings=True)}")
             return seq[idx]
 
+        if isinstance(seq, str):
+            i = self.to_list_index(idx)
+            if i < 0 or i >= len(seq):
+                self.runtime_error("index", f"String index out of range: {i}")
+            return seq[i]
+
         hint = ""
         if isinstance(seq, Record) and seq.kind == "error" and seq.fields.get("kind") == "thrown":
             hint = "; this is a caught thrown value — access the original via e.payload"
-        self.runtime_error("type", "Indexing is only supported on lists and maps" + hint)
+        self.runtime_error("type", "Indexing is only supported on lists, maps, and strings" + hint)
 
     def write_index(self, seq, idx, value):
         if isinstance(seq, list):
@@ -2007,27 +2012,17 @@ class VM:
         b_int = isinstance(b, int) and not isinstance(b, bool)
         if a_int and b_int:
             if b == 0:
-                self.stack.append(self._make_vm_err(
-                    "math_error", "Integer division by zero",
-                    payload={"category": "division_by_zero", "operation": "div",
-                             "numerator": a, "denominator": b}
-                ))
+                self.runtime_error("math", "Integer division by zero")
             else:
-                self.stack.append(a / b)
+                self.stack.append(a // b)
         elif not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
             self._binary_type_error("divide", a, b)
         else:
-            fa, fb = float(a), float(b)
+            fb = float(b)
             if fb == 0.0:
-                if fa == 0.0:
-                    self.stack.append(float('nan'))
-                else:
-                    self.stack.append(_math.copysign(
-                        float('inf'),
-                        _math.copysign(1.0, fa) * _math.copysign(1.0, fb)
-                    ))
+                self.runtime_error("math", "Float division by zero")
             else:
-                self.stack.append(fa / fb)
+                self.stack.append(float(a) / fb)
         self.ip += 1
 
     def _op_mod(self, instr):
@@ -2037,11 +2032,7 @@ class VM:
         b_int = isinstance(b, int) and not isinstance(b, bool)
         if a_int and b_int:
             if b == 0:
-                self.stack.append(self._make_vm_err(
-                    "math_error", "Integer modulo by zero",
-                    payload={"category": "division_by_zero", "operation": "mod",
-                             "numerator": a, "denominator": b}
-                ))
+                self.runtime_error("math", "Integer modulo by zero")
             else:
                 self.stack.append(a % b)
         elif not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
@@ -2049,7 +2040,7 @@ class VM:
         else:
             fb = float(b)
             if fb == 0.0:
-                self.stack.append(float('nan'))
+                self.runtime_error("math", "Float modulo by zero")
             else:
                 self.stack.append(float(a) % fb)
         self.ip += 1

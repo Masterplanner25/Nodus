@@ -85,12 +85,12 @@ class IntArithmeticTests(unittest.TestCase):
     def test_int_times_int_is_int(self):
         self.assertEqual(run_program('print(3i * 4i)'), ["12"])
 
-    def test_int_div_int_is_float(self):
-        # Division always produces float, even int / int
-        self.assertEqual(run_program('print(1i / 2i)'), ["0.5"])
+    def test_int_div_int_is_int(self):
+        # Integer / integer uses floor division, always returns int
+        self.assertEqual(run_program('print(1i / 2i)'), ["0"])
 
     def test_int_div_int_whole_result(self):
-        self.assertEqual(run_program('print(4i / 2i)'), ["2.0"])
+        self.assertEqual(run_program('print(4i / 2i)'), ["2"])
 
     def test_int_mod_int_is_int(self):
         self.assertEqual(run_program('print(7i % 3i)'), ["1"])

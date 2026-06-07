@@ -306,7 +306,11 @@ class NodusRuntime:
             Per-call overrides are supported via ``run_source(on_error=...)``.
         """
         if allowed_paths is _SANDBOX_DEFAULT:
-            allowed_paths = [os.getcwd()]
+            raw_env = os.environ.get("NODUS_ALLOWED_PATHS")
+            if raw_env:
+                allowed_paths = [p.strip() for p in raw_env.split(os.pathsep) if p.strip()]
+            else:
+                allowed_paths = [os.getcwd()]
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
         self.max_stdout_chars = max_stdout_chars

@@ -96,8 +96,10 @@ def register(vm, registry) -> None:
             ms = 0.0
         return SleepRequest(ms)
 
-    def builtin_channel():
-        return Channel()
+    def builtin_channel(maxsize=0):
+        if not (isinstance(maxsize, int) and not isinstance(maxsize, bool)) or maxsize < 0:
+            vm.runtime_error("value", "channel() maxsize must be a non-negative integer")
+        return Channel(maxsize=maxsize)
 
     def builtin_send(channel, value):
         ch = vm.ensure_channel(channel, "send(channel, value)")
@@ -128,6 +130,8 @@ def register(vm, registry) -> None:
             )
             vm.event_bus.emit_event("channel_wake", coroutine_id=receiver.id, name=receiver.name)
             return None
+        if ch.maxsize > 0 and len(ch.queue) >= ch.maxsize:
+            vm.runtime_error("runtime", f"send: channel is full (maxsize={ch.maxsize})")
         ch.queue.append(value)
         vm.event_bus.emit_event(
             "channel_send",
@@ -217,7 +221,7 @@ def register(vm, registry) -> None:
     registry.add("run_loop", 0, builtin_run_loop)
     registry.add("sleep", 1, builtin_sleep)
     registry.add("__sleep", 1, builtin_sleep)
-    registry.add("channel", 0, builtin_channel)
+    registry.add("channel", (0, 1), builtin_channel)
     registry.add("send", 2, builtin_send)
     registry.add("recv", 1, builtin_recv)
     registry.add("close", 1, builtin_close)
