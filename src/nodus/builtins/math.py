@@ -156,6 +156,50 @@ def register(vm, registry) -> None:
     def builtin_math_neg_infinity():
         return float('-inf')
 
+    def builtin_math_bit_and(a, b):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_and() expects int, got {vm.builtin_type(a)} as argument 1")
+        if not (isinstance(b, int) and not isinstance(b, bool)):
+            vm.runtime_error("type", f"bit_and() expects int, got {vm.builtin_type(b)} as argument 2")
+        return a & b
+
+    def builtin_math_bit_or(a, b):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_or() expects int, got {vm.builtin_type(a)} as argument 1")
+        if not (isinstance(b, int) and not isinstance(b, bool)):
+            vm.runtime_error("type", f"bit_or() expects int, got {vm.builtin_type(b)} as argument 2")
+        return a | b
+
+    def builtin_math_bit_xor(a, b):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_xor() expects int, got {vm.builtin_type(a)} as argument 1")
+        if not (isinstance(b, int) and not isinstance(b, bool)):
+            vm.runtime_error("type", f"bit_xor() expects int, got {vm.builtin_type(b)} as argument 2")
+        return a ^ b
+
+    def builtin_math_bit_not(a):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_not() expects int, got {vm.builtin_type(a)}")
+        return ~a
+
+    def builtin_math_bit_lshift(a, n):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_lshift() expects int, got {vm.builtin_type(a)} as argument 1")
+        if not (isinstance(n, int) and not isinstance(n, bool)):
+            vm.runtime_error("type", f"bit_lshift() expects int shift amount, got {vm.builtin_type(n)}")
+        if n < 0:
+            vm.runtime_error("runtime", f"bit_lshift() shift amount must be non-negative, got {n}")
+        return a << n
+
+    def builtin_math_bit_rshift(a, n):
+        if not (isinstance(a, int) and not isinstance(a, bool)):
+            vm.runtime_error("type", f"bit_rshift() expects int, got {vm.builtin_type(a)} as argument 1")
+        if not (isinstance(n, int) and not isinstance(n, bool)):
+            vm.runtime_error("type", f"bit_rshift() expects int shift amount, got {vm.builtin_type(n)}")
+        if n < 0:
+            vm.runtime_error("runtime", f"bit_rshift() shift amount must be non-negative, got {n}")
+        return a >> n
+
     registry.add("math_abs", 1, builtin_math_abs)
     registry.add("math_min", 2, builtin_math_min)
     registry.add("math_max", 2, builtin_math_max)
@@ -172,6 +216,12 @@ def register(vm, registry) -> None:
     registry.add("math_is_float", 1, builtin_math_is_float)
     registry.add("math_is_numeric", 1, builtin_math_is_numeric)
     registry.add("type_eq", 2, builtin_type_eq)
+    registry.add("math_bit_and", 2, builtin_math_bit_and)
+    registry.add("math_bit_or", 2, builtin_math_bit_or)
+    registry.add("math_bit_xor", 2, builtin_math_bit_xor)
+    registry.add("math_bit_not", 1, builtin_math_bit_not)
+    registry.add("math_bit_lshift", 2, builtin_math_bit_lshift)
+    registry.add("math_bit_rshift", 2, builtin_math_bit_rshift)
     registry.add("bool_equal", 2, builtin_bool_equal)
     registry.add("math_idiv", 2, builtin_math_idiv)
     registry.add("math_round", 1, builtin_math_round)
