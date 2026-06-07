@@ -39,6 +39,8 @@ pip install nodus-lang
 - [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
 - [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete stdlib function reference
 - [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+- [docs/guide/real-world-integration.md](docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
+- [examples/webhook_bridge/](examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
 - [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
 
 ## Runtime Reference

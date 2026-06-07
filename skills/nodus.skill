@@ -1,0 +1,1895 @@
+---
+name: nodus
+version: "4.0.0"
+description: >
+  Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
+  Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
+  std:* modules, coroutine or channel patterns, converting Python orchestration
+  to Nodus, troubleshooting `nodus_gate` or `nodus run` failures, designing
+  workflows or goal pipelines, embedding NodusRuntime in Python, building a
+  Nodus companion library, or any direct mention of Nodus or nodus-lang.
+  Do NOT skip this skill because the code looks simple — even single-step
+  workflows have non-obvious idioms that differ from Python.
+---
+
+# Nodus v4 Skill
+
+## Identity — read this first
+
+**Nodus is a workflow-focused orchestration DSL. It is not a general-purpose Python competitor.**
+
+Nodus exists to express DAG execution, coroutine scheduling, durable step graphs,
+tool dispatch, and event-driven resumption. Its syntax is intentionally minimal —
+the power is in the orchestration primitives, not in the expression language.
+
+The most common failure mode: writing Python-shaped Nodus. A script full of
+functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
+`workflow { step … }` whenever there is sequencing, dependency, or retry involved.
+
+**Bytecode version is 4. Package version is 4.0.0.** Installed via `pip install nodus-lang`.
+
+---
+
+## Non-negotiable rules
+
+### 1. `let` in closures is read-only — use a map
+
+Assigning to an outer `let` variable inside a closure silently creates a local
+shadow, making the outer value read as `nil`. Use a **map with quoted keys**:
+
+```nd
+// ❌ Silent nil — outer count becomes nil inside closure
+let count = 0i
+let inc = fn() { count = count + 1i }   // count reads as nil
+
+// ✅ Correct — map mutation works across closure boundary
+let state = {"count": 0i}
+let inc = fn() { state["count"] = state["count"] + 1i }
+inc()
+inc()
+print(state["count"])   // 2
+```
+
+Why: closures capture the map reference, not a copy. Assigning to `let` in a
+closure creates a new local binding, not a mutation.
+
+### 2. `{"key": val}` is a map; `{key: val}` is a record — never mix
+
+| Literal | Type | Access | Error if wrong |
+|---------|------|--------|----------------|
+| `{"key": val}` | `map` | `m["key"]` | `Field access is only supported on records` |
+| `{key: val}` | `record` | `r.key` | `Indexing is only supported on lists and maps` |
+
+`json.parse()` returns a **map**. Access with brackets: `data["field"]`.
+
+### 3. No `+=`, no `**`, no multi-line expressions
+
+```nd
+x = x + 1i          // ✅ — no += operator
+x = x + 1           //    (this gives float — use 1i for int)
+math.pow(x, 2)       // ✅ — no ** operator
+
+fn add(a, b) { return a + b }    // ✅ — one line
+let result = add(1i,              // ❌ — spans lines, parser error
+                 2i)
+```
+
+Why: the parser treats a newline as a statement terminator inside expressions.
+Keep all function calls and list literals on a single line.
+
+### 4. `print()` takes exactly one argument
+
+```nd
+print("x:", x)             // ❌ — syntax error: Expected ')', got ','
+print("\(label): \(x)")    // ✅ — string interpolation: \(expr) embeds any expression
+```
+
+### 5. Channels are built-in — do not import
+
+```nd
+import "std:channel" as ch  // ❌ — Import not found: std:channel
+let ch = channel()          // ✅ — built-in: channel(), send(), recv(), close()
+```
+
+### 6. `spawn()` takes a coroutine value, not a function
+
+```nd
+spawn(fn() { print("hi") })           // ❌ — "spawn(coroutine) expects a coroutine"
+let c = coroutine(fn() { ... })       // ✅ — wrap in coroutine() first
+spawn(c)
+run_loop()
+```
+
+### 7. Imports must be at the top level of a file
+
+```nd
+fn helper() {
+    import "std:json" as json  // ❌ — "import statements must be at the top level"
+}
+
+import "std:json" as json      // ✅ — top of file, before any fn/workflow
+fn helper() { json.stringify({}) }
+```
+
+### 8. Workflow results are maps — use bracket notation
+
+```nd
+let r = run_workflow(my_wf)
+r.steps           // ❌ — Field access is only supported on records
+r["steps"]        // ✅
+r["steps"]["step_name"]   // ✅
+r["state"]["var_name"]    // ✅ — workflow state is also a map
+```
+
+### 9. `checkpoint` is valid only inside step bodies
+
+```nd
+workflow w {
+    checkpoint "top"         // ❌ — "workflow body must contain state declarations or steps"
+    step a { checkpoint "inside"; return 1i }  // ✅
+}
+```
+
+### 10. Gate-before-done
+
+Code is not finished until `nodus check <file>.nd` passes clean (no syntax errors)
+and `nodus_gate` passes for any example that is part of documentation.
+Never present unverified Nodus as a final answer.
+
+---
+
+## Numeric literals — floats and ints are different types
+
+```nd
+42           // type: "float" — str(42) = "42.0"
+42i          // type: "int"   — str(42i) = "42"
+len([1,2,3]) // type: "int"   — len() returns int, not float
+type(42)     // "float"
+type(42i)    // "int"
+```
+
+Always use `i` suffix for integer arithmetic, loop counters, and anywhere
+`str()` output matters. In step bodies, `return 1i` not `return 1`.
+
+---
+
+## Decision guide — which reference to reach for
+
+| Task | File |
+|------|------|
+| Syntax question (operators, control flow, types) | `references/syntax.md` |
+| "Why doesn't this Python pattern work in Nodus?" | `references/idioms.md` |
+| Module imports, stdlib list, entry-point packaging | `references/modules.md` |
+| Error message you don't recognize | `references/errors.md` |
+| Complete working example to adapt | `references/examples.md` |
+
+All reference files are in `nodus/references/` alongside this SKILL.md.
+
+---
+
+## Useful links
+
+- PyPI: `pip install nodus-lang` — <https://pypi.org/project/nodus-lang/>
+- GitHub: <https://github.com/Masterplanner25/Nodus>
+- Wiki (full language reference): <https://github.com/Masterplanner25/Nodus/wiki>
+- Creator: Shawn Knight — <https://www.the-master-plan.com/>
+
+---
+
+## Session learning clause
+
+After completing any substantive Nodus task, append to `.nodus/learnings.md`
+in the user's workspace. Three categories, one entry each, kept terse:
+
+```markdown
+## YYYY-MM-DD
+
+**New idiom:** <what the pattern is — include a verified snippet>
+
+**Gate/runtime failure not in errors.md:** <error text> → <diagnosis> → <fix class>
+
+**Skill gap:** <what the skill said> vs <what turned out true>
+```
+
+Check `.nodus/learnings.md` at session start and treat it as a local extension
+of these references — it captures what this workspace has discovered that the
+skill didn't already know.
+
+If an entry reveals a language bug, doc gap, or missing idiom, it is welcome
+as a GitHub issue: <https://github.com/Masterplanner25/Nodus/issues>. Include
+the entry verbatim as the issue body — this makes every skill user a passive
+contributor to Nodus's knowledge base.
+
+---
+
+# Reference: Syntax
+
+# Nodus v4 Syntax Reference
+
+All examples in this file are verified against nodus-lang 4.0.0.
+
+---
+
+## Types and literals
+
+| Value | Literal | `type()` returns | Notes |
+|-------|---------|-----------------|-------|
+| Nil | `nil` | `"nil"` | falsy |
+| Boolean | `true`, `false` | `"bool"` | false is falsy |
+| Float | `42`, `3.14`, `1e3` | `"float"` | default for bare numbers |
+| Integer | `42i`, `0i`, `-1i` | `"int"` | arbitrary precision; use for counters |
+| String | `"hello"` | `"string"` | double-quoted only |
+| List | `[1, 2, 3]` | `"list"` | mutable, indexed from 0 |
+| Map | `{"k": v}` | `"map"` | quoted keys, bracket access |
+| Record | `{k: v}` | `"record"` | bare-identifier keys, dot access |
+| Function | `fn(x) { x }` | `"function"` | first-class |
+
+**Falsy values:** `nil`, `false`, `0`, `0i`, `""`, `[]`. Everything else is truthy.
+
+**Float vs int arithmetic:**
+```nd
+1 + 1        // 2.0  (float)
+1i + 1i      // 2    (int)
+1i / 2i      // 0.5  (division always yields float)
+str(42)      // "42.0"
+str(42i)     // "42"
+type(len([1,2,3]))  // "int"  — len() returns int
+```
+
+---
+
+## Variables
+
+```nd
+let x = 42i           // declare (works as mutable in regular scope)
+x = x + 1i            // reassign — no += operator
+let y: int = 0i       // type annotation (hint only, not enforced)
+```
+
+**Outer-let closure restriction:** assigning to a `let` inside a closure
+creates a new local shadow (the outer reads as `nil`). Use a map instead:
+
+```nd
+let state = {"n": 0i}
+let inc = fn() { state["n"] = state["n"] + 1i }
+inc()
+print(state["n"])  // 1
+```
+
+---
+
+## Functions
+
+```nd
+fn greet(name) {
+    return "Hello, \(name)!"
+}
+
+fn add(a: int, b: int) -> int {    // type annotations: hints only
+    return a + b
+}
+
+let double = fn(x) { return x * 2i }   // anonymous, assigned to let
+
+fn factorial(n) {                       // recursion works
+    if (n <= 1i) { return 1i }
+    return n * factorial(n - 1i)
+}
+```
+
+- No implicit return — function without `return` returns `nil`
+- DSL keywords cannot be used as parameter names: `fn`, `action`, `with`, `after`, `step`, `goal`
+  — gives "Expected identifier, got 'keyword'". Note: `state` is allowed as a param name.
+- No variadic arguments
+- Functions are first-class values: pass, return, store in maps/records
+
+---
+
+## String interpolation
+
+```nd
+let name = "Alice"
+let n = 42i
+print("Hello, \(name)!")                   // Hello, Alice!
+print("n = \(n), doubled = \(n * 2i)")    // n = 42, doubled = 84
+print("sum: \(1i + 2i + 3i)")             // sum: 6
+```
+
+- Syntax: `\(expr)` — any expression inside
+- Automatic `str()` conversion of the result
+- Keep interpolated expressions on one line
+
+---
+
+## Records vs Maps — the critical distinction
+
+```nd
+// Record — bare identifier keys, dot access
+let user = {name: "Alice", age: 30i}
+print(user.name)       // "Alice"
+user.age = 31i         // field assignment
+print(type(user))      // "record"
+
+// Map — quoted string keys, bracket access
+let config = {"host": "localhost", "port": 8080i}
+print(config["host"])           // "localhost"
+config["port"] = 9000i          // bracket assignment
+print(type(config))             // "map"
+print(has_key(config, "host"))  // true
+print(keys(config))             // ["host", "port"]
+```
+
+**Mixing causes runtime errors:**
+```nd
+let m = {"key": 1i}
+m.key     // ❌  Field access is only supported on records
+let r = {key: 1i}
+r["key"]  // ❌  Indexing is only supported on lists and maps
+```
+
+**json.parse() returns a map (not a record):**
+```nd
+import "std:json" as json
+let data = json.parse(some_json_string)
+data["field"]   // ✅  bracket notation
+data.field      // ❌  runtime error
+```
+
+---
+
+## Control flow
+
+```nd
+// if/else
+if (x > 0) {
+    print("positive")
+} else if (x == 0) {
+    print("zero")
+} else {
+    print("negative")
+}
+
+// while
+let i = 0i
+while (i < 5i) {
+    print(i)
+    i = i + 1i     // no +=
+}
+
+// for-in (lists and maps)
+for item in ["a", "b", "c"] { print(item) }
+for key in {"x": 1, "y": 2} { print(key) }
+```
+
+**No `break` or `continue`.** Design loops to avoid needing them, or use
+early return from a function.
+
+---
+
+## Operators
+
+| Category | Operators | Notes |
+|----------|-----------|-------|
+| Arithmetic | `+`, `-`, `*`, `/`, `%` | `/` always yields float |
+| Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` | cross-type (1i == 1) works |
+| Logical | `&&`, `\|\|`, `!` | short-circuit |
+| Missing | `+=`, `**`, `&`, `\|`, `^`, `<<`, `>>` | use `x = x + 1i`, `math.pow()` |
+
+---
+
+## Error handling
+
+```nd
+try {
+    let result = risky_operation()
+} catch err {
+    print(err.kind)     // "thrown", "type", "key", "index", "name", "runtime", "sandbox"
+    print(err.message)  // human-readable description
+    // err.payload      — original thrown value (nil for string throws)
+    // err.path, err.line, err.column — source location
+    // err.stack        — list of stack frame strings
+} finally {
+    cleanup()           // always runs
+}
+
+throw "something went wrong"          // err.kind = "thrown", err.message = "something went wrong"
+throw {code: 404, reason: "missing"}  // err.payload = the record, err.kind = "thrown"
+```
+
+---
+
+## List operations
+
+```nd
+let xs = [1i, 2i, 3i]
+print(len(xs))        // 3  (int, not float)
+print(xs[0])          // 1
+xs[0] = 99i           // index assignment
+list_push(xs, 4i)     // append in-place, returns list
+let top = list_pop(xs)  // remove and return last element
+```
+
+Multiline list literals are not supported — keep on one line:
+```nd
+let bad = [1,
+           2]    // ❌  Unexpected end of statement
+
+let good = [1, 2, 3]   // ✅
+```
+
+---
+
+## Workflow DSL
+
+```nd
+import "std:strings" as strings   // imports at top level only
+
+workflow my_pipeline {
+    state processed = 0i          // durable mutable state
+
+    step ingest {
+        return ["item1", "item2", "item3"]
+    }
+
+    step transform after ingest {  // ingest result available as variable
+        let out = []
+        for item in ingest {
+            list_push(out, strings.upper(item))
+            processed = processed + 1i
+        }
+        checkpoint "after_transform"    // valid inside step only
+        return out
+    }
+
+    step report after transform {
+        return "processed: \(processed)"
+    }
+}
+
+let r = run_workflow(my_pipeline)
+print(r["steps"]["report"])        // bracket notation — result is a map
+print(r["state"]["processed"])     // workflow state is also a map
+print(r["graph_id"])               // unique execution id
+```
+
+**Result keys:** `steps`, `state`, `graph_id`, `failed`, `tasks`, `timings`,
+`attempts`, `cache_hits`, `checkpoints`, `workflow`
+
+**Step options:**
+```nd
+step flaky with { retries: 3, retry_delay_ms: 500, timeout_ms: 5000 } {
+    // body
+}
+```
+
+Note: `retries` with `retry_delay_ms > 0` schedules asynchronous retries —
+the workflow does not complete synchronously. For synchronous retry patterns,
+use `try/catch` inside the step body.
+
+---
+
+## Coroutines and channels
+
+```nd
+// Yield-based generator
+fn gen() {
+    yield 1i
+    yield 2i
+    yield 3i
+}
+let c = coroutine(gen)        // coroutine() takes a zero-arg function
+print(resume(c))              // 1
+print(resume(c))              // 2
+print(coroutine_status(c))    // "suspended"
+
+// Spawn onto event loop
+let state = {"done": false}
+let worker = coroutine(fn() {
+    state["done"] = true
+})
+spawn(worker)    // spawn() takes coroutine, not fn literal
+run_loop()
+print(state["done"])   // true
+
+// Channels (built-in — no import needed)
+let ch = channel()
+let results = []
+let producer = coroutine(fn() {
+    send(ch, "a")
+    send(ch, "b")
+    close(ch)
+})
+let consumer = coroutine(fn() {
+    let item = recv(ch)
+    while (item != nil) {
+        list_push(results, item)
+        item = recv(ch)
+    }
+})
+spawn(producer)
+spawn(consumer)
+run_loop()
+print(results)   // ["a", "b"]
+```
+
+**Coroutine statuses:** `"created"`, `"running"`, `"suspended"`, `"finished"`
+
+**Execution deadline:** default 200ms wall-clock including sleep time.
+For long-running tasks: `nodus run --time-limit 5000 script.nd`
+
+---
+
+# Reference: Idioms
+
+# Nodus v4 Idioms — Python vs Nodus Contrast Pairs
+
+Each pair shows what a Python developer will naturally try, what Nodus actually
+requires, and one line on the mental-model difference. All examples verified.
+
+---
+
+## 1. Incrementing a counter
+
+```python
+# Python
+count = 0
+count += 1
+```
+
+```nd
+// ❌ Nodus (no += operator)
+let count = 0i
+count += 1i    // SyntaxError: Unexpected '=' in expression
+
+// ✅ Nodus
+let count = 0i
+count = count + 1i
+```
+
+**Why:** Nodus has no compound-assignment operators. Write the full expression.
+
+---
+
+## 2. Mutable state shared between functions
+
+```python
+# Python — closure over a mutable variable
+count = 0
+def increment():
+    global count
+    count += 1
+```
+
+```nd
+// ❌ Nodus — closure doesn't see outer let mutation
+let count = 0i
+let inc = fn() {
+    count = count + 1i   // count reads as nil inside closure
+}
+inc()
+print(count)   // 0, not 1 — silent bug
+
+// ✅ Nodus — use a map as the mutable container
+let state = {"count": 0i}
+let inc = fn() {
+    state["count"] = state["count"] + 1i
+}
+inc()
+print(state["count"])   // 1
+```
+
+**Why:** Closures in Nodus capture the map *reference*, not a copy. Assigning
+to a `let` inside a closure creates a new local variable that shadows the outer
+one. Always use a map with quoted keys for shared mutable state.
+
+---
+
+## 3. Printing multiple values
+
+```python
+# Python
+print("x:", 42, "y:", 99)
+```
+
+```nd
+// ❌ Nodus — print() takes one argument
+print("x:", 42, "y:", 99)   // SyntaxError: Expected ')', got ','
+
+// ✅ Nodus — use string interpolation
+let x = 42i
+let y = 99i
+print("x: \(x), y: \(y)")
+```
+
+**Why:** `print()` is a single-argument builtin. `\(expr)` embeds any expression.
+
+---
+
+## 4. String conversion of a number
+
+```python
+# Python
+str(42)    # "42"
+```
+
+```nd
+// Nodus — result depends on integer vs float literal
+print(str(42))     // "42.0"  — bare 42 is a float
+print(str(42i))    // "42"    — 42i is an int
+
+// When you need "42" (no .0), always use int literals
+let n = 42i
+print("Count: \(n)")   // "Count: 42"
+```
+
+**Why:** `42` is a float in Nodus (IEEE 754 double). `42i` is an exact integer.
+Use `i` suffix for counters and any value where `str()` output matters.
+
+---
+
+## 5. Accessing a parsed JSON object
+
+```python
+# Python
+import json
+data = json.loads('{"name": "Alice"}')
+print(data["name"])
+```
+
+```nd
+// ❌ Nodus — json.parse() returns a map, not a record
+import "std:json" as json
+let data = json.parse(raw_json_string)
+print(data.name)      // RuntimeError: Field access is only supported on records
+
+// ✅ Nodus — use bracket notation for maps
+print(data["name"])   // "Alice"
+```
+
+**Why:** JSON objects become Nodus *maps* (quoted keys, bracket access). Only
+Nodus record literals (`{key: val}`) use dot notation.
+
+---
+
+## 6. Checking if a key exists
+
+```python
+# Python
+if "name" in d:
+    print(d["name"])
+```
+
+```nd
+// ❌ Nodus — no `in` operator for map membership
+if ("name" in config) { ... }   // SyntaxError
+
+// ✅ Nodus
+if (has_key(config, "name")) {
+    print(config["name"])
+}
+```
+
+**Why:** `has_key(map, key)` is the builtin for map membership.
+`in` is only used as `for item in list`.
+
+---
+
+## 7. Using a library for async
+
+```python
+# Python
+import asyncio
+async def main():
+    await asyncio.sleep(1)
+asyncio.run(main())
+```
+
+```nd
+// ❌ Nodus — no await keyword, no asyncio, no import for channels
+import "std:channel" as ch  // ImportError: std:channel not found
+await some_value            // SyntaxError
+
+// ✅ Nodus — cooperative coroutines, built-in channel/sleep
+import "std:async" as async
+
+let c = coroutine(fn() {
+    async.sleep(1000)   // suspend for 1 second
+    print("done")
+})
+spawn(c)
+run_loop()
+```
+
+**Why:** Nodus uses cooperative coroutines with explicit `spawn()` and `run_loop()`,
+not an event loop with async/await. Channels are language builtins: `channel()`,
+`send()`, `recv()`, `close()`.
+
+---
+
+## 8. Spawning a background task
+
+```python
+# Python
+import threading
+t = threading.Thread(target=lambda: do_work())
+t.start()
+```
+
+```nd
+// ❌ Nodus — spawn() expects a coroutine, not a function literal
+spawn(fn() { do_work() })   // RuntimeError: spawn(coroutine) expects a coroutine
+
+// ✅ Nodus
+let task = coroutine(fn() { do_work() })
+spawn(task)
+run_loop()   // required: runs the scheduler until all spawned tasks finish
+```
+
+**Why:** `spawn()` schedules a coroutine on the event loop. `run_loop()` then drives
+it to completion. Skip `run_loop()` and the task never runs.
+
+---
+
+## 9. Workflow results: dot notation vs bracket
+
+```python
+# Python
+result = run_pipeline()
+print(result.steps)
+```
+
+```nd
+// ❌ Nodus — run_workflow() returns a map, not a record
+let r = run_workflow(my_pipeline)
+print(r.steps)             // RuntimeError: Field access is only supported on records
+print(r.steps.ingest)      // same error
+
+// ✅ Nodus
+print(r["steps"])                   // map of step results
+print(r["steps"]["ingest"])         // specific step result
+print(r["state"]["my_var"])         // workflow state (also a map)
+print(r["graph_id"])                // execution identifier
+print(r["failed"])                  // list of failed step names
+```
+
+**Why:** `run_workflow()`, `run_goal()`, and `run_graph()` all return Nodus *maps*.
+
+---
+
+## 10. Workflow step dependencies
+
+```python
+# Python DAG (e.g. Airflow)
+@task(depends_on=["ingest"])
+def transform():
+    ...
+```
+
+```nd
+// ❌ Nodus — no `depends_on` keyword
+step transform depends_on: [ingest] { ... }   // SyntaxError
+
+// ✅ Nodus — `after` keyword
+step ingest {
+    return ["item1", "item2"]
+}
+
+step transform after ingest {
+    // ingest result is available as the variable `ingest`
+    for item in ingest {
+        print(item)
+    }
+    return "done"
+}
+```
+
+**Why:** Dependencies use the `after` keyword. The dependency's result is
+injected as a local variable matching the step name.
+
+---
+
+## 11. Hashing data
+
+```python
+# Python
+import hashlib
+print(hashlib.sha256(b"hello").hexdigest())
+```
+
+```nd
+// ❌ Nodus — hash() returns a hash object, not a string directly
+import "std:hash" as hash
+print(hash.sha256("hello"))   // prints hash object representation
+
+// ✅ Nodus — call .to_hex() on the result
+let digest = hash.sha256("hello").to_hex()
+print(digest)   // hex string
+```
+
+**Why:** `std:hash` functions return a hash record with a `.to_hex()` method.
+Chain the call: `hash.sha256(data).to_hex()`.
+
+---
+
+## 12. Tool names without namespacing
+
+```python
+# Python — any string works as a key
+registry.register("greet", handler)
+```
+
+```nd
+// ❌ Nodus — non-dotted tool names fail silently
+import "std:tool" as tool
+tool.register({name: "greet", handler: my_fn, ...})
+// silently returns an error: "must use dotted namespacing"
+
+// ✅ Nodus — always use dotted names
+tool.register({name: "myapp.greet", handler: my_fn, ...})
+```
+
+**Why:** Tool names must be dotted (`"myapp.greet"`, `"mylib.action"`) to avoid
+collisions across libraries. The error is silent — verify registration with
+`tool_available()`.
+
+---
+
+## 13. Importing a module inside a function
+
+```python
+# Python — lazy imports work fine
+def process():
+    import json
+    return json.dumps({})
+```
+
+```nd
+// ❌ Nodus — imports inside functions are rejected
+fn process() {
+    import "std:json" as json   // SyntaxError: import statements must be at the top level
+    return json.stringify({})
+}
+
+// ✅ Nodus — all imports at the top of the file
+import "std:json" as json
+
+fn process() {
+    return json.stringify({})
+}
+```
+
+**Why:** Nodus resolves imports at parse/compile time. Move all `import`
+statements to the top of the `.nd` file.
+
+---
+
+## 14. Counting items in a list with map()
+
+```python
+# Python
+nums = [1, 2, 3, 4, 5]
+doubled = list(map(lambda x: x * 2, nums))
+total = sum(nums)
+```
+
+```nd
+// ✅ Nodus — std:collections has map, filter, reduce
+import "std:collections" as col
+
+let nums = [1i, 2i, 3i, 4i, 5i]
+let doubled = col.map(nums, fn(x) { return x * 2i })
+let total = col.reduce(nums, fn(acc, x) { return acc + x }, 0i)
+print(doubled)   // [2, 4, 6, 8, 10]
+print(total)     // 15
+```
+
+**Note:** If you use float literals (`[1, 2, 3]`), the arithmetic results are floats
+(`[2.0, 4.0, ...]`). Use integer literals (`[1i, 2i, 3i]`) for integer results.
+
+---
+
+## 15. Storing results in a loop
+
+```python
+# Python
+results = []
+for item in items:
+    results.append(process(item))
+```
+
+```nd
+// ✅ Nodus — list_push() mutates the list in-place
+let results = []
+for item in items {
+    list_push(results, process(item))
+}
+print(results)
+```
+
+**Why:** Nodus has no `.append()` method. Use the builtin `list_push(list, value)`.
+It mutates in place and returns the list.
+
+---
+
+## 16. Early exit on error in a step
+
+```python
+# Python workflow step
+def step_fn():
+    result = fetch()
+    if not result.ok:
+        raise ValueError("fetch failed")
+    return result.data
+```
+
+```nd
+// ✅ Nodus
+step fetch_data {
+    let result = external_fetch()
+    if (!result["ok"]) {
+        throw "fetch failed: \(result[\"error\"])"
+    }
+    return result["data"]
+}
+```
+
+**Why:** `throw` in a step causes the step to fail. With `retries`, the scheduler
+will retry. Without retries, it goes to `r["failed"]`. Either way, downstream
+steps that depend on it do not run.
+
+---
+
+## 17. Reading workflow state from inside a step
+
+```python
+# Python — state passed as argument
+def step_fn(state):
+    print(state["counter"])
+```
+
+```nd
+// ✅ Nodus — workflow state variables are accessible as bare names
+workflow counter_wf {
+    state counter = 0i
+
+    step increment {
+        counter = counter + 1i    // bare name access
+        return counter
+    }
+
+    step read after increment {
+        // can also read via workflow_state() if needed
+        let snap = workflow_state()
+        print(snap["counter"])    // state snapshot is a map
+        return counter            // or just the bare name
+    }
+}
+```
+
+---
+
+## 18. Sending a record-shaped response from a step
+
+```python
+# Python
+def step_fn():
+    return {"status": "ok", "data": [1, 2, 3]}
+```
+
+```nd
+// ❌ This returns a map (quoted keys) — fine, but callers must use bracket access
+step respond {
+    return {"status": "ok", "data": [1i, 2i, 3i]}
+}
+
+// ✅ This returns a record (bare keys) — callers use dot access
+step respond {
+    return {status: "ok", data: [1i, 2i, 3i]}
+}
+
+// Read the result
+let r = run_workflow(my_wf)
+let response = r["steps"]["respond"]
+print(response.status)    // "ok"   if record
+print(response["status"]) // "ok"   if map
+```
+
+**Why:** Choose record or map based on how the caller will access it. Records
+use dot notation; maps use bracket notation. Be consistent within a codebase.
+
+---
+
+## 19. The hello-workflow (first Nodus program)
+
+```python
+# Python "hello world"
+print("Hello, world!")
+```
+
+```nd
+// Python developer's instinct — prints fine, but misses the point of Nodus
+print("Hello, Nodus!")
+
+// Idiomatic Nodus — even a trivial task uses the workflow primitive
+workflow hello {
+    step greet {
+        return "Hello, Nodus!"
+    }
+}
+let r = run_workflow(hello)
+print(r["steps"]["greet"])
+```
+
+**Why:** Not every `.nd` script needs a workflow, but the workflow DSL is *why
+Nodus exists*. A one-liner `print()` is a test script. A workflow is Nodus.
+
+---
+
+## 20. Checkpoint placement
+
+```python
+# Python — "checkpoint" has no equivalent; state is in-memory
+def step_fn():
+    intermediate = compute()
+    store_checkpoint(intermediate)   # explicit, anywhere
+    return finish(intermediate)
+```
+
+```nd
+// ❌ Nodus — checkpoint at workflow level is a syntax error
+workflow w {
+    checkpoint "before_steps"   // SyntaxError: workflow body must contain state declarations or steps
+    step a { ... }
+}
+
+// ✅ Nodus — checkpoint inside a step body only
+workflow w {
+    step a {
+        let mid = compute()
+        checkpoint "after_compute"    // valid here
+        return finish(mid)
+    }
+}
+```
+
+**Why:** Checkpoints are a workflow primitive that persists the execution graph
+state at a named point. They only make sense inside step execution.
+
+---
+
+# Reference: Modules
+
+# Nodus v4 Modules and Imports Reference
+
+All examples verified against nodus-lang 4.0.0.
+
+---
+
+## Import syntax
+
+```nd
+// Namespace import — bind all exports under a name
+import "std:strings" as strings
+strings.upper("hello")
+
+// Named import — bind specific exports directly
+import { upper, lower } from "std:strings"
+upper("hello")
+
+// Relative path
+import "./utils"
+import "../shared/helpers"
+
+// Project-relative (from project root)
+import "lib/validators"
+
+// Third-party (pip-installed via nodus.nd entry-point)
+import "nodus-mcp" as mcp
+import "my-library:submodule" as sub
+```
+
+**Rule: all imports must be at the top level of a file.** Imports inside
+functions, step bodies, or workflow blocks are a syntax error:
+```nd
+fn helper() {
+    import "std:json" as json   // ❌ SyntaxError
+}
+import "std:json" as json       // ✅ top of file
+```
+
+---
+
+## Resolution order
+
+For a bare import `import "name"`, Nodus checks in this order:
+
+1. `{project_root}/name.nd` or `{project_root}/name/index.nd`
+2. `{project_root}/.nodus/modules/name/index.nd` (Nodus package manager)
+3. Built-in stdlib: `std:name` (always prefixed with `std:`)
+4. Pip-installed packages via the `nodus.nd` entry-point group
+
+**Local always wins.** A file at `.nodus/modules/lib/index.nd` shadows a
+pip-installed package of the same name. This is a permanent rule — never
+suggest working around it.
+
+---
+
+## Stdlib modules
+
+All stdlib modules are imported with the `std:` prefix:
+
+| Import | What it provides |
+|--------|-----------------|
+| `"std:strings"` | `upper`, `lower`, `trim`, `split`, `contains`, `replace`, `join`, `repeat`, `is_blank` |
+| `"std:json"` | `parse(str) → map`, `stringify(val) → str` |
+| `"std:math"` | `floor`, `ceil`, `sqrt`, `abs`, `min`, `max`, `pow`, `random`, `to_int`, `to_float`, `idiv`, `parse_int` |
+| `"std:collections"` | `map(list, fn)`, `filter(list, fn)`, `reduce(list, fn, init)` |
+| `"std:memory"` | `get(key)`, `put(key, val)`, `delete(key)`, `has(key)`, `keys()` |
+| `"std:fs"` | `read(path)`, `write(path, content)`, `append(path, content)`, `exists(path)`, `listdir(path)`, `ensure_dir(path)` |
+| `"std:hash"` | `sha256(data)`, `sha512(data)`, `md5(data)`, `hmac_sha256(key, msg)` — all return a hash record; call `.to_hex()` |
+| `"std:http"` | `get(url, opts?)`, `post(url, opts?)`, `put`, `delete`, `patch` — return record `{status, body, headers, ok}` |
+| `"std:async"` | `sleep(ms)`, `parallel(tasks)`, `series(tasks)`, `worker_pool(fn, n)`, `pipeline(stages)` |
+| `"std:time"` | `now()`, `from_epoch_ms(ms)`, `parse(s, fmt)`, `format(dt, fmt)`, duration helpers |
+| `"std:path"` | Path manipulation utilities |
+| `"std:env"` | Environment variable access |
+| `"std:subprocess"` | `run(cmd, args?, opts?)` → record `{stdout, stderr, exit_code, ok}` |
+| `"std:runtime"` | `fn_name`, `fn_arity`, `fields`, `stack_depth`, `typeof`, `tasks`, `scheduler` |
+| `"std:test"` | `suite(name, fn)`, `case(name, fn)`, `assert`, `assert_eq`, `assert_err`, `assert_throws` |
+| `"std:effects"` | Effect system (EXPERIMENTAL) |
+| `"std:retry"` | Retry with backoff |
+| `"std:circuit_breaker"` | Circuit breaker pattern |
+| `"std:encoding"` | Base64, hex encoding |
+| `"std:tool"` | `register`, `execute`, `available`, `describe` |
+| `"std:agent"` | `call`, `available`, `describe` |
+
+**Channels are built-in — no import needed:** `channel()`, `send()`, `recv()`,
+`close()` are available without any import statement.
+
+---
+
+## Stdlib return type notes
+
+These are the most common gotchas:
+
+| Function | Returns | Access |
+|----------|---------|--------|
+| `json.parse()` | `map` | bracket: `data["field"]` |
+| `hash.sha256()` | hash record | `.to_hex()` method |
+| `http.get()` | record | dot: `r.status`, `r.body`, `r.ok` |
+| `subprocess.run()` | record | dot: `r.stdout`, `r.exit_code`, `r.ok` |
+| `math.floor()` | `int` | no `.0` in `str()` output |
+| `math.ceil()` | `int` | no `.0` in `str()` output |
+| `math.parse_int()` | `int` or error record | check `type(r) == "error"` |
+| `fs.read()` | `string` or error record | check `type(r) == "error"` |
+| `len()` | `int` | built-in, no import |
+| `type()` | `string` | built-in, no import |
+
+---
+
+## Third-party packages via pip
+
+Pip-installed Nodus libraries expose their `.nd` files through the Python
+`nodus.nd` entry-point group. After `pip install some-nodus-library`:
+
+```nd
+import "some-nodus-library" as lib        // resolves library/nd/index.nd
+import "some-nodus-library:client" as c   // resolves library/nd/client.nd
+```
+
+The library author declares the entry-point in their `pyproject.toml`:
+```toml
+[project.entry-points."nodus.nd"]
+some-nodus-library = "some_nodus_library.nd:get_nd_root"
+```
+
+And exposes a `get_nd_root()` function that returns the absolute path to
+the directory containing the `.nd` files.
+
+**For users:** install the library with pip, then `import` it by name.
+No configuration needed in your Nodus project.
+
+**For library authors:** see the full guide at
+`docs/guide/build-a-library.md` or the
+[Nodus Wiki — Building a Companion Library](https://github.com/Masterplanner25/Nodus/wiki/Building-a-Companion-Library).
+
+---
+
+## Local packages via .nodus/modules/
+
+For packages not on PyPI, place them in `.nodus/modules/` under your project root:
+
+```
+my-project/
+├── main.nd
+└── .nodus/
+    └── modules/
+        └── my-lib/
+            └── index.nd    # import "my-lib" resolves here
+```
+
+```nd
+// main.nd
+import "my-lib" as lib
+lib.do_something()
+```
+
+This is also how `nodus install` places dependencies defined in a project
+manifest. Local packages take precedence over pip-installed packages with
+the same name — always.
+
+---
+
+## Module exports
+
+```nd
+// By default: if a module has NO export declarations, all top-level
+// let/fn bindings are exported
+
+// Explicit exports (recommended for libraries):
+export fn my_function(x) { return x }
+export let MY_CONST = 42i
+
+// Re-exports:
+export { helper } from "./internal"
+
+// If a module has ANY export declaration, ONLY exported names are visible
+// to importers — accessing non-exported names raises a runtime error
+```
+
+---
+
+## Project setup (`nodus init`)
+
+```bash
+nodus init           # creates nodus.toml, src/main.nd, .nodus/modules/
+nodus run            # runs the entry file from nodus.toml
+nodus install        # installs dependencies into .nodus/modules/
+```
+
+`nodus.toml` example:
+```toml
+[project]
+name = "my-app"
+entry = "src/main.nd"
+
+[dependencies]
+# future: managed package dependencies
+```
+
+---
+
+## Debugging imports
+
+```bash
+nodus run --trace-imports script.nd
+# Prints: [import] Resolved "std:json" → /path/to/stdlib/json.nd
+# Prints: [import] Failed "missing" — <reason>
+```
+
+---
+
+# Reference: Errors
+
+# Nodus v4 Error Guide
+
+Error text → what it means → fix class. All errors verified against nodus-lang 4.0.0.
+
+Fix classes are named consistently so they can be referenced across sessions.
+
+---
+
+## Syntax errors (caught at parse time)
+
+### `Expected ')', got ','`
+**Context:** `print("a", "b")` or any function call with too many arguments.
+**Meaning:** Function being called accepts fewer arguments than you passed.
+`print()` is single-argument.
+**Fix class:** SINGLE-ARG — use string interpolation: `print("\(a), \(b)")`
+
+---
+
+### `Unexpected '=' in expression`
+**Context:** `x += 1` or `x -= 1`.
+**Meaning:** Compound assignment operators don't exist.
+**Fix class:** NO-COMPOUND-ASSIGN — write `x = x + 1i` in full.
+
+---
+
+### `Unexpected end of statement - expression is incomplete`
+**Context:** Multi-line function call, list literal, or expression:
+```nd
+let x = len(       // ❌
+    "hello"
+)
+```
+**Meaning:** The parser treats a newline as a statement terminator. An open
+paren or bracket after a newline is not a continuation — it starts a new statement.
+**Fix class:** KEEP-ON-ONE-LINE — put the entire call/literal on a single line.
+
+---
+
+### `Expected identifier, got 'fn'`
+**Context:** `fn myFunc(fn, x) { ... }` — using `fn` as a parameter name.
+**Meaning:** `fn` is a reserved keyword.
+**Fix class:** RENAME-PARAM — use a different name: `handler`, `callback`, `func`.
+
+---
+
+### `import statements must be at the top level of a module; move this import to the top of the file`
+**Context:** `import` inside a function, step body, or `if` block.
+**Meaning:** Imports are resolved at parse/compile time, not at runtime.
+**Fix class:** HOIST-IMPORT — move all imports to the top of the file, before any `fn` or `workflow`.
+
+---
+
+### `workflow body must contain state declarations or steps`
+**Context:** `workflow w { checkpoint "x"; step a { ... } }` — checkpoint at workflow body level.
+**Meaning:** Checkpoints are only valid inside step bodies, not at the workflow level.
+**Fix class:** MOVE-CHECKPOINT-INSIDE-STEP — put `checkpoint "label"` inside a `step { }` body.
+
+---
+
+### `[import] Import not found: std:channel`
+**Context:** `import "std:channel" as ch`.
+**Meaning:** Channels are language built-ins, not a stdlib module. There is no `std:channel`.
+**Fix class:** NO-IMPORT-CHANNEL — use `channel()`, `send()`, `recv()`, `close()` directly.
+
+---
+
+## Runtime errors (caught at execution time)
+
+### `Field access is only supported on records`
+**Context:** Using dot notation on a map: `m.key` where `m` was created with `{"key": val}`.
+**Meaning:** Dot notation only works on records (bare-key literals). Maps require bracket notation.
+**Fix class:** BRACKET-FOR-MAP
+```nd
+m["key"]        // ✅ for maps (quoted-key literals)
+r.key           // ✅ for records (bare-key literals)
+```
+Also triggered when accessing `json.parse()` result with dot: `data.field` should be `data["field"]`.
+
+---
+
+### `Indexing is only supported on lists and maps`
+**Context:** Using bracket notation on a record: `r["key"]` where `r` was created with `{key: val}`.
+**Meaning:** Bracket notation is for maps and lists. Records require dot notation.
+**Fix class:** DOT-FOR-RECORD — use `r.key`.
+
+---
+
+### `Missing map key: "key_name"`
+**Context:** `m["key_name"]` where the key doesn't exist.
+**Meaning:** Unlike Python, accessing a missing map key is an error, not `None`.
+**Fix class:** HAS-KEY-GUARD — check with `has_key(m, "key_name")` before access.
+```nd
+if (has_key(m, "step_name")) {
+    print(m["step_name"])
+}
+```
+Common cause: accessing `result["steps"]["step_name"]` when that step failed
+and is therefore in `result["failed"]`, not `result["steps"]`.
+
+---
+
+### `Cannot add nil and int` (or any type with nil)
+**Context:** Usually inside a closure that tries to use an outer `let` variable.
+**Meaning:** The closure created a local shadow of the variable, which starts as `nil`.
+The arithmetic then fails because `nil + int` is invalid.
+**Fix class:** CLOSURE-MAP-PATTERN
+```nd
+// Replace outer let + closure assignment:
+let state = {"x": 0i}          // map reference is captured
+let fn_name = fn() {
+    state["x"] = state["x"] + 1i   // mutates map, not the binding
+}
+```
+
+---
+
+### `spawn(coroutine) expects a coroutine`
+**Context:** `spawn(fn() { ... })`.
+**Meaning:** `spawn()` requires a coroutine value, not a function literal.
+**Fix class:** WRAP-IN-COROUTINE
+```nd
+let c = coroutine(fn() { ... })
+spawn(c)
+run_loop()
+```
+
+---
+
+### `Cannot resume finished coroutine`
+**Context:** Calling `resume(c)` after the coroutine has returned.
+**Meaning:** Once a coroutine's function returns (not yields), it's done.
+**Fix class:** CHECK-STATUS — guard with `coroutine_status(c) != "finished"`.
+
+---
+
+### `TypeError: must use dotted namespacing`
+**Context:** `tool.register({name: "greet", ...})`.
+**Meaning:** Tool names must contain a dot for namespacing.
+**Fix class:** DOTTED-TOOL-NAME — use `"myapp.greet"` or `"lib.operation"`.
+
+---
+
+## Gate failures (nodus_gate / nodus check)
+
+### Gate: `nodus check` fails with syntax error
+**Meaning:** The `.nd` file has a parse error.
+**Fix class:** FIX-SYNTAX — run `nodus check file.nd` to pinpoint the line/column.
+
+### Gate: `nodus_gate --runtime` block fails
+**Meaning:** A runnable code block in documentation doesn't produce the expected output.
+**Fix class:** UPDATE-OUTPUT or FIX-CODE — run the block with `nodus run` and compare.
+
+### Gate: `nodus fmt --check` fails
+**Meaning:** The `.nd` file is not correctly formatted.
+**Fix class:** FORMAT — run `python nodus.py fmt file.nd` (use dev source, not nodus.exe).
+
+---
+
+## Execution and timeout issues
+
+### Script terminates mid-execution with no error
+**Context:** Long-running coroutine or workflow with cooperative sleep.
+**Meaning:** The default 200ms wall-clock deadline was hit. Cooperative sleep counts
+against the deadline even when the script is not using CPU.
+**Fix class:** TIME-LIMIT — use `nodus run --time-limit 5000 script.nd`.
+For embedded use: `NodusRuntime(timeout_ms=None)` to disable the deadline entirely.
+
+### Workflow status is `"retry_scheduled"` — never completes
+**Context:** `step x with { retries: N, retry_delay_ms: M }` where M > 0.
+**Meaning:** Non-zero `retry_delay_ms` schedules an async retry — the workflow
+run does not complete synchronously. You need a sweep loop to rehydrate it.
+**Fix class:** SYNC-RETRY — for synchronous retry, use `try/catch` inside the step body:
+```nd
+step x {
+    let attempt = {"n": 0i}
+    let done = {"ok": false}
+    while (!done["ok"]) {
+        try {
+            let result = do_thing()
+            done["ok"] = true
+            return result
+        } catch err {
+            attempt["n"] = attempt["n"] + 1i
+            if (attempt["n"] >= 3i) { throw err.message }
+        }
+    }
+}
+```
+
+---
+
+## Python embedding issues
+
+### `NodusRuntime()` with no arguments — scripts time out after 200ms
+**Context:** Embedding Nodus in a server, long-running agent, or workflow host.
+**Meaning:** Default is `timeout_ms=200` (same as CLI). Any cooperative sleep
+or long workflow will hit this.
+**Fix class:** DISABLE-TIMEOUT — always pass `timeout_ms=None, max_steps=None`
+for server or long-running embedded use:
+```python
+rt = NodusRuntime(timeout_ms=None, max_steps=None)
+```
+
+### `run_source()` returns `{"ok": False, "error": ...}` with no exception
+**Context:** A script that raises a Nodus error.
+**Meaning:** Nodus errors become structured Python dicts, not Python exceptions.
+**Fix class:** CHECK-OK — always check `result["ok"]` before using `result["stdout"]`.
+```python
+result = rt.run_source(code)
+if not result["ok"]:
+    print(result["error"])  # dict with kind, message, path, line, etc.
+```
+
+---
+
+# Reference: Examples
+
+# Nodus v4 Verified Examples
+
+All examples are complete, runnable programs verified against nodus-lang 4.0.0.
+Each carries a one-line statement of what it demonstrates.
+
+**Key pattern note:** List literals cannot span multiple lines. Use `list_push()` to
+build multi-element lists when elements are complex enough to warrant separate lines.
+
+---
+
+## EX1 — Hello world and string interpolation
+
+```nd
+print("Hello, Nodus!")
+let name = "world"
+print("Hello, \(name)!")
+```
+Output:
+```
+Hello, Nodus!
+Hello, world!
+```
+
+---
+
+## EX2 — Recursive function
+
+```nd
+fn factorial(n) {
+    if (n <= 1i) { return 1i }
+    return n * factorial(n - 1i)
+}
+print(factorial(10i))
+print(factorial(0i))
+```
+Output: `3628800` / `1`
+
+---
+
+## EX3 — Records vs maps: the critical distinction
+
+```nd
+let user = {name: "Alice", age: 30i}         // record — bare keys, dot access
+let cfg = {"host": "localhost", "port": 8080i}  // map — quoted keys, bracket access
+
+print(user.name)         // Alice
+print(user.age)          // 30
+print(cfg["host"])       // localhost
+print(cfg["port"])       // 8080
+print(type(user))        // record
+print(type(cfg))         // map
+```
+
+---
+
+## EX4 — Error handling with try/catch
+
+```nd
+fn safe_divide(a, b) {
+    if (b == 0i) { throw "division by zero" }
+    return a / b
+}
+try {
+    print(safe_divide(10i, 0i))
+} catch err {
+    print(err.kind)     // thrown
+    print(err.message)  // division by zero
+}
+print(safe_divide(10i, 2i))  // 5.0
+```
+
+---
+
+## EX5 — Collections: map, filter, reduce
+
+```nd
+import "std:collections" as col
+
+let nums = [1i, 2i, 3i, 4i, 5i]
+let doubled = col.map(nums, fn(x) { return x * 2i })
+let evens = col.filter(nums, fn(x) { return x % 2i == 0i })
+let total = col.reduce(nums, fn(acc, x) { return acc + x }, 0i)
+print(doubled)  // [2, 4, 6, 8, 10]
+print(evens)    // [2, 4]
+print(total)    // 15
+```
+
+---
+
+## EX6 — String manipulation
+
+```nd
+import "std:strings" as strings
+
+let words = strings.split("hello world nodus", " ")
+let upper = []
+for word in words {
+    list_push(upper, strings.upper(word))
+}
+print(strings.join(upper, "-"))             // HELLO-WORLD-NODUS
+print(strings.contains("hello world", "world"))  // true
+print(strings.replace("foo bar foo", "foo", "baz"))  // baz bar baz
+```
+
+---
+
+## EX7 — JSON round-trip (map access, not dot access)
+
+```nd
+import "std:json" as json
+
+let data = {"name": "Alice", "scores": [95i, 87i, 92i]}
+let encoded = json.stringify(data)
+print(encoded)               // {"name": "Alice", "scores": [95, 87, 92]}
+let decoded = json.parse(encoded)
+print(decoded["name"])       // Alice
+print(decoded["scores"][0])  // 95.0  (json numbers become floats)
+print(type(decoded))         // map
+```
+
+---
+
+## EX8 — Linear workflow with state and checkpoints
+
+```nd
+import "std:strings" as strings
+
+workflow text_pipeline {
+    state word_count = 0i
+
+    step parse {
+        return strings.split("hello world nodus v4", " ")
+    }
+
+    step count after parse {
+        for word in parse {
+            word_count = word_count + 1i
+        }
+        return word_count
+    }
+
+    step format after count {
+        return "Found " + str(count) + " words"
+    }
+}
+
+let r = run_workflow(text_pipeline)
+print(r["steps"]["format"])         // Found 4 words
+print(r["state"]["word_count"])     // 4
+print(r["graph_id"] != nil)         // true
+```
+
+---
+
+## EX9 — Parallel steps: fan-out / fan-in
+
+```nd
+workflow parallel_fetch {
+    step fetch_users {
+        return ["alice", "bob", "carol"]
+    }
+
+    step fetch_products {
+        return ["widget", "gadget"]
+    }
+
+    // Both fetch_users and fetch_products run before combine
+    step combine after fetch_users, fetch_products {
+        return {"users": fetch_users, "products": fetch_products, "total": len(fetch_users) + len(fetch_products)}
+    }
+}
+
+let r = run_workflow(parallel_fetch)
+let summary = r["steps"]["combine"]
+print(summary["users"])     // ["alice", "bob", "carol"]
+print(summary["products"])  // ["widget", "gadget"]
+print(summary["total"])     // 5
+```
+
+**Note:** Step results returned from `run_workflow()` must be JSON-serializable.
+Return maps (`{"key": val}`) not records (`{key: val}`) from step bodies.
+
+---
+
+## EX10 — Producer-consumer with channels
+
+```nd
+let ch = channel()
+let log = []
+
+let producer = coroutine(fn() {
+    let items = ["task-1", "task-2", "task-3"]
+    for item in items {
+        send(ch, item)
+    }
+    close(ch)
+})
+
+let consumer = coroutine(fn() {
+    let item = recv(ch)
+    while (item != nil) {
+        list_push(log, "processed: " + item)
+        item = recv(ch)
+    }
+})
+
+spawn(producer)
+spawn(consumer)
+run_loop()         // required — drives the scheduler to completion
+print(len(log))   // 3
+print(log[0])     // processed: task-1
+```
+
+---
+
+## EX11 — Generator with yield
+
+```nd
+fn range_gen(n) {
+    let i = 1i
+    while (i <= n) {
+        yield i
+        i = i + 1i
+    }
+}
+
+fn collect(gen_fn, arg) {
+    let c = coroutine(fn() { return gen_fn(arg) })
+    let values = []
+    while (coroutine_status(c) != "finished") {
+        let v = resume(c)
+        if (v != nil) { list_push(values, v) }
+    }
+    return values
+}
+
+print(collect(range_gen, 5i))  // [1, 2, 3, 4, 5]
+```
+
+---
+
+## EX12 — Record with methods (object-like pattern)
+
+```nd
+fn make_counter(start) {
+    return {
+        value: start,
+        increment: fn(self) { self.value = self.value + 1i },
+        reset: fn(self) { self.value = 0i },
+        get: fn(self) { return self.value }
+    }
+}
+
+let c = make_counter(10i)
+c.increment()
+c.increment()
+c.increment()
+print(c.get())   // 13
+c.reset()
+print(c.get())   // 0
+```
+
+---
+
+## EX13 — Hashing (always call .to_hex())
+
+```nd
+import "std:hash" as hash
+import "std:json" as json
+
+let payload = {"user": "alice", "action": "login"}
+let encoded = json.stringify(payload)
+let digest = hash.sha256(encoded).to_hex()
+print("encoded: " + encoded)
+print("sha256: " + digest)
+print("type: " + type(digest))   // string
+```
+
+---
+
+## EX14 — In-memory session store
+
+```nd
+import "std:memory" as mem
+
+mem.put("session_user", "alice")
+mem.put("request_count", 0i)
+
+fn handle_request(path) {
+    let count = mem.get("request_count")
+    mem.put("request_count", count + 1i)
+    let user = mem.get("session_user")
+    return "[\(user)] \(path) (req #\(count + 1i))"
+}
+
+print(handle_request("/home"))   // [alice] /home (req #1)
+print(handle_request("/about"))  // [alice] /about (req #2)
+print(mem.get("request_count"))  // 2
+print(mem.keys())                // ["request_count", "session_user"]
+```
+
+---
+
+## EX15 — ETL pipeline: extract, transform, report with error tracking
+
+Demonstrates: multi-step workflow, durable state, checkpoints, loops, conditionals.
+
+**Note:** Build multi-element lists with `list_push()` — list literals cannot span
+multiple lines in Nodus v4.
+
+```nd
+import "std:strings" as strings
+
+fn make_raw_data() {
+    let raw = []
+    list_push(raw, {"id": "1", "name": "  Alice  ", "score": "95"})
+    list_push(raw, {"id": "2", "name": "Bob", "score": "invalid"})
+    list_push(raw, {"id": "3", "name": "Carol ", "score": "87"})
+    return raw
+}
+
+workflow etl_pipeline {
+    state records_in = 0i
+    state records_out = 0i
+    state errors = []
+
+    step extract {
+        let raw = make_raw_data()
+        records_in = len(raw)
+        checkpoint "after_extract"
+        return raw
+    }
+
+    step transform after extract {
+        let out = []
+        for row in extract {
+            let name = strings.trim(row["name"])
+            if (row["score"] == "invalid") {
+                list_push(errors, "bad score for id: " + row["id"])
+            } else {
+                list_push(out, {"id": row["id"], "name": name, "score": row["score"]})
+                records_out = records_out + 1i
+            }
+        }
+        checkpoint "after_transform"
+        return out
+    }
+
+    step report after transform {
+        return {"in": records_in, "out": records_out, "errors": errors}
+    }
+}
+
+let r = run_workflow(etl_pipeline)
+print("in: " + str(r["state"]["records_in"]))     // in: 3
+print("out: " + str(r["state"]["records_out"]))   // out: 2
+print("errors: " + str(r["state"]["errors"]))     // errors: ["bad score for id: 2"]
+```
+
+---
+
+## Mutable counter via map (closure-safe pattern)
+
+The standard pattern for shared mutable state across functions:
+
+```nd
+let state = {"count": 0i}
+
+let increment = fn() {
+    state["count"] = state["count"] + 1i
+}
+
+let decrement = fn() {
+    state["count"] = state["count"] - 1i
+}
+
+increment()
+increment()
+increment()
+decrement()
+print(state["count"])  // 2
+```
+
+---
+
+## Running from the CLI
+
+```bash
+# Install
+pip install nodus-lang
+
+# Run a script
+nodus run my_script.nd
+
+# Check syntax
+nodus check my_script.nd
+
+# Format
+nodus fmt my_script.nd
+
+# With a longer time limit (overrides 200ms default)
+nodus run --time-limit 5000 my_script.nd
+
+# Sandbox filesystem access
+nodus run --allow-paths /data,/tmp my_script.nd
+```

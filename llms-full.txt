@@ -219,6 +219,158 @@ rt.shutdown()  # clears last_vm, host functions, registered tools
 
 ---
 
+## Real-World Integration Patterns
+
+The canonical reference for embedding Nodus inside a production Python application
+is documented in `docs/guide/real-world-integration.md`. The patterns below are
+extracted from a working agent orchestration loop (AINDY) that was migrated from a
+pure-Python prototype to Nodus as the orchestration layer.
+
+### Architecture decision: .nd vs Python
+
+| Lives in .nd | Lives in Python host |
+|---|---|
+| DAG step ordering (`step after`) | Event routing (which run to resume) |
+| Retry + attempt tracking (`step with { retries }`) | Outcome scoring / strategy learning |
+| Checkpoints (`checkpoint "label"`) | Policy / governance enforcement |
+| WAIT/RESUME protocol (`workflow_wait`, `workflow_resume_payload`) | Intent → workflow compilation |
+| Workflow state persistence (graph JSON) | Auth enforcement at the API layer |
+
+Nodus owns the orchestration shell. Python owns application-specific logic,
+external state, and security. This boundary holds even in complex systems.
+
+### WAIT/RESUME approval gate
+
+```nodus
+workflow aindy_gated_execute {
+    state approved = false
+
+    step analyze with { retries: 3, retry_delay_ms: 500 } {
+        checkpoint "after_analyze"
+        return 1
+    }
+
+    // Suspends the run until an external event fires.
+    // No deadline_ms = indefinite wait (required for human-approval flows).
+    step gate after analyze {
+        return workflow_wait("aindy.approval.granted", "approve-aindy", {kind: "aindy_approval"})
+    }
+
+    step execute after gate {
+        let payload = workflow_resume_payload()   // dict the host passed on resume
+        if (payload == nil) { throw "no approval payload" }
+        if (payload["approved"] == false) { throw "denied" }
+        checkpoint "after_execute"
+        return 1
+    }
+}
+```
+
+`workflow_wait(event_type, correlation_key, meta)` — suspends and records the wait
+in the durable store. Run status becomes `"waiting"`.
+`workflow_resume_payload()` — retrieves the host-supplied payload inside the step
+that runs after resume.
+
+### Embedded bridge (Python)
+
+Use the lower-level `run_workflow_code` / `resume_workflow` API (not `NodusRuntime`)
+when you need a persistent `WorkflowFrameworkRunner` with a durable store.
+
+```python
+from nodus.tooling.runner import run_workflow_code, resume_workflow
+from nodus.cli import cli as nodus_cli
+from nodus.vm.vm import VM
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner
+from nodus_lang_workflow.store import LocalWorkflowStore, SQLiteWorkflowStore
+
+_store = SQLiteWorkflowStore(path=".nodus/app.sqlite3")
+_runner = WorkflowFrameworkRunner(_store)
+
+def _fresh_vm(source_path=None):
+    return VM([], {}, code_locs=[], source_path=source_path)
+
+def run_nd_file(path, initial_globals=None):
+    vm = _fresh_vm(source_path=path)
+    if initial_globals:
+        vm.globals.update(initial_globals)
+    with open(path) as fh:
+        source = fh.read()
+    with nodus_cli._project_root_context(PROJECT_ROOT):
+        result, _vm = run_workflow_code(vm, source, filename=path, project_root=PROJECT_ROOT)
+    return result
+```
+
+### Host-side event routing
+
+Nodus has no native event bus. Routing an arriving event to the correct waiting
+run is always the host's responsibility.
+
+```python
+def route_event(runner, event_type, correlation_key, payload):
+    # Query and close before any resume — avoids nested-session deadlock.
+    waiting = runner.store.list_runs_filtered(statuses={"waiting"})
+    run_ids = [
+        r.run_id for r in waiting
+        if r.wait and r.wait.event_type == event_type
+        and r.wait.correlation_key == correlation_key
+    ]
+    for run_id in run_ids:
+        vm = _fresh_vm()
+        runner.resume_workflow(
+            vm, run_id,
+            resume_payload=payload,
+            event_type=event_type,
+            correlation_key=correlation_key,
+            rebuild_graph=vm._rebuild_workflow_graph,   # bound method, not a lambda
+        )
+```
+
+### Sweep loop (required after restart)
+
+`workflow_wait()` without `deadline_ms` waits indefinitely. After a process restart,
+those runs are in the store but not in memory. The sweep loop rehydrates them.
+
+```python
+import threading, time
+
+def start_sweep(runner, interval_s=30):
+    def _loop():
+        while True:
+            time.sleep(interval_s)
+            now_ms = int(time.time() * 1000)
+            with nodus_cli._project_root_context(PROJECT_ROOT):
+                runner.sweep(lambda record: _fresh_vm(), now_ms=now_ms)
+    threading.Thread(target=_loop, daemon=True).start()
+
+# Call at startup, before accepting traffic.
+start_sweep(_runner)
+```
+
+### Dynamic .nd generation
+
+The host can generate `.nd` source at runtime and pass it to `run_workflow_code`.
+
+```python
+def compile_plan_to_nd(steps, flow_name):
+    lines = [f"workflow {flow_name} {{"]
+    for i, step in enumerate(steps):
+        dep = f" after {steps[i-1]}" if i > 0 else ""
+        lines += [f"    step {step}{dep} {{", f'        checkpoint "after_{step}"',
+                  f"        return {steps[i-1] + ' + 1' if i > 0 else '1'}", "    }", ""]
+    lines.append("}")
+    return "\n".join(lines)
+```
+
+### Required flags
+
+- **SEC-001:** `run_nd_file`, `run_nd_source`, and `resume_nd` do not enforce auth.
+  Authenticate at the API layer before calling any bridge function. Verify the caller
+  is permitted to resume the specific `graph_id`, not just that they hold a valid token.
+- **SCHED-001:** Always call `start_sweep()` at service startup. Indefinite waits are
+  stranded after restart without it.
+
+---
+
 ## Stability Surface
 
 Run `nodus stability` to see the full index. Summary:

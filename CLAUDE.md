@@ -129,6 +129,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
 | Eval results (per-version) | `docs/evals/` — e.g. `docs/evals/v4.0.0/CREATOR_VALIDATION.md` |
+| Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 6 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model) |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
 | Issue response policy | `docs/governance/ISSUE_RESPONSE_POLICY.md` |
 | AI discoverability (canonical map) | `llms.txt` |
@@ -315,11 +316,7 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
   The `*.egg-info/` is in `.gitignore`.
 - Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
   absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
-- Key documented contracts (see `docs/governance/TECH_DEBT.md`):
-  - TD-007: server-initiated requests over HTTP are stdio-only (no SSE/push)
-  - TD-008: `_validate_args` is top-level type checking only (not full JSON Schema)
-  - TD-009: resource read handler must raise `KeyError` for unknown URI → -32601
-  - TD-010: `requestState` is on the wire; never checkpoint secrets in sentinel state
+- Key contracts: TD-007–010 in `docs/governance/TECH_DEBT.md`.
 - **Next: two-artifact coordinated launch** — nodus-lang 4.0.0 + nodus-mcp 0.1.0.
 
 ## nodus-a2a companion library
@@ -436,63 +433,7 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 
 All packages have GitHub repos under Masterplanner25. No nodus-lang dependency unless noted.
 Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
-
-### Group 1 — AINDY-derived (7 packages)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-circuit-breaker | none | Three-state CB, sync+async, optional Prometheus |
-| nodus-auth | python-jose, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
-| nodus-observability | python-json-logger (otel/prometheus optional) | Trace ContextVars, init_otel(), create_registry(), configure_logging() |
-| nodus-queue | tenacity (redis optional) | RedisQueueBackend LPUSH/BRPOP+Lua, DLQ, delayed jobs; Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
-| nodus-state | none | FlowStatus/UnitStatus/AgentStatus, WaitCondition, ResumeSpec, ExecutionContext, SessionKey |
-| nodus-observability-framework | nodus-observability, fastapi optional | AIMetrics (8), RequestMetricWriter, middleware, health router, ExecutionBlock streaming, CostAttribution/CostTracker |
-| nodus-mcp (aindy bridge) | mcp>=1.0.0 | ToolDefinition, ToolRegistry, NodusServer, MCPClientAdapter; flat code at `nodus_mcp_aindy/` in C:\dev\nodus-mcp |
-
-### Group 2 — OpenClaw-derived (5 packages)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-context | none | ContextBudget, ContextWindow (add/compact/guard_tool_results), DropToolInternalsStrategy, SummarizeStrategy |
-| nodus-approvals | none | ApprovalGate (check/approve/deny/poll), ApprovalPolicy (fnmatch rules), PairingStore (6-digit codes) |
-| nodus-channels | none | ChannelAdapter protocol, ChannelRegistry, HealthMonitor (CONNECTED→DEGRADED→DISCONNECTED) |
-| nodus-llm | nodus-circuit-breaker | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff), OpenAI/Anthropic providers |
-| nodus-delivery | nodus-channels | DeliveryPlan, SizeChunker, ParagraphChunker, MarkdownBlockChunker, DeliveryRouter |
-
-### Group 3 — Tier 1: Buildable standalone (7 packages)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-retry | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore, compute_action_id() |
-| nodus-http | httpx, nodus-circuit-breaker | HttpClient (circuit breaker + retry + trace headers), HttpResponse, RetryConfig; **requires `respx` for tests** |
-| nodus-events | redis (optional) | EventBus (Redis pub/sub, source-instance dedup, pre-rehydration buffer), AuditStore, publish_event() |
-| nodus-schema | none | validate_payload(), parse_versioned_name(), resolve_version(), SchemaRegistry, SchemaEntry |
-| nodus-protocol | none | RequestEnvelope, ResponseEnvelope, EventEnvelope, JSON encode()/decode() with _type discriminator |
-| nodus-session | none | SessionEntry (transcript, provenance), InMemorySessionStore, SessionPruningPolicy, SessionManager |
-| nodus-router | none | RouteBinding (fnmatch), RoutingTable (priority-sorted), RouteResolver (default agent fallback) |
-
-### Group 4 — Tier 2: Requires Tier 1 (4 packages + 1 additive)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-memory | nodus-events; pgvector/openai optional | MemoryNode, InMemoryStore, MAS build_path()/glob_match(), score_nodes(), update_feedback(), recall()/recall_async(), EmbeddingProvider |
-| nodus-workflow | nodus-state, nodus-events | FlowDefinition/FlowNode/FlowEdge, FlowStatus/FlowRun, SchedulerEngine (priority queue + WAIT/RESUME), FlowExecutor, FlowRehydrator |
-| nodus-a2a | none | AgentRegistry, AgentCoordinator (local/delegate), DelegationRequest, DeadLetterService, StuckRunWatchdog |
-| nodus-adapters/base | nodus-channels | BaseChannelAdapter (reconnect backoff, health recording), ConnectionManager; path: `C:\dev\nodus-adapters\base` |
-
-### Group 5 — Tier 3: Requires T1+T2 (2 packages)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-agent | nodus-state, nodus-retry | AgentRun, CapabilityToken (HMAC-SHA256), mint_token()/validate_token(), LocalPlanner/LLMPlanner, DuplicateSubmissionGuard, AgentExecutor |
-| nodus-gateway | nodus-protocol, websockets | GatewayServer (WebSocket + handler dispatch + idempotency cache), GatewayClient, HandlerRegistry, EventBroadcaster; **requires nodus-protocol installed** |
-
-### Group 6 — Tier 4: Requires All (2 packages)
-
-| Package | Key deps | Key abstraction |
-|---------|----------|----------------|
-| nodus-extensions | none | ExtensionManifest (ABI versioning), HookRunner (phase hooks), SubprocessSandboxRunner/OciSandboxRunner, ExtensionRegistry (disk discovery); **asyncio.run() not get_event_loop()** |
-| nodus-governance | none | OperatorScope/ScopeBundle (PERM_* constants), PolicyBundle, TrustSurface (deny-by-default allowlist/blocklist), AuditTrail (append-only, multi-field query) |
+Package tables (deps + key abstractions by tier): `docs/ecosystem/PACKAGE_QUICK_REF.md`.
 
 ### Dependency audit (critical pattern)
 
@@ -639,25 +580,13 @@ rt = NodusRuntime()
 rt = NodusRuntime(timeout_ms=None, max_steps=None)
 ```
 
-**SPAWN-001 (#117, open) — `spawn().wait_async()` is sync:**
-The `wait_async()` method on a spawned process record is a direct alias for `wait()` —
-it blocks the scheduler thread instead of suspending the coroutine. Fix: apply the same
-thread+channel pattern used by `_do_async_run`. Falls back to `wait()` outside a
-scheduler context. Low severity; does not affect `subprocess_run_async`.
+**SPAWN-001 (#117, open):** `spawn().wait_async()` is sync — blocks scheduler thread. Low severity; does not affect `subprocess_run_async`.
 
-**CHAN-001 (open) — silent coroutine orphan on empty `recv()`:**
-A coroutine blocked on `recv()` of an empty channel is silently stranded — `run_loop`
-exits when it sees no pending work. The only workaround is:
-(a) pre-populate the channel before `run_loop`, or
-(b) use the subprocess-pipe pattern (daemon thread feeds `ch.queue` continuously).
-The `_io_channels` workaround requires touching a private scheduler attribute and has
-a close-ordering race. Do not use it directly.
+**CHAN-001 (open):** `recv()` on empty channel strands the coroutine silently — pre-populate the channel or use the subprocess-pipe pattern. See `docs/governance/TECH_DEBT.md`.
 
 ## Publish sequence (do NOT run until explicitly asked)
 
-**PyPI new-project rate limit (learned 2026-05-31):** PyPI enforces a hard cap on new project creation — separate from upload limits. Creating 4+ projects in rapid succession triggers a 429 "Too many new projects created" error with no Retry-After header. **Reset window is ~48 hours** (hit limit 2026-05-31, cleared 2026-06-02). Strategy: upload **max 2-3 new packages per session**, wait ~1 hour between sessions. Do NOT batch-upload all 29 at once. All dist/ artifacts can be pre-built without hitting any limit; only the upload step is rate-limited.
-
-**Current publish status (as of 2026-06-05):** Round 1 COMPLETE — 16 packages live: nodus-lang ✅ nodus-circuit-breaker ✅ nodus-retry ✅ nodus-channels ✅ nodus-protocol ✅ nodus-schema ✅ nodus-approvals ✅ nodus-context ✅ nodus-state ✅ nodus-session ✅ nodus-governance ✅ nodus-agent ✅ nodus-workflow ✅ nodus-a2a ✅ nodus-extensions ✅ nodus-store-sql ✅. nodus-native-memory-engine blocked by Windows Application Control policy (Rust build step). Next: Round 2 (11 packages with external-only deps).
+**PyPI rate limit:** Max 2-3 new packages per session; wait ~1 hour between sessions. Pre-build all dist/ artifacts first — only the upload step is rate-limited.
 
 Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
