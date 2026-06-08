@@ -9,7 +9,7 @@ try:
 except ImportError:
     _RETRY_AVAILABLE = False
 
-from nodus.vm.vm import Closure, _ClosureProxy
+from nodus.vm.types import Closure, _ClosureProxy
 
 _DEPENDENCY_ERR = {"kind": "dependency_error", "message": "nodus-retry package not installed"}
 

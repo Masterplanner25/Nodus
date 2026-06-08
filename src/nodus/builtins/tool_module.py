@@ -3,7 +3,7 @@
 import re
 import sys
 
-from nodus.vm.vm import Closure, Record
+from nodus.vm.types import Closure, Record
 
 _TOOL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]*$')
 _TOOL_NAME_MAX_LEN = 200

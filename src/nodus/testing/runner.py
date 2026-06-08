@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nodus.runtime.diagnostics import LangRuntimeError
-from nodus.vm.vm import Closure, Record, BuiltinMethod, VM
+from nodus.vm.vm import VM
+from nodus.vm.types import Closure, Record, BuiltinMethod
 
 
 @dataclass

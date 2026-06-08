@@ -4,7 +4,7 @@ import base64
 import hashlib
 import hmac as _hmac
 
-from nodus.vm.vm import BuiltinMethod, Record
+from nodus.vm.types import BuiltinMethod, Record
 
 _CHUNK = 65536
 

@@ -4,7 +4,7 @@ import difflib
 import math
 
 from nodus.runtime.diagnostics import LangRuntimeError
-from nodus.vm.vm import Closure, Record
+from nodus.vm.types import Closure, Record
 
 
 # -- Sentinel for zero-duration yield used by test.flush_async() ----------
