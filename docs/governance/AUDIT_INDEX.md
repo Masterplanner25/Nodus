@@ -19,7 +19,6 @@ a new contributor who will evaluate the system from the outside).
 | [AUDIT_LIMITS.md](AUDIT_LIMITS.md) | Where does the runtime stop being useful, and what is the single highest-leverage extension? |
 | [AUDIT_SECURITY_MODEL.md](AUDIT_SECURITY_MODEL.md) | Where does security enforcement live, is it consistent, and what are the gaps? |
 | [AUDIT_INFINITY_RUNTIME.md](AUDIT_INFINITY_RUNTIME.md) | Does the runtime observe, store, and recall — or does it only execute? |
-| [AUDIT_REAL_WORLD_CAPABILITY.md](AUDIT_REAL_WORLD_CAPABILITY.md) | What kinds of real systems can credibly be built today, and what is the right application domain? |
 
 ## When to run each
 
@@ -31,7 +30,6 @@ a new contributor who will evaluate the system from the outside).
 | Bootstrap milestone planning | Runtime Readiness (§Bootstrap), Capability (Axis 5) |
 | Security incident or report | Security Model, Architecture (§Embedding API, §Failure Handling) |
 | Planning self-improvement features | Infinity Runtime |
-| Evaluating application domain fit | Real-World Capability |
 
 ## Stored results
 
