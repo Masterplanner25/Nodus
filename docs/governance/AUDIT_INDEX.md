@@ -7,7 +7,7 @@ written with the specific concerns of production language runtimes in mind.
 Run these periodically (pre-release, post-major-refactor, or when onboarding
 a new contributor who will evaluate the system from the outside).
 
-## The six audits
+## The audits
 
 | Prompt | What it answers |
 |--------|----------------|
@@ -18,6 +18,7 @@ a new contributor who will evaluate the system from the outside).
 | [AUDIT_CAPABILITY.md](AUDIT_CAPABILITY.md) | What class of system is this, scored across five axes including bootstrap readiness? |
 | [AUDIT_LIMITS.md](AUDIT_LIMITS.md) | Where does the runtime stop being useful, and what is the single highest-leverage extension? |
 | [AUDIT_SECURITY_MODEL.md](AUDIT_SECURITY_MODEL.md) | Where does security enforcement live, is it consistent, and what are the gaps? |
+| [AUDIT_INFINITY_RUNTIME.md](AUDIT_INFINITY_RUNTIME.md) | Does the runtime observe, store, and recall — or does it only execute? |
 
 ## When to run each
 
@@ -28,6 +29,7 @@ a new contributor who will evaluate the system from the outside).
 | Evaluating adoption readiness | User Reality, Capability, Limits |
 | Bootstrap milestone planning | Runtime Readiness (§Bootstrap), Capability (Axis 5) |
 | Security incident or report | Security Model, Architecture (§Embedding API, §Failure Handling) |
+| Planning self-improvement features | Infinity Runtime |
 
 ## Stored results
 
