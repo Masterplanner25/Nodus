@@ -333,9 +333,9 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 These burn time when forgotten:
 
 - **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
-- **No `+=` operator.** Use `x = x + 1i`. In closures, you can't assign
-  outer `let` variables at all — use a **map** with quoted keys and mutate via
-  bracket notation: `state["count"] = state["count"] + 1i`.
+- **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183). In closures, you
+  still can't assign outer `let` variables at all — use a **map** with quoted keys and mutate
+  via bracket notation: `state["count"] = state["count"] + 1i`.
   (The pattern uses `{"count": 0i}` — quoted-key map — NOT `{count: 0i}` record.)
 - **Maps vs Records — dot vs bracket notation:**
   - `{"key": val}` (quoted keys) → **map** → access with `state["key"]`
