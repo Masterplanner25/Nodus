@@ -12,7 +12,7 @@ from nodus_lang_workflow.store import SQLiteWorkflowStore
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls._original_cwd = os.getcwd()
         os.chdir(cls._tmpdir.name)
         cls.server, cls.thread = run_in_thread("127.0.0.1", 0, allowed_paths=[cls._tmpdir.name])

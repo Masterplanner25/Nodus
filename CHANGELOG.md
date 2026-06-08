@@ -20,6 +20,99 @@
   - Unknown annotations raise a compile-time `LangSyntaxError`.
   Closes #101.
 
+- **Compound assignment operators `+=`, `-=`, `*=`, `/=` (PR #183).**
+  Desugared by the parser — no new opcodes, no BYTECODE_VERSION bump. Works on
+  variables (`x += 1i`), index targets (`lst[i] += n`), and field targets
+  (`rec.field += n`). The formatter preserves the short form as a round-trip.
+
+- **Multiline expressions inside delimiters (PR #178).**
+  Function calls, list literals, and map literals can now span lines. Newlines
+  inside an unclosed `(`, `[`, or `{` are silently consumed instead of terminating
+  the statement — the same rule used by Python, JavaScript, and Go.
+
+- **`std:math` bit operations (PR #172):** `math.bit_and(a, b)`, `math.bit_or(a, b)`,
+  `math.bit_xor(a, b)`, `math.bit_not(a)`, `math.bit_lshift(a, n)`,
+  `math.bit_rshift(a, n)`. All six validate int-typed arguments; shifts require a
+  non-negative amount.
+
+- **`NodusRuntime(allow_subprocess=False)` and `allow_network=False` (PR #165).**
+  Capability flags added end-to-end: `VM.__init__`, `BuiltinRegistry`, and
+  `NodusRuntime`. When disabled, the matching stdlib modules are replaced with
+  sandbox-error stubs so every call path — including calls routed via
+  `import "std:subprocess"` — is gated. Critical bug fix: `NodusModule.invoke_function()`
+  now propagates both flags to child VMs (previously they could be bypassed via a
+  module import).
+
+- **`NodusRuntime(allow_env=False)` (PR #189).**
+  Gates all six `env_*` builtins and their `std:env` module-method equivalents.
+  Mirrors the `allow_subprocess` / `allow_network` pattern. Bug fix:
+  `invoke_function()` now propagates all three capability flags to child VMs
+  consistently.
+
+- **`NodusRuntime(allowed_commands=[...])` (PR #198).**
+  Subprocess allowlist — scripts may only invoke binaries named in the list.
+  Shell mode (`shell=True`) is blocked entirely when the list is set.
+  Closes #161.
+
+- **`NodusRuntime(allowed_hosts=[...])` (PR #198).**
+  HTTP allowlist — requests to hosts not in the list raise a sandbox error.
+  Closes #162.
+
+- **`NodusRuntime(event_sinks=[...])` (PR #200).**
+  Wires event observer callables to `vm.event_bus` immediately after VM construction
+  so sinks observe the full execution. Closes #190.
+
+- **`NodusRuntime(coroutine_timeout_ms=N)` (PR #200).**
+  Per-coroutine wall-clock deadline. `builtin_spawn()` stamps it onto each spawned
+  coroutine as `task_timeout_ms`; the scheduler enforces it on first resume.
+  Closes #191.
+
+- **`NodusRuntime.get_execution_stats()` (PR #200).**
+  Returns `{"instructions_executed": int, "coroutines_spawned": int}` — the
+  documented public replacement for the now-private `_last_vm`.
+
+- **`NodusRuntime.clear_shared_state()` class method (PR #172).**
+  Resets process-level singletons (`GLOBAL_MEMORY_STORE`, `AGENT_REGISTRY`,
+  `_GRAPH_*`) for clean sequential restart after `shutdown()`. Does not fix
+  concurrent multi-instance isolation (tracked as #166 RUNTIME-001).
+
+- **`channel(maxsize=N)` optional capacity cap (PR #197).**
+  `send()` raises `runtime_error("channel", ...)` when the cap is exceeded.
+  Omitting `maxsize` preserves the existing unbounded behaviour. Closes #175.
+
+- **String indexing (PR #197).**
+  `"hello"[1]` returns `"e"` with bounds checking. Out-of-range raises
+  `runtime_error("index", ...)`. Closes #171.
+
+- **Capability audit events (PR #165).**
+  `vm.event_bus` now emits `RuntimeEvent("capability_use")` for `fs_read`,
+  `fs_write`, `fs_exists`, `fs_append`, `fs_list`, `http_request` (method + URL),
+  and `subprocess_run` (cmd + shell flag). Embedders get a real-time capability
+  log with no extra configuration.
+
+- **`nodus serve` unauthenticated startup warning (PR #165).**
+  A `stderr` warning is printed when `--auth-token` is not configured, telling
+  operators that all requests are accepted without authentication.
+
+### Changed
+
+- **`NodusRuntime.last_vm` renamed to `_last_vm` (PR #200).**
+  Signals this is an implementation detail, not a stable API. Use
+  `get_execution_stats()` for runtime metrics. **Migration:** replace `rt.last_vm`
+  with `rt._last_vm` (or switch to `get_execution_stats()`). Closes #186.
+
+- **`httpx` is now an optional dependency (PR #172).**
+  `pip install nodus-lang` no longer installs httpx. Use `pip install nodus-lang[http]`
+  or `nodus-lang[server]` to restore it. When httpx is absent all `std:http` builtins
+  emit a clear install-hint error instead of an import crash.
+
+- **Integer division now returns an integer (PR #197).**
+  `6i / 2i` returns `3` (floor division) instead of `3.0`. Mixed-type expressions
+  (`6i / 2.0`) still return a float. Closes #151.
+
+- **Expression nesting depth limit raised from 50 to 100 (PR #178).**
+  Accommodates generated code and macro expanders that previously hit the ceiling.
+
 ### Fixed
 
 - **#106 (DAP-001): DAP `evaluate` command implemented — expression evaluation at breakpoints.**
@@ -31,6 +124,55 @@
   response; the debug server never crashes on a bad expression. `allowed_paths` and
   `host_globals` are forwarded to the child VM so sandbox integrity is preserved.
   Closes #106.
+
+- **UX: six runtime-audit gaps (PR #150).**
+  - `HostFunctionError` from host-registered callbacks now returns `ok=False` instead
+    of escaping `run_source()` as a live Python exception.
+  - Indexing a caught error record (`e[0]`) adds: _"this is a caught thrown value —
+    access the original via e.payload"_.
+  - `spawn()` without `run_loop()` appends `"Warning: N spawned tasks never executed"`
+    to `Result.stderr`.
+  - Spawned-coroutine errors are collected in `result["spawned_errors"]` for embedder
+    inspection without parsing stderr.
+
+- **UX: error-message improvements from user reality audit (PR #159).**
+  `import "std:channel"` now gives _"channel(), send(), recv(), and close() are
+  built-in functions — no import needed"_ instead of an unhelpful path dump.
+  Additional targeted hints for other common mistake sites.
+
+- **#163 (SEC-004): `NODUS_ALLOWED_PATHS` env var now honoured in embedded mode
+  (PR #197).** `NodusRuntime()` reads it when `allowed_paths` is not passed explicitly.
+
+- **#164 (SEC-005): Symlink traversal fixed (PR #197).** All path enforcement points
+  now use `os.path.realpath` instead of `os.path.abspath`.
+
+- **#152 / #153: Division and modulo by zero raise `runtime_error("math", ...)` (PR #197).**
+  Previously returned IEEE 754 `inf` / `nan` or inconsistent error records.
+
+- **`run_source()` thread safety (PR #178).** `NodusRuntime` gains `_run_lock`
+  (threading.Lock); concurrent `run_source()` calls serialize instead of racing on
+  `_last_vm`.
+
+- **Default workflow sweep thread auto-starts (PR #178).** `get_default_workflow_runner()`
+  starts a daemon thread (`nodus-workflow-sweep`) on first call; calls
+  `expire_wait_timeouts()` every 30 seconds so workflow wait-deadlines are enforced
+  without host involvement.
+
+- **#187: `legacy_error_dict()` consolidated onto `coerce_error()` path (PR #196).**
+  Eliminates duplicate exception-parsing logic; all exception types derive their
+  legacy dict from `coerce_error()` except `TypeError` (preserved to keep the
+  `"type"` prefix that `format_error_payload` depends on).
+
+- **#184 (BI-03): Core value types extracted to `src/nodus/vm/types.py` (PR #201).**
+  `Cell`, `Closure`, `_ClosureProxy`, `Record`, `BuiltinMethod`, and `Frame` moved
+  out of `vm.py`. Re-imports in `vm.py` preserve backwards compatibility for existing
+  code using `from nodus.vm.vm import Record`.
+
+### Removed
+
+- **`nodus.run_source` top-level re-export dropped (PR #196, closes #188).**
+  Deprecated in v4.0; removed from `nodus.__init__`. Use `NodusRuntime.run_source()`
+  from `nodus.runtime.embedding`.
 
 ---
 
