@@ -46,6 +46,24 @@ script. Treat it with the same security assumptions as `python script.py`.
 - Bearer-token authentication for the HTTP server mode (if running server mode on
   non-local bindings)
 
+**CLI vs. embedded code-path divergence (#192):**
+
+The CLI (`nodus run`) and the HTTP server (`nodus serve`) execute scripts via
+`tooling/runner.py`, which constructs VM instances directly — it does **not** go
+through `NodusRuntime`. This creates an important split:
+
+| | `NodusRuntime` | CLI / `nodus serve` |
+|--|--|--|
+| Default timeout | `None` (no deadline) | `EXECUTION_TIMEOUT_MS` = 200 ms |
+| `allow_env` / `allow_subprocess` / `allow_network` flags | Honoured | Not wired — VM defaults apply |
+| Error shape | Consistent `{ok, error, errors}` | Varies by call site |
+
+Consequence: sandbox flags set on a `NodusRuntime` instance in tests or application
+code do **not** apply when the same script is executed via the CLI. If your
+security posture relies on `allow_env=False` or similar controls, enforce them
+through `NodusRuntime` in your host application — never assume the CLI shares
+that configuration. See GitHub #192 for the long-term unification plan (v5 scope).
+
 ---
 
 ## 4. Embedded mode security posture

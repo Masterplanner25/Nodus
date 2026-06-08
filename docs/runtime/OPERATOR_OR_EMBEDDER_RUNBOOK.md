@@ -196,6 +196,33 @@ Before deploying a Nodus-embedded application to production:
 - [ ] Nodus version is pinned in `requirements.txt` or `pyproject.toml`
 - [ ] Upgrade procedure has been tested (at minimum, a version bump smoke test)
 - [ ] Workflow persistence directory (`.nodus/`) is on a persistent volume if workflows are used
+- [ ] If workflows are used in production, `SQLiteWorkflowStore` is configured (see §6.1)
+
+---
+
+## 6.1 Workflow store durability (#174)
+
+The default workflow runner uses `LocalWorkflowStore` — file-backed JSON at
+`.nodus/workflow_framework/runs/`. This store is **not crash-safe**: a process kill
+between the read-modify-write of a run file can corrupt run state. It is appropriate
+for development and short-lived scripts only.
+
+For any production deployment where workflows must survive a restart:
+
+```python
+from nodus_lang_workflow.runner import configure_default_workflow_runner
+
+configure_default_workflow_runner(backend="sqlite", path=".nodus/workflow.db")
+```
+
+Call this once at application startup, before any `run_workflow()` or
+`NodusRuntime` usage that triggers a workflow.
+
+`SQLiteWorkflowStore` uses WAL mode for atomic writes and survives unexpected
+process exits. The default path can be any writable path on a persistent volume.
+
+The HTTP server (`nodus serve`) accepts `--workflow-store-backend sqlite` and
+`--workflow-store-path PATH` flags for the same effect.
 
 ---
 
