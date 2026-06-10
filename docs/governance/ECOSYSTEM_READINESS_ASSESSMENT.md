@@ -1,142 +1,154 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Ecosystem Readiness Assessment
 
-**Date:** 2026-05-30 (updated from 2026-05-29)
+**Date:** 2026-06-10 (updated from 2026-05-30)
 **Status:** Current-state assessment — update at each library release
-**Assessor:** Codex (documentation maturity sweep) / updated for v4.0.0
+**Assessor:** Claude Opus 4.8 (post-publication sweep)
 **Rubric:** `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md`
 
 ---
 
 ## Summary
 
-The Nodus ecosystem is **real, architecturally coherent, and prepared for a coordinated
-launch** — but it is **not yet production-credible and not yet proven in real systems.**
-nodus-lang is at **4.0.0** (unpublished). The ecosystem now spans **29 standalone packages**
-(27 Nodus packages + nodus-sdk v0.1.0 + nodus-store-sql v0.1.0), all with GitHub repos
-under Masterplanner25. None are published to PyPI. None have been used in a real
-production system.
+The Nodus ecosystem is **published, real, and awaiting real-world validation.**
+nodus-lang is at **v4.0.2** (current stable on PyPI). The ecosystem spans **35 standalone
+packages**, all published to PyPI under Masterplanner25. The coordinated launch is
+complete. No package has yet seen significant real-world traffic; that is the honest
+next frontier.
 
-v4.0.0 additions: 6 new AI-native stdlib modules (std:identity, std:effects, std:sys,
-extended std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure
-in nodus_schema, nodus-sdk (unified SDK), and nodus-store-sql (SQLAlchemy persistence).
-1,612 tests pass in nodus-lang. Both ecosystem audits (A.I.N.D.Y. and OpenClaw) are
-now fully covered.
+v4.0.2 fixes: `@exactly_once` idempotency, `allowed_commands` enforcement, `@retry`
+silent-skip, `event_sinks` callable wiring, trailing-comma syntax. 1,781 tests pass.
+Coverage: 76%. Two patch releases since v4.0.0 (4.0.1 stress-eval fixes, 4.0.2 eval
+follow-up) with no CRITICAL findings in any eval cycle.
 
 ---
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 4.0.0 (prepared, not yet published)
-**Published on PyPI:** 3.0.2 (last published release)
+**Current version:** 4.0.2 (published to PyPI 2026-06-10)
+**Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
 |-----------|-------|
-| Architectural coherence | **Coherent** — orchestration DSL identity is well-defined; design decisions documented across 17 Phase 0 decisions and 13 Phase 1 design docs |
-| Implementation completeness | **Substantially complete for 3.0.2** — core language stable, experimental surfaces (workflows, coroutines) implemented but not graduated |
-| Operational readiness | **Prepared** — stable CLI, embedding API, test suite (77% coverage), lint gate, doc-vs-code gate. Not yet used in large-scale production deployments. |
-| Stability commitment | **Pre-stable for the whole package (Beta)** — stable surfaces are documented (LANGUAGE_STABILITY_INDEX.md) but the package classifier says Beta, which covers the experimental surfaces |
-| Publication status | **Published** (3.0.2 on PyPI) |
+| Architectural coherence | **Coherent** — orchestration DSL identity well-defined; design decisions documented across 17 Phase 0 and 13 Phase 1 design docs |
+| Implementation completeness | **Complete for v4.0 scope** — core language, VM, embedding API, coroutine scheduler, goals/workflows DSL, AI-native stdlib, full security sandbox all shipped |
+| Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,781 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
+| Stability commitment | **Beta classifier (PyPI)** — stable surfaces documented in LANGUAGE_STABILITY_INDEX.md; classifier upgrade to Production/Stable deferred until two consecutive minor releases with clean evals |
+| Publication status | **Published** — v4.0.2 live on PyPI |
 
-**Composite label:** Development-complete / Prepared
+**Composite label:** Published / Stable baseline
 
 **Honest assessment:**
-- Core language (syntax, VM, embedding API) is stable and production-usable for scripting
-  and automation tasks within its design scope
-- Workflows, goals, and coroutines are implemented but their APIs have not completed the
-  stability graduation process — treat as experimental
-- The eval score (7.57/10 on 3.0.2) honestly reflects where the language is: real and
-  usable, not yet at the quality bar of a mature language runtime
-- The v4.0 cycle (not yet released) adds the stdlib modules (`std:http`, `std:tool`, etc.)
-  that are central to the orchestration DSL identity — without them, 3.0.2 is a capable
-  scripting runtime but not yet a full orchestration DSL
+- Core language (syntax, VM, embedding API) is stable and production-usable for
+  scripting, automation, and agent orchestration within its design scope
+- Goals, workflows, and coroutines are implemented and tested; APIs are stable but
+  haven't completed the formal stability graduation process — treat as supported-experimental
+- Two patch release cycles (4.0.1, 4.0.2) resolved all eval-identified bugs with no
+  CRITICAL findings; the baseline is trustworthy
+- Known identified consumer: aindy-runtime (pinned at 3.0.2; upgrade path to 4.0.2 is
+  a single pin change — embedding API is backward compatible)
 
 ---
 
 ## Assessment: nodus-mcp
 
-**Current version:** 0.1.0 (prepared, not published)
-**Publication:** Waiting for coordinated three-artifact launch with nodus-lang 4.0.0
+**Current version:** 0.1.0 (published to PyPI)
 
 | Dimension | Level |
 |-----------|-------|
-| Architectural coherence | **Coherent** — protocol adapter pattern clearly implemented; design decision docs (14 phases, 280 tests); known limitations documented (TD-001 through TD-010) |
-| Implementation completeness | **Substantially complete** — all 14 implementation phases done; stdio and HTTP transports; all core MCP capabilities (Resources, Prompts, Tools, Sampling, Roots, Elicitation, Logging, Progress, Completion); OAuth deferred to v0.2 |
-| Operational readiness | **Prepared, not production-credible** — 280 tests pass; known limitations documented; NOT used in a real production system; no operational procedures for monitoring, upgrade, or failure handling |
+| Architectural coherence | **Coherent** — protocol adapter pattern clearly implemented; 14 design phases, 280 tests; known limitations documented (TD-001–TD-010) |
+| Implementation completeness | **Complete for v0.1 scope** — stdio and HTTP transports; Resources, Prompts, Tools, Sampling, Roots, Elicitation, Logging, Progress, Completion; OAuth deferred to v0.2 |
+| Operational readiness | **Published, not yet traffic-proven** — 280 tests pass; limitations documented; no real-world MCP traffic observed yet |
 | Stability commitment | **Pre-release (v0.1.0)** — no backward compatibility commitment |
-| Publication status | **Prepared-unpublished** — cannot be installed by users today |
+| Publication status | **Published** |
 
-**Composite label:** Launch-ready
+**Composite label:** Published / Launch-ready
 
 **Honest assessment:**
 - The architecture and implementation are strong for a v0.1 library
-- The 14-phase discipline (design docs → implementation → tests) is rigorous
-- The known limitations are honestly documented in TECH_DEBT.md and the README
-- **The critical known limitation is OAuth:** nodus-mcp v0.1 cannot authenticate to
-  production MCP servers that require OAuth 2.0 / OIDC. Many production MCP deployments
-  do require OAuth. This limits nodus-mcp's immediate real-world utility to environments
-  that use bearer tokens or open servers.
-- "Prepared" means: if you check out the repo and run it, it works. It does not mean:
-  it has been proven under real MCP ecosystem traffic.
-- The MCP spec target is the 2026-07-28 RC — this is a near-current spec but still an RC;
-  the final spec may differ.
+- **Critical known limitation:** OAuth 2.0 / OIDC not implemented. Production MCP
+  servers that require OAuth cannot be used. Bearer token and open-server deployments work.
+- "Published" means installable and functional. It does not mean traffic-proven.
 
 ---
 
 ## Assessment: nodus-a2a
 
-**Current version:** 0.1.0 (prepared, not published)
-**Publication:** Waiting for coordinated three-artifact launch with nodus-lang 4.0.0
+**Current version:** 0.1.0 (published to PyPI — original wire-protocol adapter)
+**Note:** Local `C:\dev\nodus-a2a` has been replaced with the AgentCoordinator
+layer (23 tests, no nodus-lang dep). The original A2A adapter (180 tests) is preserved
+at `github.com/Masterplanner25/nodus-a2a`.
 
 | Dimension | Level |
 |-----------|-------|
-| Architectural coherence | **Coherent** — message-only scope is a deliberate design decision (D5), not an oversight; protocol adapter pattern consistent with nodus-mcp; D6 inversion properly documented |
-| Implementation completeness | **Substantially complete for v0.1 scope** — HTTP+JSON/REST transport; Agent Card discovery; DataPart dispatch; bearer token auth; 169 tests, 93% coverage. Out-of-scope for v0.1 is substantial: no Task lifecycle, no streaming, no push notifications, no JSON-RPC binding, no gRPC binding, no OAuth |
-| Operational readiness | **Prepared, not production-credible** — tests pass; known limitations documented; NOT used in a real production system; no operational runbook |
+| Architectural coherence | **Coherent** — message-only scope is deliberate (D5); protocol adapter pattern consistent with nodus-mcp |
+| Implementation completeness | **Complete for v0.1 scope** — HTTP+JSON/REST, Agent Card discovery, DataPart dispatch, bearer token auth; 169 tests, 93% coverage. No Task lifecycle, streaming, push notifications, or OAuth in v0.1. |
+| Operational readiness | **Published, not yet traffic-proven** |
 | Stability commitment | **Pre-release (v0.1.0)** — no backward compatibility commitment |
-| Publication status | **Prepared-unpublished** — cannot be installed by users today |
+| Publication status | **Published** |
 
-**Composite label:** Launch-ready (for its stated v0.1 message-only scope)
+**Composite label:** Published / Launch-ready (message-only scope)
 
 **Honest assessment:**
-- v0.1 is narrower than many readers will expect from the ecosystem descriptions:
-  HTTP+JSON only, message-only, no Task lifecycle, no streaming
-- The D5 (message-only) decision is architecturally correct for a first version, but
-  it means nodus-a2a v0.1 cannot participate in the A2A ecosystem's most interesting
-  use cases (multi-turn task management, streaming, push notifications)
-- 93% coverage on 169 tests is strong for v0.1
-- **The key gap:** `LIBRARY_ECOSYSTEM.md` describes nodus-a2a as supporting
-  "all three protocol bindings" and "full A2A spec" — this is the v0.2+ target,
-  not the v0.1 reality. That description overclaims. (See DOCSET_ALIGNMENT_AUDIT.md Finding 5.)
-- nodus-a2a's production auth story is underdeveloped: no `token_validator` → accepts
-  all requests. Production deployments require explicit validator configuration.
+- v0.1 is narrower than many readers expect: HTTP+JSON only, message-only, no Task lifecycle
+- Production auth requires explicit `token_validator` configuration — no-op default accepts all requests
+- The D5 (message-only) decision is correct for v0.1 but limits participation in
+  multi-turn A2A use cases until v0.2
+
+---
+
+## Assessment: nodus-sdk
+
+**Current version:** 0.1.0 (published to PyPI)
+
+| Dimension | Level |
+|---|---|
+| Architectural coherence | **Coherent** — extras-based optional deps; NodusSDKRuntime fluent `attach_*` pattern; 9 bridge modules in one repo |
+| Implementation completeness | **Complete for v0.1 scope** — 99 tests; FastAPI router; 9 bridges (redis, http, llm, observability, sql, vector, scheduler, webhook, api) |
+| Publication status | **Published** |
+
+**Honest assessment:** Closes the "one install story" gap. Bridge host functions return
+maps — `.nd` code must use `r["key"]` not `r.key` for bridge return values. Single
+entry point for the full ecosystem.
+
+---
+
+## Assessment: nodus-store-sql
+
+**Current version:** 0.1.0 (published to PyPI)
+
+| Dimension | Level |
+|---|---|
+| Architectural coherence | **Coherent** — frozen dataclasses + SQLAlchemy ORM + stores cleanly separated |
+| Implementation completeness | **Complete** — RunStore, EventStore, JobStore (sync + async); optimistic locking, atomic job claiming, 47 tests |
+| Publication status | **Published** |
+
+**Honest assessment:** Closes the SQLAlchemy persistence gap. No Alembic — `create_all()`
+is the dev-time bootstrap; production teams manage migrations independently.
 
 ---
 
 ## Ecosystem-level assessment
 
-**Is the Nodus ecosystem real?** Yes. 29 packages exist as real GitHub repos with real
-implementations, real tests, and real design documentation. The A.I.N.D.Y. and OpenClaw
-ecosystem audits (25 capabilities, 9+ library candidates, 7 framework candidates) are now
-fully covered by implemented packages.
+**Is the Nodus ecosystem real?** Yes. 35 packages exist as real GitHub repos with real
+implementations, real tests, and real design documentation. All are published to PyPI.
 
-**Is the Nodus ecosystem mature?** No. None of the packages have been published to PyPI.
-None have been proven in production. The core language (3.0.2) is the only published
-artifact. nodus-lang 4.0.0 and the companion libraries await coordinated publication.
+**Is the Nodus ecosystem mature?** Partially. The codebase and test coverage are solid.
+No package has yet been proven under real production traffic. aindy-runtime is the
+identified first real-world consumer; that upgrade (3.0.2 → 4.0.2) will be the first
+production validation.
 
 **Is the ecosystem architected well?** Yes. The protocols-are-adapters commitment is
-sound. The three-tier ecosystem model is clear. The AI-native primitives (Phase 6)
-make execution identity, idempotency, syscall dispatch, and reliability patterns
-first-class language features rather than optional library wiring.
+sound. The three-tier ecosystem model is clear. AI-native primitives (Phase 6) make
+execution identity, idempotency, syscall dispatch, and reliability patterns first-class
+language features rather than optional library wiring.
 
 **What does the ecosystem prove today?**
-- That Nodus can be used as an orchestration runtime (1,612 tests passing)
-- That the embedding API is stable enough for library development (27 packages built on it)
+- That Nodus is published, installable, and gate-validated (1,781 tests, Gate 10 pass)
+- That the embedding API is stable enough for real-world consumer integration
 - That MCP, A2A, agent, workflow, memory, auth, observability, and extension patterns
   all compose cleanly on the Nodus runtime
 - That a unified SDK (`nodus-sdk`) can auto-wire the ecosystem with a single install line
-- That both audit-identified capability gaps (A.I.N.D.Y. + OpenClaw) are now closed
+- That two patch release cycles have resolved all identified bugs with no CRITICAL findings
 
 **What does the ecosystem not yet prove?**
 - That any package is stable under real production traffic
@@ -145,47 +157,16 @@ first-class language features rather than optional library wiring.
 
 ---
 
-## Assessment: nodus-sdk
+## Remaining gaps (post-publication)
 
-**Current version:** 0.1.0 (prepared, not published)
-
-| Dimension | Level |
-|---|---|
-| Architectural coherence | **Coherent** — extras-based optional deps; NodusSDKRuntime fluent attach_* pattern; bridge code in one repo |
-| Implementation completeness | **Complete for v0.1 scope** — 9 bridge modules; factory; 99 tests |
-| Publication status | **Prepared-unpublished** |
-
-**Honest assessment:** Closes the "one install story" gap. The five new Python bridges
-(sql, vector, scheduler, webhook, api) are net-new code with no prior equivalent. Bridge
-host functions return maps (not Records) — .nd code must use index access `r["key"]`
-not dot access `r.key` for bridge return values. LLMBridge requires a `provider_fn` arg.
-
----
-
-## Assessment: nodus-store-sql
-
-**Current version:** 0.1.0 (prepared, not published)
-
-| Dimension | Level |
-|---|---|
-| Architectural coherence | **Coherent** — frozen dataclasses (domain models) + SQLAlchemy ORM (storage) + stores (operations) cleanly separated |
-| Implementation completeness | **Complete** — RunStore, EventStore, JobStore (sync + async); optimistic locking, atomic job claiming, causal event chains, pagination |
-| Publication status | **Prepared-unpublished** |
-
-**Honest assessment:** Closes the last gap identified by both ecosystem audits. The scaffold
-was already architecturally sound — this release added API completion (4 new methods),
-async support, and expanded tests (6 → 47). No Alembic integration — `create_all()` is
-the dev-time schema bootstrap; production teams manage migrations independently.
-
----
-
-## Gaps that must close before production-credible claims
-
-1. At least one package must be published to PyPI and used in a real system
-2. The operational runbook must be exercised by at least one real deployment
-3. The OAuth gap in nodus-mcp must be documented prominently (it is, but users may miss it)
-4. nodus-a2a's auth requirement must be visible in the getting-started docs, not just the README
-5. LIBRARY_ECOSYSTEM.md nodus-a2a overclaim has been noted (Finding 5 in audit) — partial fix applied
+1. **Real-world traffic** — no package has been used in a real production system yet;
+   aindy-runtime upgrade is the near-term validation event
+2. **PyPI classifier** — still `4 - Beta`; upgrade to `5 - Production/Stable` requires
+   two consecutive minor releases with clean evals (policy in `docs/release.md`)
+3. **OAuth in nodus-mcp** — deferred to v0.2; limits use against production MCP servers
+4. **nodus-a2a Task lifecycle** — deferred to v0.2; limits multi-turn A2A use cases
+5. **Performance at scale** — Python interpreter ceiling (~200K instr/sec, no JIT);
+   acceptable for orchestration use cases, not for high-throughput compute (LIMITS-001)
 
 ---
 
@@ -193,5 +174,5 @@ the dev-time schema bootstrap; production teams manage migrations independently.
 
 - `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md` — the rubric used here
 - `docs/governance/ECOSYSTEM_90_DAY_CHECKLIST.md` — what to complete before production
-- `docs/governance/ECOSYSTEM_DOCSET_AUDIT.md` — companion library docset state
 - `docs/governance/LIBRARY_ECOSYSTEM.md` — ecosystem architecture
+- `docs/evals/v4.0.2/CREATOR_VALIDATION.md` — latest Gate 10 results
