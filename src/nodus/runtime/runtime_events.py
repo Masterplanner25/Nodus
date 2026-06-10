@@ -58,7 +58,10 @@ class RuntimeEventBus:
             return
         self._events.append(event)
         for sink in self._sinks:
-            sink.emit(event)
+            if hasattr(sink, "emit"):
+                sink.emit(event)
+            else:
+                sink(event)
 
     def emit_event(
         self,

@@ -327,12 +327,18 @@ class NodusRuntime:
             (default) means no per-coroutine limit.  This is independent of the
             global ``timeout_ms`` (which limits the entire execution).  See #191.
         event_sinks:
-            Optional list of event sink objects to attach to the VM's event bus
-            before each execution.  Each sink must implement ``emit(event)``; use
-            ``HumanReadableEventSink`` or ``JsonEventSink`` from
-            ``nodus.runtime.runtime_events`` for convenience.  Sinks attached here
-            observe the full run — unlike attaching via ``_last_vm.event_bus`` after
-            ``run_source()`` returns, which is too late.  See #190.
+            Optional list of event sinks to attach to the VM's event bus before
+            each execution.  Each sink may be either a callable (``lambda e: ...``)
+            or an object implementing ``emit(event)``.  Convenience sink classes
+            ``HumanReadableEventSink`` and ``JsonEventSink`` live in
+            ``nodus.runtime.runtime_events``.  Sinks are attached before execution
+            begins so they observe all events — unlike ``_last_vm.event_bus`` which
+            is too late.  See #190.
+
+            Events only fire for operations that cross subsystem boundaries:
+            coroutine lifecycle (spawn/resume/complete), workflow/goal steps,
+            subprocess and network capability use, and VM errors.  Simple
+            arithmetic and variable assignments emit no events.
         """
         if allowed_paths is _SANDBOX_DEFAULT:
             raw_env = os.environ.get("NODUS_ALLOWED_PATHS")

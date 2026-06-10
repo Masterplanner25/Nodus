@@ -1132,5 +1132,31 @@ print(fs.exists_path(file_path))
         )
 
 
+# closes: #211
+class TrailingCommaTests(unittest.TestCase):
+    """Trailing comma in list literals and function call args must be valid syntax."""
+
+    def test_trailing_comma_list_literal(self):
+        out = run_program("let x = [1i, 2i,]\nprint(len(x))")
+        self.assertEqual(out, ["2"])
+
+    def test_trailing_comma_multiline_list(self):
+        src = "let x = [\n  1i,\n  2i,\n]\nprint(len(x))"
+        out = run_program(src)
+        self.assertEqual(out, ["2"])
+
+    def test_trailing_comma_fn_call(self):
+        out = run_program("print(len([1i, 2i,]))")
+        self.assertEqual(out, ["2"])
+
+    def test_no_trailing_comma_still_works(self):
+        out = run_program("print(len([1i, 2i, 3i]))")
+        self.assertEqual(out, ["3"])
+
+    def test_empty_list_not_affected(self):
+        out = run_program("print(len([]))")
+        self.assertEqual(out, ["0"])
+
+
 if __name__ == "__main__":
     unittest.main()

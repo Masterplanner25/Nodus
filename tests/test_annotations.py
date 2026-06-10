@@ -83,6 +83,30 @@ def test_unknown_annotation_raises():
     assert "Unknown annotation" in error_msg
 
 
+# closes: #210
+def test_retry_missing_dep_raises_clear_error():
+    """When nodus-retry is not installed, @retry must raise a dependency error,
+    not silently skip the function body and return a dict."""
+    if __import__("importlib").util.find_spec("nodus_retry") is not None:
+        import pytest
+        pytest.skip("nodus_retry is installed — this test only runs without it")
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:retry"
+
+@retry(max_attempts: 3i, backoff_ms: 0i)
+fn work() {
+    return 42i
+}
+
+work()
+""")
+    assert not result["ok"], "expected a dependency error, got ok=True"
+    err = result.get("error") or {}
+    assert err.get("kind") == "dependency", f"expected kind='dependency', got: {err}"
+    assert "nodus-retry" in err.get("message", "").lower()
+
+
 def test_retry_annotation_succeeds_on_trivial_fn():
     pytest.importorskip("nodus_retry")
     out = _run("""

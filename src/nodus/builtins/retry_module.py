@@ -34,7 +34,10 @@ def register(vm, registry) -> None:
 
     def retry_call(fn_value, policy_map):
         if not _RETRY_AVAILABLE:
-            return _DEPENDENCY_ERR
+            vm.runtime_error(
+                "dependency",
+                "nodus-retry is required for @retry — install it with: pip install 'nodus-lang[retry]'",
+            )
         if not isinstance(fn_value, Closure):
             vm.runtime_error("type", "retry_call(fn, policy) expects a function as first argument")
         if not isinstance(policy_map, dict):
