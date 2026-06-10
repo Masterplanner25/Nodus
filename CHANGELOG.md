@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **#207/#208 (@exactly_once broken):** Idempotency not enforced; return value always nil.
+- **#209 (allowed_commands not enforced):** Blocked binaries run freely in embedded mode.
+- **#210 (@retry silent skip):** Function body runs 0 times when nodus-retry missing.
+- **#212 (event_sinks never fires):** Sink callable wired but never called.
+
+### Added
+
+- **#211 (trailing comma in multiline):** `[1i, 2i,]` now valid syntax.
+- **#213 (channel() docs):** Correct positional API documented (`channel(2i)` not `channel(maxsize=N)`).
+
 ---
 
 ## [4.0.1] - 2026-06-10
