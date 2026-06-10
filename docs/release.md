@@ -115,7 +115,7 @@ evaluation.
 
 ## Version
 
-Release target: `3.0.2`
+Release target: `4.0.2`
 
 ## Clean Build Preparation
 
@@ -177,7 +177,7 @@ nodus run invalid_import.nd
 
 Expected outcomes:
 
-- `nodus --version` reports `3.0.2`
+- `nodus --version` reports `4.0.2`
 - `nodus repl` starts successfully from the installed package
 - `nodus run main.nd` runs only the explicit file
 - `nodus run` runs only `src/main.nd` inside a project root
