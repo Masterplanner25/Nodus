@@ -326,20 +326,27 @@ class Compiler:
         aid = Var("__nodus_aid")
         st = Var("__nodus_st")
         res = Var("__nodus_res")
-        # effect_resolve returns a Record — use Attr (dot) not Index (bracket).
+        # effect_resolve returns Record({"done": bool, "cached": Record({"result": val})}).
+        # Unwrap one level: st.cached.result gives the original return value.
         done_guard = If(
             Attr(st, "done"),
-            Block([Return(Attr(st, "cached"))]),
+            Block([Return(Attr(Attr(st, "cached"), "result"))]),
             None,
         )
-        inner_call = Call(FnExpr([], stmt.body), [])
+        # Ensure the inner body has an explicit return so FnExpr propagates the value.
+        # Without this, a bare last expression (ExprStmt) is popped and nil is returned.
+        body_stmts = list(stmt.body.stmts) if isinstance(stmt.body, Block) else [stmt.body]
+        if body_stmts and isinstance(body_stmts[-1], ExprStmt):
+            body_stmts = body_stmts[:-1] + [Return(body_stmts[-1].expr)]
+        returnable_body = Block(body_stmts)
+        inner_call = Call(FnExpr([], returnable_body), [])
         new_body = Block([
             Let("__nodus_aid", aid_call),
             Let("__nodus_st", Call(Var("effect_resolve"), [aid])),
             done_guard,
             ExprStmt(Call(Var("effect_pending"), [aid, Str("")])),
             Let("__nodus_res", inner_call),
-            ExprStmt(Call(Var("effect_complete"), [aid, Str("ok"), MapLit([(Str("result"), res)])])),
+            ExprStmt(Call(Var("effect_complete"), [aid, Str("success"), MapLit([(Str("result"), res)])])),
             Return(res),
         ])
         return FnDef(stmt.name, stmt.params, new_body,
