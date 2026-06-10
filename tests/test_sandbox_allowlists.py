@@ -55,6 +55,38 @@ class TestAllowedCommands:
         assert result["ok"]
         assert rt._last_vm.allowed_commands == ["git", "ls"]
 
+    # closes: #209
+    def test_blocked_command_via_module_import(self):
+        """allowed_commands must be enforced when calling through std:subprocess module.
+
+        Bug: invoke_function() created a child VM without propagating allowed_commands,
+        so sub.run() bypassed the allowlist entirely.
+        """
+        r = _run(
+            'import "std:subprocess" as sub\nlet r = sub.run(["git", "--version"])\nprint(r)',
+            allowed_commands=["python"],
+        )
+        assert not r["ok"], "git should have been blocked by allowed_commands"
+        err = r.get("error") or {}
+        assert err.get("type") == "sandbox" or "sandbox" in str(r).lower()
+
+    # closes: #209
+    def test_allowed_command_via_module_import(self):
+        """An explicitly allowed command must succeed when called via std:subprocess module."""
+        r = _run(
+            'import "std:subprocess" as sub\nlet r = sub.run(["python", "--version"])\nprint(r.exit_code)',
+            allowed_commands=["python"],
+        )
+        assert r["ok"], f"python should have been allowed: {r.get('error')}"
+        assert r.get("stdout", "").strip() == "0"
+
+    # closes: #209
+    def test_allowed_commands_propagated_to_child_vm(self):
+        """Child VM created by invoke_function must inherit allowed_commands from caller."""
+        rt = NodusRuntime(timeout_ms=None, allowed_commands=["python"])
+        rt.run_source("print(1)")
+        assert rt._last_vm.allowed_commands == ["python"]
+
 
 # ---------------------------------------------------------------------------
 # allowed_hosts — #162
