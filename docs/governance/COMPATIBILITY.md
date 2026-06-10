@@ -25,7 +25,9 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - **v2.1.0 (2026-05-24):** `json.parse` now returns maps (BREAKING from v2.0.0).
   Legacy `.tl` extension and `language.py` / `language.bat` launchers remain supported with warnings; no removal date set.
 - **v2.1.1 (2026-05-24):** `allowed_paths` sandbox now enforced for `std:fs` module calls (security fix, BUG-046). No deprecation or compatibility impact — scripts relying on the bypass were relying on a bug.
-- **v3.0.2 (2026-05-25, current):** `math.log_base` export removed; use `math.log(n, base)` instead. Patch release fixing BUG-V31E-01 (1I parse error) and BUG-V31E-02 (math.log argument order).
+- **v3.0.2 (2026-05-25):** `math.log_base` export removed; use `math.log(n, base)` instead. Patch release fixing BUG-V31E-01 (1I parse error) and BUG-V31E-02 (math.log argument order).
+- **v4.0.0 (2026-06-04):** Major release. BYTECODE_VERSION 4. New opcodes, annotation syntax, compound assignment, multiline expressions, AI-native primitives, full security sandbox, coroutine scheduler, goals/workflows DSL. See CHANGELOG for full scope.
+- **v4.0.1 (2026-06-10, current):** Patch release. `@exactly_once`/`@retry` decorators, `+=`/`-=`/`*=`/`/=` operators, multiline expressions, `std:math` bit ops, `allowed_commands`/`allowed_hosts` sandbox allowlists, `event_sinks`/`coroutine_timeout_ms`/`get_execution_stats` embedding API additions, `clear_shared_state()`, bounded channels. No bytecode break.
 
 ## Migration Path
 - Use `.nd` files for new code.
