@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.0.2] - 2026-06-10
+
 ### Fixed
 
 - **#207/#208 (@exactly_once broken):** Idempotency not enforced; return value always nil.
