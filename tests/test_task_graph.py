@@ -477,6 +477,10 @@ print(result["tasks"]["task_1"])
             pass  # keep the file alive until after the test
         service.workers.event_bus = RuntimeEventBus()
         service.workers._worker_heartbeat_timeout_ms = 10
+        # _startup_grace_ms (default 250ms) overrides the timeout for workers
+        # that never sent a heartbeat. Zero it out so the 10ms timeout applies
+        # directly — otherwise CI threads starved for >250ms cause a false fail.
+        service.workers._startup_grace_ms = 0.0
         worker_id = service.workers.register(["cpu"])
         dead_event = None
         deadline = time.time() + 5.0
