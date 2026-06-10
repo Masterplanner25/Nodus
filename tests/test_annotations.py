@@ -144,3 +144,114 @@ print(compute(5))
     lines = out.splitlines()
     assert len(lines) == 2
     assert lines[0] == lines[1] == "15.0"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for #207 and #208 — run with InMemoryEffectStore fallback
+# (no nodus_retry required so they exercise the in-tree store path too).
+# ---------------------------------------------------------------------------
+
+# closes: #207
+def test_exactly_once_body_executes_only_once():
+    """Second call with same args must not re-execute the function body."""
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:effects"
+
+let counter = {"n": 0i}
+
+@exactly_once
+fn side_effect(x) {
+    counter["n"] = counter["n"] + 1i
+    return x
+}
+
+side_effect("hello")
+side_effect("hello")
+print(counter["n"])
+""")
+    assert result["ok"], result.get("error")
+    assert result.get("stdout", "").strip() == "1"
+
+
+# closes: #207
+def test_exactly_once_different_args_execute_separately():
+    """Calls with different args each execute exactly once."""
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:effects"
+
+let counter = {"n": 0i}
+
+@exactly_once
+fn op(x) {
+    counter["n"] = counter["n"] + 1i
+    return x
+}
+
+op("a")
+op("b")
+op("a")
+op("b")
+print(counter["n"])
+""")
+    assert result["ok"], result.get("error")
+    assert result.get("stdout", "").strip() == "2"
+
+
+# closes: #208
+def test_exactly_once_returns_correct_value_explicit_return():
+    """First call returns the function body's return value (explicit return)."""
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:effects"
+
+@exactly_once
+fn greet(name) {
+    return name
+}
+
+print(greet("world"))
+""")
+    assert result["ok"], result.get("error")
+    assert result.get("stdout", "").strip() == "world"
+
+
+# closes: #208
+def test_exactly_once_returns_correct_value_implicit_return():
+    """First call returns the function body's last expression (implicit return)."""
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:effects"
+
+@exactly_once
+fn label(x) {
+    x
+}
+
+print(label("nodus"))
+""")
+    assert result["ok"], result.get("error")
+    assert result.get("stdout", "").strip() == "nodus"
+
+
+# closes: #207
+# closes: #208
+def test_exactly_once_cached_return_matches_first_call():
+    """Second call returns the same value as the first call (cache hit)."""
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    result = rt.run_source("""
+import "std:effects"
+
+@exactly_once
+fn compute(x) {
+    return x + 10i
+}
+
+print(compute(5i))
+print(compute(5i))
+""")
+    assert result["ok"], result.get("error")
+    lines = result.get("stdout", "").strip().splitlines()
+    assert len(lines) == 2
+    assert lines[0] == lines[1] == "15"
