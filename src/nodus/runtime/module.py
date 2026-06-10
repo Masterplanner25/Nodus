@@ -206,6 +206,8 @@ class NodusModule:
             allow_subprocess=getattr(caller_vm, "allow_subprocess", True) if caller_vm is not None else True,
             allow_network=getattr(caller_vm, "allow_network", True) if caller_vm is not None else True,
             allow_env=getattr(caller_vm, "allow_env", True) if caller_vm is not None else True,
+            allowed_commands=getattr(caller_vm, "allowed_commands", None) if caller_vm is not None else None,
+            allowed_hosts=getattr(caller_vm, "allowed_hosts", None) if caller_vm is not None else None,
         )
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)
