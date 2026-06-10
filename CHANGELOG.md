@@ -85,16 +85,18 @@
 
 - **`NodusRuntime.get_execution_stats()` (PR #200).**
   Returns `{"instructions_executed": int, "coroutines_spawned": int}` — the
-  documented public replacement for the now-private `_last_vm`.
+  documented public replacement for the deprecated `_last_vm`.
 
 - **`NodusRuntime.clear_shared_state()` class method (PR #172).**
   Resets process-level singletons (`GLOBAL_MEMORY_STORE`, `AGENT_REGISTRY`,
   `_GRAPH_*`) for clean sequential restart after `shutdown()`. Does not fix
   concurrent multi-instance isolation (tracked as #166 RUNTIME-001).
 
-- **`channel(maxsize=N)` optional capacity cap (PR #197).**
+- **`channel(N)` optional capacity cap (PR #197).**
   `send()` raises `runtime_error("channel", ...)` when the cap is exceeded.
-  Omitting `maxsize` preserves the existing unbounded behaviour. Closes #175.
+  Omitting the capacity argument preserves the existing unbounded behaviour.
+  Correct call syntax is positional: `channel(2i)` — not `channel(maxsize=N)`.
+  Closes #175.
 
 - **String indexing (PR #197).**
   `"hello"[1]` returns `"e"` with bounds checking. Out-of-range raises

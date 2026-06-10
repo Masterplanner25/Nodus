@@ -684,6 +684,9 @@ class Parser:
                     args.append(self.expr())
                     while self.at(","):
                         self.eat(",")
+                        self.skip_seps()
+                        if self.at(")"):
+                            break
                         args.append(self.expr())
 
                 self.eat(")")
@@ -883,6 +886,9 @@ class Parser:
                 items.append(self.expr())
                 while self.at(","):
                     self.eat(",")
+                    self.skip_seps()
+                    if self.at("]"):
+                        break
                     items.append(self.expr())
             self.eat("]")
             return self.mark(ListLit(items), tok)

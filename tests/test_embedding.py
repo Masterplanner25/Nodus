@@ -234,6 +234,15 @@ class EventSinksTests(unittest.TestCase):
         result = rt.run_source('print("ok")', filename="inline.nd")
         self.assertTrue(result["ok"])
 
+    # closes: #212
+    def test_event_sink_accepts_callable(self):
+        """A plain callable (lambda) must work as an event sink, not raise AttributeError."""
+        received = []
+        rt = NodusRuntime(timeout_ms=None, event_sinks=[lambda e: received.append(e.type)])
+        result = rt.run_source('print("hello")', filename="inline.nd")
+        self.assertTrue(result["ok"], result.get("error"))
+        self.assertTrue(len(received) > 0, "lambda sink should have received events")
+
 
 class CoroutineTimeoutTests(unittest.TestCase):
     """#191 — coroutine_timeout_ms kills slow coroutines."""
