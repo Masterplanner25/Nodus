@@ -296,7 +296,7 @@ class GoalFrameworkRegistrationTests(unittest.TestCase):
             fh.write(src)
         vm = lang.VM([], {}, code_locs=[], source_path=path)
         with nodus_cli._project_root_context(td):
-            result, vm = run_goal_code(vm, src, filename=path, project_root=td)
+            result, vm = run_goal_code(vm, src, filename=path, project_root=td, timeout_ms=5000)
         return result, vm, path
 
     def test_run_goal_creates_framework_run_record(self):
