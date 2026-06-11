@@ -30,3 +30,11 @@ fn recall_all(ns) {
 fn share(ns, key, value) {
     return memory_share(ns, key, value)
 }
+
+fn forget(key) {
+    return memory_delete(key)
+}
+
+fn tag(key, tags) {
+    return memory_put("__nodus_tags__:\(key)", tags)
+}

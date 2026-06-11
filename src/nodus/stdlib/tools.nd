@@ -6,6 +6,10 @@ fn available() {
     return tool_available()
 }
 
+fn has(name) {
+    return tool_has(name)
+}
+
 fn describe(name) {
     return tool_describe(name)
 }

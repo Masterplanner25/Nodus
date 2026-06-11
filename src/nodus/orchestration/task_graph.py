@@ -704,7 +704,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return payload
 
     def failed_id(task: TaskNode) -> str:
-        if execution_kind == "goal" and task.step_name is not None:
+        if task.step_name is not None:
             return task.step_name
         return task.task_id
 

@@ -31,16 +31,17 @@
 - **#232 (`nodus test` UnicodeEncodeError on Windows):** Fixed in this release — see Fixes above.
 - **#233 (`nodus test` rejects `../lib/x` from tests/ subdir):** Fixed in this release — see Fixes above.
 
-**Low (P3)**
-- **#234 (`cb.create` map form crashes):** Actual signature is positional `(name, threshold, timeout_secs)`.
-- **#235 (`cb.call` never throws):** Circuit-open/failure returns a plain map, not a throw.
-- **#236 (`identity.trace_id/session_id` nil under CLI):** Auto-generation not wired in the CLI runner.
-- **#237 (`mem.tag`/`mem.forget` not implemented):** Documented in ai-primitives.md; produce `Missing module export`.
-- **#238 (`tool.execute`/`tool.available` don't exist):** Real API is `invoke`/`call`/`has`.
-- **#239 (`std:effects` docs describe wrong API):** `fx.get_result()` absent; `complete` silently no-ops without prior `pending`.
-- **#240 (failed-step IDs inconsistent wf vs goal):** Workflows report task IDs; goals report step names.
-- **#241 (`nodus test` absent from `--help`):** Subcommand not registered in help output.
-- **#242 (`.nodus/` run artifacts never cleaned up):** 210 orphaned snapshots after two failed runs; no cleanup command.
+**Low (P3) — Fixed in this release**
+- **#214 (`_last_vm` still public):** Renamed internal storage to `__last_vm` (name-mangled). `_last_vm` is now a `@property` that emits `DeprecationWarning` pointing to `get_execution_stats()`.
+- **#234 (`cb.create` map form crashes):** Python builtin now accepts both positional `(name, threshold, timeout_secs)` and map `(name, {failure_threshold, recovery_timeout_ms})` forms. `.nd` wrapper retains 3-arg positional signature; `create_config(name, config)` added for map form.
+- **#235 (`cb.call` never throws on circuit-open):** `cb.call` now throws `circuit_open` when the breaker is in open state. Function-call failures still return `{kind: "circuit_error", message: ...}` to allow failure accumulation before the breaker trips.
+- **#236 (`identity.trace_id/session_id` nil under CLI):** `runner.py` now auto-generates `trace_id` and `session_id` UUIDs before script execution, matching the documented auto-generation behaviour.
+- **#237 (`mem.tag`/`mem.forget` not implemented):** Both functions added to `std:memory`: `forget(key)` aliases `delete(key)`; `tag(key, tags)` stores tags under `__nodus_tags__:<key>`.
+- **#238 (`tool.execute`/`tool.available` missing in `std:tool`):** Added `execute(name, args)` (alias for `invoke`) and `available(name)` (alias for `has`) to `std:tool`. Added `has(name)` to `std:tools`.
+- **#239 (`fx.get_result()` absent):** `effect_get_result(action_id)` builtin added; `std:effects` exposes it as `get_result(action_id)` — returns the cached result value or `nil` if not yet complete.
+- **#240 (failed-step IDs inconsistent wf vs goal):** `failed_id()` in `task_graph.py` now always prefers `step_name` over `task_id`, making `result["failed"]` consistent for both workflows and goals.
+- **#241 (`nodus test` absent from `--help`):** `test [path]` added to the Execution section of `_render_help()`.
+- **#242 (`.nodus/` run artifacts never cleaned up):** `nodus workflow cleanup` now removes runs in `failed` and `dead_lettered` terminal states in addition to `completed`.
 
 ---
 

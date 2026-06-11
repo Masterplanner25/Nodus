@@ -69,8 +69,17 @@ def register(vm, registry) -> None:
     def effect_store_size():
         return len(vm.effect_store)
 
+    def effect_get_result(action_id):
+        if not isinstance(action_id, str):
+            vm.runtime_error("type", "effect_get_result(action_id) expects a string")
+        done, result = vm.effect_store.resolve(action_id)
+        if not done or result is None:
+            return None
+        return Record(result) if isinstance(result, dict) else result
+
     registry.add("effect_resolve", 1, effect_resolve)
     registry.add("effect_pending", 2, effect_pending)
     registry.add("effect_complete", 3, effect_complete)
     registry.add("effect_action_id", 3, effect_action_id)
     registry.add("effect_store_size", 0, effect_store_size)
+    registry.add("effect_get_result", 1, effect_get_result)

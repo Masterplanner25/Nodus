@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any
 
 from nodus.frontend.ast.ast_printer import format_ast
@@ -207,6 +208,8 @@ def run_source(
         fs_root=fs_root,
     )
     vm.trace_errors = trace_errors
+    vm.trace_id = str(uuid.uuid4())
+    vm.session_id = str(uuid.uuid4())
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     loader = ModuleLoader(
         project_root=project_root,
