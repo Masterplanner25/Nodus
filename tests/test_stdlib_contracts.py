@@ -26,13 +26,8 @@ import os
 import sys
 import unittest
 
-import pytest
-
 if os.environ.get("NODUS_RUN_CONTRACTS") != "1":
-    pytest.skip(
-        "Set NODUS_RUN_CONTRACTS=1 to run contract tests against the installed wheel",
-        allow_module_level=True,
-    )
+    raise unittest.SkipTest("Set NODUS_RUN_CONTRACTS=1 to run contract tests against the installed wheel")
 
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 
