@@ -142,7 +142,7 @@ class ToolRegistry:
         RuntimeError:
             If a Nodus-closure handler is requested but no VM is active.
         """
-        vm = self._runtime._NodusRuntime__last_vm
+        vm = self._runtime._get_active_vm()
         if vm is not None:
             with vm._tool_registry_lock:
                 entry = vm.tool_registry.get(name)
@@ -169,7 +169,7 @@ class ToolRegistry:
 
     def lookup(self, name: str) -> dict | None:
         """Return a tool's metadata dict, or ``None`` if not registered."""
-        vm = self._runtime._NodusRuntime__last_vm
+        vm = self._runtime._get_active_vm()
         if vm is not None:
             with vm._tool_registry_lock:
                 entry = vm.tool_registry.get(name)
@@ -189,7 +189,7 @@ class ToolRegistry:
         result: dict[str, dict] = {}
         for name, entry in self._runtime._python_registered_tools.items():
             result[name] = {k: v for k, v in entry.items() if not k.startswith("_")}
-        vm = self._runtime._NodusRuntime__last_vm
+        vm = self._runtime._get_active_vm()
         if vm is not None:
             with vm._tool_registry_lock:
                 vm_entries = dict(vm.tool_registry)
@@ -201,7 +201,7 @@ class ToolRegistry:
         """Return ``True`` if a tool with this name is registered."""
         if name in self._runtime._python_registered_tools:
             return True
-        vm = self._runtime._NodusRuntime__last_vm
+        vm = self._runtime._get_active_vm()
         if vm is not None:
             with vm._tool_registry_lock:
                 return name in vm.tool_registry
@@ -455,6 +455,9 @@ class NodusRuntime:
             DeprecationWarning,
             stacklevel=2,
         )
+        return self.__last_vm
+
+    def _get_active_vm(self) -> "VM | None":
         return self.__last_vm
 
     def reset(self) -> None:
