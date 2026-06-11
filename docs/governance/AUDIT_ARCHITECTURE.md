@@ -262,8 +262,8 @@ Nodus v4.0.0 — End-to-End Architecture Audit 6/6/26 - 11:28pm
   contract for that failure class.
 
   Can a script run forever? Only when both timeout_ms=None and max_steps=None are set. With default NodusRuntime construction (timeout_ms=None,
-  max_steps=10_000_000), the step limit fires at 10M instructions. With CLI defaults (timeout_ms=200ms), the wall-clock deadline fires first. Neither is
-  ever set to None by the runtime itself — it requires explicit embedder opt-in.
+  max_steps=10_000_000), the step limit fires at 10M instructions. With CLI defaults (timeout_ms=200ms), the wall-clock deadline fires first.
+  timeout_ms=None is the NodusRuntime default (v4.0.1+); max_steps=None requires explicit opt-out.
 
   Error model consistency: Within the VM, LangRuntimeError is the canonical type with a consistent {kind, message, payload, path, line, col, stack} shape.
   All stdlib modules return errors in this shape or compatible records. However, spawned coroutine errors are caught by the scheduler, printed to stderr via
@@ -352,8 +352,7 @@ Nodus v4.0.0 — End-to-End Architecture Audit 6/6/26 - 11:28pm
   user-defined functions of the same name.
 
   CLI vs embedding behavioral differences:
-  - Default timeout_ms: CLI applies 200ms; NodusRuntime defaults to None (documented as EMBED-001, but the difference exists at the default level and causes
-  silent behavioral divergence).
+  - Default timeout_ms: CLI applies 200ms; NodusRuntime defaults to None (EMBED-001 closed in v4.0.1 — NodusRuntime now deliberately uses None for server/embedding use cases).
   - Memory defaults: CLI runs through tooling/runner.py which may configure memory_store differently per call path; NodusRuntime always uses
   GLOBAL_MEMORY_STORE.
   - Sandbox path: CLI applies fs_root restriction (project root) without allowed_paths; NodusRuntime defaults to allowed_paths=[os.getcwd()].

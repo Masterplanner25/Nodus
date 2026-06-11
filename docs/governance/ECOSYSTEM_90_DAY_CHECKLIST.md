@@ -2,7 +2,7 @@
 
 # Ecosystem 90-Day Pre-Launch Checklist
 
-**Status:** Working document — to be executed before the coordinated three-artifact launch
+**Status:** COMPLETE — coordinated launch executed 2026-06-10 (nodus-lang 4.0.0 + full ecosystem)
 **Maintainer:** Shawn Knight (Masterplanner25)
 
 This checklist defines what must be done before the coordinated launch of

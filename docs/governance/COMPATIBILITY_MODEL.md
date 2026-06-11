@@ -124,9 +124,8 @@ semver. A registry library's compatibility with `nodus-lang` is declared via its
 
 Both `nodus-mcp` and `nodus-a2a` declare `nodus-lang>=4.0.0,<5.0.0` as a dependency. This means:
 - Neither library can be used with nodus-lang 3.0.2
-- Both libraries wait for the coordinated three-artifact launch (nodus-lang 4.0.0 + nodus-mcp
-  0.1.0 + nodus-a2a 0.1.0) before being published
-- Until the launch, both libraries are development-only (not on PyPI)
+- Both libraries require nodus-lang 4.0.0 or later
+- Both are published on PyPI (launched as part of the v4.0 ecosystem, 2026-06-10)
 
 ### 4.3a Decision record — F0-07: cap companion library nodus-lang dependency at `<5.0.0`
 

@@ -106,10 +106,10 @@ The PyPI Development Status classifier reflects deployed maturity:
   requires two consecutive minor releases with no CRITICAL findings from
   independent evaluation
 
-Nodus is currently classified as **Beta**. The classifier was downgraded from
+Nodus is currently classified as **Beta** (v4.0.2). The classifier was downgraded from
 Production/Stable to Beta in v2.0.1 after the v2.0.0 evaluation found three
-CRITICAL issues. It will be reassessed after the v2.2 release clears
-evaluation.
+CRITICAL issues. Reassessment to Production/Stable requires two consecutive minor
+releases with no CRITICAL findings from independent evaluation.
 
 ---
 
