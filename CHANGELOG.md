@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#225 fix (tool.register in imported module → re-execution storm):** `builtin_tool_invoke` now saves the bytecode context at registration time and creates an isolated child VM when invoking a handler whose code differs from the current root VM. Eliminates the entry-script re-execution loop caused by `run_closure` executing the wrong bytecode after `reset_program`.
+- **#226 fix (step `with { retries: N }` no-ops under `nodus run`):** Added `inline_retries=True` path to `run_workflow_code` that loops on `retry_scheduled` responses — sleeping `retry_delay_ms` then calling `resume_graph` — so `nodus run` honours step-level retries without a long-running workflow framework sweeper. The workflow framework's external retry path is unchanged (default `inline_retries=False`).
+
+### Known bugs (found during Sentinel evaluation against v4.0.2, filed 2026-06-10)
+
+**Critical (P0)**
+- **#225 (tool.register in imported module → re-execution storm):** Fixed in this release — see Fixes above.
+- **#226 (step `with { retries: N }` no-ops under `nodus run`):** Fixed in this release — see Fixes above.
+
+**High (P1)**
+- **#227 (state vars invisible in string interpolation):** `state x` raises `Undefined variable: x` inside `"\(x)"` though bare reads work.
+- **#228 (`let` in `for` loop — no per-iteration binding):** Closures capture final iteration value; factory-function workaround required.
+- **#229 (`run_loop()` swallows coroutine errors):** Worker throws → stderr only, no error flag, silent data loss.
+
+**Medium (P2)**
+- **#230 (tool JSON-Schema form explodes at invoke):** `schema: {type: "object", ...}` accepted at register, crashes at invoke; use simple-form schema.
+- **#231 (`time.format()` garbled):** `%m`/`%M` and `%Y`/`%S` substitutions are scrambled.
+- **#232 (`nodus test` UnicodeEncodeError on Windows):** `✗` character crashes test runner; `PYTHONIOENCODING=utf-8` workaround.
+- **#233 (`nodus test` rejects `../lib/x` from tests/ subdir):** Sandbox roots at test file, not `nodus.toml` project root.
+
+**Low (P3)**
+- **#234 (`cb.create` map form crashes):** Actual signature is positional `(name, threshold, timeout_secs)`.
+- **#235 (`cb.call` never throws):** Circuit-open/failure returns a plain map, not a throw.
+- **#236 (`identity.trace_id/session_id` nil under CLI):** Auto-generation not wired in the CLI runner.
+- **#237 (`mem.tag`/`mem.forget` not implemented):** Documented in ai-primitives.md; produce `Missing module export`.
+- **#238 (`tool.execute`/`tool.available` don't exist):** Real API is `invoke`/`call`/`has`.
+- **#239 (`std:effects` docs describe wrong API):** `fx.get_result()` absent; `complete` silently no-ops without prior `pending`.
+- **#240 (failed-step IDs inconsistent wf vs goal):** Workflows report task IDs; goals report step names.
+- **#241 (`nodus test` absent from `--help`):** Subcommand not registered in help output.
+- **#242 (`.nodus/` run artifacts never cleaned up):** 210 orphaned snapshots after two failed runs; no cleanup command.
+
 ---
 
 ## [4.0.2] - 2026-06-10
