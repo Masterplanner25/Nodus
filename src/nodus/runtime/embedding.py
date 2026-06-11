@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import os
 import threading
+import warnings
 from typing import Any, Callable
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
@@ -141,7 +142,7 @@ class ToolRegistry:
         RuntimeError:
             If a Nodus-closure handler is requested but no VM is active.
         """
-        vm = self._runtime._last_vm
+        vm = self._runtime._NodusRuntime__last_vm
         if vm is not None:
             with vm._tool_registry_lock:
                 entry = vm.tool_registry.get(name)
@@ -168,7 +169,7 @@ class ToolRegistry:
 
     def lookup(self, name: str) -> dict | None:
         """Return a tool's metadata dict, or ``None`` if not registered."""
-        vm = self._runtime._last_vm
+        vm = self._runtime._NodusRuntime__last_vm
         if vm is not None:
             with vm._tool_registry_lock:
                 entry = vm.tool_registry.get(name)
@@ -188,7 +189,7 @@ class ToolRegistry:
         result: dict[str, dict] = {}
         for name, entry in self._runtime._python_registered_tools.items():
             result[name] = {k: v for k, v in entry.items() if not k.startswith("_")}
-        vm = self._runtime._last_vm
+        vm = self._runtime._NodusRuntime__last_vm
         if vm is not None:
             with vm._tool_registry_lock:
                 vm_entries = dict(vm.tool_registry)
@@ -200,7 +201,7 @@ class ToolRegistry:
         """Return ``True`` if a tool with this name is registered."""
         if name in self._runtime._python_registered_tools:
             return True
-        vm = self._runtime._last_vm
+        vm = self._runtime._NodusRuntime__last_vm
         if vm is not None:
             with vm._tool_registry_lock:
                 return name in vm.tool_registry
@@ -363,7 +364,7 @@ class NodusRuntime:
         self._event_sinks: list = list(event_sinks) if event_sinks else []
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._python_registered_tools: dict[str, dict] = {}
-        self._last_vm: VM | None = None
+        self.__last_vm: VM | None = None
         self._tool_registry: ToolRegistry = ToolRegistry(self)
         self._run_lock = threading.Lock()
 
@@ -429,8 +430,8 @@ class NodusRuntime:
         ``run_source`` / ``run_file`` to affect that execution.
         """
         self._pending_effect_store = store
-        if self._last_vm is not None:
-            self._last_vm.effect_store = store
+        if self.__last_vm is not None:
+            self.__last_vm.effect_store = store
 
     def set_trace_id(self, trace_id: str) -> None:
         """Inject a distributed trace ID into the next (and current) VM execution.
@@ -444,8 +445,17 @@ class NodusRuntime:
         is applied to it immediately.
         """
         self._pending_trace_id: str | None = trace_id
-        if self._last_vm is not None:
-            self._last_vm.trace_id = trace_id
+        if self.__last_vm is not None:
+            self.__last_vm.trace_id = trace_id
+
+    @property
+    def _last_vm(self) -> "VM | None":
+        warnings.warn(
+            "_last_vm is a private implementation detail; use get_execution_stats() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.__last_vm
 
     def reset(self) -> None:
         """Clear the reference to the last VM instance.
@@ -458,8 +468,8 @@ class NodusRuntime:
         Any subprocesses started by ``subprocess_spawn`` during the last run are
         killed and their pump threads joined before the VM reference is released.
         """
-        _drain_spawned(self._last_vm)
-        self._last_vm = None
+        _drain_spawned(self.__last_vm)
+        self.__last_vm = None
 
     def shutdown(self) -> None:
         """Release all runtime resources held by this instance.
@@ -469,8 +479,8 @@ class NodusRuntime:
         host functions, and registered Python tools.  After calling ``shutdown()``,
         this runtime instance should not be used again.
         """
-        _drain_spawned(self._last_vm)
-        self._last_vm = None
+        _drain_spawned(self.__last_vm)
+        self.__last_vm = None
         self._host_functions.clear()
         self._python_registered_tools.clear()
 
@@ -486,7 +496,7 @@ class NodusRuntime:
         a new execution starts (i.e. each ``run_source`` / ``run_file`` call creates
         a fresh VM, so these reflect only the last run).
         """
-        vm = self._last_vm
+        vm = self.__last_vm
         if vm is None:
             return {"instructions_executed": 0, "coroutines_spawned": 0}
         return {
@@ -740,7 +750,7 @@ class NodusRuntime:
             vm.on_error = resolved_on_error
         if self.coroutine_timeout_ms is not None:
             vm.coroutine_timeout_ms = self.coroutine_timeout_ms
-        self._last_vm = vm
+        self.__last_vm = vm
         for sink in self._event_sinks:
             vm.event_bus.add_sink(sink)
         host_builtins = {

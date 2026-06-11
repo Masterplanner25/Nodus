@@ -205,6 +205,7 @@ def _render_help() -> str:
         "  run [file]        Run a Nodus script or project",
         "  check [file]      Validate syntax and imports without executing",
         "  fmt <file>        Format a source file in-place",
+        "  test [path]       Run .nd test files (files matching *_test.nd or test_*.nd)",
         "  repl              Start an interactive shell (REPL)",
         "  status            Show the project and entry point for the current directory",
         "",
@@ -891,7 +892,7 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
             should_remove = False
             if force:
                 should_remove = True
-            elif threshold and snapshot.get("status") == "completed":
+            elif threshold and snapshot.get("status") in ("completed", "failed", "dead_lettered"):
                 updated = snapshot.get("updated_at") or 0
                 try:
                     updated_ms = int(updated)

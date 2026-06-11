@@ -2,8 +2,12 @@ fn available() {
     return cb_available()
 }
 
-fn create(name, failure_threshold, recovery_timeout_secs) {
-    return cb_create(name, failure_threshold, recovery_timeout_secs)
+fn create(name, threshold, timeout) {
+    return cb_create(name, threshold, timeout)
+}
+
+fn create_config(name, config) {
+    return cb_create(name, config)
 }
 
 fn call(name, func) {
