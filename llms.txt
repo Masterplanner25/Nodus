@@ -118,7 +118,5 @@ Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave
 
 - PyPI: `nodus-lang` (v4.0.2 — current stable, published 2026-06-10)
 - Install: `pip install nodus-lang`
-- Full 35-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
-- Install: `pip install nodus-lang`
-- Full ecosystem: `pip install nodus-sdk[agent,sql,fastapi]`
+- Full 29-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 - Requires Python >= 3.10

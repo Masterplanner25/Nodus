@@ -22,7 +22,7 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
-**Current version:** v4.0.2 — published to PyPI 2026-06-10. Install: `pip install nodus-lang`. Full 35-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
+**Current version:** v4.0.2 — published to PyPI 2026-06-10. Install: `pip install nodus-lang`. Full 29-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
 
 ---
 
@@ -47,7 +47,7 @@ Nodus now ships assistant-specific context assets for both Claude Code and Codex
 - `skills/nodus/` is the Codex skill folder. `skills/nodus/SKILL.md` is the entrypoint, with smaller reference files loaded on demand.
 - `skills/project-AGENTS.md` is the project-root template that should be copied to `AGENTS.md` in a user project.
 
-These assets exist because general-purpose coding agents frequently miss the same Nodus-specific hazards: map vs record access, closure mutation through maps, one-argument `print()`, top-level-only imports, `spawn()` requiring a coroutine value, workflow results being maps, and the default 200ms execution deadline.
+These assets exist because general-purpose coding agents frequently miss the same Nodus-specific hazards: map vs record access, closure mutation through maps, one-argument `print()`, top-level-only imports, `spawn()` requiring a coroutine value, workflow results being maps, and NodusRuntime embedding defaults (timeout_ms=None, allowed_paths restricted to CWD — both changed in v4.0.1).
 
 ---
 
