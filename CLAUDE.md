@@ -357,6 +357,9 @@ These burn time when forgotten:
 - **`spawn()` takes a coroutine value**, not a function literal. Use
   `let c = coroutine(fn() {...})` then `spawn(c)`.
 - **`fn` is a reserved keyword** — can't use as a parameter name in `.nd` files.
+- **`if` conditions with function calls require parentheses.** `if (module.fn(a, b))` works;
+  `if module.fn(a, b)` gives "Expected '(', got identifier". Simple field access works without
+  parens (`if record.field`), but call expressions need `if (expr)`.
 - **Multiline list literals and function calls cannot span newlines.** Both
   `[1,\n2]` and `len(\n"hi"\n)` give "Unexpected end of statement". Keep on one line.
 - **`print()` is single-argument.** `print("label:", value)` → syntax error.
