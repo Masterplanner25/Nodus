@@ -11,6 +11,27 @@ from nodus.testing.runner import TestResult, TestRunner
 from nodus.testing.formatter import format_text, format_json, format_junit, _is_tty
 
 
+def _safe_write(text: str) -> None:
+    """Write text to stdout, falling back to UTF-8 bytes on Windows cp1252 consoles."""
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
+
+
+def _find_project_root(start_dir: str) -> str:
+    """Walk up from start_dir until a directory containing nodus.toml is found."""
+    current = start_dir
+    while True:
+        if os.path.isfile(os.path.join(current, "nodus.toml")):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return start_dir
+
+
 def run_test_command(cmd_args: list[str]) -> int:
     """Entry point for 'nodus test [path] [flags]'. Returns exit code."""
     # Parse flags
@@ -74,14 +95,14 @@ def run_test_command(cmd_args: list[str]) -> int:
     # Output results
     if output_format in ("pretty", "plain"):
         output = format_text(all_results, use_color=use_color, verbose=verbose, quiet=quiet)
-        sys.stdout.write(output)
+        _safe_write(output)
     elif output_format == "json":
-        sys.stdout.write(format_json(all_results))
+        _safe_write(format_json(all_results))
     elif output_format == "junit":
-        sys.stdout.write(format_junit(all_results))
+        _safe_write(format_junit(all_results))
     else:
         output = format_text(all_results, use_color=False, verbose=verbose, quiet=quiet)
-        sys.stdout.write(output)
+        _safe_write(output)
 
     # Coverage reporting
     if do_coverage and coverage_collector is not None:
@@ -133,7 +154,9 @@ def _run_one_file(
         coverage_collector.attach(vm)
 
     try:
-        loader = ModuleLoader(project_root=os.path.dirname(os.path.abspath(path)), vm=vm)
+        test_dir = os.path.dirname(os.path.abspath(path))
+        project_root = _find_project_root(test_dir)
+        loader = ModuleLoader(project_root=project_root, vm=vm)
         try:
             loader.load_module_from_path(path)
         except Exception as exc:

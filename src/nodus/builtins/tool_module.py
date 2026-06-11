@@ -51,7 +51,14 @@ def _normalize_schema(schema):
         return None, "schema must be a map"
     # JSON Schema form: has top-level "type": "object"
     if d.get("type") == "object":
-        return dict(d), None
+        # Deep-convert nested Records in properties so "type" in prop works correctly
+        props_raw = _as_dict(d.get("properties") or {}) or {}
+        props = {k: (_as_dict(v) or {} if v is not None else {}) for k, v in props_raw.items()}
+        req = list(d.get("required") or [])
+        normalized: dict = {"type": "object", "properties": props}
+        if req:
+            normalized["required"] = req
+        return normalized, None
     # Simple form: flat map of param name → Nodus type string
     properties = {}
     required = []
