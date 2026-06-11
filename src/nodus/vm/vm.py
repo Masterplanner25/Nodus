@@ -1852,6 +1852,17 @@ class VM:
             arr[slot] = value
         self.ip += 1
 
+    def _op_reset_local_idx(self, instr):
+        """Detach any Cell at a local slot by replacing it with a plain None.
+
+        Emitted at the start of each for-loop iteration (for the loop variable)
+        and before each `let` binding (for any variable inside a loop body) so
+        that MAKE_CLOSURE creates a fresh per-iteration Cell rather than reusing
+        the Cell from a previous iteration. No stack effect.
+        """
+        self.frames[-1].locals_array[instr[1]] = None
+        self.ip += 1
+
     def _op_load_upvalue(self, instr):
         self.stack.append(self.load_upvalue(instr[1]))
         self.ip += 1
@@ -2473,6 +2484,7 @@ class VM:
             "LOAD_UPVALUE":   self._op_load_upvalue,
             "STORE":          self._op_store,
             "STORE_LOCAL_IDX":self._op_store_local_idx,
+            "RESET_LOCAL_IDX":self._op_reset_local_idx,
             "STORE_UPVALUE":self._op_store_upvalue,
             "STORE_ARG":    self._op_store_arg,
             "POP":          self._op_pop,

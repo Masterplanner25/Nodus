@@ -27,6 +27,8 @@ from nodus.frontend.ast.ast_nodes import (
     Import,
     Index,
     IndexAssign,
+    InterpolatedString,
+    InterpolationPart,
     Let,
     ListLit,
     ListPattern,
@@ -561,4 +563,12 @@ class _StateRewriter:
             body = self.rewrite_stmt(expr.body)
             self._exit_scope()
             return _mark_from(FnExpr(expr.params, body, return_type=expr.return_type), expr)
+        if isinstance(expr, InterpolatedString):
+            new_parts = []
+            for part in expr.parts:
+                if isinstance(part, InterpolationPart):
+                    new_parts.append(InterpolationPart(self.rewrite_expr(part.expression)))
+                else:
+                    new_parts.append(part)
+            return _mark_from(InterpolatedString(new_parts), expr)
         return expr
