@@ -1,6 +1,6 @@
 # `nodus-events`
 
-> **Status:** v0.1.0 implemented — `C:\dev\nodus-events`, 17 tests, prepared not yet published.
+> **Status:** v0.1.0 implemented and **published on PyPI** ✅ — `C:\dev\nodus-events`, 17 tests.
 > This document is the original design spec; the implementation was built against it.
 
 ## Summary
