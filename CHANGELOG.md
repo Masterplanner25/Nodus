@@ -6,6 +6,9 @@
 
 - **#225 fix (tool.register in imported module → re-execution storm):** `builtin_tool_invoke` now saves the bytecode context at registration time and creates an isolated child VM when invoking a handler whose code differs from the current root VM. Eliminates the entry-script re-execution loop caused by `run_closure` executing the wrong bytecode after `reset_program`.
 - **#226 fix (step `with { retries: N }` no-ops under `nodus run`):** Added `inline_retries=True` path to `run_workflow_code` that loops on `retry_scheduled` responses — sleeping `retry_delay_ms` then calling `resume_graph` — so `nodus run` honours step-level retries without a long-running workflow framework sweeper. The workflow framework's external retry path is unchanged (default `inline_retries=False`).
+- **#227 fix (state vars invisible in string interpolation):** `_StateRewriter` in `workflow_lowering.py` now recurses into `InterpolatedString` sub-expressions, so `"\(x)"` inside a workflow step correctly rewrites `x` to `__state["x"]`.
+- **#228 fix (`let` in `for` loop — no per-iteration binding):** New `RESET_LOCAL_IDX` opcode emitted before `STORE_LOCAL_IDX` in `ForEach` (for the loop variable) and `Let` (for all let bindings). It writes `None` directly to the locals-array slot without touching any existing Cell, so the next `MAKE_CLOSURE` creates a fresh per-iteration Cell rather than reusing the previous iteration's Cell.
+- **#229 fix (`run_loop()` swallows coroutine errors):** `builtin_run_loop()` now returns the list of coroutine error strings (e.g. `["worker failure"]`) when any worker failed, instead of returning `nil`. Coroutine isolation is preserved (session continues), but callers can detect partial failure by checking the return value.
 
 ### Known bugs (found during Sentinel evaluation against v4.0.2, filed 2026-06-10)
 
@@ -14,9 +17,9 @@
 - **#226 (step `with { retries: N }` no-ops under `nodus run`):** Fixed in this release — see Fixes above.
 
 **High (P1)**
-- **#227 (state vars invisible in string interpolation):** `state x` raises `Undefined variable: x` inside `"\(x)"` though bare reads work.
-- **#228 (`let` in `for` loop — no per-iteration binding):** Closures capture final iteration value; factory-function workaround required.
-- **#229 (`run_loop()` swallows coroutine errors):** Worker throws → stderr only, no error flag, silent data loss.
+- **#227 (state vars invisible in string interpolation):** Fixed in this release — see Fixes above.
+- **#228 (`let` in `for` loop — no per-iteration binding):** Fixed in this release — see Fixes above.
+- **#229 (`run_loop()` swallows coroutine errors):** Fixed in this release — see Fixes above.
 
 **Medium (P2)**
 - **#230 (tool JSON-Schema form explodes at invoke):** `schema: {type: "object", ...}` accepted at register, crashes at invoke; use simple-form schema.

@@ -415,6 +415,10 @@ class Compiler:
             self.compile_expr(stmt.expr)
             symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
             if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
+                # Reset before storing so that inside loop bodies each `let`
+                # definition creates a fresh Cell on MAKE_CLOSURE rather than
+                # reusing the Cell left behind by the previous iteration.
+                self.emit("RESET_LOCAL_IDX", symbol.index)
                 self.emit("STORE_LOCAL_IDX", symbol.index)
             else:
                 self.emit("STORE", self.resolve_store_name(stmt.name))
@@ -534,6 +538,11 @@ class Compiler:
             iter_next = self.emit("ITER_NEXT", None)
             loop_var_symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
             if loop_var_symbol is not None and loop_var_symbol.scope == "local" and self.in_function_scope() and loop_var_symbol.index is not None:
+                # Reset the slot to a plain None before writing the new iteration
+                # value. This detaches any Cell left by MAKE_CLOSURE in the
+                # previous iteration so closures created in each iteration
+                # capture an independent Cell (per-iteration binding semantics).
+                self.emit("RESET_LOCAL_IDX", loop_var_symbol.index)
                 self.emit("STORE_LOCAL_IDX", loop_var_symbol.index)
             else:
                 self.emit("STORE", stmt.name)
