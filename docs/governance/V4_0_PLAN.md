@@ -1432,7 +1432,7 @@ PyO3/Maturin Rust extension for 9 hot-path memory operations with pure-Python fa
 The original Tier 2 LIBRARY_ECOSYSTEM entry for `nodus-memory` tracked it for
 v5.0. It shipped ahead of schedule as a v0.1.0 companion repo.
 
-**Status:** v0.1.0 COMPLETE — prepared, not yet published.
+**Status:** v0.1.0 PUBLISHED on PyPI.
 - nodus-memory: 192 tests, 97% coverage, Phases A–K
 - nodus-native-memory-engine: 76 tests, PyO3/Maturin Rust, 9 operations
 
@@ -1446,7 +1446,7 @@ declare `nodus-extension.json` + `extension.py`; the framework loads them via
 subprocess (sandbox tier 1). Exposes `_ext_*` host functions and `import
 "nodus-extension"` in .nd code.
 
-**Status:** v0.1.0 COMPLETE — prepared, not yet published.
+**Status:** v0.1.0 PUBLISHED on PyPI.
 - 126 tests, 93% coverage, Phases A–J
 
 ---
@@ -1481,7 +1481,7 @@ a second design space: an AI agent as the primary developer of .nd code. That fr
 produced different design requirements (automatic identity propagation, first-class
 idempotency, enumerable syscall surface, declarative reliability).
 
-**Five sub-phases implemented (prepared, not yet published — part of v4.0.0 pre-release cycle):**
+**Five sub-phases implemented (shipped in v4.0.0):**
 - **6A — Execution identity:** `trace_id`, `execution_unit_id` on every VM + event.
   `std:identity`, `NodusRuntime.set_trace_id()`. All module VMs propagate identity.
 - **6B — Namespaced memory:** `recall_from`, `recall_all`, `share` in `std:memory`.

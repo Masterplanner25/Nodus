@@ -82,11 +82,10 @@ These were identified by a raw-path readiness probe before the MCP/A2A launch.
 The nodus-mcp Phase 1 design decisions in `C:\dev\nodus-mcp\docs\design\06-embedding-runtime-blockers.md`
 describe the workaround patterns used until these are fixed.
 
-- **EMBED-001** (documented, workaround in EMBEDDING.md): `NodusRuntime()` defaults
-  to a 200ms wall-clock deadline (`EXECUTION_TIMEOUT_MS=200`). Every long-lived
-  embedder (MCP servers, A2A servers, workflow hosts, any coroutine that sleeps >
-  200ms cumulatively) must pass `timeout_ms=None, max_steps=None` explicitly. The
-  default matches `nodus run` (sandboxed scripts), not server embedding. GitHub: #97.
+- **EMBED-001** (FIXED in v4.0.1 — #97 closed): `NodusRuntime()` now defaults to
+  `timeout_ms=None` (no deadline) and `allowed_paths=[os.getcwd()]` (CWD jail). The
+  200ms default that silently killed long-lived embedders was a security fix under
+  §6 of COMPATIBILITY_MODEL.md. See v4.0-patch-notes.md §1 for the migration notes.
 
 - **EMBED-002** (FIXED): `NodusRuntime` now exposes `on_error` as an `__init__`
   parameter and a `run_source()` per-call override. The callback is wired to
@@ -130,17 +129,12 @@ describe the workaround patterns used until these are fixed.
   register the channel in `scheduler._io_channels` so the scheduler stays alive.
   Phase B graduation blocker. Skill: `/nodus-scheduler-freeze`.
 
-## Scheduler / coroutine execution-limit behavior (v4.0.0 known limitations)
+## Scheduler / coroutine execution-limit behavior
 
-These items are deferred to 4.0.1. They affect the experimental coroutine/scheduler
-tier — the stable embedding API contract is not violated (limit breaches now correctly
-surface as ok=False after the SCHED-002 fix).
-
-- **SCHED-001** (Phase B graduation blocker): The execution deadline (`timeout_ms`)
-  counts wall-clock time including cooperative sleep. A coroutine that calls
-  `sleep(1000)` four times is killed after 200ms total wall time even though it
-  consumed no CPU. Workaround: `nodus run --time-limit N`. GitHub: #94.
-  Skill: `/nodus-scheduler-freeze`.
+- **SCHED-001** (FIXED in v4.0.1 — #94 closed): Time spent in `sleep()` calls is
+  now excluded from the `timeout_ms` deadline budget. Only active VM instruction
+  execution counts against the deadline. A coroutine sleeping 4×100ms with
+  `timeout_ms=500` completes cleanly.
 
 - **SCHED-002** (Phase B graduation blocker): A limit breach kills only the coroutine
   that tripped it; other coroutines continue running. Full session termination on

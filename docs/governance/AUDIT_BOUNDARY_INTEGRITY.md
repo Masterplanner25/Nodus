@@ -284,8 +284,8 @@ Boundary Integrity Audit — Nodus v4.0.0 Runtime - 6/6/26- 11:28pm
   │ vm/vm.py constructor              │ from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE  │ Module-level singleton binds all VM instances  │
   │                                   │ pulled at import time                                          │ to the same memory namespace at import         │
   ├───────────────────────────────────┼────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────┤
-  │ embedding.py:233                  │ timeout_ms=None default (CLI default is 200ms)                 │ Runtime layer and CLI layer apply different    │
-  │                                   │                                                                │ policies to the same execution path            │
+  │ embedding.py:233                  │ timeout_ms=None default (v4.0.1+); CLI default is 200ms        │ Runtime layer and CLI layer intentionally use  │
+  │                                   │                                                                │ different defaults (EMBED-001 closed, by design)│
   ├───────────────────────────────────┼────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────┤
   │ nodus_lang_workflow/runner.py:773 │ get_default_workflow_runner() returns LocalWorkflowStore by    │ Persistence policy is hardwired in the runtime │
   │                                   │ default, not SQLiteWorkflowStore                               │  layer, not passed by the caller               │
@@ -534,11 +534,11 @@ Boundary Integrity Audit — Nodus v4.0.0 Runtime - 6/6/26- 11:28pm
   Sandbox enforcement is inconsistently owned: filesystem enforcement exists, but subprocess command, network, and environment access are unowned by any
   security boundary.
 
-  Priority: High — pre-publication blocker for multi-tenant embedding use cases
+  Priority: High — post-publication tracking item for multi-tenant embedding use cases
 
   The sandbox gaps (BI-17–19) and multi-tenant isolation failures (BI-20, BI-10) mean that the security posture described in
   docs/governance/SECURITY_POSTURE.md cannot be delivered by the current implementation for any deployment where scripts from different trust levels share a
-  process. This needs to be either fixed before publication or prominently documented as a known limitation with specific deployment guidance.
+  process. This is prominently documented in SECURITY_POSTURE.md §12 as a known limitation with specific deployment guidance.
 
   The structural contamination (BI-06 through BI-12) is the correct categorization but is lower publication priority — it affects maintainability and the
   refactoring roadmap, not the security surface directly. It is the root cause of the multi-tenant isolation problem but would require a multi-phase

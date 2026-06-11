@@ -116,10 +116,9 @@ When writing about a companion library:
 4. Do not use the composite label unless all five dimensions support it
 
 **Example (correct):**
-> nodus-mcp v0.1.0 is architecturally coherent, implementation-complete for its stated
-> scope (stdio and HTTP transports, no OAuth), and prepared-but-unpublished. It is not
-> yet production-credible: it has not been used in a real system and lacks operational
-> procedures for upgrade and monitoring. Publication waits for the coordinated launch.
+> nodus-mcp v0.1.0 is architecturally coherent and published on PyPI. It is not yet
+> production-credible: it has not been used in a real system and lacks operational
+> procedures for upgrade and monitoring. The OAuth gap is explicitly documented.
 
 **Example (incorrect):**
 > nodus-mcp is ready to use and has everything you need.
