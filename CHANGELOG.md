@@ -9,6 +9,10 @@
 - **#227 fix (state vars invisible in string interpolation):** `_StateRewriter` in `workflow_lowering.py` now recurses into `InterpolatedString` sub-expressions, so `"\(x)"` inside a workflow step correctly rewrites `x` to `__state["x"]`.
 - **#228 fix (`let` in `for` loop — no per-iteration binding):** New `RESET_LOCAL_IDX` opcode emitted before `STORE_LOCAL_IDX` in `ForEach` (for the loop variable) and `Let` (for all let bindings). It writes `None` directly to the locals-array slot without touching any existing Cell, so the next `MAKE_CLOSURE` creates a fresh per-iteration Cell rather than reusing the previous iteration's Cell.
 - **#229 fix (`run_loop()` swallows coroutine errors):** `builtin_run_loop()` now returns the list of coroutine error strings (e.g. `["worker failure"]`) when any worker failed, instead of returning `nil`. Coroutine isolation is preserved (session continues), but callers can detect partial failure by checking the return value.
+- **#230 fix (`tool.register` JSON-Schema form crashes at invoke):** `_normalize_schema` now deep-converts nested Nodus Records in `properties` values via `_as_dict`, so `"type" in prop` succeeds at validation time. JSON-Schema-style registration (`{type: "object", properties: {x: {type: "string"}}, required: [...]}`) now works end-to-end.
+- **#231 fix (`time.format()` garbled with strftime tokens):** `builtin_time_format` now detects `%` in the format string and delegates to Python's `datetime.strftime`, enabling standard strftime syntax (`%Y-%m-%d %H:%M:%S`). The existing Java/ICU token syntax (`yyyy-MM-dd HH:mm:ss`) continues to work unchanged.
+- **#232 fix (`nodus test` UnicodeEncodeError on Windows):** Test runner output is now written through `_safe_write`, which falls back to `sys.stdout.buffer.write(...encode("utf-8", errors="replace"))` on `UnicodeEncodeError`, fixing the crash on Windows cp1252 consoles caused by `✗`/`✓` characters.
+- **#233 fix (`nodus test` rejects `../lib/x` from `tests/` subdir):** `_run_one_file` now calls `_find_project_root` to walk up from the test file directory to find `nodus.toml`, using that as the sandbox root instead of the test file's directory. `import "../lib/tools"` from `tests/` is now valid when the resolved path stays within the project root.
 
 ### Known bugs (found during Sentinel evaluation against v4.0.2, filed 2026-06-10)
 
@@ -22,10 +26,10 @@
 - **#229 (`run_loop()` swallows coroutine errors):** Fixed in this release — see Fixes above.
 
 **Medium (P2)**
-- **#230 (tool JSON-Schema form explodes at invoke):** `schema: {type: "object", ...}` accepted at register, crashes at invoke; use simple-form schema.
-- **#231 (`time.format()` garbled):** `%m`/`%M` and `%Y`/`%S` substitutions are scrambled.
-- **#232 (`nodus test` UnicodeEncodeError on Windows):** `✗` character crashes test runner; `PYTHONIOENCODING=utf-8` workaround.
-- **#233 (`nodus test` rejects `../lib/x` from tests/ subdir):** Sandbox roots at test file, not `nodus.toml` project root.
+- **#230 (tool JSON-Schema form explodes at invoke):** Fixed in this release — see Fixes above.
+- **#231 (`time.format()` garbled):** Fixed in this release — see Fixes above.
+- **#232 (`nodus test` UnicodeEncodeError on Windows):** Fixed in this release — see Fixes above.
+- **#233 (`nodus test` rejects `../lib/x` from tests/ subdir):** Fixed in this release — see Fixes above.
 
 **Low (P3)**
 - **#234 (`cb.create` map form crashes):** Actual signature is positional `(name, threshold, timeout_secs)`.
