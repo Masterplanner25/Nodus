@@ -890,6 +890,7 @@ def run_workflow_code(
     import_state: dict | None = None,
     project_root: str | None = None,
     event_bus: RuntimeEventBus | None = None,
+    inline_retries: bool = False,
 ):
     result, vm = run_in_vm(
         vm,
@@ -910,6 +911,7 @@ def run_workflow_code(
     )
     if not result["ok"]:
         return result, vm
+    import time as _time
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
             workflow = _resolve_workflow_from_vm(vm, workflow_name)
@@ -924,6 +926,29 @@ def run_workflow_code(
                     workflow_result["error"],
                     filename=normalize_filename(filename),
                 )
+            # Inline retry loop: when run_workflow returns retry_scheduled, resume
+            # in-process rather than requiring an external workflow framework sweeper.
+            # Enabled by inline_retries=True so `nodus run` honours step-level
+            # `with { retries: N }` without needing a long-running server.
+            # Cap at 1000 iterations as a safety net.
+            if inline_retries:
+                _inline_retry_count = 0
+                while (
+                    isinstance(workflow_result, dict)
+                    and workflow_result.get("status") == "retry_scheduled"
+                    and _inline_retry_count < 1000
+                ):
+                    _inline_retry_count += 1
+                    _retry = workflow_result.get("retry") or {}
+                    _delay_ms = float(_retry.get("delay_ms") or 0)
+                    _graph_id = workflow_result.get("graph_id")
+                    if _delay_ms > 0:
+                        _time.sleep(_delay_ms / 1000.0)
+                    if not _graph_id:
+                        break
+                    workflow_result = vm.builtin_resume_graph(_graph_id)
+                    if isinstance(workflow_result, dict) and "error" in workflow_result and "ok" in workflow_result:
+                        break
         except Exception as err:
             return (
                 _error_result(

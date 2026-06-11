@@ -707,7 +707,7 @@ def _run_workflow(path: str, workflow_name: str | None = None, *, project_root: 
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root)
+    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root, inline_retries=True)
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
