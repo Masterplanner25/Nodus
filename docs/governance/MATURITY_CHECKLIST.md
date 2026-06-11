@@ -107,9 +107,9 @@ Nodus is being matured as:
 - [x] Tighten broad `object` interfaces — body: Block, _tok: Tok|None, dict[str,Any], etc.
 
 ### Core Refactors
-- [ ] Isolate one oversized responsibility from `vm.py` — tracked as SCHED-001/002 (#94/#95)
+- [ ] Isolate one oversized responsibility from `vm.py` — SCHED-001 fixed (#94 closed); SCHED-002 (#95) open
 - [ ] Simplify one loader/import boundary — CIRC-001 #103, CHAN-001 #107
-- [ ] Simplify one scheduler/runtime boundary — SCHED-001 #94, SCHED-002 #95
+- [ ] Simplify one scheduler/runtime boundary — SCHED-002 #95 (SCHED-001 #94 closed)
 - [x] Preserve/document semantics while refactoring — graduation skills + invariants
 
 ### Release Discipline
@@ -150,12 +150,11 @@ Nodus is being matured as:
 ## Top 3 blockers to 85/100
 
 1. **Experimental surface graduation** — Coroutines/Channels/Goal/Workflow still Experimental.
-   Fixes tracked as Phase B (#94,#95,#107), Phase C (#108,#109), Phase D (#102,#104,#110,#111).
+   Fixes tracked as Phase B (#95,#107; #94 closed), Phase C (#108,#109), Phase D (#102,#104,#110,#111).
    Skills: `/nodus-scheduler-freeze`, `/nodus-goal-freeze`, `/nodus-workflow-freeze`
 
-2. **Ecosystem publication** — Nothing on PyPI beyond v3.0.2.
-   Ecosystem Readiness hard-capped at 7.0 until the coordinated launch ships.
-   Skill: `/release-prep`
+2. **Ecosystem publication** — ✅ RESOLVED: nodus-lang 4.0.0 + 28 companion packages
+   published on PyPI (Round 1 + Round 2, 2026-06-10). Ecosystem Readiness gate cleared.
 
 3. **Semantic invariant gaps** — Checkpoint, resume, step-ordering invariants not yet written.
    Security matrix with server-mode coverage not yet built.
@@ -174,9 +173,9 @@ Nodus is being matured as:
 | Golden bytecode tests | #114 | — |
 | SECURITY_MATRIX.md test coverage matrix | #112 | — |
 | Server mode sandbox audit | #113 | — |
-| Isolate responsibility from vm.py | #94/#95 | /nodus-scheduler-freeze |
+| Isolate responsibility from vm.py | #95 (#94 closed) | /nodus-scheduler-freeze |
 | Simplify loader boundary | #103/#107 | /nodus-scheduler-freeze |
-| Simplify scheduler boundary | #94/#95 | /nodus-scheduler-freeze |
+| Simplify scheduler boundary | #95 (#94 closed) | /nodus-scheduler-freeze |
 
 ---
 
@@ -186,4 +185,4 @@ Nodus is being matured as:
 - Date: 2026-05-31
 - Notes: 90-day target (78-80) exceeded. Primary driver was mypy reduction (4.5→9.0).
   Remaining gaps all tracked with issues and skills. Next milestone: experimental
-  surface graduation (Phase B/C/D) + coordinated ecosystem launch.
+  surface graduation (Phase B/C/D). Ecosystem launch complete (v4.0.2, 2026-06-10).

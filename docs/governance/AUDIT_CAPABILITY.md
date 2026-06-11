@@ -189,7 +189,7 @@ Nodus v4.0.0 — System Capability Audit --6/6/26-10:39pm
 
   What breaks Level 5: The invariants doc is authored documentation, not machine-checked proofs; TEST_GAP_BACKLOG.md acknowledges gaps. A VM crash
   mid-coroutine outside a registered workflow run cannot be recovered — only workflow runs tracked by WorkflowFrameworkRunner and backed by SQLite survive
-  process restart. The 200ms default deadline trap (EMBED-001) is a known footgun for embedders.
+  process restart. EMBED-001 is closed (v4.0.1): NodusRuntime() now defaults to timeout_ms=None.
 
   ---
   Axis 3 — Autonomy: 4 / 5
@@ -220,7 +220,7 @@ Nodus v4.0.0 — System Capability Audit --6/6/26-10:39pm
   - No += operator; closure mutation requires {"count": 0i} map workaround.
   - print() is single-argument only; channel() is a builtin, not a module (import fails silently with wrong error).
   - run_workflow() returns maps, not records — bracket notation required.
-  - 200ms default timeout kills any workflow sleeping cumulatively over 200ms.
+  - NodusRuntime() timeout_ms now defaults to None (v4.0.1+); CLI still applies 200ms.
 
   Onboarding friction is real, not low. Leverage is strong within the orchestration domain but friction-heavy for general-purpose programs.
 

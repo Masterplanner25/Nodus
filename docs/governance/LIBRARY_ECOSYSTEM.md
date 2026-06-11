@@ -9,11 +9,9 @@
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-> **Current state note (2026-05-30):** nodus-lang is at **4.0.0** (unpublished; awaiting
-> coordinated launch with nodus-mcp 0.1.0). The standalone ecosystem now has 29 packages:
-> 27 standalone Nodus packages + nodus-sdk v0.1.0 + nodus-store-sql v0.1.0. All packages
-> have GitHub repos under Masterplanner25. For honest current-state per package:
-> `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
+> **Current state note (2026-06-10):** nodus-lang is at **4.0.2**, published on PyPI.
+> The standalone ecosystem has 29 packages, all published on PyPI under Masterplanner25.
+> For honest current-state per package: `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
 
 ---
 
@@ -41,7 +39,7 @@ Tier 1 libraries make the language credible as an orchestration DSL. They
 ship with the `nodus-lang` PyPI package and are available without registry
 installation.
 
-**Implemented in v4.0 (prepared, not yet published):**
+**Shipped with nodus-lang 4.0.0 (published on PyPI):**
 
 - `std:http` — HTTP client (sync + async, buffered + streaming)
 - `std:env` — Environment variables
@@ -55,7 +53,7 @@ installation.
 - `std:tool` — Tool registry with library-side handler support (v4.1: gains
   `effects` validation and `returns_schema` contract enforcement)
 
-**Added in v4.1 (AI-native primitives — Phase 6, prepared, not yet published):**
+**Added in v4.0.0 (AI-native primitives — Phase 6, published on PyPI):**
 
 - `std:identity` — Execution identity: `trace_id()`, `session_id()`, `execution_unit_id()`.
   All three auto-propagate across module boundaries.
