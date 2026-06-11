@@ -11,23 +11,25 @@ This document describes testing philosophy and how to run and write tests for th
 
 ## Running Tests
 
-Run the full suite:
+Run the full suite (preferred — matches CI):
 
 ```bash
-python -m unittest discover -s tests -v
+PYTHONPATH="C:/dev/Coding Language/src" python -m pytest tests/ -q
 ```
 
 Run a single test module:
 
 ```bash
-python -m unittest tests.test_task_graph -v
+PYTHONPATH="C:/dev/Coding Language/src" python -m pytest tests/test_task_graph.py -v
 ```
 
 Run a single test case:
 
 ```bash
-python -m unittest tests.test_task_graph.TaskGraphTests.test_task_retry_success -v
+PYTHONPATH="C:/dev/Coding Language/src" python -m pytest tests/test_task_graph.py::TaskGraphTests::test_task_retry_success -v
 ```
+
+The suite also supports `python -m unittest discover -s tests -v` — CI runs both runners. Use pytest for coverage reporting and selective deselection of timing-sensitive tests.
 
 Run the installed-wheel smoke validation:
 
@@ -134,26 +136,31 @@ Guidelines:
 - Formatter fixtures live under `tests/fixtures/fmt`.
 - Prefer one concept per test for clarity and maintainability.
 
-## CI Format Check and Auto-format
+## CI Pipeline
 
-The CI pipeline (`ci.yml`) runs a format check across all `.nd` files. The workflow
-steps run in this order:
+The CI pipeline (`ci.yml`) runs two parallel jobs: `security` and `test`.
 
-1. **Checkout** — fetch the repository.
-2. **Setup Python** — install the required Python version.
-3. **Install dependencies** — install package and test dependencies.
-4. **Auto-format all .nd files** — runs `python nodus.py fmt` on every `.nd` file in the repo
-   (in-place, no `--check` flag), excluding `.git/`, `.venv/`, `tmp_demo/`, and
-   `tests/fixtures/fmt/` (formatter test fixtures that are intentionally non-canonical).
-5. **Commit formatted files** — if any file was changed by the formatter, CI commits it back
-   with the message `style: auto-format .nd files [skip ci]`. The `[skip ci]` tag prevents the
-   commit from re-triggering the workflow. The commit step is a no-op when files are already
-   correctly formatted — `git diff --quiet` exits 0 and nothing is committed.
-6. **Format check** — runs `python nodus.py fmt --check` across all `.nd` files in the repo.
-7. **Run tests** — runs the full unittest suite (`python -m unittest discover -s tests -v`).
+**Security job** — runs the sandbox and path-traversal test files only:
+```bash
+python -m pytest -q tests/test_cli_allowed_paths.py tests/test_fs_path_traversal.py \
+  tests/test_path_traversal.py tests/test_sandbox_filesystem.py \
+  tests/test_sandbox_limits.py tests/test_subprocess_sandbox.py
+```
 
-The auto-format commit only appears when a contributor adds or edits a `.nd` file without
-running the formatter locally first. To avoid these auto-commits, format before pushing:
+**Test job** — runs the following steps in order:
+
+1. **Lint** — `ruff check .`
+2. **Type check** — `mypy src/nodus/ --ignore-missing-imports --no-error-summary`
+3. **Format check** — `python nodus.py fmt --check` on all `.nd` files (excluding `.git/`, `.venv/`, `tmp_demo/`, `tests/fixtures/fmt/`)
+4. **Static checks** — `python nodus.py check` on example files
+5. **Unit tests** — `python -m unittest discover -s tests -v`
+6. **Pytest** — `python -m pytest -q`
+7. **Coverage** — pytest with `--cov=src/nodus --cov-fail-under=70`; three timing-sensitive tests are deselected
+8. **Build wheel** — `python -m build --wheel`
+9. **Smoke test** — installed-wheel validation (`NODUS_RUN_DIST_SMOKE=1 python -m unittest tests.test_distribution_smoke -v`)
+10. **Example suite** — `python nodus.py test-examples`
+
+The format check step fails if any `.nd` file is not canonically formatted. Format locally before pushing:
 
 ```bash
 find . -name "*.nd" \

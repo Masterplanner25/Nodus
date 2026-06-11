@@ -96,33 +96,16 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v3.0.2)
+## Current Release (v4.0.2)
 
-Shipped 2026-05-25. Three patches in the v3.0 cycle:
-- v3.0.0: Integer type, error replacement, map/record disambiguation
-- v3.0.1: 21 of 22 v3.0.0 eval bugs fixed
-- v3.0.2: BUG-V31E-01 (1I parse error) and BUG-V31E-02 (math.log arg swap)
+Shipped 2026-06-10 on PyPI (`pip install nodus-lang`).
 
-Current eval score: 7.57/10 (composite weighted, 21 dimensions).
+v4.0 cycle highlights:
+- v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 29 companion packages
+- v4.0.1: NodusRuntime sandbox defaults hardened (SCHED-001 fixed, timeout_ms → None, allowed_paths → CWD), httpx optional, integer division returns int, div/zero raises error, compound assignment operators, multiline expressions, @annotation syntax
+- v4.0.2: Bug fixes for @exactly_once, allowed_commands, @retry, event_sinks, trailing commas
 
-## v4.0 (in progress)
-
-Theme: Production-Ready Orchestration DSL.
-
-Three coordinated release artifacts:
-- `nodus-lang` 4.0.0 (PyPI)
-- `nodus-mcp` v0.1 (registry; MCP 2025-11-25 spec)
-- `nodus-a2a` v0.1 (registry; A2A v1.0.0 spec)
-
-Phase 0 (17 design decisions) and Phase 1 (13 design docs) complete.
-Phase 2 (non-breaking fixes), Phase 3 (breaking changes + new stdlib),
-Phase 4 (docs sweep), Phase 5 (coordinated release) in progress.
-
-Target eval score: ≥8.0/10 with stretch goal toward 9.5/10
-"production-ready architecturally."
-
-See `docs/governance/V4_0_PLAN.md` for the cycle plan and
-`docs/design/v4/` for the 13 design docs.
+Previous: v3.0.2 (shipped 2026-05-25; eval score 7.57/10).
 
 ## v5.0 (planned)
 

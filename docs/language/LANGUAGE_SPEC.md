@@ -30,7 +30,7 @@ wires tool calls, and expresses business logic as workflow steps with checkpoint
 
 ## Values
 Stability: Stable (v3.0).
-- number (float; scientific notation `1e3`, `2.5e-4`, `1E10` supported; `type()` returns `"number"`)
+- number (float; scientific notation `1e3`, `2.5e-4`, `1E10` supported; `type()` returns `"float"`)
 - int (integer literal suffix `i`: `42i`, `0i`, `-1i`; `type()` returns `"int"`; large integers stay exact)
 - bool (`true`, `false`)
 - string (double-quoted with escapes: `\\`, `\"`, `\n`, `\t`, `\r`, `\0`, `\xHH`, `\uXXXX`)
@@ -71,6 +71,7 @@ Stability: Stable.
 - Arithmetic: `+ - * / %` (`%` is modulo; works for integer and float values)
 - Comparison: `== != < > <= >=`
 - Logical: `&& || !`
+- Compound assignment: `+=`, `-=`, `*=`, `/=` (lower to expanded form at compile time)
 - Truthiness: `nil` is falsey; booleans use natural value; others use Python-like truthiness.
 
 ## Control Flow
@@ -220,7 +221,7 @@ Module visibility rules:
 ## Built-ins
 Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experimental.
 - `clock()`
-- `type(x)` — returns `"number"` for floats, `"int"` for integer values (`42i`), `"bool"`, `"string"`, `"nil"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"`. Use `rt.typeof(x)` from `std:runtime` for the internal runtime type name.
+- `type(x)` — returns `"float"` for floats, `"int"` for integer values (`42i`), `"bool"`, `"string"`, `"nil"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"`. Use `rt.typeof(x)` from `std:runtime` for the internal runtime type name.
 - `str(x)`
 - `len(x)` for list/map/string
 - `print(x)`

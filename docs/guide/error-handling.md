@@ -16,9 +16,8 @@ a syntax error.
 **Runtime errors** happen during execution: missing keys, wrong types, out-of-
 bounds indices. These are catchable with `try/catch`.
 
-**Arithmetic errors** (integer division/modulo by zero) are returned as err
-values, not thrown. `try/catch` cannot intercept them — use
-`type(result) == "error"` to detect them. See [Section 6](#6-what-is-not-catchable).
+**Arithmetic errors** (division/modulo by zero) raise `runtime_error("math", ...)`.
+They are catchable with `try/catch` — use `err.kind == "math"` in the catch block to detect them.
 
 **Thrown errors** are raised deliberately with `throw`. They are catchable
 and carry whatever value you threw.
@@ -97,9 +96,8 @@ if (type(result) == "error") {
 ### finally semantics
 
 `finally` runs after `try` completes (with or without an error) and after
-`catch` completes. One known limitation: **`finally` does not run when the
-`catch` block contains a `return`** (tracked as a v3.1 bug). In all other
-exit paths the spec describes, `finally` runs correctly.
+`catch` completes — including when `catch` contains a `return`. All five exit
+paths from a `try/catch/finally` block correctly execute `finally`.
 
 ```nd
 fn divide(a, b) {
@@ -124,11 +122,9 @@ Output:
 cleanup
 5.0
 caught: divide by zero
+cleanup
 -1.0
 ```
-
-Note that `cleanup` prints for the non-error case but not for the error case,
-because `finally` is skipped when `catch` returns.
 
 ### Re-throwing
 
@@ -253,11 +249,9 @@ value, which is rarely useful. Prefer `err.payload` for structured errors.
 **Important distinctions:**
 
 - `"runtime"` is the VM catch-all for failures not covered by a specific kind.
-- **Integer division and modulo by zero** produce a `"math_error"` err record
-  **returned as a value** (not thrown). `1i / 0i` does not raise — it returns an
-  err record. Check with `type(result) == "error"`. Float division by zero
-  returns `inf`/`nan` (not an error). See also
-  [v3-to-v4 migration §4](../migration/v3-to-v4.md#4-float-division-by-zero-returns-infnan).
+- **Division and modulo by zero** raise `runtime_error("math", "Division by zero")`
+  for both `int` and `float` operands. Use `try/catch` to handle it, or guard the
+  divisor explicitly. See also [v3-to-v4 migration §4](../migration/v3-to-v4.md#4-division-and-modulo-by-zero-raise-runtime_errormatch-).
 - `"type_error"` (from stdlib) is different from `"type"` (from the VM). Both
   describe type mismatches; the VM raises `"type"` for operators like `+`; stdlib
   functions return `"type_error"` err records.
@@ -362,17 +356,6 @@ fn parse_user(raw) {
 ---
 
 ## 6. What is not catchable
-
-**Arithmetic err-values**: `1i / 0i` and `1i % 0i` return an err record as a
-value — they do not throw. `try/catch` never fires for these. The idiomatic
-check is:
-
-```nd
-let result = a / b
-if (type(result) == "error") {
-    print("division by zero: " + result.message)
-}
-```
 
 **Parse errors**: Syntax errors, unterminated strings, invalid escape sequences.
 These abort at load time before any `try` block can execute.

@@ -1,7 +1,6 @@
 # `nodus-store-sql`
 
-> **Status:** v0.1.0 implemented — `C:\dev\nodus-store-sql`, 47 tests (31 sync + 16 async),
-> prepared not yet published. Promoted from incubator scaffold.
+> **Status:** v0.1.0 implemented and **published on PyPI** ✅ — `C:\dev\nodus-store-sql`, 47 tests (31 sync + 16 async). Promoted from incubator scaffold.
 > This document is the original design spec; the implementation was built against it.
 
 ## Summary

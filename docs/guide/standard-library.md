@@ -34,7 +34,7 @@ These functions are always available. No import needed.
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `type(x)` | `string` | Type name: `"nil"`, `"bool"`, `"number"`, `"int"`, `"string"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"` |
+| `type(x)` | `string` | Type name: `"nil"`, `"bool"`, `"float"`, `"int"`, `"string"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"` |
 | `str(x)` | `string` | String representation of any value |
 | `len(x)` | `number` | Length of a list or string (returns a float) |
 
@@ -52,7 +52,7 @@ print(len("hello"))
 Output:
 
 ```
-number
+float
 int
 string
 list
@@ -62,12 +62,8 @@ list
 5.0
 ```
 
-`type(x)` returns `"int"` for integer values and `"number"` for floats.
+`type(x)` returns `"float"` for floating-point values and `"int"` for integer values.
 `type(x)` returns `"error"` for err records returned by stdlib functions.
-
-> **Naming note:** `type()` returns `"number"` for floats and `"int"` for
-> integers. The asymmetry (`"number"` vs `"float"`) is a known inconsistency
-> tracked for a future release.
 
 `len` always returns a float (e.g., `len([1, 2, 3])` → `3.0`). This is a
 known inconsistency; returning an `int` is tracked for a future release. `str(42i)` returns `"42"` (no `.0`);
@@ -806,8 +802,8 @@ false
 
 | Value | `type(x)` | `rt.typeof(x)` | Notes |
 |-------|-----------|----------------|-------|
-| `42` (float) | `"number"` | `"float"` | Plain number literals are floats |
-| `3.14` (float) | `"number"` | `"float"` | |
+| `42` (float) | `"float"` | `"float"` | Plain number literals are floats |
+| `3.14` (float) | `"float"` | `"float"` | |
 | `42i` (integer) | `"int"` | `"int"` | Integer literals have `i` suffix |
 | `"hello"` | `"string"` | `"string"` | |
 | `true` | `"bool"` | `"bool"` | |
@@ -815,13 +811,9 @@ false
 | `[1, 2]` | `"list"` | `"list"` | |
 | `{ "a": 1 }` | `"map"` | `"map"` | |
 
-Use `type()` for type checks in application logic. Use `rt.typeof()` when
-you need to distinguish whole-number floats from fractional floats, or when
-you need the granular `"float"` vs `"int"` distinction.
-
-Note: `type()` returns `"int"` for integer values and `"number"` for both
-whole-number and fractional floats. `rt.typeof()` returns `"float"` for all
-floats (including `42.0`) and `"int"` for integer values.
+Both `type()` and `rt.typeof()` return `"float"` for floats and `"int"` for
+integer values. The main difference is that `rt.typeof()` can additionally
+return `"module"` for runtime module objects, which `type()` cannot.
 
 ### Timing and stack
 
@@ -967,8 +959,7 @@ F15: std:utils is not documented in LANGUAGE_SPEC.md.
 The following modules ship with nodus-lang 4.0.0 and are not covered in the
 v3.0 sections above. For all modules, import with `import "std:<name>" as <alias>`.
 
-> **Note:** The standard-library.md was written for v3.0. Full per-function docs
-> for v4.0 modules are in progress. The key API shapes and non-obvious behaviors
+> **Note:** The standard-library.md was written for v3.0. The key API shapes and non-obvious behaviors
 > are documented here; the machine-readable index in `llms.txt` covers the rest.
 
 ---
@@ -1155,8 +1146,6 @@ test.suite("my feature", fn() {
 
 CLI: `nodus test [path] [--filter pattern] [--coverage] [--bail]`.
 
-> **Note:** `nodus test` does not appear in `nodus --help`; this is a known gap
-> (BUG-EVAL-14, batched to 4.0.1).
 
 ---
 
