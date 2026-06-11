@@ -227,10 +227,10 @@ The CLI (`nodus run`) and the embedding API (`NodusRuntime`) have different secu
 The critical difference: `timeout_ms` defaults to `None` in embedded mode (unlimited).
 Scripts that call `http.get()` or `subprocess.run()` over a slow network or slow process
 will block the host process indefinitely unless the embedder sets `timeout_ms` explicitly.
-See also EMBED-001 (#97).
+EMBED-001 (#97) is closed: `NodusRuntime()` now defaults to `timeout_ms=None` (fixed in v4.0.1).
 
-The filesystem default changed from `None` (unrestricted) to `[os.getcwd()]` in v4.0.0 
-(post-BUG-119 fix). An explicit `allowed_paths=None` still grants unrestricted access.
+The filesystem default changed from `None` (unrestricted) to `[os.getcwd()]` in v4.0.1
+(security fix #119). An explicit `allowed_paths=None` still grants unrestricted access.
 
 ---
 
