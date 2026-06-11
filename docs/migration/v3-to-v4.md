@@ -157,26 +157,36 @@ if i != nil { use(lst[i]) }
 
 ---
 
-### 4. Float division by zero returns `inf`/`nan`
+### 4. Division and modulo by zero raise `runtime_error("math", ...)`
 
-**What changed:** `1.0 / 0.0` returns `inf`; `0.0 / 0.0` returns `nan`.
-In v3.x these threw a runtime error.
+**What changed in v4.0.0:** Float division by zero returned `inf`/`nan`.
+Integer division by zero returned err records.
 
-**How to fix:**
+**What changed in v4.0.1 (reverted):** All division and modulo by zero now
+raise `runtime_error("math", ...)` — integers and floats alike. The `inf`/`nan`
+return behavior from 4.0.0 is gone.
 
-Code that caught "division by zero" errors will silently get `inf`/`nan`
-instead. If you need strict behavior, add explicit checks:
+**If you are upgrading from v3.x directly to v4.0.1+:**
+
+v3.x threw a runtime error → v4.0.1+ throws a runtime error. No change needed.
+
+**If you are on v4.0.0 and added `math.is_nan` / `math.is_inf` guards:**
+
+Remove them — division by zero now throws instead of returning IEEE 754 values:
 
 ```nodus
-import "std:math" as math
-
+// v4.0.0 pattern — no longer needed in v4.0.1+
 let result = a / b
-if math.is_nan(result) or math.is_inf(result) {
-    // handle the degenerate case
+if math.is_nan(result) or math.is_inf(result) { ... }
+
+// v4.0.1+ — use try/catch or guard the divisor
+try {
+    let result = a / b
+    // use result
+} catch err {
+    if err.kind == "math" { ... }
 }
 ```
-
-**Note:** Integer division and modulo by zero still return err records.
 
 ---
 
@@ -264,8 +274,8 @@ Use `nodus test` to run test files matching `*_test.nd`. See
        cross-family coercion reliance
 3. [ ] Grep for `== -1` after `index_of` / `last_index_of` → update to
        `== nil`
-4. [ ] Check any code that caught "division by zero" runtime errors →
-       integer div-by-zero is now an err-value (not thrown); float div-by-zero
-       returns `inf`/`nan`. Add `type(result) == "error"` guards.
+4. [ ] Division by zero: in v4.0.1+ all division/modulo by zero throws
+       `runtime_error("math", ...)`. If upgrading from v4.0.0, remove any
+       `math.is_nan` / `math.is_inf` guards added for float div-by-zero.
 5. [ ] Check any workflow error handling → update to check for err record
        with `category: "cyclic_workflow"`
