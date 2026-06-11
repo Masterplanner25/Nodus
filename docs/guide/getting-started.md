@@ -15,7 +15,7 @@ pip install nodus-lang
 nodus --version
 ```
 
-Expected output: `Nodus 4.0.0`.
+Expected output: `Nodus 4.0.2`.
 
 For the optional FastAPI/Uvicorn HTTP server:
 
@@ -75,7 +75,7 @@ Plain numeric literals like `2` are floats. `2` stores and prints as `2.0`. See
 for what this means in practice.
 
 > **v4.0 note:** Nodus also has an integer type. Write `2i` (with the `i` suffix)
-> to get an exact integer. `type(2)` returns `"number"`; `type(2i)` returns `"int"`.
+> to get an exact integer. `type(2)` returns `"float"`; `type(2i)` returns `"int"`.
 > String interpolation lets you embed values inline: `"\(name) \(count)"` — no
 > multi-argument `print()` needed.
 
@@ -407,7 +407,7 @@ These assistant assets capture the Nodus-specific rules that general-purpose mod
 - `spawn()` plus `coroutine()` plus `run_loop()`
 - workflow result bracket notation
 - top-level import requirements
-- the default 200ms execution deadline
+- NodusRuntime defaults: no timeout by default; allowed_paths jailed to CWD
 
 ---
 
