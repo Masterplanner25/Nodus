@@ -71,5 +71,5 @@ RETURN
 
 ```text
 > :type [1, 2, 3]
-List<number>
+List<float>
 ```

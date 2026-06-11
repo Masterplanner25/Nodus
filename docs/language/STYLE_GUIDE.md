@@ -167,7 +167,7 @@ Prefer early returns.
 Example:
 
 fn process(value) {
-    if value == null {
+    if value == nil {
         return
     }
 
@@ -177,11 +177,11 @@ fn process(value) {
 
 Use lists for ordered collections.
 
-numbers = [1, 2, 3]
+let numbers = [1, 2, 3]
 
-Use maps for key/value structures.
+Use records for named fields (bare identifier keys), maps for dynamic key/value pairs (quoted keys).
 
-config = {
+let config = {
     host: "localhost",
     port: 8080
 }
@@ -195,8 +195,8 @@ Prefer clear error handling rather than deeply nested logic.
 Example:
 
 fn load_config(path) {
-    if not exists(path) {
-        return error("missing config")
+    if !exists(path) {
+        throw "missing config"
     }
 
     return read_file(path)

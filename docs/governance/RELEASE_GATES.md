@@ -129,11 +129,10 @@ JSON-LD version field must be updated.
 
 ---
 
-## Gate 8: Doc-vs-code gate on companion libraries (for coordinated releases)
+## Gate 8: Doc-vs-code gate on companion libraries
 
-For the coordinated three-artifact release (nodus-lang 4.0.0 + nodus-mcp 0.1.0 +
-nodus-a2a 0.1.0), the doc-vs-code gate must pass for all three repos before any
-of the three is published.
+For any release that includes companion library changes, the doc-vs-code gate must
+pass for all affected repos before any of them is published.
 
 **Companion library test commands:**
 ```powershell
