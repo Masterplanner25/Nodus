@@ -1,8 +1,6 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Execution Invariants
 
-**Version:** 4.0.0
+**Version:** 4.0.2
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
