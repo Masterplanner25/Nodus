@@ -188,12 +188,11 @@ construction time and overridden per call.
 | Limit | Constructor param | Default |
 |-------|------------------|---------|
 | CPU steps | `max_steps` | 10,000,000 |
-| Wall-clock time | `timeout_ms` | **200 ms** |
+| Wall-clock time | `timeout_ms` | `None` (no deadline) |
 | Output size | `max_stdout_chars` | 20,000 chars |
 
-> **Watch the default timeout.** 200 ms is short enough to fire on legitimate
-> computation-heavy scripts. For long-running tasks or servers, pass
-> `timeout_ms=None` to disable it or raise it explicitly at construction time.
+> **`timeout_ms` defaults to `None`.** No deadline is applied to a bare `NodusRuntime()`.
+> For sandboxed short-lived scripts, pass an explicit `timeout_ms` value at construction time.
 
 ```python
 # test_04_limits.py
