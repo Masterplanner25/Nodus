@@ -78,5 +78,4 @@ The adapter reuses the existing runtime debugger for breakpoints, stepping, stac
 ## Future Ideas
 
 - Distribute as a standalone VS Code extension.
-- Add snippets for common constructs (imports, functions, loops).
 - Expand the LSP with richer semantic analysis and editor-specific packaging.

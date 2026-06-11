@@ -121,7 +121,7 @@ Version dependencies (e.g. `utils = "^1.0.0"`) can be resolved and installed fro
 
 ### Configuration priority
 
-1. `--registry <url>` CLI flag (wired to `nodus install` as of v0.9.0)
+1. `--registry <url>` CLI flag
 2. `NODUS_REGISTRY_URL` environment variable
 3. `registry_url` field in `[package]` section of `nodus.toml`
 4. If none set: falls back to the local `.nodus/registry.toml`
@@ -195,7 +195,7 @@ Response:
 }
 ```
 
-### Publish endpoint (v0.9)
+### Publish endpoint
 
 ```
 POST {registry_url}/packages/{name}/{version}
@@ -325,8 +325,8 @@ When `nodus publish` creates a `.tar.gz` archive, the following paths are exclud
 
 The archive root is named `{name}-{version}/` so extraction strips the prefix correctly.
 
-**Planned:** `.ndignore` support — a `.ndignore` file in the project root will give
-package authors fine-grained control over what is included. Target: post-v0.9.
+**Future consideration:** `.ndignore` support — a `.ndignore` file in the project root would give
+package authors fine-grained control over what is included.
 
 ## Notes
 - The package manager is local-first and keeps runtime execution separate from manifest parsing and dependency resolution.
