@@ -106,7 +106,7 @@ The PyPI Development Status classifier reflects deployed maturity:
   requires two consecutive minor releases with no CRITICAL findings from
   independent evaluation
 
-Nodus is currently classified as **Beta** (v4.0.2). The classifier was downgraded from
+Nodus is currently classified as **Beta** (v4.0.3). The classifier was downgraded from
 Production/Stable to Beta in v2.0.1 after the v2.0.0 evaluation found three
 CRITICAL issues. Reassessment to Production/Stable requires two consecutive minor
 releases with no CRITICAL findings from independent evaluation.
@@ -115,7 +115,7 @@ releases with no CRITICAL findings from independent evaluation.
 
 ## Version
 
-Release target: `4.0.2`
+Release target: `4.0.3`
 
 ## Clean Build Preparation
 
@@ -177,7 +177,7 @@ nodus run invalid_import.nd
 
 Expected outcomes:
 
-- `nodus --version` reports `4.0.2`
+- `nodus --version` reports `4.0.3`
 - `nodus repl` starts successfully from the installed package
 - `nodus run main.nd` runs only the explicit file
 - `nodus run` runs only `src/main.nd` inside a project root

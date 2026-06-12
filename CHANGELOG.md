@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.0.3] - 2026-06-11
+
 ### Fixes
 
 - **#225 fix (tool.register in imported module → re-execution storm):** `builtin_tool_invoke` now saves the bytecode context at registration time and creates an isolated child VM when invoking a handler whose code differs from the current root VM. Eliminates the entry-script re-execution loop caused by `run_closure` executing the wrong bytecode after `reset_program`.
@@ -42,6 +46,10 @@
 - **#240 (failed-step IDs inconsistent wf vs goal):** `failed_id()` in `task_graph.py` now always prefers `step_name` over `task_id`, making `result["failed"]` consistent for both workflows and goals.
 - **#241 (`nodus test` absent from `--help`):** `test [path]` added to the Execution section of `_render_help()`.
 - **#242 (`.nodus/` run artifacts never cleaned up):** `nodus workflow cleanup` now removes runs in `failed` and `dead_lettered` terminal states in addition to `completed`.
+
+### Tests
+
+- **#252 (stdlib contract test suite):** 87-test contract suite added to `tests/test_stdlib_contracts.py`, gated on `NODUS_RUN_CONTRACTS=1`. Verifies installed-wheel API shapes match documentation for all stdlib modules (tool, identity, effects, sys, memory, retry, circuit-breaker, channel, http, subprocess, hash, time, fs, encoding, json, math). Run with `NODUS_RUN_CONTRACTS=1 python -m pytest tests/test_stdlib_contracts.py`.
 
 ---
 
