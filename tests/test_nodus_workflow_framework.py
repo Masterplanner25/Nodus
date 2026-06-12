@@ -18,6 +18,7 @@ from nodus_lang_workflow.models import (  # noqa: E402
     RUN_STATUS_RETRY_SCHEDULED,
     RUN_STATUS_WAITING,
 )
+import nodus_lang_workflow.runner as _wf_runner  # noqa: E402
 from nodus_lang_workflow.runner import WorkflowFrameworkRunner  # noqa: E402
 from nodus_lang_workflow.store import LocalWorkflowStore, SQLiteWorkflowStore, WorkflowStore, create_workflow_store  # noqa: E402
 
@@ -299,6 +300,14 @@ class WorkflowStoreSharedBehaviorTests(unittest.TestCase):
 
 
 class WorkflowFrameworkCompatibilityTests(unittest.TestCase):
+    def setUp(self):
+        # Reset the global default-runner cache so each test starts fresh.
+        # get_default_workflow_runner() is keyed on os.getcwd(); stale state
+        # from previous tests (deleted temp dirs) causes it to create a runner
+        # pointing at the wrong directory.
+        _wf_runner._DEFAULT_RUNNER = None
+        _wf_runner._DEFAULT_RUNNER_ROOT = None
+
     def _run_demo_workflow(self, project_root: str):
         path = os.path.join(project_root, "demo.nd")
         with open(path, "w", encoding="utf-8") as handle:
@@ -331,7 +340,7 @@ class WorkflowFrameworkCompatibilityTests(unittest.TestCase):
             graph_id = payload["graph_id"]
             with nodus_cli._project_root_context(td):
                 resumed, _vm = resume_workflow(graph_id, "after-first")
-            self.assertTrue(resumed.get("ok"))
+            self.assertTrue(resumed.get("ok"), msg=str(resumed))
             self.assertEqual(resumed["result"]["steps"]["second"], 2)
             store = framework_store(td)
             record = store.get_run(graph_id)

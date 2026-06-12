@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.0.2 stable on PyPI** — `pip install nodus-lang` · Full 35-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v4.0.2 stable on PyPI** — `pip install nodus-lang` · Full 29-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
 ```bash
 pip install nodus-lang
@@ -19,7 +19,7 @@ If you're building multi-step AI agents, embedding a scripting layer in a Python
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
-The Nodus ecosystem spans **35 standalone packages** across 6 tiers, all available at
+The Nodus ecosystem spans **29 standalone packages**, all available at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
 story: `pip install nodus-sdk[agent,sql,fastapi]`.
 
@@ -165,8 +165,8 @@ that teaches Claude the idioms, gotchas, and workflow patterns specific to Nodus
 4. Claude will apply Nodus-specific rules automatically in every session.
 
 The skill covers: record vs map distinction, the closure outer-let pattern, `spawn()` coroutine
-wrapping, workflow result bracket notation, the 200ms default timeout trap, all 19 stdlib modules,
-and 15 verified complete example programs.
+wrapping, workflow result bracket notation, NodusRuntime embedding defaults (timeout_ms=None,
+allowed_paths=CWD since v4.0.1), all 19 stdlib modules, and 15 verified complete example programs.
 
 ## Using with Codex
 
@@ -177,8 +177,9 @@ If you write Nodus with Codex, a Codex-native skill and project template are ava
 3. Start a Codex session in your Nodus project. Codex can auto-trigger the skill, or you can invoke `$nodus` explicitly.
 
 The Codex skill covers the same core language hazards: record vs map distinction, closure outer-`let`
-mutation, `spawn()` coroutine wrapping, workflow result bracket notation, import rules, and the
-200ms default timeout trap, while keeping deeper material in reference files for on-demand loading.
+mutation, `spawn()` coroutine wrapping, workflow result bracket notation, import rules, and
+NodusRuntime embedding defaults (timeout_ms=None, allowed_paths=CWD since v4.0.1), while keeping
+deeper material in reference files for on-demand loading.
 
 ---
 
