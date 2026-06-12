@@ -96,14 +96,15 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v4.0.2)
+## Current Release (v4.0.3)
 
-Shipped 2026-06-10 on PyPI (`pip install nodus-lang`).
+Shipped 2026-06-11 on PyPI (`pip install nodus-lang`).
 
 v4.0 cycle highlights:
 - v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 29 companion packages
 - v4.0.1: NodusRuntime sandbox defaults hardened (SCHED-001 fixed, timeout_ms → None, allowed_paths → CWD), httpx optional, integer division returns int, div/zero raises error, compound assignment operators, multiline expressions, @annotation syntax
 - v4.0.2: Bug fixes for @exactly_once, allowed_commands, @retry, event_sinks, trailing commas
+- v4.0.3: All 18 Sentinel evaluation bugs fixed; stdlib contract test suite added
 
 Previous: v3.0.2 (shipped 2026-05-25; eval score 7.57/10).
 

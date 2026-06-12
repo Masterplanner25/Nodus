@@ -1,6 +1,6 @@
 # Ecosystem Readiness Assessment
 
-**Date:** 2026-06-10 (updated from 2026-05-30)
+**Date:** 2026-06-11 (updated from 2026-06-10)
 **Status:** Current-state assessment — update at each library release
 **Assessor:** Claude Opus 4.8 (post-publication sweep)
 **Rubric:** `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md`
@@ -10,21 +10,23 @@
 ## Summary
 
 The Nodus ecosystem is **published, real, and awaiting real-world validation.**
-nodus-lang is at **v4.0.2** (current stable on PyPI). The ecosystem spans **35 standalone
+nodus-lang is at **v4.0.3** (current stable on PyPI). The ecosystem spans **35 standalone
 packages**, all published to PyPI under Masterplanner25. The coordinated launch is
 complete. No package has yet seen significant real-world traffic; that is the honest
 next frontier.
 
-v4.0.2 fixes: `@exactly_once` idempotency, `allowed_commands` enforcement, `@retry`
-silent-skip, `event_sinks` callable wiring, trailing-comma syntax. 1,781 tests pass.
-Coverage: 76%. Two patch releases since v4.0.0 (4.0.1 stress-eval fixes, 4.0.2 eval
-follow-up) with no CRITICAL findings in any eval cycle.
+v4.0.3 fixes: all 18 Sentinel evaluation bugs from v4.0.2 — P0 tool.register storm and
+step-level retries, P1 state vars in interpolation and per-iteration let bindings,
+P2 tool JSON-Schema/time.format/nodus test regressions, P3 API surface gaps. Stdlib
+contract test suite (87 tests) added. 1,798 tests pass. Coverage: 76%. Three patch
+releases since v4.0.0 (4.0.1 stress-eval fixes, 4.0.2 eval follow-up, 4.0.3 Sentinel
+fixes) with no CRITICAL findings in any eval cycle.
 
 ---
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 4.0.2 (published to PyPI 2026-06-10)
+**Current version:** 4.0.3 (published to PyPI 2026-06-11)
 **Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
@@ -33,7 +35,7 @@ follow-up) with no CRITICAL findings in any eval cycle.
 | Implementation completeness | **Complete for v4.0 scope** — core language, VM, embedding API, coroutine scheduler, goals/workflows DSL, AI-native stdlib, full security sandbox all shipped |
 | Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,781 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
 | Stability commitment | **Beta classifier (PyPI)** — stable surfaces documented in LANGUAGE_STABILITY_INDEX.md; classifier upgrade to Production/Stable deferred until two consecutive minor releases with clean evals |
-| Publication status | **Published** — v4.0.2 live on PyPI |
+| Publication status | **Published** — v4.0.3 live on PyPI |
 
 **Composite label:** Published / Stable baseline
 
@@ -42,9 +44,9 @@ follow-up) with no CRITICAL findings in any eval cycle.
   scripting, automation, and agent orchestration within its design scope
 - Goals, workflows, and coroutines are implemented and tested; APIs are stable but
   haven't completed the formal stability graduation process — treat as supported-experimental
-- Two patch release cycles (4.0.1, 4.0.2) resolved all eval-identified bugs with no
+- Three patch release cycles (4.0.1, 4.0.2, 4.0.3) resolved all eval-identified bugs with no
   CRITICAL findings; the baseline is trustworthy
-- Known identified consumer: aindy-runtime (pinned at 3.0.2; upgrade path to 4.0.2 is
+- Known identified consumer: aindy-runtime (pinned at 3.0.2; upgrade path to 4.0.3 is
   a single pin change — embedding API is backward compatible)
 
 ---
@@ -134,7 +136,7 @@ implementations, real tests, and real design documentation. All are published to
 
 **Is the Nodus ecosystem mature?** Partially. The codebase and test coverage are solid.
 No package has yet been proven under real production traffic. aindy-runtime is the
-identified first real-world consumer; that upgrade (3.0.2 → 4.0.2) will be the first
+identified first real-world consumer; that upgrade (3.0.2 → 4.0.3) will be the first
 production validation.
 
 **Is the ecosystem architected well?** Yes. The protocols-are-adapters commitment is
@@ -143,12 +145,12 @@ execution identity, idempotency, syscall dispatch, and reliability patterns firs
 language features rather than optional library wiring.
 
 **What does the ecosystem prove today?**
-- That Nodus is published, installable, and gate-validated (1,781 tests, Gate 10 pass)
+- That Nodus is published, installable, and gate-validated (1,798 tests, Gate 10 pass)
 - That the embedding API is stable enough for real-world consumer integration
 - That MCP, A2A, agent, workflow, memory, auth, observability, and extension patterns
   all compose cleanly on the Nodus runtime
 - That a unified SDK (`nodus-sdk`) can auto-wire the ecosystem with a single install line
-- That two patch release cycles have resolved all identified bugs with no CRITICAL findings
+- That three patch release cycles have resolved all identified bugs with no CRITICAL findings
 
 **What does the ecosystem not yet prove?**
 - That any package is stable under real production traffic
@@ -175,4 +177,4 @@ language features rather than optional library wiring.
 - `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md` — the rubric used here
 - `docs/governance/ECOSYSTEM_90_DAY_CHECKLIST.md` — what to complete before production
 - `docs/governance/LIBRARY_ECOSYSTEM.md` — ecosystem architecture
-- `docs/evals/v4.0.2/CREATOR_VALIDATION.md` — latest Gate 10 results
+- `docs/evals/v4.0.2/CREATOR_VALIDATION.md` — most recent Gate 10 results (v4.0.2 cycle)
