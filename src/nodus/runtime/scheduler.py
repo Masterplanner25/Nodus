@@ -255,13 +255,14 @@ class Scheduler:
                 # Do NOT swallow with the broad except below.
                 raise
             except Exception as _e:
-                print(format_error(_e, path=self.vm.source_path), file=sys.stderr)
                 self._coroutine_errors.append(_e)
                 self._mark_completed(coroutine)
                 if coroutine.id is not None:
                     self.sleeping_tasks.discard(coroutine.id)
                 if on_error is not None:
                     stop = bool(on_error(coroutine, _e))
+                if not getattr(_e, "_retry_pending", False):
+                    print(format_error(_e, path=self.vm.source_path), file=sys.stderr)
                 if stop:
                     break
                 continue

@@ -212,6 +212,7 @@ class NodusModule:
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)
             vm.trace_id = getattr(caller_vm, "trace_id", None)
+            vm.session_id = getattr(caller_vm, "session_id", None)
             vm.execution_unit_id = getattr(caller_vm, "execution_unit_id", vm.execution_unit_id)
             if getattr(caller_vm, "event_bus", None) is not None:
                 vm.event_bus = caller_vm.event_bus
