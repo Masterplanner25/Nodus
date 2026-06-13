@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodus-lang"
-version = "4.0.3"
+version = "4.0.4"
 description = "An orchestration DSL and embedded runtime for agentic systems"
 authors = [
   { name = "Shawn Knight" }

@@ -2,13 +2,14 @@
 
 ## [Unreleased]
 
-### Known bugs (found during Stage 5 independent eval against v4.0.3, filed 2026-06-13)
+---
 
-**Low (P3)**
-- **#254 (`identity.session_id()` nil under CLI — residual from #236):** `module.py` propagates `trace_id` to child VMs but not `session_id`. One-line fix: add `vm.session_id = getattr(caller_vm, "session_id", None)` after the `trace_id` propagation line.
+## [4.0.4] - 2026-06-13
 
-**Cosmetic**
-- **#255 (retry error trace bleeds to stderr on eventual workflow success):** First-attempt thrown error from a retried step is printed to stderr even when the retry succeeds and exit code is 0. Fix: suppress per-attempt trace inside the inline retry loop; only emit on retry exhaustion.
+### Fixes
+
+- **#254 fix (`identity.session_id()` nil under CLI — residual from #236):** `module.py` now propagates `session_id` to child VMs alongside `trace_id`. One-line addition: `vm.session_id = getattr(caller_vm, "session_id", None)` after the existing `trace_id` propagation.
+- **#255 fix (retry error trace bleeds to stderr on eventual workflow success):** `task_graph.py` marks the exception with `_retry_pending = True` when a step will be retried. `scheduler.py` checks that flag before printing and suppresses the per-attempt trace; the error is only printed if retries are exhausted and the step permanently fails.
 
 ---
 

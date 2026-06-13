@@ -57,3 +57,43 @@ block:docs/runtime/WORKFLOWS.md:44
 # FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent
 block:docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md:146
+
+# README.md — http example shows field access on result; 'body' field varies by sandbox config
+block:README.md:96
+
+# getting-started.md — multi-file example (imports ./math_utils companion) and context-dependent snippet
+block:docs/guide/getting-started.md:255
+block:docs/guide/getting-started.md:299
+
+# ai-primitives.md — all blocks are multi-file or context-dependent (require companion state/imports)
+block:docs/guide/ai-primitives.md:15
+block:docs/guide/ai-primitives.md:67
+block:docs/guide/ai-primitives.md:93
+block:docs/guide/ai-primitives.md:123
+block:docs/guide/ai-primitives.md:186
+block:docs/guide/ai-primitives.md:202
+
+# ecosystem.md — multi-file examples (client module, nodus-extension host install required)
+block:docs/guide/ecosystem.md:51
+block:docs/guide/ecosystem.md:72
+
+# error-handling.md — intentional reserved-keyword syntax demo and intentional missing-file sandbox demo
+block:docs/guide/error-handling.md:284
+block:docs/guide/error-handling.md:380
+
+# library-entry-points.md — hypothetical package imports (nodus-example, your-library)
+block:docs/guide/library-entry-points.md:109
+block:docs/guide/library-entry-points.md:162
+
+# standard-library.md — intentional missing-file demo, context-dependent subprocess/time snippets
+block:docs/guide/standard-library.md:581
+block:docs/guide/standard-library.md:1046
+block:docs/guide/standard-library.md:1083
+block:docs/guide/standard-library.md:1156
+
+# LANGUAGE_SPEC.md — illustrative pattern code with undefined context variable
+block:docs/language/LANGUAGE_SPEC.md:584
+block:docs/language/LANGUAGE_SPEC.md:594
+
+# error-surfaces.md — intentional sandbox security demo (blocked path access)
+block:docs/policy/error-surfaces.md:80
