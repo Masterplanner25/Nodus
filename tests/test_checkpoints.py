@@ -37,7 +37,7 @@ def _run(src: str, td: str):
         fh.write(src)
     vm = VM([], {}, code_locs=[], source_path=path)
     with nodus_cli._project_root_context(td):
-        result, vm = run_workflow_code(vm, src, filename=path, project_root=td)
+        result, vm = run_workflow_code(vm, src, filename=path, project_root=td, timeout_ms=None)
     return result, vm
 
 
