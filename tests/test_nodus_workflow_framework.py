@@ -339,7 +339,7 @@ class WorkflowFrameworkCompatibilityTests(unittest.TestCase):
             payload = self._run_demo_workflow(td)
             graph_id = payload["graph_id"]
             with nodus_cli._project_root_context(td):
-                resumed, _vm = resume_workflow(graph_id, "after-first")
+                resumed, _vm = resume_workflow(graph_id, "after-first", timeout_ms=None)
             self.assertTrue(resumed.get("ok"), msg=str(resumed))
             self.assertEqual(resumed["result"]["steps"]["second"], 2)
             store = framework_store(td)

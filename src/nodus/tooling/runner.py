@@ -676,7 +676,9 @@ def resume_workflow_in_vm(
     event_type: str | None = None,
     correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
+    timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
 ):
+    configure_vm_limits(vm, timeout_ms=timeout_ms)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
             if checkpoint is None and resume_payload is None:
@@ -1187,6 +1189,7 @@ def resume_workflow(
     event_type: str | None = None,
     correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
+    timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
 ):
     vm = get_registered_vm(graph_id) or VM([], {}, code_locs=[], source_path=None)
     return resume_workflow_in_vm(
@@ -1197,6 +1200,7 @@ def resume_workflow(
         event_type=event_type,
         correlation_key=correlation_key,
         max_stdout_chars=max_stdout_chars,
+        timeout_ms=timeout_ms,
     )
 
 
