@@ -527,6 +527,20 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 - **Note:** Not the same as the standalone `nodus-schema` package (`C:\dev\nodus-schema`).
   Option C post-launch will consolidate these. Skill: `/nodus-name-col-consolidation`.
 
+## nodus-vscode VS Code extension
+
+- Repo: `C:\dev\nodus-vscode` / `github.com/Masterplanner25/nodus-vscode`
+- **Status: v0.1.0 COMPLETE — all four phases done, not yet published to VS Code Marketplace.**
+- **Phase 1:** TextMate grammar, 23 snippets, bracket/fold config
+- **Phase 2:** Diagnostics via `nodus check` (fallback; skipped once LSP starts)
+- **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
+- **Phase 4:** LSP via `nodus lsp` — hover docs, go-to-definition, completions
+- **Build:** `cd C:\dev\nodus-vscode && npm run package` (requires `@vscode/vsce`)
+- **Publish:** `vsce publish` (requires marketplace Personal Access Token from user)
+- **Key settings:** `nodus.executablePath` (default: `nodus`), `nodus.lspCommand` (array, overrides LSP command — useful for dev source: `["C:/dev/Coding Language/.venv/Scripts/python.exe", "C:/dev/Coding Language/nodus.py", "lsp"]`)
+- **LSP note:** VS Code spawns the INSTALLED `nodus.exe`, not dev source. LSP server changes require a new nodus-lang release to take effect in the extension.
+- **Next:** DAP evaluate (#106), Marketplace publish
+
 ## nodus-sdk companion package
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
