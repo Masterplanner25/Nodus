@@ -1,7 +1,7 @@
 # `nodus-memory`
 
-> **Status:** v0.1.0 implemented — `C:\dev\nodus-memory`, 28 tests (Tier 2 core: MemoryNode,
-> InMemoryStore, recall, scoring, feedback), prepared not yet published. Original full adapter
+> **Status:** v0.1.0 implemented and **published on PyPI** ✅ — `C:\dev\nodus-memory`, 28 tests (Tier 2 core: MemoryNode,
+> InMemoryStore, recall, scoring, feedback). Original full adapter
 > (192 tests, nodus-lang integration) preserved at github.com/Masterplanner25/nodus-memory.
 > This document is the original design spec; the Tier 2 implementation was built against it.
 

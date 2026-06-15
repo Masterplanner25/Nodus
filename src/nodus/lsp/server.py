@@ -786,9 +786,10 @@ class LanguageServer:
 
     def _handle_definition(self, params: dict):
         state = self._get_document(params)
+        pos = params.get("position", {})
         if state is None:
             return None
-        token = self._token_at_position(state, params.get("position", {}))
+        token = self._token_at_position(state, pos)
         if token is None or token.kind != "ID":
             return None
         target = self._resolve_symbol_at(state, token)

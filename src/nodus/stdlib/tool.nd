@@ -28,3 +28,11 @@ fn list_tools(filter) {
 fn has(name) {
     return tool_has(name)
 }
+
+fn execute(name, args) {
+    return tool_invoke(name, args)
+}
+
+fn available(name) {
+    return tool_has(name)
+}

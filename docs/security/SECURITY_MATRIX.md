@@ -1,6 +1,6 @@
 # Nodus Security Matrix
 
-**Version:** 4.0.0  
+**Version:** 4.0.3  
 **Status:** Governing document  
 **Relates to:** `docs/governance/SECURITY_POSTURE.md` (policy intent),
 `docs/governance/TECH_DEBT.md` (known gaps)
@@ -28,16 +28,15 @@ testing gap.
 
 | Behavior | CLI | EMB | SRV | Test file |
 |----------|:---:|:---:|:---:|-----------|
-| Blocks `../` traversal out of project root | ✅ enforced | ⚠️ opt-in (`allowed_paths`) | ✅ enforced | `test_path_traversal.py`, `test_fs_path_traversal.py` |
+| Blocks `../` traversal out of project root | ✅ enforced | ✅ enforced | ✅ enforced | `test_path_traversal.py`, `test_fs_path_traversal.py` |
 | `allowed_paths` restricts reads/writes/listdir | n/a | ✅ enforced | ✅ enforced | `test_cli_allowed_paths.py`, `test_sandbox_filesystem.py` |
-| Absolute paths to system dirs blocked | ✅ enforced | ⚠️ opt-in (`allowed_paths`) | ✅ enforced | `test_sandbox_filesystem.py` |
+| Absolute paths to system dirs blocked | ✅ enforced | ✅ enforced | ✅ enforced | `test_sandbox_filesystem.py` |
 | Write to read-only path raises `io_error` | ✅ (OS) | ✅ (OS) | ✅ (OS) | none |
 
-**Known gap — BUG-119:** The embedded runtime has no filesystem sandbox by
-default. `NodusRuntime()` with no `allowed_paths` argument grants unrestricted
-disk read/write to any path the OS user can access. The CLI jails to the
-project root; the embedded runtime does not. Callers must opt in with
-`NodusRuntime(allowed_paths=[...])`. Fix tracked in #119.
+**Fixed — #119 (PR #133, 2026-06-06):** `NodusRuntime()` now defaults
+`allowed_paths` to `[os.getcwd()]`, jailing embedded scripts to the project
+tree — matching the CLI sandbox. Pass `allowed_paths=None` for unrestricted
+access. The `NODUS_ALLOWED_PATHS` env var is also honoured when set.
 
 ---
 
@@ -78,20 +77,19 @@ network isolation must proxy or firewall at the OS/container level.
 | `--step-limit N` caps instruction count | ✅ | ✅ (`max_steps=N`) | ✅ | `test_sandbox_limits.py` |
 | `--time-limit N` caps wall-clock ms | ✅ | ✅ (`timeout_ms=N`) | ✅ | `test_sandbox_limits.py` |
 | Default step limit | none | none | none | — |
-| Default time limit | none | 200ms | none | `test_sandbox_limits.py` |
+| Default time limit | none | none | none | `test_sandbox_limits.py` |
 | Limits non-bypassable from inside script | ✅ | ✅ | ✅ | `test_sandbox_limits.py` |
 
-**Known gap — BUG-97 / EMBED-001:** The 200ms default in `NodusRuntime()` is
-a trap for embedders building servers, workflows, or MCP hosts — any coroutine
-sleeping more than 200ms cumulative is killed silently. Use
-`NodusRuntime(timeout_ms=None, max_steps=None)` for long-lived hosts. This is
-documented in `docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md` but not surfaced
-at the API call site.
+**Fixed — #97 / EMBED-001 (PR #133, 2026-06-06):** `NodusRuntime()` now
+defaults `timeout_ms=None` (unlimited). The 200ms guardrail is only applied
+when explicitly passed (e.g. `timeout_ms=200`). Long-lived hosts — MCP
+servers, workflow engines, event loops — are no longer silently killed by
+default.
 
-**Known gap — SCHED-001 / #94:** The wall-clock deadline counts cooperative
-sleep time. A coroutine doing 4 × 50ms sleeps is killed after 200ms even
-though it consumed no CPU. The intent was CPU-time limiting, but the
-implementation is wall-clock. Fix tracked in #94.
+**Fixed — SCHED-001 / #94:** The scheduler now extends the deadline by the
+actual wall-clock duration of each sleep call. Only active instruction
+execution consumes the deadline budget; idle sleep time is excluded. A
+coroutine sleeping 4×100ms with `timeout_ms=200` now completes cleanly.
 
 ---
 
@@ -128,23 +126,24 @@ resolver runs before the file is read, independent of the runtime context.
 | Sandbox defaults (filesystem, limits) same as EMB | none |
 | Request isolation (one runtime per request vs shared) | none |
 
-**Known gap — BUG-113:** Server mode sandbox behavior is not tested. The
-sandbox configuration at server startup and the relationship between per-request
-and per-server state needs a test pass. Tracked in #113.
+**Fixed — BUG-113 (PR #133, 2026-06-06):** `NodusRuntime()` now defaults
+`allowed_paths=[os.getcwd()]`, making the embedded server sandbox match the
+CLI default. The open-by-default exposure that made this audit finding
+necessary has been resolved.
 
 ---
 
 ## Gap summary
 
-| Gap | Severity | Issue |
-|-----|----------|-------|
-| Embedded runtime filesystem open by default | HIGH | #119 |
-| Subprocess not sandboxed in any context | MEDIUM | (not filed; known limitation) |
-| Network access unrestricted | MEDIUM | (by design; note in docs) |
-| 200ms trap in NodusRuntime() | HIGH | #97 |
-| Wall-clock deadline counts sleep (SCHED-001) | HIGH | #94 |
-| Server mode sandbox untested | MEDIUM | #113 |
-| No memory limit | LOW | (not filed) |
+| Gap | Severity | Status |
+|-----|----------|--------|
+| Embedded runtime filesystem open by default | HIGH | ✅ Fixed #119 (PR #133, 2026-06-06) |
+| Subprocess not sandboxed in any context | MEDIUM | Open — known limitation |
+| Network access unrestricted | MEDIUM | Open — by design |
+| 200ms trap in NodusRuntime() | HIGH | ✅ Fixed #97 (PR #133, 2026-06-06) |
+| Wall-clock deadline counts sleep (SCHED-001) | HIGH | ✅ Fixed #94 |
+| Server mode sandbox untested | MEDIUM | ✅ Fixed #113 (PR #133, 2026-06-06) |
+| No memory limit | LOW | Open — not filed |
 
 ---
 

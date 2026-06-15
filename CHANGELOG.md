@@ -4,6 +4,64 @@
 
 ---
 
+## [4.0.4] - 2026-06-13
+
+### Fixes
+
+- **#254 fix (`identity.session_id()` nil under CLI — residual from #236):** `module.py` now propagates `session_id` to child VMs alongside `trace_id`. One-line addition: `vm.session_id = getattr(caller_vm, "session_id", None)` after the existing `trace_id` propagation.
+- **#255 fix (retry error trace bleeds to stderr on eventual workflow success):** `task_graph.py` marks the exception with `_retry_pending = True` when a step will be retried. `scheduler.py` checks that flag before printing and suppresses the per-attempt trace; the error is only printed if retries are exhausted and the step permanently fails.
+
+---
+
+## [4.0.3] - 2026-06-11
+
+### Fixes
+
+- **#225 fix (tool.register in imported module → re-execution storm):** `builtin_tool_invoke` now saves the bytecode context at registration time and creates an isolated child VM when invoking a handler whose code differs from the current root VM. Eliminates the entry-script re-execution loop caused by `run_closure` executing the wrong bytecode after `reset_program`.
+- **#226 fix (step `with { retries: N }` no-ops under `nodus run`):** Added `inline_retries=True` path to `run_workflow_code` that loops on `retry_scheduled` responses — sleeping `retry_delay_ms` then calling `resume_graph` — so `nodus run` honours step-level retries without a long-running workflow framework sweeper. The workflow framework's external retry path is unchanged (default `inline_retries=False`).
+- **#227 fix (state vars invisible in string interpolation):** `_StateRewriter` in `workflow_lowering.py` now recurses into `InterpolatedString` sub-expressions, so `"\(x)"` inside a workflow step correctly rewrites `x` to `__state["x"]`.
+- **#228 fix (`let` in `for` loop — no per-iteration binding):** New `RESET_LOCAL_IDX` opcode emitted before `STORE_LOCAL_IDX` in `ForEach` (for the loop variable) and `Let` (for all let bindings). It writes `None` directly to the locals-array slot without touching any existing Cell, so the next `MAKE_CLOSURE` creates a fresh per-iteration Cell rather than reusing the previous iteration's Cell.
+- **#229 fix (`run_loop()` swallows coroutine errors):** `builtin_run_loop()` now returns the list of coroutine error strings (e.g. `["worker failure"]`) when any worker failed, instead of returning `nil`. Coroutine isolation is preserved (session continues), but callers can detect partial failure by checking the return value.
+- **#230 fix (`tool.register` JSON-Schema form crashes at invoke):** `_normalize_schema` now deep-converts nested Nodus Records in `properties` values via `_as_dict`, so `"type" in prop` succeeds at validation time. JSON-Schema-style registration (`{type: "object", properties: {x: {type: "string"}}, required: [...]}`) now works end-to-end.
+- **#231 fix (`time.format()` garbled with strftime tokens):** `builtin_time_format` now detects `%` in the format string and delegates to Python's `datetime.strftime`, enabling standard strftime syntax (`%Y-%m-%d %H:%M:%S`). The existing Java/ICU token syntax (`yyyy-MM-dd HH:mm:ss`) continues to work unchanged.
+- **#232 fix (`nodus test` UnicodeEncodeError on Windows):** Test runner output is now written through `_safe_write`, which falls back to `sys.stdout.buffer.write(...encode("utf-8", errors="replace"))` on `UnicodeEncodeError`, fixing the crash on Windows cp1252 consoles caused by `✗`/`✓` characters.
+- **#233 fix (`nodus test` rejects `../lib/x` from `tests/` subdir):** `_run_one_file` now calls `_find_project_root` to walk up from the test file directory to find `nodus.toml`, using that as the sandbox root instead of the test file's directory. `import "../lib/tools"` from `tests/` is now valid when the resolved path stays within the project root.
+
+### Known bugs (found during Sentinel evaluation against v4.0.2, filed 2026-06-10)
+
+**Critical (P0)**
+- **#225 (tool.register in imported module → re-execution storm):** Fixed in this release — see Fixes above.
+- **#226 (step `with { retries: N }` no-ops under `nodus run`):** Fixed in this release — see Fixes above.
+
+**High (P1)**
+- **#227 (state vars invisible in string interpolation):** Fixed in this release — see Fixes above.
+- **#228 (`let` in `for` loop — no per-iteration binding):** Fixed in this release — see Fixes above.
+- **#229 (`run_loop()` swallows coroutine errors):** Fixed in this release — see Fixes above.
+
+**Medium (P2)**
+- **#230 (tool JSON-Schema form explodes at invoke):** Fixed in this release — see Fixes above.
+- **#231 (`time.format()` garbled):** Fixed in this release — see Fixes above.
+- **#232 (`nodus test` UnicodeEncodeError on Windows):** Fixed in this release — see Fixes above.
+- **#233 (`nodus test` rejects `../lib/x` from tests/ subdir):** Fixed in this release — see Fixes above.
+
+**Low (P3) — Fixed in this release**
+- **#214 (`_last_vm` still public):** Renamed internal storage to `__last_vm` (name-mangled). `_last_vm` is now a `@property` that emits `DeprecationWarning` pointing to `get_execution_stats()`.
+- **#234 (`cb.create` map form crashes):** Python builtin now accepts both positional `(name, threshold, timeout_secs)` and map `(name, {failure_threshold, recovery_timeout_ms})` forms. `.nd` wrapper retains 3-arg positional signature; `create_config(name, config)` added for map form.
+- **#235 (`cb.call` never throws on circuit-open):** `cb.call` now throws `circuit_open` when the breaker is in open state. Function-call failures still return `{kind: "circuit_error", message: ...}` to allow failure accumulation before the breaker trips.
+- **#236 (`identity.trace_id/session_id` nil under CLI):** `runner.py` now auto-generates `trace_id` and `session_id` UUIDs before script execution, matching the documented auto-generation behaviour.
+- **#237 (`mem.tag`/`mem.forget` not implemented):** Both functions added to `std:memory`: `forget(key)` aliases `delete(key)`; `tag(key, tags)` stores tags under `__nodus_tags__:<key>`.
+- **#238 (`tool.execute`/`tool.available` missing in `std:tool`):** Added `execute(name, args)` (alias for `invoke`) and `available(name)` (alias for `has`) to `std:tool`. Added `has(name)` to `std:tools`.
+- **#239 (`fx.get_result()` absent):** `effect_get_result(action_id)` builtin added; `std:effects` exposes it as `get_result(action_id)` — returns the cached result value or `nil` if not yet complete.
+- **#240 (failed-step IDs inconsistent wf vs goal):** `failed_id()` in `task_graph.py` now always prefers `step_name` over `task_id`, making `result["failed"]` consistent for both workflows and goals.
+- **#241 (`nodus test` absent from `--help`):** `test [path]` added to the Execution section of `_render_help()`.
+- **#242 (`.nodus/` run artifacts never cleaned up):** `nodus workflow cleanup` now removes runs in `failed` and `dead_lettered` terminal states in addition to `completed`.
+
+### Tests
+
+- **#252 (stdlib contract test suite):** 87-test contract suite added to `tests/test_stdlib_contracts.py`, gated on `NODUS_RUN_CONTRACTS=1`. Verifies installed-wheel API shapes match documentation for all stdlib modules (tool, identity, effects, sys, memory, retry, circuit-breaker, channel, http, subprocess, hash, time, fs, encoding, json, math). Run with `NODUS_RUN_CONTRACTS=1 python -m pytest tests/test_stdlib_contracts.py`.
+
+---
+
 ## [4.0.2] - 2026-06-10
 
 ### Fixed

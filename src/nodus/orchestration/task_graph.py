@@ -704,7 +704,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return payload
 
     def failed_id(task: TaskNode) -> str:
-        if execution_kind == "goal" and task.step_name is not None:
+        if task.step_name is not None:
             return task.step_name
         return task.task_id
 
@@ -1077,6 +1077,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             fail_data["message"] = str(err)
             vm.event_bus.emit_event("goal_step_fail", name=task.step_name, data=fail_data)
         if task.attempts <= task.max_retries:
+            setattr(err, "_retry_pending", True)
             vm.event_bus.emit_event("task_retry", name=task.task_id, data={"attempt": float(task.attempts + 1)})
             if execution_kind == "workflow":
                 task.status = "retry_scheduled"

@@ -26,8 +26,8 @@ surprises.
 |------|---------------|---------------|----------------|
 | `nil` | `nil` | Default, absent values | `== nil`, truthiness check |
 | `bool` | `true`, `false` | Comparisons, logical ops | `&&`, `\|\|`, `!` |
-| `number` | `42`, `3.14`, `1e3` | Arithmetic, literals | `+ - * / %`, comparisons |
-| `int` | `42i`, `0i` | Integer literals, `math.parse_int` | `+ - * %`, comparisons; division yields `number` |
+| `float` | `42`, `3.14`, `1e3` | Arithmetic, literals | `+ - * / %`, comparisons |
+| `int` | `42i`, `0i` | Integer literals, `math.parse_int` | `+ - * %`, comparisons; int/int division yields `int` |
 | `string` | `"hello"` | Literals, `str(x)` | `+` (concat), std:strings |
 | `list` | `[1, 2, 3]` | Literals, push/pop | `[i]`, `len()`, for-in |
 | `map` | `{ "k": v }` | Literals, `json.parse()` | `["k"]`, `has_key()`, `keys()`, `values()` |
@@ -53,7 +53,7 @@ Output:
 ```
 nil
 bool
-number
+float
 int
 string
 list
@@ -68,15 +68,14 @@ function
 
 Nodus has two numeric kinds.
 
-**`number` (float)** — the default. Every numeric literal without an `i` suffix
-is a 64-bit float (IEEE 754 double). This is the type `type()` returns as
-`"number"`.
+**`float`** — the default. Every numeric literal without an `i` suffix
+is a 64-bit float (IEEE 754 double). `type()` returns `"float"`.
 
 **`int`** — arbitrary-precision integer. Write the `i` suffix on any integer
 literal: `42i`, `0i`, `-7i`. `type()` returns `"int"`.
 
 ```nd
-print(type(42))    // "number" — float
+print(type(42))    // "float"
 print(type(42i))   // "int"
 print(42)          // 42.0
 print(42i)         // 42
@@ -85,7 +84,7 @@ print(42i)         // 42
 Output:
 
 ```
-number
+float
 int
 42.0
 42
@@ -120,8 +119,8 @@ print(1i + 1i)    // int + int → int
 print(5i - 3i)    // int - int → int
 print(3i * 4i)    // int * int → int
 print(7i % 3i)    // int % int → int
-print(4i / 2i)    // int / int → number (division always yields float)
-print(1i + 1.0)   // int + number → number (promotes to float)
+print(4i / 2i)    // int / int → int (integer floor division)
+print(1i + 1.0)   // int + float → float (promotes to float)
 ```
 
 Output:
@@ -131,12 +130,12 @@ Output:
 2
 12
 1
-2.0
+2
 2.0
 ```
 
-Division (`/`) always produces a `number` even when both operands are integers.
-For integer division with truncation, use `math.idiv`.
+Integer `/` returns an `int` when both operands are `int` (floor division).
+For truncation toward zero instead of floor, use `math.idiv`.
 
 ### Large integers stay exact
 
@@ -573,12 +572,10 @@ nil is falsy
 empty list is falsy
 ```
 
-### Numeric-boolean coercion
+### Numeric-boolean comparison (v4.0: no cross-family coercion)
 
-`0 == false` is `true`, and `1 == true` is `true`. This is the documented
-coercion contract for `==`. It applies to both float zero (`0`) and integer
-zero (`0i`). If your code needs to distinguish between numeric zero and boolean
-false, use explicit type checks via `type(x)`.
+In v4.0, comparisons between numbers and booleans always return `false`.
+Cross-family coercion was removed as a breaking change from v3.x:
 
 ```nd
 print(0 == false)
@@ -589,10 +586,13 @@ print(0i == false)
 Output:
 
 ```
-true
-true
-true
+false
+false
+false
 ```
+
+Use explicit type checks (`type(x) == "bool"`) or the `std:bool` helpers when
+you need to distinguish numeric zero from boolean false.
 
 ---
 

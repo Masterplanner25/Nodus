@@ -644,12 +644,19 @@ def register(vm, registry) -> None:
         _require_dt(dt, "time.format")
         if not isinstance(fmt, str):
             vm.runtime_error("type", "time.format: format must be a string")
+        tz = _get_zone(dt.fields["zone"])
+        local = _local_from_epoch_ms(dt.fields["epoch_ms"], tz)
+        # strftime syntax (%Y, %m, …) — delegate directly to Python
+        if "%" in fmt:
+            try:
+                return local.strftime(fmt)
+            except Exception as exc:
+                return _time_err("parse_error", f"invalid format string: {exc}", fmt=fmt)
+        # Java/ICU token syntax (yyyy, MM, HH, mm, …)
         try:
             fmt_tokens = _tokenize_fmt(fmt)
         except Exception as exc:
             return _time_err("parse_error", f"invalid format string: {exc}", fmt=fmt)
-        tz = _get_zone(dt.fields["zone"])
-        local = _local_from_epoch_ms(dt.fields["epoch_ms"], tz)
         return _render_fmt(fmt_tokens, local, tz)
 
     # ── Serialization helpers ────────────────────────────────────────

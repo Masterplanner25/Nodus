@@ -5,8 +5,7 @@
 integration, agent coordination, memory, observability, circuit breaking, auth,
 queuing, SQL persistence, and more.
 
-All packages are at `github.com/Masterplanner25` and coordinated for a
-simultaneous first release alongside `nodus-lang` 4.0.0.
+All packages are at `github.com/Masterplanner25` and published on PyPI.
 
 ---
 

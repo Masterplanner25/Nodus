@@ -88,7 +88,14 @@ def register(vm, registry) -> None:
 
     def builtin_run_loop():
         on_error = getattr(vm, "on_error", None)
-        vm.scheduler.run_loop(on_error=on_error)
+        scheduler = vm.scheduler
+        scheduler._coroutine_errors = []
+        scheduler.run_loop(on_error=on_error)
+        errors = scheduler._coroutine_errors
+        if errors:
+            # Return error list so callers can detect partial failure without
+            # crashing the session — coroutine isolation is preserved by design.
+            return [str(e) for e in errors]
         return None
 
     def builtin_sleep(value):

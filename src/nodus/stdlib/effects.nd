@@ -17,3 +17,7 @@ fn action_id(action_type, payload, scope) {
 fn store_size() {
     return effect_store_size()
 }
+
+fn get_result(action_id) {
+    return effect_get_result(action_id)
+}

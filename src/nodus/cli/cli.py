@@ -205,6 +205,7 @@ def _render_help() -> str:
         "  run [file]        Run a Nodus script or project",
         "  check [file]      Validate syntax and imports without executing",
         "  fmt <file>        Format a source file in-place",
+        "  test [path]       Run .nd test files (files matching *_test.nd or test_*.nd)",
         "  repl              Start an interactive shell (REPL)",
         "  status            Show the project and entry point for the current directory",
         "",
@@ -707,7 +708,7 @@ def _run_workflow(path: str, workflow_name: str | None = None, *, project_root: 
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root)
+    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root, inline_retries=True)
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
@@ -891,7 +892,7 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
             should_remove = False
             if force:
                 should_remove = True
-            elif threshold and snapshot.get("status") == "completed":
+            elif threshold and snapshot.get("status") in ("completed", "failed", "dead_lettered"):
                 updated = snapshot.get("updated_at") or 0
                 try:
                     updated_ms = int(updated)

@@ -1,8 +1,6 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Operator / Embedder Runbook
 
-**Version:** 3.0.2
+**Version:** 4.0.3
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -17,12 +15,12 @@ and upgrade procedures.
 ### 1.1 Install
 
 ```bash
-pip install nodus-lang==3.0.2
+pip install nodus-lang==4.0.3
 ```
 
 For the FastAPI/Uvicorn server stack (experimental):
 ```bash
-pip install "nodus-lang[server]==3.0.2"
+pip install "nodus-lang[server]==4.0.3"
 ```
 
 ### 1.2 Minimal embedding
@@ -57,10 +55,10 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | Parameter | Type | Default | When to change |
 |-----------|------|---------|----------------|
 | `max_steps` | `int \| None` | `MAX_STEPS` (~10M) | Lower for untrusted/short-running scripts |
-| `timeout_ms` | `int \| None` | **200 ms** | **Set `None` for servers/loops/MCP hosts.** The default 200 ms matches `nodus run` and kills coroutines that sleep > 200 ms cumulatively. For latency-bounded batch scripts, keep it short; for long-lived embedding, always pass `timeout_ms=None`. (EMBED-001 / #97) |
+| `timeout_ms` | `int \| None` | `None` (no deadline) | Pass an explicit value (e.g. `5000`) for short-lived sandboxed scripts. The default `None` is correct for servers, loops, and MCP/A2A hosts. Cooperative sleep time is excluded from the budget — only active instruction execution counts (SCHED-001 fixed). |
 | `max_stdout_chars` | `int \| None` | `MAX_STDOUT_CHARS` | Lower for log-constrained environments |
 | `project_root` | `str \| None` | `None` | Set to project directory when scripts use imports |
-| `allowed_paths` | `list[str] \| None` | `None` (unrestricted) | Set for untrusted scripts; restrict to needed directories |
+| `allowed_paths` | `list[str] \| None` | `[os.getcwd()]` (CWD jail) | Default jails to working directory. Pass `None` to allow unrestricted access. Set explicit paths for untrusted scripts that need access outside CWD. |
 | `allow_input` | `bool` | `False` | Keep `False`; set `True` only for interactive use cases |
 | `max_frames` | `int \| None` | `None` (uses `MAX_STACK_DEPTH`) | Set to 200-1000 for untrusted code |
 
@@ -230,19 +228,17 @@ The HTTP server (`nodus serve`) accepts `--workflow-store-backend sqlite` and
 
 ### nodus-mcp
 
-When embedding with nodus-mcp:
+When embedding with nodus-mcp (`pip install nodus-mcp`):
 - The MCP server and client are managed through `NodusRuntime.register_function()` or
   the nodus-mcp Python API directly
-- nodus-mcp v0.1 is not yet published (three-artifact launch pending)
-- Server-initiated requests (roots/list, sampling/createMessage) are stdio-only in v0.1
+- Server-initiated requests (roots/list, sampling/createMessage) are stdio-compatible in v0.1
 
 ### nodus-a2a
 
-When embedding with nodus-a2a:
+When embedding with nodus-a2a (`pip install nodus-a2a`):
 - The A2A server runs in a thread via `A2AHttpServer.serve_in_thread()`
 - Production deployments must configure `token_validator` — dev mode accepts all requests
 - v0.1 is message-only; no Task lifecycle, no streaming
-- Not yet published (three-artifact launch pending)
 
 ---
 

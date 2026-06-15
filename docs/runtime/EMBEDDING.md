@@ -56,22 +56,22 @@ result = runtime.run_source(source_code)
 
 **Long-lived embedding (servers, loops, MCP/A2A hosts):**
 
-The default ``timeout_ms=200`` is designed for short sandboxed script executions
-(matching ``nodus run``).  Any session whose coroutines sleep for more than 200 ms
-cumulatively — including workflow steps, async I/O loops, or MCP/A2A request handlers
-— must disable the deadline explicitly::
+``NodusRuntime()`` defaults to ``timeout_ms=None`` (no deadline). Short-lived sandboxed
+scripts that need a guardrail should pass an explicit value::
 
-  # For servers, event loops, or any coroutine-heavy long-lived host:
+  # Short-lived sandboxed script — explicit deadline
+  runtime = NodusRuntime(timeout_ms=5000, max_steps=100_000)
+
+  # Long-lived host (server, MCP/A2A, workflow engine) — use default or be explicit
   runtime = NodusRuntime(
-      timeout_ms=None,    # no wall-clock deadline
-      max_steps=None,     # no instruction ceiling
+      timeout_ms=None,    # no wall-clock deadline (this is already the default)
+      max_steps=None,
       project_root="/my/project",
   )
 
-With the default, a coroutine sleeping 4 × 100 ms is killed after 200 ms total,
-even though it consumed no excessive compute.  This is EMBED-001 (#97); the fix
-is always to set ``timeout_ms=None`` for long-lived sessions.  Use per-task timeouts
-in your Nodus workflow code instead of a session-level VM deadline.
+Note: as of v4.0.1 (SCHED-001), cooperative sleep time is excluded from the deadline
+budget. Only active VM instruction execution consumes ``timeout_ms``. A coroutine
+sleeping 4 × 100 ms with ``timeout_ms=500`` completes cleanly.
 
 # Optional: inject initial globals or host globals
 # (useful for passing host-owned context to scripts)
@@ -85,14 +85,18 @@ Constructor parameters:
 
 - ``max_steps`` (int | None, default MAX_STEPS): Maximum total VM instructions per
   execution. Raises ``RuntimeLimitExceeded`` when exceeded. ``None`` means unlimited.
-- ``timeout_ms`` (int | None, default EXECUTION_TIMEOUT_MS): Wall-clock timeout in
-  milliseconds per execution. ``None`` means no timeout.
+- ``timeout_ms`` (int | None, default None): Wall-clock timeout in milliseconds per
+  execution. ``None`` means no timeout (the default). Pass an explicit value for
+  short-lived sandboxed scripts.
 - ``max_stdout_chars`` (int | None, default MAX_STDOUT_CHARS): Maximum captured stdout
   characters per execution. Output beyond this limit is silently truncated.
 - ``project_root`` (str | None, default None): Absolute path to the project root.
   Used by the module loader to resolve non-relative imports.
-- ``allowed_paths`` (list[str] | None, default None): Directory paths the script may
-  access via filesystem builtins. ``None`` means unrestricted.
+- ``allowed_paths`` (list[str] | None, default [os.getcwd()]): Directory paths the
+  script may access via filesystem builtins. Defaults to the working directory at
+  construction time. Pass ``allowed_paths=None`` to allow unrestricted filesystem access.
+  Also reads ``NODUS_ALLOWED_PATHS`` env var (colon-separated) when the parameter is
+  omitted.
 - ``allow_input`` (bool, default False): If ``False``, the ``input()`` builtin raises
   a sandbox error.
 - ``max_frames`` (int | None, default None): Maximum call stack depth. Prevents runaway

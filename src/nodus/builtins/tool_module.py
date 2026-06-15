@@ -51,7 +51,14 @@ def _normalize_schema(schema):
         return None, "schema must be a map"
     # JSON Schema form: has top-level "type": "object"
     if d.get("type") == "object":
-        return dict(d), None
+        # Deep-convert nested Records in properties so "type" in prop works correctly
+        props_raw = _as_dict(d.get("properties") or {}) or {}
+        props = {k: (_as_dict(v) or {} if v is not None else {}) for k, v in props_raw.items()}
+        req = list(d.get("required") or [])
+        normalized: dict = {"type": "object", "properties": props}
+        if req:
+            normalized["required"] = req
+        return normalized, None
     # Simple form: flat map of param name → Nodus type string
     properties = {}
     required = []
@@ -283,6 +290,10 @@ def register(vm, registry) -> None:
             "tags": tags,
             "deprecated": bool(d.get("deprecated", False)),
             "metadata": meta_raw,
+            "_handler_code": rvm.code,
+            "_handler_functions": rvm.functions,
+            "_handler_code_locs": rvm.code_locs,
+            "_handler_globals": rvm.globals,
         }
         with rvm._tool_registry_lock:
             if name in rvm.tool_registry:
@@ -351,7 +362,37 @@ def register(vm, registry) -> None:
             )
         handler = entry["handler"]
         if isinstance(handler, Closure):
-            result = rvm.run_closure(handler, [args])
+            handler_code = entry.get("_handler_code")
+            if handler_code is not None and handler_code is not rvm.code:
+                from nodus.vm.vm import VM
+                child_vm = VM(
+                    handler_code,
+                    entry["_handler_functions"],
+                    code_locs=entry.get("_handler_code_locs"),
+                    module_globals=entry.get("_handler_globals"),
+                    allowed_paths=rvm.allowed_paths,
+                    fs_root=rvm.fs_root,
+                    allow_subprocess=getattr(rvm, "allow_subprocess", True),
+                    allow_network=getattr(rvm, "allow_network", True),
+                    allow_env=getattr(rvm, "allow_env", True),
+                    allowed_commands=getattr(rvm, "allowed_commands", None),
+                    allowed_hosts=getattr(rvm, "allowed_hosts", None),
+                )
+                child_vm.trace_errors = getattr(rvm, "trace_errors", False)
+                child_vm.trace_id = getattr(rvm, "trace_id", None)
+                child_vm.execution_unit_id = getattr(rvm, "execution_unit_id", child_vm.execution_unit_id)
+                if getattr(rvm, "event_bus", None) is not None:
+                    child_vm.event_bus = rvm.event_bus
+                if getattr(rvm, "effect_store", None) is not None:
+                    child_vm.effect_store = rvm.effect_store
+                if getattr(rvm, "memory_store", None) is not None:
+                    child_vm.memory_store = rvm.memory_store
+                if getattr(rvm, "circuit_breakers", None) is not None:
+                    child_vm.circuit_breakers = rvm.circuit_breakers
+                setattr(child_vm, "_caller_vm", rvm)
+                result = child_vm.run_closure(handler, [args])
+            else:
+                result = rvm.run_closure(handler, [args])
         elif callable(handler):
             host_args = _to_host_value(args)
             result = handler(host_args)
