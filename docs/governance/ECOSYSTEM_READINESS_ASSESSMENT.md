@@ -1,6 +1,6 @@
 # Ecosystem Readiness Assessment
 
-**Date:** 2026-06-11 (updated from 2026-06-10)
+**Date:** 2026-06-14 (updated from 2026-06-11)
 **Status:** Current-state assessment — update at each library release
 **Assessor:** Claude Opus 4.8 (post-publication sweep)
 **Rubric:** `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md`
@@ -10,32 +10,36 @@
 ## Summary
 
 The Nodus ecosystem is **published, real, and awaiting real-world validation.**
-nodus-lang is at **v4.0.3** (current stable on PyPI). The ecosystem spans **35 standalone
+nodus-lang is at **v4.0.4** (current stable on PyPI). The ecosystem spans **35 standalone
 packages**, all published to PyPI under Masterplanner25. The coordinated launch is
 complete. No package has yet seen significant real-world traffic; that is the honest
 next frontier.
 
-v4.0.3 fixes: all 18 Sentinel evaluation bugs from v4.0.2 — P0 tool.register storm and
+v4.0.4 fixes: identity.session_id() nil in child VMs (#254), retry stderr noise suppression
+(#255). v4.0.3 fixes: all 18 Sentinel evaluation bugs — P0 tool.register storm and
 step-level retries, P1 state vars in interpolation and per-iteration let bindings,
 P2 tool JSON-Schema/time.format/nodus test regressions, P3 API surface gaps. Stdlib
-contract test suite (87 tests) added. 1,798 tests pass. Coverage: 76%. Three patch
-releases since v4.0.0 (4.0.1 stress-eval fixes, 4.0.2 eval follow-up, 4.0.3 Sentinel
-fixes) with no CRITICAL findings in any eval cycle.
+contract test suite (87 tests) added. 1,798 tests pass. Coverage: 76%. Four patch
+releases since v4.0.0 with no CRITICAL findings in any eval cycle.
+
+First-party VS Code extension (nodus-vscode v0.1.0) is complete: syntax highlighting,
+diagnostics, run/format, DAP debugger, and LSP (hover/definition/completions). Awaiting
+Marketplace publish.
 
 ---
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 4.0.3 (published to PyPI 2026-06-11)
+**Current version:** 4.0.4 (published to PyPI 2026-06-13)
 **Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
 |-----------|-------|
 | Architectural coherence | **Coherent** — orchestration DSL identity well-defined; design decisions documented across 17 Phase 0 and 13 Phase 1 design docs |
 | Implementation completeness | **Complete for v4.0 scope** — core language, VM, embedding API, coroutine scheduler, goals/workflows DSL, AI-native stdlib, full security sandbox all shipped |
-| Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,781 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
+| Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,798 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
 | Stability commitment | **Beta classifier (PyPI)** — stable surfaces documented in LANGUAGE_STABILITY_INDEX.md; classifier upgrade to Production/Stable deferred until two consecutive minor releases with clean evals |
-| Publication status | **Published** — v4.0.3 live on PyPI |
+| Publication status | **Published** — v4.0.4 live on PyPI |
 
 **Composite label:** Published / Stable baseline
 
@@ -129,6 +133,30 @@ is the dev-time bootstrap; production teams manage migrations independently.
 
 ---
 
+## Assessment: nodus-vscode (VS Code extension)
+
+**Current version:** 0.1.0 (local complete — not yet published to VS Code Marketplace)
+**Source:** `github.com/Masterplanner25/nodus-vscode`
+
+| Dimension | Level |
+|---|---|
+| Architectural coherence | **Coherent** — four phases cleanly separated (grammar, diagnostics, DAP, LSP); `vscode-languageclient` v9 over stdio |
+| Implementation completeness | **Complete for v0.1 scope** — syntax highlighting, 23 snippets, diagnostics, run/format, DAP debugger, hover/definition/completions via LSP |
+| Operational readiness | **Verified locally** — all four phases tested end-to-end; not yet Marketplace-published |
+| Stability commitment | **Pre-release (v0.1.0)** — no backward compatibility commitment |
+| Publication status | **Not yet published** — VSIX built; awaiting Marketplace PAT |
+
+**Composite label:** Complete / Pre-publish
+
+**Honest assessment:**
+- LSP features (hover, definition, completions) work against the installed `nodus.exe` — changes
+  to `nodus lsp` server code require a new nodus-lang PyPI release to take effect in VS Code
+- LSP returns no results for files with syntax errors (parser can't build symbol table); diagnostics still work
+- `nodus.lspCommand` setting allows pointing at dev source without a release
+- DAP debugger depends on `nodus dap`; evaluate command (#106) not yet implemented
+
+---
+
 ## Ecosystem-level assessment
 
 **Is the Nodus ecosystem real?** Yes. 35 packages exist as real GitHub repos with real
@@ -150,7 +178,8 @@ language features rather than optional library wiring.
 - That MCP, A2A, agent, workflow, memory, auth, observability, and extension patterns
   all compose cleanly on the Nodus runtime
 - That a unified SDK (`nodus-sdk`) can auto-wire the ecosystem with a single install line
-- That three patch release cycles have resolved all identified bugs with no CRITICAL findings
+- That four patch release cycles have resolved all identified bugs with no CRITICAL findings
+- That first-party IDE tooling (VS Code extension, all four phases) is complete and working
 
 **What does the ecosystem not yet prove?**
 - That any package is stable under real production traffic
