@@ -1,6 +1,6 @@
 # Ecosystem Readiness Assessment
 
-**Date:** 2026-06-14 (updated from 2026-06-11)
+**Date:** 2026-06-15 (updated from 2026-06-14)
 **Status:** Current-state assessment — update at each library release
 **Assessor:** Claude Opus 4.8 (post-publication sweep)
 **Rubric:** `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md`
@@ -10,27 +10,25 @@
 ## Summary
 
 The Nodus ecosystem is **published, real, and awaiting real-world validation.**
-nodus-lang is at **v4.0.4** (current stable on PyPI). The ecosystem spans **35 standalone
+nodus-lang is at **v4.0.5** (current stable on PyPI). The ecosystem spans **35 standalone
 packages**, all published to PyPI under Masterplanner25. The coordinated launch is
 complete. No package has yet seen significant real-world traffic; that is the honest
 next frontier.
 
+v4.0.5: stability graduation release — spawn/coroutine/channel and workflow/goal/step
+promoted to Mostly Stable; yield to Stable. Language Stability Index updated.
+Companion tooling: nodus-vscode v0.1.0 (VS Code Marketplace), nodus-jupyter v0.1.0
+(PyPI), nodus-run-action v1.0.0 (GitHub Actions), nodus-adapter-base v0.1.0 (PyPI).
 v4.0.4 fixes: identity.session_id() nil in child VMs (#254), retry stderr noise suppression
-(#255). v4.0.3 fixes: all 18 Sentinel evaluation bugs — P0 tool.register storm and
-step-level retries, P1 state vars in interpolation and per-iteration let bindings,
-P2 tool JSON-Schema/time.format/nodus test regressions, P3 API surface gaps. Stdlib
-contract test suite (87 tests) added. 1,798 tests pass. Coverage: 76%. Four patch
-releases since v4.0.0 with no CRITICAL findings in any eval cycle.
-
-First-party VS Code extension (nodus-vscode v0.1.0) is complete: syntax highlighting,
-diagnostics, run/format, DAP debugger, and LSP (hover/definition/completions). Awaiting
-Marketplace publish.
+(#255). v4.0.3 fixes: all 18 Sentinel evaluation bugs. Stdlib contract test suite (87 tests)
+added. 1,796 tests pass. Coverage: 76%. Five patch releases since v4.0.0 with no CRITICAL
+findings in any eval cycle.
 
 ---
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 4.0.4 (published to PyPI 2026-06-13)
+**Current version:** 4.0.5 (published to PyPI 2026-06-15)
 **Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
@@ -39,7 +37,7 @@ Marketplace publish.
 | Implementation completeness | **Complete for v4.0 scope** — core language, VM, embedding API, coroutine scheduler, goals/workflows DSL, AI-native stdlib, full security sandbox all shipped |
 | Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,798 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
 | Stability commitment | **Beta classifier (PyPI)** — stable surfaces documented in LANGUAGE_STABILITY_INDEX.md; classifier upgrade to Production/Stable deferred until two consecutive minor releases with clean evals |
-| Publication status | **Published** — v4.0.4 live on PyPI |
+| Publication status | **Published** — v4.0.5 live on PyPI |
 
 **Composite label:** Published / Stable baseline
 
