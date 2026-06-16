@@ -1,15 +1,12 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Language Stability Index
 
-**Version:** 3.0.2
+**Version:** 4.0.5
 **Status:** Governing document — supersedes `docs/governance/STABILITY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
 This is the surface-by-surface stability index for Nodus. Every public surface is
-classified. Classifications apply to the current release only; experimental surfaces
-may stabilize in future releases without notice in this document — changes are recorded
-in CHANGELOG.md and the relevant eval reports.
+classified. Classifications apply to the current release only; changes between
+releases are recorded in CHANGELOG.md and the relevant eval reports.
 
 ---
 
@@ -32,6 +29,7 @@ in CHANGELOG.md and the relevant eval reports.
 | Literals: numbers, ints, strings, booleans, `nil` | Stable | String escapes `\x`, `\u` finalized in v3.0.1 |
 | Integer suffix `i` (e.g. `42i`) | Stable | Added in v3.0 |
 | Arithmetic operators `+ - * / %` | Stable | |
+| Compound assignment `+=, -=, *=, /=` | Mostly Stable | Added in v4.0.1 (#183); closures still require map-mutation pattern |
 | Comparison operators `== != < > <= >=` | Stable | |
 | Logical operators `&& \|\| !` | Stable | |
 | Control flow: `if`, `while`, `for (init;cond;inc)` | Stable | |
@@ -47,13 +45,13 @@ in CHANGELOG.md and the relevant eval reports.
 | Bracket access on maps | Stable | |
 | Import syntax `import "path" as name` | Stable | |
 | Export syntax | Mostly Stable | Visibility rules may be refined |
-| `workflow`, `goal`, `step` | Experimental | Implemented; semantics may change |
-| `action` expressions in steps | Experimental | |
-| `yield expr` | Mostly Stable | Semantics frozen; `YIELD` opcode stable |
-| `spawn`, `coroutine`, `channel` | Experimental | Implemented; API not frozen |
-| String interpolation | Check V4_0_PLAN.md — planned for v4.0 | Not yet in 3.0.2 |
+| String interpolation `"\(expr)"` | Stable | Implemented in v4.0; syntax frozen |
+| `workflow`, `goal`, `step` | Mostly Stable | Graduated v4.0.5; WorkflowFrameworkRunner path unified; checkpoint API documented |
+| `action` expressions in steps | Experimental | Step modifier; API not yet frozen |
+| `yield expr` | Stable | Promoted v4.0.5; `YIELD` opcode stable since v1.0; no further changes planned |
+| `spawn`, `coroutine`, `channel` | Mostly Stable | Graduated v4.0.5; SCHED-001/002, CHAN-001, CIRC-001 all resolved |
 | Optional type annotations | Experimental | Syntax accepted; no enforcement |
-| `break` / `continue` | Not implemented | Not in 3.0.2 |
+| `break` / `continue` | Not implemented | Planned for a future release |
 
 ---
 
@@ -67,21 +65,21 @@ in CHANGELOG.md and the relevant eval reports.
 | `std:collections` | Mostly Stable | Map/list ops stable; additions possible |
 | `std:fs` | Mostly Stable | Sandbox enforcement added in v2.1.1; API stable |
 | `std:path` | Mostly Stable | |
-| `std:http` | Experimental | Shipping in v4.0; async variants + SSE streaming |
-| `std:env` | Experimental | Shipping in v4.0 |
-| `std:time` | Experimental | Shipping in v4.0 |
-| `std:hash` | Experimental | Shipping in v4.0; returns hash record with `.to_hex()` |
-| `std:encoding` | Experimental | Shipping in v4.0; base64, URL encode/decode |
-| `std:secrets` | Experimental | Shipping in v4.0; cryptographic random tokens |
-| `std:subprocess` | Experimental | Shipping in v4.0; run, shell, spawn with async variants |
-| `std:test` | Experimental | Shipping in v4.0; built-in assertion framework |
-| `std:tool` | Experimental | Shipping in v4.0; MCP-compatible tool registry |
-| `std:identity` | Experimental | Shipping in v4.0; trace_id, session_id propagation |
-| `std:effects` | Experimental | Shipping in v4.0; EXACTLY_ONCE idempotency |
-| `std:sys` | Experimental | Shipping in v4.0; versioned syscall dispatch |
-| `std:memory` | Experimental | Shipping in v4.0; share/recall/forget across namespaces |
-| `std:retry` | Experimental | Shipping in v4.0; configurable retry policies |
-| `std:circuit_breaker` | Experimental | Shipping in v4.0; three-state breaker |
+| `std:http` | Experimental | Shipped in v4.0; async variants + SSE streaming |
+| `std:env` | Experimental | Shipped in v4.0 |
+| `std:time` | Experimental | Shipped in v4.0; `time.format()` strftime support added v4.0.3 |
+| `std:hash` | Experimental | Shipped in v4.0; returns hash record with `.to_hex()` |
+| `std:encoding` | Experimental | Shipped in v4.0; base64, URL encode/decode |
+| `std:secrets` | Experimental | Shipped in v4.0; cryptographic random tokens |
+| `std:subprocess` | Experimental | Shipped in v4.0; run, shell, spawn with async variants |
+| `std:test` | Experimental | Shipped in v4.0; built-in assertion framework |
+| `std:tool` | Experimental | Shipped in v4.0; MCP-compatible tool registry; dotted namespacing required |
+| `std:identity` | Experimental | Shipped in v4.0; trace_id, session_id propagation; CLI propagation fixed v4.0.3 |
+| `std:effects` | Experimental | Shipped in v4.0; EXACTLY_ONCE idempotency; `get_result()` added v4.0.3 |
+| `std:sys` | Experimental | Shipped in v4.0; versioned syscall dispatch |
+| `std:memory` | Experimental | Shipped in v4.0; share/recall/forget across namespaces; `tag`/`forget` added v4.0.3 |
+| `std:retry` | Experimental | Shipped in v4.0; configurable retry policies |
+| `std:circuit_breaker` | Experimental | Shipped in v4.0; three-state breaker; map-form `create` added v4.0.3 |
 | Legacy `.tl` extension | Deprecated | Warned on use; no removal date set |
 
 ---
@@ -100,7 +98,7 @@ in CHANGELOG.md and the relevant eval reports.
 | `set_trace_id(id)` | Mostly Stable | Added v4.0 |
 | `set_effect_store(store)` | Mostly Stable | Added v4.0 |
 | `run_source()` result shape | Stable | `ok`, `stdout`, `stderr`, `error` keys |
-| `run_file()` result shape | Stable | Now consistent with run_source (ok=False for missing files, v4.0) |
+| `run_file()` result shape | Stable | Consistent with run_source (ok=False for missing files, v4.0) |
 | Event subscription API | Experimental | Not yet implemented |
 | Module loading hooks | Experimental | Not yet implemented |
 | `host_globals` parameter | Mostly Stable | |
@@ -113,7 +111,7 @@ in CHANGELOG.md and the relevant eval reports.
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| Opcode set (47 opcodes) | Stable | Frozen at v1.0 (2026-03-15) |
+| Opcode set (47 opcodes) | Stable | Frozen at v1.0 (2026-03-15); `RESET_LOCAL_IDX` added v4.0.3 |
 | `BYTECODE_VERSION = 4` | Stable | Bumped for `finally` support; frozen |
 | Bytecode cache format | Mostly Stable | Uses `marshal` + SHA-256 + `NDSC` magic; invalidated on version change |
 | `FunctionInfo` serialization | Internal | Cache format; may change without notice on `BYTECODE_VERSION` bump |
@@ -144,24 +142,31 @@ in CHANGELOG.md and the relevant eval reports.
 | `nodus check` | Stable | |
 | `nodus fmt` | Stable | |
 | `nodus repl` | Stable | |
+| `nodus test` | Mostly Stable | Built-in test runner; added v4.0 |
 | `nodus --version` | Stable | |
 | `nodus init` | Stable | |
 | `nodus install` | Mostly Stable | Package manager; registry auth added in v0.9 |
 | `nodus publish` | Mostly Stable | |
 | `nodus login` / `nodus logout` | Mostly Stable | |
+| `nodus workflow` subcommands | Mostly Stable | `runs`, `inspect`, `dead-letters`, `replay`, `migrate-state`, `cleanup` |
+| `nodus lsp` | Experimental | LSP server; hover, go-to-definition, completions |
+| `nodus dap` | Experimental | DAP debug server; breakpoints, stepping, variable inspection, evaluate |
 | `nodus dis` | Internal | Bytecode disassembler; output format not guaranteed |
 | `nodus ast` | Internal | AST printer; output format not guaranteed |
 | REPL inspection commands (`:ast`, `:dis`, `:type`) | Internal | REPL-only; output format not guaranteed |
 
 ---
 
-## 7. Tooling servers (LSP, DAP)
+## 7. Tooling servers (LSP, DAP) and companion tooling
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| LSP server (language server protocol) | Experimental | Implements LSP 3.17; feature coverage partial |
-| DAP server (debug adapter protocol) | Experimental | Breakpoints, stepping, variable inspection; `evaluate` not implemented (GitHub #106) |
+| LSP server (`nodus lsp`) | Experimental | LSP 3.17; hover docs, go-to-definition, completions |
+| DAP server (`nodus dap`) | Experimental | Breakpoints, stepping, variable inspection, evaluate (#106 closed v4.0.4) |
 | Server mode (HTTP/FastAPI) | Experimental | Requires `nodus-lang[server]`; protocol not frozen |
+| **nodus-vscode** extension | Experimental | VS Code Marketplace (`MasterplanInfiniteWeave`); v0.1.0 (2026-06-15) |
+| **nodus-jupyter** kernel | Experimental | `pip install nodus-jupyter`; v0.1.0 (2026-06-15) |
+| **nodus-mcp-server** | Experimental | Standalone MCP server; v0.1.0 on GitHub (2026-06-15) |
 
 **Tooling drift policy:** The formatter has a CI gate that catches formatting
 regressions automatically. The LSP and DAP do not have equivalent gates —
@@ -198,8 +203,8 @@ Until gated tests exist for those, this rule is the process guard against drift.
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| Eval score (composite weighted, 21 dimensions) | Informational | Current: 7.57/10 (v3.0.2); not a stability guarantee |
-| Coverage gate (≥60%) | Internal quality gate | Not a public API commitment |
+| Eval score (composite weighted, 21 dimensions) | Informational | v4.0.3: 6.3/10 (Stage 5 independent eval, 2026-06-13); not a stability guarantee |
+| Coverage gate (≥70%) | Internal quality gate | Raised from 60% on 2026-05-31; not a public API commitment |
 | Ruff lint gate | Internal quality gate | |
 | Doc-vs-code gate (nodus_gate) | Internal quality gate | |
 
@@ -214,8 +219,10 @@ An experimental surface graduates to Mostly Stable or Stable when:
 3. A design decision record exists and is not provisional
 4. The surface has been in production use (embedded or CLI) without reported breakage
 
-Coroutines, channels, and task graphs are the largest experimental surfaces. They are
-implemented and tested but their API has not completed the graduation process.
+**Graduated in v4.0.5:** `spawn`/`coroutine`/`channel` and `workflow`/`goal`/`step`
+completed all four criteria after the v4.0.3 and v4.0.4 eval cycles. The primary
+remaining experimental surfaces are the v4.0 stdlib modules (`std:http`, `std:tool`,
+`std:identity`, etc.) — these need one more eval cycle before graduation is considered.
 
 ---
 

@@ -4,6 +4,46 @@
 
 ---
 
+## [4.0.5] - 2026-06-15
+
+### Stability graduations
+
+The following experimental language surfaces have completed the graduation
+criteria (two eval cycles without regression, ≥70% coverage, closed issues,
+documented semantics) and are promoted in the Language Stability Index:
+
+- **`spawn`, `coroutine`, `channel`**: Experimental → **Mostly Stable**
+  SCHED-001 (#94), SCHED-002 (#95), CHAN-001 (#107), and CIRC-001 (#103) are
+  all resolved. API is frozen.
+- **`workflow`, `goal`, `step`**: Experimental → **Mostly Stable**
+  WorkflowFrameworkRunner path unified (#108, #109). WF-SCAN-001 (#102) and
+  checkpoint API (#110) resolved. NAME-COL-001 (#104) resolved via Option A
+  (in-tree rename completed 2026-05-31).
+- **`yield expr`**: Mostly Stable → **Stable**
+  Semantics and `YIELD` opcode unchanged since v1.0; promoted to Stable.
+
+### Documentation
+
+- **Language Stability Index** updated to v4.0.5: graduation entries above,
+  string interpolation corrected to Stable (was incorrectly marked "planned
+  for v4.0" — shipped in v4.0), `+=/-=/*=/=/=` compound assignment added
+  (shipped in v4.0.1), DAP evaluate corrected (implemented, #106 closed),
+  coverage gate updated to 70% (raised from 60% on 2026-05-31).
+
+### Companion tooling (published alongside this release)
+
+- **nodus-vscode v0.1.0** — VS Code extension; TextMate grammar, snippets,
+  diagnostics, run/format/DAP/LSP support. Published to VS Code Marketplace
+  under publisher `MasterplanInfiniteWeave`.
+- **nodus-jupyter v0.1.0** — Jupyter kernel for Nodus. Cross-cell state via
+  full source accumulation. `pip install nodus-jupyter`. Published to PyPI.
+- **nodus-mcp-server v0.1.0** — Standalone MCP tool server wrapping a
+  NodusRuntime. 6 MCP tools. Available on GitHub.
+- **nodus-adapter-base v0.1.0** — Abstract base for channel adapters;
+  reconnect loop, health recording, `ConnectionManager`. Published to PyPI.
+
+---
+
 ## [4.0.4] - 2026-06-13
 
 ### Fixes
