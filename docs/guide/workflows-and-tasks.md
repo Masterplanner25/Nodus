@@ -263,6 +263,17 @@ run_goal(release)
 `goal` is a naming convention for "desired end states" rather than
 pipelines. The distinction is semantic, not technical.
 
+As a convention: reach for `goal` when the emphasis is on the **outcome**
+— the steps are implementation details of achieving something (`goal summarize`,
+`goal release`, `goal validate`). Reach for `workflow` when the emphasis is on
+the **process** — the pipeline itself is the point, and callers care about the
+step sequence and dependencies (`workflow research`, `workflow build_and_deploy`,
+`workflow ingest_and_index`).
+
+Code that follows this convention reads like the problem it solves: a
+`goal release` communicates intent differently from a `workflow release`,
+even though the runtime treats them identically.
+
 CLI commands mirror the keyword: `nodus workflow run` / `nodus workflow plan` /
 `nodus workflow resume` for workflows; `nodus goal run` / `nodus goal plan` /
 `nodus goal resume` for goals. `nodus workflow run` prints step stdout then
