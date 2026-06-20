@@ -64,7 +64,7 @@ All packages are published on PyPI. Organized by build tier.
 | [`nodus-memory`](https://github.com/Masterplanner25/nodus-memory) | 28 | **published** ✅ |
 | [`nodus-workflow`](https://github.com/Masterplanner25/nodus-workflow) | 17 | **published** ✅ |
 | [`nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a) | 23 | **published** ✅ |
-| [`nodus-adapters`](https://github.com/Masterplanner25/nodus-adapters) | 11 | **published** ✅ |
+| [`nodus-adapter-base`](https://github.com/Masterplanner25/nodus-adapters) (PyPI: `nodus-adapter-base`, repo: `nodus-adapters/base/`) | 11 | **published** ✅ |
 
 ### Tier 3 — Requires T1+T2 (Group 5)
 
@@ -85,9 +85,18 @@ All packages are published on PyPI. Organized by build tier.
 | Package | Tests | Notes |
 |---------|-------|-------|
 | [`nodus-store-sql`](https://github.com/Masterplanner25/nodus-store-sql) | 47 | Promoted from incubator scaffold; **published** ✅ |
-| [`nodus-extension`](https://github.com/Masterplanner25/nodus-extension) | 126 | nodus-lang plugin framework companion repo; **published** ✅ |
-| [`nodus-native-memory-engine`](https://github.com/Masterplanner25/nodus-native-memory-engine) | 76 | PyO3/Maturin Rust extension; **published** ✅ |
-| [`nodus-sdk`](https://github.com/Masterplanner25/nodus-sdk) | 99 | Unified platform SDK (9 bridges); **published** ✅ |
+| [`nodus-extension`](https://github.com/Masterplanner25/nodus-extension) | 126 | nodus-lang plugin framework (typed, versioned, sandboxed); **published** ✅ |
+| [`nodus-native-memory-engine`](https://github.com/Masterplanner25/nodus-native-memory-engine) | 76 | PyO3/Maturin Rust extension with pure-Python fallback; **published** ✅ |
+| [`nodus-sdk`](https://github.com/Masterplanner25/nodus-sdk) | 99 | Unified platform SDK (9 bridges, FastAPI router); **published** ✅ |
+
+### Non-PyPI published artifacts
+
+| Artifact | Version | Distribution |
+|----------|---------|--------------|
+| [`nodus-mcp-server`](https://github.com/Masterplanner25/nodus-mcp-server) | v0.1.11 | PyPI — standalone MCP tool server (6 tools, stdio + HTTP/SSE transports) |
+| [`nodus-jupyter`](https://github.com/Masterplanner25/nodus-jupyter) | v0.1.0 | PyPI — Jupyter kernel for `.nd` files (32 unit tests) |
+| [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | v0.1.0 | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
+| [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | v1.0.0 | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
 
 ## Shared design rules
 
