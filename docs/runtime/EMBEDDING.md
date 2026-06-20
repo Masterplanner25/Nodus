@@ -6,22 +6,19 @@ This document describes how host applications can integrate with the Nodus runti
 
 Embedding allows external systems to:
 
-execute Nodus scripts
-
-register host functions
-
-expose services to scripts
-
-receive runtime events
-
-control execution environments
+- execute Nodus scripts
+- register host functions
+- expose services to scripts
+- receive runtime events
+- control execution environments
 
 This makes Nodus suitable as a scripting layer for automation platforms and orchestration systems.
 
-1. Embedding Model
+## 1. Embedding Model
 
 At a high level, embedding Nodus involves four steps:
 
+```
 Host System
    ->
 Create Runtime
@@ -31,20 +28,24 @@ Register Builtins / Services
 Load Script
    ->
 Execute
+```
 
 The host environment provides capabilities while the Nodus runtime executes script logic.
 
-2. Runtime Initialization
+## 2. Runtime Initialization
 
-For embedded use, create a ``NodusRuntime`` instance from ``nodus.runtime.embedding``.
+For embedded use, create a `NodusRuntime` instance from `nodus.runtime.embedding`.
 
-``NodusRuntime`` is available directly from the ``nodus`` package as of v1.0:
+`NodusRuntime` is available directly from the `nodus` package as of v1.0:
 
-  from nodus import NodusRuntime         # preferred — added to nodus.__all__ in v1.0
-  from nodus.runtime.embedding import NodusRuntime  # also works
+```python
+from nodus import NodusRuntime         # preferred — added to nodus.__all__ in v1.0
+from nodus.runtime.embedding import NodusRuntime  # also works
+```
 
 Example flow:
 
+```python
 from nodus.runtime.embedding import NodusRuntime
 
 runtime = NodusRuntime(
@@ -53,26 +54,30 @@ runtime = NodusRuntime(
     project_root="/my/project",
 )
 result = runtime.run_source(source_code)
+```
 
 **Long-lived embedding (servers, loops, MCP/A2A hosts):**
 
-``NodusRuntime()`` defaults to ``timeout_ms=None`` (no deadline). Short-lived sandboxed
-scripts that need a guardrail should pass an explicit value::
+`NodusRuntime()` defaults to `timeout_ms=None` (no deadline). Short-lived sandboxed
+scripts that need a guardrail should pass an explicit value:
 
-  # Short-lived sandboxed script — explicit deadline
-  runtime = NodusRuntime(timeout_ms=5000, max_steps=100_000)
+```python
+# Short-lived sandboxed script — explicit deadline
+runtime = NodusRuntime(timeout_ms=5000, max_steps=100_000)
 
-  # Long-lived host (server, MCP/A2A, workflow engine) — use default or be explicit
-  runtime = NodusRuntime(
-      timeout_ms=None,    # no wall-clock deadline (this is already the default)
-      max_steps=None,
-      project_root="/my/project",
-  )
+# Long-lived host (server, MCP/A2A, workflow engine) — use default or be explicit
+runtime = NodusRuntime(
+    timeout_ms=None,    # no wall-clock deadline (this is already the default)
+    max_steps=None,
+    project_root="/my/project",
+)
+```
 
 Note: as of v4.0.1 (SCHED-001), cooperative sleep time is excluded from the deadline
-budget. Only active VM instruction execution consumes ``timeout_ms``. A coroutine
-sleeping 4 × 100 ms with ``timeout_ms=500`` completes cleanly.
+budget. Only active VM instruction execution consumes `timeout_ms`. A coroutine
+sleeping 4 × 100 ms with `timeout_ms=500` completes cleanly.
 
+```python
 # Optional: inject initial globals or host globals
 # (useful for passing host-owned context to scripts)
 result = runtime.run_source(
@@ -80,59 +85,64 @@ result = runtime.run_source(
     initial_globals={"request_id": "abc123"},
     host_globals={"external_service": {"name": "example"}},
 )
+```
 
 Constructor parameters:
 
-- ``max_steps`` (int | None, default MAX_STEPS): Maximum total VM instructions per
-  execution. Raises ``RuntimeLimitExceeded`` when exceeded. ``None`` means unlimited.
-- ``timeout_ms`` (int | None, default None): Wall-clock timeout in milliseconds per
-  execution. ``None`` means no timeout (the default). Pass an explicit value for
+- `max_steps` (int | None, default `MAX_STEPS`): Maximum total VM instructions per
+  execution. Raises `RuntimeLimitExceeded` when exceeded. `None` means unlimited.
+- `timeout_ms` (int | None, default `None`): Wall-clock timeout in milliseconds per
+  execution. `None` means no timeout (the default). Pass an explicit value for
   short-lived sandboxed scripts.
-- ``max_stdout_chars`` (int | None, default MAX_STDOUT_CHARS): Maximum captured stdout
+- `max_stdout_chars` (int | None, default `MAX_STDOUT_CHARS`): Maximum captured stdout
   characters per execution. Output beyond this limit is silently truncated.
-- ``project_root`` (str | None, default None): Absolute path to the project root.
+- `project_root` (str | None, default `None`): Absolute path to the project root.
   Used by the module loader to resolve non-relative imports.
-- ``allowed_paths`` (list[str] | None, default [os.getcwd()]): Directory paths the
+- `allowed_paths` (list[str] | None, default `[os.getcwd()]`): Directory paths the
   script may access via filesystem builtins. Defaults to the working directory at
-  construction time. Pass ``allowed_paths=None`` to allow unrestricted filesystem access.
-  Also reads ``NODUS_ALLOWED_PATHS`` env var (colon-separated) when the parameter is
+  construction time. Pass `allowed_paths=None` to allow unrestricted filesystem access.
+  Also reads `NODUS_ALLOWED_PATHS` env var (colon-separated) when the parameter is
   omitted.
-- ``allow_input`` (bool, default False): If ``False``, the ``input()`` builtin raises
+- `allow_input` (bool, default `False`): If `False`, the `input()` builtin raises
   a sandbox error.
-- ``max_frames`` (int | None, default None): Maximum call stack depth. Prevents runaway
+- `max_frames` (int | None, default `None`): Maximum call stack depth. Prevents runaway
   recursion from exhausting memory. When exceeded, raises a sandbox error with
-  ``kind="sandbox"``. Set to ``None`` for no limit (not recommended for untrusted code;
-  the VM applies ``MAX_STACK_DEPTH`` as a hard backstop when this is ``None``).
+  `kind="sandbox"`. Set to `None` for no limit (not recommended for untrusted code;
+  the VM applies `MAX_STACK_DEPTH` as a hard backstop when this is `None`).
 
-``NodusRuntime`` handles the full pipeline internally:
+`NodusRuntime` handles the full pipeline internally:
 
+```
 tokenize
 -> parse
 -> resolve imports (ModuleLoader)
 -> compile
 -> optimize
 -> execute
+```
 
-The ``result`` dict contains ``"ok"``, ``"stdout"``, ``"stderr"``, and on error
-a structured ``"error"`` entry.
+The `result` dict contains `"ok"`, `"stdout"`, `"stderr"`, and on error
+a structured `"error"` entry.
 
-``run_source()`` / ``run_file()`` optional parameters:
-- ``initial_globals``: dict injected into ``module_globals`` for the VM (script-level globals).
-- ``host_globals``: dict injected into ``host_globals`` for the VM (host-provided services).
+`run_source()` / `run_file()` optional parameters:
 
-The low-level ``nodus.tooling.loader.run_source()`` function is also available
-but does not provide sandbox controls or host function registration.  Prefer
-``NodusRuntime`` for all embedding scenarios.
+- `initial_globals`: dict injected into `module_globals` for the VM (script-level globals).
+- `host_globals`: dict injected into `host_globals` for the VM (host-provided services).
 
-3. Registering Host Functions
+The low-level `nodus.tooling.loader.run_source()` function is also available
+but does not provide sandbox controls or host function registration. Prefer
+`NodusRuntime` for all embedding scenarios.
+
+## 3. Registering Host Functions
 
 One of the primary embedding mechanisms is the host function registry on
-``NodusRuntime``.
+`NodusRuntime`.
 
 Host applications can expose functionality to Nodus scripts.
 
 Example:
 
+```python
 from nodus.runtime.embedding import NodusRuntime
 
 def host_log(message):
@@ -141,120 +151,118 @@ def host_log(message):
 runtime = NodusRuntime()
 runtime.register_function("log", host_log)
 result = runtime.run_source('log("hello from script")')
+```
 
 Nodus code can then call the function:
 
+```nd
 log("hello from script")
+```
 
-``register_function(name, fn, arity=None)`` registers the callable before any
-run; it is available in every subsequent ``run_source`` / ``run_file`` call.
+`register_function(name, fn, arity=None)` registers the callable before any
+run; it is available in every subsequent `run_source` / `run_file` call.
 Arity is inferred from the signature when not provided explicitly.
 
 This mechanism allows scripts to interact with host services such as:
 
-databases
+- databases
+- APIs
+- task schedulers
+- monitoring systems
+- external agents
 
-APIs
-
-task schedulers
-
-monitoring systems
-
-external agents
-
-4. Providing Runtime Services
+## 4. Providing Runtime Services
 
 Host applications can expose structured services to the runtime.
 
 Examples include:
 
-tool execution
-
-memory systems
+- tool execution
+- memory systems
 
 External memory systems, including A.I.N.D.Y., can be connected by the host
 application through explicit host functions or services. They are integration
 concerns and are not part of Nodus core local key/value memory.
 
-agent frameworks
-
-orchestration infrastructure
+- agent frameworks
+- orchestration infrastructure
 
 Typical architecture:
 
+```
 Host System
   |- tools
   |- memory
   |- services
-  - runtime environment
+  |- runtime environment
         ->
      Nodus Runtime
+```
 
 Scripts act as orchestration logic while the host system performs the actual work.
 
-5. Script Execution Modes
+## 5. Script Execution Modes
 
 Nodus supports multiple execution contexts.
 
-Single Script Execution
+### Single Script Execution
 
 Run a script once.
 
 Example:
 
+```bash
 nodus run script.nd
-REPL Execution
+```
+
+### REPL Execution
 
 Interactive execution through the runtime REPL.
 
+```bash
 python -m nodus.tooling.repl
+```
 
 The REPL supports multiline brace-delimited input, persistent history via `~/.nodus_history` when `readline` is available, and shell inspection commands such as `:ast <expr>`, `:dis <expr>`, and `:type <expr>`.
-Server Mode
 
-The runtime can run as a service through:
+### Server Mode
 
-server.py
+The runtime can run as a service through `server.py`.
 
 This mode allows external systems to send scripts or commands to the runtime.
 
-6. Event Integration
+## 6. Event Integration
 
 The runtime supports event tracing through the runtime event system.
 
-Key module:
-
-runtime_events.py
+Key module: `runtime_events.py`
 
 Hosts may subscribe to events such as:
 
-task execution
-
-workflow transitions
-
-coroutine scheduling
-
-errors
+- task execution
+- workflow transitions
+- coroutine scheduling
+- errors
 
 Example architecture:
 
+```
 VM Execution
    ->
 Runtime Events
    ->
 Host Event Sink
+```
 
 This allows external systems to observe and monitor script execution.
 
-7. Task and Workflow Integration
+## 7. Task and Workflow Integration
 
 Nodus includes orchestration primitives such as:
 
-workflows
-
-goals
-
-task graphs
+- workflows
+- goals
+- task graphs
 
 These constructs compile into runtime task graph structures.
 
@@ -262,6 +270,7 @@ Host systems may provide execution environments for tasks.
 
 Example model:
 
+```
 Nodus Script
    ->
 Workflow
@@ -271,24 +280,22 @@ Task Graph
 Scheduler
    ->
 Host Worker Execution
+```
 
 This design allows scripts to describe coordination logic while host systems execute the underlying tasks.
 
-8. Runtime Isolation
+## 8. Runtime Isolation
 
 Embedded runtimes should consider isolation strategies.
 
 Possible approaches include:
 
-separate runtime instances
+- separate runtime instances
+- restricted builtin sets
+- sandboxed file access
+- execution time limits
 
-restricted builtin sets
-
-sandboxed file access
-
-execution time limits
-
-NodusRuntime accepts optional `allowed_paths` and `allow_input` settings.
+`NodusRuntime` accepts optional `allowed_paths` and `allow_input` settings.
 `allowed_paths` restricts filesystem builtins
 (`read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, and `exists`). When
 set, paths outside the allowlist raise a sandbox error. When omitted, filesystem
@@ -298,7 +305,7 @@ access remains unrestricted.
 
 Isolation policies should be defined by the host environment.
 
-9. Error Handling
+## 9. Error Handling
 
 As of v2.1.0 (BUG-005), `run_source()` catches all runtime and syntax errors and returns
 `{"ok": false, ...}` instead of propagating Python exceptions to the caller. Users on
@@ -307,12 +314,14 @@ to get this behavior.
 
 Example:
 
+```python
 result = rt.run_source(code)
 if not result["ok"]:
     print(f"Error: {result['error']}")
     print(f"Stderr: {result['stderr']}")
 else:
     print(f"Result: {result['stdout']}")
+```
 
 The result dict always contains `"ok"` (bool), `"stdout"` (str), and `"stderr"` (str).
 On error, `"error"` contains a human-readable description of the failure.
@@ -337,18 +346,13 @@ flag that would fold spawned failures into `ok=False`.
 
 Hosts may also intercept runtime errors to:
 
-log failures
+- log failures
+- retry operations
+- report failures to external systems
 
-retry operations
+Key modules: `errors.py`, `diagnostics.py`
 
-report failures to external systems
-
-Key modules:
-
-errors.py
-diagnostics.py
-
-10. Embedding API Stability (v1.0)
+## 10. Embedding API Stability (v1.0)
 
 The `NodusRuntime` embedding API is **stable as of v1.0** (2026-03-15).
 
@@ -364,27 +368,28 @@ Areas of future work include:
 
 These additions will not break the existing stable API surface.
 
-11. Example Embedding Architecture
+## 11. Example Embedding Architecture
 
 A typical embedded environment might look like:
 
+```
 Application Platform
   |- API services
   |- task workers
   |- memory systems
-  - AI agents
+  |- AI agents
         ->
      Nodus Runtime
         ->
      Automation Scripts
+```
 
 In this model:
 
-the host platform provides capabilities
+- the host platform provides capabilities
+- Nodus scripts orchestrate behavior
 
-Nodus scripts orchestrate behavior
-
-Final Note
+## Final Note
 
 Nodus is designed to serve as a programmable coordination layer.
 
