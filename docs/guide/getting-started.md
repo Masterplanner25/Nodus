@@ -15,7 +15,7 @@ pip install nodus-lang
 nodus --version
 ```
 
-Expected output: `Nodus 4.0.3`.
+Expected output: `Nodus 4.0.5`.
 
 For the optional FastAPI/Uvicorn HTTP server:
 
@@ -379,7 +379,7 @@ Start with the foundation guides, then pick the topic you need:
 
 **Ecosystem and packages**
 
-- **[ecosystem.md](ecosystem.md)** - the 29 companion packages, what each
+- **[ecosystem.md](ecosystem.md)** - the 35 companion packages, what each
   does, install tiers, and the nodus-sdk unified entry point.
 - **[library-entry-points.md](library-entry-points.md)** - how third-party
   Nodus libraries expose `.nd` files via the `nodus.nd` entry-point group.

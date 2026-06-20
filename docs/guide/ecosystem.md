@@ -1,7 +1,7 @@
 # Nodus Ecosystem
 
 `nodus-lang` is the core language and runtime. The surrounding ecosystem is
-**29 standalone Python packages** that extend it for specific domains: MCP
+**35 standalone Python packages** that extend it for specific domains: MCP
 integration, agent coordination, memory, observability, circuit breaking, auth,
 queuing, SQL persistence, and more.
 
@@ -132,7 +132,7 @@ with `NodusRuntime` or work standalone.
 | `nodus-channels` | ChannelAdapter protocol, ChannelRegistry, HealthMonitor |
 | `nodus-delivery` | DeliveryPlan, SizeChunker, ParagraphChunker, MarkdownBlockChunker |
 | `nodus-gateway` | GatewayServer (WebSocket + handler dispatch + idempotency cache) |
-| `nodus-adapters` | BaseChannelAdapter (reconnect backoff, health recording) |
+| `nodus-adapter-base` | BaseChannelAdapter (reconnect backoff, health recording) |
 
 ### Data and Schema
 
@@ -184,7 +184,7 @@ Tier 2: Requires Tier 1
   nodus-llm (openai/anthropic optional)
   nodus-gateway (websockets optional)
   nodus-observability-framework (nodus-observability)
-  nodus-adapters (nodus-channels)
+  nodus-adapter-base (nodus-channels)
 
 Tier 3: Requires nodus-lang on PyPI
   nodus-extension (nodus-lang, pydantic)
