@@ -178,13 +178,13 @@ describe the workaround patterns used until these are fixed.
   dicts-of-dicts (maps), not Records. Intentional: Records are for host-constructed typed
   values, maps are for arbitrary JSON-shape returns.
 
-- **@annotation syntax deferred to Phase 7:** `@exactly_once` and `@retry(...)` as
-  language-level function annotations are the highest-DX gap remaining after Phase 6.
-  Requires: lexer (`@` token), parser (annotation-before-fn), AST field, compiler lowering
-  (emit EffectStore wrapper code). Estimated 4-5 days of frontend work.
-  `effects.nd` provides the runtime primitives; the sugar is the outstanding piece.
+- ✅ **@annotation syntax (`@retry`, `@exactly_once`):** Both annotations are implemented —
+  lexer, parser, AST field, and compiler lowering are complete. `@retry` had a key-mapping
+  bug (short-form keys `max`/`delay_ms` vs long-form `max_attempts`/`backoff_ms`) fixed in
+  v4.0.6 (COMPILER-001, PR #267). `@exactly_once` scope limitation (per-`NodusRuntime`
+  instance only) documented in `docs/guide/ai-primitives.md` and at the compiler call site.
 
-- **Coverage baseline (pytest-cov 7.1.0, 2026-05-31):** Overall: 76% (19,126 stmts, 1638 tests). Gate raised to `--cov-fail-under=70` (was 60%; actual coverage 76% makes 70% a meaningful safety net). Three timing-sensitive tests deselected from the coverage run (they pass in the regular pytest step but fail under instrumentation overhead: `test_scheduler_fairness.py::test_multiple_tasks_progress`, `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`, `test_task_graph.py::TaskGraphTests::test_worker_death_detection`). Modules below 60%:
+- **Coverage baseline (pytest-cov 7.1.0, 2026-05-31):** Overall: 76% (19,126 stmts, 1,645 tests). Gate raised to `--cov-fail-under=70` (was 60%; actual coverage 76% makes 70% a meaningful safety net). Coverage run uses `--ignore=tests/test_scheduler_fairness.py` to exclude the timing-sensitive scheduler fairness tests. Known pre-existing flaky test (passes individually, timing-sensitive under full-suite load): `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`. Modules below 60%:
   - `src/nodus/__main__.py`: 0% (3 stmts — trivial entry point, not exercised by test suite)
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
   - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
@@ -334,36 +334,30 @@ not just verifying known fixes are present.
 
 - **Missing rubric eval for v2.1.0:** v2.1.0 shipped without a formal rubric eval. Guide-writing surfaced 23 issues but produced no composite score, leaving v2.0.0 (5.52) as the only comparable data point going into v3.0. **Playbook action:** every major/minor release must run the formal rubric eval and record the composite score before close. Guide-writing is supplementary, not a substitute. Capture in `RELEASE_PLAYBOOK.md` Phase 5.
 
-## v4.0 Pre-publish Decisions (must resolve before shipping)
+## v4.0 Pre-publish Decisions (post-launch status)
 
-These items were surfaced during the 2026-05-30 ecosystem verification pass and are
-not blocking current development but **must be decided before v4.0.0 publishes**.
+These items were surfaced during the 2026-05-30 ecosystem verification pass. v4.0.0
+shipped on 2026-06-10; items below are updated to reflect post-launch status.
 Each has a GitHub issue for scope discussion.
 
-- **WF-SCAN-001** (Phase D graduation blocker, GitHub: #102): `LocalWorkflowStore`
-  scans all run files on every sweep — O(n) over historical runs. Fix: SQLite default
-  for tests, or cap scan to a time-window. Skill: `/nodus-workflow-freeze`.
+- ✅ **WF-SCAN-001** (GitHub: #102): `LocalWorkflowStore` O(n) sweep scan — **CLOSED**.
+  Fix: tests use SQLite temp store; documented in CLAUDE.md operational gotcha section.
+  Skill: `/nodus-workflow-freeze`.
 
-- **CIRC-001** (Phase A, GitHub: #103): `nodus.vm.vm` imports `nodus_workflow.runner`
-  at module level. Fix: lazy import inside the function body. One-liner.
+- **CIRC-001** (GitHub: #103): `nodus.vm.vm` imports `nodus_lang_workflow.runner`
+  at module level. Fix: lazy import inside the function body. One-liner. Still open.
   Skill: `/nodus-scheduler-freeze` (included as Phase A quick-win).
 
-- **NAME-COL-001** (pre-publish decision, GitHub: #104): `nodus_schema` and
-  `nodus_workflow` in-tree modules collide with standalone PyPI packages. Must be
-  decided (rename standalone, move in-tree, or consolidate) before v4.0.0 tag.
+- **NAME-COL-001** (GitHub: #104): `nodus_lang_schema` / `nodus_lang_workflow` in-tree
+  modules vs standalone `nodus-schema` / `nodus-workflow` PyPI packages. Resolved at
+  4.0.0 via Option A rename (in-tree prefixed `nodus_lang_*`). Option C full
+  consolidation tracked post-launch. Skill: `/nodus-name-col-consolidation`.
 
-- **run_goal WorkflowFrameworkRunner bypass** (Phase C graduation blocker, GitHub: #108):
-  `run_goal()` calls `run_task_graph()` directly without registering with
-  `WorkflowFrameworkRunner`. Goals are invisible to the framework's claim/resume/
-  dead-letter machinery. Skill: `/nodus-goal-freeze`.
+- ✅ **run_goal WorkflowFrameworkRunner bypass** (GitHub: #108): **CLOSED** (2026-06-05).
 
-- **Workflow/goal path unification** (Phase C graduation blocker, GitHub: #109):
-  Goals and workflows use diverging execution paths — goals will silently miss
-  framework capabilities as the runner evolves. Skill: `/nodus-goal-freeze`.
+- ✅ **Workflow/goal path unification** (GitHub: #109): **CLOSED** (2026-06-05).
 
-- **Checkpoint API completeness** (Phase D graduation blocker, GitHub: #110):
-  `checkpoints` vs `engine_checkpoints` distinction undocumented; no dedicated
-  checkpoint test file. Skill: `/nodus-workflow-freeze`.
+- ✅ **Checkpoint API completeness** (GitHub: #110): **CLOSED** (2026-06-05).
 
 ## Phase 4 Deferred Content: STDLIB_PHILOSOPHY.md
 
