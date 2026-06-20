@@ -133,25 +133,26 @@ is the dev-time bootstrap; production teams manage migrations independently.
 
 ## Assessment: nodus-vscode (VS Code extension)
 
-**Current version:** 0.1.0 (local complete — not yet published to VS Code Marketplace)
+**Current version:** 0.1.0 (published to VS Code Marketplace 2026-06-15)
 **Source:** `github.com/Masterplanner25/nodus-vscode`
+**Publisher:** `MasterplanInfiniteWeave`
 
 | Dimension | Level |
 |---|---|
 | Architectural coherence | **Coherent** — four phases cleanly separated (grammar, diagnostics, DAP, LSP); `vscode-languageclient` v9 over stdio |
 | Implementation completeness | **Complete for v0.1 scope** — syntax highlighting, 23 snippets, diagnostics, run/format, DAP debugger, hover/definition/completions via LSP |
-| Operational readiness | **Verified locally** — all four phases tested end-to-end; not yet Marketplace-published |
+| Operational readiness | **Published and working** — all four phases tested end-to-end; live on VS Code Marketplace |
 | Stability commitment | **Pre-release (v0.1.0)** — no backward compatibility commitment |
-| Publication status | **Not yet published** — VSIX built; awaiting Marketplace PAT |
+| Publication status | **Published** — VS Code Marketplace (MasterplanInfiniteWeave publisher) |
 
-**Composite label:** Complete / Pre-publish
+**Composite label:** Published / Launch-ready
 
 **Honest assessment:**
 - LSP features (hover, definition, completions) work against the installed `nodus.exe` — changes
   to `nodus lsp` server code require a new nodus-lang PyPI release to take effect in VS Code
 - LSP returns no results for files with syntax errors (parser can't build symbol table); diagnostics still work
 - `nodus.lspCommand` setting allows pointing at dev source without a release
-- DAP debugger depends on `nodus dap`; evaluate command (#106) not yet implemented
+- DAP evaluate command (#106) implemented and closed
 
 ---
 
