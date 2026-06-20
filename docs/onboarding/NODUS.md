@@ -65,7 +65,7 @@ The scheduler is cooperative: coroutines yield explicitly, enabling deterministi
 
 ## Ecosystem
 
-Nodus ships as `nodus-lang` on PyPI. The surrounding ecosystem spans **29 standalone packages** covering agent coordination, MCP integration, memory, observability, circuit breaking, auth, queues, and more. A unified SDK installs them together:
+Nodus ships as `nodus-lang` on PyPI. The surrounding ecosystem spans **35 standalone packages** covering agent coordination, MCP integration, memory, observability, circuit breaking, auth, queues, and more. A unified SDK installs them together:
 
 ```bash
 pip install nodus-sdk[agent,sql,fastapi]
@@ -130,4 +130,4 @@ The project file provides always-on guardrails for the language. The skill provi
 
 ## Current Stage
 
-v4.0.3, published on PyPI (`pip install nodus-lang`). The v4.0 cycle adds the AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, and the full ecosystem of 29 companion packages. See `CHANGELOG.md` for the complete version history.
+v4.0.5, published on PyPI (`pip install nodus-lang`). The v4.0 cycle adds the AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, and the full ecosystem of 35 companion packages. See `CHANGELOG.md` for the complete version history.
