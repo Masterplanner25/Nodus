@@ -1,10 +1,10 @@
 # Nodus
 
-[![CI](https://github.com/Masterplanner25/nodus-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/Masterplanner25/nodus-lang/actions/workflows/ci.yml)
+[![CI](https://github.com/Masterplanner25/Nodus/actions/workflows/ci.yml/badge.svg)](https://github.com/Masterplanner25/Nodus/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.0.3 stable on PyPI** — `pip install nodus-lang` · Full 29-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v4.0.5 stable on PyPI** — `pip install nodus-lang` · Full 33-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
 ```bash
 pip install nodus-lang
@@ -19,7 +19,7 @@ If you're building multi-step AI agents, embedding a scripting layer in a Python
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
-The Nodus ecosystem spans **29 standalone packages**, all available at
+The Nodus ecosystem spans **33 standalone packages**, all available at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
 story: `pip install nodus-sdk[agent,sql,fastapi]`.
 
