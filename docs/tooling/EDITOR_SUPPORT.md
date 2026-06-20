@@ -4,13 +4,17 @@ Nodus ships a small TextMate grammar and VS Code language configuration so `.nd`
 
 ## VS Code
 
-Files live under `tools/vscode/`:
+The Nodus VS Code extension (`nodus-vscode`) is published on the VS Code Marketplace
+under publisher `MasterplanInfiniteWeave`. Install it by searching for "Nodus" in the
+VS Code Extensions panel, or find it at the Marketplace under `MasterplanInfiniteWeave`.
+
+For development or local testing from the in-repo source, files live under `tools/vscode/`:
 - `tools/vscode/package.json`
 - `tools/vscode/language-configuration.json`
 - `tools/vscode/syntaxes/nodus.tmLanguage.json`
 - `tools/vscode/snippets/nodus.json`
 
-To use locally:
+To install locally from source:
 1. Open the `tools/vscode/` folder in VS Code.
 2. Use the command palette: `Developer: Install Extension from Location...` and select `tools/vscode/`.
 3. Open any `.nd` file and confirm the language mode is `Nodus`.
@@ -77,5 +81,4 @@ The adapter reuses the existing runtime debugger for breakpoints, stepping, stac
 
 ## Future Ideas
 
-- Distribute as a standalone VS Code extension.
 - Expand the LSP with richer semantic analysis and editor-specific packaging.
