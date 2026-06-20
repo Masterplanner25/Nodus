@@ -2,7 +2,7 @@
 
 ## Language
 
-This project uses **Nodus v4** (`nodus-lang 4.0.0`).
+This project uses **Nodus v4** (`nodus-lang 4.0.5`).
 
 Install: `pip install nodus-lang`
 
@@ -21,7 +21,7 @@ nodus repl
 - `{k: v}` is a record. Use dot access: `r.key`.
 - `{"k": v}` is a map. Use bracket access: `m["key"]`.
 - `json.parse()` returns a map. Never use dot access on parsed JSON.
-- No `+=`. Write `x = x + 1i`.
+- `+=`, `-=`, `*=`, `/=` work. `**` does not — use `math.pow()`.
 - `print()` is single-argument. Use interpolation: `print("value: \(x)")`.
 - Expressions cannot span newlines. Keep calls and list literals on one line.
 - Bare numbers are floats. Use `i` suffix for counters, indices, loop bounds, and workflow state.
@@ -44,5 +44,5 @@ Codex can then invoke `$nodus` for deep Nodus-specific guidance.
 ## Useful links
 
 - Nodus on PyPI: https://pypi.org/project/nodus-lang/
-- GitHub: https://github.com/Masterplanner25/nodus-lang
-- Wiki: https://github.com/Masterplanner25/nodus-lang/wiki
+- GitHub: https://github.com/Masterplanner25/Nodus
+- Wiki: https://github.com/Masterplanner25/Nodus/wiki

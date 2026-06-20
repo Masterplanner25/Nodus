@@ -2,7 +2,7 @@
 
 ## Language
 
-This project uses **Nodus v4** (`nodus-lang 4.0.0`).
+This project uses **Nodus v4** (`nodus-lang 4.0.5`).
 
 Install: `pip install nodus-lang`
 
@@ -25,7 +25,7 @@ nodus repl                               # interactive REPL
 - `json.parse()` returns a map — always bracket access.
 
 **Operators and syntax**
-- No `+=`. Write `x = x + 1i` in full.
+- `+=`, `-=`, `*=`, `/=` work. `**` does not — use `math.pow()`.
 - `print()` is single-argument. Use interpolation: `print("val: \(x)")`.
 - Expressions cannot span newlines. Keep list literals and function calls on one line.
 - No `break` or `continue`. Structure loops to avoid needing them.
@@ -59,8 +59,8 @@ nodus repl                               # interactive REPL
 ## AI coding assistant skill
 
 A Claude Code skill for Nodus v4 is available at
-[`skills/nodus.skill`](https://github.com/Masterplanner25/nodus-lang/raw/main/skills/nodus.skill)
-in the nodus-lang repo.
+[`skills/nodus.skill`](https://github.com/Masterplanner25/Nodus/raw/main/skills/nodus.skill)
+in the Nodus repo.
 
 Drop it in `.claude/commands/nodus.skill` alongside this file for deep Nodus support:
 15 verified example programs, 20 Python→Nodus contrast pairs, named error fix classes,
@@ -69,6 +69,6 @@ and full stdlib coverage.
 ## Useful links
 
 - [Nodus on PyPI](https://pypi.org/project/nodus-lang/)
-- [GitHub](https://github.com/Masterplanner25/nodus-lang)
-- [Wiki](https://github.com/Masterplanner25/nodus-lang/wiki)
-- [Standard Library reference](https://github.com/Masterplanner25/nodus-lang/wiki/Standard-Library)
+- [GitHub](https://github.com/Masterplanner25/Nodus)
+- [Wiki](https://github.com/Masterplanner25/Nodus/wiki)
+- [Standard Library reference](https://github.com/Masterplanner25/Nodus/wiki/Standard-Library)

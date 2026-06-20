@@ -20,7 +20,7 @@ Nodus is a workflow-oriented orchestration DSL. Do not treat it like lightweight
 - Treat `{"k": v}` as a map and access it with `m["k"]`. Treat `{k: v}` as a record and access it with `r.k`. Never mix them.
 - Assume `json.parse()` returns a map, not a record.
 - Use `i` suffix for integer arithmetic, counters, list indexes, and workflow state. Bare numbers are floats.
-- Never use `+=` or `**`. Write `x = x + 1i` and use `math.pow()` when needed.
+- `+=`, `-=`, `*=`, `/=` work. `**` does not — use `math.pow()`. Write `x = x + 1i` or `x += 1i`.
 - Keep function calls, list literals, and interpolated expressions on one line. Newlines terminate expressions.
 - Use `print()` with exactly one argument. Prefer interpolation: `print("value: \(x)")`.
 - Keep imports at top level only. Never place `import` inside `fn`, `workflow`, `step`, or conditional bodies.

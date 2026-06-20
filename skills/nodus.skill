@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "4.0.0"
+version: "4.0.5"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Bytecode version is 4. Package version is 4.0.0.** Installed via `pip install nodus-lang`.
+**Bytecode version is 4. Package version is 4.0.5.** Installed via `pip install nodus-lang`.
 
 ---
 
@@ -62,20 +62,21 @@ closure creates a new local binding, not a mutation.
 
 `json.parse()` returns a **map**. Access with brackets: `data["field"]`.
 
-### 3. No `+=`, no `**`, no multi-line expressions
+### 3. `+=` works; `**` does not; multi-line expressions are invalid
 
 ```nd
-x = x + 1i          // ✅ — no += operator
+x += 1i              // ✅ — compound assignment works (v4.0.1+)
+x = x + 1i          // ✅ — equivalent long form
 x = x + 1           //    (this gives float — use 1i for int)
-math.pow(x, 2)       // ✅ — no ** operator
+math.pow(x, 2)       // ✅ — no ** operator; use math.pow()
 
 fn add(a, b) { return a + b }    // ✅ — one line
 let result = add(1i,              // ❌ — spans lines, parser error
                  2i)
 ```
 
-Why: the parser treats a newline as a statement terminator inside expressions.
-Keep all function calls and list literals on a single line.
+Why: `+=`, `-=`, `*=`, `/=` were added in v4.0.1. The newline-as-terminator rule still
+applies: keep all function calls and list literals on a single line.
 
 ### 4. `print()` takes exactly one argument
 
@@ -206,7 +207,7 @@ contributor to Nodus's knowledge base.
 
 # Nodus v4 Syntax Reference
 
-All examples in this file are verified against nodus-lang 4.0.0.
+All examples in this file are verified against nodus-lang 4.0.5.
 
 ---
 
@@ -537,16 +538,16 @@ count += 1
 ```
 
 ```nd
-// ❌ Nodus (no += operator)
+// ✅ Both forms work in Nodus v4.0.1+
 let count = 0i
-count += 1i    // SyntaxError: Unexpected '=' in expression
-
-// ✅ Nodus
-let count = 0i
-count = count + 1i
+count += 1i        // compound assignment — added v4.0.1
+count = count + 1i // long form — always worked
 ```
 
-**Why:** Nodus has no compound-assignment operators. Write the full expression.
+**Note:** `**` (power) still does not exist — use `math.pow(x, n)`.
+Closure scope is the catch: `count += 1i` inside a closure where `count` is an
+outer `let` still silently creates a local shadow. Use the map pattern for shared
+mutable state across closure boundaries.
 
 ---
 
@@ -1061,7 +1062,7 @@ state at a named point. They only make sense inside step execution.
 
 # Nodus v4 Modules and Imports Reference
 
-All examples verified against nodus-lang 4.0.0.
+All examples verified against nodus-lang 4.0.5.
 
 ---
 
@@ -1272,7 +1273,7 @@ nodus run --trace-imports script.nd
 
 # Nodus v4 Error Guide
 
-Error text → what it means → fix class. All errors verified against nodus-lang 4.0.0.
+Error text → what it means → fix class. All errors verified against nodus-lang 4.0.5.
 
 Fix classes are named consistently so they can be referenced across sessions.
 
@@ -1289,9 +1290,9 @@ Fix classes are named consistently so they can be referenced across sessions.
 ---
 
 ### `Unexpected '=' in expression`
-**Context:** `x += 1` or `x -= 1`.
-**Meaning:** Compound assignment operators don't exist.
-**Fix class:** NO-COMPOUND-ASSIGN — write `x = x + 1i` in full.
+**Context:** Not triggered by `+=` anymore (compound assignment added v4.0.1).
+Can still appear with other malformed assignment forms or operator typos.
+**Fix class:** CHECK-SYNTAX — run `nodus check file.nd` to pinpoint the line.
 
 ---
 
@@ -1489,7 +1490,7 @@ if not result["ok"]:
 
 # Nodus v4 Verified Examples
 
-All examples are complete, runnable programs verified against nodus-lang 4.0.0.
+All examples are complete, runnable programs verified against nodus-lang 4.0.5.
 Each carries a one-line statement of what it demonstrates.
 
 **Key pattern note:** List literals cannot span multiple lines. Use `list_push()` to
