@@ -384,6 +384,43 @@ _COMMAND_HELP: dict[str, str] = {
         "Examples:",
         "  nodus debug main.nd",
     ]),
+    "serve": "\n".join([
+        "Usage: nodus serve [options]",
+        "",
+        "Start the Nodus HTTP server. Exposes a REST API for running scripts,",
+        "managing sessions, and coordinating workflow/graph execution.",
+        "",
+        "Options:",
+        "  --host HOST                      Bind address (default: 127.0.0.1)",
+        "  --port PORT                      Port to listen on (default: 7477)",
+        "  --auth-token TOKEN               Require this token on all requests (recommended for non-local hosts)",
+        "  --allow-paths PATHS              Colon-separated list of paths the runtime may access",
+        "  --allow-input                    Allow scripts to read from stdin",
+        "  --trace                          Log each VM instruction to stderr",
+        "  --worker-sweep-interval-ms N     How often to sweep for dead workers (default: 500)",
+        "  --workflow-store-backend BACKEND Workflow store backend: local or sqlite (default: local)",
+        "  --workflow-store-path PATH       Path for the workflow store",
+        "",
+        "Examples:",
+        "  nodus serve",
+        "  nodus serve --host 0.0.0.0 --port 8080 --auth-token mysecret",
+    ]),
+    "worker": "\n".join([
+        "Usage: nodus worker [options]",
+        "",
+        "Connect to a running Nodus server as a remote worker.",
+        "The worker registers with the server, polls for jobs, and executes them locally.",
+        "Requires a server started with `nodus serve`.",
+        "",
+        "Options:",
+        "  --host HOST        Server host to connect to (default: 127.0.0.1)",
+        "  --port PORT        Server port (default: 7477)",
+        "  --auth-token TOKEN Auth token to present to the server",
+        "",
+        "Examples:",
+        "  nodus worker",
+        "  nodus worker --host 10.0.0.1 --port 8080 --auth-token mysecret",
+    ]),
 }
 
 
@@ -1645,6 +1682,9 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_graph_file(positional[0], project_root=project_root)
 
     if command == "serve":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["serve"])
+            return 0
         flags_with_values = {
             "--host",
             "--port",
@@ -1738,6 +1778,9 @@ def main(argv: list[str] | None = None) -> int:
         return _run_restore(positional[0], host=host, port=port, token=token)
 
     if command == "worker":
+        if "--help" in cmd_args or "-h" in cmd_args:
+            print(_COMMAND_HELP["worker"])
+            return 0
         flags_with_values = {"--host", "--port", "--auth-token"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         host, port = _resolve_server_host_port(flags)
