@@ -140,6 +140,13 @@ Guide files live in `docs/guide/`. The full guide index is in
 | nodus-memory companion repo | `C:\dev\nodus-memory` / github.com/Masterplanner25/nodus-memory |
 | nodus-native-memory-engine repo | `C:\dev\nodus-native-memory-engine` / github.com/Masterplanner25/nodus-native-memory-engine |
 | nodus-extension companion repo | `C:\dev\nodus-extension` / github.com/Masterplanner25/nodus-extension |
+| nodus-mcp-server repo | `C:\dev\nodus-mcp-server` / github.com/Masterplanner25/nodus-mcp-server |
+| nodus-jupyter repo | `C:\dev\nodus-jupyter` / github.com/Masterplanner25/nodus-jupyter |
+| nodus-vscode repo | `C:\dev\nodus-vscode` / github.com/Masterplanner25/nodus-vscode |
+| nodus-run-action repo | `C:\dev\nodus-run-action` / github.com/Masterplanner25/nodus-run-action |
+| nodus-workflow repo | `C:\dev\nodus-workflow` / github.com/Masterplanner25/nodus-workflow |
+| nodus-sdk repo | `C:\dev\nodus-sdk` / github.com/Masterplanner25/nodus-sdk |
+| nodus-store-sql repo | `C:\dev\nodus-store-sql` / github.com/Masterplanner25/nodus-store-sql |
 | Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
 | Ecosystem incubator scaffolds | `packages/` — Python-first scaffolds for planned libraries |
 
@@ -302,7 +309,7 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.** BYTECODE_VERSION 4, no new opcodes.
+- **Status: v0.1.0 PUBLISHED on PyPI.**  BYTECODE_VERSION 4, no new opcodes.
 - **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
   `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
   The pyproject.toml `where = ["src"]` installs the Phase A–N library; the aindy
@@ -317,7 +324,6 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 - Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
   absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
 - Key contracts: TD-007–010 in `docs/governance/TECH_DEBT.md`.
-- **Next: two-artifact coordinated launch** — nodus-lang 4.0.0 + nodus-mcp 0.1.0.
 
 ## nodus-a2a companion library
 
@@ -409,7 +415,7 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 ## nodus-native-memory-engine companion library
 
 - Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
+- **Status: v0.1.0 PUBLISHED on PyPI.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
 - **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
   Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
 - Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
@@ -417,7 +423,7 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 ## nodus-extension companion library
 
 - Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.** BYTECODE_VERSION 4, no new opcodes.
+- **Status: v0.1.0 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
 - **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
   write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
 - **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
@@ -530,21 +536,59 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 ## nodus-vscode VS Code extension
 
 - Repo: `C:\dev\nodus-vscode` / `github.com/Masterplanner25/nodus-vscode`
-- **Status: v0.1.0 COMPLETE — all four phases done, not yet published to VS Code Marketplace.**
+- **Status: v0.1.0 PUBLISHED — live on VS Code Marketplace 2026-06-15 under publisher `MasterplanInfiniteWeave`.**
 - **Phase 1:** TextMate grammar, 23 snippets, bracket/fold config
 - **Phase 2:** Diagnostics via `nodus check` (fallback; skipped once LSP starts)
 - **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
 - **Phase 4:** LSP via `nodus lsp` — hover docs, go-to-definition, completions
 - **Build:** `cd C:\dev\nodus-vscode && npm run package` (requires `@vscode/vsce`)
-- **Publish:** `vsce publish` (requires marketplace Personal Access Token from user)
+- **Publish:** upload VSIX at marketplace.visualstudio.com → Manage Publishers & Extensions → `+ New extension` → `Visual Studio Code`. Publisher ID must be `MasterplanInfiniteWeave` in package.json.
 - **Key settings:** `nodus.executablePath` (default: `nodus`), `nodus.lspCommand` (array, overrides LSP command — useful for dev source: `["C:/dev/Coding Language/.venv/Scripts/python.exe", "C:/dev/Coding Language/nodus.py", "lsp"]`)
 - **LSP note:** VS Code spawns the INSTALLED `nodus.exe`, not dev source. LSP server changes require a new nodus-lang release to take effect in the extension.
-- **Next:** DAP evaluate (#106), Marketplace publish
+
+## nodus-mcp-server
+
+- Repo: `C:\dev\nodus-mcp-server` / `github.com/Masterplanner25/nodus-mcp-server`
+- **Status: v0.1.11 PUBLISHED on PyPI.** Install via `pipx install nodus-mcp-server`.
+- **Supports two transports:**
+  - **Claude Desktop (stdio):** Add to `claude_desktop_config.json` under `mcpServers`
+  - **ChatGPT Desktop (HTTP/SSE):** Run `nodus-mcp-server --http --port 8765`, tunnel via ngrok
+- **HTTP transport uses `StreamableHTTPSessionManager`** (MCP SDK 1.28.0), single endpoint `POST /mcp`.
+  The old `SseServerTransport` (two-endpoint SSE) is broken — do not use it.
+- **ngrok static domain:** `nodusmcpserver.ngrok.io` (paid plan). ChatGPT Desktop requires public HTTPS;
+  server runs plain HTTP, ngrok terminates SSL. Point ChatGPT at `https://nodusmcpserver.ngrok.io/mcp`.
+- **Windows auto-startup:** Registry `HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` runs
+  `C:\Users\shawn\.nodus-mcp-server\startup.ps1` at login (no admin needed). Starts server + ngrok.
+- **Shared memory:** Both Claude Desktop and ChatGPT Desktop read/write the same SQLite DB at
+  `~/.nodus-mcp-server/data/memory.db` — memory written in one AI is readable by the other.
+- **6 MCP tools:** `nodus_run_goal`, `nodus_run_workflow`, `nodus_resume_workflow`,
+  `nodus_store_memory`, `nodus_recall`, `nodus_list_graphs`
+- **goal vs workflow naming convention:** `goal` = outcome-oriented, single-shot (steps are impl details);
+  `workflow` = process-oriented, resumable (pipeline itself is the point, returns `graph_id`).
+  Runtime treats them identically; convention is semantic.
+- Run tests: `cd C:\dev\nodus-mcp-server && python -m pytest -q`
+
+## nodus-jupyter
+
+- Repo: `C:\dev\nodus-jupyter` / `github.com/Masterplanner25/nodus-jupyter`
+- **Status: v0.1.0 PUBLISHED on PyPI 2026-06-15.**
+- **Install:** `pip install nodus-jupyter && python -m nodus_jupyter install`
+- **32 unit tests** — require `ipykernel` installed (`pip install ipykernel`).
+- Provides a Jupyter kernel for `.nd` files; works in JupyterLab, Jupyter Notebook, VS Code notebooks.
+
+## nodus-run-action
+
+- Repo: `C:\dev\nodus-run-action` / `github.com/Masterplanner25/nodus-run-action`
+- **Status: v1.0.0 — GitHub Action (not a PyPI package).**
+- **Usage:** `uses: Masterplanner25/nodus-run-action@v1`
+- **Three modes:** `file` (run a .nd script), `test-path` (run test suite), `fmt-check` (format gate)
+- Pin the nodus-lang version with `version: '4.0.5'` for reproducible CI.
+- No local test suite — tests run in CI via the action itself.
 
 ## nodus-sdk companion package
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+- **Status: v0.1.0 PUBLISHED on PyPI.**
   99 tests. Unified platform SDK auto-wiring the 27-package ecosystem.
 - **Install:** `pip install nodus-sdk[agent,sql,fastapi]` (extras-based)
 - **Key exports:** `NodusSDKRuntime`, `create_runtime(**kwargs)`, `detect_available()`
@@ -557,26 +601,22 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 ## nodus-store-sql companion package
 
 - Repo: `C:\dev\nodus-store-sql` / `github.com/Masterplanner25/nodus-store-sql`
-- **Status: v0.1.0 COMPLETE — prepared, not yet published.**
+- **Status: v0.1.0 PUBLISHED on PyPI.**
   47 tests (31 sync + 16 async). Promoted from `packages/nodus-store-sql` incubator scaffold.
+- **Async tests require `aiosqlite`** — not installed by default. Run `pip install aiosqlite` if async tests fail with `ModuleNotFoundError`.
 - **Three stores:** `RunStore` (optimistic locking), `EventStore` (append-only), `JobStore` (atomic claiming)
 - **Async:** `AsyncSqlStore` via `sqlalchemy.ext.asyncio`; test with `sqlite+aiosqlite:///:memory:`
 - **Tables:** `nodus_runs`, `nodus_events`, `nodus_jobs`
 - **No Alembic:** `create_all()` is the dev schema bootstrap; production manages migrations independently
 - Run tests: `cd C:\dev\nodus-store-sql && python -m pytest -q`
 
-## SemVer policy — version only increments on PyPI publication
+## SemVer policy
 
-The version number in `src/nodus/support/version.py` and `pyproject.toml` is **4.0.0**.
-It stays at 4.0.0 until the package is actually published to PyPI.
+The current published version is **v4.0.5** (live on PyPI). Both files must stay in sync:
+- `src/nodus/support/version.py` — `__version__ = "4.0.5"`
+- `pyproject.toml` — `version = "4.0.5"`
 
-All additions made after the original v4.0.0 scope (Phase 6 AI-native primitives,
-Phase A-D HandlerContract, nodus-sdk, nodus-store-sql, repo alignment sweep) are part
-of the **v4.0.0 pre-release cycle** — not a new minor version. Do not bump to 4.1.0
-unless 4.0.0 has shipped. The last published release is **v3.0.2**.
-
-Both `version.py` and `pyproject.toml` must stay in sync at all times (Version sync
-section above). If you ever see them at 4.1.0, revert to 4.0.0.
+Patch releases (4.0.x) for bug fixes and stability graduations. Next minor bump (4.1.0) requires a substantive feature addition. Never bump without a corresponding PyPI publish. If you see these files at different values, fix the mismatch before doing anything else.
 
 ## Embedding API — known blockers and operational traps
 
@@ -601,54 +641,33 @@ rt = NodusRuntime(timeout_ms=None, max_steps=None)
 
 **CHAN-001 (open):** `recv()` on empty channel strands the coroutine silently — pre-populate the channel or use the subprocess-pipe pattern. See `docs/governance/TECH_DEBT.md`.
 
-## Publish sequence (do NOT run until explicitly asked)
+## Published ecosystem — current state (as of 2026-06-20)
 
-**PyPI rate limit:** Max 2-3 new packages per session; wait ~1 hour between sessions. Pre-build all dist/ artifacts first — only the upload step is rate-limited.
+All packages are live. PyPI rate limit is 2-3 new uploads per session; wait ~1 hour between sessions.
 
-Last published PyPI release: **v3.0.2**. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
+**nodus-lang:** v4.0.5 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
-Round 2 — Packages with external-only deps (PyPI already has them):
+**Standalone packages (all v0.1.0, PyPI):**
 ```
-nodus-auth 0.1.0        (python-jose, passlib, bcrypt, pydantic)
-nodus-observability 0.1.0   (python-json-logger optional)
-nodus-queue 0.1.0       (tenacity; redis optional)
-nodus-events 0.1.0      (redis optional)
-nodus-router 0.1.0      (nodus-session optional)
-nodus-delivery 0.1.0    (nodus-channels)
-nodus-http 0.1.0        (httpx)
-nodus-llm 0.1.0         (openai/anthropic optional)
-nodus-adapters-base 0.1.0  (nodus-channels)
-nodus-gateway 0.1.0     (websockets optional)
-nodus-observability-framework 0.1.0  (nodus-observability)
+nodus-schema, nodus-protocol, nodus-state, nodus-session, nodus-events
+nodus-channels, nodus-context, nodus-approvals, nodus-retry, nodus-circuit-breaker
+nodus-agent, nodus-auth, nodus-observability, nodus-queue, nodus-router
+nodus-delivery, nodus-http, nodus-llm, nodus-adapter-base, nodus-gateway
+nodus-observability-framework, nodus-workflow, nodus-store-sql, nodus-sdk
+nodus-mcp, nodus-extension, nodus-native-memory-engine, nodus-jupyter
+nodus-mcp-server (v0.1.11)
 ```
 
-Round 3 — nodus-lang itself:
-```
-1. git tag v4.0.0 && git push origin main --tags
-2. python -m build   (from C:\dev\Coding Language)
-3. Upload nodus-lang 4.0.0 to real PyPI (token from user at upload time)
-4. Confirm: pip install nodus-lang==4.0.0
-```
-
-Round 4 — nodus-lang companion packages (require nodus-lang on PyPI):
-```
-nodus-extension 0.1.0      (nodus-lang, pydantic)
-nodus-memory 0.1.0         (nodus-lang adapter — original, on GitHub)
-nodus-mcp 0.1.0            (nodus-lang, httpx — separate repo, own PyPI token)
-nodus-native-memory-engine 0.1.0   (PyO3/Maturin wheel, no nodus-lang dep)
-```
-
-Round 5 — SDK and high-level packages:
-```
-nodus-sdk 0.1.0   (nodus-lang, nodus-schema, nodus-protocol, nodus-retry)
-```
-
-After all packages are up:
-- Create GitHub releases for all published packages
-- Update ECOSYSTEM_READINESS_ASSESSMENT.md to reflect published status
-- Verify: pip install nodus-sdk[full] pulls in the full ecosystem cleanly
+**Other published artifacts:**
+- nodus-vscode v0.1.0 — VS Code Marketplace (MasterplanInfiniteWeave)
+- nodus-run-action v1.0.0 — GitHub Action (Masterplanner25/nodus-run-action@v1)
 
 **PyPI token note:** Each package in a separate repo (nodus-mcp, nodus-extension,
-nodus-memory, nodus-native-memory-engine) needs its own project-specific PyPI token.
+nodus-memory, nodus-native-memory-engine, nodus-mcp-server) needs its own project-specific PyPI token.
 nodus-lang packages use the main nodus-lang token. Retrieve from user at upload time —
 never store tokens in any file.
+
+**Future publish sequence:** For any new package, the pattern is:
+1. `python -m build` (in the package dir)
+2. `twine upload --username __token__ --password <token> dist/*`
+3. Add status badge to README, commit, push
