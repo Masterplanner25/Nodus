@@ -12,7 +12,7 @@ Nodus is a workflow and orchestration language. Prefer workflows, step results, 
 - `{key: val}` is a record. Use `r.key`.
 - `json.parse()` returns a map.
 - Bare numeric literals are floats. Use `42i` for ints.
-- No `+=`, `-=`, or `**`.
+- `+=`, `-=`, `*=`, `/=` work (v4.0.1+). `**` does not — use `math.pow()`.
 - `print()` takes one argument only.
 - Imports must be top-level.
 - Expressions do not continue across newlines.
