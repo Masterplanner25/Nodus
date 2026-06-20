@@ -1,6 +1,6 @@
 # Operator / Embedder Runbook
 
-**Version:** 4.0.3
+**Version:** 4.0.5
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -15,12 +15,12 @@ and upgrade procedures.
 ### 1.1 Install
 
 ```bash
-pip install nodus-lang==4.0.3
+pip install nodus-lang==4.0.5
 ```
 
 For the FastAPI/Uvicorn server stack (experimental):
 ```bash
-pip install "nodus-lang[server]==4.0.3"
+pip install "nodus-lang[server]==4.0.5"
 ```
 
 ### 1.2 Minimal embedding
@@ -157,7 +157,7 @@ No script changes required. No API changes. The bytecode cache may be invalidate
 patch bumps `BYTECODE_VERSION` (rare; noted in CHANGELOG.md).
 
 ```bash
-pip install nodus-lang==3.0.Z
+pip install nodus-lang==4.0.Z
 ```
 
 After upgrade, verify with `nodus --version` and a smoke-test run.
