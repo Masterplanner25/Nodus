@@ -50,7 +50,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `action` expressions in steps | Experimental | Step modifier; API not yet frozen |
 | `yield expr` | Stable | Promoted v4.0.5; `YIELD` opcode stable since v1.0; no further changes planned |
 | `spawn`, `coroutine`, `channel` | Mostly Stable | Graduated v4.0.5; SCHED-001/002, CHAN-001, CIRC-001 all resolved |
-| Optional type annotations | Experimental | Syntax accepted; no enforcement |
+| Optional type annotations | Experimental | Syntax accepted and preserved in AST; **no runtime enforcement** — `let x: int = "hello"` succeeds silently. Forward path: `nodus check --strict` (not yet implemented). |
 | `break` / `continue` | Not implemented | Planned for a future release |
 
 ---
