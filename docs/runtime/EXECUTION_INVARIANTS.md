@@ -1,6 +1,6 @@
 # Execution Invariants
 
-**Version:** 4.0.3
+**Version:** 4.0.5
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
