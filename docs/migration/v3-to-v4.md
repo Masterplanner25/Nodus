@@ -120,7 +120,7 @@ and review whether the comparison was relying on cross-family coercion.
 **How to fix:**
 
 When you need to check if a value is `true` (the bool):
-```nodus
+```nd
 import "std:bool" as b
 
 // v3.x (may have relied on coercion):
@@ -145,7 +145,7 @@ return `nil` instead of `-1`.
 
 **How to fix:**
 
-```nodus
+```nd
 // v3.x
 let i = index_of(lst, item)
 if i != -1 { use(lst[i]) }
@@ -174,7 +174,7 @@ v3.x threw a runtime error → v4.0.1+ throws a runtime error. No change needed.
 
 Remove them — division by zero now throws instead of returning IEEE 754 values:
 
-```nodus
+```nd
 // v4.0.0 pattern — no longer needed in v4.0.1+
 let result = a / b
 if math.is_nan(result) or math.is_inf(result) { ... }
@@ -197,7 +197,7 @@ an err record instead of a plain dict.
 
 **How to fix:**
 
-```nodus
+```nd
 // v4.0
 let result = run_workflow(my_workflow)
 if type(result) == "error" {
@@ -230,7 +230,7 @@ for exact field set).
 
 ### String interpolation
 
-```nodus
+```nd
 let name = "world"
 print("Hello, \(name)!")        // Hello, world!
 print("1 + 1 = \(1i + 1i)")    // 1 + 1 = 2
