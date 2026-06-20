@@ -20,9 +20,12 @@ def _policy_from_map(policy_map: dict) -> "RetryPolicy":
     name = policy_map.get("name")
     if isinstance(name, str):
         return resolve_retry_policy(name.upper())
+    # Accept both DSL short-form keys (max, delay_ms) and long-form keys (max_attempts, backoff_ms).
+    max_attempts = policy_map.get("max_attempts", policy_map.get("max", 1))
+    backoff_ms = policy_map.get("backoff_ms", policy_map.get("delay_ms", 0))
     return RetryPolicy(
-        max_attempts=int(policy_map.get("max_attempts", 1)),
-        backoff_ms=int(policy_map.get("backoff_ms", 0)),
+        max_attempts=int(max_attempts),
+        backoff_ms=int(backoff_ms),
         exponential_backoff=bool(policy_map.get("exponential_backoff", False)),
         high_risk_immediate_fail=bool(policy_map.get("high_risk_immediate_fail", False)),
     )
