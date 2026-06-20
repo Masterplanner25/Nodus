@@ -176,6 +176,9 @@ class Scheduler:
         self._run_loop_called = True
         self._spawned_without_loop = 0
         stop = False
+        # Note: _spawned_without_loop is also reset at the end of this method.
+        # Coroutines spawned *during* run_loop (e.g. by task callbacks) go into
+        # ready_queue and are drained by the loop below, so they are not unrun.
         while self.ready_queue or self.timers or self._io_channels or self._recv_channels:
             self._drain_timers()
             self._drain_io_channels()
@@ -303,3 +306,7 @@ class Scheduler:
             self.ready_queue.append(coroutine)
             if stop:
                 break
+        # Any coroutines spawned during this run_loop were drained above.
+        # Reset so the embedding's unrun-task check only catches spawns that
+        # happen after the loop exits (i.e. genuinely unexecuted tasks).
+        self._spawned_without_loop = 0

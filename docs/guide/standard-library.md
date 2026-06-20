@@ -858,6 +858,12 @@ Coroutine and concurrency primitives.
 | `worker_pool(n, fns)` | Run `fns` across `n` workers |
 | `pipeline(fns)` | Chain functions as a pipeline |
 
+**Note:** `channel()`, `send()`, `recv()`, `close()`, `spawn()`, and
+`coroutine()` are **VM builtins**, not exports of `std:async`. Use them
+directly without an import — `async.channel()` will fail with "Missing module
+export: channel". This is intentional: these primitives are always available
+regardless of whether `std:async` is imported.
+
 Coroutines and the scheduler are experimental. Do not rely on their behavior
 being stable across minor versions.
 

@@ -83,6 +83,32 @@ The effect store is injected by the host via `NodusRuntime.set_effect_store(stor
 The default in-memory store is reset between `run_source()` calls unless you
 persist it to a database (via the `nodus-store-sql` package).
 
+### @exactly_once annotation
+
+The `@exactly_once` annotation is syntactic sugar over `std:effects` that
+automatically wraps a function with action-id generation and effect guards:
+
+```nd
+@exactly_once
+fn charge_card(order_id, amount) {
+    return payment_api_charge(order_id, amount)
+}
+
+// Safe to call multiple times with the same arguments — only runs once.
+charge_card("order-42", 99.99)
+charge_card("order-42", 99.99)  // returns cached result immediately
+```
+
+**Scope limitation:** `@exactly_once` deduplicates within a **single
+`NodusRuntime` instance only**. Two separate `NodusRuntime()` objects in the
+same process each have their own in-memory effect store and do not share
+idempotency state. Across process restarts, the state is also lost unless the
+host provides a persistent store via `NodusRuntime(effect_store=...)`.
+
+This annotation does **not** provide distributed deduplication. For cross-process
+or cross-restart idempotency, inject a persistent `EffectStore` backed by
+`nodus-store-sql` or a similar durable backend.
+
 ---
 
 ## std:memory — Shared Namespace Memory
