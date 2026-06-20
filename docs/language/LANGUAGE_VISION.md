@@ -96,15 +96,17 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v4.0.3)
+## Current Release (v4.0.5)
 
-Shipped 2026-06-11 on PyPI (`pip install nodus-lang`).
+Shipped 2026-06-15 on PyPI (`pip install nodus-lang`).
 
 v4.0 cycle highlights:
-- v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 29 companion packages
+- v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 35 companion packages
 - v4.0.1: NodusRuntime sandbox defaults hardened (SCHED-001 fixed, timeout_ms → None, allowed_paths → CWD), httpx optional, integer division returns int, div/zero raises error, compound assignment operators, multiline expressions, @annotation syntax
 - v4.0.2: Bug fixes for @exactly_once, allowed_commands, @retry, event_sinks, trailing commas
 - v4.0.3: All 18 Sentinel evaluation bugs fixed; stdlib contract test suite added
+- v4.0.4: session_id propagation fix (#254), retry error trace suppression on eventual success (#255)
+- v4.0.5: spawn/coroutine/channel and workflow/goal promoted to Mostly Stable; yield promoted to Stable; nodus-vscode v0.1.0, nodus-jupyter v0.1.0, nodus-mcp-server, nodus-adapter-base published
 
 Previous: v3.0.2 (shipped 2026-05-25; eval score 7.57/10).
 
@@ -114,6 +116,20 @@ Long-term roadmap for Tier 2 infrastructure libraries and Tier 3 agent
 runtime libraries. 10 deferred items tracked on the v5.0 milestone. See
 `docs/governance/LIBRARY_ECOSYSTEM.md` for the three-tier library
 ecosystem architecture.
+
+## Bootstrapping (long-term goal)
+
+A long-term aspirational goal for Nodus is to bootstrap itself — to rewrite
+the Nodus compiler and core runtime in Nodus. This would mean that the language
+is expressive and performant enough to implement its own compilation pipeline:
+lexer, parser, AST lowering, bytecode generation, and VM evaluation.
+
+Bootstrapping is a meaningful milestone in a language's maturity. It validates
+that the language is sufficiently complete, performant, and expressive to handle
+non-trivial systems programming tasks. It is not a near-term goal, but it
+informs design decisions: features that would make bootstrapping impossible
+(or require a separate "systems" subset) are treated as signals that the
+language's abstraction level is wrong.
 
 ---
 
