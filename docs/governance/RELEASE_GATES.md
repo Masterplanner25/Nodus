@@ -2,7 +2,7 @@
 
 # Release Gates
 
-**Version:** 3.0.2
+**Version:** 4.0.5
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -22,12 +22,11 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 
 **Passing criteria:**
 - All tests pass (0 failures, 0 errors)
-- Coverage ≥ 60% (gate: `--cov-fail-under=60`)
-- Exception: three known timing-sensitive tests are deselected from the coverage run
-  (`test_scheduler_fairness.py::test_multiple_tasks_progress`,
-  `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`,
-  `test_task_graph.py::TaskGraphTests::test_worker_death_detection`) — they must
-  pass in the non-coverage run.
+- Coverage ≥ 70% (gate: `--cov-fail-under=70`; raised from 60% on 2026-05-31)
+- Coverage run uses `--ignore=tests/test_scheduler_fairness.py` to exclude
+  timing-sensitive scheduler fairness tests; those tests must still pass in the
+  non-coverage run. Known pre-existing flaky test under full-suite load:
+  `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`.
 
 **Exemptions:** None. The coverage gate cannot be lowered without a TECH_DEBT.md entry
 documenting the reason and a plan to recover.

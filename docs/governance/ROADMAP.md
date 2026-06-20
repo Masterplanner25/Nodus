@@ -19,11 +19,15 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## Active Development
 
-Current release: **v2.1.0** (2026-05-24). See root `CHANGELOG.md` for full history.
+Current release: **v4.0.5** (2026-06-15). See root `CHANGELOG.md` for full history.
 
 Open milestones:
-- **v2.2** — `nodus fmt --check` false-negative on freshly written files (BUG-025).
-- **v3.0** — Integer type (distinct from float), equality coercion semantics redesign.
+- **v4.1** — Substantive new feature addition required; patch (4.0.x) track for bug fixes only.
+- **v5.0** — Tier 2/3 infrastructure and AI-agent runtime libraries (see LIBRARY_ECOSYSTEM.md).
+
+Language now includes: coroutines, channels, goals/workflows/steps, AI-native stdlib
+(std:identity, std:effects, std:memory, std:sys, std:retry, std:circuit_breaker), full
+sandbox, embedding API (NodusRuntime), and 35 published ecosystem packages. See CHANGELOG.md.
 
 ## Released Versions
 

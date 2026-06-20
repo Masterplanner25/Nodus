@@ -9,8 +9,8 @@
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-> **Current state note (2026-06-11):** nodus-lang is at **4.0.3**, published on PyPI.
-> The standalone ecosystem has 29 packages, all published on PyPI under Masterplanner25.
+> **Current state note (2026-06-20):** nodus-lang is at **4.0.5**, published on PyPI.
+> The standalone ecosystem has 35 packages, all published on PyPI under Masterplanner25.
 > For honest current-state per package: `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
 
 ---
