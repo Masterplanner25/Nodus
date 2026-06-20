@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **COMPILER-001 fix (`@retry` annotation was a no-op — PR #267):** `_lower_retry()` emits annotation args verbatim (`max`, `delay_ms`) but `_policy_from_map()` was reading `max_attempts`/`backoff_ms`, producing a 1-attempt/no-delay policy regardless of what the annotation declared. Fixed by adding short-form key aliases in `_policy_from_map()`: `max` → `max_attempts`, `delay_ms` → `backoff_ms`. Both spellings are now accepted. `@retry(max: 3i, delay_ms: 50i)` now retries up to 3 times as expected.
+- **WARN-001 fix (spurious "spawned task never executed" warning — PR #268):** `run_workflow()` and `run_graph()` were printing a false warning after every successful run. Coroutines spawned *during* `run_loop()` by task callbacks were incrementing `_spawned_without_loop` and the counter was only reset at the *start* of `run_loop()`, not the end. Fixed by resetting to 0 at the end of `run_loop()` as well. Tasks that run inside a loop are not unrun.
+
+### CLI
+
+- **`nodus serve --help` and `nodus worker --help` now print help and exit (PR #267):** Both commands were starting the server / attempting live worker registration instead of showing usage. Added `--help`/`-h` guards matching the pattern used by every other command. Full usage text added to `_COMMAND_HELP` for both commands.
+
+### Documentation
+
+- **`@exactly_once` scope warning (EXACT-001 — PR #268):** Added a scope note to `_lower_exactly_once()` in the compiler and a new `@exactly_once` subsection in `docs/guide/ai-primitives.md` clarifying that the annotation deduplicates within a single `NodusRuntime` instance only — not across separate instances, threads, or process restarts. Documents how to get durable idempotency via a persistent `EffectStore`.
+- **`std:async` channel builtin note (CHAN-001 — PR #268):** `docs/guide/standard-library.md` now explicitly notes that `channel()`, `send()`, `recv()`, `close()`, `spawn()`, and `coroutine()` are VM builtins and must be called directly — `async.channel()` fails with "Missing module export: channel".
+- **Type annotation enforcement note (TYPES-001 — PR #268):** `LANGUAGE_STABILITY_INDEX.md` entry for optional type annotations now explicitly states that `let x: int = "hello"` succeeds silently with no runtime enforcement, and names `nodus check --strict` as the forward path.
+
 ---
 
 ## [4.0.5] - 2026-06-15
