@@ -1146,24 +1146,37 @@ class VM:
             with open(source_path, "r", encoding="utf-8") as f:
                 source_code = f.read()
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
-        try:
-            from nodus.runtime.module_loader import ModuleLoader as _ModuleLoader
-            _loader = _ModuleLoader(project_root=None)
-            code, functions, code_locs = _loader.compile_only(
-                source_code,
-                module_name=rebuild_path or "<memory>",
-            )
-        except Exception:
-            return None
         worker_dispatcher = getattr(self, "worker_dispatcher", None)
         event_bus = self.event_bus
-        rebuilt_globals: dict[str, object] = {}
-        self.reset_program(code, functions, code_locs=code_locs, source_path=rebuild_path, module_globals=rebuilt_globals)
+        try:
+            from nodus.runtime.module_loader import ModuleLoader as _ModuleLoader
+            # Rebuild through the normal module-load path with THIS vm as the
+            # execution target, so the workflow's `import` statements are re-bound
+            # exactly as on first run: flat exports land in module_globals and
+            # bare-namespace imports (e.g. `json` from `import "std:json"`)
+            # populate this vm's _bare_import_hints. The previous compile_only
+            # path was import-blind, leaving the rebuilt vm without tool/mem/json
+            # bound — a post-wait step referencing them failed with "Undefined
+            # variable: <name>", surfaced only in spawned_errors while the run
+            # still reported ok: True (so cross-process resume silently no-op'd).
+            #
+            # Host-injected (non-import) globals are NOT reconstructable from
+            # source; reset_program preserves self.host_globals, and the embedder
+            # must re-supply them on the rehydrating runtime.
+            _loader = _ModuleLoader(
+                project_root=None,
+                vm=self,
+                host_globals=getattr(self, "host_globals", None),
+            )
+            module_name = rebuild_path or "<memory>"
+            base_dir = os.path.dirname(rebuild_path) if rebuild_path else os.getcwd()
+            _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
+        except Exception:
+            return None
         self.event_bus = event_bus
         self.source_code = source_code
         if worker_dispatcher is not None:
             self.worker_dispatcher = worker_dispatcher
-        self.run()
         workflow = find_goal_value(self.globals, flow_name) if execution_kind == "goal" else find_workflow_value(self.globals, flow_name)
         if workflow is None:
             return None
