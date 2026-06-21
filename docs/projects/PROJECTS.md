@@ -223,11 +223,14 @@ finalize result → persist outcome and memory
 **Location:** `C:\dev\claw`
 **Status:** Active development · Python implementation substantial · Nodus workflows stubbed, expanding
 
-The largest of the four projects and the broadest in scope. Infinity Claw is not a
-pure Nodus project — it is the **first full application in the Masterplan Infinite
-Weave** — but Nodus is the orchestration layer and the reason the project is
-architecturally coherent. The OpenClaw rewrite was designed around Nodus first,
-then wired into the AINDY execution kernel.
+The largest of the four projects and the broadest in scope. Infinity Claw is the
+**first company application built on infrastructure that Masterplan Infinite Weave
+itself created** — making it the first application to fully exercise the underlying
+substrate of the Infinity Algorithm. It does this by running on Nodus (the language
+ecosystem built in-house) and AINDY (the execution kernel built in-house) at the
+same time. The name is deliberate: Infinity Claw is the Infinity Algorithm expressed
+as a working application. The OpenClaw rewrite was designed around Nodus first, then
+wired into AINDY.
 
 ### What it is
 
@@ -334,7 +337,7 @@ without external help.
 
 **Sentinel** is the benchmark — built by an LLM from scratch, it runs end-to-end
 and exercises the full AI-native surface. **claudecodenodus** and **codexnodus**
-push further into multi-agent and durable-service territory. **Infinity Claw** is
-the production target: the full Masterplan Infinite Weave application where Nodus,
-AINDY, and the companion ecosystem all converge in a real deployed system. A future
-Nodus coding agent will be evaluated against tasks drawn from all four.
+push further into multi-agent and durable-service territory. **Infinity Claw** is the production target: the first company application to run
+on the infrastructure Masterplan Infinite Weave built itself, exercising the Infinity
+Algorithm through Nodus + AINDY in a real deployed system. A future Nodus coding
+agent will be evaluated against tasks drawn from all four.
