@@ -1,6 +1,7 @@
 # Nodus Showcase Projects
 
-Three standalone Nodus projects built by the language's author. Each one:
+Four projects built by the language's author using the Nodus ecosystem. They range
+from a fully-running 430-line example to a production platform:
 
 - exercises real Nodus language features end-to-end in a domain that makes sense outside of a tutorial
 - tests the Claude/Codex skills that ship with the language against a live coding session
@@ -217,15 +218,123 @@ finalize result → persist outcome and memory
 
 ---
 
+## Infinity Claw — Self-Hosted Multi-Channel AI Workspace
+
+**Location:** `C:\dev\claw`
+**Status:** Active development · Python implementation substantial · Nodus workflows stubbed, expanding
+
+The largest of the four projects and the broadest in scope. Infinity Claw is not a
+pure Nodus project — it is the **first full application in the Masterplan Infinite
+Weave** — but Nodus is the orchestration layer and the reason the project is
+architecturally coherent. The OpenClaw rewrite was designed around Nodus first,
+then wired into the AINDY execution kernel.
+
+### What it is
+
+A production-grade, self-hosted personal AI assistant platform:
+
+- **Multi-channel** — WebChat, Telegram, Discord, Slack, Matrix, Signal, each as
+  a separate `nodus_adapter_base.Adapter` package (`claw_telegram`, `claw_discord`, etc.)
+- **Persistent memory** — SQLite-backed hybrid BM25+vector search; daily Markdown
+  memory logs; `std:memory` KV for runtime state
+- **Multi-agent** — multiple named agents against a single workspace, each with
+  their own session, credential store, and skill set
+- **Self-hosted** — single `claw start` from a `claw.toml` + API key; no cloud dependency
+
+### Where Nodus fits
+
+Nodus is the workflow and infrastructure layer. The Python `claw/` package is a
+thin orchestration shell; almost every subsystem delegates to a Nodus package:
+
+| OpenClaw concept | Nodus replacement in Claw |
+|---|---|
+| TypeScript event handlers | `.nd` workflows (`boot.nd`, `session_reset.nd`, `heartbeat.nd`, `bootstrap.nd`) |
+| Custom retry / failover | `nodus_retry`, `nodus_circuit_breaker`, `nodus_llm.FailoverClient` |
+| Custom queue/lane system | `nodus_queue` (session, main, cron, subagent lanes) |
+| mcporter MCP bridge | `nodus_mcp` — first-class, bidirectional; every `std:tool` registration auto-exposed |
+| Custom observability | `nodus_observability_framework` (OTel, Prometheus, health endpoints) |
+| Idempotency keys | `std:effects` EXACTLY_ONCE (`@exactly_once` on sends and agent methods) |
+| Execution trace correlation | `std:identity` (`trace_id`, `session_id`, `execution_unit_id`) |
+| Agent-to-agent delegation | `nodus_a2a` (opt-in) |
+| Approvals + risk policy | `nodus_approvals`, `nodus_governance` |
+
+The Nodus `.nd` workflows replace TypeScript `setTimeout` / cron handlers. Recurring
+platform logic — memory flush before compaction, daily session reset, startup checklist,
+heartbeat turn — is expressed as named workflow steps with `@exactly_once` idempotency,
+not imperative event handlers.
+
+### System diagram (abbreviated)
+
+```
+[Telegram] [Discord] [Slack] [Signal] [Matrix] [WebChat]
+      │          nodus_adapter_base.Adapter
+      ▼
+[Claw Gateway — FastAPI + WebSocket]
+      │
+      ▼
+[Agent Runtime — nodus_agent.AgentExecutor]
+  nodus_llm.FailoverClient  |  nodus_queue (lanes)  |  nodus_events
+      │
+      ▼
+[Tool Layer — std:tool (MCP-compatible registry)]
+  std:fs, std:http, std:subprocess, memory_search, sessions_*, cron
+  └── nodus_mcp.server (exposes all tools over MCP to Claude Code, etc.)
+      │
+      ▼
+[Infrastructure — full Nodus package stack]
+  Sessions: nodus_session + nodus_state + nodus_store_sql
+  Memory:   nodus_memory (embeddings) + std:memory (KV)
+  Auth:     nodus_auth + nodus_llm.CredentialStore
+  A2A:      nodus_a2a  |  Approvals: nodus_approvals
+  Obs:      nodus_observability_framework (OTel, Prometheus)
+```
+
+### AINDY integration
+
+AINDY (runtime v1.4.0) is the execution kernel underneath Claw. Claw is the
+first Masterplan Infinite Weave application: Nodus handles workflow orchestration,
+AINDY handles turn lifecycle events, syscall dispatch, MAS memory, and the Redis
+event bus. The two are connected at the platform boundary — Claw calls into AINDY
+for lifecycle events and memory; AINDY knows nothing about Claw's channel adapters
+or skill files.
+
+### Implementation status
+
+- `claw/` Python package — gateway, agents, sessions, memory, channels, routing,
+  skills, cron, workspace, tools, auth, weave modules all implemented
+- Channel adapters — `claw_discord`, `claw_telegram`, `claw_slack`, `claw_signal`,
+  `claw_matrix`, `claw_webchat` all scaffolded
+- Test suite — 14 phase test files (`test_aindy_phase2.py` through `test_aindy_phase14.py`)
+- Nodus workflows — `boot.nd`, `session_reset.nd`, `heartbeat.nd`, `bootstrap.nd`
+  exist; currently stubs being expanded as each phase completes
+- `claw start` — gateway starts; WebChat reachable at `http://127.0.0.1:18789/`
+
+### Key files
+
+| File | Contents |
+|---|---|
+| `PROJECT_BRIEF.md` | Vision, problem statement, success criteria |
+| `OPENCLAW_NODUS_ARCHITECTURE.md` | Full system diagram, package responsibilities, boundary contracts |
+| `OPENCLAW_TO_NODUS_ANALYSIS.md` | Migration analysis: what moves to Nodus vs. stays Python |
+| `CLAW_AINDY_INTEGRATION_PLAN.md` | AINDY integration points and phase plan |
+| `workflows/*.nd` | Nodus workflow files for recurring platform logic |
+| `claw/` | Core Python orchestration package |
+| `claw_*/` | Per-channel adapter packages |
+| `tests/` | Phase test suite (phases 2–14) |
+
+---
+
 ## Relationship to the Nodus coding agent
 
-These three projects are the early sketch of what a **Nodus-specific AI coding
+These four projects are the early sketch of what a **Nodus-specific AI coding
 agent** would need to handle autonomously: read the skill files, understand the
 language quirks, plan an implementation, write correct `.nd` code on the first
 pass, debug using `nodus check` / `nodus ast`, and produce a runnable project
 without external help.
 
-Sentinel is the benchmark — it was built by an LLM from scratch and runs. The
-research agent and agent service are the two next-generation designs that push
-further into the multi-agent and service-layer territory. A future Nodus coding
-agent will be evaluated against tasks in this space.
+**Sentinel** is the benchmark — built by an LLM from scratch, it runs end-to-end
+and exercises the full AI-native surface. **claudecodenodus** and **codexnodus**
+push further into multi-agent and durable-service territory. **Infinity Claw** is
+the production target: the full Masterplan Infinite Weave application where Nodus,
+AINDY, and the companion ecosystem all converge in a real deployed system. A future
+Nodus coding agent will be evaluated against tasks drawn from all four.
