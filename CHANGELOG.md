@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **REHYDRATE-001 fix (cross-process workflow resume dropped module imports — #285):** When a waiting workflow was resumed in a VM other than the original (live VM/graph evicted — e.g. a human approves later in a different process), `VM._rebuild_workflow_graph` recompiled the source with `ModuleLoader.compile_only`, which is import-blind: it emits bytecode but never resolves the workflow's `import` statements. The rebuilt VM ran with `tool`/`mem`/`json`/aliased stdlib imports unbound, so a post-wait step referencing them failed with `Undefined variable: <name>` — surfaced only in `spawned_errors` while the run still reported `ok: True` (resume silently no-op'd). Fixed by rebuilding through the normal module-load path with the workflow VM as the execution target (`ModuleLoader(vm=self).load_module_from_source(...)`), which re-binds named/aliased imports into `module_globals` and bare-namespace imports via `_bare_import_hints`, exactly as on first run. In-process resume was unaffected (it reuses the still-live registered VM). **Known limit:** host-injected, non-import globals (e.g. an embedder-supplied `llm_client`, custom effect handlers) are not reconstructable from source — the embedder must re-supply them on the rehydrating runtime; the framework then re-binds all `import`ed names automatically.
+
 ---
 
 ## [4.0.6] - 2026-06-20

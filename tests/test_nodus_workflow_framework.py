@@ -830,6 +830,55 @@ workflow demo {
             self.assertIsNotNone(task_graph.get_registered_graph(graph_id))
             self.assertIs(task_graph.get_registered_vm(graph_id), fresh_vm)
 
+    def test_resume_on_rebuilt_vm_rebinds_module_imports(self):
+        # Regression: cross-process resume must re-bind the workflow's `import`
+        # statements. Previously the rehydration path compiled via
+        # ModuleLoader.compile_only, which is import-blind, so a rebuilt VM ran
+        # with `json` (and tool/mem/...) unbound. A post-wait step referencing an
+        # imported symbol then failed with "Undefined variable" — surfaced only
+        # in spawned_errors while the run still reported ok: True.
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "wait_import.nd")
+            code = """
+import "std:json" as json
+
+workflow demo {
+    step gate {
+        return workflow_wait("approval.granted", "req-import", {kind: "approval"})
+    }
+
+    step finish after gate {
+        return json.stringify({status: "ok"})
+    }
+}
+"""
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(code)
+            with nodus_cli._project_root_context(td):
+                result, _vm = run_workflow_code(
+                    VM([], {}, code_locs=[], source_path=None),
+                    code,
+                    filename=path,
+                    project_root=td,
+                )
+            self.assertTrue(result.get("ok"))
+            graph_id = result["result"]["graph_id"]
+
+            # Simulate a fresh process: drop the live graph + VM so resume must
+            # rebuild the workflow from persisted source on a brand-new VM.
+            task_graph._GRAPH_REGISTRY.pop(graph_id, None)
+            task_graph._GRAPH_VMS.pop(graph_id, None)
+
+            with nodus_cli._project_root_context(td):
+                resumed, _vm = resume_workflow(graph_id)
+            self.assertTrue(resumed.get("ok"))
+            # The post-wait step ran against the rebuilt VM and resolved `json`.
+            self.assertEqual(resumed["result"]["steps"]["finish"], '{"status": "ok"}')
+            self.assertEqual(resumed["result"].get("spawned_errors", []), [])
+
+            runner = WorkflowFrameworkRunner(framework_store(td))
+            self.assertEqual(runner.get_run(graph_id).status, RUN_STATUS_COMPLETED)
+
     def test_rehydrate_runs_discovers_waiting_runs(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "wait_rehydrate_many.nd")
