@@ -582,7 +582,7 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 - **Status: v1.0.0 — GitHub Action (not a PyPI package).**
 - **Usage:** `uses: Masterplanner25/nodus-run-action@v1`
 - **Three modes:** `file` (run a .nd script), `test-path` (run test suite), `fmt-check` (format gate)
-- Pin the nodus-lang version with `version: '4.0.5'` for reproducible CI.
+- Pin the nodus-lang version with `version: '4.0.7'` for reproducible CI.
 - No local test suite — tests run in CI via the action itself.
 
 ## nodus-sdk companion package
@@ -612,9 +612,9 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 
 ## SemVer policy
 
-The current published version is **v4.0.5** (live on PyPI). Both files must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "4.0.5"`
-- `pyproject.toml` — `version = "4.0.5"`
+The current published version is **v4.0.7** (live on PyPI). Both files must stay in sync:
+- `src/nodus/support/version.py` — `__version__ = "4.0.7"`
+- `pyproject.toml` — `version = "4.0.7"`
 
 Patch releases (4.0.x) for bug fixes and stability graduations. Next minor bump (4.1.0) requires a substantive feature addition. Never bump without a corresponding PyPI publish. If you see these files at different values, fix the mismatch before doing anything else.
 
@@ -645,7 +645,7 @@ rt = NodusRuntime(timeout_ms=None, max_steps=None)
 
 All packages are live. PyPI rate limit is 2-3 new uploads per session; wait ~1 hour between sessions.
 
-**nodus-lang:** v4.0.5 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
+**nodus-lang:** v4.0.7 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
 **Standalone packages (all v0.1.0, PyPI):**
 ```
