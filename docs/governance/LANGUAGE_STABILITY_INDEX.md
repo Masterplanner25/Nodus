@@ -1,6 +1,6 @@
 # Language Stability Index
 
-**Version:** 4.0.5
+**Version:** 4.0.6
 **Status:** Governing document — supersedes `docs/governance/STABILITY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 

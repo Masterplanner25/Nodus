@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [4.0.6] - 2026-06-20
+
 ### Fixes
 
 - **COMPILER-001 fix (`@retry` annotation was a no-op — PR #267):** `_lower_retry()` emits annotation args verbatim (`max`, `delay_ms`) but `_policy_from_map()` was reading `max_attempts`/`backoff_ms`, producing a 1-attempt/no-delay policy regardless of what the annotation declared. Fixed by adding short-form key aliases in `_policy_from_map()`: `max` → `max_attempts`, `delay_ms` → `backoff_ms`. Both spellings are now accepted. `@retry(max: 3i, delay_ms: 50i)` now retries up to 3 times as expected.
