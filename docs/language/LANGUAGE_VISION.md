@@ -96,9 +96,9 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v4.0.6)
+## Current Release (v4.0.7)
 
-Shipped 2026-06-15 on PyPI (`pip install nodus-lang`).
+Shipped 2026-06-21 on PyPI (`pip install nodus-lang`).
 
 v4.0 cycle highlights:
 - v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 35 companion packages
@@ -107,6 +107,8 @@ v4.0 cycle highlights:
 - v4.0.3: All 18 Sentinel evaluation bugs fixed; stdlib contract test suite added
 - v4.0.4: session_id propagation fix (#254), retry error trace suppression on eventual success (#255)
 - v4.0.5: spawn/coroutine/channel and workflow/goal promoted to Mostly Stable; yield promoted to Stable; nodus-vscode v0.1.0, nodus-jupyter v0.1.0, nodus-mcp-server, nodus-adapter-base published
+- v4.0.6: @retry annotation no-op fixed (COMPILER-001, #267), spurious "spawned task never executed" warning fixed (WARN-001, #268), `nodus serve`/`worker --help` print usage
+- v4.0.7: cross-process workflow resume re-binds module imports (REHYDRATE-001, #285)
 
 Previous: v3.0.2 (shipped 2026-05-25; eval score 7.57/10).
 

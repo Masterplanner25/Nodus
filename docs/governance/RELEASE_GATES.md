@@ -2,7 +2,7 @@
 
 # Release Gates
 
-**Version:** 4.0.6
+**Version:** 4.0.7
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
