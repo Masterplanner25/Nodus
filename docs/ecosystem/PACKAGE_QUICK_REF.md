@@ -77,4 +77,4 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 | Artifact | Distribution | Key details |
 |----------|-------------|-------------|
 | nodus-vscode | VS Code Marketplace (MasterplanInfiniteWeave) | Phase 1–4: grammar/snippets, diagnostics, run/fmt/DAP, LSP; `nodus.executablePath` setting; LSP uses installed nodus.exe (not dev source) |
-| nodus-run-action | GitHub Actions (`Masterplanner25/nodus-run-action@v1`) | 3 modes: `file` / `test-path` / `fmt-check`; pin version with `version: '4.0.5'` |
+| nodus-run-action | GitHub Actions (`Masterplanner25/nodus-run-action@v1`) | 3 modes: `file` / `test-path` / `fmt-check`; pin version with `version: '4.0.6'` |

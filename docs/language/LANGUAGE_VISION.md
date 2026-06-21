@@ -96,7 +96,7 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v4.0.5)
+## Current Release (v4.0.6)
 
 Shipped 2026-06-15 on PyPI (`pip install nodus-lang`).
 

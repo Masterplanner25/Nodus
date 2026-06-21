@@ -1,6 +1,6 @@
 # Nodus Security Matrix
 
-**Version:** 4.0.5  
+**Version:** 4.0.6  
 **Status:** Governing document  
 **Relates to:** `docs/governance/SECURITY_POSTURE.md` (policy intent),
 `docs/governance/TECH_DEBT.md` (known gaps)
