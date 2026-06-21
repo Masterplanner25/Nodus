@@ -176,6 +176,18 @@ scaffolds live at [`packages/`](../packages/) in the repo root.
 
 ---
 
+### `projects/` — Showcase Projects
+
+Standalone Nodus projects built end-to-end using only the installed ecosystem and
+the skills that ship with the language. Each one tests the skills in a real context
+and serves as reference material for a future Nodus coding agent.
+
+| File | Contents |
+|---|---|
+| `PROJECTS.md` | All three projects — purpose, status, architecture, next steps |
+
+---
+
 ### `evals/` — Evaluation Results
 
 Per-version independent evaluation reports (Stage 4/5 process).
