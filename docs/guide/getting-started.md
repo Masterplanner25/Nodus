@@ -15,7 +15,7 @@ pip install nodus-lang
 nodus --version
 ```
 
-Expected output: `Nodus 4.0.6`.
+Expected output: `Nodus 4.0.7`.
 
 For the optional FastAPI/Uvicorn HTTP server:
 

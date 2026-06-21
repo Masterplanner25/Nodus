@@ -19,7 +19,7 @@ Nodus is evolving as a bytecode-based scripting runtime designed for automation 
 
 ## Active Development
 
-Current release: **v4.0.6** (2026-06-20). See root `CHANGELOG.md` for full history.
+Current release: **v4.0.7** (2026-06-20). See root `CHANGELOG.md` for full history.
 
 Open milestones:
 - **v4.1** — Substantive new feature addition required; patch (4.0.x) track for bug fixes only.

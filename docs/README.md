@@ -1,6 +1,6 @@
 # Nodus Documentation
 
-**Current stable version:** v4.0.6 · [CHANGELOG](../CHANGELOG.md) · [PyPI](https://pypi.org/project/nodus-lang/)
+**Current stable version:** v4.0.7 · [CHANGELOG](../CHANGELOG.md) · [PyPI](https://pypi.org/project/nodus-lang/)
 
 This directory contains all technical documentation for Nodus. Start with the
 [Getting Started guide](guide/getting-started.md) if you are new.
