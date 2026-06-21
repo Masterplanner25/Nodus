@@ -830,6 +830,7 @@ workflow demo {
             self.assertIsNotNone(task_graph.get_registered_graph(graph_id))
             self.assertIs(task_graph.get_registered_vm(graph_id), fresh_vm)
 
+    # closes: #285
     def test_resume_on_rebuilt_vm_rebinds_module_imports(self):
         # Regression: cross-process resume must re-bind the workflow's `import`
         # statements. Previously the rehydration path compiled via
