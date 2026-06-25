@@ -25,3 +25,8 @@ class Coroutine:
     task_timeout_ms: float | None = None
     task_started_at: float | None = None
     workflow_context: dict | None = None
+    # ASYNC-MOD-001 (#105): the module execution context (code/functions/globals/
+    # ...) this coroutine should run in. Captured at spawn and on every suspend,
+    # restored on resume — so a coroutine suspended inside a cross-module call
+    # does not leak its swapped context to other coroutines on the shared VM.
+    module_ctx: object | None = None

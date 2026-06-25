@@ -112,3 +112,6 @@ class Frame:
     closure: Closure | None = None
     locals_array: list | None = None
     locals_name_to_slot: dict | None = None
+    # ASYNC-MOD-001 (#105): for a cross-module call frame, the caller's module
+    # context to restore when this frame pops. None for ordinary frames.
+    cross_module_ctx: object | None = None
