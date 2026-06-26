@@ -4,6 +4,14 @@
 
 ---
 
+## [4.0.8] - 2026-06-25
+
+### Fixes
+
+- **ASYNC-MOD-001 fix (stdlib async wrappers fell back to sync — #105):** Async builtins called through a `std:` module wrapper — `http.get_async()`, `subprocess.run_async()`/`shell_async()` via `import "std:http"` / `import "std:subprocess"` — silently executed **synchronously**, so fanning N of them out across coroutines ran serially instead of overlapping (the documented async fan-out lost its concurrency). Root cause: module functions were dispatched through `invoke_function`, which runs the wrapper in a detached VM whose `run_closure` cannot yield, so the async builtin's `ChannelRecvRequest` suspension could not propagate and a `current_task` guard fell back to the blocking path. (#105 was previously closed when only the *direct*-builtin path — `http_get_async(...)` — was fixed; the module-wrapper path it actually describes remained broken.) Fixed by dispatching a module function **in the calling VM** when it is invoked from inside a scheduler-managed coroutine: `_op_call_method` swaps the module's execution context onto a cross-module call frame (restored on frame pop in `_op_return`/`handle_exception`), so execution stays in the same coroutine and `execute()` loop and the yield propagates to the scheduler. The swapped context is tracked per-coroutine (`Coroutine.module_ctx` — captured at spawn, saved on suspend, restored on resume) and saved/restored around `resume`, so a coroutine suspended mid-cross-module call never leaks its context to another coroutine and re-entrant resumes (e.g. `test.flush_async` stepping tasks) are not clobbered. The `BuiltinMethod` call path now also propagates `SleepRequest`/`ChannelRecvRequest` sentinels, so `handle.wait_async()` is genuinely async. The async guards in `_do_async_request`/`_do_async_run` are deliberately kept so `run_closure`/graph contexts stay synchronous. Verified by a new timing regression test (`tests/test_async_concurrency_timing.py`): `http.get_async` fan-out now overlaps (~2x+ vs the prior serial baseline).
+
+---
+
 ## [4.0.7] - 2026-06-21
 
 ### Fixes
