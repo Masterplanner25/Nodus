@@ -7,22 +7,22 @@ WSGI app and assert only correctness), these run against a real, concurrent
 ``ThreadingHTTPServer`` with measurable per-request latency, so serial execution
 is observable.
 
-Known bug (these tests document it):
-    The idiomatic stdlib wrapper ``http.get_async`` SILENTLY FALLS BACK TO THE
-    SYNC BLOCKING PATH. ``_do_async_request`` only takes the async (thread-backed
-    ``_io_channels``) path when ``coroutine is scheduler.current_task``; calling
-    the builtin through a ``.nd`` module function (``fn get_async`` ->
-    ``http_get_async``) runs it in a nested ``invoke_function -> execute`` frame
-    that fails that check. Result: ``http.get_async`` fan-out is serial, while the
-    raw ``http_get_async`` builtin overlaps.
+Regression guard (ASYNC-MOD-001, #105):
+    The idiomatic stdlib wrapper ``http.get_async`` previously fell back to the
+    SYNC blocking path: calling the async builtin through a ``.nd`` module
+    function (``fn get_async`` -> ``http_get_async``) ran it in a detached
+    ``invoke_function -> run_closure`` frame that could not yield, so a
+    ``current_task`` guard fell back to sync and fan-out was serial. The fix
+    dispatches module functions in-VM when called from a scheduler coroutine, so
+    the async yield propagates and the fan-out overlaps. These tests fail again
+    if that regresses.
 
 Expectations:
-    * ``test_raw_async_builtin_overlaps``  -> PASSES today (proves the
-      thread-backed substrate works AND that overlap is detectable on this host;
-      guards the wrapper test against false failures on a slow machine).
-    * ``test_wrapper_async_overlaps``      -> FAILS today (the bug). It should
-      start passing once the async guard is fixed to survive a module-function
-      call frame.
+    * ``test_raw_async_builtin_overlaps``  -> PASSES (the thread-backed substrate
+      overlaps; also confirms overlap is detectable on this host, guarding the
+      wrapper test against false failures on a slow machine).
+    * ``test_wrapper_async_overlaps``      -> PASSES (the idiomatic wrapper now
+      overlaps too). Fails if ASYNC-MOD-001 regresses.
 
 Self-calibrating: each test compares against a serial baseline measured on the
 same host, so the threshold is a ratio, not an absolute time -- robust to load.
@@ -104,12 +104,14 @@ class AsyncIOConcurrencyTimingTests(unittest.TestCase):
             f"is then inconclusive.",
         )
 
+    # closes: #105
     def test_wrapper_async_overlaps(self):
-        """Idiomatic http.get_async fan-out must overlap -- FAILS today (the bug).
+        """Idiomatic http.get_async fan-out must overlap (ASYNC-MOD-001, #105).
 
-        http.get_async currently falls back to the sync blocking path (module
-        function call frame fails the async guard), so this runs serially. Should
-        flip to passing once the guard is fixed.
+        Regression guard: http.get_async (a std: module wrapper) previously fell
+        back to the sync blocking path and ran serially. Module functions called
+        from a scheduler coroutine now dispatch in-VM so the async yield
+        propagates and the fan-out overlaps. Re-breaking that makes this fail.
         """
         concurrent = self._time_source(self._fanout_src(f'http.get_async("{self._url}", nil)'))
         self.assertLess(
