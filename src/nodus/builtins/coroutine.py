@@ -27,6 +27,10 @@ def register(vm, registry) -> None:
             vm.runtime_error("runtime", "Cannot resume running coroutine")
 
         caller_context = vm.save_execution_context()
+        # ASYNC-MOD-001: resuming a coroutine restores ITS module context via
+        # load_coroutine_context; save the caller's so a re-entrant resume (e.g.
+        # test.flush_async stepping tasks, or in-VM module calls) is not clobbered.
+        caller_module_ctx = vm._capture_module_ctx() if hasattr(vm, "_capture_module_ctx") else None
         try:
             if coroutine.state == "created":
                 call_path, call_line, call_col = vm.current_loc()
@@ -77,12 +81,18 @@ def register(vm, registry) -> None:
             return None
         finally:
             vm.restore_execution_context(caller_context)
+            if caller_module_ctx is not None:
+                vm._restore_module_ctx(caller_module_ctx)
 
     def builtin_spawn(value):
         coroutine = vm.ensure_coroutine(value, "spawn(coroutine)")
         coro_timeout = getattr(vm, "coroutine_timeout_ms", None)
         if coro_timeout is not None:
             coroutine.task_timeout_ms = coro_timeout
+        # ASYNC-MOD-001: capture the spawning module context so the coroutine's
+        # first resume restores it (not a context another coroutine left behind).
+        if coroutine.module_ctx is None and hasattr(vm, "_capture_module_ctx"):
+            coroutine.module_ctx = vm._capture_module_ctx()
         vm.scheduler.spawn(coroutine)
         return None
 
@@ -90,7 +100,12 @@ def register(vm, registry) -> None:
         on_error = getattr(vm, "on_error", None)
         scheduler = vm.scheduler
         scheduler._coroutine_errors = []
+        # ASYNC-MOD-001: restore the caller's module context after the loop, in
+        # case the last-resumed coroutine left a swapped context behind.
+        _caller_ctx = vm._capture_module_ctx() if hasattr(vm, "_capture_module_ctx") else None
         scheduler.run_loop(on_error=on_error)
+        if _caller_ctx is not None:
+            vm._restore_module_ctx(_caller_ctx)
         errors = scheduler._coroutine_errors
         if errors:
             # Return error list so callers can detect partial failure without

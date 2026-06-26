@@ -400,6 +400,8 @@ class VM:
                 continue
             while len(self.frames) > frame_depth:
                 frame = self.frames.pop()
+                if frame.cross_module_ctx is not None:
+                    self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore on unwind
                 self._profiler_exit_frame(frame)
             while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
                 self.handler_stack.pop()
@@ -904,6 +906,11 @@ class VM:
         self.handler_stack = coroutine.handler_stack
         self.current_coroutine = coroutine
         self.ip = coroutine.ip if coroutine.ip is not None else 0
+        # ASYNC-MOD-001: restore the module context this coroutine runs in, so a
+        # coroutine that suspended inside a cross-module call resumes correctly
+        # and coroutines never inherit another's swapped context.
+        if coroutine.module_ctx is not None:
+            self._restore_module_ctx(coroutine.module_ctx)
 
     def _profiler_exit_frame(self, frame: Frame) -> None:
         profiler = self.profiler
@@ -951,6 +958,9 @@ class VM:
         coroutine.stack = self.stack
         coroutine.frames = self.frames
         coroutine.handler_stack = self.handler_stack
+        # ASYNC-MOD-001: remember the module context this coroutine suspended in,
+        # so it is restored on resume (not whatever another coroutine left).
+        coroutine.module_ctx = self._capture_module_ctx()
 
     def builtin_task(self, fn, deps):
         closure = self.ensure_function(fn, "task(fn, deps)")
@@ -2378,6 +2388,88 @@ class VM:
         self.stack.append(Closure(fn, upvalues))
         self.ip += 1
 
+    def _capture_module_ctx(self):
+        """Snapshot the current module execution context (ASYNC-MOD-001)."""
+        return (self.code, self.functions, self.module_globals, self.globals,
+                self.code_locs, self.source_path, self.builtins,
+                self.host_globals, self.bytecode_version)
+
+    def _restore_module_ctx(self, saved) -> None:
+        """Restore a module context captured by _capture_module_ctx."""
+        (self.code, self.functions, self.module_globals, self.globals,
+         self.code_locs, self.source_path, self.builtins,
+         self.host_globals, self.bytecode_version) = saved
+
+    def _try_enter_module_call(self, module, name: str, args: list) -> bool:
+        """Dispatch a module function IN THE CALLER VM instead of a detached VM.
+
+        ASYNC-MOD-001 (#105): module functions were dispatched via
+        ``invoke_function``, which spins up a fresh VM and calls ``run_closure``;
+        that VM's ``execute`` raises on yield, so async builtins (``http_get_async``,
+        ``subprocess_run_async``) inside a stdlib wrapper (e.g. ``http.get_async``)
+        fall back to synchronous execution and lose concurrency.
+
+        When we are inside a scheduler-managed coroutine, run the module function
+        in the *current* VM by swapping in the module's compiled context and
+        pushing a cross-module frame. Execution stays in the same coroutine and
+        the same ``execute`` loop, so a ``ChannelRecvRequest`` yield from an async
+        builtin propagates to the scheduler and overlaps. The saved context is
+        restored when the frame pops (see _op_return / handle_exception).
+
+        Returns True if the cross-module frame was set up (caller must return),
+        or False to fall back to ``invoke_function`` (unchanged behavior outside
+        a coroutine, for unknown functions, or on arity mismatch).
+        """
+        scheduler = getattr(self, "scheduler", None)
+        coroutine = self.current_coroutine
+        if (coroutine is None or scheduler is None
+                or coroutine is not getattr(scheduler, "current_task", None)):
+            return False
+        functions = getattr(module, "functions", None)
+        if not functions or name not in functions:
+            return False
+        fn_info = functions[name]
+        expected = len(fn_info.params)
+        if len(args) > expected:
+            return False  # let invoke_function raise the canonical arity error
+        padded = list(args) + [None] * (expected - len(args))
+
+        saved = self._capture_module_ctx()
+        version, instructions = normalize_bytecode(module.bytecode)
+        self.code = instructions
+        self.bytecode_version = version
+        self.functions = functions
+        self.module_globals = module.globals
+        self.globals = module.globals
+        self.code_locs = module.code_locs or [(None, None, None)] * len(instructions)
+        self.source_path = module.path
+        if getattr(module, "host_globals", None) is not None:
+            self.host_globals = module.host_globals
+        if getattr(module, "host_builtins", None):
+            self.builtins = {**self.builtins, **module.host_builtins}
+
+        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+            self._restore_module_ctx(saved)
+            self.runtime_error("sandbox", "Call stack overflow")
+        closure = Closure(fn_info, [])
+        frame = Frame(
+            return_ip=self.ip + 1,
+            locals={},
+            fn_name=fn_info.name,
+            call_line=None,
+            call_col=None,
+            call_path=None,
+            closure=closure,
+        )
+        frame.cross_module_ctx = saved
+        if fn_info.local_slots:
+            frame.locals_name_to_slot = fn_info.local_slots
+        self.frames.append(frame)
+        for arg in padded:
+            self.stack.append(arg)
+        self.ip = fn_info.addr
+        return True
+
     def _op_call_method(self, instr):
         name = instr[1]
         arg_count = instr[2]
@@ -2390,6 +2482,10 @@ class VM:
             method = obj.get_export(name)
             self.record_vm_call(name, "call_method")
             if isinstance(method, ModuleFunction):
+                # ASYNC-MOD-001 (#105): run in-VM when inside a coroutine so async
+                # builtins in the module function can overlap; else fall back.
+                if self._try_enter_module_call(method.module, method.name, args):
+                    return None
                 self.stack.append(method.module.invoke_function(method.name, args, caller_vm=self))
                 self.ip += 1
                 return None
@@ -2404,10 +2500,31 @@ class VM:
         method = obj.fields[name]
         self.record_vm_call(name, "call_method")
         if isinstance(method, BuiltinMethod):
-            self.stack.append(method._fn(*args))
+            result = method._fn(*args)
+            # ASYNC-MOD-001: a method-style builtin (e.g. handle.wait_async)
+            # may return a suspend sentinel — propagate it as a yield like
+            # call_builtin does, instead of pushing it as a value.
+            if isinstance(result, SleepRequest):
+                self.stack.append(None)
+                if self.current_coroutine is None:
+                    self.runtime_error(
+                        "runtime",
+                        "sleep(ms) outside coroutine — "
+                        "wrap your code in spawn(coroutine(fn() { ... })) and call run_loop()",
+                    )
+                self.current_coroutine.state = "suspended"
+                self.save_current_coroutine_state(self.ip + 1)
+                return ("yield", {SLEEP_KEY: result.ms})
+            if isinstance(result, ChannelRecvRequest):
+                return ("yield", {CHANNEL_WAIT_KEY: True})
+            if isinstance(result, Record) and result.kind == "error":
+                result = self._augment_stdlib_err(result)
+            self.stack.append(result)
             self.ip += 1
             return None
         if isinstance(method, ModuleFunction):
+            if self._try_enter_module_call(method.module, method.name, args):
+                return None
             self.stack.append(method(*args))
             self.ip += 1
             return None
@@ -2461,6 +2578,8 @@ class VM:
             self.ip = finally_ip
             return
         frame = self.frames.pop()
+        if frame.cross_module_ctx is not None:
+            self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore caller module context
         self._profiler_exit_frame(frame)
         self.record_vm_return(self.display_name(frame.fn_name))
         while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):

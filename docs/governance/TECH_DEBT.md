@@ -105,15 +105,26 @@ describe the workaround patterns used until these are fixed.
   `subprocess_spawn`). `subprocess_run_async` and `subprocess_shell_async` use the
   same thread+channel approach. Verified 3.3x speedup for 3 parallel 1s subprocesses
   (sequential: ~4.3s, async: ~1.3s).
-  **Remaining limitation (ASYNC-MOD-001, GitHub #105):** when called via the stdlib
-  module wrapper (`subprocess.run_async(...)`, `http.get_async(...)` via
-  `import "std:subprocess"`), the `invoke_function` path doesn't support yield —
-  falls back to sync. Direct builtin calls (`subprocess_run_async(...)`) within
-  spawned coroutines are fully async. Workaround: use direct builtin names.
-  Fix direction: add `_code_stack` to VM; in `_op_call_method` for module functions
-  in scheduler context, push current code, swap to module code, use `call_closure`,
-  pop on RETURN. Skill: `/nodus-async-module-yield`.
-  GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001 tracking issue).
+  **ASYNC-MOD-001 (GitHub #105) — FIXED.** Previously, when an async builtin was
+  called via the stdlib module wrapper (`http.get_async(...)`, `subprocess.run_async(...)`
+  through `import "std:http"`), the `invoke_function` path ran the wrapper in a
+  detached VM that cannot yield, so it silently fell back to **sync** — fan-out via
+  the documented API was serial. (#105 was closed-as-completed when only the direct
+  builtin path was fixed; the module-wrapper path it actually describes remained
+  broken — caught by the new timing test `tests/test_async_concurrency_timing.py`.)
+  Fix: when a module function is called from inside a scheduler-managed coroutine,
+  `_op_call_method` now dispatches it **in the same VM** via `_try_enter_module_call`
+  (swap the module's execution context onto a cross-module frame, restored on pop in
+  `_op_return`/`handle_exception`), so a `ChannelRecvRequest` yield propagates and
+  overlaps. The swapped context is tracked per-coroutine (`Coroutine.module_ctx`,
+  saved on suspend / restored on resume) so a coroutine suspended mid-cross-module
+  call never leaks its context to another coroutine on the shared VM. The
+  `BuiltinMethod` branch of `_op_call_method` now also propagates `SleepRequest`/
+  `ChannelRecvRequest` sentinels (this additionally makes `handle.wait_async()` truly
+  async). Verified: `http.get_async` fan-out overlaps (~2x+) vs the prior serial
+  baseline. NOTE: the async guards in `_do_async_request`/`_do_async_run` were
+  deliberately **kept** — they correctly keep `run_closure`/graph contexts sync.
+  GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001).
 
 - **DAP-001** (open, severity: high, GitHub #106): The DAP server does not implement
   the `evaluate` command. When paused at a breakpoint, users cannot evaluate
