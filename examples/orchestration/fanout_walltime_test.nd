@@ -1,0 +1,88 @@
+// fanout_walltime_test.nd
+// The wall-clock regression test the async suite is missing (finding #3): it
+// asserts that fanned-out I/O-bound calls actually OVERLAP, measured against a
+// real concurrent server — not an instant in-process mock.
+//
+// MEASURED (Nodus main @ PR #290, 6×300ms reqs, this harness):
+//   - idiomatic http.get_async wrapper -> ~319ms : FULL overlap (was serial pre-#290).
+//   - raw direct http_get_async        -> ~1068ms: PARTIAL overlap (~3.5x, not 6x).
+// #290 (guard fix #1) flipped the idiomatic wrapper from serial to fully
+// overlapping — it is now the fast path AND the regression guard below. The raw
+// direct path only partially overlaps: the signature of the still-open cap lift
+// (#3 — direct path tops out short of N×). So the two cases assert different bars:
+//   - idiomatic: MUST fully overlap (< half-serial)  -> regression guard for #1.
+//   - raw:       MUST beat serial (partial is fine)  -> documents #3 still open.
+//
+// SETUP: point BASE at a LOCAL server that delays each response ~PER_REQ_MS and
+// serves requests concurrently. Any will do, e.g.:
+//   python -c "import time;from http.server import *;\
+//     class H(BaseHTTPRequestHandler):\
+//       def do_GET(s): time.sleep(0.3); s.send_response(200); s.end_headers(); s.wfile.write(b'ok')\
+//     ThreadingHTTPServer(('127.0.0.1',8099),H).serve_forever()"
+// Run:  nodus test "fanout_walltime_test.nd"
+import "std:test" as test
+import "std:time" as time
+import "std:http" as http
+
+let BASE = "http://127.0.0.1:8099/delay"
+let N = 6
+let PER_REQ_MS = 300
+let SERIAL_MS = N * PER_REQ_MS
+// 1800ms if fully serial
+let OVERLAP_CEILING_MS = N * PER_REQ_MS / 2
+
+// 900ms: must beat this to count as overlapping
+fn _now_ms() {
+    return time.to_epoch_ms(time.now())
+}
+
+// IDIOMATIC path: the stdlib wrapper real orchestration code would call.
+// This is the path the wrapper->sync bug defeats.
+fn _fanout_wrapper(n) {
+    let bucket = {}
+    let i = 0
+    while (i < n) {
+        let idx = i
+        spawn(coroutine(fn() { bucket[str(idx)] = http.get_async(BASE + "/" + str(PER_REQ_MS)) }))
+        i = i + 1
+    }
+    run_loop()
+    return bucket
+}
+
+// CONTROL path: the RAW builtin called directly in the coroutine body. Already
+// overlaps today (measured ~704ms for N=6). Proves the server + harness can
+// observe overlap at all, so a RED idiomatic case is a real bug, not a flaky setup.
+fn _fanout_raw(n) {
+    let bucket = {}
+    let i = 0
+    while (i < n) {
+        let idx = i
+        spawn(coroutine(fn() { bucket[str(idx)] = http_get_async(BASE + "/" + str(PER_REQ_MS)) }))
+        i = i + 1
+    }
+    run_loop()
+    return bucket
+}
+
+// Only PARTIAL overlap today (~3.5x): the raw direct path is still capped
+// (#3, cap lift). Assert it beats serial, not full overlap. Tighten this to
+// OVERLAP_CEILING_MS once #3 lands.
+// GREEN as of PR #290 (guard fix #1). If this goes red, the wrapper->sync
+// fallback has regressed — the idiomatic async path is serial again.
+test.suite("agent fan-out overlaps (gate for guard fix #1)", fn() {
+    test.case("raw direct builtin partially overlaps (beats serial; #3 cap open)", fn() {
+    let t0 = _now_ms()
+    _fanout_raw(N)
+    let elapsed = _now_ms() - t0
+    print("raw builtin fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
+    test.assert(elapsed < SERIAL_MS, "raw async path should at least beat serial; if not, the test server is not concurrent")
+})
+    test.case("idiomatic http.get_async wrapper overlaps", fn() {
+    let t0 = _now_ms()
+    _fanout_wrapper(N)
+    let elapsed = _now_ms() - t0
+    print("wrapper fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
+    test.assert(elapsed < OVERLAP_CEILING_MS, "http.get_async fan-out went serial — wrapper->sync fallback regression (guard fix #1).")
+})
+})
