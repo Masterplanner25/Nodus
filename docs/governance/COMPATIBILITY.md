@@ -33,7 +33,8 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - **v4.0.4 (2026-06-13):** Patch release. `identity.session_id()` nil in child VMs fixed (#254); retry stderr noise suppressed on eventual workflow success (#255). No bytecode break.
 - **v4.0.5 (2026-06-15):** Stability graduation release. `spawn`/`coroutine`/`channel` and `workflow`/`goal`/`step` promoted to Mostly Stable; `yield` promoted to Stable. Companion tooling: nodus-vscode v0.1.0, nodus-jupyter v0.1.0, nodus-mcp-server, nodus-adapter-base. No bytecode break.
 - **v4.0.6 (2026-06-20):** Patch release. `@retry` annotation no-op fixed (COMPILER-001, #267); spurious "spawned task never executed" warning fixed (WARN-001, #268); `nodus serve --help` and `nodus worker --help` now print usage instead of starting. No bytecode break.
-- **v4.0.7 (2026-06-21, current):** Patch release. Cross-process workflow resume re-binds module imports (REHYDRATE-001, #285): a waiting workflow rehydrated in a fresh VM no longer runs with `tool`/`mem`/`json` unbound. No bytecode break.
+- **v4.0.7 (2026-06-21):** Patch release. Cross-process workflow resume re-binds module imports (REHYDRATE-001, #285): a waiting workflow rehydrated in a fresh VM no longer runs with `tool`/`mem`/`json` unbound. No bytecode break.
+- **v4.0.8 (2026-06-25, current):** Patch release. Stdlib async wrappers (`http.get_async`, `subprocess.run_async`) called from a scheduler coroutine now genuinely overlap instead of silently falling back to synchronous execution (ASYNC-MOD-001, #105). No bytecode break.
 
 ## Migration Path
 - Use `.nd` files for new code.
