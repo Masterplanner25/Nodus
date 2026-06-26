@@ -96,6 +96,7 @@ When two documents make conflicting claims, the document higher in this list win
 | `docs/governance/LIBRARY_ECOSYSTEM.md` | Ecosystem architecture and tiers |
 | `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md` | How to assess companion libraries |
 | `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` | Current companion library state |
+| `docs/governance/ECOSYSTEM_COVERAGE_ANALYSIS.md` | Coverage vs. 12 reference systems (strict, gaps + strengths) |
 | `docs/governance/RELEASE_GATES.md` | What must pass before a release |
 | `docs/governance/TECH_DEBT.md` | Open items and known limitations |
 | `docs/governance/VERSIONING.md` | Semver policy |
