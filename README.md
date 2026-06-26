@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.0.7 stable on PyPI** — `pip install nodus-lang` · Full 33-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v4.0.8 stable on PyPI** — `pip install nodus-lang` · Full 33-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
 ```bash
 pip install nodus-lang
