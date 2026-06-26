@@ -1,0 +1,86 @@
+// judge_panel.nd
+// Judge-panel orchestration skeleton: generate N angled solutions concurrently,
+// score each with a small judge panel, synthesize the winner while grafting in
+// the best ideas from the runners-up.
+//
+// STATUS: guard fix #1 is merged on Nodus main (PR #290). The two fan_out()
+// calls below now OVERLAP whenever invoke() (in agent_typed.nd) routes the agent
+// through an async transport (option A there: http.post_async / subprocess.run_async).
+// With the default SYNC agent.call they still produce correct results serially
+// until a thread-backed agent_async builtin (#2) lands.
+//
+// Run shape (host must register "solver", "judge", "synthesizer" agents):
+//   let out = run_panel("Design a rate limiter", ANGLES, JUDGES)
+import "./agent_typed.nd" as ax
+
+// Required keys each agent role must return (the "schema").
+let SOLUTION_KEYS = ["approach", "design"]
+let SCORE_KEYS = ["total", "best_idea"]
+
+// Index of the highest-avg-score entry.
+fn _argmax_index(scored) {
+    let best = 0
+    let i = 1
+    while (i < len(scored)) {
+        if (scored[i]["avg"] > scored[best]["avg"]) {
+            best = i
+        }
+        i = i + 1
+    }
+    return best
+}
+
+// Every judge's best_idea from all entries EXCEPT the winner (by index, so
+// value-equal entries are not accidentally excluded).
+fn _best_ideas_except(scored, winner_idx) {
+    let ideas = []
+    let i = 0
+    while (i < len(scored)) {
+        if (i != winner_idx) {
+            let verdicts = scored[i]["verdicts"]
+            let j = 0
+            while (j < len(verdicts)) {
+                list_push(ideas, verdicts[j]["best_idea"])
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return ideas
+}
+
+// Average of the "total" field across a panel's verdicts.
+fn _avg_total(verdicts) {
+    let total = 0
+    let i = 0
+    while (i < len(verdicts)) {
+        total = total + verdicts[i]["total"]
+        i = i + 1
+    }
+    return total / len(verdicts)
+}
+
+// 1. GENERATE — one solver per angle, fanned out concurrently.
+// 2. SCORE — each candidate judged by the full panel, also fanned out.
+//    (Nested fan_out: candidates in the outer sweep, judges in the inner.)
+// 3. SYNTHESIZE — start from the winner, graft the best runner-up ideas.
+export fn run_panel(task, angles, judges) {
+    let candidates = ax.fan_out(angles, fn(angle) {
+    let payload = {"task": task, "bias": angle}
+    let sol = ax.typed("solver", payload, SOLUTION_KEYS, 3)
+    sol["angle"] = angle
+    return sol
+})
+    let scored = ax.fan_out(candidates, fn(candidate) {
+    let verdicts = ax.fan_out(judges, fn(judge) {
+    let payload = {"judge": judge, "task": task, "candidate": candidate}
+    return ax.typed("judge", payload, SCORE_KEYS, 3)
+})
+    return {"candidate": candidate, "avg": _avg_total(verdicts), "verdicts": verdicts}
+})
+    let winner_idx = _argmax_index(scored)
+    let winner = scored[winner_idx]
+    let payload = {"task": task, "winner": winner["candidate"], "graft_ideas": _best_ideas_except(scored, winner_idx)}
+    let final = ax.typed("synthesizer", payload, ["design"], 3)
+    return {"final": final, "winner_angle": winner["candidate"]["angle"], "scored": scored}
+}

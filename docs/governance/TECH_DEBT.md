@@ -126,6 +126,39 @@ describe the workaround patterns used until these are fixed.
   deliberately **kept** — they correctly keep `run_closure`/graph contexts sync.
   GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001).
 
+- **ASYNC-MOD-002** (open, severity: medium, GitHub: #294): No async agent builtin.
+  `agent_call` is sync-only (`src/nodus/vm/vm.py:264` — `BuiltinInfo("agent_call", 2,
+  self.builtin_agent_call)`); there is no `agent_call_async` / `agent_async` / `llm_async`
+  counterpart, and `std:agent` (`src/nodus/stdlib/agent.nd`) exposes only `call`.
+  Consequence: agent fan-out (`fan_out`/`parallel` over `agent.call`) runs **serially**
+  even after ASYNC-MOD-001 (#105/#290) fixed the module-wrapper async path — because the
+  call has no async (daemon-thread + `_io_channels`) path to take in the first place. The
+  ASYNC-MOD-001 fix only helps builtins that *have* an async variant (`http_*_async`,
+  `subprocess_run_async`). Today the only way to overlap agent work is to route it through
+  an already-async transport (`http.post_async` to the model/agent host, or
+  `subprocess.run_async`). Fix direction: add `agent_call_async` as a thread-backed builtin
+  on the same `_io_channels` pattern as `http_*_async` (EMBED-004), suspending the caller
+  via a `ChannelRecvRequest` yield so it overlaps under the scheduler; expose it as
+  `agent.call_async` in `std:agent`, and ensure it is reachable through the module wrapper
+  (must satisfy the ASYNC-MOD-001 guard / `_try_enter_module_call`), not just the direct
+  builtin. Regression test belongs alongside `tests/test_async_concurrency_timing.py`.
+
+- **ASYNC-CAP-001** (open, severity: low, GitHub: #295): Async fan-out concurrency is
+  capped well short of N× on the **raw direct-builtin** path. Measured (6 × 300ms
+  concurrent GETs against a local ThreadingHTTPServer, Nodus main post-#290): the idiomatic
+  stdlib **wrapper** path (`http.get_async` called inside a coroutine) fully overlaps at
+  **~319–326ms** (≈ full 6-way), but the **raw** direct builtin (`http_get_async` called
+  directly in the coroutine body) only partially overlaps at **~946–1068ms** (≈ 1.7–1.9×,
+  not 6×). So post-#290 the wrapper is now the *faster* path and the raw direct path is the
+  capped one (an inversion of the pre-fix situation). Suspected causes: httpx connection-pool
+  limits (`max_connections`) and/or the scheduler's 1ms `_io_channels` poll granularity
+  (`src/nodus/runtime/scheduler.py` `_drain_io_channels` / `time.sleep(0.001)`), and/or
+  per-call setup cost on the direct path. Fix direction: identify the limiting factor and
+  lift it so the direct path scales toward N (~16) like the wrapper path. **Not blocking** —
+  the idiomatic wrapper path (what orchestration code actually calls) already overlaps; this
+  only affects code that bypasses the stdlib wrapper. Add a scaling assertion (N=6, N=12) to
+  `tests/test_async_concurrency_timing.py`.
+
 - **DAP-001** (open, severity: high, GitHub #106): The DAP server does not implement
   the `evaluate` command. When paused at a breakpoint, users cannot evaluate
   expressions in the debug console — VS Code and other DAP clients show an error.

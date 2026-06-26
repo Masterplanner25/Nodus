@@ -1,0 +1,128 @@
+// agent_typed.nd
+// Schema-forced agent calls + ordered concurrent fan-out for Nodus.
+//
+// STATUS: guard fix #1 is MERGED on Nodus main (PR #290) — the async stdlib
+// wrappers (http.*_async, subprocess.run_async) now genuinely OVERLAP under
+// fan_out() instead of silently falling back to sync. Remaining gap: there is
+// still NO async agent builtin (#2) — `agent_call` is sync-only. So an agent
+// invoked via a SYNC agent.call still runs serially under fan_out(); to overlap
+// TODAY, route the agent through an async transport (http.post_async to the
+// model/host, or subprocess.run_async). invoke() below is the one place that
+// choice is made.
+import "std:agent" as agent
+import "std:json" as json
+
+// ─────────────────────────────────────────────────────────────────────────
+// The single agent-execution seam. This is the ONLY place to change the
+// transport; typed() and the judge panel are agnostic to it.
+//
+// As of PR #290 the wrapper->sync bug is gone, so async stdlib wrappers
+// overlap. But `agent.call` is the SYNC builtin and still serializes under
+// fan_out(). Two ways to run agents:
+//
+//   (A) OVERLAPS TODAY — dispatch through an async transport. Swap the body to,
+//       e.g., a model/host HTTP call:
+//           return http.post_async(AGENT_HOST + "/run",
+//               { "json": { "agent": name, "payload": payload } })
+//       (or subprocess.run_async([...])). Both genuinely overlap post-#290.
+//
+//   (B) SERIAL until agent_async (#2) lands — the direct sync builtin below.
+//       Correct results, but fan_out() over it collapses to a sequential loop.
+//
+// Default is (B) for portability (no host wiring assumed). Flip to (A) once the
+// agent host/model endpoint is known.
+// ─────────────────────────────────────────────────────────────────────────
+export fn invoke(name, payload) {
+    return agent.call(name, payload)
+}
+
+// Coerce an agent result to a map. Agents may return a JSON string or an
+// already-structured map; normalize so callers can validate keys uniformly.
+fn _as_map(value) {
+    if (type(value) == "string") {
+        return json.parse(value)
+    }
+    return value
+}
+
+// Return the list of required keys missing from a result map.
+fn _missing_keys(result, required) {
+    let missing = []
+    let i = 0
+    while (i < len(required)) {
+        if (map_has_key(result, required[i]) == false) {
+            list_push(missing, required[i])
+        }
+        i = i + 1
+    }
+    return missing
+}
+
+// On a retry, tell the agent which required keys it omitted last time.
+fn _augment(payload, missing) {
+    if (missing == nil) {
+        return payload
+    }
+    payload["__missing_required"] = missing
+    return payload
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// typed(): invoke an agent and force its output to satisfy a required-key
+// "schema". Re-invokes (up to max_attempts) when keys are missing, feeding the
+// missing list back to the agent. This is the pragmatic stand-in for the JS
+// workflow tool's `schema:` option; extend _missing_keys for value/type checks.
+// Returns the validated map, or an error map if it never validates.
+// ─────────────────────────────────────────────────────────────────────────
+export fn typed(name, payload, required_keys, max_attempts) {
+    let attempts = max_attempts
+    if (attempts == nil) {
+        attempts = 3
+    }
+    let last_missing = nil
+    let i = 0
+    while (i < attempts) {
+        let raw = invoke(name, _augment(payload, last_missing))
+        let result = _as_map(raw)
+        let missing = _missing_keys(result, required_keys)
+        if (len(missing) == 0) {
+            return result
+        }
+        last_missing = missing
+        i = i + 1
+    }
+    return {"ok": false, "error": "schema_validation_failed", "missing": last_missing}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// fan_out(): run worker(item) for every item concurrently, preserving input
+// order in the returned list.
+//
+// CONCURRENCY NOTE: this spawns one coroutine per item and drives them with a
+// single run_loop(). Whether they actually overlap is decided ENTIRELY by what
+// worker() does inside:
+//   - worker doing sync work or a sync agent call -> serial (today).
+//   - worker doing a properly thread-backed async call on a frame the fixed
+//     guard accepts -> genuine overlap (post fix #1 + #2).
+// The structure does not change between those worlds — only invoke()'s body.
+// Results are collected in a map keyed by index, then rebuilt in order.
+// ─────────────────────────────────────────────────────────────────────────
+export fn fan_out(items, worker) {
+    let n = len(items)
+    let bucket = {}
+    let i = 0
+    while (i < n) {
+        let idx = i
+        let item = items[i]
+        spawn(coroutine(fn() { bucket[str(idx)] = worker(item) }))
+        i = i + 1
+    }
+    run_loop()
+    let results = []
+    let k = 0
+    while (k < n) {
+        list_push(results, bucket[str(k)])
+        k = k + 1
+    }
+    return results
+}
