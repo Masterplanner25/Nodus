@@ -6,8 +6,8 @@
 
 - **Doc-vs-code gate restored to green (#293):** The mandatory `nodus_gate --all`
   gate had been shipping red since ~v4.0.7 — 21 runtime doc-block failures plus a
-  contract-check failure. Two unrelated causes: (1) the doc-reformat PRs (#273/#276)
-  shifted line numbers so `.nodusgate-allow` entries no longer matched their blocks,
+  contract-check failure. Two unrelated causes: (1) the doc-reformat pull requests
+  273 and 276 shifted line numbers so `.nodusgate-allow` entries no longer matched their blocks,
   and a handful of examples had real errors; (2) `contracts_phase.py` still imported
   `HandlerContract`/`VALID_EFFECTS` from `nodus_schema`, a stale reference from before
   the NAME-COL-001 rename — that name now resolves to the standalone PyPI package,
