@@ -2,7 +2,7 @@
 
 ## Language
 
-This project uses **Nodus v4** (`nodus-lang 4.0.6`).
+This project uses **Nodus v4** (`nodus-lang 4.0.8`).
 
 Install: `pip install nodus-lang`
 

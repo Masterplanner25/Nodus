@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "4.0.6"
+version: "4.0.8"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Bytecode version is 4. Package version is 4.0.6.** Installed via `pip install nodus-lang`.
+**Bytecode version is 4. Package version is 4.0.8.** Installed via `pip install nodus-lang`.
 
 ---
 
@@ -207,7 +207,7 @@ contributor to Nodus's knowledge base.
 
 # Nodus v4 Syntax Reference
 
-All examples in this file are verified against nodus-lang 4.0.6.
+All examples in this file are verified against nodus-lang 4.0.8.
 
 ---
 
@@ -1062,7 +1062,7 @@ state at a named point. They only make sense inside step execution.
 
 # Nodus v4 Modules and Imports Reference
 
-All examples verified against nodus-lang 4.0.6.
+All examples verified against nodus-lang 4.0.8.
 
 ---
 
@@ -1273,7 +1273,7 @@ nodus run --trace-imports script.nd
 
 # Nodus v4 Error Guide
 
-Error text → what it means → fix class. All errors verified against nodus-lang 4.0.6.
+Error text → what it means → fix class. All errors verified against nodus-lang 4.0.8.
 
 Fix classes are named consistently so they can be referenced across sessions.
 
@@ -1490,7 +1490,7 @@ if not result["ok"]:
 
 # Nodus v4 Verified Examples
 
-All examples are complete, runnable programs verified against nodus-lang 4.0.6.
+All examples are complete, runnable programs verified against nodus-lang 4.0.8.
 Each carries a one-line statement of what it demonstrates.
 
 **Key pattern note:** List literals cannot span multiple lines. Use `list_push()` to
