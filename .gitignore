@@ -41,6 +41,7 @@ AUDIT_REPORT*.md
 DOCS_AUDIT_REPORT*.md
 
 # Planning and evaluation documents (working files, not part of the repo)
+Session Handoff Summary*.md
 docs/governance/V3_0_PLAN.md
 CAPTURE RELEASE PLAYBOOK.md
 DOCS AUDIT TASK.md
