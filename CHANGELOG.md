@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Docs / Tooling
+
+- **Doc-vs-code gate restored to green (#293):** The mandatory `nodus_gate --all`
+  gate had been shipping red since ~v4.0.7 — 21 runtime doc-block failures plus a
+  contract-check failure. Two unrelated causes: (1) the doc-reformat PRs (#273/#276)
+  shifted line numbers so `.nodusgate-allow` entries no longer matched their blocks,
+  and a handful of examples had real errors; (2) `contracts_phase.py` still imported
+  `HandlerContract`/`VALID_EFFECTS` from `nodus_schema`, a stale reference from before
+  the NAME-COL-001 rename — that name now resolves to the standalone PyPI package,
+  which has no such symbols. **Fixed real doc bugs:** `docs/runtime/RUNTIME.md` used
+  the reserved word `record` as a variable; `docs/guide/standard-library.md`'s
+  `std:time` example read a non-existent `now.unix` field (correct: `now.epoch_ms`)
+  and used `"YYYY-MM-DD"` parse tokens (correct: `"yyyy-MM-dd"`);
+  `docs/language/STYLE_GUIDE.md` showed unquoted `import std:strings` (correct:
+  `import "std:strings" as strings`). **Re-pointed the allowlist** for the remaining
+  17 intentionally-illustrative fragments (undefined context vars, paren-less
+  control-flow demos, host-registered functions, error demos). **Pointed the contract
+  check at `nodus_lang_schema`.** Gate now reports Static/Runtime/Closed-issues/
+  Contracts all PASS (0 failures, 227/227 blocks, 6/6 contract checks).
+
 ---
 
 ## [4.0.8] - 2026-06-25

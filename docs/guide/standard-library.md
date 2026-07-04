@@ -1094,9 +1094,9 @@ print(now.year)
 print(now.month)
 print(now.day)
 print(now.hour)
-print(now.unix)                       // Unix timestamp (float)
+print(now.epoch_ms)                   // Unix timestamp in ms (integer)
 
-let dt = time.parse("2026-01-15", "YYYY-MM-DD")
+let dt = time.parse("2026-01-15", "yyyy-MM-dd")
 let diff = time.diff(dt, now)         // duration in ms
 ```
 
