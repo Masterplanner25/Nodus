@@ -249,7 +249,7 @@ Records are structured objects implemented as dictionaries with field-style acce
 Example:
 
 ```nd
-record = {x: 10, y: 20}
+let point = {x: 10, y: 20}
 ```
 
 Records support:

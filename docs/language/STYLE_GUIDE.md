@@ -44,8 +44,8 @@ Typical file structure:
 Example:
 
 ```nd
-import std:strings
-import std:collections
+import "std:strings" as strings
+import "std:collections" as collections
 
 fn normalize_name(name) {
     return strings.trim(strings.lower(name))
@@ -278,9 +278,9 @@ Imports should appear at the top of the file.
 Example:
 
 ```nd
-import std:strings
-import std:collections
-import std:json
+import "std:strings" as strings
+import "std:collections" as collections
+import "std:json" as json
 ```
 
 Group imports logically if the file grows large.

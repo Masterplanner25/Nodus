@@ -97,3 +97,34 @@ block:docs/language/LANGUAGE_SPEC.md:594
 
 # error-surfaces.md — intentional sandbox security demo (blocked path access)
 block:docs/policy/error-surfaces.md:80
+
+# --- Re-pointed after doc-reformat PRs #273/#276 shifted line numbers (#293) ---
+
+# ai-primitives.md — context-dependent primitive snippets (undefined host functions,
+# record-vs-map memory values, sys.v1 namespace, partial agent-step context)
+block:docs/guide/ai-primitives.md:91
+block:docs/guide/ai-primitives.md:119
+block:docs/guide/ai-primitives.md:149
+block:docs/guide/ai-primitives.md:212
+block:docs/guide/ai-primitives.md:228
+
+# standard-library.md — std:bool snippet uses undefined context variable 'some_value'
+block:docs/guide/standard-library.md:1162
+
+# workflows-and-tasks.md — intentional WRONG/RIGHT record-vs-map error demo
+block:docs/guide/workflows-and-tasks.md:344
+
+# STYLE_GUIDE.md — illustrative style fragments (undefined context vars/functions,
+# intentional paren-less control-flow snippets, multiline line-length demo)
+block:docs/language/STYLE_GUIDE.md:131
+block:docs/language/STYLE_GUIDE.md:179
+block:docs/language/STYLE_GUIDE.md:191
+block:docs/language/STYLE_GUIDE.md:226
+block:docs/language/STYLE_GUIDE.md:246
+block:docs/language/STYLE_GUIDE.md:253
+block:docs/language/STYLE_GUIDE.md:308
+block:docs/language/STYLE_GUIDE.md:343
+block:docs/language/STYLE_GUIDE.md:357
+
+# EMBEDDING.md — 'log' is a host-registered function (see preceding Python block), not a builtin
+block:docs/runtime/EMBEDDING.md:158

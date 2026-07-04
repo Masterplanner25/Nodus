@@ -31,13 +31,15 @@ def run_contracts_phase(root: str) -> ContractsResult:
 
     result = ContractsResult()
 
-    # Check 1: HandlerContract is importable from nodus_schema
+    # Check 1: HandlerContract is importable from nodus_lang_schema
+    # (in-tree ABI contracts package; renamed from nodus_schema in NAME-COL-001
+    # so it no longer collides with the standalone nodus-schema PyPI package).
     result.checks_run += 1
     try:
-        from nodus_schema import HandlerContract, VALID_EFFECTS
+        from nodus_lang_schema import HandlerContract, VALID_EFFECTS
     except ImportError as exc:
         result.findings.append(ContractsFinding(
-            message="HandlerContract not importable from nodus_schema",
+            message="HandlerContract not importable from nodus_lang_schema",
             detail=str(exc),
         ))
         return result  # Can't run further checks without the type
