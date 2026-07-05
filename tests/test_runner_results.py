@@ -44,6 +44,29 @@ class RunnerResultTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn("CALL print", result.get("disassembly", ""))
 
+    def test_parse_error_carries_snippet_with_caret(self):
+        result = check_source("let x = ", filename="inline.nd")
+        self.assertFalse(result["ok"])
+        err = result["errors"][0]
+        self.assertIn("snippet", err)
+        # source line + caret line pointing at the reported column (1-based)
+        line_text, caret = err["snippet"].split("\n")
+        self.assertEqual(line_text, "let x = ")
+        self.assertEqual(caret.index("^"), err["column"] - 1)
+
+    def test_runtime_error_carries_snippet_on_offending_line(self):
+        result, _vm = run_source("let a = 5\nlet b = a + (10 / 0)", filename="inline.nd")
+        self.assertFalse(result["ok"])
+        err = result["errors"][0]
+        line_text, caret = err["snippet"].split("\n")
+        self.assertEqual(line_text, "let b = a + (10 / 0)")
+        self.assertEqual(caret.index("^"), err["column"] - 1)
+
+    def test_success_result_has_no_error_snippet(self):
+        result, _vm = run_source("print(1)", filename="inline.nd")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["errors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

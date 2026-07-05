@@ -90,6 +90,47 @@ def _compile_stage(err: Exception) -> str:
     return "compile"
 
 
+def _source_snippet(structured: dict, code: str | None) -> str | None:
+    """Render a source line + caret for an error, for agent self-repair.
+
+    Prefers reading the error's own file from disk (handles imported modules),
+    falling back to the in-memory ``code`` (handles ``<memory>`` sources). Returns
+    ``None`` when the location cannot be resolved to a source line.
+    """
+    line = structured.get("line")
+    if not isinstance(line, int) or line < 1:
+        return None
+
+    text = None
+    err_filename = structured.get("filename")
+    if err_filename and err_filename != "<memory>":
+        try:
+            if os.path.isfile(err_filename):
+                with open(err_filename, encoding="utf-8") as fh:
+                    text = fh.read()
+        except OSError:
+            text = None
+    if text is None:
+        text = code
+    if text is None:
+        return None
+
+    lines = text.splitlines()
+    if line > len(lines):
+        return None
+    src_line = lines[line - 1]
+
+    column = structured.get("column")
+    caret_col = column if isinstance(column, int) and column >= 1 else 1
+    target = caret_col - 1
+    prefix_chars = src_line[:target]
+    # Preserve tabs in the caret prefix so it aligns under tab-indented code.
+    caret_prefix = "".join(c if c == "\t" else " " for c in prefix_chars)
+    if len(prefix_chars) < target:
+        caret_prefix += " " * (target - len(prefix_chars))
+    return f"{src_line}\n{caret_prefix}^"
+
+
 def _error_result(
     *,
     stage: str,
@@ -99,9 +140,11 @@ def _error_result(
     err: Exception,
     extras: dict | None = None,
     result: object | None = None,
+    code: str | None = None,
 ) -> dict:
     normalized = normalize_filename(filename)
     structured = coerce_error(err, stage=stage, filename=normalized).to_dict()
+    structured["snippet"] = _source_snippet(structured, code)
     legacy = legacy_error_dict(err, filename=filename)
     return Result.failure(
         stage=stage,
@@ -233,6 +276,7 @@ def run_source(
                 stdout="",
                 stderr="",
                 err=err,
+                code=code,
             ),
             None,
         )
@@ -261,6 +305,7 @@ def run_source(
                         stderr=stderr.getvalue(),
                         err=err,
                         extras=extras,
+                        code=code,
                     ),
                     vm,
                 )
@@ -451,7 +496,7 @@ def check_source(
         return _success_result(stage="check", filename=filename, stdout="", stderr="")
     except Exception as err:
         stage = _compile_stage(err)
-        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err)
+        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)
 
 
 def build_ast(code: str, filename: str | None = None, *, compact: bool = False):
@@ -463,7 +508,7 @@ def build_ast(code: str, filename: str | None = None, *, compact: bool = False):
         return _success_result(stage="ast", filename=filename, stdout="", stderr="", extras=extras)
     except Exception as err:
         stage = _compile_stage(err)
-        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err)
+        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)
 
 
 def disassemble_source(
@@ -491,7 +536,7 @@ def disassemble_source(
         return _success_result(stage="disassemble", filename=filename, stdout="", stderr="", extras=extras)
     except Exception as err:
         stage = _compile_stage(err)
-        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err)
+        return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)
 
 
 def run_graph_code(
