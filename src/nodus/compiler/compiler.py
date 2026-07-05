@@ -325,7 +325,7 @@ class Compiler:
         # Two separate NodusRuntime() instances in the same process each have their own
         # InMemoryEffectStore and do NOT share idempotency state. Across process restarts,
         # state is also lost unless the host injects a persistent store via
-        # NodusRuntime(effect_store=...). The annotation is NOT a distributed guarantee.
+        # runtime.set_effect_store(store). The annotation is NOT a distributed guarantee.
         payload_map = MapLit([(Str(p.name), Var(p.name)) for p in stmt.params])
         aid_call = Call(Var("effect_action_id"), [Str(stmt.name), payload_map, Str("default")])
         aid = Var("__nodus_aid")
