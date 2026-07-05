@@ -1,0 +1,254 @@
+// expr_compiler.nd
+// A self-contained arithmetic-expression compiler written entirely in Nodus.
+//
+// Pipeline:  source string -> lexer -> tokens -> recursive-descent parser
+//            -> AST (records tagged with `kind`) -> tree-walking evaluator.
+//
+// Grammar (standard precedence, left-associative):
+//   expr   := term   (('+' | '-') term)*
+//   term   := factor (('*' | '/') factor)*
+//   factor := NUMBER | '-' factor | '(' expr ')'
+//
+// Demonstrates that Nodus can express real character-level lexing and
+// recursive parsing today. Notes on the idioms this had to use because the
+// language lacks match/enum/break are collected at the bottom.
+import "std:math" as math
+
+// ---------------------------------------------------------------------------
+// Lexer
+// ---------------------------------------------------------------------------
+// Safe character access: returns "" past end-of-input so callers never need a
+// short-circuit guard before indexing (there is no slice op, so we index).
+fn char_at(src, i, n) {
+    if (i >= n) {
+        return ""
+    }
+    return src[i]
+}
+
+fn is_digit(c) {
+    return c >= "0" && c <= "9"
+}
+
+// chr(13i) is a carriage return; written this way because the current
+// `nodus fmt` mangles a literal "\r" escape on round-trip (see repo issues).
+fn is_space(c) {
+    return c == " " || c == "\t" || c == "\n" || c == chr(13i)
+}
+
+fn op_kind(c) {
+    if (c == "+") {
+        return "plus"
+    }
+    if (c == "-") {
+        return "minus"
+    }
+    if (c == "*") {
+        return "star"
+    }
+    if (c == "/") {
+        return "slash"
+    }
+    if (c == "(") {
+        return "lparen"
+    }
+    if (c == ")") {
+        return "rparen"
+    }
+    return "?"
+}
+
+// source string -> list of token records {kind, value}
+// integer part (built numerically from code points)
+// optional fractional part
+fn lex(src) {
+    let toks = []
+    let n = len(src)
+    let i = 0i
+    while (i < n) {
+        let c = char_at(src, i, n)
+        if (is_space(c)) {
+            i = i + 1i
+        } else {
+            if (is_digit(c)) {
+                let iv = 0i
+                while (is_digit(char_at(src, i, n))) {
+                    iv = iv * 10i + (ord(char_at(src, i, n)) - ord("0"))
+                    i = i + 1i
+                }
+                let value = iv * 1.0
+                if (char_at(src, i, n) == ".") {
+                    i = i + 1i
+                    let place = 0.1
+                    while (is_digit(char_at(src, i, n))) {
+                        let d = ord(char_at(src, i, n)) - ord("0")
+                        value = value + d * place
+                        place = place / 10.0
+                        i = i + 1i
+                    }
+                }
+                push(toks, record {kind: "num", value: value})
+            } else {
+                let k = op_kind(c)
+                if (k == "?") {
+                    throw "Unexpected character '\(c)' at position \(i)"
+                } else {
+                    push(toks, record {kind: k, value: nil})
+                    i = i + 1i
+                }
+            }
+        }
+    }
+    push(toks, record {kind: "eof", value: nil})
+    return toks
+}
+
+// ---------------------------------------------------------------------------
+// Parser  (parser state is a MAP so `pos` mutates by reference across calls)
+// ---------------------------------------------------------------------------
+fn p_peek(ps) {
+    return ps["toks"][ps["pos"]]
+}
+
+fn p_advance(ps) {
+    let t = ps["toks"][ps["pos"]]
+    ps["pos"] = ps["pos"] + 1i
+    return t
+}
+
+fn p_expect(ps, kind) {
+    let t = p_peek(ps)
+    if (t.kind != kind) {
+        throw "Expected \(kind) but got \(t.kind)"
+    }
+    return p_advance(ps)
+}
+
+fn parse_expr(ps) {
+    let node = parse_term(ps)
+    let go = true
+    while (go) {
+        let k = p_peek(ps).kind
+        if (k == "plus" || k == "minus") {
+            p_advance(ps)
+            let right = parse_term(ps)
+            node = record {kind: "bin", op: k, left: node, right: right}
+        } else {
+            go = false
+        }
+    }
+    return node
+}
+
+fn parse_term(ps) {
+    let node = parse_factor(ps)
+    let go = true
+    while (go) {
+        let k = p_peek(ps).kind
+        if (k == "star" || k == "slash") {
+            p_advance(ps)
+            let right = parse_factor(ps)
+            node = record {kind: "bin", op: k, left: node, right: right}
+        } else {
+            go = false
+        }
+    }
+    return node
+}
+
+fn parse_factor(ps) {
+    let t = p_peek(ps)
+    if (t.kind == "num") {
+        p_advance(ps)
+        return record {kind: "num", value: t.value}
+    }
+    if (t.kind == "minus") {
+        p_advance(ps)
+        let operand = parse_factor(ps)
+        return record {kind: "neg", operand: operand}
+    }
+    if (t.kind == "lparen") {
+        p_advance(ps)
+        let inner = parse_expr(ps)
+        p_expect(ps, "rparen")
+        return inner
+    }
+    throw "Unexpected token '\(t.kind)' where a number, '-', or '(' was expected"
+}
+
+// ---------------------------------------------------------------------------
+// Evaluator  (tree-walk; if/else dispatch on the `kind` tag)
+// ---------------------------------------------------------------------------
+fn eval_node(n) {
+    if (n.kind == "num") {
+        return n.value
+    }
+    if (n.kind == "neg") {
+        return 0.0 - eval_node(n.operand)
+    }
+    if (n.kind == "bin") {
+        let l = eval_node(n.left)
+        let r = eval_node(n.right)
+        if (n.op == "plus") {
+            return l + r
+        }
+        if (n.op == "minus") {
+            return l - r
+        }
+        if (n.op == "star") {
+            return l * r
+        }
+        if (n.op == "slash") {
+            return l / r
+        }
+        throw "Unknown operator '\(n.op)'"
+    }
+    throw "Unknown node kind '\(n.kind)'"
+}
+
+// ---------------------------------------------------------------------------
+// Driver
+// ---------------------------------------------------------------------------
+fn compile_and_eval(src) {
+    let toks = lex(src)
+    let ps = {"toks": toks, "pos": 0i}
+    let ast = parse_expr(ps)
+    p_expect(ps, "eof")
+    return eval_node(ast)
+}
+
+// pretty-print: show whole numbers without a trailing .0
+fn fmt(v) {
+    let f = math.floor(v)
+    if (v == f) {
+        return str(math.to_int(v))
+    }
+    return str(v)
+}
+
+fn run_case(src) {
+    try {
+        let result = compile_and_eval(src)
+        print("  \(src)  =>  \(fmt(result))")
+    } catch e {
+        print("  \(src)  =>  ERROR: \(e.message)")
+    }
+}
+
+print("Nodus expression compiler")
+print("-------------------------")
+run_case("2 + 3 * (4 - 1)")
+run_case("10 / 4")
+run_case("2 * 2 * 2 * 2")
+run_case("-5 + 3")
+run_case("-(2 + 3) * 4")
+run_case("1 + 2 * 3 - 4 / 2")
+run_case("((1 + 2) * (3 + 4))")
+run_case("3.5 * 2")
+run_case("100")
+print("")
+print("Error cases (compiler diagnostics):")
+run_case("2 +")
+run_case("2 @ 3")
+run_case("(1 + 2")
+run_case("3 3")
