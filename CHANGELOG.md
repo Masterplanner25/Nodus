@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Enhancements
+
+- **Structured errors now carry a source snippet + caret:** Every error dict
+  returned by the runner (`run_source`/`check_source`/`build_ast`/`disassemble_source`)
+  — and therefore the CLI, the internal HTTP API, and the four agent tools
+  (`nodus_execute`/`nodus_check`/`nodus_ast`/`nodus_dis`) — now includes a
+  `snippet` field: the offending source line plus a caret line pointing at the
+  reported column. This closes the long-standing Phase 9 "maybe snippet" gap so
+  an agent (or human) gets the source context needed for precise self-repair,
+  not just line/column coordinates. The snippet resolver prefers the error's own
+  file from disk (so errors inside imported modules render *their* line, not the
+  entry file's) and falls back to the in-memory source for `<memory>`/REPL
+  inputs; the caret prefix preserves tabs for correct alignment under
+  tab-indented code and pads correctly for end-of-line/EOF columns. `snippet` is
+  always present (value or `null`) for a stable dict contract, matching `stack`.
+
 ### Docs / Tooling
 
 - **Doc-vs-code gate restored to green (#293):** The mandatory `nodus_gate --all`
