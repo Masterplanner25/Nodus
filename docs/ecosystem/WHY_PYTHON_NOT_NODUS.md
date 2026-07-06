@@ -25,14 +25,21 @@ live on the host side.** It is a deliberate staging decision, not an accident.
    `bcrypt` callable from a Nodus program. Rewriting that glue in Nodus would first
    require Nodus to call Python — the opposite direction.
 
-3. **The language cannot self-host yet.** As of mid-2026, the first real
-   parser/compiler ever written *in* Nodus is `examples/expr_compiler.nd` (a small
-   arithmetic-expression compiler added as a self-hosting-readiness probe). It runs,
-   but the exercise surfaced concrete gaps: no `match`/tagged unions (#308), no
-   `break`/`continue` (#309), a `fmt` escape round-trip bug (#310), plus dynamic
-   typing, no first-class bytes, and no substring/slice builtin. Shipping 20–130-test
-   production libraries in a language that just grew its first in-repo parser would
-   be premature.
+3. **The language cannot self-host yet — but the compiler *shape* is now
+   expressible.** The first parser/compiler written *in* Nodus was
+   `examples/expr_compiler.nd` (a small arithmetic compiler + tree-walking
+   evaluator, added as a self-hosting-readiness probe). It surfaced concrete gaps
+   that have since been closed: `match`/tag dispatch (#308), `break`/`continue`
+   (#309), and a `fmt` escape round-trip bug (#310). `examples/tiny_vm.nd` then
+   pushed the exercise the full distance — a lexer, parser, **bytecode compiler**
+   with back-patched jumps, and a **stack VM** with call frames and recursion, all
+   in Nodus — and it compiles and runs a recursive `fib`/`fact` program on the
+   Nodus-hosted VM. So the *architecture* of a real language implementation is now
+   reachable in Nodus. What still blocks self-hosting *Nodus itself* is not
+   expressiveness but **performance** (a Nodus-hosted interpreter is double
+   interpretation and far too slow for production) plus the remaining surface gaps
+   (dynamic typing, no first-class bytes, no substring/slice builtin). Shipping
+   20–130-test production libraries on that basis would still be premature.
 
 4. **Velocity and maturity.** Python brings mature testing (pytest), packaging
    (PyPI, wheels), typing, and debuggers. The standard bootstrapping order is: build
