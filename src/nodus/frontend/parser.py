@@ -50,6 +50,8 @@ from nodus.frontend.ast.ast_nodes import (
     Var,
     VarPattern,
     While,
+    Break,
+    Continue,
     FieldAssign,
     WorkflowDef,
     WorkflowStep,
@@ -336,10 +338,8 @@ class Parser:
 
         if self.at("ID") and self.peek().val in ("break", "continue"):
             tok = self.eat("ID")
-            self.error(
-                f'"{tok.val}" is not supported; use a flag variable to exit a loop',
-                tok,
-            )
+            node = Break() if tok.val == "break" else Continue()
+            return self.mark(node, tok)
 
         return ExprStmt(self.expr())
 

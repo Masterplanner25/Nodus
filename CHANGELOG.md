@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Language
+
+- **`break` and `continue` loop control (#309):** Both statements are now
+  implemented for `while`, C-style `for`, and `for … in` loops, replacing the
+  prior flag-variable workaround. `break` exits the innermost loop; `continue`
+  skips to the next iteration (and, in a `for` loop, still runs the increment,
+  matching C semantics). A `foreach`'s live iterator is popped when breaking so
+  code after the loop runs on a clean stack. Both are compile-time errors
+  outside a loop, or when they would jump out across a `try`/`catch`/`finally`
+  boundary (which would strand the runtime's exception-handler stack) — a loop
+  wholly *inside* a `try` still allows `break`/`continue`. No new opcodes;
+  BYTECODE_VERSION is unchanged.
+
 ### Enhancements
 
 - **Structured errors now carry a source snippet + caret:** Every error dict
