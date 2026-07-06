@@ -107,3 +107,8 @@ All implementations follow these conventions:
 - Pure logic is separable from storage and transport backends.
 - Backend integration happens through explicit protocols or adapter interfaces,
   not framework-specific globals.
+
+Why Python and not Nodus itself? See
+[WHY_PYTHON_NOT_NODUS.md](./WHY_PYTHON_NOT_NODUS.md) — Nodus is a Python-hosted
+language and most packages are host-boundary interop, so they live on the host
+side. The pure-logic packages are the eventual self-hosting frontier.
