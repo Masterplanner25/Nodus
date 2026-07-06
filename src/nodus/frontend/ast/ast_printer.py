@@ -47,6 +47,7 @@ from nodus.frontend.ast.ast_nodes import (
     While,
     Break,
     Continue,
+    Match,
 )
 
 
@@ -249,6 +250,19 @@ class AstPrinter:
                 else:
                     self.emit("else:", indent + 1)
                     self.visit(node.else_branch, indent + 2)
+            return
+        if isinstance(node, Match):
+            self.emit("Match", indent)
+            self.emit("scrutinee:", indent + 1)
+            self.visit(node.scrutinee, indent + 2)
+            for arm in node.arms:
+                if arm.pattern is None:
+                    self.emit("arm _ (wildcard):", indent + 1)
+                else:
+                    self.emit("arm:", indent + 1)
+                    self.visit(arm.pattern, indent + 2)
+                self.emit("body:", indent + 2)
+                self.visit(arm.body, indent + 3)
             return
         if isinstance(node, While):
             self.emit("While", indent)

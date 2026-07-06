@@ -52,6 +52,8 @@ from nodus.frontend.ast.ast_nodes import (
     While,
     Break,
     Continue,
+    Match,
+    MatchArm,
     FieldAssign,
     WorkflowDef,
     WorkflowStep,
@@ -854,6 +856,9 @@ class Parser:
         if self.at("STRING_START"):
             return self.parse_interpolated_string()
 
+        if self.at("ID") and self.peek().val == "match":
+            return self.parse_match()
+
         if self.at("ID"):
             tok = self.eat("ID")
             return self.mark(Var(tok.val), tok)
@@ -936,6 +941,60 @@ class Parser:
             )
         else:
             self.error(f"Unexpected {_tok_desc(kind, t.val)} in expression", t)
+
+    def parse_match(self):
+        start = self.eat("ID")  # 'match'
+        scrutinee = self.expr()
+        if not self.at("{"):
+            self.error(
+                "match requires arms in braces: match <expr> { pattern => body, ... }",
+                start,
+            )
+        self.eat("{")
+        self.skip_seps()
+        arms = []
+        seen_wildcard = False
+        while not self.at("}"):
+            if self.at("EOF"):
+                self.error("Unterminated match expression: expected '}'")
+            if seen_wildcard:
+                self.error(
+                    "the wildcard arm '_' must be the last arm in a match",
+                    self.peek(),
+                )
+            if self.at("ID") and self.peek().val == "_":
+                self.eat("ID")
+                pattern = None
+                seen_wildcard = True
+            else:
+                pattern = self.expr()
+            if not self.at("=>"):
+                self.error("match arm requires '=>' between pattern and body", self.peek())
+            self.eat("=>")
+            # An arm body is a block, a bare diverging statement (throw/return),
+            # or an expression whose value becomes the arm's result.
+            if self.at("{"):
+                body = self.block()
+            elif self.at("THROW"):
+                throw_tok = self.eat("THROW")
+                body = self.mark(Throw(self.expr()), throw_tok)
+            elif self.at("RETURN"):
+                ret_tok = self.eat("RETURN")
+                if self.at("SEP") or self.at("}") or self.at(",") or self.at("EOF"):
+                    body = self.mark(Return(None), ret_tok)
+                else:
+                    body = self.mark(Return(self.expr()), ret_tok)
+            else:
+                body = self.expr()
+            arms.append(MatchArm(pattern, body))
+            self.skip_seps()
+            if self.at(","):
+                self.eat(",")
+                self.skip_seps()
+        self.eat("}")
+        if not arms:
+            self.error("match must have at least one arm", start)
+        return self.mark(Match(scrutinee, arms), start)
 
     def parse_action_expr(self):
         start = self.eat("ACTION")

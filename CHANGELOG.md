@@ -14,6 +14,30 @@
   boundary (which would strand the runtime's exception-handler stack) — a loop
   wholly *inside* a `try` still allows `break`/`continue`. No new opcodes;
   BYTECODE_VERSION is unchanged.
+- **`match` expression for value dispatch (#308):** A `match` expression
+  dispatches on a scrutinee against value-matching arms, replacing stacked
+  `if/else` chains at every tag-dispatch site (the canonical tree-walking
+  evaluator pattern). Arms use `pattern => body`; the body is an expression, a
+  `{ … }` block (its final expression is the arm's value), or a bare
+  `throw`/`return`. `_` is the catch-all and must be the last arm. Arms compare
+  with `==` and the first match wins; a scrutinee that matches no arm and has no
+  `_` raises at runtime. `match` is an expression, so it composes as a `let`
+  RHS, a `return` value, a call argument, or nested inside another `match`.
+
+  ```nodus
+  fn classify(kind) {
+      return match kind {
+          "num" => "number",
+          "bin" => "binary",
+          _ => "unknown",
+      }
+  }
+  print(classify("bin"))  // -> binary
+  ```
+
+  Value-matching only for now — no destructuring/binding patterns or
+  exhaustiveness checking. Additive surface syntax (new `=>` token; `match` is a
+  soft keyword); no new opcodes and BYTECODE_VERSION is unchanged.
 
 ### Enhancements
 
