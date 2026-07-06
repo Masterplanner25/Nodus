@@ -10,8 +10,8 @@
 //   factor := NUMBER | '-' factor | '(' expr ')'
 //
 // Demonstrates that Nodus can express real character-level lexing and
-// recursive parsing today. Notes on the idioms this had to use because the
-// language lacks match/enum/break are collected at the bottom.
+// recursive parsing today. Tag dispatch uses `match` expressions; the parser
+// loops use `break`/`continue` rather than the older flag-variable idiom.
 import "std:math" as math
 
 // ---------------------------------------------------------------------------
@@ -30,32 +30,20 @@ fn is_digit(c) {
     return c >= "0" && c <= "9"
 }
 
-// chr(13i) is a carriage return; written this way because the current
-// `nodus fmt` mangles a literal "\r" escape on round-trip (see repo issues).
 fn is_space(c) {
-    return c == " " || c == "\t" || c == "\n" || c == chr(13i)
+    return c == " " || c == "\t" || c == "\n" || c == "\r"
 }
 
 fn op_kind(c) {
-    if (c == "+") {
-        return "plus"
+    return match c {
+        "+" => "plus",
+        "-" => "minus",
+        "*" => "star",
+        "/" => "slash",
+        "(" => "lparen",
+        ")" => "rparen",
+        _ => "?",
     }
-    if (c == "-") {
-        return "minus"
-    }
-    if (c == "*") {
-        return "star"
-    }
-    if (c == "/") {
-        return "slash"
-    }
-    if (c == "(") {
-        return "lparen"
-    }
-    if (c == ")") {
-        return "rparen"
-    }
-    return "?"
 }
 
 // source string -> list of token records {kind, value}
@@ -69,35 +57,34 @@ fn lex(src) {
         let c = char_at(src, i, n)
         if (is_space(c)) {
             i = i + 1i
-        } else {
-            if (is_digit(c)) {
-                let iv = 0i
+            continue
+        }
+        if (is_digit(c)) {
+            let iv = 0i
+            while (is_digit(char_at(src, i, n))) {
+                iv = iv * 10i + (ord(char_at(src, i, n)) - ord("0"))
+                i = i + 1i
+            }
+            let value = iv * 1.0
+            if (char_at(src, i, n) == ".") {
+                i = i + 1i
+                let place = 0.1
                 while (is_digit(char_at(src, i, n))) {
-                    iv = iv * 10i + (ord(char_at(src, i, n)) - ord("0"))
-                    i = i + 1i
-                }
-                let value = iv * 1.0
-                if (char_at(src, i, n) == ".") {
-                    i = i + 1i
-                    let place = 0.1
-                    while (is_digit(char_at(src, i, n))) {
-                        let d = ord(char_at(src, i, n)) - ord("0")
-                        value = value + d * place
-                        place = place / 10.0
-                        i = i + 1i
-                    }
-                }
-                push(toks, record {kind: "num", value: value})
-            } else {
-                let k = op_kind(c)
-                if (k == "?") {
-                    throw "Unexpected character '\(c)' at position \(i)"
-                } else {
-                    push(toks, record {kind: k, value: nil})
+                    let d = ord(char_at(src, i, n)) - ord("0")
+                    value = value + d * place
+                    place = place / 10.0
                     i = i + 1i
                 }
             }
+            push(toks, record {kind: "num", value: value})
+            continue
         }
+        let k = op_kind(c)
+        if (k == "?") {
+            throw "Unexpected character '\(c)' at position \(i)"
+        }
+        push(toks, record {kind: k, value: nil})
+        i = i + 1i
     }
     push(toks, record {kind: "eof", value: nil})
     return toks
@@ -126,84 +113,74 @@ fn p_expect(ps, kind) {
 
 fn parse_expr(ps) {
     let node = parse_term(ps)
-    let go = true
-    while (go) {
+    while (true) {
         let k = p_peek(ps).kind
-        if (k == "plus" || k == "minus") {
-            p_advance(ps)
-            let right = parse_term(ps)
-            node = record {kind: "bin", op: k, left: node, right: right}
-        } else {
-            go = false
+        if (k != "plus" && k != "minus") {
+            break
         }
+        p_advance(ps)
+        let right = parse_term(ps)
+        node = record {kind: "bin", op: k, left: node, right: right}
     }
     return node
 }
 
 fn parse_term(ps) {
     let node = parse_factor(ps)
-    let go = true
-    while (go) {
+    while (true) {
         let k = p_peek(ps).kind
-        if (k == "star" || k == "slash") {
-            p_advance(ps)
-            let right = parse_factor(ps)
-            node = record {kind: "bin", op: k, left: node, right: right}
-        } else {
-            go = false
+        if (k != "star" && k != "slash") {
+            break
         }
+        p_advance(ps)
+        let right = parse_factor(ps)
+        node = record {kind: "bin", op: k, left: node, right: right}
     }
     return node
 }
 
 fn parse_factor(ps) {
     let t = p_peek(ps)
-    if (t.kind == "num") {
-        p_advance(ps)
-        return record {kind: "num", value: t.value}
+    return match t.kind {
+        "num" => {
+            p_advance(ps)
+            record {kind: "num", value: t.value}
+        },
+        "minus" => {
+            p_advance(ps)
+            let operand = parse_factor(ps)
+            record {kind: "neg", operand: operand}
+        },
+        "lparen" => {
+            p_advance(ps)
+            let inner = parse_expr(ps)
+            p_expect(ps, "rparen")
+            inner
+        },
+        _ => throw "Unexpected token '\(t.kind)' where a number, '-', or '(' was expected",
     }
-    if (t.kind == "minus") {
-        p_advance(ps)
-        let operand = parse_factor(ps)
-        return record {kind: "neg", operand: operand}
-    }
-    if (t.kind == "lparen") {
-        p_advance(ps)
-        let inner = parse_expr(ps)
-        p_expect(ps, "rparen")
-        return inner
-    }
-    throw "Unexpected token '\(t.kind)' where a number, '-', or '(' was expected"
 }
 
 // ---------------------------------------------------------------------------
-// Evaluator  (tree-walk; if/else dispatch on the `kind` tag)
+// Evaluator  (tree-walk; `match` dispatch on the `kind` tag, then the `op` tag)
 // ---------------------------------------------------------------------------
 fn eval_node(n) {
-    if (n.kind == "num") {
-        return n.value
+    return match n.kind {
+        "num" => n.value,
+        "neg" => 0.0 - eval_node(n.operand),
+        "bin" => {
+            let l = eval_node(n.left)
+            let r = eval_node(n.right)
+            match n.op {
+                "plus" => l + r,
+                "minus" => l - r,
+                "star" => l * r,
+                "slash" => l / r,
+                _ => throw "Unknown operator '\(n.op)'",
+            }
+        },
+        _ => throw "Unknown node kind '\(n.kind)'",
     }
-    if (n.kind == "neg") {
-        return 0.0 - eval_node(n.operand)
-    }
-    if (n.kind == "bin") {
-        let l = eval_node(n.left)
-        let r = eval_node(n.right)
-        if (n.op == "plus") {
-            return l + r
-        }
-        if (n.op == "minus") {
-            return l - r
-        }
-        if (n.op == "star") {
-            return l * r
-        }
-        if (n.op == "slash") {
-            return l / r
-        }
-        throw "Unknown operator '\(n.op)'"
-    }
-    throw "Unknown node kind '\(n.kind)'"
 }
 
 // ---------------------------------------------------------------------------
