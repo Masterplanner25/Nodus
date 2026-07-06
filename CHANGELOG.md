@@ -31,6 +31,20 @@
   tab-indented code and pads correctly for end-of-line/EOF columns. `snippet` is
   always present (value or `null`) for a stable dict contract, matching `stack`.
 
+### Fixes
+
+- **`nodus fmt` no longer corrupts `\r` / `\0` string escapes (#310):** The
+  formatter decoded string-literal escapes and re-emitted only `\\`, `\n`, `\t`,
+  and `"`; `\r`, `\0`, and other control code points were written back as raw
+  control bytes, corrupting the file so it no longer parsed (`fmt --check` in CI
+  then failed on a file the author never hand-broke). A single shared
+  `escape_string_body()` helper — the full inverse of the lexer's escape set —
+  now drives both re-emission sites (plain strings and interpolated-string
+  literal parts), preferring named escapes and falling back to `\xHH` / `\uXXXX`
+  for other non-printables. `fmt` output is also written with LF endings verbatim
+  instead of being rewritten to CRLF on Windows, keeping the round-trip
+  idempotent. Found while formatting the `examples/expr_compiler.nd` example.
+
 ### Docs / Tooling
 
 - **Doc-vs-code gate restored to green (#293):** The mandatory `nodus_gate --all`
