@@ -343,13 +343,7 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         for part in expr.parts:
             if isinstance(part, StringLiteralPart):
                 # Re-escape the literal text for display (without surrounding quotes)
-                escaped = (
-                    part.text.replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\t", "\\t")
-                    .replace('"', '\\"')
-                )
-                parts_str += escaped
+                parts_str += escape_string_body(part.text)
             elif isinstance(part, InterpolationPart):
                 parts_str += f"\\({format_expr(part.expression)})"
         return f'"{parts_str}"'
@@ -454,11 +448,50 @@ def format_number(num: Num) -> str:
     return str(num.v)
 
 
+# Named re-escapes: the inverse of lexer.ESCAPE_MAP for characters that have a
+# short escape form. Any other control / non-printable code point falls back to
+# \xHH or \uXXXX below so that a formatted file re-parses to the same value.
+_STRING_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\n": "\\n",
+    "\t": "\\t",
+    "\r": "\\r",
+    "\0": "\\0",
+}
+
+
+def escape_string_body(value: str) -> str:
+    """Re-escape a decoded string value back into Nodus source form.
+
+    Inverse of ``lexer.decode_string_literal``: every character the lexer would
+    treat specially (backslash, quote) or that is a non-printable control code
+    point is emitted as an escape sequence, so the formatted output round-trips
+    to the same runtime string. Named escapes (``\\n \\t \\r \\0 \\\\ \\"``) are
+    preferred; any other non-printable char falls back to ``\\xHH`` (<= U+00FF)
+    or ``\\uXXXX`` (<= U+FFFF). Printable characters — including non-ASCII — are
+    passed through unchanged.
+    """
+    out = []
+    for ch in value:
+        named = _STRING_ESCAPES.get(ch)
+        if named is not None:
+            out.append(named)
+            continue
+        if ch.isprintable():
+            out.append(ch)
+            continue
+        code = ord(ch)
+        if code <= 0xFF:
+            out.append(f"\\x{code:02X}")
+        elif code <= 0xFFFF:
+            out.append(f"\\u{code:04X}")
+        else:
+            # Astral non-printable (rare): no fixed-width escape form exists in
+            # the lexer's grammar (\x is 2 digits, \u is 4). Emit raw.
+            out.append(ch)
+    return "".join(out)
+
+
 def format_string(value: str) -> str:
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace("\n", "\\n")
-        .replace("\t", "\\t")
-        .replace('"', '\\"')
-    )
-    return f'"{escaped}"'
+    return f'"{escape_string_body(value)}"'

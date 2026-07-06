@@ -60,7 +60,10 @@ def _read_file(path: str) -> str:
 
 
 def _write_file(path: str, contents: str) -> None:
-    with open(path, "w", encoding="utf-8") as handle:
+    # newline="" disables newline translation so the formatter's LF line
+    # endings are written verbatim (no platform CRLF rewrite on Windows),
+    # keeping `fmt` output idempotent across platforms.
+    with open(path, "w", encoding="utf-8", newline="") as handle:
         handle.write(contents)
 
 
