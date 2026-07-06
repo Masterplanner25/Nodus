@@ -50,6 +50,8 @@ from nodus.frontend.ast.ast_nodes import (
     VarPattern,
     While,
     For,
+    Break,
+    Continue,
     FieldAssign,
     ForEach,
     Param,
@@ -127,6 +129,16 @@ class Compiler:
         self.symbols: SymbolTable | None = None
         self.fn_counter = 0
         self.temp_counter = 0
+        # Stack of loop-compilation frames for break/continue. Each frame is
+        # {"breaks": [jump_idx], "continues": [jump_idx], "break_pops": bool,
+        #  "try_depth": int}. break_pops is True for foreach loops, whose
+        # iterator lives on the VM stack and must be popped when breaking out.
+        self.loop_stack: list[dict] = []
+        # Nesting depth of try/catch/finally regions, used to reject a
+        # break/continue that would jump out across a try boundary (which would
+        # strand the VM handler_stack). Compared against each loop frame's
+        # captured depth so a loop nested *inside* a try still allows break.
+        self.try_depth = 0
 
     def new_temp(self) -> str:
         self.temp_counter += 1
@@ -257,6 +269,22 @@ class Compiler:
 
     def patch(self, index: int, *instr):
         self.code[index] = instr
+
+    def _push_loop(self, *, break_pops: bool = False) -> dict:
+        frame = {
+            "breaks": [],
+            "continues": [],
+            "break_pops": break_pops,
+            "try_depth": self.try_depth,
+        }
+        self.loop_stack.append(frame)
+        return frame
+
+    def _patch_loop(self, frame: dict, *, break_target: int, continue_target: int) -> None:
+        for idx in frame["breaks"]:
+            self.patch(idx, "JUMP", break_target)
+        for idx in frame["continues"]:
+            self.patch(idx, "JUMP", continue_target)
 
     def predeclare_module_scopes(self, stmts: list) -> None:
         for stmt in stmts:
@@ -509,9 +537,13 @@ class Compiler:
             loop_start = len(self.code)
             self.compile_expr(stmt.cond)
             jmp_false = self.emit("JUMP_IF_FALSE", None)
+            frame = self._push_loop()
             self.compile_stmt(stmt.body)
+            self.loop_stack.pop()
             self.emit("JUMP", loop_start)
-            self.patch(jmp_false, "JUMP_IF_FALSE", len(self.code))
+            end = len(self.code)
+            self.patch(jmp_false, "JUMP_IF_FALSE", end)
+            self._patch_loop(frame, break_target=end, continue_target=loop_start)
             return
 
         if isinstance(stmt, For):
@@ -523,12 +555,19 @@ class Compiler:
             loop_cond = stmt.cond if stmt.cond is not None else Bool(True)
             self.compile_expr(loop_cond)
             jmp_false = self.emit("JUMP_IF_FALSE", None)
+            frame = self._push_loop()
             self.compile_stmt(stmt.body)
+            self.loop_stack.pop()
+            # `continue` re-runs the increment (C semantics), so it targets the
+            # increment code, not the condition re-test directly.
+            continue_target = len(self.code)
             if stmt.inc is not None:
                 self.compile_expr(stmt.inc)
                 self.emit("POP")
             self.emit("JUMP", loop_start)
-            self.patch(jmp_false, "JUMP_IF_FALSE", len(self.code))
+            end = len(self.code)
+            self.patch(jmp_false, "JUMP_IF_FALSE", end)
+            self._patch_loop(frame, break_target=end, continue_target=continue_target)
             if self.symbols is not None:
                 self.symbols.exit_scope()
             return
@@ -551,11 +590,35 @@ class Compiler:
                 self.emit("STORE_LOCAL_IDX", loop_var_symbol.index)
             else:
                 self.emit("STORE", stmt.name)
+            # break must pop the live iterator (GET_ITER left it on the stack);
+            # continue keeps it so the loop-start ITER_NEXT can advance.
+            frame = self._push_loop(break_pops=True)
             self.compile_stmt(stmt.body)
+            self.loop_stack.pop()
             self.emit("JUMP", loop_start)
-            self.patch(iter_next, "ITER_NEXT", len(self.code))
+            end = len(self.code)
+            self.patch(iter_next, "ITER_NEXT", end)
+            self._patch_loop(frame, break_target=end, continue_target=loop_start)
             if self.symbols is not None:
                 self.symbols.exit_scope()
+            return
+
+        if isinstance(stmt, (Break, Continue)):
+            kw = "break" if isinstance(stmt, Break) else "continue"
+            if not self.loop_stack:
+                self.raise_syntax(f"'{kw}' outside a loop", node=stmt)
+            frame = self.loop_stack[-1]
+            if self.try_depth > frame["try_depth"]:
+                self.raise_syntax(
+                    f"'{kw}' cannot cross a try/catch/finally boundary",
+                    node=stmt,
+                )
+            if isinstance(stmt, Break):
+                if frame["break_pops"]:
+                    self.emit("POP")  # discard the live foreach iterator
+                frame["breaks"].append(self.emit("JUMP", None))
+            else:
+                frame["continues"].append(self.emit("JUMP", None))
             return
 
         if isinstance(stmt, Return):
@@ -578,6 +641,10 @@ class Compiler:
 
         if isinstance(stmt, TryCatch):
             has_finally = stmt.finally_block is not None
+            # Guard break/continue against jumping out across this boundary: an
+            # unstructured JUMP would leave the VM handler_stack entry (and any
+            # pending finally) stranded. See the Break/Continue compile guard.
+            self.try_depth += 1
             if has_finally:
                 setup_idx = self.emit("SETUP_TRY", None, None)
             else:
@@ -611,6 +678,7 @@ class Compiler:
                 self.emit("FINALLY_END")
             else:
                 self.patch(jmp_end, "JUMP", len(self.code))
+            self.try_depth -= 1
             return
 
         if isinstance(stmt, Throw):

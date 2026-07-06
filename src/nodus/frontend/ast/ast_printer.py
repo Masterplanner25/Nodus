@@ -45,6 +45,8 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowDef,
     WorkflowStep,
     While,
+    Break,
+    Continue,
 )
 
 
@@ -258,6 +260,12 @@ class AstPrinter:
                 self.visit(node.cond, indent + 2)
                 self.emit("body:", indent + 1)
                 self.visit(node.body, indent + 2)
+            return
+        if isinstance(node, Break):
+            self.emit("Break", indent)
+            return
+        if isinstance(node, Continue):
+            self.emit("Continue", indent)
             return
         if isinstance(node, For):
             self.emit("For", indent)

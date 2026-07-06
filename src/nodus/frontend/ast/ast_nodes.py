@@ -283,6 +283,16 @@ class ForEach(Base):
 
 
 @dataclass
+class Break(Base):
+    pass
+
+
+@dataclass
+class Continue(Base):
+    pass
+
+
+@dataclass
 class Annotation(Base):
     name: str
     args: list | None = None  # None = bare annotation; list of (str, expr) = parameterised
