@@ -293,6 +293,21 @@ class Continue(Base):
 
 
 @dataclass
+class MatchArm:
+    # pattern is None for the wildcard arm `_`; otherwise an expression whose
+    # value is compared (==) against the scrutinee. body is an expression node
+    # or a Block (the block's final expression is the arm's value).
+    pattern: object | None
+    body: object
+
+
+@dataclass
+class Match(Base):
+    scrutinee: object
+    arms: list  # list[MatchArm]
+
+
+@dataclass
 class Annotation(Base):
     name: str
     args: list | None = None  # None = bare annotation; list of (str, expr) = parameterised

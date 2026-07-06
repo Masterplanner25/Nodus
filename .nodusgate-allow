@@ -92,8 +92,8 @@ block:docs/guide/standard-library.md:1083
 block:docs/guide/standard-library.md:1156
 
 # LANGUAGE_SPEC.md — illustrative pattern code with undefined context variable
-block:docs/language/LANGUAGE_SPEC.md:584
-block:docs/language/LANGUAGE_SPEC.md:594
+block:docs/language/LANGUAGE_SPEC.md:609
+block:docs/language/LANGUAGE_SPEC.md:619
 
 # error-surfaces.md — intentional sandbox security demo (blocked path access)
 block:docs/policy/error-surfaces.md:80

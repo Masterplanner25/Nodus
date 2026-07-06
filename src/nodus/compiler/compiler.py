@@ -52,6 +52,7 @@ from nodus.frontend.ast.ast_nodes import (
     For,
     Break,
     Continue,
+    Match,
     FieldAssign,
     ForEach,
     Param,
@@ -143,6 +144,95 @@ class Compiler:
     def new_temp(self) -> str:
         self.temp_counter += 1
         return f"__destruct{self.temp_counter}"
+
+    def _store_temp(self, name: str) -> None:
+        """Pop the stack top into a fresh temp local/global (defining it)."""
+        if self.symbols is not None:
+            self.symbols.define(name)
+        symbol = self.resolve_symbol(name) if self.symbols is not None else None
+        if (symbol is not None and symbol.scope == "local"
+                and self.in_function_scope() and symbol.index is not None):
+            self.emit("STORE_LOCAL_IDX", symbol.index)
+        else:
+            self.emit("STORE", name)
+
+    def _load_temp(self, name: str) -> None:
+        """Push a previously-stored temp onto the stack."""
+        symbol = self.resolve_symbol(name) if self.symbols is not None else None
+        if (symbol is not None and symbol.scope == "local"
+                and self.in_function_scope() and symbol.index is not None):
+            self.emit("LOAD_LOCAL_IDX", symbol.index)
+        else:
+            self.emit("LOAD", name)
+
+    def compile_match(self, expr: Match) -> None:
+        """Compile a match expression, leaving the selected arm's value on the
+        stack. The scrutinee is evaluated once into a temp; each non-wildcard
+        arm compares it (==) against the arm pattern and jumps past on a miss.
+        A wildcard arm `_` matches unconditionally. If no arm matches and there
+        is no wildcard, a runtime error is thrown."""
+        self.compile_expr(expr.scrutinee)
+        temp = self.new_temp()
+        self._store_temp(temp)
+        end_jumps = []
+        has_wildcard = False
+        for arm in expr.arms:
+            if arm.pattern is None:  # wildcard `_`
+                self.compile_match_body(arm.body)
+                end_jumps.append(self.emit("JUMP", None))
+                has_wildcard = True
+                break  # arms after the wildcard are unreachable
+            self._load_temp(temp)
+            self.compile_expr(arm.pattern)
+            self.emit("EQ")
+            skip = self.emit("JUMP_IF_FALSE", None)
+            self.compile_match_body(arm.body)
+            end_jumps.append(self.emit("JUMP", None))
+            self.patch(skip, "JUMP_IF_FALSE", len(self.code))
+        if not has_wildcard:
+            # No arm matched and no catch-all: raise. THROW diverges, so this
+            # path never reaches `end` and leaves no value.
+            self.emit("PUSH_CONST", "match: no arm matched the value")
+            self.emit("THROW")
+        end = len(self.code)
+        for idx in end_jumps:
+            self.patch(idx, "JUMP", end)
+
+    def compile_match_body(self, body) -> None:
+        """Compile a match arm body so it leaves exactly one value on the stack.
+        An expression body pushes its value directly; a block body runs its
+        statements and yields its final expression's value (or nil)."""
+        if isinstance(body, (Throw, Return)):
+            # Diverges: compiles to THROW/RETURN and never falls through, so no
+            # value is left. The unconditional JUMP the caller emits after this
+            # is unreachable, and `end` only ever sees values from normal arms.
+            self.compile_stmt(body)
+            return
+        if isinstance(body, Block):
+            stmts = body.stmts
+            if not stmts:
+                self.emit("PUSH_CONST", None)
+                return
+            if self.symbols is not None:
+                self.symbols.enter_scope("block")
+                self.predeclare_block(body)
+            for s in stmts[:-1]:
+                self.compile_stmt(s)
+            last = stmts[-1]
+            if isinstance(last, ExprStmt):
+                self.compile_expr(last.expr)
+            elif isinstance(last, (Throw, Return)):
+                # Diverging final statement — no fall-through value needed.
+                self.compile_stmt(last)
+            else:
+                # A non-expression, non-diverging final statement (e.g. let)
+                # yields nil for the arm's value.
+                self.compile_stmt(last)
+                self.emit("PUSH_CONST", None)
+            if self.symbols is not None:
+                self.symbols.exit_scope()
+            return
+        self.compile_expr(body)
 
     def resolve_module_name(self, alias: str, name: str, node=None) -> str:
         module = self.current_module
@@ -765,6 +855,10 @@ class Compiler:
 
         if isinstance(expr, Nil):
             self.emit("PUSH_CONST", None)
+            return
+
+        if isinstance(expr, Match):
+            self.compile_match(expr)
             return
 
         if isinstance(expr, Var):

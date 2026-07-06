@@ -75,15 +75,40 @@ Stability: Stable.
 - Truthiness: `nil` is falsey; booleans use natural value; others use Python-like truthiness.
 
 ## Control Flow
-Stability: Mostly stable (missing `break`/`continue`).
+Stability: Mostly stable.
 - `if (...) { ... } else { ... }`
 - `while (...) { ... }`
 - `for (init; cond; inc) { ... }` lowered to while behavior.
 - `for name in iterable { ... }`
+- `break` / `continue` — exit or skip an iteration of the innermost loop (compile error outside a loop or across a `try` boundary).
 - `try { ... } catch err { ... }`
 - `try { ... } catch err { ... } finally { ... }`
 - `throw expr`
 - `yield expr` suspends the current coroutine and returns the yielded value to `resume(...)`
+- `match scrutinee { pattern => body, _ => body }` — value-matching expression
+
+### match expressions
+`match` dispatches on a value against value-matching arms, replacing stacked
+`if/else` chains for tag dispatch. Each arm is `pattern => body`; the body is an
+expression, a `{ … }` block (whose final expression is the arm's value), or a
+bare `throw`/`return`. Arms compare with `==` and the first match wins. `_` is
+the catch-all and must be the last arm; a value matching no arm with no `_`
+raises at runtime. `match` is an expression, so it composes as a `let` RHS, a
+`return` value, a call argument, or nested inside another `match`.
+
+```nodus-expect=binary
+fn classify(kind) {
+    return match kind {
+        "num" => "number",
+        "bin" => "binary",
+        _ => "unknown",
+    }
+}
+print(classify("bin"))
+```
+
+Value-matching only — no destructuring/binding patterns or exhaustiveness
+checking yet.
 
 ## Functions
 Stability: Stable.

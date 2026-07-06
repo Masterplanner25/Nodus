@@ -53,6 +53,7 @@ from nodus.frontend.ast.ast_nodes import (
     While,
     Break,
     Continue,
+    Match,
     Yield,
 )
 from nodus.frontend.lexer import tokenize
@@ -97,6 +98,17 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
             lines.append(f"{prefix}{comment.rstrip()}")
 
     trailing = getattr(stmt, "_trailing_comments", None)
+
+    # match is an expression, but when it is the whole of a statement we format
+    # it multi-line with correct indentation (format_expr has no indent context).
+    if isinstance(stmt, ExprStmt) and isinstance(stmt.expr, Match):
+        return lines + format_match(stmt.expr, indent) + trailing_lines(prefix, trailing)
+    if isinstance(stmt, Return) and stmt.expr is not None and isinstance(stmt.expr, Match):
+        return lines + format_match(stmt.expr, indent, "return ") + trailing_lines(prefix, trailing)
+    if isinstance(stmt, Let) and isinstance(stmt.expr, Match):
+        name = stmt.name if stmt.type_hint is None else f"{stmt.name}: {stmt.type_hint}"
+        lead = f"export let {name} = " if stmt.exported else f"let {name} = "
+        return lines + format_match(stmt.expr, indent, lead) + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, Import):
         if stmt.names is not None:
@@ -336,6 +348,11 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         return text
     if isinstance(expr, Bool):
         return "true" if expr.v else "false"
+    if isinstance(expr, Match):
+        # Fallback for match in a nested/inline expression position; statement
+        # positions get correct indentation via format_stmt. Closing brace lands
+        # at column 0 (same limitation as inline fn expressions).
+        return "\n".join(format_match(expr, 0))
     if isinstance(expr, Str):
         return format_string(expr.v)
     if isinstance(expr, InterpolatedString):
@@ -491,6 +508,32 @@ def escape_string_body(value: str) -> str:
             # the lexer's grammar (\x is 2 digits, \u is 4). Emit raw.
             out.append(ch)
     return "".join(out)
+
+
+def format_match(expr, indent: int, lead: str = "") -> list[str]:
+    """Format a match expression as indented lines. `lead` is prepended to the
+    `match` keyword on the opening line (e.g. "let x = " or "return ")."""
+    prefix = INDENT * indent
+    arm_prefix = INDENT * (indent + 1)
+    out = [f"{prefix}{lead}match {format_expr(expr.scrutinee)} {{"]
+    for arm in expr.arms:
+        pat = "_" if arm.pattern is None else format_expr(arm.pattern)
+        body = arm.body
+        if isinstance(body, Block):
+            out.append(f"{arm_prefix}{pat} => {{")
+            out.extend(format_block(body, indent + 2))
+            out.append(f"{arm_prefix}}},")
+        elif isinstance(body, Throw):
+            out.append(f"{arm_prefix}{pat} => throw {format_expr(body.expr)},")
+        elif isinstance(body, Return):
+            if body.expr is None:
+                out.append(f"{arm_prefix}{pat} => return,")
+            else:
+                out.append(f"{arm_prefix}{pat} => return {format_expr(body.expr)},")
+        else:
+            out.append(f"{arm_prefix}{pat} => {format_expr(body)},")
+    out.append(f"{prefix}}}")
+    return out
 
 
 def format_string(value: str) -> str:
