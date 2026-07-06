@@ -494,17 +494,17 @@ They are **design references / API contracts**, not production implementations.
   still exists under `packages/` but is superseded by the standalone repo.
 - **The scaffolds share Python module names with the published production
   packages** (`nodus_agent`, `nodus_events`, `nodus_retry`, …). In a venv where the
-  production packages are editable-installed, `import nodus_<name>` resolves to the
-  **production** package, not the scaffold — so those incubators cannot be imported
-  or tested there. Do not pip-install a scaffold alongside its production namesake.
+  production packages are editable-installed, `import nodus_<name>` would otherwise
+  resolve to the **production** package, not the scaffold. The scaffolds with a
+  `src/` layout set `pythonpath = ["src"]` in their pytest config so their own
+  package is imported instead (fixed for `nodus-agent`/`nodus-events`/`nodus-retry`
+  in #312). Still, do not pip-install a scaffold alongside its production namesake.
 - Run incubator tests from within each package directory:
   ```powershell
   cd "C:\dev\Coding Language\packages\nodus-memory" && python -m pytest -q
   ```
-  **Known gap:** the scaffolds do **not** set `pythonpath = ["src"]` in their pytest
-  config, so `nodus-agent`/`nodus-events`/`nodus-retry` currently fail collection in
-  a dev venv (module-name collision with production). Tracked in Nodus#312. The
-  other scaffolds collect fine.
+  All scaffolds now collect and pass in a dev venv (agent 9, events 5, retry 8,
+  a2a 9, event 8, http 5, memory 6, store-sql 6).
 - Spec docs live at `docs/ecosystem/` (NODUS_HTTP.md, NODUS_RETRY.md, etc.)
 
 ## nodus-workflow (in-tree framework)
