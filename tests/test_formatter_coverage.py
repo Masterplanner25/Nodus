@@ -45,6 +45,7 @@ class FormatterStringEscapeTests(unittest.TestCase):
         # Idempotent: formatting the output again is a no-op.
         self.assertEqual(format_source(once), once)
 
+    # closes: #310
     def test_carriage_return_escape(self):
         self._assert_idempotent('let cr = "\\r"\n')
 
