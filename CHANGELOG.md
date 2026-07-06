@@ -43,7 +43,7 @@
   literal parts), preferring named escapes and falling back to `\xHH` / `\uXXXX`
   for other non-printables. `fmt` output is also written with LF endings verbatim
   instead of being rewritten to CRLF on Windows, keeping the round-trip
-  idempotent. Found while formatting `examples/expr_compiler.nd` (#307).
+  idempotent. Found while formatting the `examples/expr_compiler.nd` example.
 
 ### Docs / Tooling
 
