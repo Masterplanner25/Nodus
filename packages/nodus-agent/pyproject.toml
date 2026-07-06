@@ -22,3 +22,9 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# Ensure the scaffold's own src/ package is imported, not the same-named
+# published production package if it happens to be installed in the venv.
+pythonpath = ["src"]
+testpaths = ["tests"]
