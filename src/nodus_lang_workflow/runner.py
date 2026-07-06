@@ -32,16 +32,76 @@ _DEFAULT_RUNNER = None
 _DEFAULT_RUNNER_ROOT = None
 _DEFAULT_RUNNER_LOCK = threading.Lock()
 _DEFAULT_SWEEP_THREAD: threading.Thread | None = None
-_DEFAULT_SWEEP_STOP = threading.Event()
+_DEFAULT_SWEEP_STOP: threading.Event | None = None
 _DEFAULT_SWEEP_INTERVAL_S = 30.0
 
 
-def _auto_sweep_loop(runner_ref: "WorkflowFrameworkRunner") -> None:
-    while not _DEFAULT_SWEEP_STOP.wait(timeout=_DEFAULT_SWEEP_INTERVAL_S):
+def _auto_sweep_loop(runner_ref: "WorkflowFrameworkRunner", stop_event: threading.Event) -> None:
+    # The stop event is per-thread (not the module global): a sweep thread is
+    # always bound to the runner it was started for, so replacing the default
+    # runner can stop exactly its own thread without racing a successor.
+    while not stop_event.wait(timeout=_DEFAULT_SWEEP_INTERVAL_S):
         try:
             runner_ref.expire_wait_timeouts()
         except Exception:
             pass
+
+
+def _autosweep_enabled() -> bool:
+    # Default on (unchanged behavior); embedders/tests can disable the background
+    # sweep entirely via env to avoid a timer thread touching the store.
+    return os.environ.get("NODUS_WORKFLOW_AUTOSWEEP", "1").strip().lower() not in {"0", "false", "no", ""}
+
+
+def _stop_default_sweep_locked() -> None:
+    """Stop the active auto-sweep thread. Caller must hold ``_DEFAULT_RUNNER_LOCK``.
+
+    Load-bearing for correctness: without this, replacing the default runner (on a
+    cwd change or explicit configure) leaves the previous sweep thread alive and
+    bound to the *old* store instance. That stale thread then writes the same run
+    files as the new store instance — two objects, two locks, no mutual exclusion —
+    corrupting run records (torn resume state on POSIX; ``os.replace`` PermissionError
+    on Windows). Stopping it here guarantees at most one sweep thread, bound to the
+    live store, whose own lock serializes it against the foreground.
+    """
+    global _DEFAULT_SWEEP_THREAD, _DEFAULT_SWEEP_STOP
+    if _DEFAULT_SWEEP_STOP is not None:
+        _DEFAULT_SWEEP_STOP.set()
+    thread = _DEFAULT_SWEEP_THREAD
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout=2.0)
+    _DEFAULT_SWEEP_THREAD = None
+    _DEFAULT_SWEEP_STOP = None
+
+
+def _start_default_sweep_locked(runner: "WorkflowFrameworkRunner") -> None:
+    """Start a fresh auto-sweep thread bound to *runner*. Caller holds the lock."""
+    global _DEFAULT_SWEEP_THREAD, _DEFAULT_SWEEP_STOP
+    if not _autosweep_enabled():
+        return
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_auto_sweep_loop,
+        args=(runner, stop_event),
+        daemon=True,
+        name="nodus-workflow-sweep",
+    )
+    _DEFAULT_SWEEP_STOP = stop_event
+    _DEFAULT_SWEEP_THREAD = thread
+    thread.start()
+
+
+def reset_default_workflow_runner() -> None:
+    """Stop the auto-sweep thread and drop the cached default runner.
+
+    For test isolation and clean shutdown: the next ``get_default_workflow_runner()``
+    rebuilds against the current working directory with a fresh store + thread.
+    """
+    global _DEFAULT_RUNNER, _DEFAULT_RUNNER_ROOT
+    with _DEFAULT_RUNNER_LOCK:
+        _stop_default_sweep_locked()
+        _DEFAULT_RUNNER = None
+        _DEFAULT_RUNNER_ROOT = None
 _REHYDRATABLE_STATUSES = {RUN_STATUS_WAITING, RUN_STATUS_RUNNING, RUN_STATUS_RETRY_SCHEDULED}
 _KNOWN_RUN_STATUSES = {
     "pending",
@@ -786,6 +846,10 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
     with _DEFAULT_RUNNER_LOCK:
         root = os.path.abspath(os.getcwd())
         if _DEFAULT_RUNNER is None or _DEFAULT_RUNNER_ROOT != root:
+            # Stop the sweep thread bound to the previous runner BEFORE swapping in
+            # a new store instance for this root — otherwise the stale thread races
+            # the new store on the same files (see _stop_default_sweep_locked).
+            _stop_default_sweep_locked()
             _DEFAULT_RUNNER = WorkflowFrameworkRunner(
                 LocalWorkflowStore(root=os.path.join(".nodus", "workflow_framework"))
             )
@@ -793,17 +857,8 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # Auto-start a daemon thread that expires wait-timeouts periodically so
             # embedders who don't call sweep() still get deadline enforcement.
             # Full retry/rehydration still requires the host to provide a vm_factory
-            # and call sweep() explicitly.
-            if _DEFAULT_SWEEP_THREAD is None or not _DEFAULT_SWEEP_THREAD.is_alive():
-                _DEFAULT_SWEEP_STOP.clear()
-                t = threading.Thread(
-                    target=_auto_sweep_loop,
-                    args=(_DEFAULT_RUNNER,),
-                    daemon=True,
-                    name="nodus-workflow-sweep",
-                )
-                t.start()
-                _DEFAULT_SWEEP_THREAD = t
+            # and call sweep() explicitly. Bound to this runner; replaced on rebuild.
+            _start_default_sweep_locked(_DEFAULT_RUNNER)
         return _DEFAULT_RUNNER
 
 
@@ -816,6 +871,9 @@ def configure_default_workflow_runner(
 ) -> WorkflowFrameworkRunner:
     global _DEFAULT_RUNNER, _DEFAULT_RUNNER_ROOT
     with _DEFAULT_RUNNER_LOCK:
+        # Stop the sweep thread bound to the previous runner before swapping so it
+        # cannot race the newly configured store on shared files.
+        _stop_default_sweep_locked()
         resolved_runner = runner
         if resolved_runner is None:
             resolved_runner = WorkflowFrameworkRunner(
