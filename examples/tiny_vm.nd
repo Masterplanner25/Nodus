@@ -1,0 +1,759 @@
+// tiny_vm.nd — a whole compiler back-end AND front-end, written in Nodus.
+//
+// Companion to expr_compiler.nd. Where that example stops at a tree-walking
+// evaluator, this one goes the full distance of a real language pipeline:
+//
+//   source -> lexer -> parser -> AST -> BYTECODE COMPILER -> STACK VM
+//
+// It compiles a small imperative language ("TL": let/assign, if/else, while,
+// fn/return, arithmetic + comparison, function calls) down to a flat list of
+// bytecode instructions with back-patched forward jumps, then executes that
+// bytecode on a stack machine with call frames and per-call locals — so TL
+// supports real recursion. The demo program computes fact(5), fib(10) (both
+// recursive), and a while-loop sum, entirely on the Nodus-hosted VM.
+//
+// Idioms worth noting (these are how Nodus expresses a compiler):
+//   * A MAP is a mutable object. `cs` (compiler state), `vm` (machine state),
+//     and `ps` (parser state) are passed by reference and mutated in place —
+//     they play the role Python would give a class instance / `self`.
+//   * AST nodes and bytecode instructions are `record { ... }` values tagged
+//     by a `kind`/`op` field; dispatch is a `match` on that tag.
+//   * `emit` = push onto the growing code list; `patch` = index-assign back
+//     into it (that is how forward jumps are back-patched).
+//   * `list_pop(vm["stack"])` is the VM operand-stack pop.
+//
+// NOTE ON SPEED: this is Nodus interpreting a VM that interprets bytecode —
+// double interpretation. It is a proof/teaching artifact, not a fast backend.
+// The recursive fib exceeds the default 200ms `nodus run` deadline, so run it
+// with a raised limit:  nodus run --time-limit 15000 examples/tiny_vm.nd
+// ===========================================================================
+// Lexer
+// ===========================================================================
+fn char_at(src, i, n) {
+    if (i >= n) {
+        return ""
+    }
+    return src[i]
+}
+
+fn is_digit(c) {
+    return c >= "0" && c <= "9"
+}
+
+fn is_alpha(c) {
+    return c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c == "_"
+}
+
+fn is_alnum(c) {
+    return is_alpha(c) || is_digit(c)
+}
+
+fn is_space(c) {
+    return c == " " || c == "\t" || c == "\r"
+}
+
+fn kw_kind(word) {
+    return match word {
+        "let" => "LET",
+        "print" => "PRINT",
+        "if" => "IF",
+        "else" => "ELSE",
+        "while" => "WHILE",
+        "fn" => "FN",
+        "return" => "RETURN",
+        "true" => "TRUE",
+        "false" => "FALSE",
+        _ => "ID",
+    }
+}
+
+// operators, including two-char == != <= >=
+fn lex(src) {
+    let toks = []
+    let n = len(src)
+    let i = 0i
+    while (i < n) {
+        let c = char_at(src, i, n)
+        if (is_space(c)) {
+            i = i + 1i
+            continue
+        }
+        if (c == "\n" || c == ";") {
+            push(toks, record {kind: "SEP", val: c})
+            i = i + 1i
+            continue
+        }
+        if (is_digit(c)) {
+            let start = i
+            let text = ""
+            while (is_digit(char_at(src, i, n))) {
+                text = text + char_at(src, i, n)
+                i = i + 1i
+            }
+            if (char_at(src, i, n) == ".") {
+                text = text + "."
+                i = i + 1i
+                while (is_digit(char_at(src, i, n))) {
+                    text = text + char_at(src, i, n)
+                    i = i + 1i
+                }
+            }
+            push(toks, record {kind: "NUM", val: text})
+            continue
+        }
+        if (is_alpha(c)) {
+            let word = ""
+            while (is_alnum(char_at(src, i, n))) {
+                word = word + char_at(src, i, n)
+                i = i + 1i
+            }
+            push(toks, record {kind: kw_kind(word), val: word})
+            continue
+        }
+        let c2 = char_at(src, i + 1i, n)
+        let two = c + c2
+        if (two == "==" || two == "!=" || two == "<=" || two == ">=") {
+            push(toks, record {kind: two, val: two})
+            i = i + 2i
+            continue
+        }
+        if (c == "+" || c == "-" || c == "*" || c == "/" || c == "=" || c == "(" || c == ")" || c == "{" || c == "}" || c == "," || c == "<" || c == ">") {
+            push(toks, record {kind: c, val: c})
+            i = i + 1i
+            continue
+        }
+        throw "Unexpected character '\(c)' at position \(i)"
+    }
+    push(toks, record {kind: "EOF", val: ""})
+    return toks
+}
+
+// ===========================================================================
+// Parser (recursive descent; state is a MAP so pos mutates by reference)
+// ===========================================================================
+fn p_peek(ps) {
+    return ps["toks"][ps["pos"]]
+}
+
+fn p_at(ps, kind) {
+    return p_peek(ps).kind == kind
+}
+
+fn p_advance(ps) {
+    let t = ps["toks"][ps["pos"]]
+    ps["pos"] = ps["pos"] + 1i
+    return t
+}
+
+fn p_eat(ps, kind) {
+    let t = p_peek(ps)
+    if (t.kind != kind) {
+        throw "Expected \(kind) but got \(t.kind) '\(t.val)'"
+    }
+    return p_advance(ps)
+}
+
+fn p_skip_seps(ps) {
+    while (p_at(ps, "SEP")) {
+        p_advance(ps)
+    }
+}
+
+fn parse_program(ps) {
+    let stmts = []
+    p_skip_seps(ps)
+    while (!p_at(ps, "EOF")) {
+        push(stmts, parse_stmt(ps))
+        p_skip_seps(ps)
+    }
+    return stmts
+}
+
+fn parse_block(ps) {
+    p_eat(ps, "{")
+    let stmts = []
+    p_skip_seps(ps)
+    while (!p_at(ps, "}")) {
+        if (p_at(ps, "EOF")) {
+            throw "Unterminated block"
+        }
+        push(stmts, parse_stmt(ps))
+        p_skip_seps(ps)
+    }
+    p_eat(ps, "}")
+    return record {kind: "block", stmts: stmts}
+}
+
+// assignment `name = expr` vs a bare expression
+fn parse_stmt(ps) {
+    p_skip_seps(ps)
+    if (p_at(ps, "LET")) {
+        p_advance(ps)
+        let name = p_eat(ps, "ID").val
+        p_eat(ps, "=")
+        let e = parse_expr(ps)
+        return record {kind: "let", name: name, expr: e}
+    }
+    if (p_at(ps, "PRINT")) {
+        p_advance(ps)
+        p_eat(ps, "(")
+        let e = parse_expr(ps)
+        p_eat(ps, ")")
+        return record {kind: "print", expr: e}
+    }
+    if (p_at(ps, "IF")) {
+        return parse_if(ps)
+    }
+    if (p_at(ps, "WHILE")) {
+        p_advance(ps)
+        p_eat(ps, "(")
+        let cond = parse_expr(ps)
+        p_eat(ps, ")")
+        let body = parse_block(ps)
+        return record {kind: "while", cond: cond, body: body}
+    }
+    if (p_at(ps, "FN")) {
+        return parse_fn(ps)
+    }
+    if (p_at(ps, "RETURN")) {
+        p_advance(ps)
+        let e = parse_expr(ps)
+        return record {kind: "return", expr: e}
+    }
+    if (p_at(ps, "{")) {
+        return parse_block(ps)
+    }
+    if (p_at(ps, "ID") && ps["toks"][ps["pos"] + 1i].kind == "=") {
+        let name = p_advance(ps).val
+        p_eat(ps, "=")
+        let e = parse_expr(ps)
+        return record {kind: "assign", name: name, expr: e}
+    }
+    return record {kind: "exprstmt", expr: parse_expr(ps)}
+}
+
+fn parse_if(ps) {
+    p_eat(ps, "IF")
+    p_eat(ps, "(")
+    let cond = parse_expr(ps)
+    p_eat(ps, ")")
+    let then_branch = parse_block(ps)
+    p_skip_seps(ps)
+    let else_branch = nil
+    if (p_at(ps, "ELSE")) {
+        p_advance(ps)
+        else_branch = parse_block(ps)
+    }
+    return record {kind: "if", cond: cond, then: then_branch, els: else_branch}
+}
+
+fn parse_fn(ps) {
+    p_eat(ps, "FN")
+    let name = p_eat(ps, "ID").val
+    p_eat(ps, "(")
+    let params = []
+    if (!p_at(ps, ")")) {
+        push(params, p_eat(ps, "ID").val)
+        while (p_at(ps, ",")) {
+            p_advance(ps)
+            push(params, p_eat(ps, "ID").val)
+        }
+    }
+    p_eat(ps, ")")
+    let body = parse_block(ps)
+    return record {kind: "fn", name: name, params: params, body: body}
+}
+
+// expression precedence: comparison < add < mul < unary < call < primary
+fn parse_expr(ps) {
+    return parse_cmp(ps)
+}
+
+fn is_cmp(k) {
+    return k == "==" || k == "!=" || k == "<" || k == ">" || k == "<=" || k == ">="
+}
+
+fn parse_cmp(ps) {
+    let node = parse_add(ps)
+    while (is_cmp(p_peek(ps).kind)) {
+        let op = p_advance(ps).kind
+        let rhs = parse_add(ps)
+        node = record {kind: "bin", op: op, a: node, b: rhs}
+    }
+    return node
+}
+
+fn parse_add(ps) {
+    let node = parse_mul(ps)
+    while (p_at(ps, "+") || p_at(ps, "-")) {
+        let op = p_advance(ps).kind
+        let rhs = parse_mul(ps)
+        node = record {kind: "bin", op: op, a: node, b: rhs}
+    }
+    return node
+}
+
+fn parse_mul(ps) {
+    let node = parse_unary(ps)
+    while (p_at(ps, "*") || p_at(ps, "/")) {
+        let op = p_advance(ps).kind
+        let rhs = parse_unary(ps)
+        node = record {kind: "bin", op: op, a: node, b: rhs}
+    }
+    return node
+}
+
+fn parse_unary(ps) {
+    if (p_at(ps, "-")) {
+        p_advance(ps)
+        return record {kind: "bin", op: "-", a: record {kind: "num", v: 0.0}, b: parse_unary(ps)}
+    }
+    return parse_call(ps)
+}
+
+fn parse_call(ps) {
+    let node = parse_primary(ps)
+    while (p_at(ps, "(")) {
+        if (node.kind != "var") {
+            throw "Can only call named functions"
+        }
+        p_advance(ps)
+        let args = []
+        if (!p_at(ps, ")")) {
+            push(args, parse_expr(ps))
+            while (p_at(ps, ",")) {
+                p_advance(ps)
+                push(args, parse_expr(ps))
+            }
+        }
+        p_eat(ps, ")")
+        node = record {kind: "call", name: node.name, args: args}
+    }
+    return node
+}
+
+fn parse_primary(ps) {
+    let t = p_peek(ps)
+    return match t.kind {
+        "NUM" => {
+            p_advance(ps)
+            record {kind: "num", v: to_float(t.val)}
+        },
+        "TRUE" => {
+            p_advance(ps)
+            record {kind: "bool", v: true}
+        },
+        "FALSE" => {
+            p_advance(ps)
+            record {kind: "bool", v: false}
+        },
+        "ID" => {
+            p_advance(ps)
+            record {kind: "var", name: t.val}
+        },
+        "(" => {
+            p_advance(ps)
+            let e = parse_expr(ps)
+            p_eat(ps, ")")
+            e
+        },
+        _ => throw "Unexpected token '\(t.kind)' in expression",
+    }
+}
+
+// NUM text -> float (built numerically; no float() coercion needed)
+fn to_float(text) {
+    let n = len(text)
+    let i = 0i
+    let intpart = 0.0
+    while (i < n && char_at(text, i, n) != ".") {
+        intpart = intpart * 10.0 + (ord(char_at(text, i, n)) - ord("0")) * 1.0
+        i = i + 1i
+    }
+    let value = intpart
+    if (char_at(text, i, n) == ".") {
+        i = i + 1i
+        let place = 0.1
+        while (i < n) {
+            value = value + (ord(char_at(text, i, n)) - ord("0")) * place
+            place = place / 10.0
+            i = i + 1i
+        }
+    }
+    return value
+}
+
+// ===========================================================================
+// Bytecode compiler (emit into a growing list; backpatch forward jumps)
+// state cs = {"code": [instr...], "funcs": {name -> {params, addr}}}
+// each instr is a record {op, arg, extra}
+// ===========================================================================
+fn emit(cs, op, arg, extra) {
+    push(cs["code"], record {op: op, arg: arg, extra: extra})
+    return len(cs["code"]) - 1i
+}
+
+fn patch(cs, idx, op, arg, extra) {
+    cs["code"][idx] = record {op: op, arg: arg, extra: extra}
+    return nil
+}
+
+// jump over function bodies to main
+fn compile_program(stmts) {
+    let cs = {"code": [], "funcs": {}}
+    let jmp_main = emit(cs, "JUMP", nil, nil)
+    let idx = 0i
+    while (idx < len(stmts)) {
+        let s = stmts[idx]
+        if (s.kind == "fn") {
+            compile_fn(cs, s)
+        }
+        idx = idx + 1i
+    }
+    let main_addr = len(cs["code"])
+    patch(cs, jmp_main, "JUMP", main_addr, nil)
+    idx = 0i
+    while (idx < len(stmts)) {
+        let s = stmts[idx]
+        if (s.kind != "fn") {
+            compile_stmt(cs, s)
+        }
+        idx = idx + 1i
+    }
+    emit(cs, "HALT", nil, nil)
+    return cs
+}
+
+// store args into locals in reverse (last arg is on top of stack)
+fn compile_fn(cs, node) {
+    if (has_key(cs["funcs"], node.name)) {
+        throw "Function already defined: \(node.name)"
+    }
+    let addr = len(cs["code"])
+    cs["funcs"][node.name] = {"params": node.params, "addr": addr}
+    let j = len(node.params) - 1i
+    while (j >= 0i) {
+        emit(cs, "STORE_ARG", node.params[j], nil)
+        j = j - 1i
+    }
+    compile_stmt(cs, node.body)
+    emit(cs, "PUSH_CONST", nil, nil)
+    emit(cs, "RETURN", nil, nil)
+    return nil
+}
+
+fn bin_opcode(op) {
+    return match op {
+        "+" => "ADD",
+        "-" => "SUB",
+        "*" => "MUL",
+        "/" => "DIV",
+        "==" => "EQ",
+        "!=" => "NE",
+        "<" => "LT",
+        ">" => "GT",
+        "<=" => "LE",
+        ">=" => "GE",
+        _ => throw "Unknown operator \(op)",
+    }
+}
+
+fn compile_stmt(cs, s) {
+    match s.kind {
+        "let" => {
+            compile_expr(cs, s.expr)
+            emit(cs, "STORE", s.name, nil)
+        },
+        "assign" => {
+            compile_expr(cs, s.expr)
+            emit(cs, "STORE", s.name, nil)
+        },
+        "print" => {
+            compile_expr(cs, s.expr)
+            emit(cs, "PRINT", nil, nil)
+        },
+        "exprstmt" => {
+            compile_expr(cs, s.expr)
+            emit(cs, "POP", nil, nil)
+        },
+        "block" => {
+            let k = 0i
+            while (k < len(s.stmts)) {
+                compile_stmt(cs, s.stmts[k])
+                k = k + 1i
+            }
+        },
+        "if" => compile_if(cs, s),
+        "while" => compile_while(cs, s),
+        "return" => {
+            compile_expr(cs, s.expr)
+            emit(cs, "RETURN", nil, nil)
+        },
+        "fn" => nil,
+        _ => throw "Unknown stmt kind \(s.kind)",
+    }
+    return nil
+}
+
+fn compile_if(cs, s) {
+    compile_expr(cs, s.cond)
+    let jmp_false = emit(cs, "JUMP_IF_FALSE", nil, nil)
+    compile_stmt(cs, s.then)
+    if (s.els != nil) {
+        let jmp_end = emit(cs, "JUMP", nil, nil)
+        patch(cs, jmp_false, "JUMP_IF_FALSE", len(cs["code"]), nil)
+        compile_stmt(cs, s.els)
+        patch(cs, jmp_end, "JUMP", len(cs["code"]), nil)
+    } else {
+        patch(cs, jmp_false, "JUMP_IF_FALSE", len(cs["code"]), nil)
+    }
+    return nil
+}
+
+fn compile_while(cs, s) {
+    let loop_start = len(cs["code"])
+    compile_expr(cs, s.cond)
+    let jmp_false = emit(cs, "JUMP_IF_FALSE", nil, nil)
+    compile_stmt(cs, s.body)
+    emit(cs, "JUMP", loop_start, nil)
+    patch(cs, jmp_false, "JUMP_IF_FALSE", len(cs["code"]), nil)
+    return nil
+}
+
+fn compile_expr(cs, e) {
+    match e.kind {
+        "num" => emit(cs, "PUSH_CONST", e.v, nil),
+        "bool" => emit(cs, "PUSH_CONST", e.v, nil),
+        "var" => emit(cs, "LOAD", e.name, nil),
+        "bin" => {
+            compile_expr(cs, e.a)
+            compile_expr(cs, e.b)
+            emit(cs, bin_opcode(e.op), nil, nil)
+        },
+        "call" => {
+            let k = 0i
+            while (k < len(e.args)) {
+                compile_expr(cs, e.args[k])
+                k = k + 1i
+            }
+            emit(cs, "CALL", e.name, len(e.args))
+        },
+        _ => throw "Unknown expr kind \(e.kind)",
+    }
+    return nil
+}
+
+// ===========================================================================
+// Stack VM (call frames w/ locals -> supports recursion)
+// vm = {"stack": [], "frames": [], "globals": {}, "ip": 0i}
+// frame = {"ret": ip, "locals": {}}
+// ===========================================================================
+fn cur_locals(vm) {
+    let f = vm["frames"]
+    if (len(f) == 0i) {
+        return nil
+    }
+    return f[len(f) - 1i]["locals"]
+}
+
+fn vm_load(vm, name) {
+    let loc = cur_locals(vm)
+    if (loc != nil && has_key(loc, name)) {
+        return loc[name]
+    }
+    if (has_key(vm["globals"], name)) {
+        return vm["globals"][name]
+    }
+    throw "Undefined variable: \(name)"
+}
+
+fn vm_store(vm, name, value) {
+    let loc = cur_locals(vm)
+    if (loc != nil) {
+        loc[name] = value
+    } else {
+        vm["globals"][name] = value
+    }
+    return nil
+}
+
+fn binop(op, a, b) {
+    return match op {
+        "ADD" => a + b,
+        "SUB" => a - b,
+        "MUL" => a * b,
+        "DIV" => a / b,
+        "EQ" => a == b,
+        "NE" => a != b,
+        "LT" => a < b,
+        "GT" => a > b,
+        "LE" => a <= b,
+        "GE" => a >= b,
+        _ => throw "bad binop \(op)",
+    }
+}
+
+fn is_binop(op) {
+    return op == "ADD" || op == "SUB" || op == "MUL" || op == "DIV" || op == "EQ" || op == "NE" || op == "LT" || op == "GT" || op == "LE" || op == "GE"
+}
+
+fn run(cs) {
+    let vm = {"stack": [], "frames": [], "globals": {}, "ip": 0i}
+    let code = cs["code"]
+    let funcs = cs["funcs"]
+    while (true) {
+        let instr = code[vm["ip"]]
+        let op = instr.op
+        if (is_binop(op)) {
+            let b = list_pop(vm["stack"])
+            let a = list_pop(vm["stack"])
+            push(vm["stack"], binop(op, a, b))
+            vm["ip"] = vm["ip"] + 1i
+            continue
+        }
+        let halt = match op {
+            "PUSH_CONST" => {
+                push(vm["stack"], instr.arg)
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "LOAD" => {
+                push(vm["stack"], vm_load(vm, instr.arg))
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "STORE" => {
+                vm_store(vm, instr.arg, list_pop(vm["stack"]))
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "STORE_ARG" => {
+                let loc = cur_locals(vm)
+                loc[instr.arg] = list_pop(vm["stack"])
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "POP" => {
+                list_pop(vm["stack"])
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "PRINT" => {
+                print(fmt_val(list_pop(vm["stack"])))
+                vm["ip"] = vm["ip"] + 1i
+                false
+            },
+            "JUMP" => {
+                vm["ip"] = instr.arg
+                false
+            },
+            "JUMP_IF_FALSE" => {
+                let c = list_pop(vm["stack"])
+                if (c) {
+                    vm["ip"] = vm["ip"] + 1i
+                } else {
+                    vm["ip"] = instr.arg
+                }
+                false
+            },
+            "CALL" => {
+                let fname = instr.arg
+                if (!has_key(funcs, fname)) {
+                    throw "Undefined function: \(fname)"
+                }
+                let fn_info = funcs[fname]
+                push(vm["frames"], {"ret": vm["ip"] + 1i, "locals": {}})
+                vm["ip"] = fn_info["addr"]
+                false
+            },
+            "RETURN" => {
+                let rv = list_pop(vm["stack"])
+                let frame = list_pop(vm["frames"])
+                push(vm["stack"], rv)
+                vm["ip"] = frame["ret"]
+                false
+            },
+            "HALT" => true,
+            _ => throw "Unknown opcode: \(op)",
+        }
+        if (halt) {
+            break
+        }
+    }
+    return vm
+}
+
+// pretty print: whole numbers without trailing .0
+fn fmt_val(v) {
+    if (type(v) == "bool") {
+        return str(v)
+    }
+    if (type(v) == "nil") {
+        return "nil"
+    }
+    let f = floor_f(v)
+    if (v == f) {
+        return str(to_int_f(v))
+    }
+    return str(v)
+}
+
+fn floor_f(v) {
+    let t = to_int_f(v) * 1.0
+    if (t > v) {
+        return t - 1.0
+    }
+    return t
+}
+
+// truncate toward zero for non-negative demo values
+fn to_int_f(v) {
+    let i = 0i
+    let acc = 0.0
+    while (acc + 1.0 <= v) {
+        acc = acc + 1.0
+        i = i + 1i
+    }
+    return i
+}
+
+// ===========================================================================
+// Driver: compile & run a program written in the tiny language
+// ===========================================================================
+let program = "fn fact(n) {\n"
+program = program + "  if (n <= 1) { return 1 }\n"
+program = program + "  return n * fact(n - 1)\n"
+program = program + "}\n"
+program = program + "fn fib(n) {\n"
+program = program + "  if (n < 2) { return n }\n"
+program = program + "  return fib(n - 1) + fib(n - 2)\n"
+program = program + "}\n"
+program = program + "let s = 0\n"
+program = program + "let x = 0\n"
+program = program + "while (x < 5) {\n"
+program = program + "  s = s + x\n"
+program = program + "  x = x + 1\n"
+program = program + "}\n"
+program = program + "print(fact(5))\n"
+program = program + "print(fib(10))\n"
+program = program + "print(s)\n"
+print("=== Tiny-language compiler + VM, written in Nodus ===")
+let toks = lex(program)
+print("lexer:    \(len(toks)) tokens")
+let ps = {"toks": toks, "pos": 0i}
+let ast = parse_program(ps)
+print("parser:   \(len(ast)) top-level statements")
+let cs = compile_program(ast)
+print("compiler: \(len(cs["code"])) bytecode instructions, \(len(keys(cs["funcs"]))) functions")
+print("--- program output (produced by the Nodus-hosted VM) ---")
+run(cs)
+// Verified output (nodus run --time-limit 15000 examples/tiny_vm.nd):
+//
+//   === Tiny-language compiler + VM, written in Nodus ===
+//   lexer:    119 tokens
+//   parser:   8 top-level statements
+//   compiler: 62 bytecode instructions, 2 functions
+//   --- program output (produced by the Nodus-hosted VM) ---
+//   120      // fact(5)  — recursion via call frames + locals
+//   55       // fib(10)  — recursion
+//   10       // while-loop sum 0+1+2+3+4
