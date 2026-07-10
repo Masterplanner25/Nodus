@@ -95,11 +95,15 @@ def run_test(
     test_file: str, test_function: str | None, *, use_dev_source: bool = True
 ) -> tuple[bool, str]:
     """Run a specific test file/function. Return (passed, error_msg)."""
+    repo_root = str(Path(__file__).parents[2])
     src_root = str(Path(__file__).parents[2] / "src")
     env = os.environ.copy()
     if use_dev_source:
         existing = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = f"{src_root}{os.pathsep}{existing}" if existing else src_root
+        # Both src (for `import nodus`) and the repo root (for `import tools...`)
+        # so closed-issue tests resolve portably without hardcoded local paths.
+        parts = [src_root, repo_root] + ([existing] if existing else [])
+        env["PYTHONPATH"] = os.pathsep.join(parts)
 
     cmd = [sys.executable, "-m", "pytest", test_file, "-q", "--tb=short", "--no-header"]
     if test_function:

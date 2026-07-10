@@ -1,10 +1,7 @@
 """Closed-issue test for #78: err records carry location fields (Doc 13)."""
 
-import sys
 import io
 from contextlib import redirect_stdout
-
-sys.path.insert(0, "C:/dev/Coding Language/src")
 
 import nodus
 from nodus.runtime.module_loader import ModuleLoader

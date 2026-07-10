@@ -87,6 +87,49 @@ print(result["steps"]["b"])
         self.assertEqual(out, ["1.0", "2.0"])
         self.assertEqual(err.strip(), "")
 
+    # closes: #324
+    def test_workflow_composition_routes_to_one_subworkflow(self):
+        """#324: a step selects one of several sub-workflows via match +
+        run_workflow; only the chosen sub-pipeline runs (workflow composition —
+        the documented Nodus idiom for conditional routing over sub-graphs)."""
+        src = """
+workflow pipe_a {
+    step a1 {
+        return "a1"
+    }
+    step a2 after a1 {
+        return "a2"
+    }
+}
+workflow pipe_b {
+    step b1 {
+        return "b1"
+    }
+}
+workflow router {
+    step classify {
+        return "a"
+    }
+    step dispatch after classify {
+        let sub = match classify {
+            "a" => run_workflow(pipe_a),
+            _ => run_workflow(pipe_b),
+        }
+        return sub["steps"]
+    }
+}
+
+let r = run_workflow(router)
+let dispatched = r["steps"]["dispatch"]
+print(dispatched["a1"])
+print(dispatched["a2"])
+"""
+        _vm, out, err = run_program(src, "compose.nd")
+        self.assertEqual(out, ["a1", "a2"], f"pipe_a should have run; err={err}")
+        # pipe_b never ran: its step is absent from the dispatched sub-result.
+        dispatched = _vm.globals.get("dispatched")
+        self.assertNotIn("b1", dispatched, "the un-taken sub-workflow must not run")
+
     def test_workflow_state_initialization(self):
         src = """
 workflow demo {
