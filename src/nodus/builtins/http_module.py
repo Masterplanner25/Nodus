@@ -397,6 +397,9 @@ def _root_vm(vm):
         root = parent
 
 
+_client_create_lock = threading.Lock()
+
+
 def _get_or_create_client(vm) -> _httpx.Client:
     # Walk up the _caller_vm chain: module functions run in a fresh sub-VM
     # whose _caller_vm points back to the VM that called it.  Find or create
@@ -404,8 +407,17 @@ def _get_or_create_client(vm) -> _httpx.Client:
     root = _root_vm(vm)
     client = getattr(root, "_http_client", None)
     if not client:
-        client = _httpx.Client(follow_redirects=True, max_redirects=10)
-        root._http_client = client
+        # Double-checked locking (ASYNC-CAP-001, #295): an async fan-out starts N
+        # worker threads that all call this concurrently. Without the lock the
+        # check-then-set races and every worker builds its OWN httpx.Client — each
+        # with a fresh connection pool — so requests can no longer share
+        # connections and the fan-out serialises toward ~2x instead of N. The lock
+        # ensures exactly one shared client is created and reused.
+        with _client_create_lock:
+            client = getattr(root, "_http_client", None)
+            if not client:
+                client = _httpx.Client(follow_redirects=True, max_redirects=10)
+                root._http_client = client
     if root is not vm:
         vm._http_client = client  # cache on sub-VM for next call
     return client

@@ -141,21 +141,26 @@ describe the workaround patterns used until these are fixed.
   agent work was to route it through an already-async transport (`http.post_async` /
   `subprocess.run_async`).
 
-- **ASYNC-CAP-001** (open, severity: low, GitHub: #295): Async fan-out concurrency is
-  capped well short of N× on the **raw direct-builtin** path. Measured (6 × 300ms
-  concurrent GETs against a local ThreadingHTTPServer, Nodus main post-#290): the idiomatic
-  stdlib **wrapper** path (`http.get_async` called inside a coroutine) fully overlaps at
-  **~319–326ms** (≈ full 6-way), but the **raw** direct builtin (`http_get_async` called
-  directly in the coroutine body) only partially overlaps at **~946–1068ms** (≈ 1.7–1.9×,
-  not 6×). So post-#290 the wrapper is now the *faster* path and the raw direct path is the
-  capped one (an inversion of the pre-fix situation). Suspected causes: httpx connection-pool
-  limits (`max_connections`) and/or the scheduler's 1ms `_io_channels` poll granularity
-  (`src/nodus/runtime/scheduler.py` `_drain_io_channels` / `time.sleep(0.001)`), and/or
-  per-call setup cost on the direct path. Fix direction: identify the limiting factor and
-  lift it so the direct path scales toward N (~16) like the wrapper path. **Not blocking** —
-  the idiomatic wrapper path (what orchestration code actually calls) already overlaps; this
-  only affects code that bypasses the stdlib wrapper. Add a scaling assertion (N=6, N=12) to
-  `tests/test_async_concurrency_timing.py`.
+- **ASYNC-CAP-001** (PARTIALLY FIXED, severity: low, GitHub: #295): Async fan-out
+  concurrency was capped well short of N×. **Root cause found + fixed:** a
+  check-then-set **race in `_get_or_create_client`** (`src/nodus/builtins/http_module.py`).
+  An async fan-out starts N worker threads that all called it concurrently on a VM with
+  no client yet, so each worker built its **own** `httpx.Client` — each with a separate
+  connection pool — and the requests could no longer share connections, serialising the
+  fan-out toward ~2×. Double-checked locking now guarantees one shared client. Measured
+  (6 × 300ms local GETs): raw fan-out improved from ~2.2× to ~3.3× (and the wrapper path
+  moved together with it — on the tested host both paths were symmetric, not the
+  asymmetry originally reported). Deterministic regression test
+  (`test_concurrent_fanout_shares_one_http_client`) asserts exactly one client is
+  created under an N-way fan-out. **Residual gap (still open):** even with the shared
+  client, the scheduler path reaches ~3.3× vs ~6× for the same client driven by plain
+  Python threads — a cooperative-scheduler + GIL interaction (the single-thread run-loop
+  competes with the worker threads during response processing; the pure-sleep worker and
+  subprocess fan-out both hit full N×, and `_do_sync_request` from plain threads hits
+  full N×, so the residual is specific to real-HTTP-under-the-scheduler). Not blocking —
+  the idiomatic wrapper path already overlaps and this only affects raw fan-out
+  throughput ceilings. Closing the residual likely needs the run-loop to block on a
+  worker signal instead of a 1ms busy-poll (a scheduler change, deferred).
 
 - **DAP-001** (open, severity: high, GitHub #106): The DAP server does not implement
   the `evaluate` command. When paused at a breakpoint, users cannot evaluate
