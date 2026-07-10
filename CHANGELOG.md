@@ -113,6 +113,14 @@
 
 ### Docs / Tooling
 
+- **The doc-vs-code gate now runs in CI (#302):** `python -m tools.nodus_gate.cli
+  --all` (static / runtime / closed-issues / contracts) is executed on every push
+  and PR, failing the build on non-zero exit. Previously CI only ran `nodus check`
+  on two examples, so the gate could — and did (#293) — ship red across releases
+  undetected. Also made the closed-issue tests path-portable (the gate now supplies
+  both `src` and the repo root on `PYTHONPATH`; removed hardcoded local paths) so the
+  gate runs cleanly on the Linux CI runner.
+
 - **Workflow composition documented (#324):** `docs/guide/workflows-and-tasks.md`
   §9 now shows conditional routing and iteration by *composition* — control flow
   (`match`/`while`) selecting nested `run_workflow` calls, with two gate-run

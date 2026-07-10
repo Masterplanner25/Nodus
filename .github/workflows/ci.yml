@@ -67,6 +67,9 @@ jobs:
           python nodus.py check examples/import_demo.nd
           python nodus.py check examples/stdlib_demo.nd
 
+      - name: Doc-vs-code gate
+        run: PYTHONPATH="$PWD/src:$PWD" python -m tools.nodus_gate.cli --all
+
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 

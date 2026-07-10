@@ -12,13 +12,11 @@ Guards both halves of the fix:
 """
 
 import os
-import sys
 
 # closes: #293
 
-sys.path.insert(0, "C:/dev/Coding Language")  # noqa: E402
-sys.path.insert(0, "C:/dev/Coding Language/src")  # noqa: E402
-
+# Paths (repo root + src) are supplied by the runner's PYTHONPATH — the gate's
+# closed-issues phase and CI both set it — so no hardcoded local paths here.
 from tools.nodus_gate.contracts_phase import run_contracts_phase  # noqa: E402
 from tools.nodus_gate.runtime_phase import _run_block_with_timeout  # noqa: E402
 
