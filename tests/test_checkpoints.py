@@ -16,6 +16,8 @@ label wins (duplicate-label semantics).  ``_rollback_to_checkpoint`` resets the
 checkpointed task and all its dependents to ``pending``.
 """
 
+import glob
+import json
 import os
 import sys
 import tempfile
@@ -325,6 +327,63 @@ let _ = run_workflow(demo)
             self.assertIn("b", rr["steps"])
             # c is a sibling of b (not a dependent) — not re-run
             self.assertEqual(rr["steps"]["c"], rr["steps"]["c"])  # unchanged
+
+
+class CheckpointResumeNoReexecTests(unittest.TestCase):
+    """#322: resume must not re-execute the module's top-level driver."""
+
+    @staticmethod
+    def _graph_ids(td: str) -> set:
+        ids = set()
+        for path in glob.glob(os.path.join(td, ".nodus", "graphs", "*.json")):
+            if path.endswith(".checkpoint.json"):
+                continue
+            with open(path) as fh:
+                ids.add(json.load(fh).get("graph_id"))
+        return ids
+
+    # closes: #322
+    def test_resume_does_not_re_execute_top_level_run_workflow(self):
+        """Resuming a self-invoking workflow (`... let r = run_workflow(build)`)
+        must rebuild only the definitions, not re-run the top-level driver.
+
+        Before the fix, `_rebuild_workflow_graph` re-executed the whole source
+        module, so the top-level `run_workflow` spawned a **spurious fresh graph**
+        (a new graph_id) and re-ran every step. The signature of that regression is
+        a new graph_id appearing during resume; assert none does.
+        """
+        src = """
+workflow build {
+    step first {
+        checkpoint "after_first"
+        return 1
+    }
+    step second after first {
+        return 2
+    }
+}
+let r = run_workflow(build)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            result, _vm = _run(src, td)
+            self.assertTrue(result.get("ok"), result)
+            graph_id = result["result"]["graph_id"]
+            before = self._graph_ids(td)
+
+            # Drop the in-RAM graph so resume must rebuild from disk (fresh-process
+            # simulation), the path that re-executed the module.
+            task_graph._GRAPH_REGISTRY.pop(graph_id, None)
+            task_graph._GRAPH_VMS.pop(graph_id, None)
+
+            resumed = _resume(graph_id, "after_first", td)
+            self.assertTrue(resumed.get("ok"), resumed)
+
+            spurious = self._graph_ids(td) - before
+            self.assertEqual(
+                spurious, set(),
+                f"resume re-executed the top-level driver and created spurious "
+                f"graph(s): {spurious}",
+            )
 
 
 if __name__ == "__main__":

@@ -77,6 +77,20 @@
 
 ### Fixes
 
+- **Resume no longer re-executes the workflow during graph rebuild (#322):**
+  `resume_workflow` rebuilds a graph by re-executing the workflow's source module
+  (to re-bind its definitions and imports). For a self-invoking flow
+  (`… let r = run_workflow(build)`) that re-ran the top-level `run_workflow`,
+  spawning a **spurious fresh graph** (a new random `graph_id`) and re-running every
+  step — duplicating side effects. The rebuild now suppresses top-level
+  `run_workflow`/`run_goal` execution (they return a benign, index-safe empty result
+  so top-level code reading the result doesn't crash), so resume reuses the original
+  graph and resumes from the checkpoint correctly. Verified across the runner/CLI/HTTP
+  resume paths; regression test in `tests/test_checkpoints.py` asserts no spurious
+  graph is created on resume. (The in-script `resume_workflow` builtin's mid-script
+  continuation — the rebuild `reset_program`s the caller's VM — is tracked as a
+  follow-up in #328.)
+
 - **`nodus fmt` no longer corrupts `\r` / `\0` string escapes (#310):** The
   formatter decoded string-literal escapes and re-emitted only `\\`, `\n`, `\t`,
   and `"`; `\r`, `\0`, and other control code points were written back as raw

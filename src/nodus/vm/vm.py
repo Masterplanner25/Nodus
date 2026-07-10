@@ -1048,9 +1048,27 @@ class VM:
             self.runtime_error("type", "resume_graph(graph_id) expects a string")
         return resume_graph(self, graph_id)
 
+    def _suppressed_flow_result(self) -> dict:
+        """A benign, index-safe empty result returned by run_workflow/run_goal while
+        a module is being re-executed only to re-bind its definitions during
+        resume-rebuild (#322). Carries the keys top-level code commonly reads so a
+        `let r = run_workflow(x)` followed by `r["steps"]` etc. does not crash the
+        rebuild."""
+        return {
+            "steps": {}, "failed": [], "tasks": {}, "timings": {}, "attempts": {},
+            "cache_hits": [], "graph_id": "", "state": {}, "checkpoints": [],
+            "workflow": "", "goal": "",
+        }
+
     def builtin_run_workflow(self, workflow):
         if not is_workflow_value(workflow):
             self.runtime_error("type", "run_workflow(workflow) expects a workflow")
+        if getattr(self, "_suppress_flow_execution", False):
+            # Resume-rebuild is re-running this module ONLY to re-bind the
+            # workflow/fn definitions and imports (#322). Executing the flow here
+            # would spawn a spurious fresh graph and re-run steps (duplicating side
+            # effects), which is the bug this guard fixes. Skip it.
+            return self._suppressed_flow_result()
         graph = workflow_to_graph(self, workflow, init_state=True)
         from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().start_graph(self, graph)
@@ -1094,6 +1112,8 @@ class VM:
     def builtin_run_goal(self, goal):
         if not is_goal_value(goal):
             self.runtime_error("type", "run_goal(goal) expects a goal")
+        if getattr(self, "_suppress_flow_execution", False):
+            return self._suppressed_flow_result()   # resume-rebuild — see run_workflow (#322)
         graph = workflow_to_graph(self, goal, init_state=True)
         from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().start_graph(self, graph)
@@ -1181,7 +1201,17 @@ class VM:
             )
             module_name = rebuild_path or "<memory>"
             base_dir = os.path.dirname(rebuild_path) if rebuild_path else os.getcwd()
-            _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
+            # #322: this re-execution exists only to re-bind the workflow/fn
+            # definitions and imports. Suppress top-level run_workflow/run_goal so a
+            # self-invoking module does not spawn a spurious fresh graph and re-run
+            # its steps. The flag rides on `self` (reset_program preserves it) and is
+            # cleared in finally, so the actual resume run that follows is unaffected.
+            _prev_suppress = getattr(self, "_suppress_flow_execution", False)
+            self._suppress_flow_execution = True
+            try:
+                _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
+            finally:
+                self._suppress_flow_execution = _prev_suppress
         except Exception:
             return None
         self.event_bus = event_bus
