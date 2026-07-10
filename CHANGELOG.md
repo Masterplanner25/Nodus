@@ -77,6 +77,17 @@
 
 ### Fixes
 
+- **Async fan-out no longer builds a separate HTTP client per worker (#295):**
+  `_get_or_create_client` had a check-then-set race — an async fan-out (N coroutines
+  each calling `http_get_async`/`http.get_async`) starts N worker threads that all
+  found no client yet and each built their own `httpx.Client` with a separate
+  connection pool, so requests couldn't share connections and the fan-out serialised
+  toward ~2×. Double-checked locking now creates exactly one shared client. Measured
+  raw fan-out improved from ~2.2× to ~3.3× (6 × 300ms local GETs). A residual gap to
+  full N× remains — a cooperative-scheduler/GIL interaction, documented as
+  ASYNC-CAP-001 in TECH_DEBT and deferred. Deterministic regression test asserts a
+  single shared client under an N-way fan-out.
+
 - **Resume no longer re-executes the workflow during graph rebuild (#322):**
   `resume_workflow` rebuilds a graph by re-executing the workflow's source module
   (to re-bind its definitions and imports). For a self-invoking flow
