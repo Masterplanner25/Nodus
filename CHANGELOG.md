@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-07-10
+
 ### Language
 
 - **`break` and `continue` loop control (#309):** Both statements are now
