@@ -350,6 +350,95 @@ let opts = {"deps": [t1, t2]}
 let t3 = task(my_fn, opts)
 ```
 
+**Conditional routing and iteration via composition:** A single workflow is a
+static, acyclic DAG — every declared step runs, and `after` deps cannot form a
+cycle (§11). To *route* to one of several multi-step pipelines, or to *loop* a
+pipeline, compose: call `run_workflow` (or `run_goal`) on a sub-workflow from
+inside a step, chosen by ordinary control flow. Only the selected sub-workflow
+runs, and each is a real DAG with its own steps.
+
+```nd
+import "std:memory" as memory
+
+workflow billing_pipeline {
+    step validate {
+        return "ok"
+    }
+    step refund after validate {
+        return "refunded"
+    }
+}
+workflow technical_pipeline {
+    step reproduce {
+        return "ok"
+    }
+    step escalate after reproduce {
+        return "escalated"
+    }
+}
+workflow router {
+    step classify {
+        memory.put("kind", "billing")
+        return memory.get("kind")
+    }
+    step dispatch after classify {
+        // conditional subgraph selection — only ONE pipeline runs
+        let sub = match memory.get("kind") {
+            "billing" => run_workflow(billing_pipeline),
+            _ => run_workflow(technical_pipeline),
+        }
+        return sub["steps"]
+    }
+}
+let r = run_workflow(router)
+print("ran: \(r["steps"]["dispatch"])")
+```
+
+```
+ran: {"validate": "ok", "refund": "refunded"}
+```
+
+The same shape iterates a sub-workflow with a `while` — each pass is a real
+sub-DAG (this is how you express a "loop back to an earlier node" that the acyclic
+`after` graph cannot):
+
+```nd
+import "std:memory" as memory
+
+workflow revise_pass {
+    step revise {
+        memory.put("n", memory.get("n") + 1i)
+        return "revised"
+    }
+}
+workflow refine {
+    step start {
+        memory.put("n", 0i)
+        return 0i
+    }
+    step loop after start {
+        while (memory.get("n") < 3i) {
+            run_workflow(revise_pass)
+        }
+        return memory.get("n")
+    }
+}
+let r = run_workflow(refine)
+print("passes: \(r["steps"]["loop"])")
+```
+
+```
+passes: 3
+```
+
+> **Durability caveat.** Composition is safe for *execution* and each sub-workflow
+> checkpoints independently, but a composed flow does **not** resume from a
+> checkpoint cleanly today: resuming the outer workflow re-executes its source
+> module, which re-runs the nested `run_workflow` and **duplicates its side
+> effects** (see #322). Use composition for control flow and per-sub-workflow
+> checkpointing; do not rely on whole-flow crash-resume with exactly-once nested
+> execution until #322 is fixed.
+
 ---
 
 ## 10. Embedding workflows
@@ -381,13 +470,18 @@ script including the `run_workflow()` call.
 
 ## 11. Known limits
 
-**No conditional steps** — use `try/catch` or state guards in the step body.
+**A single workflow is a static, acyclic DAG** — every declared step runs (there
+is no per-step `when`/guard clause), and `after` deps cannot form a cycle. This is
+not a routing/iteration limit: express **conditional routing** and **iteration** by
+*composition* — control flow (`match`/`while`) selecting nested `run_workflow`
+calls (see §9). Within a single step body you can also branch/loop with plain
+`if`/`while`, but that only changes what that one step computes; it cannot skip a
+sibling step or re-run an upstream one. For a graph whose *shape* is built at
+runtime, drop to `task()` / `run_graph()`.
 
-**No dynamic graph structure** — steps are fixed at compile time. Use
-`task()` / `run_graph()` for graphs built at runtime.
-
-**Cyclic dependency returns an err record** — `run_workflow()` returns an err
-record with `kind = "workflow_error"`. Check `type(r) == "error"`.
+**Cyclic dependency returns an err record** — a cyclic `after` graph is rejected
+when the graph is built (before the scheduler runs); `run_workflow()` returns an
+err record with `kind = "workflow_error"`. Check `type(r) == "error"`.
 `nodus workflow run` exits 1.
 
 **Retry state is not isolated** — state mutations from a failed attempt
