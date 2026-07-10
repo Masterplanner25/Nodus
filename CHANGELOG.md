@@ -80,6 +80,15 @@
 
 ### Docs / Tooling
 
+- **Workflow composition documented (#324):** `docs/guide/workflows-and-tasks.md`
+  §9 now shows conditional routing and iteration by *composition* — control flow
+  (`match`/`while`) selecting nested `run_workflow` calls, with two gate-run
+  examples — and §11 is reframed from "no conditional steps" to "a single workflow
+  is a static acyclic DAG; route/loop by composition." Both carry the durability
+  caveat (composition executes and each sub-workflow checkpoints independently, but
+  whole-flow resume re-runs nested workflows — #322). A matching idioms-reference
+  entry was added.
+
 - **Doc-vs-code gate restored to green (#293):** The mandatory `nodus_gate --all`
   gate had been shipping red since ~v4.0.7 — 21 runtime doc-block failures plus a
   contract-check failure. Two unrelated causes: (1) the doc-reformat pull requests
