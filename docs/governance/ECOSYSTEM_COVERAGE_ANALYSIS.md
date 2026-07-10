@@ -7,7 +7,8 @@
 > **Note (v4.0.8):** one capability has improved since this snapshot — idiomatic
 > async fan-out (`http.get_async` / `subprocess.run_async` under `fan_out`/`parallel`)
 > now genuinely overlaps rather than silently serializing (ASYNC-MOD-001, #105/#290).
-> Agent-call fan-out is still serial pending an async agent builtin (#294).
+> Agent-call fan-out now overlaps too, via the `agent_call_async` / `agent.call_async`
+> builtin added for #294 (ASYNC-MOD-002).
 
 > **This document deliberately supersedes `Ecosystem_Coverage_Analysis.md` for the Nodus-only question.** That earlier doc rated **"AINDY Runtime + Nodus" as one stack** and assigned most of the strong coverage (syscall dispatch, WAIT/RESUME, multi-tenancy, pgvector memory, hosting, leader election, dead-letter) to **`aindy-runtime`**. This one strips every aindy-owned capability and re-scores strictly.
 

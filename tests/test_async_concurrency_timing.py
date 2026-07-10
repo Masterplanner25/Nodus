@@ -34,6 +34,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from nodus.runtime.embedding import NodusRuntime
+from nodus.services.agent_runtime import register_agent, unregister_agent
 
 _DELAY_S = 0.2   # per-request server latency
 _N = 8           # fan-out width
@@ -121,6 +122,88 @@ class AsyncIOConcurrencyTimingTests(unittest.TestCase):
             f"{concurrent:.2f}s vs serial baseline {self.serial:.2f}s "
             f"(expected < {self.serial * _OVERLAP_RATIO:.2f}s). The stdlib async "
             f"wrapper is silently falling back to the synchronous path.",
+        )
+
+
+class AsyncAgentConcurrencyTimingTests(unittest.TestCase):
+    """agent_call_async fan-out must overlap (ASYNC-MOD-002, #294).
+
+    Before the async agent builtin, `agent_call` was synchronous with no async
+    variant, so fanning N agent calls across coroutines ran serially on the single
+    cooperative scheduler thread. `agent_call_async` runs the handler on a daemon
+    thread and suspends the caller via the `_io_channels` pattern, so the fan-out
+    overlaps — verified here against a serial baseline measured on the same host.
+    """
+
+    _AGENT = "timing_agent"
+
+    @classmethod
+    def setUpClass(cls):
+        def _slow(payload):
+            time.sleep(_DELAY_S)
+            return {"ok": True}
+
+        register_agent(cls._AGENT, _slow, description="slow timing agent")
+        # Warmup + serial baseline: N sequential synchronous agent_call.
+        cls._time_source(f'let r = agent_call("{cls._AGENT}", {{}})')  # warmup
+        serial_src = "\n".join(
+            [f'let r{i} = agent_call("{cls._AGENT}", {{}})' for i in range(_N)]
+        )
+        cls.serial = cls._time_source(serial_src)
+
+    @classmethod
+    def tearDownClass(cls):
+        unregister_agent(cls._AGENT)
+
+    @staticmethod
+    def _time_source(src: str) -> float:
+        rt = NodusRuntime(timeout_ms=None, max_steps=None)
+        t0 = time.monotonic()
+        result = rt.run_source(src, filename="timing_agent.nd")
+        elapsed = time.monotonic() - t0
+        rt.shutdown()
+        assert result.get("ok"), f"script failed: {result.get('error')}"
+        return elapsed
+
+    def _fanout_src(self, call: str, imports: str = "") -> str:
+        lines = [f'let co{i} = coroutine(fn() {{ let r = {call} }})' for i in range(_N)]
+        lines += [f"spawn(co{i})" for i in range(_N)]
+        lines += ["run_loop()"]
+        return imports + "\n".join(lines)
+
+    def test_raw_agent_call_async_overlaps(self):
+        """Raw agent_call_async builtin fan-out overlaps (sanity + substrate)."""
+        concurrent = self._time_source(
+            self._fanout_src(f'agent_call_async("{self._AGENT}", {{}})')
+        )
+        self.assertLess(
+            concurrent,
+            self.serial * _OVERLAP_RATIO,
+            f"agent_call_async fan-out did not overlap: {concurrent:.2f}s vs serial "
+            f"baseline {self.serial:.2f}s (expected < {self.serial * _OVERLAP_RATIO:.2f}s). "
+            f"If this fails, the host may be too loaded to observe overlap.",
+        )
+
+    # closes: #294
+    def test_wrapper_agent_call_async_overlaps(self):
+        """Idiomatic agent.call_async fan-out must overlap (ASYNC-MOD-002, #294).
+
+        Regression guard: the module wrapper must propagate the async yield (same
+        in-VM dispatch fix as ASYNC-MOD-001) so the fan-out overlaps rather than
+        silently falling back to the synchronous path.
+        """
+        concurrent = self._time_source(
+            self._fanout_src(
+                f'agent.call_async("{self._AGENT}", {{}})',
+                imports='import "std:agent" as agent\n',
+            )
+        )
+        self.assertLess(
+            concurrent,
+            self.serial * _OVERLAP_RATIO,
+            f"agent.call_async fan-out did NOT overlap (ran serially): {concurrent:.2f}s "
+            f"vs serial baseline {self.serial:.2f}s (expected < {self.serial * _OVERLAP_RATIO:.2f}s). "
+            f"The stdlib async wrapper is silently falling back to the synchronous path.",
         )
 
 
