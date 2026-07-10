@@ -41,6 +41,15 @@
 
 ### Enhancements
 
+- **Workflow/goal dependency cycles are rejected before the scheduler runs (#323):**
+  A cyclic `after` graph (`step a after b` + `step b after a`) is now detected at
+  graph-build time — the moment `run_workflow`/`run_goal` constructs the graph —
+  instead of only after the scheduler drains with tasks stuck pending. The
+  `workflow_error` record is unchanged (same `Dependency cycle detected: …` message,
+  `cyclic_workflow` category, and cycle step list); only the timing moves earlier, so
+  a runnable sibling step no longer executes before the cycle is reported (fail-fast,
+  no partial execution). The post-drain check remains as a defensive backstop.
+
 - **Structured errors now carry a source snippet + caret:** Every error dict
   returned by the runner (`run_source`/`check_source`/`build_ast`/`disassemble_source`)
   — and therefore the CLI, the internal HTTP API, and the four agent tools

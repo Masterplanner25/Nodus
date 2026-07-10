@@ -540,6 +540,28 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     workflow_name = graph.metadata.get("workflow_name") if isinstance(graph.metadata, dict) else None
     execution_kind = graph.metadata.get("execution_kind") if isinstance(graph.metadata, dict) else None
     goal_name = graph.metadata.get("goal_name") if isinstance(graph.metadata, dict) else None
+
+    # ENH-323 (#323): reject dependency cycles up front, before the scheduler runs.
+    # A cyclic `after` graph used to be caught only after the run loop drained with
+    # tasks stuck pending (see the identical check further below, kept as a backstop).
+    # Detecting it here — the moment the graph is built — turns a late, post-stall
+    # failure into an immediate one, with the same workflow_error record.
+    _cycle_ids = _detect_cycle_task_ids(tasks, {})
+    if _cycle_ids:
+        _t2s_up = graph.metadata.get("task_to_step") if isinstance(graph.metadata, dict) else None
+        _t2s_up = _t2s_up if isinstance(_t2s_up, dict) else {}
+        _cycle_names = [_t2s_up.get(tid, tid) for tid in _cycle_ids]
+        _cycle_str = " -> ".join(_cycle_names + [_cycle_names[0]])
+        return vm.make_err(
+            "workflow_error",
+            f"Dependency cycle detected: {_cycle_str}",
+            payload={
+                "category": "cyclic_workflow",
+                "cycle": _cycle_names,
+                "workflow_name": workflow_name,
+            },
+        )
+
     workflow_state: dict | None = None
     checkpoints: list[dict] | None = None
     engine_checkpoints: list[dict] | None = None
