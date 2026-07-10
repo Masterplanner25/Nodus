@@ -71,3 +71,33 @@ run_workflow(tri)
 """
         result = _run_workflow(src)
         self.assertFalse(result["ok"], f"expected ok=False, got: {result}")
+
+    # closes: #323
+    def test_cycle_detected_before_scheduling_no_partial_execution(self):
+        """ENH-323: a dependency cycle is caught at graph-build time, before the
+        scheduler runs — so a runnable sibling step does NOT execute first.
+
+        Before the fix, detection happened only after the run loop drained, so
+        `runnable` (ready, no deps) ran and printed before the cycle was reported.
+        """
+        src = """
+workflow mixed {
+    step runnable {
+        print("RUNNABLE_RAN")
+        return 1
+    }
+    step a after b {
+        return 1
+    }
+    step b after a {
+        return 1
+    }
+}
+run_workflow(mixed)
+"""
+        result = _run_workflow(src)
+        self.assertFalse(result["ok"], f"expected ok=False, got: {result}")
+        self.assertNotIn(
+            "RUNNABLE_RAN", result.get("stdout", ""),
+            "cycle must be detected before any step runs (no partial execution)",
+        )
