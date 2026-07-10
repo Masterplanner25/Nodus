@@ -27,6 +27,7 @@ sys.path.insert(0, "C:/dev/Coding Language/src")
 
 from nodus.cli import cli as nodus_cli  # noqa: E402
 from nodus.orchestration import task_graph  # noqa: E402
+from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 from nodus.tooling.runner import resume_workflow, run_workflow_code  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
 from nodus_lang_workflow.store import LocalWorkflowStore  # noqa: E402
@@ -384,6 +385,51 @@ let r = run_workflow(build)
                 f"resume re-executed the top-level driver and created spurious "
                 f"graph(s): {spurious}",
             )
+
+    # closes: #328
+    def test_in_script_resume_preserves_caller_and_suppresses_rebuild_output(self):
+        """#328: `resume_workflow(...)` called from inside a .nd script must return
+        control to the script (the statement after it runs), and the rebuild's
+        re-execution of the module's top-level must not leak into the output.
+
+        Before the fix, the rebuild ran on the caller's own VM and `reset_program`
+        replaced the running script, so the post-resume statement never ran; the
+        rebuilt module's top-level prints also leaked into the resumed output.
+        """
+        wf = (
+            'workflow build {\n'
+            '    step first { checkpoint "cp"; return 1 }\n'
+            '    step second after first { return 2 }\n'
+            '}\n'
+            'let r = run_workflow(build)\n'
+            'print("DRIVER_top")\n'
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "build.nd")
+            with open(path, "w") as fh:
+                fh.write(wf)
+            with nodus_cli._project_root_context(td):
+                rt = NodusRuntime(timeout_ms=None, max_steps=None, project_root=td)
+                rt.run_file(path)
+                rt.shutdown()
+                graph_id = next(iter(self._graph_ids(td)))
+
+                # fresh-process simulation: drop the in-RAM graph so resume rebuilds
+                task_graph._GRAPH_REGISTRY.clear()
+                task_graph._GRAPH_VMS.clear()
+
+                resume_src = (
+                    f'let res = resume_workflow("{graph_id}", "cp")\n'
+                    'print("AFTER_RESUME")\n'
+                )
+                rt2 = NodusRuntime(timeout_ms=None, max_steps=None, project_root=td)
+                result = rt2.run_source(resume_src)
+                rt2.shutdown()
+
+            out = result.get("stdout", "")
+            self.assertTrue(result.get("ok"), result)
+            self.assertIn("AFTER_RESUME", out, "caller continuation was lost after resume_workflow")
+            self.assertNotIn("DRIVER_top", out, "rebuild's top-level output leaked into the resume")
 
 
 if __name__ == "__main__":

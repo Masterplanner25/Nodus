@@ -25,6 +25,13 @@ def register(vm, registry) -> None:
             print_trace(func_name, exc)
 
     def builtin_print(value):
+        # Silence output while a module is being re-executed purely to re-bind its
+        # definitions during resume-rebuild (#328): the rebuild re-runs pure
+        # top-level statements, whose prints are throwaway noise that must not leak
+        # into the resumed run. Scoped per-VM via the flag — never touches global
+        # sys.stdout. (run_workflow/run_goal are likewise skipped under this flag.)
+        if getattr(vm, "_suppress_flow_execution", False):
+            return None
         print(vm.value_to_string(value, quote_strings=False))
         return None
 

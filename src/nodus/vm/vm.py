@@ -1085,6 +1085,37 @@ class VM:
         )
         return step_plan
 
+    def _resume_target_vm(self, graph_id: str):
+        """Pick the VM a resume should run on (#328).
+
+        If the graph is still registered for THIS vm, resume reuses it in place —
+        no rebuild — so return self. Otherwise a rebuild is required, and the
+        rebuild `reset_program`s its execution target. If this vm is running its
+        own program (a `.nd` script that called `resume_workflow` and has more
+        statements to run), rebuilding on it would clobber that program and the
+        caller's continuation would be lost. In that case run the resume on a
+        dedicated child VM instead, inheriting host state (host functions, shared
+        memory, event bus, worker dispatcher) so the resumed steps still resolve.
+
+        A bare resume VM (e.g. the Python runner's ``VM([], {})``) has no program
+        to clobber, so it keeps using self — leaving the runner/CLI/HTTP paths
+        unchanged.
+        """
+        from nodus.orchestration.task_graph import get_registered_graph, get_registered_vm
+        graph = get_registered_graph(graph_id)
+        registered_vm = get_registered_vm(graph_id)
+        needs_rebuild = graph is None or (registered_vm is not None and registered_vm is not self)
+        if not needs_rebuild or not self.code:
+            return self
+        child = VM([], {}, code_locs=[], host_globals=self.host_globals,
+                   source_path=self.source_path, event_bus=self.event_bus)
+        child.memory_store = self.memory_store
+        if getattr(self, "worker_dispatcher", None) is not None:
+            child.worker_dispatcher = self.worker_dispatcher
+        for name, info in self.builtins.items():
+            child.builtins.setdefault(name, info)   # carry host builtins; core already bound to child
+        return child
+
     def builtin_resume_workflow(self, graph_id, checkpoint=None, resume_payload=None):
         if not isinstance(graph_id, str):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint) expects graph_id as string")
@@ -1100,13 +1131,14 @@ class VM:
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects checkpoint as string or nil")
         if resume_payload is not None and not isinstance(resume_payload, dict):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects payload as map or nil")
+        target = self._resume_target_vm(graph_id)
         from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().resume_workflow(
-            self,
+            target,
             graph_id,
             checkpoint,
             resume_payload=resume_payload,
-            rebuild_graph=self._rebuild_workflow_graph,
+            rebuild_graph=target._rebuild_workflow_graph,
         )
 
     def builtin_run_goal(self, goal):
@@ -1135,12 +1167,13 @@ class VM:
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects graph_id as string")
         if checkpoint is not None and not isinstance(checkpoint, str):
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
+        target = self._resume_target_vm(graph_id)
         from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
         return get_default_workflow_runner().resume_workflow(
-            self,
+            target,
             graph_id,
             checkpoint,
-            rebuild_graph=self._rebuild_workflow_graph,
+            rebuild_graph=target._rebuild_workflow_graph,
         )
 
     def _step_plan_from_graph(self, graph: TaskGraph, *, label: str) -> dict:
@@ -1206,6 +1239,12 @@ class VM:
             # self-invoking module does not spawn a spurious fresh graph and re-run
             # its steps. The flag rides on `self` (reset_program preserves it) and is
             # cleared in finally, so the actual resume run that follows is unaffected.
+            # While `_suppress_flow_execution` is set, run_workflow/run_goal are
+            # skipped (above) and `print` is a no-op (see builtin_print) — so the
+            # rebuild's re-run of pure top-level statements (e.g. a
+            # `print("init: \(r["steps"])")` after the driver) is silent and does not
+            # leak into the resumed run's output (#328 facet 2). The real resume run
+            # happens after this returns, with the flag cleared, and prints normally.
             _prev_suppress = getattr(self, "_suppress_flow_execution", False)
             self._suppress_flow_execution = True
             try:

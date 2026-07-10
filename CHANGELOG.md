@@ -87,9 +87,17 @@
   so top-level code reading the result doesn't crash), so resume reuses the original
   graph and resumes from the checkpoint correctly. Verified across the runner/CLI/HTTP
   resume paths; regression test in `tests/test_checkpoints.py` asserts no spurious
-  graph is created on resume. (The in-script `resume_workflow` builtin's mid-script
-  continuation — the rebuild `reset_program`s the caller's VM — is tracked as a
-  follow-up in #328.)
+  graph is created on resume.
+
+- **In-script `resume_workflow` no longer clobbers the calling script (#328):**
+  The rebuild `reset_program`s its execution target, so calling `resume_workflow(…)`
+  from inside a running `.nd` script used to replace that script's program — the
+  statement after `resume_workflow(…)` never ran, and the rebuilt module's top-level
+  output leaked into the resumed run. When a rebuild is required and the caller is
+  running its own program, the resume now executes on a **dedicated child VM**
+  (inheriting host functions, shared memory, event bus, and worker dispatcher), and
+  the rebuild's throwaway stdout is suppressed. The graph-reuse path and the
+  runner/CLI/HTTP paths (bare resume VM — nothing to clobber) are unchanged.
 
 - **`nodus fmt` no longer corrupts `\r` / `\0` string escapes (#310):** The
   formatter decoded string-literal escapes and re-emitted only `\\`, `\n`, `\t`,
