@@ -126,22 +126,20 @@ describe the workaround patterns used until these are fixed.
   deliberately **kept** — they correctly keep `run_closure`/graph contexts sync.
   GitHub: #100 (EMBED-004 parent), #105 (ASYNC-MOD-001).
 
-- **ASYNC-MOD-002** (open, severity: medium, GitHub: #294): No async agent builtin.
-  `agent_call` is sync-only (`src/nodus/vm/vm.py:264` — `BuiltinInfo("agent_call", 2,
-  self.builtin_agent_call)`); there is no `agent_call_async` / `agent_async` / `llm_async`
-  counterpart, and `std:agent` (`src/nodus/stdlib/agent.nd`) exposes only `call`.
-  Consequence: agent fan-out (`fan_out`/`parallel` over `agent.call`) runs **serially**
-  even after ASYNC-MOD-001 (#105/#290) fixed the module-wrapper async path — because the
-  call has no async (daemon-thread + `_io_channels`) path to take in the first place. The
-  ASYNC-MOD-001 fix only helps builtins that *have* an async variant (`http_*_async`,
-  `subprocess_run_async`). Today the only way to overlap agent work is to route it through
-  an already-async transport (`http.post_async` to the model/agent host, or
-  `subprocess.run_async`). Fix direction: add `agent_call_async` as a thread-backed builtin
-  on the same `_io_channels` pattern as `http_*_async` (EMBED-004), suspending the caller
-  via a `ChannelRecvRequest` yield so it overlaps under the scheduler; expose it as
-  `agent.call_async` in `std:agent`, and ensure it is reachable through the module wrapper
-  (must satisfy the ASYNC-MOD-001 guard / `_try_enter_module_call`), not just the direct
-  builtin. Regression test belongs alongside `tests/test_async_concurrency_timing.py`.
+- **ASYNC-MOD-002** (FIXED, GitHub: #294): Added the async agent builtin
+  `agent_call_async` (`src/nodus/vm/vm.py` — `builtin_agent_call_async`), exposed as
+  `agent.call_async` in `std:agent` (`src/nodus/stdlib/agent.nd`). It runs the agent
+  handler on a daemon thread and suspends the caller via the same
+  daemon-thread + `_io_channels` + `ChannelRecvRequest` pattern as `http_*_async` /
+  `subprocess_run_async` (EMBED-004), so agent fan-out under `spawn()` now genuinely
+  overlaps instead of serializing. It falls back to synchronous `call_agent` when not
+  running inside the scheduler's own coroutine (same `current_task` guard as
+  `_do_async_run`), and the module-wrapper path propagates the yield via the
+  ASYNC-MOD-001 in-VM dispatch. Regression tests: `AsyncAgentConcurrencyTimingTests`
+  in `tests/test_async_concurrency_timing.py` (raw builtin + `agent.call_async`
+  wrapper both overlap vs a serial baseline). Before this, the only way to overlap
+  agent work was to route it through an already-async transport (`http.post_async` /
+  `subprocess.run_async`).
 
 - **ASYNC-CAP-001** (open, severity: low, GitHub: #295): Async fan-out concurrency is
   capped well short of N× on the **raw direct-builtin** path. Measured (6 × 300ms

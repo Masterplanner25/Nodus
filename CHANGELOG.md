@@ -41,6 +41,17 @@
 
 ### Enhancements
 
+- **Async agent calls — `agent_call_async` / `agent.call_async` (#294):** New async
+  variant of `agent_call` that runs the agent handler on a daemon thread and suspends
+  the calling coroutine until it completes (the same thread + `_io_channels` +
+  `ChannelRecvRequest` pattern as `http_*_async` / `subprocess_run_async`). Fanning
+  agent calls out under `spawn()` now genuinely **overlaps** instead of serializing on
+  the single cooperative scheduler thread — closing ASYNC-MOD-002. It falls back to the
+  synchronous path when not called from inside a scheduler coroutine, and the
+  `std:agent` module wrapper propagates the async yield (ASYNC-MOD-001). Timing
+  regression tests added alongside the HTTP ones in
+  `tests/test_async_concurrency_timing.py`.
+
 - **Workflow/goal dependency cycles are rejected before the scheduler runs (#323):**
   A cyclic `after` graph (`step a after b` + `step b after a`) is now detected at
   graph-build time — the moment `run_workflow`/`run_goal` constructs the graph —

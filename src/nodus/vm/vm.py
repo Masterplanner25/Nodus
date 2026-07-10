@@ -262,6 +262,7 @@ class VM:
             "syscall": BuiltinInfo("syscall", 2, self.builtin_syscall),
             "syscall_list": BuiltinInfo("syscall_list", 0, self.builtin_syscall_list),
             "agent_call": BuiltinInfo("agent_call", 2, self.builtin_agent_call),
+            "agent_call_async": BuiltinInfo("agent_call_async", 2, self.builtin_agent_call_async),
             "agent_available": BuiltinInfo("agent_available", 0, self.builtin_agent_available),
             "agent_describe": BuiltinInfo("agent_describe", 1, self.builtin_agent_describe),
             "__action_tool": BuiltinInfo("__action_tool", 2, self.builtin_action_tool),
@@ -1442,6 +1443,43 @@ class VM:
 
     def builtin_agent_call(self, name, payload):
         return call_agent(name, payload, vm=self)
+
+    def builtin_agent_call_async(self, name, payload):
+        """Async variant of agent_call (#294).
+
+        Runs the agent handler on a daemon thread and suspends the calling
+        coroutine until it completes, so concurrent agent calls under ``spawn()``
+        overlap instead of serializing on the single scheduler thread. Mirrors the
+        thread + ``_io_channels`` pattern of ``subprocess_run_async`` /
+        ``http_*_async``.
+
+        Falls back to the synchronous ``call_agent`` when not running inside the
+        scheduler's own coroutine (module-function or graph contexts drive the VM
+        through ``run_closure``/``execute``, which cannot yield — same guard as
+        ``_do_async_run``).
+        """
+        scheduler = getattr(self, "scheduler", None)
+        coroutine = getattr(self, "current_coroutine", None)
+        if (scheduler is None or coroutine is None or
+                coroutine is not getattr(scheduler, "current_task", None)):
+            return call_agent(name, payload, vm=self)
+
+        result_ch = Channel()
+
+        def _worker() -> None:
+            result_ch.queue.append(call_agent(name, payload, vm=self))
+            result_ch.closed = True
+
+        threading.Thread(target=_worker, daemon=True).start()
+        scheduler._io_channels.append(result_ch)
+
+        coroutine.state = "suspended"
+        coroutine.blocked_on = result_ch
+        coroutine.blocked_reason = "agent_async"
+        self.stack.append(None)
+        self.save_current_coroutine_state(self.ip + 1)
+        result_ch.waiting_receivers.append(coroutine)
+        return ChannelRecvRequest(result_ch)
 
     def builtin_action_tool(self, name, args):
         return self._run_goal_action("tool", name, lambda: self.builtin_tool_call(name, args))

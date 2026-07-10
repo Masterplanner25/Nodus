@@ -2,6 +2,10 @@ fn call(name, payload) {
     return agent_call(name, payload)
 }
 
+fn call_async(name, payload) {
+    return agent_call_async(name, payload)
+}
+
 fn available() {
     return agent_available()
 }
