@@ -2,7 +2,7 @@
 
 ## What Nodus Is
 
-An orchestration DSL and embedded runtime for building agentic systems. Nodus gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, goals, and MCP-compatible tool registries are first-class constructs, not library conventions.
+An orchestration DSL and embedded runtime for building agentic systems. Nodus gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, goals, and namespaced tool registries are language-level constructs, not library conventions. The tool registry is MCP-shaped and bridged to the MCP protocol by the `nodus-mcp` companion package.
 
 ## Who It Is For
 
@@ -45,7 +45,7 @@ The scheduler is cooperative: coroutines yield explicitly, enabling deterministi
 - workflow and goal DSL (lowered to task graphs)
 
 **AI-native standard library (v4.0)**
-- `std:tool` — register and dispatch tools; MCP-compatible namespaced registry
+- `std:tool` — register and dispatch tools; MCP-shaped namespaced registry (wire protocol via `nodus-mcp`)
 - `std:identity` — trace_id, session_id, execution_unit_id propagated automatically
 - `std:effects` — EXACTLY_ONCE idempotency for retryable operations
 - `std:sys` — versioned syscall dispatch with uniform response envelope

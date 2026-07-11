@@ -1,6 +1,6 @@
 # Nodus Architecture
 
-Nodus is an orchestration DSL and embedded runtime implemented in Python. Its execution model supports coroutines, task graphs, workflows, goals, and MCP-compatible tool dispatch as first-class language constructs.
+Nodus is an orchestration DSL and embedded runtime implemented in Python. Its execution model supports coroutines, task graphs, workflows, goals, and namespaced tool dispatch as language-level constructs. The tool registry is MCP-shaped and bridged to the MCP wire protocol by the `nodus-mcp` companion package; the core language ships no MCP protocol code.
 
 The architecture is split into two layers:
 
@@ -192,7 +192,7 @@ See `/nodus-dap-evaluate` skill for the implementation plan.
 The runtime exposes builtins and adapters for:
 
 **Core services**
-- tools (`tool_call`, `tool_available`, `tool_describe`) — MCP-compatible namespaced tool registry
+- tools (`tool_call`, `tool_available`, `tool_describe`) — MCP-shaped namespaced tool registry (wire protocol via `nodus-mcp`)
 - agents (`agent_call`, `agent_available`, `agent_describe`)
 - memory (`memory_get`, `memory_put`, `memory_delete`, `memory_keys`)
 - events (`emit`, runtime event bus)
