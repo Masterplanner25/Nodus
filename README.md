@@ -13,9 +13,9 @@ nodus run
 nodus repl
 ```
 
-Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. It implements the **Infinity Algorithm**'s execution model as a first-class language construct. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are first-class constructs rather than library conventions layered over Python.
+Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are language-level constructs rather than library conventions layered over Python.
 
-If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A, Nodus is the execution layer.
+If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A (through the `nodus-mcp` and `nodus-a2a` companion packages — the core language ships neither protocol), Nodus is the execution layer.
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
@@ -130,7 +130,7 @@ The full standard library ships with Nodus — no extra installs required for co
 
 | Module | What it does |
 |---|---|
-| `std:tool` | Register and dispatch tools — MCP-compatible namespaced registry |
+| `std:tool` | Register and dispatch tools in a namespaced local registry; MCP-shaped, bridged to the wire protocol by the `nodus-mcp` companion package |
 | `std:identity` | `trace_id()`, `session_id()`, `execution_unit_id()` — propagated automatically |
 | `std:effects` | EXACTLY_ONCE idempotency — `resolve`, `pending`, `complete`, `action_id` |
 | `std:sys` | Versioned syscall dispatch — uniform `{status, data, error, trace_id}` response shape |
@@ -187,8 +187,9 @@ deeper material in reference files for on-demand loading.
 
 Nodus is created and maintained by **Shawn Knight** as part of the
 [Masterplan Infinite Weave](https://www.the-master-plan.com/) — an AI-native execution
-framework built on the Infinity Algorithm. Nodus is the runtime layer that makes the
-Infinity Algorithm's orchestration constructs executable as a first-class language.
+framework built on the Infinity Algorithm. Nodus is the runtime layer whose execution
+model embodies the Infinity Algorithm's orchestration structure (see
+[Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md)).
 
 **From the creator's writing:**
 - [Why I'm Building A.I.N.D.Y. (Or Any Tool, Really)](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-why-im-building-a-i-n-d-y-or-any-tool-really-a138f7860fba) — the strategic context behind Nodus

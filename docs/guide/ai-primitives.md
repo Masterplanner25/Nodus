@@ -9,8 +9,9 @@ install required.
 
 ## std:tool — Tool Registry
 
-Registers callable functions as tools discoverable by agents, with MCP-compatible
-namespaced naming.
+Registers callable functions as tools discoverable by agents, with MCP-shaped
+namespaced naming. The registry is local to the runtime; the `nodus-mcp` companion
+package bridges these registrations to the MCP wire protocol.
 
 ```nd
 import "std:tool" as tool
