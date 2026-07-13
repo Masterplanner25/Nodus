@@ -650,7 +650,9 @@ rt = NodusRuntime(timeout_ms=None, max_steps=None)
 
 ## Published ecosystem — current state (as of 2026-06-20)
 
-All packages are live. PyPI rate limit is 2-3 new uploads per session; wait ~1 hour between sessions.
+All packages are live. PyPI rate limits apply to **new project creation** (~a few
+per hour), not to version uploads on existing projects — republishing new versions
+of already-published packages is not session-limited.
 
 **nodus-lang:** v4.0.8 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
