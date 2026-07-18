@@ -9,6 +9,7 @@ venv/
 cleanenv/
 .release-venv/
 .release-smoke/
+.venv-validation/
 
 # Test cache
 .pytest_cache/
