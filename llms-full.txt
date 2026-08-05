@@ -22,7 +22,7 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
-**Current version:** v4.0.8 — published to PyPI 2026-06-25. Install: `pip install nodus-lang`. Full 29-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
+**Current version:** v4.1.1 — published to PyPI 2026-08-05. Install: `pip install nodus-lang`. Full 32-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
 
 ---
 
@@ -77,6 +77,10 @@ These assets exist because general-purpose coding agents frequently miss the sam
 - `while (cond) { }`
 - `for (init; cond; inc) { }`
 - `for name in iterable { }`
+- `break` / `continue` (v4.1.0+) — all loop forms; compile-time error outside a loop
+  or when crossing a `try`/`catch`/`finally` boundary
+- `match scrutinee { pattern => body, _ => body }` (v4.1.0+) — an expression; arms
+  compare with `==`, first match wins, `_` catch-all must be last; no binding patterns
 - `try { } catch var { } finally { }`
 - `throw expr`
 - `return expr`
@@ -100,13 +104,14 @@ All modules import via `import "std:module" as alias`.
 - **std:subprocess** — `sp.run(argv)`, `sp.shell(cmd)`, `sp.spawn(argv)` with async variants [Experimental]
 
 ### Data
-- **std:math** — arithmetic, trig, `math_idiv(a,b)` (int division), `math_is_int()`, `math_is_float()`
-- **std:string** (accessed via builtins) — `str_upper`, `str_lower`, `str_split`, `str_contains`, `str_replace`, `str_trim`
+- **std:math** — `abs`, `min`, `max`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `log`, `random`, `idiv` (int division), `to_int`/`to_float`/`parse_int`, `is_int`/`is_float`/`is_nan`/`is_inf`, `bit_and`/`bit_or`/`bit_xor`/`bit_not`/`bit_lshift`/`bit_rshift`. No trig functions.
+- **std:strings** — `upper`, `lower`, `trim`, `split`, `join`, `contains`, `starts_with`, `ends_with`, `replace`, `repeat`, `is_blank`. Note the plural: `import "std:string"` fails.
+- **std:collections** — `map`, `filter`, `reduce`, `push`, `pop`, `first`, `last`, `has_key`, `len`
 - **std:encoding** — base64, URL encode/decode [Experimental]
 - **std:hash** — `hash.sha256(data).to_hex()`, `hash.sha512(data).to_hex()` — returns record with `.to_hex()` [Experimental]
 
 ### System
-- **std:time** — `time.now_ms()`, `time.sleep(ms)`, UTC offset, timestamps [Experimental]
+- **std:time** — `time.now()`, `time.from_epoch_ms(ms)`, `time.to_epoch_ms(t)`, `time.format`/`time.parse`, ISO-8601 and HTTP-date helpers, duration and calendar arithmetic [Experimental]. There is no `time.now_ms()`; `sleep(ms)` lives in `std:async`, not here.
 - **std:secrets** — cryptographic random tokens [Experimental]
 - **std:env** — environment variable access [Experimental]
 

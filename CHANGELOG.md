@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-08-05
+
+### Fixes
+
+- **ASYNC-MOD-003 (#339): closures passed to a module function inside a container
+  ran against the wrong bytecode.** A module function is dispatched in a detached
+  VM whose `code` is the module's. `invoke_function` wrapped top-level `Closure`
+  arguments in a `_ClosureProxy` so they dispatch back through the caller — but a
+  closure nested inside a **list, map, or record** was never wrapped, so its
+  `fn.addr` (an index into the *caller's* bytecode) was executed against the
+  *module's* instructions. Under the CLI this raised `Stack underflow` or
+  `'NoneType' object is not subscriptable`; under `NodusRuntime` it was worse — the
+  task body silently never ran and `ok` was still `True`.
+
+  This broke every library, not just the stdlib: any `.nd` module taking a list of
+  callbacks was affected (`fn call_nested(fns) { return fns[0]() }` → `Stack
+  underflow`).
+
+  The fix identifies a foreign closure by `FunctionInfo` identity against the
+  module's own `functions` table (which includes mangled anonymous entries such as
+  `__anon_1__fn2`) and routes it back through the caller VM at three points:
+  `CALL_VALUE` dispatch, `coroutine()` creation, and `spawn()`. Coroutines now pin
+  the context their closure was compiled against at creation time rather than
+  inheriting the spawning VM's.
+
+  `std:async.parallel` and `std:async.series` work as documented as a result,
+  including with pre-built coroutines and with tasks that `sleep()` — a sleeping
+  task suspends and the others continue, rather than blocking. Regression tests:
+  `tests/test_async_module_boundary.py` (12 tests, CLI **and** embedded for each
+  behavior, since the two modes failed differently).
+
+  `_caller_vm` is now initialized in `VM.__init__` so the `CALL_VALUE` hot path is
+  a plain attribute read; without that, the added check cost ~1s of CLI startup.
+
+### Known bugs
+
+- **`std:async.worker_pool` and `std:async.pipeline` are still broken**
+  ([issue 339](https://github.com/Masterplanner25/Nodus/issues/339) remains open for
+  these two). Both spawn coroutines inside the module and return a channel for the
+  caller to drive; those coroutines land on the detached VM's own scheduler, which
+  nothing runs, so work is silently dropped. Sharing the caller's scheduler is not
+  sufficient — builtins close over the VM that registered them, so resuming a
+  module coroutine on the caller VM installs the wrong builtins. Fixing it needs
+  VM-agnostic builtins, tracked with the design gap in
+  [issue 157](https://github.com/Masterplanner25/Nodus/issues/157). The guide
+  documents an inline workaround.
+
+### Documentation
+
+- **Doc sweep against the shipped 4.1.0 surface.** Re-pointed every `4.0.8` version
+  claim (README, `llms.txt`, `llms-full.txt`, `CLAUDE.md`, the Claude and Codex
+  skills) and reconciled the companion-package count, which read 29 / 33 / 35 in
+  different files, against PyPI: **32 companion packages, 33 projects including
+  `nodus-lang`**.
+- **Corrected stdlib documentation errors:** `std:string` → `std:strings` (the
+  singular form does not exist); `std:time` no longer documented as having
+  `now_ms()` or `sleep()` (the latter is in `std:async`); `std:math` no longer
+  claimed to provide trig functions; `std:async` signatures corrected
+  (`queue()` takes no arguments, `worker_pool(worker, count)`, `parallel`/`series`
+  return nil rather than a list of results).
+- **`break`, `continue`, and `match` documented in the AI-assistant assets.** Both
+  skills still stated "No `break` or `continue`" and the Claude skill's operator
+  table contradicted itself on `+=`. README, `llms-full.txt`, and both skills now
+  cover the 4.1.0 control-flow surface, including the two compile-time errors
+  (`'break' outside a loop`, `'break' cannot cross a try/catch/finally boundary`).
+- **README:** added the missing stdlib modules (`std:collections`, `std:path`,
+  `std:env`, `std:utils`, `std:runtime`, `std:async`, `std:tools`/`std:agent`),
+  documented the `[http]`/`[schema]`/`[retry]` extras alongside `[server]`, noted
+  that `std:http` requires the `[http]` extra, and linked the user guide,
+  standard-library reference, embedding guide, and ecosystem guide.
+- **`llms.txt`:** removed a link to `docs/guide/build-a-library.md`, a page that was
+  never written and had been advertised to AI crawlers since the discoverability
+  commit.
+- **`docs/guide/ecosystem.md`:** added the missing `nodus-jupyter` and
+  `nodus-mcp-server` entries.
+- **`.nodusgate-allow`:** re-pointed 8 line-number suppressions whose blocks moved.
+  Gate verified green afterward (static 132/132, runtime 229/229).
+
 ## [4.1.0] - 2026-07-10
 
 ### Language

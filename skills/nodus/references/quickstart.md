@@ -13,6 +13,10 @@ Nodus is a workflow and orchestration language. Prefer workflows, step results, 
 - `json.parse()` returns a map.
 - Bare numeric literals are floats. Use `42i` for ints.
 - `+=`, `-=`, `*=`, `/=` work (v4.0.1+). `**` does not — use `math.pow()`.
+- `break` and `continue` work in all loop forms (v4.1.0+), but are a compile-time
+  error outside a loop or when they would cross a `try`/`catch`/`finally` boundary.
+- `match` is an expression for value dispatch (v4.1.0+). Arms compare with `==`,
+  first match wins, `_` is the catch-all and must be last. No binding patterns.
 - `print()` takes one argument only.
 - Imports must be top-level.
 - Expressions do not continue across newlines.
@@ -31,6 +35,24 @@ let inc = fn() {
 }
 inc()
 print("count: \(state["count"])")
+```
+
+```nd
+fn classify(kind) {
+    return match kind {
+        "num" => "number",
+        "bin" => "binary",
+        _ => "unknown",
+    }
+}
+
+let i = 0i
+while (i < 6i) {
+    i += 1i
+    if (i == 2i) { continue }
+    if (i == 5i) { break }
+    print(classify("bin"))
+}
 ```
 
 ```nd

@@ -1,11 +1,14 @@
 # Nodus Ecosystem
 
 `nodus-lang` is the core language and runtime. The surrounding ecosystem is
-**35 standalone Python packages** that extend it for specific domains: MCP
+**32 standalone Python packages** that extend it for specific domains: MCP
 integration, agent coordination, memory, observability, circuit breaking, auth,
 queuing, SQL persistence, and more.
 
-All packages are at `github.com/Masterplanner25` and published on PyPI.
+All packages are at `github.com/Masterplanner25` and published on PyPI — 33
+projects counting `nodus-lang` itself. Two further artifacts ship outside PyPI:
+the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=MasterplanInfiniteWeave.nodus-lang)
+and the [`nodus-run` GitHub Action](https://github.com/Masterplanner25/nodus-run-action).
 
 ---
 
@@ -158,6 +161,13 @@ with `NodusRuntime` or work standalone.
 | `nodus-context` | ContextBudget, ContextWindow (add/compact/guard_tool_results) |
 | `nodus-router` | RouteBinding, RoutingTable, RouteResolver |
 | `nodus-llm` | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff) |
+
+### Developer Tooling
+
+| Package | What it does |
+|---------|-------------|
+| `nodus-jupyter` | Jupyter kernel for `.nd` files — JupyterLab, Notebook, VS Code notebooks. Install: `pip install nodus-jupyter && python -m nodus_jupyter install` |
+| `nodus-mcp-server` | Standalone MCP server exposing Nodus to Claude Desktop (stdio) and ChatGPT Desktop (HTTP/SSE). Six tools: run_goal, run_workflow, resume_workflow, store_memory, recall, list_graphs. Install: `pipx install nodus-mcp-server` |
 
 ---
 

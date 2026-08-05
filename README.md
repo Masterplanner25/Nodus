@@ -4,7 +4,11 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.0.8 stable on PyPI** — `pip install nodus-lang` · Full 33-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v4.1.1 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+
+**Recent:** 4.1.0 added `match` expressions for value dispatch and `break` / `continue`
+in every loop form; 4.1.1 fixes closures passed to a module function inside a list, map,
+or record. See the [changelog](CHANGELOG.md).
 
 ```bash
 pip install nodus-lang
@@ -19,9 +23,16 @@ If you're building multi-step AI agents, embedding a scripting layer in a Python
 
 For a machine-readable project index see [llms.txt](llms.txt).
 
-The Nodus ecosystem spans **33 standalone packages**, all available at
+Beyond the core language, the Nodus ecosystem spans **32 standalone companion packages**
+published on PyPI (33 projects counting `nodus-lang` itself), all with source at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
-story: `pip install nodus-sdk[agent,sql,fastapi]`.
+story: `pip install nodus-sdk[agent,sql,fastapi]`. See the
+[ecosystem guide](docs/guide/ecosystem.md) for the package-by-package breakdown.
+
+Editor and CI integrations ship separately: the
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=MasterplanInfiniteWeave.nodus-lang)
+(syntax, LSP, debugger), the [Jupyter kernel](https://pypi.org/project/nodus-jupyter/),
+and the [`nodus-run` GitHub Action](https://github.com/Masterplanner25/nodus-run-action).
 
 ## Install
 
@@ -31,11 +42,16 @@ Requires **Python 3.10+**.
 pip install nodus-lang
 ```
 
-For the optional FastAPI/Uvicorn server stack:
+Optional extras:
 
 ```bash
-pip install "nodus-lang[server]"
+pip install "nodus-lang[server]"   # FastAPI + Uvicorn — nodus serve
+pip install "nodus-lang[http]"     # httpx — std:http
+pip install "nodus-lang[schema]"   # pydantic — syscall/extension schema validation
+pip install "nodus-lang[retry]"    # nodus-retry — durable effect store for std:retry
 ```
+
+Without `[retry]`, `std:retry` falls back to the built-in in-memory effect store.
 
 ## Quick Start
 
@@ -82,12 +98,18 @@ When you provide a file path, Nodus runs only that file. When you run `nodus run
 ## Common Commands
 
 - `nodus --version`
-- `nodus run hello.nd`
-- `nodus run`
-- `nodus repl`
-- `nodus check hello.nd`
-- `nodus check`
-- `nodus fmt hello.nd`
+- `nodus run hello.nd` / `nodus run` — run a file, or the current project's entry point
+- `nodus check hello.nd` / `nodus check` — validate syntax and imports without executing
+- `nodus fmt hello.nd` — format in place
+- `nodus test` — run `*_test.nd` / `test_*.nd` files
+- `nodus repl` — interactive shell
+- `nodus status` — show the project and entry point for the current directory
+- `nodus stability` — show which language surfaces are stable vs experimental
+
+`nodus --help` lists the rest: project and dependency management (`init`, `add`,
+`install`, `deps`), inspection (`ast`, `dis`, `debug`, `profile`), orchestration
+(`workflow`, `goal-run`, `graph run`), the HTTP server (`serve`, `worker`), and the
+LSP/DAP servers (`lsp`, `dap`) used by the editor integrations.
 
 ## Standard Library
 
@@ -99,38 +121,55 @@ let r = http.get("https://api.example.com/data")
 print(r.body)
 ```
 
-The full standard library ships with Nodus — no extra installs required for core modules:
+The standard library ships with Nodus — no extra installs for core modules (`std:http` is
+the one exception; it needs the `[http]` extra above). Full reference:
+[Standard Library guide](docs/guide/standard-library.md).
 
-**Networking and I/O**
+**Networking, processes, and the filesystem**
 
 | Module | What it does |
 |---|---|
-| `std:http` | HTTP client — GET, POST, PUT, DELETE, PATCH; async variants; SSE streaming |
+| `std:http` | HTTP client — GET, POST, PUT, DELETE, PATCH; async variants; SSE streaming (requires `nodus-lang[http]`) |
 | `std:subprocess` | Run processes — `sp.run(argv)`, `sp.spawn(argv)` for async + channel output |
-| `std:fs` | Filesystem — read, write, append, exists, listdir, mkdir |
+| `std:fs` | Filesystem — read, write, append, exists, listdir, ensure_dir |
+| `std:path` | Path manipulation — `join`, `dirname`, `basename`, `ext`, `stem`, `relative`, `absolute` |
+| `std:env` | Environment variables — `get`, `get_or`, `set`, `unset`, `has`, `list_keys` |
 
 **Data and encoding**
 
 | Module | What it does |
 |---|---|
 | `std:json` | `json.parse(str)` / `json.stringify(val)` |
-| `std:math` | Arithmetic, trig, rounding, min/max |
-| `std:string` | Split, join, trim, replace, starts_with, ends_with, case conversion |
-| `std:encoding` | Base64 encode/decode, URL encode/decode |
-| `std:hash` | SHA-256 / SHA-512 for data and files — returns record with `.to_hex()` |
+| `std:math` | Arithmetic, rounding, min/max, `random`, numeric parsing |
+| `std:strings` | Split, join, trim, replace, contains, repeat, case conversion |
+| `std:collections` | `map`, `filter`, `reduce`, `push`, `pop`, `first`, `last`, `has_key` |
+| `std:encoding` | Base64, hex, and URL encode/decode |
+| `std:hash` | SHA-256 / SHA-512 / BLAKE2b, HMAC — returns a record; call `.to_hex()` |
+| `std:utils` | `clamp`, `coalesce`, `get` — small helpers |
 
 **Time and system**
 
 | Module | What it does |
 |---|---|
-| `std:time` | `now_ms()`, `sleep(ms)`, UTC offset, format/parse timestamps |
+| `std:time` | `now()`, `from_epoch_ms(ms)`, format/parse timestamps, duration helpers |
 | `std:secrets` | Cryptographic random tokens and bytes |
+| `std:runtime` | Introspection — `typeof`, `fields`, `fn_arity`, `stack_depth`, `tasks`, `scheduler` |
+
+**Concurrency (experimental)**
+
+| Module | What it does |
+|---|---|
+| `std:async` | `sleep(ms)`, `parallel(tasks)`, `series(tasks)`, `worker_pool(worker, count)`, `pipeline(stages)` |
+
+`channel()`, `send()`, `recv()`, `close()`, `spawn()`, and `coroutine()` are VM
+built-ins — always available, no import needed.
 
 **AI-native orchestration (v4.0)**
 
 | Module | What it does |
 |---|---|
 | `std:tool` | Register and dispatch tools in a namespaced local registry; MCP-shaped, bridged to the wire protocol by the `nodus-mcp` companion package |
+| `std:tools` / `std:agent` | Call tools and agents registered by the embedding host — `execute`/`call`, `available`, `describe` |
 | `std:identity` | `trace_id()`, `session_id()`, `execution_unit_id()` — propagated automatically |
 | `std:effects` | EXACTLY_ONCE idempotency — `resolve`, `pending`, `complete`, `action_id` |
 | `std:sys` | Versioned syscall dispatch — uniform `{status, data, error, trace_id}` response shape |
@@ -146,7 +185,9 @@ The full standard library ships with Nodus — no extra installs required for co
 
 ## Documentation
 
+- [User Guide](docs/guide/getting-started.md) — task-oriented walkthroughs; index in §7
 - [Language Specification](docs/language/LANGUAGE_SPEC.md) — full syntax, types, control flow, imports, coroutines
+- [Embedding Nodus](docs/guide/embedding-nodus.md) — `NodusRuntime` from Python, sandboxing, limits
 - [Ecosystem Specs](docs/ecosystem/README.md) - implementation specs for proposed Nodus libraries and frameworks
 - [Architecture](docs/runtime/ARCHITECTURE.md) — runtime pipeline and module system
 - [Changelog](CHANGELOG.md) — version history
@@ -166,7 +207,8 @@ that teaches Claude the idioms, gotchas, and workflow patterns specific to Nodus
 
 The skill covers: record vs map distinction, the closure outer-let pattern, `spawn()` coroutine
 wrapping, workflow result bracket notation, NodusRuntime embedding defaults (timeout_ms=None,
-allowed_paths=CWD since v4.0.1), all 19 stdlib modules, and 15 verified complete example programs.
+allowed_paths=CWD since v4.0.1), the stdlib module surface, and 15 verified complete example
+programs.
 
 ## Using with Codex
 

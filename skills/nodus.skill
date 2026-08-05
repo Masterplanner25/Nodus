@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "4.0.8"
+version: "4.1.1"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Bytecode version is 4. Package version is 4.0.8.** Installed via `pip install nodus-lang`.
+**Bytecode version is 4. Package version is 4.1.1.** Installed via `pip install nodus-lang`.
 
 ---
 
@@ -207,7 +207,7 @@ contributor to Nodus's knowledge base.
 
 # Nodus v4 Syntax Reference
 
-All examples in this file are verified against nodus-lang 4.0.8.
+All examples in this file are verified against nodus-lang 4.1.1.
 
 ---
 
@@ -354,7 +354,7 @@ if (x > 0) {
 let i = 0i
 while (i < 5i) {
     print(i)
-    i = i + 1i     // no +=
+    i += 1i        // compound assignment works (v4.0.1+)
 }
 
 // for-in (lists and maps)
@@ -362,8 +362,49 @@ for item in ["a", "b", "c"] { print(item) }
 for key in {"x": 1, "y": 2} { print(key) }
 ```
 
-**No `break` or `continue`.** Design loops to avoid needing them, or use
-early return from a function.
+**`break` and `continue` work in every loop form (v4.1.0+).** `break` exits the
+innermost loop; `continue` skips to the next iteration — and in a C-style `for`,
+`continue` still runs the increment (C semantics).
+
+```nd
+let i = 0i
+while (i < 6i) {
+    i += 1i
+    if (i == 2i) { continue }   // skip 2
+    if (i == 5i) { break }      // stop before 5
+    print(i)                    // -> 1, 3, 4
+}
+```
+
+Two compile-time errors to know:
+
+- `break`/`continue` outside a loop → `'break' outside a loop`.
+- `break`/`continue` that would jump out across a `try`/`catch`/`finally`
+  boundary → `'break' cannot cross a try/catch/finally boundary`. A loop wholly
+  *inside* a `try` is fine; it is escaping the handler that is rejected.
+
+### `match` — value dispatch (v4.1.0+)
+
+`match` is an **expression**, so it works as a `let` RHS, a `return` value, a call
+argument, or nested in another `match`. Arms compare with `==`, first match wins;
+`_` is the catch-all and must be last. No destructuring or binding patterns yet —
+value matching only. A scrutinee matching no arm with no `_` raises at runtime.
+
+```nd
+fn classify(kind) {
+    return match kind {
+        "num" => "number",
+        "bin" => "binary",
+        _ => "unknown",
+    }
+}
+print(classify("bin"))   // -> binary
+print(classify("zzz"))   // -> unknown
+```
+
+An arm body is an expression, a `{ … }` block (its final expression is the arm's
+value), or a bare `throw`/`return`. Prefer `match` over stacked `if/else` chains
+at any tag-dispatch site.
 
 ---
 
@@ -374,7 +415,8 @@ early return from a function.
 | Arithmetic | `+`, `-`, `*`, `/`, `%` | `/` always yields float |
 | Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` | cross-type (1i == 1) works |
 | Logical | `&&`, `\|\|`, `!` | short-circuit |
-| Missing | `+=`, `**`, `&`, `\|`, `^`, `<<`, `>>` | use `x = x + 1i`, `math.pow()` |
+| Compound assign | `+=`, `-=`, `*=`, `/=` | v4.0.1+; still not allowed on an outer `let` inside a closure |
+| Missing | `**`, `&`, `\|`, `^`, `<<`, `>>` | use `math.pow()`, `math.bit_and()`, `math.bit_lshift()`, … |
 
 ---
 
@@ -1062,7 +1104,7 @@ state at a named point. They only make sense inside step execution.
 
 # Nodus v4 Modules and Imports Reference
 
-All examples verified against nodus-lang 4.0.8.
+All examples verified against nodus-lang 4.1.1.
 
 ---
 
@@ -1273,7 +1315,7 @@ nodus run --trace-imports script.nd
 
 # Nodus v4 Error Guide
 
-Error text → what it means → fix class. All errors verified against nodus-lang 4.0.8.
+Error text → what it means → fix class. All errors verified against nodus-lang 4.1.1.
 
 Fix classes are named consistently so they can be referenced across sessions.
 
@@ -1490,7 +1532,7 @@ if not result["ok"]:
 
 # Nodus v4 Verified Examples
 
-All examples are complete, runnable programs verified against nodus-lang 4.0.8.
+All examples are complete, runnable programs verified against nodus-lang 4.1.1.
 Each carries a one-line statement of what it demonstrates.
 
 **Key pattern note:** List literals cannot span multiple lines. Use `list_push()` to

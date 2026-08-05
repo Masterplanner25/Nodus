@@ -589,14 +589,14 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 - **Status: v1.0.0 — GitHub Action (not a PyPI package).**
 - **Usage:** `uses: Masterplanner25/nodus-run-action@v1`
 - **Three modes:** `file` (run a .nd script), `test-path` (run test suite), `fmt-check` (format gate)
-- Pin the nodus-lang version with `version: '4.0.8'` for reproducible CI.
+- Pin the nodus-lang version with `version: '4.1.1'` for reproducible CI.
 - No local test suite — tests run in CI via the action itself.
 
 ## nodus-sdk companion package
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
 - **Status: v0.1.0 PUBLISHED on PyPI.**
-  99 tests. Unified platform SDK auto-wiring the 27-package ecosystem.
+  99 tests. Unified platform SDK auto-wiring the 32-package companion ecosystem.
 - **Install:** `pip install nodus-sdk[agent,sql,fastapi]` (extras-based)
 - **Key exports:** `NodusSDKRuntime`, `create_runtime(**kwargs)`, `detect_available()`
 - **9 bridges:** redis, http, llm, observability (wrappers), sql, vector, scheduler, webhook, api (new)
@@ -619,11 +619,11 @@ before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus
 
 ## SemVer policy
 
-The current published version is **v4.0.8** (live on PyPI). Both files must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "4.0.8"`
-- `pyproject.toml` — `version = "4.0.8"`
+The current published version is **v4.1.1** (live on PyPI, published 2026-08-05). Both files must stay in sync:
+- `src/nodus/support/version.py` — `__version__ = "4.1.1"`
+- `pyproject.toml` — `version = "4.1.1"`
 
-Patch releases (4.0.x) for bug fixes and stability graduations. Next minor bump (4.1.0) requires a substantive feature addition. Never bump without a corresponding PyPI publish. If you see these files at different values, fix the mismatch before doing anything else.
+Patch releases (4.1.x) for bug fixes and stability graduations. A minor bump (4.2.0) requires a substantive feature addition. Never bump without a corresponding PyPI publish. If you see these files at different values, fix the mismatch before doing anything else.
 
 ## Embedding API — known blockers and operational traps
 
@@ -648,24 +648,31 @@ rt = NodusRuntime(timeout_ms=None, max_steps=None)
 
 **CHAN-001 (open):** `recv()` on empty channel strands the coroutine silently — pre-populate the channel or use the subprocess-pipe pattern. See `docs/governance/TECH_DEBT.md`.
 
-## Published ecosystem — current state (as of 2026-06-20)
+## Published ecosystem — current state (verified against PyPI 2026-08-05)
 
 All packages are live. PyPI rate limits apply to **new project creation** (~a few
 per hour), not to version uploads on existing projects — republishing new versions
 of already-published packages is not session-limited.
 
-**nodus-lang:** v4.0.8 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
+**nodus-lang:** v4.1.1 on PyPI. nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
-**Standalone packages (all v0.1.0, PyPI):**
+**Standalone companion packages — 32 live on PyPI** (33 projects counting nodus-lang).
+All at v0.1.0 except where noted:
 ```
 nodus-schema, nodus-protocol, nodus-state, nodus-session, nodus-events
-nodus-channels, nodus-context, nodus-approvals, nodus-retry, nodus-circuit-breaker
+nodus-channels, nodus-context, nodus-approvals, nodus-circuit-breaker
 nodus-agent, nodus-auth, nodus-observability, nodus-queue, nodus-router
-nodus-delivery, nodus-http, nodus-llm, nodus-adapter-base, nodus-gateway
-nodus-observability-framework, nodus-workflow, nodus-store-sql, nodus-sdk
-nodus-mcp, nodus-extension, nodus-native-memory-engine, nodus-jupyter
-nodus-mcp-server (v0.1.11)
+nodus-delivery, nodus-http, nodus-llm, nodus-adapter-base
+nodus-observability-framework, nodus-workflow, nodus-store-sql
+nodus-extension, nodus-native-memory-engine, nodus-jupyter
+nodus-governance, nodus-memory, nodus-a2a
 ```
+Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.2**, `nodus-gateway` **0.1.1**,
+`nodus-sdk` **0.1.1**, `nodus-mcp-server` **0.1.11**.
+
+Note: `nodus-memory` and `nodus-a2a` are published from the **GitHub** repos, which hold
+the nodus-lang adapter versions — the local `C:\dev` checkouts were replaced with the
+Tier 2 rewrites (see the sections above). Do not publish from the local checkouts.
 
 **Other published artifacts:**
 - nodus-vscode v0.1.0 — VS Code Marketplace (MasterplanInfiniteWeave)
