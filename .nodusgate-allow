@@ -34,7 +34,6 @@ block:docs/guide/workflows-and-tasks.md:81
 block:docs/guide/workflows-and-tasks.md:158
 block:docs/guide/workflows-and-tasks.md:179
 block:docs/guide/workflows-and-tasks.md:273
-block:docs/guide/workflows-and-tasks.md:364
 
 # working-with-json.md — context-dependent snippets
 block:docs/guide/working-with-json.md:241
@@ -42,8 +41,6 @@ block:docs/guide/working-with-json.md:266
 block:docs/guide/working-with-json.md:277
 
 # LANGUAGE_SPEC.md — illustrative pattern code with implicit context
-block:docs/language/LANGUAGE_SPEC.md:543
-block:docs/language/LANGUAGE_SPEC.md:553
 
 # Runtime reference docs — context-dependent examples
 block:docs/runtime/TASK_GRAPHS.md:48
@@ -51,7 +48,6 @@ block:docs/runtime/WORKFLOWS.md:44
 
 # FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent
-block:docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md:146
 
 # README.md — http example shows field access on result; 'body' field varies by sandbox config
 block:README.md:118
@@ -63,10 +59,6 @@ block:docs/guide/getting-started.md:350
 # ai-primitives.md — all blocks are multi-file or context-dependent (require companion state/imports)
 block:docs/guide/ai-primitives.md:15
 block:docs/guide/ai-primitives.md:67
-block:docs/guide/ai-primitives.md:93
-block:docs/guide/ai-primitives.md:123
-block:docs/guide/ai-primitives.md:186
-block:docs/guide/ai-primitives.md:202
 
 # ecosystem.md — multi-file examples (client module, nodus-extension host install required)
 block:docs/guide/ecosystem.md:54
@@ -82,9 +74,6 @@ block:docs/guide/library-entry-points.md:162
 
 # standard-library.md — intentional missing-file demo, context-dependent subprocess/time snippets
 block:docs/guide/standard-library.md:589
-block:docs/guide/standard-library.md:1087
-block:docs/guide/standard-library.md:1124
-block:docs/guide/standard-library.md:1197
 
 # LANGUAGE_SPEC.md — illustrative pattern code with undefined context variable
 block:docs/language/LANGUAGE_SPEC.md:609
