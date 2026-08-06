@@ -189,15 +189,26 @@ step risky {
 
 Downstream steps run normally when the step completes without re-throwing.
 
-**Retries** — `with { retries: N }` retries the step on any throw. Each
-failed attempt prints to stderr; state mutations from failing attempts
-persist into the next attempt — design retry logic with this in mind:
+**Retries** — `with { retries: N }` retries the step on any throw. State
+mutations from failing attempts persist into the next attempt — design retry
+logic with this in mind.
+
+> **Retries are asynchronous. One `run_workflow()` call does not exhaust them.**
+> When a step with `retries` throws, the run **suspends**: `run_workflow()`
+> returns immediately with `status = "retry_scheduled"` and a `graph_id`, and
+> the step's own result is not yet in `r["steps"]`. Each retry needs an explicit
+> `resume_workflow(graph_id)`. This is true whether or not you set
+> `retry_delay_ms`.
+>
+> The trap: on that first return `r["failed"]` is `[]` and `r["steps"]` is `{}`,
+> so a caller that only checks `failed` sees a *clean* result and never learns
+> the step has not finished. Check `r["status"]` too.
 
 ```nd
 workflow with_retries {
     state attempt = 0
 
-    step flaky with { retries: 2, retry_delay_ms: 100 } {
+    step flaky with { retries: 2, retry_delay_ms: 1 } {
         attempt = attempt + 1
         let s = workflow_state()
         if (s["attempt"] < 3) {
@@ -206,9 +217,29 @@ workflow with_retries {
         print("succeeded on attempt " + str(s["attempt"]))
     }
 }
-run_workflow(with_retries)
-// succeeded on attempt 3.0
+
+let r = run_workflow(with_retries)
+print(r["status"])
+
+let r2 = resume_workflow(r["graph_id"])
+print(r2["status"])
+
+let r3 = resume_workflow(r["graph_id"])
+print(r3["steps"])
 ```
+
+Output:
+
+```
+retry_scheduled
+retry_scheduled
+succeeded on attempt 3.0
+{"flaky": nil}
+```
+
+Two `resume_workflow` calls, because the step fails twice before succeeding on
+the third attempt. For a retry that completes inside a single `run_workflow()`,
+use `try`/`catch` inside the step body instead of the `retries` option.
 
 **Step options** (`with { ... }`): `retries` (max retry count), `retry_delay_ms`
 (ms between retries), `timeout_ms` (per-step timeout), `cache` (skip on re-run
@@ -534,10 +565,26 @@ TESTED SCRIPTS (originally run against nodus-lang v2.1.1; reviewed for v3.0 —
 24: wf23_retry_state.nd     → state mutations from failed attempts persist into next retry
 
 BEHAVIORAL FINDINGS:
-F34: Cyclic dependency detected at runtime, not compile time. Returns exit 0 with
-     r["error"]="Dependency cycle or missing tasks", no stderr output. Callers must
-     inspect r["error"] to detect failure. Should exit 1 or print stderr warning.
-     Filed as BUG-049.
+F34: OBSOLETE as of v4.1.0 (#323) — do not follow this entry. It described the
+     pre-4.1.0 behavior: exit 0 with r["error"]="Dependency cycle or missing
+     tasks". That guidance is now actively WRONG: run_workflow() returns an
+     **err record**, so `r["error"]` raises "Indexing is only supported on
+     lists, maps, and strings". Re-verified 2026-08-05 on 4.1.1: a cyclic
+     `after` graph is rejected when the graph is built, and run_workflow()
+     returns an err record with kind="workflow_error" and
+     message="Dependency cycle detected: a -> b -> a". Detect it with
+     `type(r) == "error"`. Sections 3 and 11 already document this correctly.
+
+F36 (2026-08-05, DOC FIXED): The §5 retry example claimed a single
+     run_workflow() call prints "succeeded on attempt 3.0". It does not.
+     Retries are ASYNCHRONOUS regardless of retry_delay_ms: the first
+     run_workflow() returns status="retry_scheduled" with a graph_id, and each
+     retry needs an explicit resume_workflow(graph_id). Verified identical
+     under `nodus run` and embedded NodusRuntime. The trap worth knowing: on
+     that first return r["failed"] is [] and r["steps"] is {}, so a caller
+     checking only `failed` sees a clean result while the step has not run to
+     completion. §5 now shows the real three-call sequence with verbatim
+     output.
 
 F35: State mutations in a failed retry attempt persist into the next attempt.
      Undocumented; can cause surprising counter accumulation in retry loops.

@@ -33,8 +33,8 @@ block:docs/guide/types-and-values.md:654
 block:docs/guide/workflows-and-tasks.md:81
 block:docs/guide/workflows-and-tasks.md:158
 block:docs/guide/workflows-and-tasks.md:179
-block:docs/guide/workflows-and-tasks.md:242
-block:docs/guide/workflows-and-tasks.md:333
+block:docs/guide/workflows-and-tasks.md:273
+block:docs/guide/workflows-and-tasks.md:364
 
 # working-with-json.md — context-dependent snippets
 block:docs/guide/working-with-json.md:241
@@ -107,7 +107,7 @@ block:docs/guide/ai-primitives.md:228
 block:docs/guide/standard-library.md:1220
 
 # workflows-and-tasks.md — intentional WRONG/RIGHT record-vs-map error demo
-block:docs/guide/workflows-and-tasks.md:344
+block:docs/guide/workflows-and-tasks.md:375
 
 # STYLE_GUIDE.md — illustrative style fragments (undefined context vars/functions,
 # intentional paren-less control-flow snippets, multiline line-length demo)
