@@ -35,7 +35,7 @@ The scheduler is cooperative: coroutines yield explicitly, enabling deterministi
 - numbers (float + integer `42i`), booleans, strings, nil
 - lists, maps, records
 - functions, closures, recursion
-- control flow: if/while/for/foreach/try/catch/finally/throw
+- control flow: if/while/for/foreach/try/catch/finally/throw, plus break/continue and the match expression (v4.1.0)
 - imports, namespaces, explicit exports
 
 **Orchestration**
@@ -103,6 +103,9 @@ nodus run [file]       Run a script or project
 nodus check [file]     Validate syntax and imports
 nodus fmt <file>       Format in-place
 nodus repl             Interactive shell
+nodus test [path]      Run .nd test files (*_test.nd / test_*.nd)
+nodus status           Show the project and entry point here
+nodus stability        Show which surfaces are stable vs experimental
 nodus init             Create a new project
 nodus install          Install dependencies
 nodus add <pkg>        Add a dependency
@@ -111,7 +114,7 @@ nodus serve            Start the HTTP API server
 nodus lsp              Start the Language Server
 nodus dap              Start the Debug Adapter
 nodus workflow <cmd>   Manage workflow runs
-nodus goal run <file>  Run a goal
+nodus goal-run <file>  Run a goal
 nodus dis <file>       Disassemble to bytecode
 nodus ast <file>       Print the AST
 nodus profile <file>   Profile execution
@@ -130,4 +133,4 @@ The project file provides always-on guardrails for the language. The skill provi
 
 ## Current Stage
 
-v4.0.7, published on PyPI (`pip install nodus-lang`). The v4.0 cycle adds the AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, and the full ecosystem of 35 companion packages. See `CHANGELOG.md` for the complete version history.
+v4.1.1, published on PyPI (`pip install nodus-lang`). The v4.0 cycle added the AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, and the companion package ecosystem. v4.1.0 added the first new language syntax since v4.0 — the `match` expression and `break`/`continue`. See `CHANGELOG.md` for the complete version history.
