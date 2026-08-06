@@ -15,12 +15,25 @@ The REPL keeps reading when `{` and `}` braces are unbalanced.
 Example:
 
 ```text
-> fn add(a, b) {
-...   return a + b
+nodus> fn add(a, b) {
+...     return a + b
 ... }
 ```
 
-The primary prompt is `> `. Continued input uses `... `.
+The primary prompt is `nodus> `. Inside a project — a directory containing
+`nodus.toml` — it includes the project name: `nodus (myproject)> `. Continued
+input uses `... `.
+
+The REPL prints a banner on start:
+
+```text
+4.1.1 REPL (type 'exit', 'quit', or ':quit' to quit)
+```
+
+That version comes from the **installed** distribution (`importlib.metadata`),
+while `nodus --version` reports the version of the **source** being executed.
+They agree for a normal `pip install`; they diverge only in a development
+checkout that shadows an older installed package via `PYTHONPATH`.
 
 ## Command History
 
@@ -53,7 +66,7 @@ REPL commands start with `:` and are handled by the shell instead of the VM.
 Examples:
 
 ```text
-> :ast 1 + 2 * 3
+nodus> :ast 1 + 2 * 3
 Binary(+)
   Number(1)
   Binary(*)
@@ -62,7 +75,7 @@ Binary(+)
 ```
 
 ```text
-> :dis 1 + 2
+nodus> :dis 1 + 2
 PUSH_CONST 1.0
 PUSH_CONST 2.0
 ADD
@@ -70,6 +83,6 @@ RETURN
 ```
 
 ```text
-> :type [1, 2, 3]
-List<float>
+nodus> :type [1, 2, 3]
+List<number>
 ```
