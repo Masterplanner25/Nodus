@@ -633,13 +633,36 @@ Exit codes: `0` = all pass, `1` = failures, `2` = no tests found.
 
 ---
 
-<!-- TESTED 2026-05-28 against Nodus v4.0 dev source
-All code blocks verified runnable except:
-- The "WRONG — single flush" example is intentionally failing (illustrative)
-Key implementation notes confirmed:
+<!-- TESTED 2026-08-05 against Nodus 4.1.1 (dev source)
+
+Re-verified by running each block through `nodus test` — NOT `nodus run`.
+This matters: `nodus run` on a test file exits 0 and prints nothing even when
+an assertion FAILS, so "the block executes" proves nothing about these
+examples. The doc-vs-code gate uses that same path, so its pass for this file
+is vacuous. Only `nodus test` reports and fails.
+
+Results: 24 nd blocks — 23 suites pass under `nodus test`. The 24th
+("Opt out of isolation") is schematic: a suite body with no cases, which
+correctly yields exit 2 / "Tests: 0 total".
+
+Claims verified individually rather than assumed:
+- Falsiness list for assert(): false, nil, 0, 0.0, "", [], {} — all 7 confirmed
+  falsy via assert_throws.
+- Exit codes 0 (all pass) / 1 (failures) / 2 (no tests found) — all three
+  confirmed. NOTE when checking these yourself: `cmd | head` reports head's
+  exit code, not nodus's. Measure without a pipe.
+- Flags --verbose, --filter, --format json, --bail all behave as documented;
+  --format json emits one JSON object per test plus a summary line.
+- assert_eq argument order is actual-first, expected-second (confirmed from
+  failure output: "actual: 2 / expected: 99").
+
+Known CLI wart (not a doc error, filed as #345): `nodus test --help` runs discovery instead
+of printing usage — the same class of bug fixed for `nodus serve`/`worker`
+in v4.0.6 (#268).
+
+Earlier notes, still confirmed:
 - flush_async() is synchronous (no await keyword in Nodus)
 - spawn() requires coroutine value, not fn literal
 - Closures cannot mutate outer let variables; use map fields
-- sleep(N) takes ms as plain number
-- advance_clock(N) takes ms as plain number
+- sleep(N) / advance_clock(N) take ms as a plain number
 -->
