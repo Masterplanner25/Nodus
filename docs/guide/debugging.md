@@ -350,17 +350,39 @@ Infinite recursion produces a full stack trace — one entry per frame up to
 the stack limit:
 
 ```
-Sandbox error at deep.nd:2:24: Call stack overflow
+Sandbox error at /abs/path/deep.nd:1:36: Call stack overflow
 Stack trace:
-  at recurse (deep.nd:2:24)
-  called from recurse (deep.nd:2:24)
-  called from recurse (deep.nd:2:24)
+  at recurse (/abs/path/deep.nd:1:36)
+  called from recurse (/abs/path/deep.nd:1:36)
+  called from recurse (/abs/path/deep.nd:1:36)
   ...
 ```
 
 The call site in the trace is where the recursive call was made, not the
 top of the function. The depth (number of `called from` lines) confirms
 unbounded recursion vs. expected deep nesting.
+
+> **Redirect this to a file.** The trace is **not truncated** on the `nodus run`
+> path — it prints one line per frame for all 10,000 frames, about **1.5 MB** of
+> stderr ([#49](https://github.com/Masterplanner25/Nodus/issues/49), reopened).
+> Your terminal truncates it; Nodus does not. Use `nodus run deep.nd 2> trace.txt`
+> and read the head of the file.
+>
+> With the default 200 ms deadline you usually get `Execution timed out`
+> instead, because the run dies before recursion reaches the stack limit. Pass
+> `--time-limit 10000` to see the actual overflow.
+>
+> Embedding via `NodusRuntime` is no better, just quieter: `stderr` comes back
+> empty and the full frame list arrives in `result["errors"][0]["stack"]` —
+> also uncapped. Slice it yourself before logging:
+>
+> ```python
+> stack = result["errors"][0]["stack"]
+> print("\n".join(stack[:20]), f"\n... ({len(stack) - 20} more frames)")
+> ```
+>
+> Setting `max_frames` on the runtime bounds recursion depth, and therefore the
+> trace: `NodusRuntime(max_frames=200)` yields 201 entries instead of 10,001.
 
 ---
 
@@ -396,13 +418,23 @@ F32: `nodus debug --help` outputs "File not found: --help" instead of help text.
      BUG-001/002 fixed --help for check/ast/dis in v2.1.0; debug was missed.
      Filed as BUG-047 (#48). RESOLVED in v3.0.
 
-F33: Stack overflow trace prints all 10,000 frames with no depth cap (~800 KB stderr).
-     Output is truncated by the terminal, not by Nodus. Should cap at ~20 frames
-     with "... (N more frames)" summary, matching Python/Node.js convention.
-     Filed as BUG-048 (#49). RESOLVED in v3.0 (stack overflow trace now truncated).
+F33: NOT RESOLVED — the "RESOLVED in v3.0" note here was wrong, and #49 has been
+     REOPENED. Re-verified 2026-08-05 on 4.1.1: `nodus run` still prints one line
+     per frame for all 10,000 frames — 10,003 lines / ~1.5 MB of stderr, LARGER
+     than the ~800 KB originally reported, because stack entries now carry
+     absolute paths (#342).
+     Why it looked fixed: the 20-frame cap exists, but only in ONE of two
+     stack-trace formatters. src/nodus/runtime/diagnostics.py:188 has it;
+     src/nodus/runtime/errors.py:186 joins every frame, and that is the path
+     `nodus run` uses.
+     Also verify with --time-limit 10000: at the default 200 ms deadline the run
+     dies with "Execution timed out" before recursion reaches the stack limit,
+     which makes the bug look absent.
+     Embedded NodusRuntime does NOT cap either (checked, not assumed): stderr is
+     empty and result["errors"][0]["stack"] carries the full frame list.
 
-KNOWN LIMITATION (pre-existing, not filed):
-F27: --trace-imports only fires on cold cache (module_loader bypasses resolve_import()
-     on cache hits). Documented in guide body as a known limitation. Filed separately
-     in modules-and-imports.md findings.
+F27: STILL PRESENT — now filed as #348. --trace-imports emits nothing once the
+     on-disk bytecode cache is warm. Not the same as #51 (closed/completed),
+     which was the in-memory cache within a single run. See the
+     modules-and-imports.md findings block for the mechanism.
 -->

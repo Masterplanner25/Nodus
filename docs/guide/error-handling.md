@@ -365,10 +365,20 @@ fn parse_user(raw) {
 **Parse errors**: Syntax errors, unterminated strings, invalid escape sequences.
 These abort at load time before any `try` block can execute.
 
-**Import errors**: `import "./missing_module"` inside a `try` block does not
-raise a catchable error — the import silently fails, leaving the module name
-undefined. Accessing the undefined name later raises `"name"`. This is a known
-limitation: import errors inside try blocks are not catchable.
+**Imports inside `try`**: you cannot wrap an import in `try`/`catch` at all —
+an `import` anywhere other than the top level of a file is a **syntax error**:
+
+```
+Syntax error at main.nd:2:5: import statements must be at the top level of a
+module; move this import to the top of the file
+```
+
+So an import failure is never catchable, but for a more basic reason than the
+one this section used to give. Earlier versions of this guide said the import
+"silently fails, leaving the module name undefined" and that accessing it later
+raised `"name"` — that behavior is gone; the parser now rejects the placement
+before anything runs. See
+[modules-and-imports.md §6](modules-and-imports.md#import-placement--top-level-only).
 
 **Execution limits**: When `--step-limit` or `--time-limit` is exceeded, the
 runtime terminates the script from the outside. The `catch` block never runs.

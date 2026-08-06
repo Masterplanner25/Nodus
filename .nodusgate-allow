@@ -11,10 +11,7 @@ block:docs/guide/modules-and-imports.md:105
 block:docs/guide/modules-and-imports.md:136
 block:docs/guide/modules-and-imports.md:232
 block:docs/guide/modules-and-imports.md:243
-block:docs/guide/modules-and-imports.md:273
-block:docs/guide/modules-and-imports.md:283
-block:docs/guide/modules-and-imports.md:296
-block:docs/guide/modules-and-imports.md:364
+block:docs/guide/modules-and-imports.md:361
 
 
 # debugging.md — intentional error demonstrations (missing key, non-top-level import)
@@ -66,7 +63,7 @@ block:docs/guide/ecosystem.md:75
 
 # error-handling.md — intentional reserved-keyword syntax demo and intentional missing-file sandbox demo
 block:docs/guide/error-handling.md:289
-block:docs/guide/error-handling.md:385
+block:docs/guide/error-handling.md:395
 
 # library-entry-points.md — hypothetical package imports (nodus-example, your-library)
 block:docs/guide/library-entry-points.md:109
@@ -116,3 +113,10 @@ block:docs/runtime/EMBEDDING.md:158
 # --- Re-pointed after the 2026-08-05 doc sweep shifted line numbers ---
 # (README ecosystem/extras/stdlib expansion, ecosystem.md header, standard-library.md
 #  std:async known-bug block + TOC). Block contents unchanged; only line numbers moved.
+
+# modules-and-imports.md §6 — import-placement examples: the 'Correct' form imports a
+# nonexistent ./helpers, and the 'Rejected at parse time' block is intentionally invalid
+# (that is the point of the example — all three placements are syntax errors)
+block:docs/guide/modules-and-imports.md:278
+block:docs/guide/modules-and-imports.md:288
+
