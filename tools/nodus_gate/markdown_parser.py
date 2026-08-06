@@ -10,6 +10,8 @@ Supports four fence types:
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +23,17 @@ _FENCE_CLOSE = re.compile(r"^```\s*$")
 
 _ND_ALIASES = {"nd": "nodus", "nd-no-run": "nodus-no-run",
                "nd-expect=output": "nodus-expect=output", "nd-skip": "nodus-skip"}
+
+
+def _content_digest(source: str) -> str:
+    """Stable 12-hex digest of a code block's normalized source."""
+    lines = [ln.rstrip() for ln in source.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    normalized = "\n".join(lines)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass
@@ -36,6 +49,32 @@ class CodeBlock:
     @property
     def should_run(self) -> bool:
         return self.fence_type in ("nodus", "nodus-expect=output")
+
+    def _rel(self, root: str) -> str:
+        return os.path.relpath(self.file_path, root).replace("\\", "/")
+
+    def line_key(self, root: str) -> str:
+        """Legacy allowlist key: ``block:<relpath>:<line>``.
+
+        Kept for backward compatibility. Fragile — any edit that adds or
+        removes a line above the block silently invalidates the entry, which
+        then suppresses nothing. Prefer :meth:`content_key`.
+        """
+        return f"block:{self._rel(root)}:{self.start_line}"
+
+    def content_key(self, root: str) -> str:
+        """Stable allowlist key: ``blockhash:<relpath>:<12-hex>``.
+
+        Hashes the block's normalized source instead of its position, so an
+        entry survives edits elsewhere in the file. Scoped by path so the same
+        snippet in two documents is suppressed independently — moving a block
+        between files is rare and deserves a fresh look.
+
+        Normalization strips trailing whitespace per line and leading/trailing
+        blank lines, and is line-ending agnostic, so a CRLF/LF checkout
+        difference cannot change the key.
+        """
+        return f"blockhash:{self._rel(root)}:{_content_digest(self.source)}"
 
     @property
     def expect_output(self) -> bool:

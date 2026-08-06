@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import threading
@@ -111,8 +110,9 @@ def run_runtime_phase(
             if not block.should_run:
                 continue
             result.total_blocks += 1
-            allow_key = "block:" + os.path.relpath(block.file_path, root).replace("\\", "/") + f":{block.start_line}"
-            if allow_key in allowlist:
+            # Content key first (stable across edits); line key kept so existing
+            # allowlists keep working. See CodeBlock.content_key.
+            if block.content_key(root) in allowlist or block.line_key(root) in allowlist:
                 result.passed += 1
                 continue
             _run_one_block(block, result, root, verbose=verbose)
