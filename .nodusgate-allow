@@ -16,9 +16,6 @@ block:docs/guide/modules-and-imports.md:283
 block:docs/guide/modules-and-imports.md:296
 block:docs/guide/modules-and-imports.md:364
 
-# getting-started.md — multi-file example and context-dependent snippet
-block:docs/guide/getting-started.md:250
-block:docs/guide/getting-started.md:294
 
 # debugging.md — intentional error demonstrations (missing key, non-top-level import)
 block:docs/guide/debugging.md:23
@@ -62,8 +59,8 @@ block:docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md:146
 block:README.md:118
 
 # getting-started.md — multi-file example (imports ./math_utils companion) and context-dependent snippet
-block:docs/guide/getting-started.md:255
-block:docs/guide/getting-started.md:299
+block:docs/guide/getting-started.md:306
+block:docs/guide/getting-started.md:350
 
 # ai-primitives.md — all blocks are multi-file or context-dependent (require companion state/imports)
 block:docs/guide/ai-primitives.md:15
