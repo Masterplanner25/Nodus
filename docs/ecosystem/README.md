@@ -11,7 +11,7 @@ below.
 | Spec | Package | Status |
 |------|---------|--------|
 | [NODUS_HTTP.md](./NODUS_HTTP.md) | [`nodus-http`](https://github.com/Masterplanner25/nodus-http) | v0.1.0 — 13 tests, **published on PyPI** ✅ |
-| [NODUS_RETRY.md](./NODUS_RETRY.md) | [`nodus-retry`](https://github.com/Masterplanner25/nodus-retry) | v0.1.0 — **published on PyPI** ✅ |
+| [NODUS_RETRY.md](./NODUS_RETRY.md) | [`nodus-retry`](https://github.com/Masterplanner25/nodus-retry) | v0.2.0 — 43 tests, **published on PyPI** ✅ (spec predates the durable `SqliteEffectStore`) |
 | [NODUS_EVENTS.md](./NODUS_EVENTS.md) | [`nodus-events`](https://github.com/Masterplanner25/nodus-events) | v0.1.0 — 17 tests, **published on PyPI** ✅ |
 | [NODUS_STORE_SQL.md](./NODUS_STORE_SQL.md) | [`nodus-store-sql`](https://github.com/Masterplanner25/nodus-store-sql) | v0.1.0 — 47 tests, **published on PyPI** ✅ |
 | [NODUS_AGENT.md](./NODUS_AGENT.md) | [`nodus-agent`](https://github.com/Masterplanner25/nodus-agent) | v0.1.0 — 28 tests, **published on PyPI** ✅ |
@@ -49,7 +49,7 @@ All packages are published on PyPI. Organized by build tier.
 
 | Package | Tests | PyPI status |
 |---------|-------|-------------|
-| [`nodus-retry`](https://github.com/Masterplanner25/nodus-retry) | 33 | **published** ✅ |
+| [`nodus-retry`](https://github.com/Masterplanner25/nodus-retry) | 43 | **published** ✅ (v0.2.0) |
 | [`nodus-http`](https://github.com/Masterplanner25/nodus-http) | 13 | **published** ✅ |
 | [`nodus-events`](https://github.com/Masterplanner25/nodus-events) | 17 | **published** ✅ |
 | [`nodus-schema`](https://github.com/Masterplanner25/nodus-schema) | 30 | **published** ✅ |
@@ -77,7 +77,7 @@ All packages are published on PyPI. Organized by build tier.
 
 | Package | Tests | PyPI status |
 |---------|-------|-------------|
-| [`nodus-extensions`](https://github.com/Masterplanner25/nodus-extensions) | 35 | **published** ✅ |
+| [`nodus-extensions`](https://github.com/Masterplanner25/nodus-extensions) | 35 | **published** ✅ — see the naming note below |
 | [`nodus-governance`](https://github.com/Masterplanner25/nodus-governance) | 28 | **published** ✅ |
 
 ### Additional packages
@@ -85,11 +85,14 @@ All packages are published on PyPI. Organized by build tier.
 | Package | Tests | Notes |
 |---------|-------|-------|
 | [`nodus-store-sql`](https://github.com/Masterplanner25/nodus-store-sql) | 47 | Promoted from incubator scaffold; **published** ✅ |
-| [`nodus-extension`](https://github.com/Masterplanner25/nodus-extension) | 126 | nodus-lang plugin framework (typed, versioned, sandboxed); **published** ✅ |
+| [`nodus-extension`](https://github.com/Masterplanner25/nodus-extension) | 126 | nodus-lang plugin framework (typed, versioned, sandboxed); **published** ✅ — see the naming note below |
 | [`nodus-native-memory-engine`](https://github.com/Masterplanner25/nodus-native-memory-engine) | 76 | PyO3/Maturin Rust extension with pure-Python fallback; **published** ✅ |
 | [`nodus-sdk`](https://github.com/Masterplanner25/nodus-sdk) | 99 | Unified platform SDK (9 bridges, FastAPI router); **published** ✅ |
 
-### Non-PyPI published artifacts
+### Tooling and editor artifacts
+
+Two of these are on PyPI and two are not — the distribution channel is listed
+per row.
 
 | Artifact | Version | Distribution |
 |----------|---------|--------------|
@@ -97,6 +100,23 @@ All packages are published on PyPI. Organized by build tier.
 | [`nodus-jupyter`](https://github.com/Masterplanner25/nodus-jupyter) | v0.1.0 | PyPI — Jupyter kernel for `.nd` files (32 unit tests) |
 | [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | v0.1.0 | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
 | [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | v1.0.0 | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
+
+### Naming note: `nodus-extension` vs `nodus-extensions`
+
+**Both exist on PyPI and they are different packages.** Their summaries are
+nearly identical, so `pip install` of the wrong one is an easy mistake:
+
+| Package | Module | What it is |
+|---------|--------|-----------|
+| `nodus-extension` (singular) | `nodus_extension` | The **nodus-lang plugin framework** — 126 tests. `ExtensionHost`, `attach_to_runtime()`, and the `ext_*` Nodus bindings. This is the one nodus-lang integrates with. |
+| `nodus-extensions` (plural) | `nodus_extensions` | Tier 4 extension **loading** — 35 tests. `manifest`, `hooks`, `provenance`, `sandbox`. No nodus-lang binding. |
+
+Note that **both export a class named `ExtensionRegistry`**, so that symbol does
+not tell them apart. The reliable discriminator is `attach_to_runtime` — only
+the singular package has it, because only it binds into a `NodusRuntime`.
+
+If you want the plugin framework the nodus-lang guides describe, install the
+**singular** one.
 
 ## Shared design rules
 

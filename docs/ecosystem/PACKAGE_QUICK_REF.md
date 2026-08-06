@@ -29,7 +29,7 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 
 | Package | Key deps | Key abstraction |
 |---------|----------|----------------|
-| nodus-retry | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore, compute_action_id() |
+| nodus-retry | none | RetryPolicy (6 named), execute_with_retry sync+async, EffectStore/InMemoryEffectStore/**SqliteEffectStore** (durable, added v0.2.0), EffectRecord, compute_action_id() |
 | nodus-http | httpx, nodus-circuit-breaker | HttpClient (circuit breaker + retry + trace headers), HttpResponse, RetryConfig; **requires `respx` for tests** |
 | nodus-events | redis (optional) | EventBus (Redis pub/sub, source-instance dedup, pre-rehydration buffer), AuditStore, publish_event() |
 | nodus-schema | none | validate_payload(), parse_versioned_name(), resolve_version(), SchemaRegistry, SchemaEntry |
