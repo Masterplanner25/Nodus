@@ -139,3 +139,7 @@ blockhash:docs/runtime/EMBEDDING.md:a1e94c8e2b8d
 blockhash:docs/guide/modules-and-imports.md:4d65d2486b6f
 blockhash:docs/guide/modules-and-imports.md:dd90da2bd2b5
 
+
+# STYLE_GUIDE.md §18 — the retry idiom needs an http URL and drives a workflow;
+# shown for shape, not runnable in the gate
+blockhash:docs/language/STYLE_GUIDE.md:c35b85052e78

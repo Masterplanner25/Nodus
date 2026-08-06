@@ -174,11 +174,16 @@ Break complex logic into helper functions.
 
 Prefer explicit control flow.
 
+**Parentheses around the condition are required**, not stylistic. `if count > 0 {`
+is a syntax error: `Expected '(', got identifier ('count')`. The same applies to
+`while`.
+
 Example:
 
 ```nd
-if count > 0 {
-    process_items()
+let count = 3
+if (count > 0) {
+    print("has items")
 }
 ```
 
@@ -190,13 +195,42 @@ Example:
 
 ```nd
 fn process(value) {
-    if value == nil {
+    if (value == nil) {
         return
     }
 
-    handle(value)
+    print(value)
 }
 ```
+
+Use `break` and `continue` rather than a flag variable threaded through the loop
+condition:
+
+```nd
+// preferred
+for n in [1, 2, 3, 4, 5] {
+    if (n == 2) { continue }
+    if (n == 4) { break }
+    print(n)
+}
+```
+
+When every branch tests the same value against constants, prefer `match` over a
+stacked `if`/`else if` chain. It is an expression, so it reads as one assignment
+rather than four:
+
+```nd
+let code = 404i
+let label = match code {
+    200i => "ok",
+    404i => "not found",
+    _ => "unknown",
+}
+print(label)
+```
+
+Keep `_` last — it is required to be, and a scrutinee matching no arm raises at
+runtime.
 
 ## 9. Collections
 
@@ -306,7 +340,7 @@ value = condition and compute_a() or compute_b()
 Prefer explicit code:
 
 ```nd
-if condition {
+if (condition) {
     value = compute_a()
 } else {
     value = compute_b()
@@ -338,19 +372,31 @@ Nodus orchestrates retries via workflows; it doesn't bake them into
 every call. When you need to retry an HTTP call (or any other capability),
 wrap it in a workflow construct rather than looking for a retry option.
 
-Idiomatic:
+Idiomatic — retries are a **step option**, declared with `with { … }`:
 
 ```nd
 workflow fetch_with_retry {
-    step attempt {
-        let r = http.get(url, {timeout_ms: 5000})
-        if type(r) == "error" or !r.ok {
-            return retry(attempt, max_attempts: 3, delay_ms: 1000)
+    step attempt with { retries: 3, retry_delay_ms: 1000 } {
+        let r = http.get(url)
+        if (type(r) == "error") {
+            throw "fetch failed"
         }
         return r
     }
 }
 ```
+
+The step throws; the runtime retries it. Note that retries are **asynchronous**:
+`run_workflow()` returns `status = "retry_scheduled"` and each attempt needs an
+explicit `resume_workflow(graph_id)`. See
+[workflows-and-tasks.md §5](../guide/workflows-and-tasks.md) for the full
+sequence. For a retry that completes inside one call, use `try`/`catch` in the
+step body instead.
+
+> Earlier revisions of this guide showed `return retry(attempt, max_attempts: 3,
+> delay_ms: 1000)`. That is not valid Nodus — there is no `retry` builtin and the
+> language has no named arguments. It also used `or`, which is not an operator
+> here; use `||`.
 
 Not idiomatic, and not supported:
 

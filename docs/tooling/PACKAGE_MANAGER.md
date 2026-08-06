@@ -2,6 +2,19 @@
 
 Nodus includes a minimal, local-first package manager intended for small automation projects.
 
+> **Do not append `--help` to these commands.** They do not implement a help
+> guard: the flag is ignored and the command **runs**
+> ([#353](https://github.com/Masterplanner25/Nodus/issues/353)). Most are merely
+> unhelpful — `install --help` attempts an install — but two are not:
+>
+> - `nodus logout --help` **performs the logout** and deletes the saved registry
+>   token.
+> - `nodus publish --help` crashes with an unhandled traceback.
+> - `nodus login --help` blocks waiting on interactive input.
+>
+> Use this document for usage until that is fixed. `nodus --help` (no
+> subcommand) is safe and lists every command.
+
 ## Project Files
 
 - `nodus.toml` manifest

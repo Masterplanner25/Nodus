@@ -392,6 +392,39 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   - `queue()` returns a new channel
   - `worker_pool(worker, count)` returns a jobs channel serviced by `count` workers
   - `pipeline(stages)` returns `{input, output}` channels connected by stage functions
+  - **`worker_pool` and `pipeline` are currently non-functional**
+    ([#339](https://github.com/Masterplanner25/Nodus/issues/339)): they spawn onto
+    the module's own scheduler, which nothing drives, so the work is silently
+    dropped. `sleep`, `queue`, `parallel`, and `series` work.
+
+### Remaining modules
+
+The modules above are specified here because their shapes are load-bearing for
+the orchestration primitives. The rest ship in the same distribution and are
+imported identically; full signatures live in
+[docs/guide/standard-library.md](../guide/standard-library.md) and
+[docs/guide/ai-primitives.md](../guide/ai-primitives.md).
+
+| Module | Surface |
+|--------|---------|
+| `std:http` | `get`/`post`/`put`/`delete`/`patch`/`head`/`options`/`request`, an `_async` variant of each, plus `stream` and `sse`. Requires the `nodus-lang[http]` extra. |
+| `std:subprocess` | `run`, `shell`, `spawn`, `spawn_shell`, `run_async`, `shell_async`, `shell_quote` |
+| `std:fs` | `read`, `write`, `append`, `exists`, `exists_path`, `listdir`, `mkdir`, `ensure_dir`, `delete` |
+| `std:path` | `join(parts)` (takes a **list**), `dirname`, `basename`, `ext`, `stem`, `relative`, `absolute` |
+| `std:env` | `get`, `get_or`, `set`, `unset`, `delete`, `has`, `list`, `list_keys` |
+| `std:time` | `now`, `now_in`, `from_epoch_ms`, `to_epoch_ms`, `parse`, `format`, ISO-8601 and HTTP-date conversion, duration builders (`ms`/`seconds`/`minutes`/`hours`/`days`/`weeks`), and calendar arithmetic (`add_days`, `start_of_month`, `to_zone`, …). There is no `now_ms()`; `sleep` lives in `std:async`. |
+| `std:hash` | `sha256`, `sha512`, `blake2b`, `sha1`, `md5` — each with `_builder` and `_file` variants — plus `hmac_*` and `compare`. All return a **hash record**; call `.to_hex()`. |
+| `std:encoding` | `base64_encode`/`_decode`, `base64_url_encode`/`_decode`, `hex_encode`/`_encode_upper`/`_decode`, `url_encode`/`_decode`, `url_encode_form`/`_decode_form` |
+| `std:secrets` | `random_bytes`, `random_int`, `randbelow`, `token_hex`, `token_base64`, `token_urlsafe`, `token_alphanumeric`, `uuid_v4`, `uuid_v7` |
+| `std:utils` | `clamp`, `coalesce`, `get` |
+| `std:bool` | `equal(value, bool_value)` |
+| `std:test` | `suite`, `case`, `case_async`, `skip`, the `assert*` family, `before_all`/`after_all`/`before_each`/`after_each`, `fixture`, `cleanup`, `parameterize`, `advance_clock`, `flush_async`. Run with `nodus test` — `nodus run` on a test file exits 0 without reporting failures. |
+| `std:tool` | `register`, `unregister`, `invoke`, `call`, `lookup`, `list_tools`, `has`, `execute`, `available`. Tool names must be dotted (`"myapp.greet"`). |
+| `std:identity` | `trace_id`, `session_id`, `execution_unit_id` |
+| `std:effects` | `action_id`, `resolve`, `pending`, `complete`, `get_result`, `store_size` |
+| `std:sys` | `call`, `list`, `memory_get`, `memory_put`, `memory_delete` |
+| `std:retry` | `call(fn, policy)`, `available()` |
+| `std:circuit_breaker` | `create`, `create_config`, `call`, `state`, `reset`, `available` |
 
 ## Task Retry Policies
 
