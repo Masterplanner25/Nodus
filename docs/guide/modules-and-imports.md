@@ -262,13 +262,18 @@ production
 > These are the import rules that produce non-obvious errors. Read them before
 > writing your first multi-file project.
 
-### Import placement
+### Import placement — top level only
 
-Imports work correctly at the top level of a file and inside function bodies
-and `if`/`else` blocks (fixed in v3.0). The recommended style is always
-top-level imports for clarity.
+An `import` must be at the **top level of the file**. Anywhere else — inside a
+function body, an `if`/`else` block, or a `try`/`catch` — is a **syntax error**,
+caught before the program runs:
 
-**Top-level (recommended):**
+```
+Syntax error at main.nd:2:5: import statements must be at the top level of a
+module; move this import to the top of the file
+```
+
+**Correct:**
 
 ```nd
 import "./helpers" as h
@@ -278,40 +283,32 @@ fn do_work() {
 }
 ```
 
-**Function body and if/else — work in v3.0**, though top-level is preferred:
+**Rejected at parse time** — all three of these fail with the message above:
 
 ```nd
-// Works in v3.0 — but prefer top-level imports
 fn do_work() {
-    import "./helpers" as h
-    return h.ping()
+    import "./helpers" as h     // syntax error
 }
-```
 
-### Imports inside `try/catch` are not catchable
+if (ready) {
+    import "./helpers" as h     // syntax error
+}
 
-Import errors inside a `try` block do not raise to the `catch` block. The
-alias is left undefined; accessing it later raises a `"name"` error:
-
-```nd
 try {
-    import "./helpers" as h
-    print(h.ping())
-} catch err {
-    print(err.kind)       // name  (not "import")
-    print(err.message)    // Undefined variable: h
-}
+    import "./helpers" as h     // syntax error
+} catch err { }
 ```
 
-Output:
+> **Changed since v3.0.** Older versions of this guide said imports "work
+> inside function bodies and `if`/`else` blocks", and described a `try`/`catch`
+> import as failing later with a `"name"` error (`Undefined variable: h`).
+> Neither is true now: the parser rejects all of them up front with an
+> actionable message. If you have code following the old advice, it will no
+> longer compile — move the import to the top of the file.
 
-```
-name
-Undefined variable: h
-```
-
-This is a known limitation. See
-[error-handling.md §6](error-handling.md#6-what-is-not-catchable).
+Because placement is now a parse error, there is nothing to catch: you cannot
+wrap an import in `try`/`catch` to handle a missing module. Guard on the
+imported value at the call site instead.
 
 ### Cyclic imports are an error
 
@@ -409,17 +406,40 @@ VERBATIM ERROR MESSAGES:
 - "Import error: Invalid import: path '../shared' escapes the project root."
 - "Key error at main.nd:6:7: Missing module export: _internal"
 
-BEHAVIORAL FINDINGS (to file as v2.2 issues):
-F26: import inside an if/else block at top level silently fails — binding never created.
-     Same behavior as in functions and try/catch. LANGUAGE_SPEC says "top-level" but
-     doesn't explicitly exclude if/else blocks. Error is "Undefined variable" with no
-     hint about the import placement.
+BEHAVIORAL FINDINGS — re-verified 2026-08-05 against 4.1.1
 
-F27: --trace-imports produces no output when bytecode is cached. _import_trace_fn is only
-     called in ModuleLoader.resolve_import(), but _build_metadata() skips resolve_import()
-     on cache hits (uses _build_metadata_from_cached_bytecode instead). Practical effect:
-     flag only works on first run after cache is cold.
+F26: RESOLVED. Was "import inside an if/else block silently fails — binding
+     never created". Misplaced imports are now a SYNTAX ERROR caught before
+     execution, with an actionable message:
+       "import statements must be at the top level of a module; move this
+        import to the top of the file"
+     Confirmed for all three placements: function body, if/else block, and
+     try/catch. This also invalidated two whole subsections of §6, which told
+     readers imports "work inside function bodies and if/else blocks (fixed in
+     v3.0)" and documented a try/catch import failing later with a "name"
+     error. Both rewritten; error-handling.md §6 carried the same stale claim
+     and was corrected to match.
 
-F28: import "./path" without 'as' clause: module executes (side effects run) but no name
-     is bound. Silently succeeds with no name. Undocumented in LANGUAGE_SPEC.
+F27: STILL PRESENT — now filed as #348. --trace-imports emits nothing once the
+     ON-DISK bytecode cache (.nodus/) is warm; it only works on the first run
+     after a cold cache. _build_metadata() returns early on a disk-cache hit,
+     before the loop that calls resolve_import(), which is the only site
+     emitting the trace. NOT the same as #51 (closed/completed) — that was the
+     in-memory cache within a single run, and that fix works: a cold run
+     correctly prints both "Resolved" and "Cache hit". Workaround: rm -rf
+     .nodus before tracing.
+
+F28: STILL PRESENT. import "./path" with no 'as' clause executes the module
+     (side effects run) but binds no name, and reports nothing. Verified on
+     4.1.1. Unfiled — arguably intentional for side-effect-only imports, but
+     undocumented in LANGUAGE_SPEC either way.
+
+Error messages re-confirmed verbatim on 4.1.1 (all now carry ABSOLUTE paths,
+see #342):
+- "Import error at <abs>/a.nd: Circular import detected: <abs>/a.nd ->
+   <abs>/b.nd -> <abs>/a.nd"
+- "Import error at <abs>/main.nd:1:1: Import not found: './no_such_file'
+   (tried ...)" — the candidate list includes .nd, .tl, index.nd, index.tl,
+   .nodus/modules/, the stdlib dir, and the nodus.nd entry-point
+- "Key error at <abs>/main.nd:2:7: Missing module export: _internal"
 -->
