@@ -79,7 +79,7 @@ Output:
 ```
 list
 1.0
-3.0
+3
 ```
 
 ### Parsing nested structures
@@ -450,4 +450,12 @@ F17: json.stringify works on records, not just maps. LANGUAGE_SPEC says so but i
 F18: Parse error format was "Runtime error: json_parse failed: ..." (Python json
      module message verbatim) in v2.1.1. CHANGED in v3.0: json.parse returns an
      err record with kind="parse_error" and a Nodus-voice message. Does not throw.
+-->
+
+<!--
+RE-VERIFIED 2026-08-05 against nodus-lang 4.1.1 — 13 nd blocks run, 8
+output-verified, 0 mismatches after the fix below.
+
+F-LEN (FIXED): an output block showed `len()` returning 3.0. `len()` returns an
+  int since v4.0; actual is 3.
 -->

@@ -21,8 +21,6 @@ block:docs/guide/modules-and-imports.md:364
 block:docs/guide/debugging.md:23
 block:docs/guide/debugging.md:329
 
-# error-handling.md — illustrative pseudo-code using reserved identifier 'and'
-block:docs/guide/error-handling.md:264
 
 # error-surfaces.md — illustrative snippet showing return-outside-function pattern
 block:docs/policy/error-surfaces.md:177
@@ -75,15 +73,15 @@ block:docs/guide/ecosystem.md:54
 block:docs/guide/ecosystem.md:75
 
 # error-handling.md — intentional reserved-keyword syntax demo and intentional missing-file sandbox demo
-block:docs/guide/error-handling.md:284
-block:docs/guide/error-handling.md:380
+block:docs/guide/error-handling.md:289
+block:docs/guide/error-handling.md:385
 
 # library-entry-points.md — hypothetical package imports (nodus-example, your-library)
 block:docs/guide/library-entry-points.md:109
 block:docs/guide/library-entry-points.md:162
 
 # standard-library.md — intentional missing-file demo, context-dependent subprocess/time snippets
-block:docs/guide/standard-library.md:588
+block:docs/guide/standard-library.md:589
 block:docs/guide/standard-library.md:1087
 block:docs/guide/standard-library.md:1124
 block:docs/guide/standard-library.md:1197
@@ -106,7 +104,7 @@ block:docs/guide/ai-primitives.md:212
 block:docs/guide/ai-primitives.md:228
 
 # standard-library.md — std:bool snippet uses undefined context variable 'some_value'
-block:docs/guide/standard-library.md:1214
+block:docs/guide/standard-library.md:1220
 
 # workflows-and-tasks.md — intentional WRONG/RIGHT record-vs-map error demo
 block:docs/guide/workflows-and-tasks.md:344
