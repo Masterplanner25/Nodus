@@ -1,6 +1,6 @@
 # Language Stability Index
 
-**Version:** 4.0.8
+**Version:** 4.1.1
 **Status:** Governing document — supersedes `docs/governance/STABILITY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -51,7 +51,8 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `yield expr` | Stable | Promoted v4.0.5; `YIELD` opcode stable since v1.0; no further changes planned |
 | `spawn`, `coroutine`, `channel` | Mostly Stable | Graduated v4.0.5; SCHED-001/002, CHAN-001, CIRC-001 all resolved |
 | Optional type annotations | Experimental | Syntax accepted and preserved in AST; **no runtime enforcement** — `let x: int = "hello"` succeeds silently. Forward path: `nodus check --strict` (not yet implemented). |
-| `break` / `continue` | Not implemented | Planned for a future release |
+| `break` / `continue` | Mostly Stable | Shipped v4.1.0 (#309) for `while`, C-style `for`, and `for … in`. Compile-time error outside a loop or across a `try`/`catch`/`finally` boundary. No new opcodes. |
+| `match` expression | Mostly Stable | Shipped v4.1.0 (#308). Value-matching arms compared with `==`, first match wins, `_` catch-all must be last. **No destructuring or binding patterns** — those would extend the surface, so it is not yet Stable. |
 
 ---
 
@@ -80,6 +81,11 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `std:memory` | Experimental | Shipped in v4.0; share/recall/forget across namespaces; `tag`/`forget` added v4.0.3 |
 | `std:retry` | Experimental | Shipped in v4.0; configurable retry policies |
 | `std:circuit_breaker` | Experimental | Shipped in v4.0; three-state breaker; map-form `create` added v4.0.3 |
+| `std:async` | Experimental | `sleep`, `queue`, `parallel`, `series` work (`parallel`/`series` fixed v4.1.1, #339). **`worker_pool` and `pipeline` are non-functional** — they spawn onto the detached module VM's scheduler, which nothing drives, so work is silently dropped (#339 open). `channel`/`send`/`recv`/`close`/`spawn`/`coroutine` are VM builtins, not exports of this module. |
+| `std:runtime` | Experimental | Introspection — `typeof`, `fields`, `fn_arity`, `stack_depth`, `tasks`, `scheduler` |
+| `std:utils` | Experimental | `clamp`, `coalesce`, `get` |
+| `std:tools` / `std:agent` | Experimental | Adapters for tools/agents registered by the embedding host; `agent.call_async` added v4.1.0 (#294) |
+| `std:bool` | Experimental | Single export `equal(value, bool_value)` |
 | Legacy `.tl` extension | Deprecated | Warned on use; no removal date set |
 
 ---
