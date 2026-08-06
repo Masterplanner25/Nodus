@@ -2,7 +2,7 @@
 
 ## Language
 
-This project uses **Nodus v4** (`nodus-lang 4.0.8`).
+This project uses **Nodus v4** (`nodus-lang 4.1.1`).
 
 Install: `pip install nodus-lang`
 
@@ -24,6 +24,8 @@ nodus repl
 - `+=`, `-=`, `*=`, `/=` work. `**` does not — use `math.pow()`.
 - `print()` is single-argument. Use interpolation: `print("value: \(x)")`.
 - Expressions cannot span newlines. Keep calls and list literals on one line.
+- `break` and `continue` work in all loop forms (4.1.0+), but cannot cross a `try`/`catch`/`finally` boundary.
+- `match` is an expression for value dispatch (4.1.0+): `match x { "a" => 1i, _ => 0i }`. `_` must be last; no binding patterns.
 - Bare numbers are floats. Use `i` suffix for counters, indices, loop bounds, and workflow state.
 - Imports must be top-level only.
 - Assigning to an outer `let` inside a closure creates a nil local shadow. Use a map for shared mutable state.

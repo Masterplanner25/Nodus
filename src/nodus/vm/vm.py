@@ -178,6 +178,10 @@ class VM:
         self.handler_stack: list[tuple[int, int, int, int]] = []
         self._deferred_return = _DEFERRED_NONE
         self.current_coroutine: Coroutine | None = None
+        # ASYNC-MOD-003: set by NodusModule.invoke_function on a detached module
+        # VM. Declared here so the CALL_VALUE hot path is a plain attribute read
+        # instead of a missing-attribute getattr on every call.
+        self._caller_vm = None
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
@@ -2471,10 +2475,35 @@ class VM:
             self.stack.append(callee(*args))
             self.ip += 1
             return None
+        if self._caller_vm is not None and self._is_foreign_closure(callee):
+            # ASYNC-MOD-003: a caller closure that reached this module VM nested
+            # inside a container (list/map/record) was never wrapped in a
+            # _ClosureProxy, so its fn.addr points into the *caller's* bytecode.
+            # Executing it here would run the module's instructions at that
+            # address (Stack underflow / NoneType errors). Dispatch it back
+            # through the caller VM, exactly as a proxy would.
+            self.stack.append(self._caller_vm.run_closure(callee, args))
+            self.ip += 1
+            return None
         for arg in args:
             self.stack.append(arg)
         self.call_closure(callee, arg_count)
         return None
+
+    def _is_foreign_closure(self, callee) -> bool:
+        """True if ``callee`` is a Closure compiled against a different chunk.
+
+        Only meaningful inside a detached module VM (``_caller_vm`` set). A
+        closure is module-local when its FunctionInfo is one of this module's
+        own — including mangled anonymous entries such as ``__anon_1__fn2``.
+        """
+        if self._caller_vm is None or not isinstance(callee, Closure):
+            return False
+        fn_info = getattr(callee, "function", None)
+        if fn_info is None:
+            return False
+        local = self.functions.get(getattr(fn_info, "name", None))
+        return local is not fn_info
 
     def _op_make_closure(self, instr):
         fn_name = instr[1]

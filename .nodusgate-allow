@@ -59,7 +59,7 @@ symbol:std:nonexistent
 block:docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md:146
 
 # README.md — http example shows field access on result; 'body' field varies by sandbox config
-block:README.md:96
+block:README.md:118
 
 # getting-started.md — multi-file example (imports ./math_utils companion) and context-dependent snippet
 block:docs/guide/getting-started.md:255
@@ -74,8 +74,8 @@ block:docs/guide/ai-primitives.md:186
 block:docs/guide/ai-primitives.md:202
 
 # ecosystem.md — multi-file examples (client module, nodus-extension host install required)
-block:docs/guide/ecosystem.md:51
-block:docs/guide/ecosystem.md:72
+block:docs/guide/ecosystem.md:54
+block:docs/guide/ecosystem.md:75
 
 # error-handling.md — intentional reserved-keyword syntax demo and intentional missing-file sandbox demo
 block:docs/guide/error-handling.md:284
@@ -86,10 +86,10 @@ block:docs/guide/library-entry-points.md:109
 block:docs/guide/library-entry-points.md:162
 
 # standard-library.md — intentional missing-file demo, context-dependent subprocess/time snippets
-block:docs/guide/standard-library.md:581
-block:docs/guide/standard-library.md:1046
-block:docs/guide/standard-library.md:1083
-block:docs/guide/standard-library.md:1156
+block:docs/guide/standard-library.md:588
+block:docs/guide/standard-library.md:1087
+block:docs/guide/standard-library.md:1124
+block:docs/guide/standard-library.md:1197
 
 # LANGUAGE_SPEC.md — illustrative pattern code with undefined context variable
 block:docs/language/LANGUAGE_SPEC.md:609
@@ -109,7 +109,7 @@ block:docs/guide/ai-primitives.md:212
 block:docs/guide/ai-primitives.md:228
 
 # standard-library.md — std:bool snippet uses undefined context variable 'some_value'
-block:docs/guide/standard-library.md:1162
+block:docs/guide/standard-library.md:1214
 
 # workflows-and-tasks.md — intentional WRONG/RIGHT record-vs-map error demo
 block:docs/guide/workflows-and-tasks.md:344
@@ -128,3 +128,7 @@ block:docs/language/STYLE_GUIDE.md:357
 
 # EMBEDDING.md — 'log' is a host-registered function (see preceding Python block), not a builtin
 block:docs/runtime/EMBEDDING.md:158
+
+# --- Re-pointed after the 2026-08-05 doc sweep shifted line numbers ---
+# (README ecosystem/extras/stdlib expansion, ecosystem.md header, standard-library.md
+#  std:async known-bug block + TOC). Block contents unchanged; only line numbers moved.

@@ -47,7 +47,13 @@ jobs:
 
       - name: Lint
         run: |
-          pip install ruff
+          # Pinned deliberately. Unpinned, CI installs whatever ruff released
+          # most recently: 0.16.1 changed the default rule selection and flagged
+          # 684 errors across untouched files (tools/, examples/) on code that
+          # was clean the day before. A linter that can change its mind between
+          # runs is not a gate. Bump this pin in its own PR, with the resulting
+          # fixes, so lint churn never rides along on an unrelated change.
+          pip install ruff==0.15.14
           ruff check .
 
       - name: Type check (mypy)

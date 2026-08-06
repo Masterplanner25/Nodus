@@ -1,7 +1,7 @@
 # Standard Library Reference
 
 This file covers every built-in function and every `std:` module available
-in Nodus v4.0. Built-ins require no import. Standard modules are imported
+in Nodus v4.1. Built-ins require no import. Standard modules are imported
 with `import "std:<name>" as <alias>`.
 
 If you haven't read [types-and-values.md](types-and-values.md) yet, do that
@@ -22,7 +22,14 @@ record/map distinction and the two numeric kinds (`number` and `int`).
 8. [std:memory](#8-stdmemory)
 9. [std:utils](#9-stdutils)
 10. [std:runtime](#10-stdruntime)
-11. [Experimental modules](#11-experimental-modules)
+11. [Experimental modules](#11-experimental-modules) — `std:async`, `std:tools`, `std:agent`
+12. [v4.0 standard library](#12-v40-standard-library-new-in-400) — `std:http`, `std:hash`,
+    `std:encoding`, `std:secrets`, `std:subprocess`, `std:env`, `std:time`, `std:tool`,
+    `std:test`, `std:bool`
+
+The AI-native orchestration modules — `std:identity`, `std:effects`, `std:sys`,
+`std:retry`, and `std:circuit_breaker` — are covered in
+[ai-primitives.md](ai-primitives.md), not here.
 
 ---
 
@@ -851,12 +858,54 @@ Coroutine and concurrency primitives.
 
 | Function | Description |
 |----------|-------------|
-| `sleep(ms)` | Suspend current coroutine for `ms` milliseconds |
-| `parallel(fns)` | Run a list of zero-arg functions concurrently; returns list of results |
-| `series(fns)` | Run a list of zero-arg functions sequentially; returns list of results |
-| `queue(fn)` | Queue a function for async execution |
-| `worker_pool(n, fns)` | Run `fns` across `n` workers |
-| `pipeline(fns)` | Chain functions as a pipeline |
+| `sleep(ms)` | Suspend current coroutine for `ms` milliseconds. Returns nil. |
+| `queue()` | Takes **no arguments**; returns a new channel. A thin alias for `channel()`. |
+| `parallel(tasks)` | Spawn every task in `tasks` and drive the scheduler until all finish. Returns nil, *not* a list of results. |
+| `series(tasks)` | Spawn and drain each task in turn, in order. Returns nil, *not* a list of results. |
+| `worker_pool(worker, count)` | ⚠️ **Broken — see below.** Intended: start `count` workers reading from a jobs channel, each calling `worker(item)`. Returns the jobs channel. |
+| `pipeline(stages)` | ⚠️ **Broken — see below.** Intended: chain `stages` through channels. Returns a record `{input, output}`. |
+| `graph_run(tasks)` | Undocumented; delegates to `run_graph(graph(tasks))`. |
+
+`tasks` may hold either zero-argument functions or pre-built coroutines — both
+forms work, and a task that calls `async.sleep()` suspends rather than blocking,
+so the others keep running:
+
+```nd
+import "std:async" as async
+async.parallel([fn() { async.sleep(30); print("slow") }, fn() { print("fast") }])
+// -> fast, then slow
+```
+
+> **⚠️ Known bug: `worker_pool` and `pipeline` still do not work**
+> ([issue 339](https://github.com/Masterplanner25/Nodus/issues/339)).
+> Both spawn coroutines inside the module and return a channel for *you* to
+> drive. Those coroutines land on the module's own scheduler, which nothing
+> ever runs, so the work is silently dropped — no error, no output:
+>
+> ```nd
+> import "std:async" as async
+> let jobs = async.worker_pool(fn(item) { print("job: \(item)") }, 2i)
+> send(jobs, "x")
+> close(jobs)
+> run_loop()        // prints nothing — the workers are on another scheduler
+> ```
+>
+> Build the pool inline instead, so the coroutines share your scheduler:
+>
+> ```nd
+> let jobs = channel()
+> spawn(coroutine(fn() {
+>     let item = recv(jobs)
+>     while (item != nil) { print("job: \(item)"); item = recv(jobs) }
+> }))
+> send(jobs, "x")
+> close(jobs)
+> run_loop()        // -> job: x
+> ```
+>
+> Fixing this needs VM-agnostic builtins (builtins currently close over the VM
+> that registered them), tracked with the design gap in
+> [issue 157](https://github.com/Masterplanner25/Nodus/issues/157).
 
 **Note:** `channel()`, `send()`, `recv()`, `close()`, `spawn()`, and
 `coroutine()` are **VM builtins**, not exports of `std:async`. Use them
@@ -962,11 +1011,14 @@ F15: std:utils is not documented in LANGUAGE_SPEC.md.
 
 ## 12. v4.0 Standard Library (New in 4.0.0)
 
-The following modules ship with nodus-lang 4.0.0 and are not covered in the
-v3.0 sections above. For all modules, import with `import "std:<name>" as <alias>`.
+The following modules were added in nodus-lang 4.0.0 and are not covered in the
+sections above. For all modules, import with `import "std:<name>" as <alias>`.
 
-> **Note:** The standard-library.md was written for v3.0. The key API shapes and non-obvious behaviors
-> are documented here; the machine-readable index in `llms.txt` covers the rest.
+> **Note:** Sections 1–11 were originally written for v3.0 and revised for v4.x;
+> this section documents the 4.0 additions. Coverage here is API shapes and
+> non-obvious behaviors rather than exhaustive signatures — see
+> [ai-primitives.md](ai-primitives.md) for the AI-native modules and `llms.txt`
+> for the machine-readable index.
 
 ---
 

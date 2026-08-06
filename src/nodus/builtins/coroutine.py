@@ -12,7 +12,15 @@ def register(vm, registry) -> None:
         closure = vm.ensure_function(value, "coroutine(fn)")
         if len(closure.function.params) != 0:
             vm.runtime_error("call", "coroutine(fn) expects a zero-argument function")
-        return Coroutine(closure)
+        coro = Coroutine(closure)
+        # ASYNC-MOD-003: a coroutine must run in the context its closure was
+        # compiled against. Inside a detached module VM, a closure that arrived
+        # from the caller (e.g. nested in the list passed to async.parallel)
+        # belongs to the caller's chunk — resuming it against the module's
+        # bytecode corrupts execution. Pin the owning context at creation.
+        if vm._is_foreign_closure(closure):
+            coro.module_ctx = vm._caller_vm._capture_module_ctx()
+        return coro
 
     def builtin_coroutine_status(value):
         coroutine = vm.ensure_coroutine(value, "coroutine_status(coroutine)")
@@ -89,6 +97,13 @@ def register(vm, registry) -> None:
         coro_timeout = getattr(vm, "coroutine_timeout_ms", None)
         if coro_timeout is not None:
             coroutine.task_timeout_ms = coro_timeout
+        # ASYNC-MOD-003: a coroutine built in the caller and handed to a module
+        # function (async.parallel([c1, c2])) carries no context, and the
+        # spawning VM's context is the *module's* — resuming against it
+        # corrupts execution. Pin the caller's context when the closure is
+        # foreign to this VM.
+        if coroutine.module_ctx is None and vm._is_foreign_closure(coroutine.closure):
+            coroutine.module_ctx = vm._caller_vm._capture_module_ctx()
         # ASYNC-MOD-001: capture the spawning module context so the coroutine's
         # first resume restores it (not a context another coroutine left behind).
         if coroutine.module_ctx is None and hasattr(vm, "_capture_module_ctx"):
