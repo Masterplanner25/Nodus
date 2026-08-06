@@ -1,114 +1,133 @@
 # .nodusgate-allow — nodus_gate suppression list
-# Format: block:<relative-path>:<line> or symbol:<name>
+#
+# Format: blockhash:<relative-path>:<12-hex>  or  symbol:<name>
+#
+# The hash covers the code block's normalized source (trailing whitespace and
+# surrounding blank lines stripped, line-ending agnostic), so an entry survives
+# edits elsewhere in the same file. Edit the block itself and the entry stops
+# matching — which is the point: the suppression should be re-reviewed when the
+# code it excuses changes.
+#
+# The legacy `block:<relative-path>:<line>` form is still accepted, but do not
+# add new ones. Line numbers rot silently: any edit that inserts a line above a
+# block leaves the entry pointing at the wrong place, where it matches nothing
+# and suppresses nothing. Four consecutive doc PRs had to re-point entries
+# before this file was migrated, and dead entries accumulated unnoticed.
+#
+# To regenerate after intentional edits:
+#     python -m tools.nodus_gate.cli --migrate-allowlist
+# It resolves each legacy entry to the block currently at that line, rewrites it
+# as a hash, and drops entries that no longer match a runnable block.
+#
 # Only suppress findings that are intentional (multi-file examples,
 # context-dependent snippets, intentional error demos).
 
 # modules-and-imports.md — all multi-file examples; requires companion files
-block:docs/guide/modules-and-imports.md:29
-block:docs/guide/modules-and-imports.md:59
-block:docs/guide/modules-and-imports.md:71
-block:docs/guide/modules-and-imports.md:105
-block:docs/guide/modules-and-imports.md:136
-block:docs/guide/modules-and-imports.md:232
-block:docs/guide/modules-and-imports.md:243
-block:docs/guide/modules-and-imports.md:361
+blockhash:docs/guide/modules-and-imports.md:9c87f5ac42cf
+blockhash:docs/guide/modules-and-imports.md:2b84e0b3e1dc
+blockhash:docs/guide/modules-and-imports.md:ab968b4824bd
+blockhash:docs/guide/modules-and-imports.md:41f99f07a648
+blockhash:docs/guide/modules-and-imports.md:8b0cd5e51fba
+blockhash:docs/guide/modules-and-imports.md:0f72fcdb2fee
+blockhash:docs/guide/modules-and-imports.md:83001d7f68e7
+blockhash:docs/guide/modules-and-imports.md:bcb77c39a4e7
 
 
 # debugging.md — intentional error demonstrations (missing key, non-top-level import)
-block:docs/guide/debugging.md:23
-block:docs/guide/debugging.md:329
+blockhash:docs/guide/debugging.md:36d75083c4e0
+blockhash:docs/guide/debugging.md:984af355e326
 
 
 # error-surfaces.md — illustrative snippet showing return-outside-function pattern
-block:docs/policy/error-surfaces.md:177
+blockhash:docs/policy/error-surfaces.md:72750155920c
 
 # types-and-values.md — intentional type-error demo and missing-key demo
-block:docs/guide/types-and-values.md:639
-block:docs/guide/types-and-values.md:654
+blockhash:docs/guide/types-and-values.md:ebd539eeebb8
+blockhash:docs/guide/types-and-values.md:6eb546d2aef5
 
 # workflows-and-tasks.md — context-dependent workflow examples
-block:docs/guide/workflows-and-tasks.md:81
-block:docs/guide/workflows-and-tasks.md:158
-block:docs/guide/workflows-and-tasks.md:179
-block:docs/guide/workflows-and-tasks.md:273
+blockhash:docs/guide/workflows-and-tasks.md:3121318e2bb0
+blockhash:docs/guide/workflows-and-tasks.md:5dea727297e5
+blockhash:docs/guide/workflows-and-tasks.md:645e392994ea
+blockhash:docs/guide/workflows-and-tasks.md:3121318e2bb0
 
 # working-with-json.md — context-dependent snippets
-block:docs/guide/working-with-json.md:241
-block:docs/guide/working-with-json.md:266
-block:docs/guide/working-with-json.md:277
+blockhash:docs/guide/working-with-json.md:b2301aa723ac
+blockhash:docs/guide/working-with-json.md:33df301296ee
+blockhash:docs/guide/working-with-json.md:91f18cc7e070
 
 # LANGUAGE_SPEC.md — illustrative pattern code with implicit context
 
 # Runtime reference docs — context-dependent examples
-block:docs/runtime/TASK_GRAPHS.md:48
-block:docs/runtime/WORKFLOWS.md:44
+blockhash:docs/runtime/TASK_GRAPHS.md:19cb6560bfc0
+blockhash:docs/runtime/WORKFLOWS.md:b9b0eb0ede24
 
 # FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent
 
 # README.md — http example shows field access on result; 'body' field varies by sandbox config
-block:README.md:118
+blockhash:README.md:287d267d54e0
 
 # getting-started.md — multi-file example (imports ./math_utils companion) and context-dependent snippet
-block:docs/guide/getting-started.md:306
-block:docs/guide/getting-started.md:350
+blockhash:docs/guide/getting-started.md:30b9a1ead393
+blockhash:docs/guide/getting-started.md:943c4c8f8cc3
 
 # ai-primitives.md — all blocks are multi-file or context-dependent (require companion state/imports)
-block:docs/guide/ai-primitives.md:15
-block:docs/guide/ai-primitives.md:67
+blockhash:docs/guide/ai-primitives.md:440e0992c5fd
+blockhash:docs/guide/ai-primitives.md:899d30806393
 
 # ecosystem.md — multi-file examples (client module, nodus-extension host install required)
-block:docs/guide/ecosystem.md:54
-block:docs/guide/ecosystem.md:75
+blockhash:docs/guide/ecosystem.md:8171416ea616
+blockhash:docs/guide/ecosystem.md:846381fd739f
 
 # error-handling.md — intentional reserved-keyword syntax demo and intentional missing-file sandbox demo
-block:docs/guide/error-handling.md:289
-block:docs/guide/error-handling.md:395
+blockhash:docs/guide/error-handling.md:2d77fe7af1e7
+blockhash:docs/guide/error-handling.md:042ad3c6c0ac
 
 # library-entry-points.md — hypothetical package imports (nodus-example, your-library)
-block:docs/guide/library-entry-points.md:109
-block:docs/guide/library-entry-points.md:162
+blockhash:docs/guide/library-entry-points.md:0eb5cf711243
+blockhash:docs/guide/library-entry-points.md:643e43e9cd95
 
 # standard-library.md — intentional missing-file demo, context-dependent subprocess/time snippets
-block:docs/guide/standard-library.md:589
+blockhash:docs/guide/standard-library.md:383ab94a6966
 
 # LANGUAGE_SPEC.md — illustrative pattern code with undefined context variable
-block:docs/language/LANGUAGE_SPEC.md:609
-block:docs/language/LANGUAGE_SPEC.md:619
+blockhash:docs/language/LANGUAGE_SPEC.md:a16a20d9ab88
+blockhash:docs/language/LANGUAGE_SPEC.md:6efd02b93559
 
 # error-surfaces.md — intentional sandbox security demo (blocked path access)
-block:docs/policy/error-surfaces.md:80
+blockhash:docs/policy/error-surfaces.md:ed50aea65253
 
 # --- Re-pointed after doc-reformat PRs #273/#276 shifted line numbers (#293) ---
 
 # ai-primitives.md — context-dependent primitive snippets (undefined host functions,
 # record-vs-map memory values, sys.v1 namespace, partial agent-step context)
-block:docs/guide/ai-primitives.md:91
-block:docs/guide/ai-primitives.md:119
-block:docs/guide/ai-primitives.md:149
-block:docs/guide/ai-primitives.md:212
-block:docs/guide/ai-primitives.md:228
+blockhash:docs/guide/ai-primitives.md:ec4ab34a2320
+blockhash:docs/guide/ai-primitives.md:9b4925658b40
+blockhash:docs/guide/ai-primitives.md:2e1b2d76a691
+blockhash:docs/guide/ai-primitives.md:c1c542fbfeaa
+blockhash:docs/guide/ai-primitives.md:74aa0fb1b491
 
 # standard-library.md — std:bool snippet uses undefined context variable 'some_value'
-block:docs/guide/standard-library.md:1220
+blockhash:docs/guide/standard-library.md:822703bb54e3
 
 # workflows-and-tasks.md — intentional WRONG/RIGHT record-vs-map error demo
-block:docs/guide/workflows-and-tasks.md:375
+blockhash:docs/guide/workflows-and-tasks.md:a8c62f3b6461
 
 # STYLE_GUIDE.md — illustrative style fragments (undefined context vars/functions,
 # intentional paren-less control-flow snippets, multiline line-length demo)
-block:docs/language/STYLE_GUIDE.md:131
-block:docs/language/STYLE_GUIDE.md:179
-block:docs/language/STYLE_GUIDE.md:191
-block:docs/language/STYLE_GUIDE.md:226
-block:docs/language/STYLE_GUIDE.md:246
-block:docs/language/STYLE_GUIDE.md:253
-block:docs/language/STYLE_GUIDE.md:308
-block:docs/language/STYLE_GUIDE.md:343
-block:docs/language/STYLE_GUIDE.md:357
+blockhash:docs/language/STYLE_GUIDE.md:3bf4c821423e
+blockhash:docs/language/STYLE_GUIDE.md:680944716d8d
+blockhash:docs/language/STYLE_GUIDE.md:41cf842bbfd4
+blockhash:docs/language/STYLE_GUIDE.md:74d40c269951
+blockhash:docs/language/STYLE_GUIDE.md:33f59c8bae39
+blockhash:docs/language/STYLE_GUIDE.md:27097469c0ee
+blockhash:docs/language/STYLE_GUIDE.md:993f66e324a5
+blockhash:docs/language/STYLE_GUIDE.md:d386a172dc1d
+blockhash:docs/language/STYLE_GUIDE.md:afea2dd1d8b4
 
 # EMBEDDING.md — 'log' is a host-registered function (see preceding Python block), not a builtin
-block:docs/runtime/EMBEDDING.md:158
+blockhash:docs/runtime/EMBEDDING.md:a1e94c8e2b8d
 
 # --- Re-pointed after the 2026-08-05 doc sweep shifted line numbers ---
 # (README ecosystem/extras/stdlib expansion, ecosystem.md header, standard-library.md
@@ -117,6 +136,6 @@ block:docs/runtime/EMBEDDING.md:158
 # modules-and-imports.md §6 — import-placement examples: the 'Correct' form imports a
 # nonexistent ./helpers, and the 'Rejected at parse time' block is intentionally invalid
 # (that is the point of the example — all three placements are syntax errors)
-block:docs/guide/modules-and-imports.md:278
-block:docs/guide/modules-and-imports.md:288
+blockhash:docs/guide/modules-and-imports.md:4d65d2486b6f
+blockhash:docs/guide/modules-and-imports.md:dd90da2bd2b5
 

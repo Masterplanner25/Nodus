@@ -26,6 +26,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--quiet": False,
         "--strict": False,
         "--no-cache": False,
+        "--migrate-allowlist": False,
     }
     flags_with_values = {"--format", "--allowlist", "--section"}
     values = {"--format": "auto", "--allowlist": ".nodusgate-allow", "--section": "Unreleased"}
@@ -62,11 +63,64 @@ def _load_allowlist(path: str) -> set[str]:
     return result
 
 
+def _migrate_allowlist(path: str) -> int:
+    """Rewrite ``block:<path>:<line>`` entries as stable ``blockhash:`` keys.
+
+    Line-number keys silently rot: any edit that shifts a block leaves the
+    entry pointing at the wrong line, where it matches nothing and suppresses
+    nothing. This resolves each entry against the block currently at that line
+    and rewrites it as a content hash. Entries that no longer resolve to a
+    runnable block are dropped with a note — they were already inert.
+
+    Comments and ordering are preserved so the file stays reviewable.
+    """
+    from tools.nodus_gate.markdown_parser import collect_doc_files, extract_blocks
+
+    root = os.getcwd()
+    by_line: dict[str, object] = {}
+    for file_path in collect_doc_files(root, include_design=True):
+        for block in extract_blocks(file_path):
+            if block.should_run:
+                by_line[block.line_key(root)] = block
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        print(f"allowlist not found: {path}")
+        return 1
+
+    out: list[str] = []
+    migrated = dropped = kept = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("block:"):
+            out.append(line)
+            continue
+        block = by_line.get(stripped)
+        if block is None:
+            print(f"  DROP (dead, matched no runnable block): {stripped}")
+            dropped += 1
+            continue
+        out.append(block.content_key(root))
+        migrated += 1
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+
+    print(f"migrated {migrated} entr{'y' if migrated == 1 else 'ies'} to blockhash keys, "
+          f"dropped {dropped} dead, left {kept} other line(s) untouched")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
     args = _parse_args(argv)
+
+    if args["--migrate-allowlist"]:
+        return _migrate_allowlist(args["--allowlist"])
 
     run_static = args["--static"] or args["--all"]
     run_runtime = args["--runtime"] or args["--all"]
@@ -88,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
         print("  --format <fmt>    Output format: pretty, plain, json (default: auto)")
         print("  --allowlist <f>   Path to allowlist file (default: .nodusgate-allow)")
         print("  --section <s>     CHANGELOG section for closed-issues (default: Unreleased)")
+        print("")
+        print("Maintenance:")
+        print("  --migrate-allowlist  Rewrite line-number block: entries as stable")
+        print("                       blockhash: entries, and drop dead ones")
         return 2
 
     output_fmt = args["--format"]
