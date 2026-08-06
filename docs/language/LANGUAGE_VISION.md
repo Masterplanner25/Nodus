@@ -96,9 +96,9 @@ All v1.0 near-term goals are complete as of v2.1.0:
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
 - Stability policy published (`docs/governance/STABILITY.md`) ✅
 
-## Current Release (v4.0.8)
+## Current Release (v4.1.1)
 
-Shipped 2026-06-25 on PyPI (`pip install nodus-lang`).
+Shipped 2026-08-05 on PyPI (`pip install nodus-lang`).
 
 v4.0 cycle highlights:
 - v4.0.0: AI-native stdlib (std:tool, std:identity, std:effects, std:sys, std:memory, std:retry, std:circuit_breaker), HandlerContract infrastructure, full ecosystem of 35 companion packages
@@ -110,6 +110,10 @@ v4.0 cycle highlights:
 - v4.0.6: @retry annotation no-op fixed (COMPILER-001, #267), spurious "spawned task never executed" warning fixed (WARN-001, #268), `nodus serve`/`worker --help` print usage
 - v4.0.7: cross-process workflow resume re-binds module imports (REHYDRATE-001, #285)
 - v4.0.8: stdlib async wrappers (`http.get_async`, `subprocess.run_async`) overlap concurrently instead of falling back to sync (ASYNC-MOD-001, #105)
+
+v4.1 cycle highlights:
+- v4.1.0: `match` expression for value dispatch (#308) and `break`/`continue` loop control (#309) — the first new language syntax since v4.0; async agent calls (#294); workflow resume fixes (#322, #328)
+- v4.1.1: closures passed to a module function inside a list, map, or record now run against the caller's bytecode instead of the module's (ASYNC-MOD-003, #339). This affected every `.nd` library taking callbacks in a container, not just the stdlib; `std:async.parallel`/`series` work as a result
 
 Previous: v3.0.2 (shipped 2026-05-25; eval score 7.57/10).
 

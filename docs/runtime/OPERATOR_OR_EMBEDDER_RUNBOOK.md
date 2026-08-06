@@ -1,6 +1,6 @@
 # Operator / Embedder Runbook
 
-**Version:** 4.0.8
+**Version:** 4.1.1
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -15,12 +15,12 @@ and upgrade procedures.
 ### 1.1 Install
 
 ```bash
-pip install nodus-lang==4.0.8
+pip install nodus-lang==4.1.1
 ```
 
 For the FastAPI/Uvicorn server stack (experimental):
 ```bash
-pip install "nodus-lang[server]==4.0.8"
+pip install "nodus-lang[server]==4.1.1"
 ```
 
 ### 1.2 Minimal embedding

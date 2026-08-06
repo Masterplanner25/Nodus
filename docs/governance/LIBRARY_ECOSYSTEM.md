@@ -9,8 +9,9 @@
 `docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-> **Current state note (2026-06-20):** nodus-lang is at **4.0.8**, published on PyPI.
-> The standalone ecosystem has 35 packages, all published on PyPI under Masterplanner25.
+> **Current state note (2026-08-05):** nodus-lang is at **4.1.1**, published on PyPI.
+> The standalone ecosystem has 32 companion packages (33 PyPI projects counting
+> nodus-lang), all published under Masterplanner25.
 > For honest current-state per package: `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`.
 
 ---
@@ -156,7 +157,7 @@ abstractions.
 - `nodus-sdk v0.1.0` — Unified platform SDK at `C:\dev\nodus-sdk`. Single install story:
   `pip install nodus-sdk[agent,sql,fastapi]`. Provides `NodusSDKRuntime` (fluent
   `attach_*` API), `create_runtime()` factory with auto-wiring, and 9 bridge modules
-  spanning the full 27-package ecosystem plus new Python bridges (SQLAlchemy, pgvector,
+  spanning the companion ecosystem plus new Python bridges (SQLAlchemy, pgvector,
   APScheduler, webhook, FastAPI router). 99 tests.
 
 - `nodus-store-sql v0.1.0` — SQLAlchemy 2.x persistence adapters at

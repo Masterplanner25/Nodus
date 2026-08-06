@@ -65,7 +65,7 @@ The scheduler is cooperative: coroutines yield explicitly, enabling deterministi
 
 ## Ecosystem
 
-Nodus ships as `nodus-lang` on PyPI. The surrounding ecosystem spans **35 standalone packages** covering agent coordination, MCP integration, memory, observability, circuit breaking, auth, queues, and more. A unified SDK installs them together:
+Nodus ships as `nodus-lang` on PyPI. The surrounding ecosystem spans **32 standalone companion packages** (33 PyPI projects counting `nodus-lang`) covering agent coordination, MCP integration, memory, observability, circuit breaking, auth, queues, and more. A unified SDK installs them together:
 
 ```bash
 pip install nodus-sdk[agent,sql,fastapi]

@@ -147,7 +147,7 @@ scaffolds live at [`packages/`](../packages/) in the repo root.
 
 | File | Contents |
 |---|---|
-| `PACKAGE_QUICK_REF.md` | All 35 packages — deps, key abstractions, tier |
+| `PACKAGE_QUICK_REF.md` | All companion packages — deps, key abstractions, tier |
 | `README.md` | Ecosystem overview |
 | `NODUS_HTTP.md` | `nodus-http` spec |
 | `NODUS_RETRY.md` | `nodus-retry` spec |
