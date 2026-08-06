@@ -43,7 +43,7 @@ These functions are always available. No import needed.
 |----------|---------|-------------|
 | `type(x)` | `string` | Type name: `"nil"`, `"bool"`, `"float"`, `"int"`, `"string"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"` |
 | `str(x)` | `string` | String representation of any value |
-| `len(x)` | `number` | Length of a list or string (returns a float) |
+| `len(x)` | `int` | Length of a list or string. **Returns an `int`, not a float** — this changed in v4.0 (it returned a float in v3). |
 
 ```nd
 print(type(42))
@@ -65,17 +65,18 @@ string
 list
 3.14
 42
-3.0
-5.0
+3
+5
 ```
 
 `type(x)` returns `"float"` for floating-point values and `"int"` for integer values.
 `type(x)` returns `"error"` for err records returned by stdlib functions.
 
-`len` always returns a float (e.g., `len([1, 2, 3])` → `3.0`). This is a
-known inconsistency; returning an `int` is tracked for a future release. `str(42i)` returns `"42"` (no `.0`);
-`str(10.0)` returns `"10.0"`. Use integer literals or `math.to_int` to get
-whole-number output without the `.0`.
+`len` returns an `int` (e.g., `len([1, 2, 3])` → `3`). It returned a float in
+v3; the v4.0 change is why older examples show `3.0`. `math.floor` and
+`math.ceil` return `int` for the same reason. `str(42i)` returns `"42"` (no
+`.0`); `str(10.0)` returns `"10.0"`. Use integer literals or `math.to_int` to
+get whole-number output without the `.0`.
 
 `print(42i)` displays `42` (not `42i` — the `i` suffix is source syntax only,
 not part of the runtime representation).
@@ -450,8 +451,8 @@ import "std:math" as math
 | `abs` | `(n)` | `number` | Absolute value |
 | `min` | `(a, b)` | `number` | Smaller of two numbers |
 | `max` | `(a, b)` | `number` | Larger of two numbers |
-| `floor` | `(n)` | `number` | Round down to nearest integer-valued float |
-| `ceil` | `(n)` | `number` | Round up to nearest integer-valued float |
+| `floor` | `(n)` | `int` | Round down. **Returns an `int`**, not a float |
+| `ceil` | `(n)` | `int` | Round up. **Returns an `int`**, not a float |
 | `sqrt` | `(n)` | `number` | Square root; returns `value_error` err if `n < 0` |
 | `random` | `()` | `number` | Pseudo-random float in `[0, 1)` |
 
@@ -472,8 +473,8 @@ Output:
 7.0
 3.0
 9.0
-3.0
-4.0
+3
+4
 5.0
 ```
 
@@ -653,7 +654,7 @@ the running script. It is not shared between scripts or persisted to disk.
 | `get` | `(key)` | value | Retrieve value for `key`; returns `nil` if absent |
 | `has` | `(key)` | `bool` | `true` if `key` is set |
 | `delete` | `(key)` | `nil` | Remove `key` |
-| `keys` | `()` | `list` | List of all stored keys |
+| `keys` | `()` | `list` | All stored keys, **sorted alphabetically** — not insertion order |
 
 ```nd
 import "std:memory" as mem
@@ -676,7 +677,7 @@ Output:
 42.0
 true
 false
-["score", "name"]
+["name", "score"]
 false
 nil
 ```
@@ -755,7 +756,7 @@ metadata, record fields, type details, and timing.
 |----------|-----------|---------|-------------|
 | `fn_name` | `(fn)` | `string` | Name of a function value |
 | `fn_arity` | `(fn)` | `number` | Number of declared parameters (as a float) |
-| `fn_module` | `(fn)` | `string` or `nil` | Module the function was defined in |
+| `fn_module` | `(fn)` | `string` or `nil` | Absolute path of the module the function was defined in. For a function in the entry script this is that script's path, **not `nil`** |
 
 ```nd
 import "std:runtime" as rt
@@ -764,7 +765,7 @@ fn add(a, b) { return a + b }
 
 print(rt.fn_name(add))
 print(rt.fn_arity(add))
-print(rt.fn_module(add))
+print(type(rt.fn_module(add)))
 ```
 
 Output:
@@ -772,8 +773,13 @@ Output:
 ```
 add
 2.0
-nil
+string
 ```
+
+`fn_arity` returns a float (`2.0`), not an int. `fn_module` returns the defining
+module's **absolute path** — for a function declared in the entry script, that
+script's own path, e.g. `/home/you/project/main.nd`. The example prints
+`type(...)` instead of the value because the path varies by machine.
 
 ### Record introspection
 
@@ -1241,3 +1247,20 @@ runtime.tool_registry.register({
 
 `tool_registry` methods: `register({...})`, `unregister(name)`, `invoke(name, args)`,
 `lookup(name)`, `list_tools(filter?)`, `has(name)`.
+
+<!--
+RE-VERIFIED 2026-08-05 against nodus-lang 4.1.1 — every nd block executed and
+its documented output diffed against actual: 44 run, 21 output-verified, 0
+mismatches after the fixes below.
+
+F-LEN (FIXED): `len()` documented as returning a float, with 3.0/5.0 output.
+  Returns an int since v4.0. Table row and prose corrected.
+F-FLOOR (FIXED): math.floor/math.ceil documented as returning
+  "integer-valued float" with 3.0/4.0 output. Both return int. math.sqrt/abs/min
+  do return floats — verified individually rather than assumed.
+F-KEYS (FIXED): mem.keys() documented as returning insertion order
+  (["score", "name"]). It returns keys SORTED alphabetically.
+F-FNMOD (FIXED): rt.fn_module() documented as returning nil for a function in
+  the entry script. It returns that script's ABSOLUTE PATH. Example now prints
+  type() since the value is machine-specific.
+-->

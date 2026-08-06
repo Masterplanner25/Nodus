@@ -72,8 +72,13 @@ Output:
 key
 Missing map key: "missing"
 3
-["at <main> (script.nd:3:5)"]
+["at <main> (/abs/path/script.nd:3:7)"]
 ```
+
+`err.stack` entries carry the **absolute** path, not the name you passed on the
+command line (see [#342](https://github.com/Masterplanner25/Nodus/issues/342)).
+The column points at the indexing expression (`["missing"]`), not at the
+variable — so line 3, column 7 here, not column 5.
 
 **Stdlib-returned err records.** Some stdlib functions return err records as values
 instead of throwing — for example `json.parse` returns an err record on invalid JSON,
@@ -430,4 +435,13 @@ TESTED EXAMPLES (v3.0 — all code blocks verified)
 7. type(content) == "error" pattern — confirmed
 8. fs.read missing file: kind="io_error", message starts with "file not found" — confirmed
 9. json.parse bad JSON: kind="parse_error", message starts with "invalid JSON" — confirmed
+-->
+
+<!--
+RE-VERIFIED 2026-08-05 against nodus-lang 4.1.1 — 13 nd blocks run, 4
+output-verified, 0 mismatches after the fixes below.
+
+F-STACK (FIXED): the err.stack example showed `script.nd:3:5`. Two errors — the
+  path in a stack entry is ABSOLUTE (see #342), and the column points at the
+  indexing expression, so it is 3:7 not 3:5.
 -->

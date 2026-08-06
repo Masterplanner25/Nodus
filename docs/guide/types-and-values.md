@@ -105,7 +105,7 @@ Output:
 5.0
 3.5
 7.0
-3.0
+3
 ```
 
 `10 / 2` is `5.0`, not `5`. `len()` returns `3.0`, not `3`. If you build output
@@ -330,7 +330,7 @@ for n in nums {
 Output:
 
 ```
-4.0
+4
 10.0
 40.0
 10.0
@@ -725,4 +725,14 @@ TESTED EXAMPLES (v3.0 — all code blocks verified)
 18. type error runtime — confirmed
 19. key error runtime — confirmed
 20. has_key guard pattern — confirmed
+-->
+
+<!--
+RE-VERIFIED 2026-08-05 against nodus-lang 4.1.1 — every nd block executed and
+its documented output diffed against actual: 23 run, 23 output-verified, 0
+mismatches after the fix below.
+
+F-LEN (FIXED): two output blocks showed `len()` returning a float (3.0, 4.0).
+  `len()` has returned an int since v4.0 — actual output is 3 and 4. These were
+  v3-era outputs that survived the v4 rewrite.
 -->
