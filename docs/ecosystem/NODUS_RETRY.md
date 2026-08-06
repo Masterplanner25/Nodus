@@ -1,7 +1,9 @@
 # `nodus-retry`
 
-> **Status:** v0.1.0 implemented and **published on PyPI** ✅ — `C:\dev\nodus-retry`, 33 tests.
+> **Status:** v0.2.0 implemented and **published on PyPI** ✅ — `C:\dev\nodus-retry`, 43 tests.
 > This document is the original design spec; the implementation was built against it.
+> v0.2.0 added a durable `SqliteEffectStore` (stdlib `sqlite3`) alongside the in-memory
+> store, for nodus-lang #304 — the spec below predates it.
 
 ## Summary
 
