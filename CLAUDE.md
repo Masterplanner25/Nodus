@@ -327,7 +327,14 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 
 ## nodus-a2a companion library
 
-⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-a2a` is the Tier 2 AgentCoordinator (23 tests, no nodus-lang dep). Original A2A wire protocol adapter (180 tests, nodus-lang dep) is preserved at `github.com/Masterplanner25/nodus-a2a`.
+⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-a2a` is the Tier 2 AgentCoordinator (23 tests, no nodus-lang dep).
+
+The original A2A **wire-protocol** adapter (180 tests, nodus-lang dep) now lives in its
+own repo: **`github.com/Masterplanner25/nodus-a2a-wire`** (local worktree at
+`C:\codev\nodus-a2a-wire`). Earlier wording here said it was "preserved at
+`github.com/Masterplanner25/nodus-a2a`" — that was true only of the *history*: its
+commit `10746ce` is an ancestor of that repo's `main`, but the current tree there is the
+coordinator, so cloning gives you the wrong thing. Use `nodus-a2a-wire`.
 
 **Current local `C:\dev\nodus-a2a` (AgentCoordinator layer, 23 tests):**
 - `AgentRegistry`, `AgentCoordinator` (local/delegate mode), `DelegationRequest`
@@ -403,7 +410,15 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 
 ## nodus-memory companion library
 
-⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-memory` is the Tier 2 full memory library (28 tests). Original nodus-lang adapter (192 tests, `attach_to_runtime`, `nm_*` host functions, `import "nodus-memory"`) is preserved at `github.com/Masterplanner25/nodus-memory`.
+⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-memory` is the Tier 2 full memory library (28 tests).
+
+The original nodus-lang adapter (192 tests, `attach_to_runtime`, `nm_*` host functions,
+`import "nodus-memory"`) exists **in git history only** — commit `f02ab1e`, which still
+carries `src/nodus_memory/nodus_bindings.py`. Commit `6d3a241` ("remove stale nodus-lang
+adapter") deleted it from the tree. Earlier wording here said it was "preserved at
+`github.com/Masterplanner25/nodus-memory`", which reads as *go clone it*; the current
+tree there is the Tier 2 library. Recover with `git show f02ab1e:src/nodus_memory/nodus_bindings.py`,
+or give it its own repo the way `nodus-a2a-wire` got one.
 
 **Current local `C:\dev\nodus-memory` (Tier 2 full library, 28 tests):**
 - `MemoryNode`, `InMemoryStore`, MAS `build_path()`/`glob_match()`
