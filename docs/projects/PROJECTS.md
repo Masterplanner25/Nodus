@@ -1,7 +1,8 @@
 # Nodus Showcase Projects
 
-Four projects built by the language's author using the Nodus ecosystem. They range
-from a fully-running 430-line example to a production platform:
+Nine projects built by the language's author using the Nodus ecosystem. They range
+from four small framework-comparison demos through a fully-running 430-line
+example to a production platform:
 
 - exercises real Nodus language features end-to-end in a domain that makes sense outside of a tutorial
 - tests the Claude/Codex skills that ship with the language against a live coding session
@@ -77,7 +78,7 @@ nodus test .
 ## claudecodenodus — Autonomous Research Agent
 
 **Location:** `C:\dev\claudecodenodus`
-**Status:** Design complete · Implementation not started
+**Status:** Implementation under way — **68 tests passing** (verified 2026-08-06). 15 Python modules and 5 `.nd` probes exist. Not yet a git repo.
 
 Designed by Claude Sonnet during an independent evaluation session where the full
 Nodus ecosystem was installed and the skills were the primary reference. Design
@@ -146,7 +147,7 @@ research/{session_id}/final
 ## codexnodus — Workflow-Native Agent Service
 
 **Location:** `C:\dev\codexnodus`
-**Status:** High-level plan complete · No concrete workflow spec yet
+**Status:** Partially implemented and **currently broken** (verified 2026-08-06). A service package exists under `src/codexnodus_agent_service/`, but there is no `pyproject.toml`, so the package is not importable and tests fail to collect. With `PYTHONPATH=src` set, 11 pass and 24 fail. Not yet a git repo.
 
 Designed by OpenAI Codex during an independent planning session with the Nodus
 ecosystem installed and the Codex skill as the primary reference. Design docs live
@@ -327,9 +328,52 @@ or skill files.
 
 ---
 
+## Framework comparison showcases
+
+**Location:** `C:\codev\nodus-showcase-*`
+**Status:** All four run today. None is a git repo yet.
+
+Four self-contained demonstrations that re-express another framework's headline
+capability in Nodus. Each is small, has no API-key requirement, and writes its
+artifacts to `output/`. Verified 2026-08-06 by running each project's documented
+entry point:
+
+| Showcase | Re-expresses | Result on run |
+|---|---|---|
+| `nodus-showcase-crewai` | CrewAI role delegation | `delegated to [researcher, writer] via A2A coordinator; 1 tool over MCP` |
+| `nodus-showcase-langgraph` | LangGraph graph composition | completes, report written to `output/` |
+| `nodus-showcase-metagpt` | MetaGPT round-loop company | `3 build round(s), 2 concurrent review(s)` |
+| `nodus-showcase-gpt-engineer` | GPT Engineer code generation | `wrote 3 file(s) to output/` |
+
+**Run them via `host.py`, not the `.nd` directly.** The `.nd` file is the
+workflow; `host.py` supplies its inputs and host functions. Running
+`nodus run <flow>.nd` standalone fails with `Undefined function: <input var>`,
+which looks like a bug and is not one:
+
+```powershell
+cd C:\codev\nodus-showcase-crewai
+python host.py
+```
+
+## A2A wire-protocol adapter
+
+**Location:** `C:\codev\nodus-a2a-wire` (a git worktree of `C:\dev\nodus-a2a`)
+**Status:** 180 tests passing, 8 skipped. Not the current tree of any repo.
+
+The original A2A 1.0.0 wire-protocol adapter — agent cards, HTTP+JSON transport,
+handler dispatch, protocol invariants. Distinct from the `nodus-a2a` package
+published on PyPI, which is the **AgentCoordinator** layer (capability routing,
+delegation, dead-letter recovery) that replaced it in the repo's working tree.
+
+Its history is reachable from `origin/main` on
+[`Masterplanner25/nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a), so
+nothing is lost — but a fresh clone gives you the coordinator, not this. If the
+wire adapter is to be maintained, it needs its own repo rather than a worktree
+whose contents no branch head points at.
+
 ## Relationship to the Nodus coding agent
 
-These four projects are the early sketch of what a **Nodus-specific AI coding
+These projects are the early sketch of what a **Nodus-specific AI coding
 agent** would need to handle autonomously: read the skill files, understand the
 language quirks, plan an implementation, write correct `.nd` code on the first
 pass, debug using `nodus check` / `nodus ast`, and produce a runnable project
@@ -340,4 +384,4 @@ and exercises the full AI-native surface. **claudecodenodus** and **codexnodus**
 push further into multi-agent and durable-service territory. **Infinity Claw** is the production target: the first company application to run
 on the infrastructure Masterplan Infinite Weave built itself, exercising the Infinity
 Algorithm through Nodus + AINDY in a real deployed system. A future Nodus coding
-agent will be evaluated against tasks drawn from all four.
+agent will be evaluated against tasks drawn from all of them.
