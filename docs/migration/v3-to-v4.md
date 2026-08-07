@@ -124,12 +124,12 @@ When you need to check if a value is `true` (the bool):
 import "std:bool" as b
 
 // v3.x (may have relied on coercion):
-if x == true { ... }
+if (x == true) { ... }
 
 // v4.0 — choose based on intent:
-if bool.equal(x, true) { ... }   // x must be literally the bool true
-if x == 1i { ... }                // x must be the integer 1
-if x { ... }                      // x is truthy (unchanged semantics)
+if (b.equal(x, true)) { ... }   // x must be literally the bool true
+if (x == 1i) { ... }             // x must be the integer 1
+if (x) { ... }                   // x is truthy (unchanged semantics)
 ```
 
 New helpers:
@@ -148,11 +148,11 @@ return `nil` instead of `-1`.
 ```nd
 // v3.x
 let i = index_of(lst, item)
-if i != -1 { use(lst[i]) }
+if (i != -1) { use(lst[i]) }
 
 // v4.0
 let i = index_of(lst, item)
-if i != nil { use(lst[i]) }
+if (i != nil) { use(lst[i]) }
 ```
 
 ---
@@ -177,7 +177,7 @@ Remove them — division by zero now throws instead of returning IEEE 754 values
 ```nd
 // v4.0.0 pattern — no longer needed in v4.0.1+
 let result = a / b
-if math.is_nan(result) or math.is_inf(result) { ... }
+if (math.is_nan(result) || math.is_inf(result)) { ... }
 
 // v4.0.1+ — use try/catch or guard the divisor
 try {
@@ -200,9 +200,9 @@ an err record instead of a plain dict.
 ```nd
 // v4.0
 let result = run_workflow(my_workflow)
-if type(result) == "error" {
+if (type(result) == "error") {
     let payload = result.payload
-    if payload["category"] == "cyclic_workflow" {
+    if (payload["category"] == "cyclic_workflow") {
         print("cycle: " + str(payload["cycle"]))
     }
 }
