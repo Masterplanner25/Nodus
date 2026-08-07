@@ -11,6 +11,22 @@ aindy-runtime wrote the implementations, then extracted them as standalone libra
 then Nodus wrapped those libraries as builtins. What hasn't happened yet: aindy-runtime
 using the libraries it created, and the apps layer running as .nd files.
 
+> **Status check, 2026-08-06.** Both halves of "what hasn't happened yet" have
+> since taken a first step, so treat the framing above as the original premise
+> rather than current state. Verified against the repos:
+>
+> - **aindy-apps-monolith is running `.nd`** — `apps/analytics/nodus/reasoning_apply_v1.nd`
+>   is a real workflow executed on the Nodus VM via
+>   `apps/analytics/services/reasoning/nodus_apply.py`. One workflow, not the
+>   whole apps layer, but the direction is no longer hypothetical.
+> - **aindy-runtime touches Nodus at exactly one point** —
+>   `AINDY/nodus/runtime/embedding.py` re-exports `NodusRuntime`. It embeds the
+>   language; it does **not** yet consume the extracted `nodus-*` standalone
+>   packages, so the core claim of this section still holds for the library
+>   direction.
+> - aindy-runtime is at **2.0.1** (`AINDY/_version.py`), well past the versions
+>   this plan was written against.
+
 ```
 What happened (extraction direction):
   aindy-runtime implementations
@@ -188,6 +204,23 @@ thin wrapper. Runtime and Nodus builtins share actual code, not parallel copies.
 ---
 
 ## Phase 2 — Nodus Layer Expansion: Full Runtime Surface in .nd Files
+
+> **The `nodus` blocks in this phase are proposed API sketches, not runnable
+> Nodus.** They describe the surface this integration would expose; none of it
+> exists today. Verified 2026-08-06: all nine blocks fail to parse or resolve
+> against nodus-lang 4.1.1.
+>
+> The largest gap is deliberate-looking but worth stating: several sketches use
+> **named arguments** — `memory.write(text, tags=[...])`,
+> `memory.link(a, b, relationship="caused_by")`. **Nodus has no named-argument
+> syntax.** Any real implementation of this surface has to take positional
+> arguments or a single options map (`memory.write(text, {tags: [...]})`),
+> which is the convention the shipped stdlib already uses for
+> `http.get(url, {headers: …})` and `step … with { retries: N }`.
+>
+> The sketches also call bare `flow.`, `event.`, `memory.`, `context.`, and
+> `plugin.` namespaces with no import; module access in Nodus requires an
+> explicit `import "…" as name`.
 
 **Scope:** Expand what Nodus scripts can call. Currently `DeferredMemoryBuiltins`
 exposes 3 operations. After this phase the entire runtime surface is callable.

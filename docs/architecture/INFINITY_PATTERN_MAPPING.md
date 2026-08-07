@@ -21,7 +21,7 @@ feedback-driven, stateful execution engine.
 
 ## The Infinity Algorithm (canonical form)
 
-The Infinity Algorithm, as defined in Masterplan Infinit Weave's canonical spec,
+The Infinity Algorithm, as defined in Masterplan Infinite Weave's canonical spec,
 is a feedback control loop over evolving system state:
 
 ```
@@ -65,10 +65,10 @@ Nodus maintains five co-evolving state surfaces:
 
 | State surface | What it holds | Location |
 |---|---|---|
-| VM state | `ip`, `stack`, `frames`, `handler_stack`, `module_globals`, `host_globals` | `vm/vm.py:194` |
-| Scheduler state | `ready_queue`, `timers`, `sleeping_tasks`, `tasks`, anti-starvation counters | `runtime/scheduler.py:24` |
-| Coroutine state | Per-coroutine `ip`, `stack`, `frames`, `state`, `blocked_on`, `last_result` | `runtime/coroutine.py:7` |
-| Workflow / task graph state | `pending`, `results`, `workflow_state`, `checkpoints`, persisted graph snapshots | `orchestration/task_graph.py:489` |
+| VM state | `ip`, `stack`, `frames`, `handler_stack`, `module_globals`, `host_globals` | `vm/vm.py` — `VM.__init__` |
+| Scheduler state | `ready_queue`, `timers`, `sleeping_tasks`, `tasks`, anti-starvation counters | `runtime/scheduler.py` — `Scheduler.__init__` |
+| Coroutine state | Per-coroutine `ip`, `stack`, `frames`, `state`, `blocked_on`, `last_result` | `runtime/coroutine.py` — `class Coroutine` |
+| Workflow / task graph state | `pending`, `results`, `workflow_state`, `checkpoints`, persisted graph snapshots | `orchestration/task_graph.py` — `_persist_graph_state` |
 | Memory state | `MemoryStore._values` (namespace-scoped KV), `InMemoryEffectStore` (EXACTLY_ONCE ledger) | `services/memory_runtime.py` |
 
 All five surfaces advance together on every execution step. This is S(t): a
