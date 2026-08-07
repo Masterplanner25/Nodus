@@ -96,7 +96,7 @@ blockhash:docs/language/LANGUAGE_SPEC.md:a16a20d9ab88
 blockhash:docs/language/LANGUAGE_SPEC.md:6efd02b93559
 
 # error-surfaces.md — intentional sandbox security demo (blocked path access)
-blockhash:docs/policy/error-surfaces.md:ed50aea65253
+blockhash:docs/policy/error-surfaces.md:dfc436c08cdd
 
 # --- Re-pointed after doc-reformat PRs #273/#276 shifted line numbers (#293) ---
 
