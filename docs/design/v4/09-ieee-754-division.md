@@ -1,10 +1,45 @@
 # Nodus v4.0 — Design Doc 09: IEEE 754 Float Division
 
 **Phase:** 1 (design docs)
-**Status:** Locked
+**Status:** ~~Locked~~ → **REVERSED in v4.0.1.** Kept as the record of a decision
+that shipped in v4.0.0 and was overturned one patch release later. Do not
+implement from this document.
 **Implements:** Decision 10 (IEEE 754 Float Division) from `00-phase-0-decisions.md`
 **Date:** 2026-05-26
+**Reversed:** 2026-06-10 (v4.0.1, #152 / #153, PR #197)
 **Maintainer:** Shawn Knight (Masterplanner25)
+
+---
+
+## Reversal notice
+
+The core semantic decision below — that division by zero yields IEEE 754
+`inf`/`nan` rather than raising — **was reversed in v4.0.1**. Verified on 4.1.1:
+
+```nd
+try {
+    print(1.0 / 0.0)
+} catch e {
+    print("kind=" + e.kind + " msg=" + e.message)
+}
+// -> kind=math msg=Float division by zero
+```
+
+So `1.0 / 0.0` raises `runtime_error("math", …)`; it does **not** return `inf`.
+The same applies to `0.0 / 0.0` and modulo by zero, for both `int` and `float`
+operands.
+
+**What survived the reversal:** the API additions in this document all shipped
+and remain — `math.is_nan()`, `math.is_inf()`, `math.is_finite()`, and the
+`math.nan` / `math.infinity` / `math.neg_infinity` constants are present on
+4.1.1. They are now useful for inspecting values that arrive from elsewhere
+rather than for handling division results.
+
+This is a "Locked" decision that lasted exactly one release. That is worth
+recording rather than editing away: it is the clearest example in the v4 design
+set of a Phase 0 decision that did not survive contact with real use. See
+[migration/v3-to-v4.md §4](../../migration/v3-to-v4.md) for the user-facing
+guidance, which is written against the post-reversal behavior.
 
 ---
 

@@ -1,5 +1,36 @@
 # Docs-as-Contracts
 
+> **Status check, 2026-08-06: two of the three core constraints already ship.**
+> `HandlerContract` exists in `src/nodus_lang_schema/contracts.py` and the
+> doc-vs-code gate smoke-tests it (`nodus_gate --contracts`, 6 checks).
+>
+> - **"Contracts, not descriptions"** — shipped. The dataclass carries
+>   `input_schema`, `returns_schema`, `effects`, `capabilities_required`,
+>   `version`, and `deprecated`, with a `validate()` returning structural
+>   errors. `VALID_EFFECTS` is `pure | reads_state | writes_state | network |
+>   filesystem | spawns_task` — which is exactly the "declared I/O category, not
+>   full effect typing" scope that open question 3 below proposes. That question
+>   is settled.
+> - **"Registry layer, not language grammar"** — shipped. It is a Python
+>   dataclass in the schema package; `.nd` syntax, parser, and compiler are
+>   untouched.
+> - **"Enforced, not optional"** — **not shipped.** This is the whole remaining
+>   delta.
+>
+> Verified on 4.1.1: `tool.register({name, handler, description})` with no
+> contract fields succeeds and yields
+> `{schema: {}, returns_schema: {}, effects: ["pure"], ...}`.
+>
+> The default is the part worth arguing about. An unannotated handler that
+> opens sockets or writes files is silently recorded as `pure`, so anything
+> reasoning about effects — capability gating, audit, sandbox policy — reads a
+> confident wrong answer rather than a missing one. If enforcement is too
+> aggressive for a backward-compatible release, defaulting to an explicit
+> `unknown` effect would at least make the absence visible.
+>
+> Read the rest of this document as scoped to that one constraint; the first two
+> are descriptions of shipped behavior now, not proposals.
+
 ## Summary
 
 The idea is to treat handler registrations as formal contracts rather than loose
