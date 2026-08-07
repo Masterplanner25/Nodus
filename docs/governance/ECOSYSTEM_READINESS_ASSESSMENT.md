@@ -78,10 +78,17 @@ findings in any eval cycle.
 
 ## Assessment: nodus-a2a
 
-**Current version:** 0.1.0 (published to PyPI — original wire-protocol adapter)
-**Note:** Local `C:\dev\nodus-a2a` has been replaced with the AgentCoordinator
-layer (23 tests, no nodus-lang dep). The original A2A adapter (180 tests) is preserved
-at `github.com/Masterplanner25/nodus-a2a`.
+**Current version:** 0.1.0 (published to PyPI — **the AgentCoordinator layer**,
+not the wire-protocol adapter)
+**Note:** Local `C:\dev\nodus-a2a` and the published `nodus-a2a` package are both
+the AgentCoordinator (23 tests, no nodus-lang dep). The original A2A
+**wire-protocol** adapter (180 tests) now has its own repo,
+[`nodus-a2a-wire`](https://github.com/Masterplanner25/nodus-a2a-wire).
+
+Earlier wording here said the adapter was "preserved at
+`github.com/Masterplanner25/nodus-a2a`" and labelled this row the wire adapter.
+Both were wrong: that repo's current tree is the coordinator, and the adapter
+survived only in its history (commit `10746ce`). Corrected 2026-08-06.
 
 | Dimension | Level |
 |-----------|-------|

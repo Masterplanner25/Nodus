@@ -192,6 +192,84 @@ describe the workaround patterns used until these are fixed.
   to cover the `run_source` (sandbox-active) path. Pre-existing tests used raw VM
   with no limits. GitHub: #96.
 
+## Open findings from the 2026-08-06 documentation sweep
+
+Nine issues surfaced while verifying the docset against shipped behavior. All are
+filed; none is fixed. Ordered by severity.
+
+- **#361 (HIGH, open) — `finally` is skipped when `catch` rethrows.** The other
+  three exit paths run `finally` correctly. Contradicts `error-handling.md`,
+  which claims all five paths do. The acquire/`try`/`finally`-release idiom
+  therefore leaks on exactly the path where cleanup matters, and silently, since
+  it only manifests under error conditions. Found by running Gate 10 against the
+  published 4.1.1 wheel.
+
+  **The regression test for this path cannot fail.**
+  `test_finally_runs_when_inner_error_propagates` has a `catch` block that prints
+  the same string as its `finally` block and asserts only membership, so the
+  catch's output satisfies the assertion. Fixing the runtime without fixing the
+  test leaves the hole open.
+
+- **#350 (HIGH, open) — `NodusRuntime` applies no `max_frames` cap**, despite its
+  docstring stating `None` means `MAX_STACK_DEPTH`. Unbounded recursion hangs the
+  host instead of raising. `configure_vm_limits()` installs the cap;
+  `embedding.py` overwrites it with `None` on the next line, so the fix is a
+  three-line conditional. CLI is unaffected. Per the security-boundary rule
+  below, the fix needs an **embedded-mode** regression test — the CLI side is
+  already covered.
+
+- **#353 (HIGH, open) — `--help` is unguarded across the package-manager
+  commands.** `nodus logout --help` **performs the logout** and deletes the saved
+  registry token; `publish --help` crashes with an unhandled traceback; `login
+  --help` blocks on input; `install`/`add`/`remove`/`update`/`deps` all run.
+  `--help` must never mutate state. The guard is per-command, so every new
+  subcommand ships unguarded — this is the fourth such fix (#1/#2, #268, #345,
+  now this). Handle `--help` centrally in dispatch. Supersedes #345 in scope.
+
+- **#49 (reopened) — stack-overflow trace is not truncated on the CLI path.**
+  ~1.5 MB of stderr, larger than the ~800 KB originally reported because stack
+  entries now carry absolute paths. The 20-frame cap exists in
+  `runtime/diagnostics.py` but not in `runtime/errors.py`, and `nodus run` uses
+  the latter. One-of-two-formatters split, same shape as ASYNC-MOD-001.
+
+- **#339 (partially fixed in 4.1.1) — `std:async.worker_pool` and `pipeline`
+  remain non-functional.** They spawn onto the detached module VM's scheduler,
+  which nothing drives, so work is silently dropped. Sharing the caller's
+  scheduler is **not** sufficient: builtins close over the VM that registered
+  them, so a resumed module coroutine gets the wrong `recv`/`send`. Needs
+  VM-agnostic builtins; overlaps the design gap in #157.
+
+- **#348 (LOW, open) — `--trace-imports` emits nothing once the on-disk bytecode
+  cache is warm.** `_build_metadata()` returns early on a cache hit, before the
+  loop that calls `resolve_import()` — the only site that emits the trace. Not
+  the same as #51 (closed, in-memory cache within one run); that fix works.
+
+- **#342 (LOW, open) — runtime errors print absolute paths, syntax errors print
+  the path as given.** Same command, same directory, two conventions. Anything
+  parsing stderr must handle both. Changing either is breaking for stderr
+  consumers, so it likely belongs in a minor release.
+
+- **#357 (LOW, open) — the VS Code grammar does not highlight `match`,
+  `break`, or `continue`.** Neither the in-repo grammar nor the published
+  `nodus-vscode` v0.1.0. The two have also diverged in opposite directions and
+  neither is a superset. Worth a release-checklist item: a new language keyword
+  needs a grammar update, or this recurs on every syntax addition.
+
+### Process gap: Gate 10 was skipped for 4.1.1
+
+v4.1.1 was published without the adversarial program sweep that Gate 10
+specifies before `twine upload`. The pre-publish checks that *were* run (full
+suite, doc gate, clean-venv wheel install, functional check of the fix)
+confirmed the intended change rather than probing unrelated surfaces — which is
+precisely why they missed #361. The sweep was run afterwards and recorded in
+`docs/evals/v4.1.1/CREATOR_VALIDATION.md`, including the sequencing failure.
+
+**The recurring pattern across all of these:** a test or check that cannot fail.
+`nodus run` on a test file exits 0 even when assertions fail; the `finally`
+regression test asserts on a string its own `catch` prints; allowlisted doc
+blocks hid a genuine syntax error in STYLE_GUIDE. When adding coverage, verify
+the new test fails against the unfixed code before trusting it.
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.
