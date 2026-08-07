@@ -110,7 +110,7 @@ for expected I/O and parse failures.
 if (strings.contains(err.message, "No such file or directory")) { ... }
 
 // v3.0 idiomatic
-if (err.kind == "io_error" and strings.contains(err.message, "file not found")) { ... }
+if (err.kind == "io_error" && strings.contains(err.message, "file not found")) { ... }
 // or, even simpler
 if (err.kind == "io_error") { ... }
 ```
