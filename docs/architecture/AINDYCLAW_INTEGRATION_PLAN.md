@@ -1,7 +1,30 @@
 # AindyClaw / NodusClaw — Integration Plan
 **Working name:** AindyClaw  
-**Status:** Discovery / Planning  
+**Status:** **Superseded by the implementation.** Written 2026-05-31 as a
+planning document; the application was subsequently built and now lives at
+`C:\dev\claw` (Infinity Claw). Read this for the *rationale* — why the Python
+twins exist and which OpenClaw surface each came from — not as a description of
+what was built.  
 **Scope:** Wrap, adapt, supervise — no rewrite
+
+> **The implementation diverged from this plan.** Verified against `C:\dev\claw`
+> on 2026-08-06:
+>
+> - Of the five "Python twins" this plan says to use, Infinity Claw imports
+>   **`nodus-channels` and `nodus-llm`** only. It declares `nodus-delivery` but
+>   never imports it, and does not use `nodus-context` or `nodus-approvals` at
+>   all.
+> - It declares 18 `nodus-*` packages and imports 7. The 11 unused declarations
+>   are `nodus-agent`, `nodus-circuit-breaker`, `nodus-delivery`,
+>   `nodus-events`, `nodus-extensions`, `nodus-gateway`, `nodus-governance`,
+>   `nodus-mcp`, `nodus-observability-framework`, `nodus-protocol`,
+>   `nodus-retry`, `nodus-router`.
+> - It imports `nodus-auth` in four files **without declaring it**. That is not
+>   a divergence from the plan but an install bug — see the note in §5.
+>
+> Divergence is not necessarily wrong; a plan written before the work is not
+> binding on it. But anyone reading this to understand what Infinity Claw
+> *does* should read the code instead.
 
 ---
 
@@ -370,13 +393,20 @@ fn handle_inbound(session_key, message, channel) {
 
 #### 2B. Approval workflow: bash command gate
 
+> **Sketch, not runnable.** Two things below do not exist in nodus-lang 4.1.1
+> and would need resolving before implementation: there is **no `std:approvals`
+> stdlib module** (`nodus-approvals` is a Python package — reach it by
+> registering host functions or via `nodus-sdk`, not `import "std:…"`), and
+> **`or` is not an operator** — Nodus uses `||`. Corrected to `||` below; the
+> import is left as written to show the intended shape.
+
 ```nodus
 // aindyclaw/workflows/exec_approval.nd
-import "std:approvals" as approvals
+import "std:approvals" as approvals   // NOTE: no such stdlib module — see above
 
 fn gate_exec(command, agent_id, session_key) {
     // High-risk commands require explicit approval
-    let needs_review = command == "rm" or command == "sudo" or command == "curl"
+    let needs_review = command == "rm" || command == "sudo" || command == "curl"
     
     if (needs_review) {
         let decision = approvals.request({
@@ -648,6 +678,21 @@ OpenClaw ExecApprovalManager resolves → bash runs or aborts
 ---
 
 ## 5. Implementation Checklist
+
+> **Open bug in the built application (found 2026-08-06, not a planning issue).**
+> `C:\dev\claw` imports `nodus_auth` in four files —
+> `claw/auth/manager.py`, `claw/auth/sqlite_store.py`, `claw/auth/store.py` —
+> but `nodus-auth` is **not declared** in its `pyproject.toml`.
+>
+> It is not installed transitively either: the only declared package that pulls
+> it in is `nodus-sdk`, and then only under its `auth` extra, which Infinity
+> Claw does not request (`nodus-sdk>=0.1.0`, no extras). A clean
+> `pip install` therefore leaves `nodus-auth` absent and the auth module raises
+> `ImportError` at import time. It works in the current dev environment only
+> because the package happens to be installed there.
+>
+> Fix in the claw repo: declare `nodus-auth>=0.1.0`, or depend on
+> `nodus-sdk[auth]`.
 
 ### Phase 1 Checklist — Adapter / Wrapper
 
