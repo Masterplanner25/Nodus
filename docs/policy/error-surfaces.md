@@ -70,20 +70,28 @@ it does not throw.
 | `path.relative(p, base)` | `path_error` |
 | `path.absolute(p)` | `path_error` |
 
-### Sandbox checks take precedence
+### Sandbox checks take precedence — and they throw
 
 Sandbox validation fires **before** stdlib error wrapping. If a path argument
 fails the sandbox check (e.g., it escapes the project root or is outside
 `allowed_paths`), the function produces a sandbox error regardless of whether
 the underlying file exists or what kind of I/O error would have occurred.
 
+**This is the one case where an in-scope surface does not return an err record.**
+A sandbox violation **throws**, so it aborts the script at that line rather than
+handing you a value to inspect — the `type(r) == "error"` pattern in Section 6
+never gets a chance to run. Catch it with `try`/`catch` (`err.kind` is
+`"sandbox"`) if a blocked path should be recoverable rather than fatal.
+
 ```nd
 import "std:fs" as fs
 
 // Absolute paths escape the project root sandbox:
 let r = fs.read("/etc/passwd")
-// -> Sandbox error: read_file blocked: path escapes project root
-// (NOT io_error, even though the file exists or doesn't)
+// throws -> Sandbox error at <file>:2:17:
+//           read_file(path) blocked: path '/etc/passwd' escapes the project root
+// (NOT io_error, even though the file exists or doesn't; nothing is assigned
+//  to r, because the throw aborts the line)
 
 // Relative paths within the project root exercise the io_error path:
 let r2 = fs.read("data/missing.json")

@@ -112,9 +112,26 @@ resolver runs before the file is read, independent of the runtime context.
 
 | Behavior | CLI | EMB | SRV | Test file |
 |----------|:---:|:---:|:---:|-----------|
-| Stack overflow raises `"sandbox"` err | ✅ | ✅ | ✅ | `test_sandbox_limits.py` |
-| Stack depth limit configurable | ❌ hardcoded | ❌ hardcoded | ❌ hardcoded | — |
+| Stack overflow raises `"sandbox"` err | ✅ | ⚠️ **only if `max_frames` passed** | ✅ | `test_sandbox_limits.py` |
+| Stack depth limit configurable | ❌ hardcoded (`MAX_STACK_DEPTH`) | ✅ `max_frames=N` | ❌ hardcoded | — |
 | Memory limit enforced | ❌ not enforced | ❌ not enforced | ❌ not enforced | none |
+
+**Open — #350: embedded mode has no default stack-depth guard.** A bare
+`NodusRuntime()` leaves `vm.max_frames` at `None`, so unbounded recursion grows
+the frame stack until the host process stops responding, rather than raising
+`Call stack overflow`. `configure_vm_limits()` does install
+`MAX_STACK_DEPTH`, but `embedding.py` overwrites it with `self.max_frames`
+(`None` by default) on the next line.
+
+This contradicts the `max_frames` docstring, which states that `None` means the
+VM default. It matters most in exactly the configuration recommended for
+long-lived hosts — `NodusRuntime(timeout_ms=None, max_steps=None)` (#97) —
+which removes the other two guards by design, leaving none.
+
+Until it is fixed, pass `max_frames` explicitly when embedding untrusted
+scripts. Per the security-boundary rule in `CLAUDE.md`, the fix needs an
+**embedded-mode** regression test; the CLI side is already covered by
+`test_sandbox_limits.py` and behaves correctly.
 
 ---
 
