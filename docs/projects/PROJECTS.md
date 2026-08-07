@@ -17,7 +17,7 @@ issues and fixed in subsequent releases.
 
 ## Sentinel — Incident Triage & Digest Orchestrator
 
-**Location:** `C:\dev\nodus-sentinel`
+**Repo:** [Masterplanner25/nodus-sentinel](https://github.com/Masterplanner25/nodus-sentinel) · local: `C:\dev\nodus-sentinel`
 **Status:** Complete and runnable
 
 ~430 lines of Nodus, zero application Python. Built as an independent evaluation
@@ -77,8 +77,8 @@ nodus test .
 
 ## claudecodenodus — Autonomous Research Agent
 
-**Location:** `C:\dev\claudecodenodus`
-**Status:** Implementation under way — **68 tests passing** (verified 2026-08-06). 15 Python modules and 5 `.nd` probes exist. Not yet a git repo.
+**Repo:** [Masterplanner25/claudecodenodus](https://github.com/Masterplanner25/claudecodenodus) · local: `C:\dev\claudecodenodus`
+**Status:** Implementation under way — **68 tests passing** (verified 2026-08-06). 15 Python modules and 5 `.nd` probes. Two runtime questions remain open before the design is complete; see *Open questions before implementation* below.
 
 Designed by Claude Sonnet during an independent evaluation session where the full
 Nodus ecosystem was installed and the skills were the primary reference. Design
@@ -146,8 +146,8 @@ research/{session_id}/final
 
 ## codexnodus — Workflow-Native Agent Service
 
-**Location:** `C:\dev\codexnodus`
-**Status:** Partially implemented and **currently broken** (verified 2026-08-06). A service package exists under `src/codexnodus_agent_service/`, but there is no `pyproject.toml`, so the package is not importable and tests fail to collect. With `PYTHONPATH=src` set, 11 pass and 24 fail. Not yet a git repo.
+**Repo:** [Masterplanner25/codexnodus](https://github.com/Masterplanner25/codexnodus) · local: `C:\dev\codexnodus`
+**Status:** Runs — **35 tests passing** (2026-08-06), up from 11 passing / 24 failing. Two fixes got it there: a missing `pyproject.toml`, without which the `src/` layout was not importable and pytest could not collect at all; and a validation-policy bug that denied every Python-based command when the interpreter path contained a space (`shlex.split(cmd, posix=False)` split `C:\Program Files\...\python.exe` on its spaces, resolving the executable name to `program`). The denial path is unchanged — `powershell -Command …` is still rejected.
 
 Designed by OpenAI Codex during an independent planning session with the Nodus
 ecosystem installed and the Codex skill as the primary reference. Design docs live
@@ -221,7 +221,7 @@ finalize result → persist outcome and memory
 
 ## Infinity Claw — Self-Hosted Multi-Channel AI Workspace
 
-**Location:** `C:\dev\claw`
+**Repo:** [Masterplanner25/infinityclaw](https://github.com/Masterplanner25/infinityclaw) · local: `C:\dev\claw`
 **Status:** Active development · Python implementation substantial · Nodus workflows stubbed, expanding
 
 The largest of the four projects and the broadest in scope. Infinity Claw is the
@@ -330,8 +330,8 @@ or skill files.
 
 ## Framework comparison showcases
 
-**Location:** `C:\codev\nodus-showcase-*`
-**Status:** All four run today. None is a git repo yet.
+**Local:** `C:\codev\nodus-showcase-*`
+**Status:** All four published and runnable.
 
 Four self-contained demonstrations that re-express another framework's headline
 capability in Nodus. Each is small, has no API-key requirement, and writes its
@@ -340,10 +340,10 @@ entry point:
 
 | Showcase | Re-expresses | Result on run |
 |---|---|---|
-| `nodus-showcase-crewai` | CrewAI role delegation | `delegated to [researcher, writer] via A2A coordinator; 1 tool over MCP` |
-| `nodus-showcase-langgraph` | LangGraph graph composition | completes, report written to `output/` |
-| `nodus-showcase-metagpt` | MetaGPT round-loop company | `3 build round(s), 2 concurrent review(s)` |
-| `nodus-showcase-gpt-engineer` | GPT Engineer code generation | `wrote 3 file(s) to output/` |
+| [nodus-showcase-crewai](https://github.com/Masterplanner25/nodus-showcase-crewai) | CrewAI role delegation | `delegated to [researcher, writer] via A2A coordinator; 1 tool over MCP` |
+| [nodus-showcase-langgraph](https://github.com/Masterplanner25/nodus-showcase-langgraph) | LangGraph graph composition | completes, report written to `output/` |
+| [nodus-showcase-metagpt](https://github.com/Masterplanner25/nodus-showcase-metagpt) | MetaGPT round-loop company | `3 build round(s), 2 concurrent review(s)` |
+| [nodus-showcase-gpt-engineer](https://github.com/Masterplanner25/nodus-showcase-gpt-engineer) | GPT Engineer code generation | `wrote 3 file(s) to output/` |
 
 **Run them via `host.py`, not the `.nd` directly.** The `.nd` file is the
 workflow; `host.py` supplies its inputs and host functions. Running
@@ -357,19 +357,25 @@ python host.py
 
 ## A2A wire-protocol adapter
 
-**Location:** `C:\codev\nodus-a2a-wire` (a git worktree of `C:\dev\nodus-a2a`)
-**Status:** 180 tests passing, 8 skipped. Not the current tree of any repo.
+**Repo:** [Masterplanner25/nodus-a2a-wire](https://github.com/Masterplanner25/nodus-a2a-wire) · local: `C:\codev\nodus-a2a-wire` (a git worktree of `C:\dev\nodus-a2a`)
+**Status:** 180 tests passing, 8 skipped. Now has its own repo.
 
 The original A2A 1.0.0 wire-protocol adapter — agent cards, HTTP+JSON transport,
 handler dispatch, protocol invariants. Distinct from the `nodus-a2a` package
 published on PyPI, which is the **AgentCoordinator** layer (capability routing,
 delegation, dead-letter recovery) that replaced it in the repo's working tree.
 
-Its history is reachable from `origin/main` on
+It previously existed only as a worktree: its commit is an ancestor of
+`origin/main` on
 [`Masterplanner25/nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a), so
-nothing is lost — but a fresh clone gives you the coordinator, not this. If the
-wire adapter is to be maintained, it needs its own repo rather than a worktree
-whose contents no branch head points at.
+the code was never lost, but the current tree there is the coordinator — a fresh
+clone gave you that, not this. It now has its own repo, branched from commit
+`10746ce` with the preceding 16 commits of development history intact rather
+than squashed into a single import.
+
+Note for anyone reading `CLAUDE.md`: its statement that the wire adapter is
+"preserved at github.com/Masterplanner25/nodus-a2a" is true only of the history.
+The maintained copy is `nodus-a2a-wire`.
 
 ## Relationship to the Nodus coding agent
 
