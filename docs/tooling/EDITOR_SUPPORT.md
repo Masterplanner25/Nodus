@@ -30,6 +30,19 @@ The grammar highlights:
 - Operators and punctuation
 - Member access like `mod.name`
 
+> **Neither grammar covers the v4.1.0 keywords yet.** `match`, `break`, and
+> `continue` are not highlighted by the in-repo grammar above, nor by the
+> published `nodus-vscode` v0.1.0 extension (whose keyword set is
+> `if|else|while|for|in|return|throw|try|catch|finally|yield`). The code is
+> valid and runs; it just renders as plain text. Updating the published
+> extension requires a Marketplace republish. Tracked as
+> [#357](https://github.com/Masterplanner25/Nodus/issues/357).
+>
+> The two grammars have also **diverged** — the published one covers
+> `throw`/`try`/`catch`/`finally`/`yield`/`in` but not
+> `let`/`fn`/`import`/`export`/`from`/`as`; the in-repo one covers the reverse.
+> Neither is a superset of the other.
+
 Sample file:
 - `examples/editor_support.nd` includes imports/exports, control flow, lists/maps, strings, and comments for quick validation.
 

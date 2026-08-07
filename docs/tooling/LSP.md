@@ -23,13 +23,19 @@ Diagnostics are published with `textDocument/publishDiagnostics`.
 
 Each diagnostic includes:
 
+- `range` — the standard LSP `{start, end}` with **zero-based** `line` and
+  `character`
 - `message`
 - `severity`
-- `source`
+- `source` — always `"nodus"`
 - `file`
-- `line`
-- `column`
+- `line` — **one-based**, matching CLI error output
+- `column` — **one-based**
 - optional `relatedInformation`
+
+`range` is what editors use to underline; `file`/`line`/`column` are Nodus
+extras that mirror the CLI diagnostic format. Note the two are offset by one:
+a syntax error at CLI `1:9` publishes `range.start` as `{line: 0, character: 8}`.
 
 ### Diagnostic Categories
 

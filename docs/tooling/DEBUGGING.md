@@ -60,6 +60,11 @@ The adapter uses standard DAP `Content-Length` framing on stdin/stdout.
 - `stackTrace`
 - `scopes`
 - `variables`
+- `evaluate` — added in v4.0.4 ([#106](https://github.com/Masterplanner25/Nodus/issues/106)).
+  Takes `expression`, `frameId`, and `context` (defaults to `"repl"`), and
+  responds with `result` and `type`. Evaluation errors come back as a DAP error
+  response rather than a thrown adapter exception, so a bad expression in a
+  watch window cannot kill the session.
 
 ### Launch Arguments
 
