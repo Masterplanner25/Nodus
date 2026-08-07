@@ -439,6 +439,18 @@ These have been hit and corrected; they should not be hit again:
   eval found that BUG-046 — the same class of issue in a different code
   path — also existed). Emergency patches still get a focused eval on
   the patched code path.
+
+  **Hit again at v4.1.1 (2026-08-06).** Stage 4 ran without Stage 3. The
+  pre-publish checks that *were* done — full suite, doc gate, clean-venv wheel
+  install, functional check of the ASYNC-MOD-003 fix — all confirmed the
+  intended change and none probed anything else. The sweep, run afterwards,
+  found #361: `finally` is skipped when `catch` rethrows, a correctness bug in
+  core error handling that was already in the published release.
+
+  The lesson is narrower than "run the eval." It is that **verifying the fix is
+  not the eval**. A patch's own tests are written to pass; Stage 3 exists to
+  attack surfaces the patch did not touch. If the checklist feels redundant
+  because the fix is well-tested, that is the moment it is doing the most work.
 - **Treating cosmetic findings as not-worth-filing**. They're signal,
   not noise. File them, defer them if needed, but file them.
 
