@@ -395,7 +395,7 @@ Combine common instruction sequences into single instructions.
 
 Example:
 
-LOAD_CONST + STORE
+PUSH_CONST + STORE
 4. Register VM Conversion (Long-Term)
 
 Large architectural rewrite with uncertain gains in Python.

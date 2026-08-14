@@ -64,6 +64,21 @@ If a `try/finally` block is entered and control leaves (via `return`, `throw`, n
 exit, or exception), the `finally` block executes exactly once. The deferred-return
 mechanism ensures `return` inside a `try` does not skip `finally`.
 
+> ⚠️ **This invariant is currently violated on one path.** When a `catch` block
+> rethrows, the `finally` block is skipped
+> ([#361](https://github.com/Masterplanner25/Nodus/issues/361), open, reproduces on
+> published 4.1.1 and on dev source, CLI and embedded alike). Every other exit path —
+> catch without rethrow, `return` from `try`, normal exit, uncaught exception — runs
+> `finally` correctly.
+>
+> Per this document's own framing, that is a bug and not a design decision. It is
+> recorded here rather than silently softening the invariant: hosts that rely on
+> `finally` for cleanup must not place cleanup on a rethrow path until #361 is fixed.
+> Note also that resource-limit termination bypasses `finally` by design — that case
+> is documented separately in
+> [`FAILURE_AND_DEGRADATION_MODEL.md`](FAILURE_AND_DEGRADATION_MODEL.md) §5 and is not
+> a violation of this invariant.
+
 **Code:** `vm.py::_op_pop_try` (normal exit → `finally_ip`), `vm.py::_op_return`
 (deferred-return path), `vm.py::handle_exception` (exception path → `finally_ip`).
 
@@ -193,7 +208,12 @@ When `max_frames` is set, any function call that would exceed the limit raises a
 error with `kind="sandbox"` before executing. The VM does not crash or overflow Python's
 call stack; the sandbox error is catchable via `try/catch` in script code.
 
-**Code:** `vm.py::call_closure`, `vm.py::_op_call`.
+**This invariant is conditional on `max_frames` being set, and it is not set by default
+in embedded mode.** `NodusRuntime` defaults `max_frames` to `None` and never installs
+`MAX_STACK_DEPTH`; only the CLI path (`tooling/sandbox.py`) applies that constant. See
+[#350](https://github.com/Masterplanner25/Nodus/issues/350) and `EMBEDDING.md` §2.
+
+**Code:** `vm.py::call_closure`, `vm.py::_op_call`; `tooling/sandbox.py` (CLI default).
 
 ### I-SAND-04: Bytecode cache is checksum-validated
 
@@ -243,7 +263,7 @@ task in pending AND all(dep.task_id in results for dep in task.dependencies)
 No partial satisfaction is accepted. If a dependency fails, the dependent step is never
 spawned and the workflow returns a failure result immediately.
 
-**Code:** `orchestration/task_graph.py::ready_tasks` (~line 719), `spawn_task`.
+**Code:** `orchestration/task_graph.py::ready_tasks`, `orchestration/task_graph.py::spawn_task`.
 
 ### I-WFLOW-05: A checkpoint snapshot captures the full workflow state at the moment of the `checkpoint` call
 
@@ -254,7 +274,7 @@ current `workflow_state` map at that instant. The public API surface
 The snapshot is atomic: `_record_checkpoint` calls `_persist_graph_state` and
 `persist_checkpoint_snapshot` before returning.
 
-**Code:** `orchestration/task_graph.py::_record_checkpoint` (~line 749),
+**Code:** `orchestration/task_graph.py::_record_checkpoint`,
 `orchestration/workflow_state.py::checkpoint_public`.
 
 ### I-WFLOW-06: Resume from a checkpoint does not re-execute already-completed steps
@@ -266,7 +286,8 @@ the step from `pending`. Those steps are never spawned again. Only steps still `
 (or not recorded at all) are eligible to run. This guarantees exactly-once execution of
 completed steps across a resume.
 
-**Code:** `orchestration/task_graph.py` (~line 1185–1221), `_normalize_workflow_snapshot`.
+**Code:** `orchestration/task_graph.py::_normalize_workflow_snapshot` and the resume
+path in `orchestration/task_graph.py`.
 
 ---
 
@@ -286,7 +307,8 @@ correct ends. No message is reordered within a channel.
 `resume(coro)` caller. The coroutine retains all local state and resumes from the
 instruction after `YIELD`. The coroutine is not terminated by `yield`.
 
-**Code:** `vm.py::_op_yield`, `vm.py::_op_resume`.
+**Code:** `vm.py::_op_yield`, `builtins/coroutine.py::builtin_coroutine_resume`
+(`resume` is a builtin, not an opcode — there is no `_op_resume`).
 
 ---
 
@@ -294,8 +316,13 @@ instruction after `YIELD`. The coroutine is not terminated by `yield`.
 
 Most of these invariants have direct test coverage. Known test gaps:
 
-- I-VM-06 (finally always runs): partially covered; edge cases (return inside try, exception
-  inside finally) may have gaps. See `docs/governance/TEST_GAP_BACKLOG.md`.
+- I-VM-06 (finally always runs): **violated on the rethrow path — #361, open.** This is a
+  live defect, not a coverage gap. The gap that let it ship is also recorded: the
+  regression test written for it asserts on a string its own `catch` block prints, so it
+  passes whether or not `finally` runs. Other edge cases (return inside try, exception
+  inside finally) remain partially covered — see `docs/governance/TEST_GAP_BACKLOG.md`.
+- I-SAND-03 (max_frames caps stack depth): holds only when `max_frames` is passed. The
+  embedded default installs no cap (#350).
 - I-MOD-02 (import containment): covered by `tests/test_import_containment.py`.
 - I-SAND-01 (allowed_paths): requires CLI-mode and embedded-mode tests. See
   TECH_DEBT.md §Security boundary test rule.

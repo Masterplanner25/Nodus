@@ -12,13 +12,17 @@ The Nodus opcode set is hereby frozen.
 
 ### Freeze Summary
 
-| Metric | Value |
-|---|---|
-| Total opcodes (active) | **47** |
-| Stable | **47** |
-| Provisional | **0** |
-| Removed | 1 (`LOAD_LOCAL`) |
-| Total in opcode space | 48 |
+| Metric | At v1.0 freeze | Today |
+|---|---|---|
+| Total opcodes (active) | **47** | **49** |
+| Stable | **47** | **49** |
+| Provisional | **0** | **0** |
+| Removed | 1 (`LOAD_LOCAL`) | 1 (`LOAD_LOCAL`) |
+| Total in opcode space | 48 | 50 |
+
+The two post-freeze additions (`MOD`, `RESET_LOCAL_IDX`) bypassed the extension process
+and were recorded retroactively on 2026-08-07 — see the amendment near the end of this
+document.
 
 All opcodes previously classified as provisional have been resolved:
 
@@ -88,7 +92,7 @@ Items marked ✅ were completed in v0.8.
 
 ## Opcode Stability Table
 
-48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.)
+48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.) `MOD` and `RESET_LOCAL_IDX` were added later and are included in the tables below — 49 active today, 50 total.
 
 ### Constants / Literals
 
@@ -115,6 +119,7 @@ Items marked ✅ were completed in v0.8.
 |---|---|---|---|
 | `LOAD_LOCAL_IDX` | `→ val` | **stable** | Added v0.8. Canonical fast path. Slot-indexed read from `frame.locals_array`. Handles Cell unwrapping. |
 | `STORE_LOCAL_IDX` | `val →` | **stable** | Added v0.8. Canonical fast path. Slot-indexed write to `frame.locals_array`. Handles Cell boxing. |
+| `RESET_LOCAL_IDX` | `→` (no stack effect) | **stable** | Detaches any `Cell` at a local slot so `MAKE_CLOSURE` allocates a fresh per-iteration Cell. Added post-freeze 2026-06-10 (`53da7f7`, PR #244) outside the extension process; recorded 2026-08-07. |
 | `LOAD_LOCAL` | `→ val` | ⛔ **removed** | Name-keyed legacy path. Removed from VM dispatch table at v1.0. Handler replaced with RuntimeError tombstone. Replacement: `LOAD_LOCAL_IDX`. |
 
 ### Variable Access — Closures
@@ -139,6 +144,7 @@ Items marked ✅ were completed in v0.8.
 | `SUB` | `a b → a-b` | **stable** | |
 | `MUL` | `a b → a*b` | **stable** | |
 | `DIV` | `a b → a/b` | **stable** | Raises runtime error on division by zero. |
+| `MOD` | `a b → a%b` | **stable** | Added post-freeze 2026-05-24 (`7520fc3`, BUG-010) outside the extension process; recorded 2026-08-07. |
 
 ### Comparison
 
@@ -234,15 +240,19 @@ Items marked ✅ were completed in v0.8.
 | removed | 1 (`LOAD_LOCAL`) |
 | **Total (active)** | **47** |
 
-(Stable count — all 47 active opcodes:
+(Stable count — the 47 opcodes active at the v1.0 freeze:
 PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
 LOAD_UPVALUE, STORE_UPVALUE, STORE_ARG, POP, ADD, SUB, MUL, DIV, EQ, NE, LT, GT, LE, GE,
 NOT, NEG, TO_BOOL, JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VALUE, CALL_METHOD,
 MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
 LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT,
-SETUP_TRY, POP_TRY, FINALLY_END, THROW = **47 stable**.)
+SETUP_TRY, POP_TRY, FINALLY_END, THROW = **47 stable at freeze**.)
 
-Totals: **47 stable**, **0 provisional**, **1 removed** = 47 active + 1 removed = 48 total.
+Plus two added after the freeze — `MOD` and `RESET_LOCAL_IDX` — for **49 active today**.
+See the amendment below.
+
+Totals at freeze: **47 stable**, **0 provisional**, **1 removed** = 47 active + 1 removed = 48 total.
+Totals today: **49 stable**, **0 provisional**, **1 removed** = 49 active + 1 removed = 50 total.
 (v1.0: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted to stable. LOAD_LOCAL removed.
  BYTECODE_VERSION bumped 2→3 (LOAD_LOCAL removal) then 3→4 (finally support).
  FINALLY_END added; SETUP_TRY/POP_TRY extended. SETUP_TRY, POP_TRY, FINALLY_END, THROW
@@ -429,9 +439,41 @@ survive at least one full release cycle after deprecation before removal.
 
 ---
 
+## Amendment 2026-08-07 — two opcodes bypassed this process
+
+A doc-vs-code sweep of `docs/runtime/` compared this document's inventory against the
+VM dispatch table and found **49 active opcodes, not 47**. Two additions skipped all
+seven steps above:
+
+| Opcode | Added | Commit | Category |
+|---|---|---|---|
+| `MOD` | 2026-05-24 | `7520fc3` (BUG-010, modulo operator) | arithmetic — `%` |
+| `RESET_LOCAL_IDX` | 2026-06-10 | `53da7f7` (PR #244) | variable access — detaches a `Cell` at a local slot so each loop iteration captures its own |
+
+Both are stable, reachable, and behaviourally correct. What failed was the record: no
+issue proposing them, no `BYTECODE_REFERENCE.md` entry, no `BYTECODE_VERSION` bump, no
+amendment here. They are now documented in `BYTECODE_REFERENCE.md` §3 and counted above.
+
+**`BYTECODE_VERSION` was not bumped retroactively** and remains `4`. Bumping it now
+would invalidate every cached bytecode file in the field to fix a window that has
+already closed for anyone on current 4.x. The residual risk is a *downgrade*: an older
+4.x nodus accepts a version-4 cache entry containing `MOD` and fails with
+`Unknown opcode: MOD` instead of a clean version-mismatch message. Clearing
+`.nodus/cache/` resolves it.
+
+The process gap this exposes is that nothing enforced step 2 or 3 — the freeze was
+declared in prose and checked by nobody. A gate comparing `_build_dispatch_table()`
+against this document's inventory would have caught both additions the day they landed.
+Tracked as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
+
+---
+
 ## Version History
 
 | Version | Event |
 |---|---|
 | v0.8.0 | Initial freeze proposal drafted. 47 opcodes classified. LOAD_LOCAL_IDX and STORE_LOCAL_IDX added. FRAME_SIZE added. LOAD_LOCAL deprecated. Bytecode version bumped to 2. |
 | v1.0 | Formal freeze declared 2026-03-15. All 47 active opcodes are stable. Zero provisional opcodes. LOAD_LOCAL removed (tombstone). BYTECODE_VERSION = 4. GET_ITER, ITER_NEXT, BUILD_MODULE, YIELD, SETUP_TRY, POP_TRY, FINALLY_END, THROW all promoted to stable. FINALLY_END opcode added. SETUP_TRY/POP_TRY extended. |
+| v4.0.x | `MOD` added 2026-05-24 (`7520fc3`) outside the extension process. Not recorded at the time. |
+| v4.0.x | `RESET_LOCAL_IDX` added 2026-06-10 (`53da7f7`) outside the extension process. Not recorded at the time. |
+| — | 2026-08-07 doc sweep found both. Inventory corrected to 49 active; amendment added above; #366 filed. BYTECODE_VERSION deliberately left at 4. |

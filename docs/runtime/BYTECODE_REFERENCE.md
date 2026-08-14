@@ -1,14 +1,15 @@
 ﻿# Nodus Bytecode Reference
 
 > **The Nodus opcode set was frozen at v1.0 (2026-03-15).**
-> All 47 active opcodes are **stable**. Zero provisional opcodes remain.
+> All 49 active opcodes are **stable**. Zero provisional opcodes remain.
 > Post-freeze additions follow the extension process in
-> [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md).
+> [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md) — though
+> two of the 49 did not follow it; see §3.1.
 
 ## 1. Executive Summary
-Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The instruction set is **frozen at v1.0**: 47 active stable opcodes, `BYTECODE_VERSION = 4`.
+Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The instruction set is **frozen at v1.0**: 49 active stable opcodes, `BYTECODE_VERSION = 4`.
 
-**Opcode stability classifications** (stable / removed) and the v1.0 freeze declaration are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: **47 stable**, 0 provisional, 1 removed (`LOAD_LOCAL`). Total active opcodes in dispatch table: **47**.
+**Opcode stability classifications** (stable / removed) and the v1.0 freeze declaration are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: **47 stable**, 0 provisional, 1 removed (`LOAD_LOCAL`). Two further opcodes were added after the freeze (`MOD`, `RESET_LOCAL_IDX`), bringing the total active opcodes in the dispatch table to **49** — see §3.1.
 
 ## 2. VM Model Overview
 - Stack model:
@@ -114,6 +115,21 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - The `STORE_ARG` opcode syncs parameters to both `frame.locals` (dict) and `frame.locals_array` so parameters are accessible via both paths.
   - Does not write to `frame.locals` (dict); the dict is only updated by `STORE_ARG` and by `capture_local` when a Cell is first created.
 
+### RESET_LOCAL_IDX
+- Category: variable access (fast path, slot-indexed)
+- Stack behavior: none (no stack effect)
+- Operands: slot (integer) — index into `frame.locals_array`
+- Emitted by compiler: yes — at the start of each `for`-loop iteration for the loop
+  variable, and before each `let` binding for any variable inside a loop body
+- Purpose: detach any `Cell` at a local slot by replacing it with a plain `None`, so
+  that `MAKE_CLOSURE` creates a fresh per-iteration `Cell` rather than reusing the one
+  from the previous iteration. This is what makes closures captured in a loop see their
+  own iteration's value.
+- Notes / edge cases: **Added post-freeze** in `53da7f7` (2026-06-10, PR #244) without
+  the extension process required by `FREEZE_PROPOSAL.md` §"What Freeze Means" — no
+  `BYTECODE_VERSION` bump, no entry here, no amendment. Documented retroactively
+  2026-08-07. See §3.1.
+
 ### LOAD_UPVALUE
 - Category: closure / upvalue access
 - Stack behavior: pushes captured variable value
@@ -187,6 +203,17 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: division
 - Notes / edge cases: host float division behavior.
+
+### MOD
+- Category: arithmetic
+- Stack behavior: pops two, pushes remainder
+- Operands: none
+- Emitted by compiler: yes (via `op_map`)
+- Purpose: `%`
+- Notes / edge cases: **Added post-freeze** in `7520fc3` (2026-05-24, BUG-010) without
+  the extension process required by `FREEZE_PROPOSAL.md` §"What Freeze Means" — no
+  `BYTECODE_VERSION` bump, no entry here, no amendment. Documented retroactively
+  2026-08-07. See §3.1.
 
 ### EQ
 - Category: comparisons
@@ -484,6 +511,29 @@ STORE x
 Unused/transitional/suspicious opcode notes:
 - No dispatched opcode appears unused in current compiler output.
 - There is **no dedicated `PRINT` opcode** in current VM; `print(...)` lowers to `CALL "print", 1` then `POP`.
+
+### 3.1 Two opcodes were added after the freeze without the extension process
+
+`FREEZE_PROPOSAL.md` §"What Freeze Means" requires three things of any post-freeze
+opcode addition: a `BYTECODE_VERSION` bump, a new entry in this file, and an amendment
+to that document. Two additions got none of the three:
+
+| Opcode | Added | Commit |
+|---|---|---|
+| `MOD` | 2026-05-24 | `7520fc3` — modulo operator (BUG-010) |
+| `RESET_LOCAL_IDX` | 2026-06-10 | `53da7f7` — per-iteration closure capture (PR #244) |
+
+Both are real, reachable, and correct; the defect is in the record, not the runtime.
+They are documented above and in `FREEZE_PROPOSAL.md` as of 2026-08-07.
+
+`BYTECODE_VERSION` remains **4**, and was not bumped for either addition. The practical
+consequence is narrow but real: the bytecode cache (`.nodus/cache/`) is keyed on that
+version, so bytecode compiled by a newer nodus containing `MOD` or `RESET_LOCAL_IDX` is
+accepted by an older 4.x nodus that has no handler for them. The failure surfaces as
+`Unknown opcode: MOD` rather than the clean version-mismatch message the handshake
+exists to produce. Deleting `.nodus/cache/` resolves it.
+
+Tracked as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
 - Import/module behavior is intentionally non-opcode (compile/load phase), which is a deliberate design choice rather than missing VM feature.
 
 ## 4. Opcode Families

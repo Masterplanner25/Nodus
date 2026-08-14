@@ -52,7 +52,7 @@ Example JSON output:
     { "name": "main", "calls": 1, "time_ms": 2.3 }
   ],
   "opcodes": {
-    "LOAD_CONST": 120,
+    "PUSH_CONST": 120,
     "CALL": 40,
     "ADD": 25
   }

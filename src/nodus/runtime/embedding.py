@@ -308,8 +308,15 @@ class NodusRuntime:
             environment variables.  Recommended when running untrusted scripts
             that should not have access to credentials in the host environment.
         max_frames:
-            Maximum call stack depth.  Raises a sandbox error on overflow.  ``None``
-            means the VM default (``MAX_STACK_DEPTH``).
+            Maximum call stack depth.  Raises a sandbox error on overflow.
+            Defaults to ``None``, which applies **no cap at all** — embedded runs
+            get no call-depth guard unless you pass one.  ``MAX_STACK_DEPTH`` is
+            installed only by the CLI path (``tooling/sandbox.py``), not here; see
+            #350.  With the default ``max_steps`` a runaway recursion still stops
+            on the step limit, but a host that also passes ``max_steps=None``
+            (recommended for long-lived servers) has no recursion guard whatsoever
+            and will grow frames until memory is exhausted.  Pass an explicit
+            ``max_frames`` (200–1000) whenever ``max_steps`` is ``None``.
         on_error:
             Optional callable invoked when a spawned coroutine dies with an uncaught
             exception.  Signature: ``on_error(coroutine, error) -> bool``.  Return

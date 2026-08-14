@@ -56,9 +56,13 @@ print(result)
 
 ## CLI Commands
 
-- `nodus graph <script.nd>` (plan a task graph from a script)
+- `nodus graph <script.nd>` (plan a task graph from a script; `nodus graph run <script.nd>`
+  is the equivalent explicit form)
 - `nodus run <script.nd>` (execute a script; workflows/goals may create graphs)
-- `nodus resume <graph_id>` (resume a persisted graph)
+- `nodus workflow resume <graph_id>` (resume a persisted graph). There is no top-level
+  `nodus resume` command — because bare `nodus <file>` is accepted for backward
+  compatibility, typing `nodus resume <id>` is interpreted as a *filename* and fails with
+  a file-not-found error rather than an unknown-command message.
 
 ## Notes
 - Task graphs are the execution substrate for workflows and goals.
