@@ -50,3 +50,11 @@ EVAL_LOG.md
 P0 BLOCKER FIXES.md
 PYPI RELEASE.md
 STRESS-TEST USER EVALUATION*
+
+# Artifacts written into the repo root by `nodus_gate --runtime` when it executes
+# the file-writing examples in docs/guide/standard-library.md. Regenerated on every
+# gate run; never meant to be committed. (tmp_demo/ is already excluded from the CI
+# fmt check for the same reason.)
+notes.txt
+output.json
+tmp_demo/

@@ -60,7 +60,25 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | `project_root` | `str \| None` | `None` | Set to project directory when scripts use imports |
 | `allowed_paths` | `list[str] \| None` | `[os.getcwd()]` (CWD jail) | Default jails to working directory. Pass `None` to allow unrestricted access. Set explicit paths for untrusted scripts that need access outside CWD. |
 | `allow_input` | `bool` | `False` | Keep `False`; set `True` only for interactive use cases |
-| `max_frames` | `int \| None` | `None` (uses `MAX_STACK_DEPTH`) | Set to 200-1000 for untrusted code |
+| `max_frames` | `int \| None` | `None` — **no cap applied** (#350) | Set to 200–1000 for untrusted code, and **always** when `max_steps` is `None` |
+| `allow_subprocess` | `bool` | `True` | Set `False` unless scripts must shell out |
+| `allow_network` | `bool` | `True` | Set `False` unless scripts must make HTTP calls |
+| `allow_env` | `bool` | `True` | Set `False` to keep scripts away from host credentials |
+| `allowed_commands` | `list[str] \| None` | `None` (any command) | Allowlist executables when `allow_subprocess=True` |
+| `allowed_hosts` | `list[str] \| None` | `None` (any host) | Allowlist hosts when `allow_network=True` |
+| `on_error` | `callable \| None` | `None` | Set to observe spawned-coroutine failures as they occur |
+| `coroutine_timeout_ms` | `int \| None` | `None` | Per-coroutine deadline |
+| `event_sinks` | `list \| None` | `None` | Attach runtime event sinks for monitoring |
+
+> **The three `allow_*` capability switches default to permissive.** A runtime built as
+> `NodusRuntime(max_steps=..., timeout_ms=...)` can still start subprocesses, open network
+> connections, and read the process environment. Sandboxing filesystem access alone does
+> not sandbox the runtime.
+
+> **`max_frames=None` means no call-depth cap**, not `MAX_STACK_DEPTH`. That constant is
+> applied only on the CLI path. With the default `max_steps` a runaway recursion stops on
+> the step limit; with `max_steps=None` it grows frames until the process runs out of
+> memory. See [#350](https://github.com/Masterplanner25/Nodus/issues/350).
 
 ---
 
@@ -157,7 +175,7 @@ No script changes required. No API changes. The bytecode cache may be invalidate
 patch bumps `BYTECODE_VERSION` (rare; noted in CHANGELOG.md).
 
 ```bash
-pip install nodus-lang==4.0.Z
+pip install nodus-lang==4.1.Z
 ```
 
 After upgrade, verify with `nodus --version` and a smoke-test run.
@@ -188,7 +206,15 @@ Before deploying a Nodus-embedded application to production:
 - [ ] `NodusRuntime` is configured with explicit `max_steps` and `timeout_ms`
 - [ ] `allowed_paths` is set if the application handles untrusted scripts
 - [ ] `allow_input=False` (the default; verify it has not been overridden)
-- [ ] `max_frames` is set for untrusted code
+- [ ] `max_frames` is set explicitly — the default is no cap, and it is **required**
+      if `max_steps=None`
+- [ ] `allow_subprocess=False` unless scripts genuinely need to shell out
+      (default is `True`)
+- [ ] `allow_network=False` unless scripts genuinely need network access
+      (default is `True`)
+- [ ] `allow_env=False` if the host environment holds credentials (default is `True`)
+- [ ] `allowed_commands` / `allowed_hosts` are set if subprocess or network access
+      is enabled
 - [ ] `result["ok"]` is checked on every `run_source()` call
 - [ ] Error logging includes both `result["error"]` and `result["stderr"]`
 - [ ] Nodus version is pinned in `requirements.txt` or `pyproject.toml`
@@ -235,10 +261,19 @@ When embedding with nodus-mcp (`pip install nodus-mcp`):
 
 ### nodus-a2a
 
-When embedding with nodus-a2a (`pip install nodus-a2a`):
-- The A2A server runs in a thread via `A2AHttpServer.serve_in_thread()`
-- Production deployments must configure `token_validator` — dev mode accepts all requests
-- v0.1 is message-only; no Task lifecycle, no streaming
+`pip install nodus-a2a` installs the **AgentCoordinator** layer — `AgentRegistry`,
+`AgentCoordinator`, `DelegationRequest`, `DeadLetterService`, `StuckRunWatchdog`. It has
+no nodus-lang dependency and no HTTP server.
+
+The A2A **wire-protocol adapter** (`A2AHttpServer.serve_in_thread()`, `token_validator`,
+Agent Card discovery, message-only v0.1 scope) is a different codebase and is **not on
+PyPI**. It lives at
+[`nodus-a2a-wire`](https://github.com/Masterplanner25/nodus-a2a-wire); install from git.
+
+Earlier revisions of this runbook documented the wire adapter's API under
+`pip install nodus-a2a`. Following it would produce an `ImportError`. Verified against
+PyPI 2026-08-07: published `nodus-a2a` 0.1.0 is *"Agent-to-Agent coordination: registry,
+delegation, dead letter, and watchdog"*.
 
 ---
 

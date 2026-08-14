@@ -69,9 +69,17 @@ runtime = NodusRuntime(timeout_ms=5000, max_steps=100_000)
 runtime = NodusRuntime(
     timeout_ms=None,    # no wall-clock deadline (this is already the default)
     max_steps=None,
+    max_frames=1000,    # REQUIRED here — see below
     project_root="/my/project",
 )
 ```
+
+> **Removing `max_steps` removes the only default recursion guard.** `max_frames`
+> also defaults to `None`, and `NodusRuntime` never applies `MAX_STACK_DEPTH`
+> ([#350](https://github.com/Masterplanner25/Nodus/issues/350)). With
+> `max_steps=None`, `timeout_ms=None`, and `max_frames` unset, an infinitely
+> recursive script runs until the process exhausts memory — it does not raise, and
+> it does not stop. Pass an explicit `max_frames` whenever you disable `max_steps`.
 
 Note: as of v4.0.1 (SCHED-001), cooperative sleep time is excluded from the deadline
 budget. Only active VM instruction execution consumes `timeout_ms`. A coroutine
@@ -105,10 +113,36 @@ Constructor parameters:
   omitted.
 - `allow_input` (bool, default `False`): If `False`, the `input()` builtin raises
   a sandbox error.
-- `max_frames` (int | None, default `None`): Maximum call stack depth. Prevents runaway
-  recursion from exhausting memory. When exceeded, raises a sandbox error with
-  `kind="sandbox"`. Set to `None` for no limit (not recommended for untrusted code;
-  the VM applies `MAX_STACK_DEPTH` as a hard backstop when this is `None`).
+- `max_frames` (int | None, default `None`): Maximum call stack depth. When exceeded,
+  raises a sandbox error with `kind="sandbox"`. **The default applies no cap at all.**
+  `MAX_STACK_DEPTH` is installed only by the CLI path (`tooling/sandbox.py`), never by
+  `NodusRuntime` — see [#350](https://github.com/Masterplanner25/Nodus/issues/350).
+  With the default `max_steps`, runaway recursion still stops on the step limit. If you
+  also pass `max_steps=None` (recommended below for long-lived hosts), **nothing stops
+  it** — frames grow until memory is exhausted. Always pass an explicit `max_frames`
+  (200–1000) when `max_steps` is `None`.
+
+The following parameters are **capability switches**. All three default to permissive,
+so an embedded script can shell out, open sockets, and read process environment
+variables unless the host turns them off:
+
+- `allow_subprocess` (bool, default `True`): when `False`, `subprocess_run` and friends
+  raise a sandbox error.
+- `allow_network` (bool, default `True`): when `False`, `http_*` builtins raise a
+  sandbox error.
+- `allow_env` (bool, default `True`): when `False`, the `env_*` builtins raise a sandbox
+  error. Set `False` to keep scripts away from credentials in the host environment.
+- `allowed_commands` (list[str] | None, default `None`): allowlist of executables for
+  `subprocess_run`. `None` means any command (subject to `allow_subprocess`).
+- `allowed_hosts` (list[str] | None, default `None`): allowlist of hosts for network
+  builtins. `None` means any host (subject to `allow_network`).
+
+Remaining parameters:
+
+- `on_error` (callable | None, default `None`): invoked when a spawned coroutine dies
+  with an uncaught exception — see §9.
+- `coroutine_timeout_ms` (int | None, default `None`): per-coroutine deadline.
+- `event_sinks` (list | None, default `None`): runtime event sinks — see §6.
 
 `NodusRuntime` handles the full pipeline internally:
 
@@ -295,13 +329,31 @@ Possible approaches include:
 - sandboxed file access
 - execution time limits
 
-`NodusRuntime` accepts optional `allowed_paths` and `allow_input` settings.
-`allowed_paths` restricts filesystem builtins
-(`read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, and `exists`). When
-set, paths outside the allowlist raise a sandbox error. When omitted, filesystem
-access remains unrestricted.
-`allow_input` controls whether `input()` is permitted in embedded mode (default: disabled).
-`max_frames` controls the maximum VM call stack depth (default: `MAX_STACK_DEPTH`).
+`allowed_paths` restricts filesystem builtins (`read_file`, `write_file`, `append_file`,
+`mkdir`, `list_dir`, and `exists`); paths outside the allowlist raise a sandbox error.
+**Omitting it does not mean unrestricted** — the default is `[os.getcwd()]`, a
+working-directory jail. Pass `allowed_paths=None` for genuinely unrestricted access.
+
+`allow_input` controls whether `input()` is permitted (default: `False`).
+
+`max_frames` caps VM call stack depth. The default is `None` — **no cap** (#350).
+
+The three capability switches — `allow_subprocess`, `allow_network`, `allow_env` —
+all default to `True`. A runtime constructed as `NodusRuntime()` can run subprocesses,
+make network calls, and read the process environment. For untrusted scripts:
+
+```python
+runtime = NodusRuntime(
+    allowed_paths=["/app/scripts"],
+    allow_input=False,
+    allow_subprocess=False,
+    allow_network=False,
+    allow_env=False,
+    max_frames=500,
+    max_steps=100_000,
+    timeout_ms=5_000,
+)
+```
 
 Isolation policies should be defined by the host environment.
 
@@ -341,8 +393,10 @@ elif result.get("extras", {}).get("spawned_errors"):
 ```
 
 Alternatively, pass `on_error=my_callback` to `run_source()` to receive each spawned
-coroutine failure as it occurs. See GitHub #193 for a planned `fail_on_spawned_errors`
-flag that would fold spawned failures into `ok=False`.
+coroutine failure as it occurs. There is no `fail_on_spawned_errors` flag; the
+two-check pattern above is the supported way to get strict failure semantics.
+(#193, which raised this, was closed by documenting the behavior rather than adding
+the flag.)
 
 Hosts may also intercept runtime errors to:
 

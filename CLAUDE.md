@@ -646,18 +646,29 @@ These were identified by a raw-path readiness probe and are filed as GitHub issu
 Full analysis: `C:\dev\nodus-mcp\docs\design\06-embedding-runtime-blockers.md`.
 All entries are also in `docs/governance/TECH_DEBT.md`.
 
-**EMBED-001 (#97) — The 200ms default trap (hits every first-time embedder):**
-`NodusRuntime()` with NO arguments applies a **200ms wall-clock deadline** — the same
-as `nodus run`. Any coroutine sleeping cumulatively more than 200ms (workflows, async
-loops, MCP/A2A request handlers) will be killed silently.
+**EMBED-001 (#97) — FIXED. `timeout_ms` now defaults to `None`.** The old 200ms-default
+trap is gone; `NodusRuntime()` applies no wall-clock deadline. Verified 2026-08-07:
+`NodusRuntime().timeout_ms is None`. Do not re-add `timeout_ms=None` as a "fix" — it is
+already the default. (SCHED-001 also means cooperative sleep no longer consumes the
+budget even when a deadline *is* set.)
+
+**The live trap is now the opposite one — `max_frames` (#350, open).** It defaults to
+`None`, which applies **no cap at all**; `MAX_STACK_DEPTH` is installed only by the CLI
+path (`tooling/sandbox.py`), never by `NodusRuntime`. With the default `max_steps` a
+runaway recursion still dies on the step limit, but the recommended long-lived config
+has no guard whatsoever:
 
 ```python
-# WRONG for any long-lived use:
-rt = NodusRuntime()
+# HANGS FOREVER on runaway recursion — no step limit, no deadline, no frame cap:
+rt = NodusRuntime(max_steps=None, timeout_ms=None)
 
-# CORRECT for servers, MCP hosts, workflow engines, anything with sleep:
-rt = NodusRuntime(timeout_ms=None, max_steps=None)
+# CORRECT for servers, MCP hosts, workflow engines:
+rt = NodusRuntime(max_steps=None, timeout_ms=None, max_frames=1000)
 ```
+
+**Capability switches default to permissive:** `allow_subprocess`, `allow_network`, and
+`allow_env` are all `True`. A bare `NodusRuntime()` can shell out, open sockets, and read
+the process environment. `allowed_paths` does default to a CWD jail (`[os.getcwd()]`).
 
 **SPAWN-001 (#117, open):** `spawn().wait_async()` is sync — blocks scheduler thread. Low severity; does not affect `subprocess_run_async`.
 
@@ -685,9 +696,21 @@ nodus-governance, nodus-memory, nodus-a2a
 Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.2**, `nodus-gateway` **0.1.1**,
 `nodus-sdk` **0.1.1**, `nodus-mcp-server` **0.1.11**.
 
-Note: `nodus-memory` and `nodus-a2a` are published from the **GitHub** repos, which hold
-the nodus-lang adapter versions — the local `C:\dev` checkouts were replaced with the
-Tier 2 rewrites (see the sections above). Do not publish from the local checkouts.
+Note: the published `nodus-memory` and `nodus-a2a` are the **Tier 2 rewrites** — the same
+thing as the local `C:\dev` checkouts, not the nodus-lang adapters. Verified against PyPI
+2026-08-07:
+
+- `nodus-a2a` 0.1.0 — *"Agent-to-Agent coordination: registry, delegation, dead letter,
+  and watchdog"*, no nodus-lang dep
+- `nodus-memory` 0.1.0 — *"Persistent agent memory: nodes, MAS path addressing, scoring,
+  embedding, and recall"*, optional pgvector/openai extras only
+
+Earlier wording here said they were "published from the GitHub repos, which hold the
+nodus-lang adapter versions — do not publish from the local checkouts." That was backwards
+on both counts: the adapters are **not on PyPI at all**, and the local checkouts are
+exactly what is published. `pip install nodus-a2a` does not give you `A2AHttpServer`;
+the wire adapter is at `nodus-a2a-wire` (git only). The nodus-memory adapter exists only
+in history — `git show f02ab1e:src/nodus_memory/nodus_bindings.py`.
 
 **Other published artifacts:**
 - nodus-vscode v0.1.0 — VS Code Marketplace (MasterplanInfiniteWeave)

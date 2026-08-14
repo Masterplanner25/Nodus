@@ -73,7 +73,7 @@ result["stderr"] = "<stderr captured before error>"
 | Nil dereference | Accessing `.field` on `nil` | `"runtime"` |
 | Type error | Arithmetic on a string | `"runtime"` |
 | Division by zero | `x / 0` | `"runtime"` |
-| Stack overflow (uncaught) | Deep recursion without `max_frames` | Python `RecursionError` → caught as internal error |
+| Stack overflow (uncaught) | Deep recursion without `max_frames` | No `RecursionError` — VM frames are heap-allocated, so Python's stack is never consumed. With the default `max_steps` you get `kind="sandbox"`, *"Execution step limit exceeded"*. With `max_steps=None` **nothing stops it** and the process grows until memory is exhausted (#350). |
 | Index out of bounds | `list[100]` on a short list | `"runtime"` |
 
 **Degradation behavior:** Execution stops at the point of the uncaught error. Stdout

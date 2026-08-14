@@ -270,6 +270,72 @@ regression test asserts on a string its own `catch` prints; allowlisted doc
 blocks hid a genuine syntax error in STYLE_GUIDE. When adding coverage, verify
 the new test fails against the unfixed code before trusting it.
 
+## Findings from the 2026-08-07 `docs/runtime/` sweep
+
+- **#366 (MEDIUM, open) — the frozen opcode set is not what the docs say it is.**
+  The VM dispatch table has **49** opcodes; `BYTECODE_REFERENCE.md` and
+  `FREEZE_PROPOSAL.md` both said 47. `MOD` (`7520fc3`, 2026-05-24) and
+  `RESET_LOCAL_IDX` (`53da7f7`, 2026-06-10) were added after the v1.0 freeze with
+  none of the three steps the freeze document mandates: no `BYTECODE_VERSION`
+  bump, no reference entry, no amendment. Both opcodes are correct — the defect
+  is in the record.
+
+  Consequence of the missing version bump: the cache is keyed on
+  `BYTECODE_VERSION`, still `4`, so an older 4.x nodus accepts newer bytecode and
+  fails with `Unknown opcode: MOD` instead of the clean recompile path. Docs are
+  now corrected and the bypass recorded rather than backfilled silently.
+
+  **This is the same shape as the pattern above — a check that cannot fail.**
+  Nothing compared the dispatch table to the inventory, so the freeze held by
+  convention only, and both additions went unnoticed for months. #366 proposes a
+  ~15-line gate in `tools/nodus_gate/`.
+
+- **`EXECUTION_INVARIANTS.md` asserted a guarantee that #361 disproves.** I-VM-06
+  ("`finally` blocks always execute") was stated unconditionally in the governing
+  invariants document, which opens by saying a violated invariant is a bug. The
+  violation was already filed. §8 listed I-VM-06 as a *coverage gap* rather than a
+  live defect. Now annotated inline.
+
+- **The embedding docs omitted every capability parameter.** `EMBEDDING.md` and
+  `OPERATOR_OR_EMBEDDER_RUNBOOK.md` documented 8 of the 17 `NodusRuntime`
+  constructor parameters, and the nine missing ones included
+  `allow_subprocess`, `allow_network`, `allow_env`, `allowed_commands`, and
+  `allowed_hosts` — **all defaulting to permissive**. The runbook's production
+  checklist had no item for subprocess or network access. `EMBEDDING.md` §10
+  meanwhile claimed the constructor surface was stable and documented. Both now
+  list all parameters; the checklist covers the capability switches.
+
+- **`max_frames`: root cause found.** The false "`None` means `MAX_STACK_DEPTH`"
+  claim originated in the **`embedding.py` docstring**, which is why five
+  documents carried it — they were copying the source. `MAX_STACK_DEPTH` has
+  exactly one enforcement site, `tooling/sandbox.py:37` (CLI only). Docstring
+  fixed alongside the docs. See #350, which now also records the measured
+  consequence: the documented long-lived config (`max_steps=None,
+  timeout_ms=None`) has no recursion guard at all and hangs until OOM.
+
+- **`FAILURE_AND_DEGRADATION_MODEL.md` described a `RecursionError` that never
+  fires.** VM frames are heap-allocated, so Python's recursion limit is never
+  reached. The real outcomes are a step-limit sandbox error (default) or an
+  unbounded hang (`max_steps=None`). Corrected.
+
+- **The runbook documented an API that `pip install nodus-a2a` does not provide.**
+  §7 described `A2AHttpServer.serve_in_thread()` and `token_validator` — the wire
+  adapter, which is not on PyPI. Published `nodus-a2a` 0.1.0 is the
+  AgentCoordinator (verified against PyPI 2026-08-07). Following the runbook
+  produced an `ImportError`. The same misattribution was corrected in `CLAUDE.md`,
+  which additionally claimed both `nodus-a2a` and `nodus-memory` are published
+  from the adapter versions and that the local checkouts must not be published —
+  backwards on both counts.
+
+- Smaller corrections: `EXECUTION_INVARIANTS.md` cited `vm.py::_op_resume`, which
+  does not exist (`resume` is a builtin); three `~line N` code references had
+  drifted ~20 lines and were replaced with symbol names; `PROFILER.md` and
+  `ROADMAP.md` used `LOAD_CONST`, not a Nodus opcode (`PUSH_CONST`);
+  `TASK_GRAPHS.md` documented a `nodus resume` command that does not exist
+  (`nodus workflow resume`); the runbook pinned `nodus-lang==4.0.Z` in a 4.1.1
+  document; `EMBEDDING.md` pointed at closed #193 for a "planned" flag that was
+  never implemented.
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.
