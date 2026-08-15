@@ -311,6 +311,11 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   in docs (233 blocks); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
+- `--opcodes`: verifies the frozen instruction set — reads the dispatch table
+  out of a constructed `VM` and requires `BYTECODE_REFERENCE.md` §3, its
+  appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
+  49 opcodes, with matching counts and `BYTECODE_VERSION`. **If you add an
+  opcode, this fails until you document it** — that is the point (#366)
 
 The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the

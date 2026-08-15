@@ -1,7 +1,7 @@
 # Nodus Instruction Semantics
 
 > The opcode semantics in this document are frozen at v1.0 (2026-03-15).
-> All 47 active opcodes are stable. See `docs/governance/FREEZE_PROPOSAL.md`
+> All 49 active opcodes are stable. See `docs/governance/FREEZE_PROPOSAL.md`
 > for the freeze declaration and post-freeze extension process.
 
 This document defines the precise behavior of each Nodus bytecode instruction.

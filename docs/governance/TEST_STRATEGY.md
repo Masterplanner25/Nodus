@@ -147,6 +147,7 @@ The doc-vs-code gate (`tools/nodus_gate/`) is a separate test system that:
 - Verifies documented symbols exist in source (`--static`)
 - Runs all code blocks in guide docs and checks output (`--runtime`)
 - Runs closed-issue regression tests (`--closed-issues`)
+- Verifies the frozen opcode set against every document that records it (`--opcodes`)
 
 This gate is mandatory before every release. See `docs/governance/RELEASE_GATES.md §Gate 3`.
 

@@ -4,6 +4,7 @@ Usage:
     python -m tools.nodus_gate.cli --static
     python -m tools.nodus_gate.cli --runtime
     python -m tools.nodus_gate.cli --closed-issues
+    python -m tools.nodus_gate.cli --opcodes
     python -m tools.nodus_gate.cli --all
 """
 
@@ -20,6 +21,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--runtime": False,
         "--closed-issues": False,
         "--contracts": False,
+        "--opcodes": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -126,14 +128,17 @@ def main(argv: list[str] | None = None) -> int:
     run_runtime = args["--runtime"] or args["--all"]
     run_closed = args["--closed-issues"] or args["--all"]
     run_contracts = args["--contracts"] or args["--all"]
+    run_opcodes = args["--opcodes"] or args["--all"]
 
-    if not (run_static or run_runtime or run_closed or run_contracts):
-        print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] [--all]")
+    if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes):
+        print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
+              "[--opcodes] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
         print("  --contracts      Verify HandlerContract infrastructure is wired correctly")
-        print("  --all            Run all four phases")
+        print("  --opcodes        Verify the frozen opcode set matches its documented record")
+        print("  --all            Run all five phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -161,10 +166,11 @@ def main(argv: list[str] | None = None) -> int:
 
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
-        format_json_results,
+        format_opcodes, format_json_results,
     )
 
     static_result = runtime_result = closed_result = contracts_result = None
+    opcode_result = None
     any_failure = False
 
     if run_static:
@@ -204,9 +210,18 @@ def main(argv: list[str] | None = None) -> int:
         if contracts_result.findings:
             any_failure = True
 
+    if run_opcodes:
+        from tools.nodus_gate.opcode_phase import run_opcode_phase
+        opcode_result = run_opcode_phase(root)
+        if output_fmt != "json":
+            print(format_opcodes(opcode_result, use_color=use_color,
+                                 verbose=verbose, quiet=quiet))
+        if opcode_result.findings:
+            any_failure = True
+
     if output_fmt == "json":
         print(format_json_results(static_result, runtime_result, closed_result,
-                                  contracts_result))
+                                  contracts_result, opcode_result))
 
     if strict and not any_failure:
         # Warnings don't fail in non-strict mode, but may have been printed

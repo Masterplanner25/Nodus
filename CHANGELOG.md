@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#366: the opcode freeze is now enforced by a gate instead of by prose.**
+  `tools/nodus_gate/opcode_phase.py` adds a `--opcodes` phase (included in
+  `--all`, which CI runs). It reads the dispatch table out of a constructed `VM`
+  — not a regex over `vm.py` — and requires every record of the instruction set
+  to agree: `BYTECODE_REFERENCE.md` §3, its appendix quick table, and the
+  `FREEZE_PROPOSAL.md` stability tables must name exactly the same opcodes;
+  removed opcodes must stay out of the dispatch table; the compiler must not be
+  able to emit an opcode with no handler; and the opcode counts and
+  `BYTECODE_VERSION` asserted in those documents must match the live values.
+
+  The freeze had been declared at v1.0 and checked by nobody, which is how `MOD`
+  and `RESET_LOCAL_IDX` were added post-freeze without any of the three mandatory
+  steps and went unnoticed until the 2026-08-07 doc sweep — about two and a half
+  months and two months later. Run against the tree as it stood before that
+  sweep, the new phase reports both as undocumented.
+
+  `BYTECODE_VERSION` stays at **4** by explicit decision — bumping it now would
+  invalidate every cached bytecode file in the field to close a window that has
+  already passed for anyone on current 4.x. Recorded in the `FREEZE_PROPOSAL.md`
+  amendment.
+
+  Fixed the drift the new phase found: five opcodes missing from the
+  `BYTECODE_REFERENCE.md` appendix table (`FRAME_SIZE`, `LOAD_LOCAL_IDX`,
+  `STORE_LOCAL_IDX`, `RESET_LOCAL_IDX`, `MOD`) and stale counts of 47 in
+  `BYTECODE_REFERENCE.md`, `FREEZE_PROPOSAL.md`, `INSTRUCTION_SEMANTICS.md`,
+  `ARCHITECTURE_ANALYSIS.md`, and `LANGUAGE_STABILITY_INDEX.md`.
+
 ## [4.1.1] - 2026-08-05
 
 ### Fixes

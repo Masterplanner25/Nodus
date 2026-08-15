@@ -272,7 +272,7 @@ the new test fails against the unfixed code before trusting it.
 
 ## Findings from the 2026-08-07 `docs/runtime/` sweep
 
-- **#366 (MEDIUM, open) — the frozen opcode set is not what the docs say it is.**
+- **#366 (MEDIUM, fixed 2026-08-14) — the frozen opcode set was not what the docs said it was.**
   The VM dispatch table has **49** opcodes; `BYTECODE_REFERENCE.md` and
   `FREEZE_PROPOSAL.md` both said 47. `MOD` (`7520fc3`, 2026-05-24) and
   `RESET_LOCAL_IDX` (`53da7f7`, 2026-06-10) were added after the v1.0 freeze with
@@ -287,8 +287,22 @@ the new test fails against the unfixed code before trusting it.
 
   **This is the same shape as the pattern above — a check that cannot fail.**
   Nothing compared the dispatch table to the inventory, so the freeze held by
-  convention only, and both additions went unnoticed for months. #366 proposes a
-  ~15-line gate in `tools/nodus_gate/`.
+  convention only, and both additions went unnoticed for months.
+
+  **Resolved by the `--opcodes` gate phase** (`tools/nodus_gate/opcode_phase.py`),
+  which runs in CI as part of `--all`. It reads the dispatch table from a
+  constructed `VM` and requires `BYTECODE_REFERENCE.md` §3, its appendix table,
+  and the `FREEZE_PROPOSAL.md` stability tables to name exactly the same opcodes,
+  the compiler to emit only opcodes that have handlers, and the counts and
+  `BYTECODE_VERSION` claimed in those docs to match the live values. Verified
+  against the tree as it stood before the 2026-08-07 sweep: it reports `MOD` and
+  `RESET_LOCAL_IDX` as undocumented plus 14 further stale claims. `BYTECODE_VERSION`
+  stays at 4 by explicit decision, recorded in the `FREEZE_PROPOSAL.md` amendment.
+
+  Prose counts are policed by a fixed anchor table rather than a general regex,
+  because both documents legitimately state historical counts ("47 at the v1.0
+  freeze"). Rewording a policed sentence is itself reported, so a claim cannot
+  drop out of coverage silently — the failure the anchor design exists to prevent.
 
 - **`EXECUTION_INVARIANTS.md` asserted a guarantee that #361 disproves.** I-VM-06
   ("`finally` blocks always execute") was stated unconditionally in the governing

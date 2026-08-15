@@ -743,7 +743,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **47** (updated from stale count of 44; three opcodes added in v0.8: `FRAME_SIZE`, `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`).
+- Estimated opcode count (exact from VM dispatch): **49** (47 at the v1.0 freeze, plus the two post-freeze additions `MOD` and `RESET_LOCAL_IDX` — see §3.1).
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 
@@ -752,7 +752,11 @@ High-level construct to opcode shape (actual lowering patterns):
 |---|---|---|---|
 | PUSH_CONST | constants | `... -> ..., v` | yes |
 | LOAD | variable access | `... -> ..., value` | yes |
+| FRAME_SIZE | frame setup | no stack change | yes |
 | LOAD_LOCAL | variable access (name-keyed) | `... -> ..., value` | ⛔ Removed in v1.0 |
+| LOAD_LOCAL_IDX | variable access (slot-indexed) | `... -> ..., value` | yes |
+| STORE_LOCAL_IDX | variable access (slot-indexed) | `..., v -> ...` | yes |
+| RESET_LOCAL_IDX | variable access (slot-indexed) | no stack change | yes |
 | LOAD_UPVALUE | closure access | `... -> ..., value` | yes |
 | STORE | variable access | `..., v -> ...` | yes |
 | STORE_UPVALUE | closure access | `..., v -> ...` | yes |
@@ -762,6 +766,7 @@ High-level construct to opcode shape (actual lowering patterns):
 | SUB | arithmetic | `..., a, b -> ..., a-b` | yes |
 | MUL | arithmetic | `..., a, b -> ..., a*b` | yes |
 | DIV | arithmetic | `..., a, b -> ..., a/b` | yes |
+| MOD | arithmetic | `..., a, b -> ..., a%b` | yes |
 | EQ | comparisons | `..., a, b -> ..., bool` | yes |
 | NE | comparisons | `..., a, b -> ..., bool` | yes |
 | LT | comparisons | `..., a, b -> ..., bool` | yes |
@@ -798,7 +803,7 @@ High-level construct to opcode shape (actual lowering patterns):
 
 ## Opcode Maturity Snapshot
 - Instruction-set classification: **frozen at v1.0**.
-- All 47 active opcodes are **stable**. Zero provisional opcodes remain.
+- All 49 active opcodes are **stable**. Zero provisional opcodes remain.
 - `BYTECODE_VERSION = 4`. Future opcodes require a version bump and FREEZE_PROPOSAL.md amendment.
 - Most load-bearing opcode families/opcodes:
 1. `CALL`/`RETURN`/`STORE_ARG` (function model, builtins, recursion)

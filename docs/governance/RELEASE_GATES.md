@@ -64,10 +64,13 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 ```
 
 **Passing criteria:**
-- `--static`: all 76 documented symbols exist in the codebase
+- `--static`: all 133 documented symbols exist in the codebase
 - `--runtime`: all doc code blocks run without failure (0 failures; allowlist covers
   intentionally non-runnable blocks)
 - `--closed-issues`: all closed-issue regression tests pass
+- `--opcodes`: the VM dispatch table matches `BYTECODE_REFERENCE.md` §3, its appendix
+  table, and the `FREEZE_PROPOSAL.md` stability tables exactly, and the opcode counts
+  and `BYTECODE_VERSION` claimed in those docs match the live values
 
 **Exemptions:** New failing blocks must either be fixed before release OR added to
 `.nodusgate-allow` with a comment explaining why they are intentionally non-runnable.
