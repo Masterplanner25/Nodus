@@ -599,6 +599,15 @@ Third audit of `3376702`, by a third auditor. Verification record in
   performs no authorisation. `register_function` takes no permission metadata, and
   `allow_subprocess`/`allow_network`/`allow_env` all default to `True`.
 
+  Design input extracted from Codex, Hermes and Claude Code — all three of which
+  have built this layer — is in
+  [CAPABILITY_POLICY_DESIGN.md](CAPABILITY_POLICY_DESIGN.md). The headline: all
+  three gate *shell command strings* and pay enormously for it (Hermes's
+  `approval.py` is 4,557 lines, much of it deobfuscation; Claude Code's
+  `bashSecurity.ts` is 13,963). Nodus's chokepoint receives `(name, args)` —
+  structured and compiler-produced — so the same guarantee costs orders of
+  magnitude less code here.
+
   **All three audits independently name this the highest-leverage change
   available** — the only finding in the series with unanimous convergence. Both
   audit 01 §8 and audit 03 §8 separately conclude that in-process capability
