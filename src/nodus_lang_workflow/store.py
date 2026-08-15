@@ -424,7 +424,27 @@ class LocalWorkflowStore(WorkflowStore):
             json.dump(data, handle, sort_keys=True, separators=(",", ":"))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
+        self._replace_with_retry(tmp_path, path)
+
+    @staticmethod
+    def _replace_with_retry(tmp_path: str, path: str, *, attempts: int = 5) -> None:
+        """`os.replace`, retried briefly on Windows sharing violations (#376).
+
+        On Windows the replace fails with `[WinError 5] Access is denied` while
+        any handle to the destination is open. In-process readers now hold the
+        store lock, which removes the case this repo hit — but a virus scanner,
+        an indexer or another process reading the store can hold a handle for a
+        few milliseconds, and losing a run record to that is not acceptable when
+        waiting is enough. POSIX never takes this path.
+        """
+        for attempt in range(attempts):
+            try:
+                os.replace(tmp_path, path)
+                return
+            except PermissionError:
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
 
     def _load_run_unlocked(self, run_id: str) -> WorkflowRunRecord | None:
         # #380: no `os.path.exists` pre-check — the open below already reports a
@@ -679,7 +699,17 @@ class LocalWorkflowStore(WorkflowStore):
         return _sorted_run_records(expired)
 
     def list_runs(self) -> list[WorkflowRunRecord]:
-        return self._list_runs_unlocked()
+        # #376: hold the lock while scanning. Reads were lock-free, so a scan
+        # could have a run file open exactly while another thread replaced it —
+        # and on Windows `os.replace` onto a path someone else has open fails
+        # with "[WinError 5] Access is denied", surfacing as a LangRuntimeError
+        # out of a workflow that did nothing wrong. POSIX allows the replace, so
+        # this is invisible on Linux and reproducible here.
+        #
+        # `_prune_terminal_runs` already holds the lock and must keep calling the
+        # unlocked variant: threading.Lock is not reentrant.
+        with self._lock:
+            return self._list_runs_unlocked()
 
     def _list_runs_unlocked(self) -> list[WorkflowRunRecord]:
         root = self._runs_root()

@@ -17,7 +17,12 @@ from nodus.frontend.parser import Parser
 from nodus.frontend.lexer import tokenize
 from nodus.vm.vm import VM
 from nodus.vm.types import Record
-from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS
+from nodus.support.config import (
+    EXECUTION_TIMEOUT_MS,
+    MAX_STEPS,
+    MAX_STDOUT_CHARS,
+    RESUME_TIMEOUT_MS,
+)
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
@@ -721,7 +726,7 @@ def resume_workflow_in_vm(
     event_type: str | None = None,
     correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
-    timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
+    timeout_ms: int | None = RESUME_TIMEOUT_MS,
 ):
     configure_vm_limits(vm, timeout_ms=timeout_ms)
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
@@ -1234,7 +1239,7 @@ def resume_workflow(
     event_type: str | None = None,
     correlation_key: str | None = None,
     max_stdout_chars: int = MAX_STDOUT_CHARS,
-    timeout_ms: int | None = EXECUTION_TIMEOUT_MS,
+    timeout_ms: int | None = RESUME_TIMEOUT_MS,
 ):
     vm = get_registered_vm(graph_id) or VM([], {}, code_locs=[], source_path=None)
     return resume_workflow_in_vm(
