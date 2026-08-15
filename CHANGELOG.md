@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#106: the DAP debug console could not see a function's own locals.** The
+  `evaluate` request has existed since 2026-06-06 and works — for module
+  globals. `DebugSession.get_locals()` read `frame.locals`, but since v0.8 that
+  dict holds only parameters and captured cells: every `let` inside a function
+  lives in the slot-indexed `frame.locals_array`. So at a breakpoint inside
+
+  ```nd
+  fn add(a, b) {
+      let total = a + b
+      return total          // <- paused here
+  }
+  ```
+
+  evaluating `total` returned `Undefined variable: total`, which is the case a
+  debug console is for.
+
+  Two other copies of the same logic — `_collect_frames()` in the same file, and
+  the CLI debugger's `get_locals()` — already merged both sources, so the
+  Variables pane and `nodus debug` were correct. This was the copy that drifted.
+  It now delegates to the CLI debugger's, and `evaluate` honours the `frameId`
+  the client sends, so evaluating against a selected caller frame works too.
+
+  The issue is closed as originally scoped — `evaluate` was implemented and the
+  issue was stale — but it was only half-verified: every existing test used a
+  module-level `let`, which passes on globals alone. Added tests for a function
+  local and for evaluation being read-only against the paused program.
+
 ### Performance
 
 - **#380 (part 2): `LocalWorkflowStore` scans got 4x cheaper, and the sweep 11x.**

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import BinaryIO, cast
 
 from nodus.runtime.debugger import Debugger, DebuggerQuit, PauseState
+from nodus.runtime.debugger import get_locals as debugger_locals
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.vm.vm import VM
@@ -415,7 +416,7 @@ class DebugSession:
 
         # Build evaluation context: module globals + current frame locals, both Cell-unwrapped.
         eval_globals: dict = {k: getattr(v, "value", v) for k, v in vm.globals.items()}
-        eval_globals.update(self.get_locals(vm))
+        eval_globals.update(self.frame_locals(frame_id))
 
         try:
             wrapped = f"let __eval_result__ = ({expression})\n"
@@ -444,13 +445,37 @@ class DebugSession:
             return "", "", str(exc)
 
     def get_locals(self, vm: VM) -> dict:
-        values = vm.current_locals()
-        if values is None:
-            values = vm.globals
-        out: dict[str, object] = {}
-        for name, value in (values or {}).items():
-            out[name] = getattr(value, "value", value)
-        return out
+        """Variables visible in the innermost frame.
+
+        Delegates to `runtime.debugger.get_locals`, which merges `frame.locals`
+        with the slot-indexed `frame.locals_array`. This used to read the dict
+        alone — but since v0.8 that dict holds only parameters and captured
+        cells, and every `let` inside a function lives in the slot array. So the
+        debug console could not see a function's own locals: evaluating `total`
+        at a breakpoint inside `fn add(a, b) { let total = a + b ... }` returned
+        "Undefined variable: total" (#106).
+
+        Two other copies of this logic — `_collect_frames` here and the CLI
+        debugger's — already merged both. This was the one that drifted.
+        """
+        return debugger_locals(vm)
+
+    def frame_locals(self, frame_id: int) -> dict:
+        """Variables visible in the frame the client selected.
+
+        `evaluate` is given a `frameId` and should honour it: a user who clicks a
+        caller in the stack view and types an expression means *that* frame.
+        Falls back to the innermost frame when the handle is unknown, which is
+        what a client that omits `frameId` gets.
+        """
+        frame_index = self.frame_handles.get(frame_id)
+        if frame_index is not None:
+            frames = self._collect_frames()
+            if frame_index < len(frames):
+                values = frames[frame_index].get("locals") or {}
+                return {name: getattr(v, "value", v) for name, v in values.items()}
+        vm = self.vm
+        return debugger_locals(vm) if vm is not None else {}
 
     def value_to_string(self, value: object) -> str:
         if self.vm is None:
