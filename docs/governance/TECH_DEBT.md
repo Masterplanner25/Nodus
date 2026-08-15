@@ -282,12 +282,34 @@ exposed); the rest are open. Ordered by severity.
   byte-identical stack section: a cap added to one renderer and not the other now
   fails.
 
-- **#339 (partially fixed in 4.1.1) — `std:async.worker_pool` and `pipeline`
-  remain non-functional.** They spawn onto the detached module VM's scheduler,
-  which nothing drives, so work is silently dropped. Sharing the caller's
-  scheduler is **not** sufficient: builtins close over the VM that registered
-  them, so a resumed module coroutine gets the wrong `recv`/`send`. Needs
-  VM-agnostic builtins; overlaps the design gap in #157.
+- **#339 (fixed 2026-08-15; `parallel`/`series` in 4.1.1, `worker_pool`/`pipeline`
+  now) — `std:async.worker_pool` and `pipeline` were non-functional.** They spawn
+  onto the detached module VM's scheduler, which nothing drives, so work was
+  silently dropped.
+
+  The earlier note here said sharing the caller's scheduler was **not**
+  sufficient and that the fix needed VM-agnostic builtins. The first half was
+  right and the conclusion was wrong. Sharing the scheduler alone fails because
+  the scheduler resumes on `self.vm`, so module coroutines ran on the caller's
+  VM with the caller's builtins and `functions` table. The fix is to keep them on
+  their own VM: `spawn` tags each coroutine with `owner_vm`, and the scheduler
+  resumes it there. Builtins stay bound to the VM that registered them — no
+  refactor of builtin registration, which is what made this look expensive.
+
+  A second half was needed for the callbacks to be useful: a `worker_pool` worker
+  calling `async.sleep` died with `Task yielded during graph execution`, because
+  a foreign closure was invoked through `run_closure`, a *nested* execute loop
+  with nowhere to put a yield. `_try_enter_foreign_closure` pushes a frame with
+  the closure's origin context instead, keeping it in the current coroutine's
+  loop, so callbacks suspend like any other code. An async primitive whose
+  callbacks cannot await is worth little.
+
+  Tests: `tests/test_async_worker_pool_pipeline.py` (11, CLI and embedded), of
+  which 9 fail against the unfixed VM. The two that pass are the `parallel` /
+  `series` must-not-regress guards.
+
+  #157 (a library cannot return a value from a spawned coroutine) is **not**
+  closed by this and remains the open design question.
 
 - **#348 (LOW, open) — `--trace-imports` emits nothing once the on-disk bytecode
   cache is warm.** `_build_metadata()` returns early on a cache hit, before the

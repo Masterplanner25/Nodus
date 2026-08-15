@@ -232,6 +232,19 @@ class NodusModule:
         #    (stack_frame, fn_module, etc.) can access the caller's context.
         if caller_vm is not None:
             setattr(vm, "_caller_vm", caller_vm)
+            # ASYNC-MOD-003 (#339): share the caller's scheduler. This VM is
+            # detached and discarded when the call returns, so anything spawned
+            # on its own scheduler is never run — `worker_pool` and `pipeline`
+            # spawn workers and hand the channel back for the *caller* to drive,
+            # and every job was silently dropped.
+            #
+            # Sharing the scheduler is only half of it: the coroutines still have
+            # to run on THIS VM, which owns their code, builtins and `functions`
+            # table. `spawn` tags each with `owner_vm` and the scheduler resumes
+            # it there (see `Scheduler._owner`). Resuming them on the caller's VM
+            # instead is what an earlier attempt did, and it corrupts execution —
+            # builtins close over the VM that registered them.
+            vm.scheduler = caller_vm.scheduler
             args = [
                 _ClosureProxy(arg, caller_vm) if isinstance(arg, Closure) and not isinstance(arg, _ClosureProxy) else arg
                 for arg in args

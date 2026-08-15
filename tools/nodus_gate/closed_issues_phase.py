@@ -82,11 +82,20 @@ def find_test_for_issue(issue_number: int, tests_root: str) -> tuple[str | None,
                 continue
             for m in _CLOSES_MARKER_RE.finditer(content):
                 if int(m.group(1)) == issue_number:
-                    # Find the function name after the marker
+                    # What the marker is attached to: a test function, or a class
+                    # tagging a whole group of them.
                     after = content[m.end():]
-                    fn_m = re.search(r'def\s+(\w+)', after[:200])
-                    fn_name = fn_m.group(1) if fn_m else None
-                    return fpath, fn_name
+                    def_m = re.search(r'\b(class|def)\s+(\w+)', after)
+                    if def_m is None:
+                        return fpath, None
+                    if def_m.group(1) == "class":
+                        # Run the whole file. Selecting just this class would skip
+                        # the issue's other classes, and the previous behavior was
+                        # worse: it matched the first `def` after the marker —
+                        # `setUp` — and `-k setUp` selected nothing, so the gate
+                        # reported a passing regression suite as a failure.
+                        return fpath, None
+                    return fpath, def_m.group(2)
 
     return None, None
 
