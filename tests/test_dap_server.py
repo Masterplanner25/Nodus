@@ -229,6 +229,94 @@ class DapServerTests(unittest.TestCase):
 
             client.request("disconnect")
 
+    # closes: #106
+    def test_evaluate_sees_function_locals_not_just_globals(self):
+        """The usual case at a breakpoint: a local or parameter, not a global.
+
+        `DebugSession.evaluate` merges the paused frame's locals over module
+        globals, but every existing evaluate test used a module-level `let`,
+        which passes on globals alone. An implementation that ignored `frameId`
+        and copied only `vm.globals` — the shape the DAP-001 plan described —
+        would have looked correct.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "locals.nd")
+            source = (
+                "fn add(a, b) {\n"
+                "    let total = a + b\n"
+                "    return total\n"
+                "}\n"
+                "print(add(2, 3))\n"
+            )
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+
+            client = _Client()
+            client.request("initialize")
+            client.request("launch", {"program": path})
+            client.request("setBreakpoints", {"source": {"path": path}, "lines": [3]})
+
+            debugger = client.server.session.debugger
+            assert debugger is not None
+            previous = debugger.stop_count
+            client.request("continue")
+            self.assertTrue(debugger.wait_for_stop(previous, timeout=1.0))
+            client.drain()
+
+            messages = client.request(
+                "evaluate", {"expression": "total * 2", "frameId": 1, "context": "repl"}
+            )
+            response = next(m for m in messages if m["type"] == "response")
+            self.assertTrue(response["success"], response)
+            self.assertEqual(response["body"]["result"], "10.0")
+
+            client.request("disconnect")
+
+    # closes: #106
+    def test_evaluate_cannot_modify_the_paused_program(self):
+        """Evaluation runs against a copy; the debuggee must be unaffected.
+
+        The implementation copies globals deliberately. Without a test, changing
+        `dict(vm.globals)` to `vm.globals` would keep every other evaluate test
+        green while letting the debug console mutate the program under the user.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "readonly.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("let x = 10\nlet y = x + 5\nprint(y)\n")
+
+            client = _Client()
+            client.request("initialize")
+            client.request("launch", {"program": path})
+            client.request("setBreakpoints", {"source": {"path": path}, "lines": [2]})
+
+            debugger = client.server.session.debugger
+            assert debugger is not None
+            previous = debugger.stop_count
+            client.request("continue")
+            self.assertTrue(debugger.wait_for_stop(previous, timeout=1.0))
+            client.drain()
+
+            vm = client.server.session.vm
+            assert vm is not None
+            before = getattr(vm.globals.get("x"), "value", vm.globals.get("x"))
+
+            messages = client.request(
+                "evaluate", {"expression": "x + 1", "frameId": 1, "context": "repl"}
+            )
+            self.assertTrue(next(m for m in messages if m["type"] == "response")["success"])
+
+            after = getattr(vm.globals.get("x"), "value", vm.globals.get("x"))
+            self.assertEqual(before, after, "evaluation changed the paused program's state")
+
+            messages = client.request(
+                "evaluate", {"expression": "x", "frameId": 1, "context": "repl"}
+            )
+            response = next(m for m in messages if m["type"] == "response")
+            self.assertEqual(response["body"]["result"], "10.0")
+
+            client.request("disconnect")
+
 
 if __name__ == "__main__":
     unittest.main()
