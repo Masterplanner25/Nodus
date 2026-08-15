@@ -133,6 +133,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
 | Eval results (per-version) | `docs/evals/` — e.g. `docs/evals/v4.0.0/CREATOR_VALIDATION.md` |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
+| External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
 | Issue response policy | `docs/governance/ISSUE_RESPONSE_POLICY.md` |
 | AI discoverability (canonical map) | `llms.txt` |
@@ -699,7 +700,20 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
   `nodus_store_memory`, `nodus_recall`, `nodus_list_graphs`
 - **goal vs workflow naming convention:** `goal` = outcome-oriented, single-shot (steps are impl details);
   `workflow` = process-oriented, resumable (pipeline itself is the point, returns `graph_id`).
-  Runtime treats them identically; convention is semantic.
+
+  **The runtime does *not* treat them identically** — earlier revisions of this file said it did,
+  and that claim is what gets read before writing host wrappers. `run_task_graph` branches on
+  `execution_kind` at `task_graph.py:1101` for **retry scheduling**: a `workflow` defers
+  (`retry_scheduled`, the run ends, a sweeper must resume it) while a `goal` retries in-process.
+  Same source, same step, same `retries: 2`, one `nodus run` → workflow **1 attempt**, goal **3**.
+  So `goal` is currently the more reliable of the two for retries, which is the opposite of what
+  the names suggest. Their result maps also differ in key set: `status`/`retry` appear only on a
+  workflow result, `goal` only on a goal result — so `result["status"]` works for one and errors
+  on the other.
+
+  Tracked in #393 (**decision: unify the retry path**) and #392 (`retries` are honoured only by
+  `nodus workflow-run`; the embedding API returns `ok: True` after one attempt). Until those land,
+  do not assume a behaviour holds for one kind because you observed it on the other.
 - Run tests: `cd C:\dev\nodus-mcp-server && python -m pytest -q`
 
 ## nodus-jupyter
