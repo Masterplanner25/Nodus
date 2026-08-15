@@ -81,7 +81,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `std:memory` | Experimental | Shipped in v4.0; share/recall/forget across namespaces; `tag`/`forget` added v4.0.3 |
 | `std:retry` | Experimental | Shipped in v4.0; configurable retry policies |
 | `std:circuit_breaker` | Experimental | Shipped in v4.0; three-state breaker; map-form `create` added v4.0.3 |
-| `std:async` | Experimental | `sleep`, `queue`, `parallel`, `series` work (`parallel`/`series` fixed v4.1.1, #339). **`worker_pool` and `pipeline` are non-functional** — they spawn onto the detached module VM's scheduler, which nothing drives, so work is silently dropped (#339 open). `channel`/`send`/`recv`/`close`/`spawn`/`coroutine` are VM builtins, not exports of this module. |
+| `std:async` | Experimental | All of `sleep`, `queue`, `parallel`, `series`, `worker_pool`, `pipeline` work (`parallel`/`series` fixed v4.1.1; `worker_pool`/`pipeline` after 4.1.1 — both were non-functional through that release, spawning onto a scheduler nothing drove, #339). Workers and stages may suspend. `channel`/`send`/`recv`/`close`/`spawn`/`coroutine` are VM builtins, not exports of this module. |
 | `std:runtime` | Experimental | Introspection — `typeof`, `fields`, `fn_arity`, `stack_depth`, `tasks`, `scheduler` |
 | `std:utils` | Experimental | `clamp`, `coalesce`, `get` |
 | `std:tools` / `std:agent` | Experimental | Adapters for tools/agents registered by the embedding host; `agent.call_async` added v4.1.0 (#294) |
