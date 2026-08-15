@@ -229,14 +229,14 @@ goal publish_article {
 """
         status, payload = self.request("POST", "/goal/run", {"code": code, "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["goal"], "publish_article")
         self.assertEqual(payload["result"]["steps"]["summarize"]["result"]["summary"], "condensed")
         graph_id = payload["result"]["graph_id"]
 
         status, payload = self.request("POST", "/goal/plan", {"code": code, "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["plan"]["goal"], "publish_article")
         self.assertEqual(payload["plan"]["parallel_groups"][1], ["summarize"])
 
@@ -244,7 +244,7 @@ goal publish_article {
         task_graph._GRAPH_VMS.pop(graph_id, None)
         status, payload = self.request("POST", "/goal/resume", {"graph_id": graph_id})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["goal"], "publish_article")
 
     def test_goal_cli_commands(self):
