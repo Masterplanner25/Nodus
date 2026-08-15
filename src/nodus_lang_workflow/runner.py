@@ -473,7 +473,23 @@ class WorkflowFrameworkRunner:
     def list_due_retry_runs(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
         return self.store.list_due_retry_runs(now_ms=now_ms)
 
-    def sweep(self, vm_factory, *, now_ms: float | None = None) -> dict[str, object]:
+    def sweep(
+        self,
+        vm_factory,
+        *,
+        now_ms: float | None = None,
+        min_idle_ms: float = 0.0,
+    ) -> dict[str, object]:
+        """Expire waits, resume due retries, and adopt orphaned runs.
+
+        ``min_idle_ms`` gates the adoption half: a run updated more recently than
+        that is left alone. Rehydration exists for runs whose owner is gone — a
+        process that crashed with work in flight — and a run touched moments ago
+        is not that (#376). Defaults to 0 so explicit callers keep adopting
+        immediately; a *background* sweeper should pass a value, because it
+        cannot tell the difference between an orphan and a run someone is in the
+        middle of, and guessing wrong corrupts the live one.
+        """
         expired = self.expire_wait_timeouts(now_ms=now_ms)
         expired_ids = {record.run_id for record in expired}
         resumed_retries: list[dict[str, object]] = []
@@ -502,9 +518,12 @@ class WorkflowFrameworkRunner:
 
         skip_ids = expired_ids | {item["run_id"] for item in resumed_retries}
         rehydrated: list[dict[str, object]] = []
+        idle_before = (now_ms if now_ms is not None else runtime_time_ms()) - min_idle_ms
         for record in self.list_rehydratable_runs():
             if record.run_id in skip_ids:
                 continue
+            if min_idle_ms > 0 and (record.updated_at or 0) > idle_before:
+                continue  # recently touched: someone is probably still on it
             vm = vm_factory(record)
             rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
             if vm is None or not callable(rebuild_graph):
@@ -520,6 +539,22 @@ class WorkflowFrameworkRunner:
         }
 
     def rehydrate_run(self, vm, run_id: str, *, rebuild_graph):
+        # #376: claim before adopting. Rehydration is not read-only — it calls
+        # register_graph()/register_graph_vm(), which replace the process-global
+        # registry entry for this run and bind it to `vm`. Doing that to a run
+        # another participant is working on hands them a graph pointed at
+        # someone else's VM, and the resume that follows returns ok:true with
+        # empty steps. `resume_workflow` has always claimed; this path did not.
+        owner = f"rehydrate:{id(vm)}"
+        claim = self.store.claim_run(run_id, owner=owner)
+        if claim is None:
+            return None  # actively owned by someone else — not ours to adopt
+        try:
+            return self._rehydrate_run_claimed(vm, run_id, rebuild_graph=rebuild_graph)
+        finally:
+            self.store.release_claim(run_id, claim.token)
+
+    def _rehydrate_run_claimed(self, vm, run_id: str, *, rebuild_graph):
         expired = self.store.expire_wait_timeout(run_id)
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return None
