@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Changed — breaking for anything parsing stderr
+
+- **#342: every error now reports the resolved absolute path.** Runtime errors
+  already did; syntax errors echoed the path exactly as typed, so the same
+  command printed two conventions depending on which phase failed. `run` and
+  `check` now agree, and so does the fallback used by errors that carry no path
+  of their own (a sandbox limit).
+
+  ```
+  # before, same directory, same invocation style
+  Name error at /abs/path/err.nd:2:7: Undefined variable: y
+  Syntax error at err.nd:1:9: Unexpected '=' in expression
+
+  # after
+  Syntax error at /abs/path/err.nd:1:9: Unexpected '=' in expression
+  ```
+
+  **This breaks stderr consumers that pass a relative path and expect that exact
+  string back.** Checked before landing: the VS Code extension passes
+  `document.uri.fsPath`, already absolute, so its diagnostic regex is unaffected.
+
+  `nodus check <file>` still echoes the given path in its `: OK` line — that is
+  not an error location.
+
+### Fixes
+
+- **#342: a syntax error in an imported module named the wrong file.** Not in
+  the issue as filed, and the more serious half. Syntax errors carried no path,
+  so the reporter fell back to the path the CLI was given — printing the **entry
+  file's** name against the **module's** line and column:
+
+  ```
+  $ nodus run main.nd            # the error is in sub/bad.nd
+  Syntax error at main.nd:1:25: Unexpected '=' in expression
+  ```
+
+  `main.nd:1:25` exists and sits inside the import string, so the report looks
+  plausible while pointing at a file that does not contain the error.
+  `ModuleLoader._parse_module` now stamps the module being parsed onto the error.
+
+  Regression tests: `tests/test_error_path_convention.py` (9 tests, 6 failing
+  before the fix), including one that reads the reported line and column out of
+  the file the error *names* — reading them out of the file the test expects
+  would pass either way, since the position was always the module's.
+
 ### Tooling
 
 - **#380 (part 1): the test suite and doc gate no longer leave workflow-run

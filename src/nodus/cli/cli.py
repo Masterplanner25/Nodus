@@ -761,9 +761,13 @@ def run_file(
     code = _read_file(path)
     if path.endswith(".tl"):
         _print_stderr("Warning: legacy .tl file detected. Consider using .nd.")
+    # #342: errors that carry their own path already report a resolved one. This
+    # is the fallback used by errors that carry none — a sandbox limit, say —
+    # and echoing the path as typed there was the last way the same command
+    # could print two path conventions depending on how it failed.
     result, _vm = run_source(
         code,
-        filename=path,
+        filename=os.path.abspath(path),
         trace=trace,
         trace_no_loc=trace_no_loc,
         trace_limit=trace_limit,
@@ -896,9 +900,15 @@ def check_file(path: str, *, project_root: str | None = None) -> int:
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result = check_source(code, filename=path, project_root=project_root)
+    # #342: report the resolved path, matching `nodus run` and every other error
+    # site. `check` parses the entry file itself rather than through the module
+    # loader, so it was the last place a syntax error echoed the path as typed
+    # while the same error from `run` — or from any imported module — printed an
+    # absolute one. The success line below still echoes what the user typed; it
+    # is not an error location.
+    result = check_source(code, filename=os.path.abspath(path), project_root=project_root)
     if not result.get("ok", False):
-        _print_error(result, path=path)
+        _print_error(result, path=os.path.abspath(path))
         return 1
     print(f"{path}: OK")
     return 0
