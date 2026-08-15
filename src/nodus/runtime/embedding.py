@@ -308,15 +308,21 @@ class NodusRuntime:
             environment variables.  Recommended when running untrusted scripts
             that should not have access to credentials in the host environment.
         max_frames:
-            Maximum call stack depth.  Raises a sandbox error on overflow.
-            Defaults to ``None``, which applies **no cap at all** — embedded runs
-            get no call-depth guard unless you pass one.  ``MAX_STACK_DEPTH`` is
-            installed only by the CLI path (``tooling/sandbox.py``), not here; see
-            #350.  With the default ``max_steps`` a runaway recursion still stops
-            on the step limit, but a host that also passes ``max_steps=None``
-            (recommended for long-lived servers) has no recursion guard whatsoever
-            and will grow frames until memory is exhausted.  Pass an explicit
-            ``max_frames`` (200–1000) whenever ``max_steps`` is ``None``.
+            Maximum call stack depth.  Raises a sandbox error (``Call stack
+            overflow``) on overflow.  ``None`` (the default) means
+            ``MAX_STACK_DEPTH`` (10,000), the same cap the CLI applies — pass an
+            integer to tighten or loosen it.
+
+            There is no "unlimited" setting: recursion depth is the one limit that
+            still bites when ``max_steps`` and ``timeout_ms`` are both ``None``,
+            the configuration recommended for long-lived hosts.  A host that truly
+            wants an effectively unbounded stack can pass a large integer, but note
+            that VM frames are heap-allocated, so nothing else stops the growth —
+            Python's own recursion limit is never reached.
+
+            Before #350 the default applied **no cap at all**, contradicting this
+            docstring; embedded runs relied on ``max_steps`` to stop runaway
+            recursion, and the recommended server configuration had no guard.
         on_error:
             Optional callable invoked when a spawned coroutine dies with an uncaught
             exception.  Signature: ``on_error(coroutine, error) -> bool``.  Return
@@ -776,8 +782,14 @@ class NodusRuntime:
         resolved_timeout = self.timeout_ms if timeout_ms is None else timeout_ms
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
         configure_vm_limits(vm, max_steps=resolved_steps, timeout_ms=resolved_timeout)
+        # #350: configure_vm_limits installs MAX_STACK_DEPTH. Only overwrite it
+        # when the caller asked for a different cap — this assignment used to be
+        # unconditional, so the default `None` replaced the guard with no guard
+        # and embedded runs had no recursion limit at all. Keeping the default in
+        # configure_vm_limits keeps CLI and embedded from drifting apart again.
         resolved_frames = self.max_frames if max_frames is None else max_frames
-        vm.max_frames = resolved_frames
+        if resolved_frames is not None:
+            vm.max_frames = resolved_frames
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
             try:

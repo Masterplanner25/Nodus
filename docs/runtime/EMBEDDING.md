@@ -69,17 +69,18 @@ runtime = NodusRuntime(timeout_ms=5000, max_steps=100_000)
 runtime = NodusRuntime(
     timeout_ms=None,    # no wall-clock deadline (this is already the default)
     max_steps=None,
-    max_frames=1000,    # REQUIRED here — see below
+    max_frames=1000,    # optional — tightens the 10,000 default
     project_root="/my/project",
 )
 ```
 
-> **Removing `max_steps` removes the only default recursion guard.** `max_frames`
-> also defaults to `None`, and `NodusRuntime` never applies `MAX_STACK_DEPTH`
-> ([#350](https://github.com/Masterplanner25/Nodus/issues/350)). With
-> `max_steps=None`, `timeout_ms=None`, and `max_frames` unset, an infinitely
-> recursive script runs until the process exhausts memory — it does not raise, and
-> it does not stop. Pass an explicit `max_frames` whenever you disable `max_steps`.
+> **`max_frames` is the guard that remains when you disable the other two.** It
+> defaults to `MAX_STACK_DEPTH` (10,000), the same cap the CLI applies, so an
+> infinitely recursive script raises `Call stack overflow` even with
+> `max_steps=None` and `timeout_ms=None`. Pass a tighter value (200–1000) for
+> untrusted code. Through v4.1.1 the default applied **no cap at all** and that
+> configuration ran until the process exhausted memory
+> ([#350](https://github.com/Masterplanner25/Nodus/issues/350)).
 
 Note: as of v4.0.1 (SCHED-001), cooperative sleep time is excluded from the deadline
 budget. Only active VM instruction execution consumes `timeout_ms`. A coroutine
@@ -113,14 +114,15 @@ Constructor parameters:
   omitted.
 - `allow_input` (bool, default `False`): If `False`, the `input()` builtin raises
   a sandbox error.
-- `max_frames` (int | None, default `None`): Maximum call stack depth. When exceeded,
-  raises a sandbox error with `kind="sandbox"`. **The default applies no cap at all.**
-  `MAX_STACK_DEPTH` is installed only by the CLI path (`tooling/sandbox.py`), never by
-  `NodusRuntime` — see [#350](https://github.com/Masterplanner25/Nodus/issues/350).
-  With the default `max_steps`, runaway recursion still stops on the step limit. If you
-  also pass `max_steps=None` (recommended below for long-lived hosts), **nothing stops
-  it** — frames grow until memory is exhausted. Always pass an explicit `max_frames`
-  (200–1000) when `max_steps` is `None`.
+- `max_frames` (int | None, default `None` → `MAX_STACK_DEPTH`): Maximum call stack
+  depth. When exceeded, raises a sandbox error with `kind="sandbox"` and the message
+  `Call stack overflow`. `None` means the CLI's cap of 10,000 — the default is a real
+  guard, and it is the only one left when `max_steps` and `timeout_ms` are both `None`.
+  Pass 200–1000 for untrusted code. There is no "unlimited" setting; a host that wants
+  an effectively unbounded stack passes a large integer, and nothing else will stop the
+  growth (VM frames are heap-allocated, so Python's recursion limit never fires).
+  Through v4.1.1 the default applied no cap at all
+  ([#350](https://github.com/Masterplanner25/Nodus/issues/350)).
 
 The following parameters are **capability switches**. All three default to permissive,
 so an embedded script can shell out, open sockets, and read process environment
@@ -336,7 +338,8 @@ working-directory jail. Pass `allowed_paths=None` for genuinely unrestricted acc
 
 `allow_input` controls whether `input()` is permitted (default: `False`).
 
-`max_frames` caps VM call stack depth. The default is `None` — **no cap** (#350).
+`max_frames` caps VM call stack depth. The default is `MAX_STACK_DEPTH` (10,000),
+matching the CLI; pass 200–1000 to tighten it for untrusted code.
 
 The three capability switches — `allow_subprocess`, `allow_network`, `allow_env` —
 all default to `True`. A runtime constructed as `NodusRuntime()` can run subprocesses,
