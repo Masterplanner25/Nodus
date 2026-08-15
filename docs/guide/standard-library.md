@@ -868,8 +868,8 @@ Coroutine and concurrency primitives.
 | `queue()` | Takes **no arguments**; returns a new channel. A thin alias for `channel()`. |
 | `parallel(tasks)` | Spawn every task in `tasks` and drive the scheduler until all finish. Returns nil, *not* a list of results. |
 | `series(tasks)` | Spawn and drain each task in turn, in order. Returns nil, *not* a list of results. |
-| `worker_pool(worker, count)` | ⚠️ **Broken — see below.** Intended: start `count` workers reading from a jobs channel, each calling `worker(item)`. Returns the jobs channel. |
-| `pipeline(stages)` | ⚠️ **Broken — see below.** Intended: chain `stages` through channels. Returns a record `{input, output}`. |
+| `worker_pool(worker, count)` | Start `count` workers reading from a jobs channel, each calling `worker(item)`. Returns the jobs channel. |
+| `pipeline(stages)` | Chain `stages` through channels, each stage a function of one argument. Returns a record `{input, output}`. |
 | `graph_run(tasks)` | Undocumented; delegates to `run_graph(graph(tasks))`. |
 
 `tasks` may hold either zero-argument functions or pre-built coroutines — both
@@ -882,36 +882,56 @@ async.parallel([fn() { async.sleep(30); print("slow") }, fn() { print("fast") }]
 // -> fast, then slow
 ```
 
-> **⚠️ Known bug: `worker_pool` and `pipeline` still do not work**
-> ([issue 339](https://github.com/Masterplanner25/Nodus/issues/339)).
-> Both spawn coroutines inside the module and return a channel for *you* to
-> drive. Those coroutines land on the module's own scheduler, which nothing
-> ever runs, so the work is silently dropped — no error, no output:
->
-> ```nd
-> import "std:async" as async
-> let jobs = async.worker_pool(fn(item) { print("job: \(item)") }, 2i)
-> send(jobs, "x")
-> close(jobs)
-> run_loop()        // prints nothing — the workers are on another scheduler
-> ```
->
-> Build the pool inline instead, so the coroutines share your scheduler:
->
-> ```nd
-> let jobs = channel()
-> spawn(coroutine(fn() {
->     let item = recv(jobs)
->     while (item != nil) { print("job: \(item)"); item = recv(jobs) }
-> }))
-> send(jobs, "x")
-> close(jobs)
-> run_loop()        // -> job: x
-> ```
->
-> Fixing this needs VM-agnostic builtins (builtins currently close over the VM
-> that registered them), tracked with the design gap in
-> [issue 157](https://github.com/Masterplanner25/Nodus/issues/157).
+`worker_pool` starts `count` workers on a jobs channel and hands the channel
+back. Send work to it, `close()` when done, and drive it with `run_loop()`:
+
+```nd
+import "std:async" as async
+let jobs = async.worker_pool(fn(item) { print("job: \(item)") }, 2i)
+send(jobs, "x")
+send(jobs, "y")
+close(jobs)
+run_loop()
+```
+
+```
+job: x
+job: y
+```
+
+`pipeline` chains stages through channels and returns `{input, output}`. Read the
+output from a coroutine — `recv()` outside one is an error:
+
+```nd
+import "std:async" as async
+let p = async.pipeline([fn(x) { return x + 1i }, fn(x) { return x * 10i }])
+spawn(coroutine(fn() {
+    let v = recv(p.output)
+    while (v != nil) {
+        print("out: \(v)")
+        v = recv(p.output)
+    }
+}))
+send(p.input, 1i)
+send(p.input, 2i)
+close(p.input)
+run_loop()
+```
+
+```
+out: 20
+out: 30
+```
+
+Closing the input closes the output once the last item is through, so a consumer
+loop terminates. Workers and stages may call `async.sleep()` — they suspend and
+the others keep running, like any other coroutine.
+
+> Both were entirely non-functional through v4.1.1: they spawned onto the
+> module's own scheduler, which nothing ran, so work was silently dropped — no
+> error, no output ([issue 339](https://github.com/Masterplanner25/Nodus/issues/339)).
+> On 4.1.1 or earlier, build the pool inline instead so the coroutines share your
+> scheduler.
 
 **Note:** `channel()`, `send()`, `recv()`, `close()`, `spawn()`, and
 `coroutine()` are **VM builtins**, not exports of `std:async`. Use them

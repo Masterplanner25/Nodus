@@ -117,6 +117,33 @@ class FindTestTests(unittest.TestCase):
         self.assertEqual(path, test_file)
         self.assertEqual(fn, "test_the_fix")
 
+    def test_marker_on_a_class_runs_the_whole_file(self):
+        # A marker tagging a class used to resolve to the first `def` after it —
+        # `setUp` — and `-k setUp` selected nothing, so the gate reported a
+        # passing regression suite as FAIL with "12 deselected" (#339).
+        test_file = os.path.join(self.tests_root, "test_class_marker.py")
+        with open(test_file, "w") as f:
+            f.write(
+                "# closes: #77\n"
+                "class SomeTests(unittest.TestCase):\n"
+                '    """Docstring long enough to push setUp past the old window."""\n'
+                "    def setUp(self):\n        pass\n"
+                "    def test_the_fix(self):\n        pass\n"
+            )
+
+        path, fn = find_test_for_issue(77, self.tests_root)
+        self.assertEqual(path, test_file)
+        self.assertIsNone(fn, "a class marker must not select a single function")
+
+    def test_marker_on_a_function_still_selects_it(self):
+        test_file = os.path.join(self.tests_root, "test_fn_marker.py")
+        with open(test_file, "w") as f:
+            f.write("# closes: #78\ndef test_only_this_one():\n    pass\n")
+
+        path, fn = find_test_for_issue(78, self.tests_root)
+        self.assertEqual(path, test_file)
+        self.assertEqual(fn, "test_only_this_one")
+
     def test_missing_issue_returns_none(self):
         path, fn = find_test_for_issue(9999, self.tests_root)
         self.assertIsNone(path)

@@ -2552,6 +2552,10 @@ class VM:
             self.ip += 1
             return None
         if isinstance(callee, _ClosureProxy):
+            # #339: inside a coroutine, run it in this loop so it can suspend.
+            if self._try_enter_foreign_closure(callee.origin_ctx,
+                                               callee._proxied_closure, args):
+                return None
             self.stack.append(callee(*args))
             self.ip += 1
             return None
@@ -2562,6 +2566,8 @@ class VM:
             # Executing it here would run the module's instructions at that
             # address (Stack underflow / NoneType errors). Dispatch it back
             # through the caller VM, exactly as a proxy would.
+            if self._try_enter_foreign_closure(self._caller_module_ctx(), callee, args):
+                return None
             self.stack.append(self._caller_vm.run_closure(callee, args))
             self.ip += 1
             return None
@@ -2569,6 +2575,65 @@ class VM:
             self.stack.append(arg)
         self.call_closure(callee, arg_count)
         return None
+
+    def _caller_module_ctx(self):
+        """The calling VM's module context, or None when there is no caller."""
+        caller = self._caller_vm
+        return caller._capture_module_ctx() if caller is not None else None
+
+    def _try_enter_foreign_closure(self, origin_ctx, closure, args: list) -> bool:
+        """Run a closure from another chunk IN THIS LOOP, not a nested one.
+
+        The fallback for a foreign closure is ``caller_vm.run_closure``, which
+        starts a nested ``execute()``. That works for synchronous callbacks and
+        fails for anything that suspends: a ``worker_pool`` worker calling
+        ``async.sleep`` died with "Task yielded during graph execution", because
+        the yield had nowhere to go (#339). Async primitives whose callbacks
+        cannot await are of little use.
+
+        Pushing a frame with the closure's own context swapped in keeps execution
+        in the current coroutine's loop, so a yield reaches the scheduler as it
+        would from any other code. ``frame.cross_module_ctx`` restores the
+        context on return and on unwind — the same mechanism
+        ``_try_enter_module_call`` uses in the other direction.
+
+        Returns False (caller falls back) outside a scheduler-managed coroutine,
+        without an origin context, or on arity mismatch — ``run_closure`` owns
+        the canonical arity error.
+        """
+        if origin_ctx is None:
+            return False
+        scheduler = getattr(self, "scheduler", None)
+        coroutine = self.current_coroutine
+        if (coroutine is None or scheduler is None
+                or coroutine is not getattr(scheduler, "current_task", None)):
+            return False
+        fn_info = getattr(closure, "function", None)
+        if fn_info is None or len(args) != len(fn_info.params):
+            return False
+
+        saved = self._capture_module_ctx()
+        self._restore_module_ctx(origin_ctx)
+        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+            self._restore_module_ctx(saved)
+            self.runtime_error("sandbox", "Call stack overflow")
+        frame = Frame(
+            return_ip=self.ip + 1,
+            locals={},
+            fn_name=fn_info.name,
+            call_line=None,
+            call_col=None,
+            call_path=None,
+            closure=closure,
+        )
+        frame.cross_module_ctx = saved
+        if fn_info.local_slots:
+            frame.locals_name_to_slot = fn_info.local_slots
+        self.frames.append(frame)
+        for arg in args:
+            self.stack.append(arg)
+        self.ip = fn_info.addr
+        return True
 
     def _is_foreign_closure(self, callee) -> bool:
         """True if ``callee`` is a Closure compiled against a different chunk.

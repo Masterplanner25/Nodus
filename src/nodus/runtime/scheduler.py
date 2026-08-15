@@ -64,6 +64,13 @@ class Scheduler:
             name = coroutine.name
         self.vm.event_bus.emit(RuntimeEvent(event_type, runtime_time_ms(), coroutine_id=coroutine_id, name=name, data=data))
 
+    def _owner(self, coroutine):
+        """The VM a coroutine runs on — the one that spawned it (#339).
+
+        Identical to ``self.vm`` for everything spawned outside a module.
+        """
+        return getattr(coroutine, "owner_vm", None) or self.vm
+
     def _ensure_metadata(self, coroutine) -> None:
         if coroutine.id is None:
             coroutine.id = self._next_id
@@ -76,8 +83,15 @@ class Scheduler:
         if coroutine.name is None:
             coroutine.name = "<anonymous>"
         if coroutine.module is None and getattr(coroutine, "closure", None) is not None:
-            module_path, _line, _col = self.vm.code_locs[coroutine.closure.function.addr]
-            coroutine.module = module_path or self.vm.source_path
+            # #339: a coroutine spawned inside a module has an `addr` into that
+            # module's chunk, not this VM's. Reading self.vm.code_locs raised
+            # "list index out of range" for every module coroutine once the
+            # caller's scheduler started driving them.
+            owner = self._owner(coroutine)
+            addr = coroutine.closure.function.addr
+            code_locs = owner.code_locs
+            module_path = code_locs[addr][0] if 0 <= addr < len(code_locs) else None
+            coroutine.module = module_path or owner.source_path
         if coroutine.created_time is None:
             coroutine.created_time = runtime_time_ms()
 
@@ -248,9 +262,10 @@ class Scheduler:
                     coroutine.task_started_at = now
                 self._emit_event("coroutine_resume", coroutine)
                 self._trace(f"resume coroutine #{coroutine.id}")
-                self.vm.task_step_budget = TASK_STEP_BUDGET
-                self.vm._budget_exceeded = False
-                result = self.vm.builtin_coroutine_resume(coroutine)
+                owner = self._owner(coroutine)
+                owner.task_step_budget = TASK_STEP_BUDGET
+                owner._budget_exceeded = False
+                result = owner.builtin_coroutine_resume(coroutine)
             except RuntimeLimitExceeded:
                 # Execution-limit breaches (deadline, step-limit) are not recoverable
                 # per-coroutine errors — they must propagate so the host (run_source /
@@ -271,8 +286,9 @@ class Scheduler:
                 continue
             finally:
                 self.current_task = None
-                self.vm.task_step_budget = None
-                self.vm._budget_exceeded = False
+                owner = self._owner(coroutine)
+                owner.task_step_budget = None
+                owner._budget_exceeded = False
 
             if coroutine.state != "suspended":
                 if coroutine.state == "finished":

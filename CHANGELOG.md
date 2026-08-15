@@ -4,6 +4,41 @@
 
 ### Fixes
 
+- **#339: `std:async.worker_pool` and `pipeline` never ran their workers.** The
+  other half of ASYNC-MOD-003 — `parallel` and `series` were fixed in 4.1.1.
+  These two spawn coroutines *inside* the module and hand a channel back for the
+  caller to drive; the coroutines landed on the detached module VM's scheduler,
+  which nothing ever runs, so every job was silently dropped. No error, no
+  output, `ok: True`.
+
+  Two halves, each useless alone:
+
+  1. A module VM shares the caller's scheduler, so spawned work is queued where
+     the caller's `run_loop()` will find it.
+  2. **A coroutine is resumed on the VM that spawned it**, not on the
+     scheduler's own VM. Builtins close over the VM that registered them, so
+     resuming module coroutines on the caller's VM hands them the wrong
+     `recv`/`send` and the wrong `current_coroutine` — which is what an earlier
+     attempt at (1) alone ran into.
+
+  A worker or stage may now also **suspend**: previously a worker calling
+  `async.sleep` died with `Task yielded during graph execution`, because a
+  closure from the caller was invoked through `run_closure` — a nested execute
+  loop with nowhere to put a yield. `_try_enter_foreign_closure` pushes a frame
+  with the closure's origin context instead, keeping it in the current
+  coroutine's loop, so callbacks suspend and interleave like any other code.
+
+  This was never specific to `std:async`: any `.nd` module that spawned a
+  coroutine and returned a channel had the same hole, and that case is covered
+  by a test.
+
+  Regression tests: `tests/test_async_worker_pool_pipeline.py` (11 tests, CLI
+  **and** embedded, since the two modes failed differently). 9 of the 11 fail
+  against the unfixed VM; the other two are `parallel`/`series` guards.
+
+  Not fixed: issue 157 — a library still cannot return a value from a coroutine
+  it spawned. That remains the open design question.
+
 - **#49: `nodus run` printed all 10,000 frames of a stack-overflow trace.**
   1,500,317 bytes of stderr across 10,003 lines — larger than the ~800 KB in the
   original report, because stack entries gained absolute paths (issue 342) and

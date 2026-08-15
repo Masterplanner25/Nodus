@@ -25,6 +25,11 @@ class Coroutine:
     deferred_return_depth: int = 0
     deferred_error: object = DEFERRED_NONE
     deferred_error_depth: int = 0
+    # The VM this coroutine must be resumed on — the one that spawned it. Set by
+    # the `spawn` builtin. Only differs from the scheduler's own VM for a
+    # coroutine spawned inside a module function, whose code, builtins and
+    # `functions` table belong to that module's detached VM (#339).
+    owner_vm: object | None = None
     id: int | None = None
     name: str | None = None
     module: str | None = None

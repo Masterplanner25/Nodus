@@ -108,6 +108,13 @@ def register(vm, registry) -> None:
         # first resume restores it (not a context another coroutine left behind).
         if coroutine.module_ctx is None and hasattr(vm, "_capture_module_ctx"):
             coroutine.module_ctx = vm._capture_module_ctx()
+        # ASYNC-MOD-003 (#339): a coroutine is resumed on the VM that spawned it.
+        # For an ordinary spawn that is the scheduler's own VM and nothing
+        # changes; for one spawned inside a module it is the module's VM, which
+        # is what keeps its builtins, its `functions` table (so a caller closure
+        # nested in a container is still recognised as foreign) and its
+        # `current_coroutine` consistent while the caller's scheduler drives it.
+        coroutine.owner_vm = vm
         vm.scheduler.spawn(coroutine)
         return None
 

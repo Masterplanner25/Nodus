@@ -45,6 +45,15 @@ class _ClosureProxy(Closure):
         super().__init__(closure.function, closure.upvalues)
         self._proxied_closure = closure
         self.caller_vm = caller_vm
+        # #339: the context the closure was compiled against, captured when it
+        # crossed the boundary. `caller_vm.run_closure` runs a *nested* execute
+        # loop, which cannot suspend — a worker that calls `async.sleep` dies
+        # with "Task yielded during graph execution". With the origin context in
+        # hand, a VM already inside a coroutine can instead push a frame and keep
+        # running in the same loop, so the closure can suspend like any other
+        # code. See `VM._try_enter_foreign_closure`.
+        capture = getattr(caller_vm, "_capture_module_ctx", None)
+        self.origin_ctx = capture() if capture is not None else None
 
     def __call__(self, *args):
         return self.caller_vm.run_closure(self._proxied_closure, list(args))
