@@ -295,7 +295,7 @@ _COMMAND_HELP: dict[str, str] = {
         "  --output-limit N           Truncate stdout after N characters",
         "  --allow-paths PATHS        Restrict file I/O to colon-separated paths",
         "  --strict                   Require an explicit file path; disable project auto-discovery",
-        "  --trace-imports            Print each resolved import path to stderr at resolution time",
+        "  --trace-imports            Print each resolved import path to stderr (marked when read from the bytecode cache)",
         "  --trace-errors             Print Python exception details to stderr for stdlib errors (also: NODUS_TRACE_ERRORS=1)",
         "",
         "Examples:",

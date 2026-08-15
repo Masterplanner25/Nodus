@@ -311,10 +311,22 @@ exposed); the rest are open. Ordered by severity.
   #157 (a library cannot return a value from a spawned coroutine) is **not**
   closed by this and remains the open design question.
 
-- **#348 (LOW, open) — `--trace-imports` emits nothing once the on-disk bytecode
-  cache is warm.** `_build_metadata()` returns early on a cache hit, before the
-  loop that calls `resolve_import()` — the only site that emits the trace. Not
-  the same as #51 (closed, in-memory cache within one run); that fix works.
+- **#348 (LOW, fixed 2026-08-15) — `--trace-imports` emitted nothing once the
+  on-disk bytecode cache was warm.** `_build_metadata()` returns early on a cache
+  hit, before the loop that calls `resolve_import()` — the only site that emits
+  the trace. So the flag worked only on the first run after `rm -rf .nodus`,
+  which is the run you are least likely to be debugging. Not the same as #51
+  (closed, in-memory cache within one run); that fix works.
+
+  The early-return path now replays what the cached unit recorded, marked
+  `Resolved (from bytecode cache)`. Nothing is re-resolved or re-parsed:
+  a debug flag must not change what a run does, only what it reports — and a
+  test asserts the program's stdout and exit code are identical with and without
+  it.
+
+  Tests run the CLI **twice** (`tests/test_import_trace_warm_cache.py`, 8 tests,
+  5 failing before the fix). A cross-run bug is invisible to any test that looks
+  at one run, which is why this sat as an unfiled finding (F27) for two releases.
 
 - **#342 (LOW, open) — runtime errors print absolute paths, syntax errors print
   the path as given.** Same command, same directory, two conventions. Anything

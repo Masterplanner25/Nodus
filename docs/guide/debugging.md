@@ -220,9 +220,18 @@ $ nodus run main.nd --trace-imports
 [import] Resolved "./utils" -> /path/to/utils.nd
 ```
 
-**Known limitation:** `--trace-imports` only fires on cold cache. Repeated
-runs of the same script will show no import output once bytecode is cached
-(BUG-027 tracked for v2.2).
+Once the on-disk bytecode cache is warm the paths come from the cached unit
+rather than the resolver, and the line says so:
+
+```
+$ nodus run main.nd --trace-imports
+[import] Resolved (from bytecode cache) "./utils" -> /path/to/utils.nd
+```
+
+Either way the whole graph is reported, transitive imports included. Through
+v4.1.1 the flag printed **nothing at all** on a warm cache — it fired only on
+the first run after `rm -rf .nodus`, which is the run you are least likely to
+be debugging ([issue 348](https://github.com/Masterplanner25/Nodus/issues/348)).
 
 ---
 
