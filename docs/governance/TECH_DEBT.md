@@ -241,13 +241,26 @@ exposed); the rest are open. Ordered by severity.
   "unlimited" setting — `max_frames` is the only guard left when `max_steps` and
   `timeout_ms` are both `None`, which is the recommended long-lived-host config.
 
-- **#353 (HIGH, open) — `--help` is unguarded across the package-manager
-  commands.** `nodus logout --help` **performs the logout** and deletes the saved
-  registry token; `publish --help` crashes with an unhandled traceback; `login
-  --help` blocks on input; `install`/`add`/`remove`/`update`/`deps` all run.
-  `--help` must never mutate state. The guard is per-command, so every new
-  subcommand ships unguarded — this is the fourth such fix (#1/#2, #268, #345,
-  now this). Handle `--help` centrally in dispatch. Supersedes #345 in scope.
+- **#353 (HIGH, fixed 2026-08-14) — `--help` was unguarded across the
+  package-manager commands.** `nodus logout --help` **performed the logout** and
+  deleted the saved registry token; `publish --help` crashed with an unhandled
+  traceback; `login --help` blocked on input; `install`/`add`/`remove`/`update`/
+  `deps`/`test` all ran. `--help` must never mutate state.
+
+  The per-command guard was the root cause — every new subcommand shipped
+  unguarded and the fixes landed one at a time (#1/#2, #268, #345, this). `main()`
+  now handles `--help`/`-h` centrally before any subcommand body runs, and the
+  ten per-command guards were deleted so there is one place to get it right.
+  Also closes #345, which was the same defect scoped to `nodus test`.
+
+  `KNOWN_COMMANDS` is module-level so `tests/test_cli_help_guard.py` can be
+  table-driven over the registry: a subcommand added tomorrow is covered without
+  anyone remembering to add a test. That matters more than the fix itself — the
+  one-command-at-a-time pattern is what made this recur four times.
+
+  The sweep runs out of process with a timeout, because against the unfixed CLI
+  `login --help` blocks on input even with stdin at `/dev/null` — an in-process
+  table test would hang the suite rather than fail it.
 
 - **#49 (reopened) — stack-overflow trace is not truncated on the CLI path.**
   ~1.5 MB of stderr, larger than the ~800 KB originally reported because stack

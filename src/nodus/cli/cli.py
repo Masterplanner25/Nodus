@@ -6,6 +6,7 @@ import http.client
 from importlib import metadata
 import json
 import os
+import re
 import sys
 import time
 from contextlib import contextmanager
@@ -424,7 +425,274 @@ _COMMAND_HELP: dict[str, str] = {
         "  nodus worker",
         "  nodus worker --host 10.0.0.1 --port 8080 --auth-token mysecret",
     ]),
+    "ast": "\n".join([
+        "Usage: nodus ast <script.nd> [--compact]",
+        "",
+        "Print the abstract syntax tree for a source file.",
+        "",
+        "Options:",
+        "  --compact    Print without indentation",
+    ]),
+    "dis": "\n".join([
+        "Usage: nodus dis <script.nd> [--loc] [--project-root PATH]",
+        "",
+        "Disassemble a source file to a bytecode listing.",
+        "",
+        "Options:",
+        "  --loc                  Annotate each instruction with its source location",
+        "  --project-root PATH    Override the project root directory",
+    ]),
+    "test": "\n".join([
+        "Usage: nodus test [path] [options]",
+        "",
+        "Run .nd test files. Discovers files matching *_test.nd or test_*.nd under",
+        "the given path (default: ./tests).",
+        "",
+        "Options:",
+        "  --filter PATTERN           Only run tests whose name contains PATTERN",
+        "  --format FMT               Output format: pretty, plain, auto (default: auto)",
+        "  --bail                     Stop after the first failing test",
+        "  --verbose                  Show each test as it runs",
+        "  --quiet                    Show only the summary line",
+        "  --watch                    Re-run tests when files change",
+        "  --seed N                   Seed for test ordering",
+        "  --parallel N               Run tests across N workers",
+        "  --coverage                 Collect coverage while running",
+        "  --coverage-per-test        Attribute coverage per test",
+        "  --coverage-output PATH     Coverage output directory (default: ./coverage)",
+        "  --coverage-format FMTS     Comma-separated: json,html (default: json,html)",
+        "  --coverage-min PCT         Fail if total coverage is below PCT",
+        "  --coverage-include GLOB    Restrict coverage to matching files",
+        "  --coverage-exclude GLOB    Exclude matching files from coverage",
+        "",
+        "Examples:",
+        "  nodus test",
+        "  nodus test ./tests --bail --verbose",
+        "  nodus test --coverage --coverage-min 80",
+    ]),
+    "install": "\n".join([
+        "Usage: nodus install [options]",
+        "",
+        "Install the dependencies listed in nodus.toml.",
+        "",
+        "Options:",
+        "  --project-root PATH     Project directory (default: current directory)",
+        "  --path PATH             Alias for --project-root",
+        "  --registry URL          Registry to install from",
+        "  --registry-token TOKEN  Token for a private registry",
+        "",
+        "Examples:",
+        "  nodus install",
+        "  nodus install --project-root ./my-project",
+    ]),
+    "update": "\n".join([
+        "Usage: nodus update [options]",
+        "",
+        "Update dependencies to the latest versions allowed by nodus.toml.",
+        "",
+        "Options:",
+        "  --project-root PATH    Project directory (default: current directory)",
+        "  --path PATH            Alias for --project-root",
+        "",
+        "Examples:",
+        "  nodus update",
+    ]),
+    "add": "\n".join([
+        "Usage: nodus add <package> [options]",
+        "",
+        "Add a dependency to nodus.toml and install it.",
+        "",
+        "Options:",
+        "  --project-root PATH    Project directory (default: current directory)",
+        "  --path PATH            Alias for --project-root",
+        "",
+        "Examples:",
+        "  nodus add nodus-http",
+    ]),
+    "remove": "\n".join([
+        "Usage: nodus remove <package> [options]",
+        "",
+        "Remove a dependency from nodus.toml.",
+        "",
+        "Options:",
+        "  --project-root PATH    Project directory (default: current directory)",
+        "  --path PATH            Alias for --project-root",
+        "",
+        "Examples:",
+        "  nodus remove nodus-http",
+    ]),
+    "deps": "\n".join([
+        "Usage: nodus deps [options]",
+        "",
+        "Print the resolved dependency graph as JSON.",
+        "",
+        "Options:",
+        "  --project-root PATH    Project directory (default: current directory)",
+        "  --path PATH            Alias for --project-root",
+        "",
+        "Examples:",
+        "  nodus deps",
+    ]),
+    "cache": "\n".join([
+        "Usage: nodus cache clear [options]",
+        "",
+        "Clear the project's bytecode cache (.nodus/cache/).",
+        "",
+        "Options:",
+        "  --project-root PATH    Project directory (default: current directory)",
+        "  --path PATH            Alias for --project-root",
+        "",
+        "Examples:",
+        "  nodus cache clear",
+    ]),
+    "login": "\n".join([
+        "Usage: nodus login [--registry URL]",
+        "",
+        "Save a registry authentication token to ~/.nodus/config.toml.",
+        "Prompts for the token on stdin.",
+        "",
+        "Options:",
+        "  --registry URL    Registry the token belongs to",
+        "",
+        "Examples:",
+        "  nodus login",
+        "  nodus login --registry https://registry.example.com",
+    ]),
+    "logout": "\n".join([
+        "Usage: nodus logout [--registry URL]",
+        "",
+        "Remove the saved registry token from ~/.nodus/config.toml.",
+        "This deletes the stored credential; there is no confirmation prompt.",
+        "",
+        "Options:",
+        "  --registry URL    Registry whose token should be removed",
+        "",
+        "Examples:",
+        "  nodus logout",
+    ]),
+    "publish": "\n".join([
+        "Usage: nodus publish [options]",
+        "",
+        "Publish the current package to a registry. Reads nodus.toml from the project",
+        "root and uploads the built package.",
+        "",
+        "Options:",
+        "  --registry URL          Registry to publish to",
+        "  --registry-token TOKEN  Token to authenticate with (overrides the saved one)",
+        "  --project-root PATH     Project directory (default: current directory)",
+        "",
+        "Examples:",
+        "  nodus publish",
+        "  nodus publish --registry https://registry.example.com",
+    ]),
 }
+
+
+# Every subcommand `main()` dispatches on. Module-level so the --help guard
+# can be tested across the whole registry rather than one command at a time
+# (#353) — the per-command pattern is what let commands ship unguarded.
+KNOWN_COMMANDS = {
+    "run",
+    "check",
+    "fmt",
+    "ast",
+    "dis",
+    "debug",
+    "profile",
+    "test",
+    "test-examples",
+    "repl",
+    "graph",
+    "serve",
+    "lsp",
+    "dap",
+    "snapshot",
+    "snapshots",
+    "restore",
+    "worker",
+    "workflow-run",
+    "workflow-plan",
+    "workflow-resume",
+    "workflow-checkpoints",
+    "workflow",
+    "goal-run",
+    "goal-plan",
+    "goal-resume",
+    "tool-call",
+    "agent-call",
+    "memory-get",
+    "memory-put",
+    "memory-delete",
+    "memory-keys",
+    "package-init",
+    "package-install",
+    "package-update",
+    "package-list",
+    "cache",
+    "add",
+    "remove",
+    "init",
+    "install",
+    "update",
+    "deps",
+    "login",
+    "logout",
+    "publish",
+    "status",
+    "stability",
+}
+
+
+_HELP_FLAGS = ("--help", "-h")
+
+
+def _command_summary(command: str) -> tuple[str, str] | None:
+    """Pull ``(usage_args, description)`` for a command out of the global help.
+
+    Derived from ``_render_help()`` rather than duplicated, so the fallback help
+    cannot drift from the command list.  Returns ``None`` for commands the global
+    help does not list.
+    """
+    for line in _render_help().splitlines():
+        if not line.startswith("  ") or line.startswith("  --"):
+            continue
+        body = line.strip()
+        parts = re.split(r"\s{2,}", body, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        signature = parts[0]
+        if signature == command or signature.startswith(command + " "):
+            return signature, parts[1]
+    return None
+
+
+def _command_help(command: str) -> str:
+    """Help text for a subcommand.
+
+    Commands with no hand-written entry still get usage and a pointer — the
+    point of handling ``--help`` centrally is that a command never *runs*
+    because nobody wrote its help yet (#353).
+    """
+    detailed = _COMMAND_HELP.get(command)
+    if detailed is not None:
+        return detailed
+    summary = _command_summary(command)
+    if summary is None:
+        return "\n".join([
+            f"Usage: nodus {command} [options]",
+            "",
+            "No detailed help has been written for this command.",
+            "Run 'nodus --help' for the full command list.",
+        ])
+    signature, description = summary
+    return "\n".join([
+        f"Usage: nodus {signature}",
+        "",
+        description + ".",
+        "",
+        "No detailed option help has been written for this command yet.",
+        "Run 'nodus --help' for the full command list.",
+    ])
 
 
 def _print_result_output(result: dict) -> None:
@@ -1359,56 +1627,7 @@ def main(argv: list[str] | None = None) -> int:
     cmd_args = args[1:]
 
     # Backward compat: nodus <file>
-    known_commands = {
-        "run",
-        "check",
-        "fmt",
-        "ast",
-        "dis",
-        "debug",
-        "profile",
-        "test",
-        "test-examples",
-        "repl",
-        "graph",
-        "serve",
-        "lsp",
-        "dap",
-        "snapshot",
-        "snapshots",
-        "restore",
-        "worker",
-        "workflow-run",
-        "workflow-plan",
-        "workflow-resume",
-        "workflow-checkpoints",
-        "workflow",
-        "goal-run",
-        "goal-plan",
-        "goal-resume",
-        "tool-call",
-        "agent-call",
-        "memory-get",
-        "memory-put",
-        "memory-delete",
-        "memory-keys",
-        "package-init",
-        "package-install",
-        "package-update",
-        "package-list",
-        "cache",
-        "add",
-        "remove",
-        "init",
-        "install",
-        "update",
-        "deps",
-        "login",
-        "logout",
-        "publish",
-        "status",
-        "stability",
-    }
+    known_commands = KNOWN_COMMANDS
 
     if command not in known_commands:
         # If argv[0] is language, treat the rest as nodus args.
@@ -1423,10 +1642,19 @@ def main(argv: list[str] | None = None) -> int:
             _print_stderr("Use --help for usage.")
             return 1
 
+    # #353: --help is handled here, centrally, before any subcommand body runs.
+    # It used to be each command's own responsibility, so every new subcommand
+    # shipped unguarded and the fixes landed one command at a time (#1/#2, then
+    # #268, then #345, then the whole package-manager group). That was not a
+    # cosmetic problem: `nodus logout --help` performed the logout and deleted
+    # the saved registry token, `nodus publish --help` crashed with an unhandled
+    # traceback, and `nodus login --help` blocked on stdin. --help must never
+    # mutate state. Do not re-add per-command guards below; this one covers them.
+    if any(flag in cmd_args for flag in _HELP_FLAGS):
+        print(_command_help(command))
+        return 0
+
     if command == "run":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["run"])
-            return 0
         flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
         flags_no_values = {
             "--trace",
@@ -1507,9 +1735,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "check":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["check"])
-            return 0
         flags_with_values = {"--project-root"}
         flags_no_values = {"--trace", "--trace-no-loc", "--trace-scheduler", "--trace-events", "--trace-json", "--no-opt"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
@@ -1533,9 +1758,6 @@ def main(argv: list[str] | None = None) -> int:
         return check_file(script, project_root=project_root)
 
     if command == "fmt":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["fmt"])
-            return 0
         flags_no_values = {"--check", "--keep-trailing"}
         positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
         if not positional:
@@ -1549,9 +1771,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "ast":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print("Usage: nodus ast <script.nd> [--compact]")
-            return 0
         flags_no_values = {"--compact"}
         positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
         if not positional:
@@ -1561,9 +1780,6 @@ def main(argv: list[str] | None = None) -> int:
         return ast_file(script, compact="--compact" in flags)
 
     if command == "dis":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print("Usage: nodus dis <script.nd> [--loc] [--project-root PATH]")
-            return 0
         flags_with_values = {"--project-root"}
         flags_no_values = {"--loc"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
@@ -1578,9 +1794,6 @@ def main(argv: list[str] | None = None) -> int:
         return dis_file(script, include_locs="--loc" in flags, project_root=project_root)
 
     if command == "debug":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["debug"])
-            return 0
         flags_with_values = {"--project-root"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:
@@ -1685,9 +1898,6 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_graph_file(positional[0], project_root=project_root)
 
     if command == "serve":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["serve"])
-            return 0
         flags_with_values = {
             "--host",
             "--port",
@@ -1738,9 +1948,6 @@ def main(argv: list[str] | None = None) -> int:
         return run_stdio_server()
 
     if command == "repl":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["repl"])
-            return 0
         run_repl(_resolve_installed_version())
         return 0
 
@@ -1781,9 +1988,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run_restore(positional[0], host=host, port=port, token=token)
 
     if command == "worker":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["worker"])
-            return 0
         flags_with_values = {"--host", "--port", "--auth-token"}
         _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         host, port = _resolve_server_host_port(flags)
@@ -2148,9 +2352,6 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_keys()
 
     if command in {"package-init", "init"}:
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["init"])
-            return 0
         _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
         path = flags.get("--project-root") or flags.get("--path")
         return _package_init(path)
@@ -2227,9 +2428,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "status":
-        if "--help" in cmd_args or "-h" in cmd_args:
-            print(_COMMAND_HELP["status"])
-            return 0
         return _nodus_status()
 
     if command == "test":

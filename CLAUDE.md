@@ -261,26 +261,29 @@ that need a file (e.g. cross-repo where stdin is awkward), write the message
 to `.git\COMMIT_MSG_TEMP` with `Out-File -Encoding utf8` then use
 `git commit -F ".git\COMMIT_MSG_TEMP"`.
 
-## ⚠️ `nodus <cmd> --help` is not safe to run (#353, open)
+## `nodus <cmd> --help` — safe now, was not (#353, fixed)
 
-**`--help` is not a global flag — it is handled per-command, and several commands
-ignore it and just run.** Verified 2026-08-06:
+`--help`/`-h` is handled **centrally in `main()`**, before any subcommand body runs, so
+it prints usage and exits 0 for every command in `KNOWN_COMMANDS`. Running it to learn
+what a command does is safe.
 
-| Command | What `--help` actually does |
+**Do not add a per-command `--help` guard.** That pattern is what made this recur four
+times (#1/#2, #268, #345, #353): each new subcommand shipped unguarded until someone
+noticed. The ten per-command guards were deleted with the fix.
+
+Through v4.1.1 — so still true if you run an installed `nodus.exe` from `.venv` rather
+than dev source:
+
+| Command | What `--help` did |
 |---|---|
-| `nodus logout --help` | **Performs the logout.** Deletes the saved registry token from `~/.nodus/config.toml` |
-| `nodus publish --help` | Crashes with an unhandled traceback |
-| `nodus login --help` | Blocks waiting on stdin |
-| `install` / `add` / `remove` / `update` / `deps` | Run for real |
+| `nodus logout --help` | **Performed the logout.** Deleted the saved registry token from `~/.nodus/config.toml` |
+| `nodus publish --help` | Crashed with an unhandled traceback |
+| `nodus login --help` | Blocked waiting on stdin |
+| `install` / `add` / `remove` / `update` / `deps` / `test` | Ran for real |
 
-This bit during this session: `nodus logout --help`, run to read the help text, deleted
-the user's registry token. `~/.pypirc` was unaffected.
-
-**To learn what a command does, read `src/nodus/cli/cli.py` — do not run `--help` on any
-package-manager or registry command.** `nodus --help` (no subcommand) is safe.
-
-This is the fourth fix in this area (#1/#2, #268, #345, now #353); the guard is
-per-command, so each new subcommand ships unguarded until someone notices.
+This bit a session on 2026-08-06: `nodus logout --help`, run to read the help text,
+deleted the user's registry token. `~/.pypirc` was unaffected. If you need to check
+against an installed build, use a throwaway `HOME`/`USERPROFILE`.
 
 ## PR workflow — required (enforce_admins is ON)
 

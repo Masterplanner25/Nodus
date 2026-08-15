@@ -2,18 +2,16 @@
 
 Nodus includes a minimal, local-first package manager intended for small automation projects.
 
-> **Do not append `--help` to these commands.** They do not implement a help
-> guard: the flag is ignored and the command **runs**
-> ([#353](https://github.com/Masterplanner25/Nodus/issues/353)). Most are merely
-> unhelpful — `install --help` attempts an install — but two are not:
+> **`nodus <command> --help` is safe on every command.** It is handled centrally
+> in dispatch, before any subcommand body runs
+> ([#353](https://github.com/Masterplanner25/Nodus/issues/353), fixed).
 >
-> - `nodus logout --help` **performs the logout** and deletes the saved registry
->   token.
-> - `nodus publish --help` crashes with an unhandled traceback.
-> - `nodus login --help` blocks waiting on interactive input.
->
-> Use this document for usage until that is fixed. `nodus --help` (no
-> subcommand) is safe and lists every command.
+> Through v4.1.1 it was not: the flag was ignored and the command **ran**.
+> `nodus logout --help` performed the logout and deleted the saved registry
+> token, `publish --help` crashed with an unhandled traceback, `login --help`
+> blocked on input, and `install` / `add` / `remove` / `update` / `deps` / `test`
+> all executed. On 4.1.1 or earlier, use this document for usage instead —
+> `nodus --help` with no subcommand was always safe.
 
 ## Project Files
 

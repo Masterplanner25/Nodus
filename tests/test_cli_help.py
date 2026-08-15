@@ -13,9 +13,13 @@ _NODUS_PY = str(_REPO_ROOT / "nodus.py")
 
 
 def run_cli(*args):
+    # 30s, not 5s: the command itself takes ~1.7s (mostly interpreter startup
+    # and imports), and a 3x margin is not enough under full-suite load — it
+    # timed out intermittently once the suite grew more subprocess-spawning
+    # tests. CLAUDE.md's rule of thumb is 5-10x headroom for timing races.
     return subprocess.run(
         [sys.executable, _NODUS_PY, *args],
-        capture_output=True, text=True, timeout=5,
+        capture_output=True, text=True, timeout=30,
     )
 
 
