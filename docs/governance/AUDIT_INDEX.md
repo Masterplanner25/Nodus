@@ -38,6 +38,20 @@ a new contributor who will evaluate the system from the outside).
 Completed audit results live in `docs/evals/` alongside the creator validation
 and independent eval results. Name them: `docs/evals/vX.Y.Z/AUDIT_<NAME>.md`.
 
+## Audits run *against* us
+
+The prompts above are the ones we run ourselves. Audits performed by an outside
+reader are recorded separately in
+**[EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md)**, which gives every
+finding a verdict — confirmed, wrong, partly wrong, or reframed — with the
+command or code reference that settled it.
+
+Verify before acting. The first audit in that series was directionally sound and
+factually wrong in five places, every one of them a negative finding of the form
+*"Nodus does not have X"* where X existed in a file the auditor did not open. An
+unverified negative finding costs either work you did not need or a doc
+correction that makes the docs worse.
+
 ## Bootstrap readiness
 
 Two audits track the bootstrap milestone independently:

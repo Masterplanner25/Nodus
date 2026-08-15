@@ -335,6 +335,24 @@
 
 ### Tooling
 
+- **Known issues recorded from an external architecture audit — two of them
+  affect embedded hosts.** An outside adversarial audit of v4.1.1 was verified
+  against the implementation; findings, verdicts and the audit's own five factual
+  errors are in `docs/governance/EXTERNAL_AUDIT_LEDGER.md`. Nothing is fixed yet.
+  What a host should know now:
+
+  - Step-level `with { retries: N }` is honoured only by `nodus workflow-run`.
+    Through `NodusRuntime` or an in-language `run_workflow()`, the step runs once
+    and the call returns **`ok: true`** with the retry silently dropped (#392).
+  - `goal` and `workflow` are not interchangeable, despite lowering through the
+    same function. A `goal` retries in-process; a `workflow` defers. Their result
+    maps also differ in key set, so `result["status"]` works for one and errors on
+    the other (#393). The retry path will be unified.
+
+  Also recorded: step ordering is a strong default rather than an unbypassable
+  invariant (#394), there is no cancellation anywhere (#395), and `nodus check`
+  does not catch dependency cycles (#396).
+
 - **The doc gate's closed-issues phase penalised honest changelog prose, and
   timed out on its own slowest regression test.** Two fixes to
   `tools/nodus_gate/closed_issues_phase.py`, both found by running it against

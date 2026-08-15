@@ -453,6 +453,65 @@ drift it was written for.
   document; `EMBEDDING.md` pointed at closed #193 for a "planned" flag that was
   never implemented.
 
+## Findings from external Architecture Audit 01 (2026-08-15)
+
+Full verification record, including the audit's own errors, is in
+[EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md). Only the debt is listed
+here.
+
+- **#392 (HIGH) — step-level `retries` are dropped on four of five entry points.**
+  #226 fixed this by adding `inline_retries=True` to `run_workflow_code`; exactly
+  one caller passes it (`cli.py:1029`, serving `nodus workflow-run`). The
+  embedding API — the path `nodus-mcp-server` uses — does one attempt, drops the
+  retry, and returns **`ok: True`**. Same success-shaped-failure signature as
+  #376. The closing comment on #226 said "used by `nodus run`", which is not the
+  command that was fixed.
+
+- **#393 (HIGH) — `goal` and `workflow` are documented as identical and are not.**
+  `task_graph.py:1101` branches on `execution_kind` for retry scheduling: a
+  workflow defers to a sweeper, a goal retries in-process. Measured, same source,
+  one `nodus run`: workflow **1 attempt**, goal **3**. So `goal` is currently the
+  *more* reliable of the two for retries, inverting the documented intuition. The
+  result maps also differ in key set (`status`/`retry` vs `goal`). Introduced by
+  `7367ef1` (2026-05-30) when durable retry was added for workflows only;
+  `test_goal_dsl.py` has no retry test, so nothing caught it for ten weeks.
+  **Decision: unify the retry path.**
+
+- **#394 (MEDIUM) — step ordering is a default, not an invariant.** A lowered
+  workflow is a reachable map; `build["steps"][1]["fn"](nil)` runs a step whose
+  dependency never ran. Verified by execution. Matters specifically in the
+  model-generated-code case the sandbox exists for. `EXECUTION_INVARIANTS.md`
+  should not group ordering with the resource/capability bounds, which *are*
+  unbypassable.
+
+- **#395 (MEDIUM, design) — no cancellation anywhere.** One `cancel` hit in
+  `src/nodus/`, a CLI print. No parent/child links, no scoped cleanup, no error
+  propagation to a parent — `_coroutine_errors` collects rather than propagates.
+  What exists is asynchronous primitives, not structured concurrency, and docs
+  should say so. `Coroutine.blocked_on`/`blocked_reason` are the state a fix
+  would build on.
+
+- **#396 (LOW) — `nodus check` does not catch dependency cycles.** #323 correctly
+  moved detection ahead of the scheduler (`task_graph.py:549`); parse-time
+  detection would additionally give CI and LSP diagnostics. The other two
+  structural checks are already at parse time (`parser.py:528`, `:537`).
+
+- **Process gap — no artifact states where a guarantee is enforced.** Four of the
+  audit's five factual errors were "looked in the architecturally obvious place,
+  missed the actual one": validation in the parser rather than the analyzer;
+  `dis` rather than `disasm`; idempotency in a compiler lowering rather than the
+  graph engine; `BYTECODE_VERSION` in the compiler rather than a bytecode header.
+  A *guarantee → enforcement point → bypass → test* table in
+  `EXECUTION_INVARIANTS.md` would have prevented them and makes "Nodus has no X"
+  cheap to settle. Worth building before the next audit in the series lands.
+
+- **Open decision — positioning.** "For building agentic systems" is not
+  supported (there is no model in the core, confirmed: 0 grep hits). This is a
+  wording problem, not a capability gap — the absence of a model is what makes
+  the semantic boundary unblurrable. Candidate reframing: **an ecosystem for
+  building agentic hosts**. Deferred until more of the audit series is in, so the
+  wording answers all of them at once.
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.
