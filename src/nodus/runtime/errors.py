@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
+from nodus.runtime.diagnostics import (
+    LangRuntimeError,
+    LangSyntaxError,
+    format_stack_section,
+)
 
 
 @dataclass
@@ -182,7 +186,7 @@ def format_error_payload(payload: dict) -> str:
     else:
         text = f"{prefix}: {message}"
 
-    stack = payload.get("stack")
-    if stack:
-        return text + "\nStack trace:\n  " + "\n  ".join(stack)
-    return text
+    # Shared with diagnostics.format_error so the 20-frame cap applies on the
+    # CLI path too — it did not, and `Call stack overflow` printed 1.5 MB of
+    # stderr (#49).
+    return text + format_stack_section(payload.get("stack"))

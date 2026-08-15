@@ -346,8 +346,8 @@ check before accessing.
 
 ### Stack overflow error
 
-Infinite recursion produces a full stack trace — one entry per frame up to
-the stack limit:
+Infinite recursion produces a stack trace capped at the innermost 20 frames,
+followed by a count of the rest:
 
 ```
 Sandbox error at /abs/path/deep.nd:1:36: Call stack overflow
@@ -355,26 +355,28 @@ Stack trace:
   at recurse (/abs/path/deep.nd:1:36)
   called from recurse (/abs/path/deep.nd:1:36)
   called from recurse (/abs/path/deep.nd:1:36)
-  ...
+  ... (9981 more frames)
 ```
 
-The call site in the trace is where the recursive call was made, not the
-top of the function. The depth (number of `called from` lines) confirms
-unbounded recursion vs. expected deep nesting.
+(20 frame lines are printed; three are shown here.)
 
-> **Redirect this to a file.** The trace is **not truncated** on the `nodus run`
-> path — it prints one line per frame for all 10,000 frames, about **1.5 MB** of
-> stderr ([#49](https://github.com/Masterplanner25/Nodus/issues/49), reopened).
-> Your terminal truncates it; Nodus does not. Use `nodus run deep.nd 2> trace.txt`
-> and read the head of the file.
+The call site in the trace is where the recursive call was made, not the
+top of the function. The final count confirms unbounded recursion vs. expected
+deep nesting — 9,981 elided frames is a runaway, 12 is not.
+
+> **Through v4.1.1 this trace was not truncated** on the `nodus run` path — it
+> printed one line per frame for all 10,000 frames, about **1.5 MB** of stderr
+> ([#49](https://github.com/Masterplanner25/Nodus/issues/49)). Your terminal
+> truncated it; Nodus did not. On 4.1.1 or earlier, redirect it with
+> `nodus run deep.nd 2> trace.txt` and read the head of the file.
 >
 > With the default 200 ms deadline you usually get `Execution timed out`
 > instead, because the run dies before recursion reaches the stack limit. Pass
 > `--time-limit 10000` to see the actual overflow.
 >
-> Embedding via `NodusRuntime` is no better, just quieter: `stderr` comes back
-> empty and the full frame list arrives in `result["errors"][0]["stack"]` —
-> also uncapped. Slice it yourself before logging:
+> **The error payload is deliberately not capped** — only the rendered text is.
+> `result["errors"][0]["stack"]` from `NodusRuntime` carries every frame, so you
+> can slice it your own way before logging:
 >
 > ```python
 > stack = result["errors"][0]["stack"]
@@ -418,20 +420,20 @@ F32: `nodus debug --help` outputs "File not found: --help" instead of help text.
      BUG-001/002 fixed --help for check/ast/dis in v2.1.0; debug was missed.
      Filed as BUG-047 (#48). RESOLVED in v3.0.
 
-F33: NOT RESOLVED — the "RESOLVED in v3.0" note here was wrong, and #49 has been
-     REOPENED. Re-verified 2026-08-05 on 4.1.1: `nodus run` still prints one line
-     per frame for all 10,000 frames — 10,003 lines / ~1.5 MB of stderr, LARGER
-     than the ~800 KB originally reported, because stack entries now carry
-     absolute paths (#342).
-     Why it looked fixed: the 20-frame cap exists, but only in ONE of two
-     stack-trace formatters. src/nodus/runtime/diagnostics.py:188 has it;
-     src/nodus/runtime/errors.py:186 joins every frame, and that is the path
-     `nodus run` uses.
-     Also verify with --time-limit 10000: at the default 200 ms deadline the run
-     dies with "Execution timed out" before recursion reaches the stack limit,
-     which makes the bug look absent.
-     Embedded NodusRuntime does NOT cap either (checked, not assumed): stderr is
-     empty and result["errors"][0]["stack"] carries the full frame list.
+F33: RESOLVED 2026-08-14 (#49) — for real this time. The earlier "RESOLVED in
+     v3.0" note was wrong and the issue was reopened on 2026-08-05.
+     Why it looked fixed the first time: the 20-frame cap existed in only ONE of
+     two stack-trace formatters. diagnostics.py had it; errors.py joined every
+     frame, and that is the path `nodus run` uses. Measured on 4.1.1: 10,003
+     lines / 1,500,317 bytes of stderr, LARGER than the ~800 KB originally
+     reported because stack entries now carry absolute paths (#342).
+     Both formatters now call diagnostics.format_stack_section. The same program
+     produces 23 lines / 3,195 bytes.
+     When re-verifying, pass --time-limit 30: at the default 200 ms deadline the
+     run dies with "Execution timed out" before recursion reaches the stack
+     limit, which makes the bug look absent whether or not it is.
+     The error PAYLOAD stays uncapped by design — result["errors"][0]["stack"]
+     carries every frame. Only rendering is capped.
 
 F27: STILL PRESENT — now filed as #348. --trace-imports emits nothing once the
      on-disk bytecode cache is warm. Not the same as #51 (closed/completed),
