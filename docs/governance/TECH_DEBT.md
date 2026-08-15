@@ -328,10 +328,25 @@ exposed); the rest are open. Ordered by severity.
   5 failing before the fix). A cross-run bug is invisible to any test that looks
   at one run, which is why this sat as an unfiled finding (F27) for two releases.
 
-- **#342 (LOW, open) — runtime errors print absolute paths, syntax errors print
-  the path as given.** Same command, same directory, two conventions. Anything
-  parsing stderr must handle both. Changing either is breaking for stderr
-  consumers, so it likely belongs in a minor release.
+- **#342 (LOW, fixed 2026-08-15) — runtime errors printed absolute paths, syntax
+  errors printed the path as given.** Same command, same directory, two
+  conventions; anything parsing stderr had to handle both. Now one: the resolved
+  absolute path, from `run` and `check` alike, including the fallback used by
+  errors that carry no path of their own (a sandbox limit).
+
+  **Investigating it turned up a defect the issue had not.** A syntax error
+  carried no path at all, so the reporter fell back to the path the CLI was
+  given — meaning a syntax error inside an *imported* module was reported
+  against the **entry file**, at the *module's* line and column. It named a file
+  that did not contain the error, at a position that looked plausible in it.
+  `ModuleLoader._parse_module` now stamps the module being parsed. That is a
+  correctness bug, not the cosmetic one the issue was filed as.
+
+  **This is the breaking-for-stderr-consumers change the issue predicted**, so it
+  wants a minor release rather than a patch. Checked before landing: the VS Code
+  extension passes `document.uri.fsPath` — already absolute — so its diagnostic
+  regex is unaffected either way. Affected consumers are those that invoke nodus
+  with a *relative* path and expect that exact string back.
 
 - **#357 (LOW, open) — the VS Code grammar does not highlight `match`,
   `break`, or `continue`.** Neither the in-repo grammar nor the published

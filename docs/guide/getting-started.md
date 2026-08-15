@@ -364,15 +364,18 @@ The format is `<Kind> error at <file>:<line>:<col>: <message>`. Line 2,
 column 7 is exactly where `y` appears. The stack trace shows the call chain
 that led there.
 
-> **Paths differ by error class.** A **runtime** error (like this one) prints the
-> fully resolved absolute path, even when you passed a relative one. A **syntax**
-> error prints the path exactly as you typed it:
+> **Paths are always the resolved absolute path**, whatever you typed and
+> whichever phase failed:
 >
 > ```
-> Syntax error at error_demo.nd:1:9: Unexpected '=' in expression
+> Syntax error at /abs/path/error_demo.nd:1:9: Unexpected '=' in expression
 > ```
 >
-> Don't write tooling that assumes one format for both.
+> Through v4.1.1 this was not true — syntax errors echoed the path as typed
+> while runtime errors resolved it, so tooling had to handle both
+> ([issue 342](https://github.com/Masterplanner25/Nodus/issues/342)). Worse, a
+> syntax error inside an *imported* module was reported against the entry file
+> at the module's line and column, naming a file that did not contain the error.
 
 **`nodus check` is parse-only.** It validates syntax and catches malformed
 code, but it does NOT detect undefined variables or type mismatches. This
@@ -496,12 +499,15 @@ Every output below is verbatim from an actual run.
 
 BEHAVIORAL FINDINGS
 
-F4 (2026-08-05, DOC FIXED; filed as #342): Runtime and syntax errors format the path
-    differently. A runtime error prints the fully resolved ABSOLUTE path even
-    when the file was passed relatively; a syntax error prints the path as
-    given. This doc previously showed a relative path for a Name error, which
-    cannot occur. Documented in §6 rather than changed — altering either
-    format is a breaking change for anything parsing stderr.
+F4 (2026-08-05, RESOLVED 2026-08-15 in #342): Runtime and syntax errors formatted
+    the path differently — runtime resolved it to an absolute path, syntax
+    echoed what was typed. Both now print the resolved absolute path, from
+    `run` and `check` alike. Investigating it turned up a defect the finding
+    had not: a syntax error inside an IMPORTED module was reported against the
+    ENTRY file at the module's line and column, so it named a file that did not
+    contain the error, at a position that looked plausible in it. The syntax
+    error carried no path and the reporter fell back to the path the CLI was
+    given; `ModuleLoader._parse_module` now stamps the module being parsed.
 
 F5 (2026-08-05, NOT A BUG — do not "fix"): In the dev environment the REPL
     banner prints the version from `importlib.metadata.version("nodus-lang")`

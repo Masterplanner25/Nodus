@@ -596,8 +596,19 @@ class ModuleLoader:
         if source is None:
             with open(module_id, "r", encoding="utf-8-sig") as handle:
                 source = handle.read()
-        toks = tokenize(source)
-        ast = Parser(toks).parse()
+        # #342: stamp the module being parsed onto syntax errors. Without it the
+        # error carries no path, and the reporter falls back to the path the CLI
+        # was given — so a syntax error inside an imported module was reported
+        # against the *entry* file, at the module's line and column. That names a
+        # file which does not contain the error, at a position that looks
+        # plausible in it.
+        try:
+            toks = tokenize(source)
+            ast = Parser(toks).parse()
+        except LangSyntaxError as err:
+            if getattr(err, "path", None) is None:
+                err.path = module_id
+            raise
         set_module_on_tree(ast, module_id)
         module_info = collect_module_info(ast, module_id, "")
         imports = [stmt for stmt in ast if isinstance(stmt, Import)]

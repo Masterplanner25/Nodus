@@ -30,7 +30,7 @@ print(m["missing"])
 
 ```
 $ nodus run runtime_err.nd
-Key error at runtime_err.nd:4:9: Missing map key: "missing"
+Key error at /abs/path/runtime_err.nd:4:9: Missing map key: "missing"
 Stack trace:
   at <main> (runtime_err.nd:4:9)
 42.0
@@ -111,7 +111,7 @@ On a syntax error, it prints the location and exits 1:
 
 ```
 $ nodus check bad.nd
-Syntax error at bad.nd:2:9: Unexpected character '@'
+Syntax error at /abs/path/bad.nd:2:9: Unexpected character '@'
 ```
 
 **`nodus check` is parse-only.** It validates syntax and catches import
@@ -278,7 +278,7 @@ If a script hangs, use `--step-limit` to cut it short and see where it was:
 
 ```
 $ nodus run loop.nd --step-limit 1000
-Sandbox error at loop.nd: Execution step limit exceeded
+Sandbox error at /abs/path/loop.nd: Execution step limit exceeded
 ```
 
 The error message does not include the instruction pointer, but the `--trace`
@@ -293,7 +293,7 @@ $ nodus run loop.nd --trace --trace-limit 20 --step-limit 20
 [trace] STORE           line 2  name=i
 [trace] JUMP            line 2  target=...
 ...
-Sandbox error at loop.nd: Execution step limit exceeded
+Sandbox error at /abs/path/loop.nd: Execution step limit exceeded
 ```
 
 ---
@@ -410,7 +410,7 @@ deep nesting — 9,981 elided frames is a runaway, 12 is not.
 TESTED COMMANDS (originally run against nodus-lang v2.1.1; reviewed for v3.0):
 
 01: nodus check hello.nd                 → "OK"
-02: nodus check syntax_err.nd            → "Syntax error at ...:2:9: Unexpected character '@'"  exit 1
+02: nodus check syntax_err.nd            → "Syntax error at <abs>/syntax_err.nd:2:9: Unexpected character '@'"  exit 1
 03: nodus check runtime_err.nd           → "OK" (confirms parse-only)
 04: nodus run runtime_err.nd             → "Key error at ...:4:9: Missing map key: "missing"", stack trace, exit 1
 05: nodus run trace_demo.nd --trace      → [trace] lines, output at end

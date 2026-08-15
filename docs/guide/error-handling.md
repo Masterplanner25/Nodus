@@ -415,7 +415,7 @@ These abort at load time before any `try` block can execute.
 an `import` anywhere other than the top level of a file is a **syntax error**:
 
 ```
-Syntax error at main.nd:2:5: import statements must be at the top level of a
+Syntax error at /abs/path/main.nd:2:5: import statements must be at the top level of a
 module; move this import to the top of the file
 ```
 
