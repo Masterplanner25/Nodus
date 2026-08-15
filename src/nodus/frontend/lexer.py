@@ -63,6 +63,28 @@ KEYWORDS = {
     "action",
 }
 
+# Recognised by the parser from an identifier token rather than reserved by the
+# lexer, so they remain usable as variable names. They are still keywords to a
+# reader and to a syntax highlighter — the VS Code grammar shipped without them
+# for two releases because nothing listed them anywhere a tool could read (#357).
+#
+# Keep in step with `parser.py`; `tests/test_keyword_coverage.py` fails if the
+# parser recognises a contextual keyword this set does not name.
+LOOP_CONTROL_KEYWORDS = {
+    "break",
+    "continue",
+}
+
+EXPRESSION_KEYWORDS = {
+    "match",
+}
+
+CONTEXTUAL_KEYWORDS = LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS
+
+# Every word the language treats as a keyword, reserved or contextual. This is
+# what editor grammars, docs and tooling should read.
+ALL_KEYWORDS = KEYWORDS | CONTEXTUAL_KEYWORDS
+
 # Simple single-character escape sequences.
 # \x and \u are handled separately in decode_string_literal because they
 # consume additional hex-digit characters from the source text.

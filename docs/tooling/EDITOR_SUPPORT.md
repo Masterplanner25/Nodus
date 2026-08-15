@@ -8,40 +8,42 @@ The Nodus VS Code extension (`nodus-vscode`) is published on the VS Code Marketp
 under publisher `MasterplanInfiniteWeave`. Install it by searching for "Nodus" in the
 VS Code Extensions panel, or find it at the Marketplace under `MasterplanInfiniteWeave`.
 
-For development or local testing from the in-repo source, files live under `tools/vscode/`:
-- `tools/vscode/package.json`
-- `tools/vscode/language-configuration.json`
-- `tools/vscode/syntaxes/nodus.tmLanguage.json`
-- `tools/vscode/snippets/nodus.json`
+The extension source lives in its own repository,
+[`Masterplanner25/nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode)
+(local checkout: `C:\dev
+odus-vscode`). To install from source:
 
-To install locally from source:
-1. Open the `tools/vscode/` folder in VS Code.
-2. Use the command palette: `Developer: Install Extension from Location...` and select `tools/vscode/`.
+1. Clone that repository and open it in VS Code.
+2. Command palette: `Developer: Install Extension from Location...` and select the folder.
 3. Open any `.nd` file and confirm the language mode is `Nodus`.
+
+There used to be a second copy of the grammar in this repository under
+`tools/vscode/`. It had drifted — neither copy was a superset of the other, and
+the in-repo one was missing 17 of the language's 31 keywords — so it was removed
+rather than reconciled ([#357](https://github.com/Masterplanner25/Nodus/issues/357)).
+The published repository is the only grammar.
 
 ## Highlighting Coverage
 
-The grammar highlights:
-- Keywords: `let`, `fn`, `return`, `if`, `else`, `while`, `for`, `import`, `export`, `from`, `as`
-- Literals: `true`, `false`, `nil`
-- Numbers: integers and floats
-- Strings: double-quoted with escape sequences
-- Comments: `#` and `//` line comments
-- Operators and punctuation
-- Member access like `mod.name`
+The grammar highlights every keyword the language has — all 31 of them,
+including the contextual `match`, `break` and `continue` — plus:
 
-> **Neither grammar covers the v4.1.0 keywords yet.** `match`, `break`, and
-> `continue` are not highlighted by the in-repo grammar above, nor by the
-> published `nodus-vscode` v0.1.0 extension (whose keyword set is
-> `if|else|while|for|in|return|throw|try|catch|finally|yield`). The code is
-> valid and runs; it just renders as plain text. Updating the published
-> extension requires a Marketplace republish. Tracked as
-> [#357](https://github.com/Masterplanner25/Nodus/issues/357).
->
-> The two grammars have also **diverged** — the published one covers
-> `throw`/`try`/`catch`/`finally`/`yield`/`in` but not
-> `let`/`fn`/`import`/`export`/`from`/`as`; the in-repo one covers the reverse.
-> Neither is a superset of the other.
+- Literals: `true`, `false`, `nil`
+- Numbers: integers and floats, including the `42i` integer suffix
+- Strings: double-quoted, with `\()` interpolation
+- Comments: `#` and `//` line comments
+- Operators, punctuation, DSL blocks, built-in functions, and type annotations
+
+The keyword list is not maintained by hand here: `nodus.frontend.lexer.ALL_KEYWORDS`
+is the source of truth, and `tests/test_keyword_coverage.py` fails when the
+published grammar does not highlight every entry. That test needs both
+repositories checked out, so it skips in this repository's CI and runs for
+whoever publishes the extension.
+
+> **`match`, `break` and `continue` were not highlighted in nodus-vscode v0.1.0.**
+> They shipped in nodus-lang v4.1.0 and rendered as plain identifiers until
+> v0.1.1 ([#357](https://github.com/Masterplanner25/Nodus/issues/357)). The code
+> was always valid and ran; only the highlighting was missing.
 
 Sample file:
 - `examples/editor_support.nd` includes imports/exports, control flow, lists/maps, strings, and comments for quick validation.

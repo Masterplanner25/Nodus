@@ -161,7 +161,7 @@ package story for a language runtime.
 | `nodus init` | ⚠️ Minimal | Creates `nodus.toml` + `src/main.nd`; no project templates |
 | **Semantic linter** | **❌ Missing** | `nodus check` validates syntax; no unused variable detection, no type-aware linting |
 | **Docs generator** | **❌ Missing** | No `nodus doc` |
-| **VS Code extension** | **⚠️ Partial** | TextMate grammar + LSP wiring exists in `tools/vscode/`; not published to VS Code Marketplace |
+| **VS Code extension** | ✅ Published | `nodus-vscode` on the VS Code Marketplace (publisher `MasterplanInfiniteWeave`); grammar, LSP, DAP, snippets |
 | **Error explanations** | **⚠️ Partial** | Error messages are good; limited "did you mean" |
 
 **Assessment:** The tooling foundation is stronger than it appears. LSP and DAP are
