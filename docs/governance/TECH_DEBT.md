@@ -262,11 +262,25 @@ exposed); the rest are open. Ordered by severity.
   `login --help` blocks on input even with stdin at `/dev/null` — an in-process
   table test would hang the suite rather than fail it.
 
-- **#49 (reopened) — stack-overflow trace is not truncated on the CLI path.**
-  ~1.5 MB of stderr, larger than the ~800 KB originally reported because stack
-  entries now carry absolute paths. The 20-frame cap exists in
-  `runtime/diagnostics.py` but not in `runtime/errors.py`, and `nodus run` uses
-  the latter. One-of-two-formatters split, same shape as ASYNC-MOD-001.
+- **#49 (fixed 2026-08-14, after being closed once already) — stack-overflow
+  trace was not truncated on the CLI path.** 10,003 lines / 1,500,317 bytes of
+  stderr, larger than the ~800 KB originally reported because stack entries now
+  carry absolute paths. The 20-frame cap existed in `runtime/diagnostics.py` but
+  not in `runtime/errors.py`, and `nodus run` uses the latter — a
+  one-of-two-formatters split, same shape as ASYNC-MOD-001 and the `.nd`
+  formatter writer-vs-checker case in `CLAUDE.md`.
+
+  Both now call `diagnostics.format_stack_section`. Same program: 23 lines /
+  3,195 bytes. Only the *rendered* text is capped; `err.stack` and the payload's
+  `stack` field still carry every frame, so embedders can slice their own way.
+
+  **The instructive part is why it was closed the first time.** The cap was
+  implemented and verified — on the formatter that was not the one the CLI uses.
+  The regression test asserted the error *message*, which was identical either
+  way, so it was blind to the defect it was written for. The new test asserts the
+  rendered line count and, more importantly, that both formatters produce a
+  byte-identical stack section: a cap added to one renderer and not the other now
+  fails.
 
 - **#339 (partially fixed in 4.1.1) — `std:async.worker_pool` and `pipeline`
   remain non-functional.** They spawn onto the detached module VM's scheduler,

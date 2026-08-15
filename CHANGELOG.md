@@ -4,6 +4,27 @@
 
 ### Fixes
 
+- **#49: `nodus run` printed all 10,000 frames of a stack-overflow trace.**
+  1,500,317 bytes of stderr across 10,003 lines — larger than the ~800 KB in the
+  original report, because stack entries gained absolute paths (issue 342) and
+  every line grew. The same program now produces 23 lines / 3,195 bytes.
+
+  The 20-frame cap had been implemented, and this issue closed on that evidence
+  — but in only one of two stack-trace formatters. `runtime/diagnostics.py`
+  capped; `runtime/errors.py` joined every frame, and the CLI renders through the
+  latter. Measured on the unfixed tree, the same 10,001-frame stack rendered as
+  803 bytes through one and 370,075 through the other.
+
+  Both now call `diagnostics.format_stack_section`. Only the rendered text is
+  capped: `err.stack` and an error payload's `stack` field still carry every
+  frame, so embedders can slice their own way (see `docs/guide/debugging.md` §9).
+
+  `tests/test_stack_trace_cap.py` (8 tests) asserts the rendered line count and
+  byte size rather than the error message — a message-only test was blind to this
+  bug, which is why it survived being "fixed" — and asserts that both formatters
+  produce a byte-identical stack section, so a cap added to one and not the other
+  fails.
+
 - **#353 (and #345): `--help` ran the command instead of printing usage.**
   `--help` was each subcommand's own responsibility, so every new subcommand
   shipped unguarded and the fixes landed one at a time — issues 1 and 2

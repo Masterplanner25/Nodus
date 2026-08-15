@@ -160,6 +160,35 @@ def diagnostic_from_error(
     )
 
 
+MAX_TRACE_FRAMES = 20
+
+
+def format_stack_section(frames) -> str:
+    """Render the ``Stack trace:`` block for an error, capped at 20 frames.
+
+    Every rendered stack trace must go through here. The cap used to live inside
+    ``format_error()`` only, and the CLI's error path renders through
+    ``errors.py::format_error_payload`` instead — so a `Call stack overflow`
+    printed all 10,000 frames, 1.5 MB of stderr, while the embedded path printed
+    20 (#49). One formatter means the next change cannot land in half of them.
+
+    Returns "" for an empty stack, so callers can concatenate unconditionally.
+
+    Only the *rendered* text is capped. ``err.stack`` and the ``stack`` field of
+    an error payload keep every frame, so an embedder can slice them differently
+    — see ``docs/guide/debugging.md`` §9.
+    """
+    if not frames:
+        return ""
+    frames = list(frames)
+    if len(frames) > MAX_TRACE_FRAMES:
+        elided = len(frames) - MAX_TRACE_FRAMES
+        body = "\n  ".join(frames[:MAX_TRACE_FRAMES]) + f"\n  ... ({elided} more frames)"
+    else:
+        body = "\n  ".join(frames)
+    return "\nStack trace:\n  " + body
+
+
 def format_error(err: Exception, path: str | None = None) -> str:
     err_path = getattr(err, "path", None) or path
     line = getattr(err, "line", None)
@@ -183,17 +212,7 @@ def format_error(err: Exception, path: str | None = None) -> str:
             base = f"{kind} error at {location}: {err}"
         else:
             base = f"{kind} error: {err}"
-        if err.stack:
-            frames = err.stack
-            max_frames = 20
-            if len(frames) > max_frames:
-                shown = frames[:max_frames]
-                elided = len(frames) - max_frames
-                stack_str = "\n  ".join(shown) + f"\n  ... ({elided} more frames)"
-            else:
-                stack_str = "\n  ".join(frames)
-            return base + "\nStack trace:\n  " + stack_str
-        return base
+        return base + format_stack_section(err.stack)
     if isinstance(err, SyntaxError):
         if location:
             return f"Syntax error at {location}: {err}"
