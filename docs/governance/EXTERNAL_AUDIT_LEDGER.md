@@ -132,10 +132,100 @@ the open decision below.
 
 ---
 
+## Audit 02 — "Nodus Language Architecture Audit — In Light of Modern Agent Systems"
+
+| | |
+|---|---|
+| **Source** | `C:\codev\Codex research\NODUS_LANGUAGE_ARCHITECTURE_AUDIT.md` |
+| **Type** | Adversarial architecture audit, comparative baseline `openai/codex@9afb96fa` |
+| **Audited at** | commit `3376702`, v4.1.1 — **the same commit as Audit 01** |
+| **Verified at** | commit `75221c7`, 2026-08-15 |
+| **Hypothesis under test** | identical to Audit 01 |
+
+Materially more rigorous than Audit 01: line-level citations throughout, explicit
+`[Observed]` / `[Inferred]` / `[Unknown]` labels, and 23 numbered findings. Its
+verdict — *"capability-gated guest language for host-supervised workflow
+execution"* — agrees with Audit 01's on the substance.
+
+### Confirmed, and filed
+
+| F | Finding | Verification | Issue |
+|---|---|---|---|
+| **F6** | `action agent` blocks the scheduler; concurrent agent steps serialise | Measured: two 1.0s agent calls in independent steps took **2.73s**, handler overlap **−0.01s** | **#398** |
+| **F8** | Resume re-executes the module source | Confirmed — and worse than stated, see below | **#399** |
+| **F14** | `nodus graph <file>` executes the file | `fs.write` probe fired while the command reported "No graph plan produced" | **#400** |
+| **F11** | Static analysis never enters a workflow body | Confirmed, and wider — `nodus check` reports no undefined symbol in ordinary code either | **#401** |
+| **F17** | `waiting_senders` is dead code; no backpressure | One grep hit, the declaration; `send` on a full channel raises | **#402** |
+| F13 | Cycles detected at run time, not parse time | Already filed from Audit 01 | #396 |
+| F16 | No cancellation, no compensation | Already filed from Audit 01 | #395 |
+| F19 | Embedding isolation is per-script, not per-orchestration; process-globals shared | Independently corroborates the root cause behind #376 | #390 |
+| F12 | Parse-time dependency-name validation is the best argument for the language | **Independently confirms the correction to Audit 01 §23** | — |
+| F5 | Zero model integration, *and this is correct* | 0 grep hits; and note this audit calls the restraint a design virtue rather than a failed claim | D1 |
+| F10 | Persistence engineering is genuinely careful | `_atomic_write_json` + dir `fsync` confirmed | — |
+
+### Wrong
+
+| F | Claim | Reality |
+|---|---|---|
+| **F3** | *"`goal` is `workflow` with a different marker string… same execution path"* | The same error Audit 01 made at §13. `task_graph.py:1101` branches on `execution_kind` for retry: workflow **1 attempt**, goal **3**. See #393 |
+| **F9** | *"Dependency ordering… none is bypassable from Nodus code. This is the project's strongest and most defensible claim."* | Ordering **is** bypassable — `build["steps"][1]["fn"](nil)` runs a step whose dependency never ran (#394). Audit 01 got this right at §18 |
+| **F2** | *"The full 39-opcode set"* | **49.** Audit 01 said 43. Two auditors, same commit, two different undercounts |
+
+### Beyond F8 — what chasing it found
+
+F8 says resume re-executes the module source. Verified, and it produces a failure
+the audit did not reach:
+
+**Cross-process resume fails for any script that uses the `run_workflow` return
+value** — which is how every guide example is written. Suppression during rebuild
+makes `run_workflow` return nil, the script's next line indexes nil and raises, a
+bare `except Exception: return None` swallows it, and the caller reports
+`Unknown graph` for a run that `nodus workflow runs` lists as `waiting`. Discard
+the result and the identical workflow resumes correctly.
+
+**And every failed attempt performs the module's side effects.** Suppression
+covers `run_workflow`, `run_goal` and `print` — nothing else. Five resumes, all
+returning `ok: false`, produced five filesystem writes. Filed as **#399**.
+
+---
+
+## What the two audits together are worth
+
+Both audited `3376702`. Independent auditors, same hypothesis. The comparison is
+more informative than either audit alone.
+
+**Where they disagreed, the disagreement marked a real defect — both times.**
+
+| Question | Audit 01 | Audit 02 | Truth |
+|---|---|---|---|
+| Is step ordering bypassable? | §18 **yes** | F9 **no** | Audit 01 — #394 |
+| Do concurrent agent calls overlap? | §06 **yes** | F6 **no** | Audit 02 — #398 |
+
+Each caught something the other got backwards, and neither error was careless:
+Audit 01 saw that `builtin_agent_call_async` exists and read existence as
+reachability; Audit 02 saw that `ready_tasks()` gates dispatch and read the engine's
+guarantee as the language's.
+
+**Where they agreed, they were both wrong — twice.**
+
+| Claim | Audit 01 | Audit 02 | Truth |
+|---|---|---|---|
+| `goal` ≡ `workflow` | §13 | F3 | Diverge on retry — #393 |
+| Opcode count | 43 | 39 | **49** |
+
+**The methodological conclusion: agreement between independent audits is not
+corroboration.** Two readers following the same reasonable path reach the same
+wrong place. The `goal`/`workflow` divergence is invisible to code reading and
+took thirty seconds to expose by running the same source twice; the opcode count
+was wrong in both and neither matched the stale docs (which said 47 — the #366
+bug, since fixed and now gate-enforced).
+
+Treat convergent findings as *unverified*, and divergent findings as *high-value
+leads*.
+
 ## Patterns across the series
 
-*One audit is not a pattern. Recorded from the start so the second and third have
-something to confirm or refute.*
+*Status after two audits. P1 partly refuted, P2 and P3 strengthened, P4 added.*
 
 **P1 — Negative findings cluster on "searched the expected location."** All five
 factual errors in Audit 01 are the same shape: validation was sought in the
@@ -156,6 +246,16 @@ using every construct and read the emitted opcodes*; for §13 it was *run the sa
 source as a `goal` and as a `workflow` and compare*; for §18 it was *call the step
 closure and see whether the dependency ran*. Each took a few minutes and each
 produced an answer a search could not.
+
+**Audit 02 largely refutes P1 as an auditor property.** It cited line numbers
+throughout, found the parse-time validation Audit 01 missed (F12), and made only
+one location error — the opcode count, which Audit 01 also got wrong, differently.
+Its errors are a different shape: **reading a capability's existence as its
+reachability** (F9, F3, and Audit 01's §06 all have this form). `agent_call_async`
+exists but `action agent` cannot reach it; `ready_tasks()` gates dispatch but the
+step closure is reachable around it; `goal` and `workflow` share a lowering
+function but not an execution path. So keep P1 as a statement about *the codebase
+being hard to search*, and read the newer failure mode as P4.
 
 **P2 — The missing artifact behind P1: nothing states where a guarantee is
 enforced.** An auditor asking "is ordering an invariant?" or "is there a version
@@ -180,6 +280,30 @@ findings that verification suggested were still live. Three were genuinely fixed
 closing comment overstated the scope ("used by `nodus run`" — it is
 `workflow-run`). Same shape as #106 earlier this cycle: closed while half-broken.
 When an audit contradicts a closed issue, re-test before trusting either.
+
+Audit 02 supplies a fourth instance from a different direction: **#294 added
+`agent_call_async` and the capability is real, but `action agent` — the documented
+way to call an agent — never reaches it** (#398). A feature can be delivered,
+tested, and closed on a path nobody uses. The generalisation across #226, #294 and
+#106 is the same: *closing an issue on one entry point is not closing the issue.*
+
+**P4 — Existence read as reachability.** The dominant error in Audit 02, and one
+of Audit 01's two: a mechanism is found in the source and assumed to be on the
+path that matters. `agent_call_async` exists → "concurrent agent calls overlap"
+(false: `action agent` calls the sync builtin, and the async one falls back to sync
+in graph contexts anyway). `ready_tasks()` gates dispatch → "ordering is not
+bypassable" (false: the step closure is reachable through the lowered map).
+`workflow` and `goal` share `_lower_flow_ast` → "identical execution path" (false:
+`run_task_graph` branches on `execution_kind`).
+
+This is a harder error to avoid than P1, because the code that was read was read
+correctly. The only reliable defence is to **exercise the documented path**, not
+the mechanism — call `action agent` from a workflow step and time it; call
+`run_workflow` and `run_goal` on the same source and compare. Every P4 error in
+both audits fell in under five minutes to a test of the user-facing path.
+
+It also predicts where to look next: any capability whose issue was closed on one
+entry point (P3) is a candidate to be unreachable from the documented one (P4).
 
 ---
 
