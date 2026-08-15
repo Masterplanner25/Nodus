@@ -189,43 +189,129 @@ returning `ok: false`, produced five filesystem writes. Filed as **#399**.
 
 ---
 
-## What the two audits together are worth
+## Audit 03 — "Nodus Architecture Audit Hermes"
 
-Both audited `3376702`. Independent auditors, same hypothesis. The comparison is
-more informative than either audit alone.
+| | |
+|---|---|
+| **Source** | `C:\codev\Hermes research\Nodus Architecture Audit Hermes.md` |
+| **Type** | Adversarial architecture audit; **also audits 8 capability satellites** (~7,050 LOC), which the first two did not |
+| **Audited at** | commit `3376702` — **the same commit again** |
+| **Verified at** | commit `2e96776`, 2026-08-15 |
+| **Method stated** | *"keyword set → AST → opcode set → lowering → runtime enforcement. Where the claim and the code disagree, the code wins."* |
 
-**Where they disagreed, the disagreement marked a real defect — both times.**
+Verdict: *"two-thirds confirmed and one-third misdescribed"* — agrees with 01 and
+02 on substance. Proposes the tagline **"for orchestrating agentic systems."**
 
-| Question | Audit 01 | Audit 02 | Truth |
+### The most valuable finding in the entire series
+
+**§16 — flagged as unverified, and correct to doubt.** Hermes could not settle
+from reading whether a waiting step re-executes on resume or its dependents
+proceed with `nil`, and said so:
+
+> *"I could not convince myself from reading alone… Flagging as unverified —
+> worth a test. If dependents can observe nil from a waiting step, that's a
+> correctness bug in the durability story."*
+
+They can, and it is. Measured:
+
+```
+step a { return workflow_wait("approval", "k3") }
+step b after a { return "b_saw_type=\(type(a))" }
+
+resume → {"steps": {"a": null, "b": "b_saw_type=nil"},
+          "attempts": {"task_1": 1.0}, "failed": [], "ok": true}
+```
+
+`a` never re-executes; `b` runs on `nil`; the run reports success. Supplying an
+explicit `resume_payload` changes nothing, because the step body is never entered
+and `workflow_resume_payload()` is never called. Filed **#404 (critical)**.
+
+**Audits 01 and 02 both asserted the opposite from reading.** Audit 01 §16: *"the
+waiting step's body runs again from the top."* Audit 02 F7: *"On resume the step
+body re-executes from the top."* Two confident wrong answers; one honest "I don't
+know, test it." The honest one was worth more than both.
+
+Every wait/resume test in the suite has a downstream step returning a constant
+(`step finish after gate { return "done" }`), so nothing could have caught it.
+
+### Confirmed
+
+| § | Finding | Verification | Issue |
 |---|---|---|---|
-| Is step ordering bypassable? | §18 **yes** | F9 **no** | Audit 01 — #394 |
-| Do concurrent agent calls overlap? | §06 **yes** | F6 **no** | Audit 02 — #398 |
+| Final | `_invoke_host_function` is a single unbypassable, **ungoverned** chokepoint | 8 lines at `embedding.py:878`; no policy check; `register_function` takes no permission metadata; `allow_subprocess/network/env` all default `True` | **#405** |
+| §16 | Waiting-step nil propagation | Above | **#404** |
+| §6 | No agentic machinery in the core | Third independent confirmation | D1 |
+| F1 | Two orchestration engines — `orchestration/task_graph` and `nodus_lang_workflow` — *"two engines is not a position you can defend"* | Both exist and are separately maintained | — |
+| §19 | `register_function` has no permission metadata | Confirmed at `embedding.py:384` | #405 |
 
-Each caught something the other got backwards, and neither error was careless:
-Audit 01 saw that `builtin_agent_call_async` exists and read existence as
-reachability; Audit 02 saw that `ready_tasks()` gates dispatch and read the engine's
-guarantee as the language's.
+### Wrong
 
-**Where they agreed, they were both wrong — twice.**
+| § | Claim | Reality |
+|---|---|---|
+| **§8** | *"`nodus graph` renders the DAG from source… inspectable without executing anything. This is real, and it's the one thing graph APIs structurally cannot match"* | **It executes the file** — #400, proved with an `fs.write` probe. This is Hermes's *first* argument for owning a compiler, and it rests on a false premise |
+| §23 | *"`after` naming a nonexistent step ❌"* | Caught at `parser.py:537`. **Second audit to miss this**; Audit 02 F12 found it and called it the best argument for the language |
+| §23 | *"Undefined symbols ✅ symbol_table.py + BUILTIN_NAMES"* | `nodus check` reports none — #401 |
+| Final | *"'Run A before B' becomes unviolatable"* | Bypassable — #394. **Second audit to get this wrong**; Audit 01 §18 got it right |
+| Final | *"Zero of **48** opcodes"* | **49.** Third audit, third different count |
 
-| Claim | Audit 01 | Audit 02 | Truth |
-|---|---|---|---|
-| `goal` ≡ `workflow` | §13 | F3 | Diverge on retry — #393 |
-| Opcode count | 43 | 39 | **49** |
+---
 
-**The methodological conclusion: agreement between independent audits is not
-corroboration.** Two readers following the same reasonable path reach the same
-wrong place. The `goal`/`workflow` divergence is invisible to code reading and
-took thirty seconds to expose by running the same source twice; the opcode count
-was wrong in both and neither matched the stale docs (which said 47 — the #366
-bug, since fixed and now gate-enforced).
+## What the three audits together are worth
 
-Treat convergent findings as *unverified*, and divergent findings as *high-value
-leads*.
+Three independent auditors, **the same commit** (`3376702`), the same hypothesis.
+Three samples is enough to say something the individual audits cannot.
+
+### Convergence is not corroboration — but it depends on the *kind* of claim
+
+| Claim | 01 | 02 | 03 | Truth |
+|---|---|---|---|---|
+| Opcode count | 43 | 39 | 48 | **49** |
+| `goal` ≡ `workflow` | §13 ✓ | F3 ✓ | — | Diverge on retry — #393 |
+| Waiting step re-executes on resume | §16 ✓ | F7 ✓ | *flagged unverified* | **False** — #404 |
+| Host-function chokepoint is single and ungoverned | §19 ✓ | F21 ✓ | Final ✓ | **True** — #405 |
+| No model in the core | ✓ | ✓ | ✓ | **True** |
+
+The split is clean, and it is not "convergence is unreliable":
+
+- **Claims about what the code *is*, read directly** — the chokepoint exists, no
+  model exists, `register_function` has no permission metadata, `waiting_senders`
+  is unused — **held every time, including unanimously.**
+- **Claims about what the code *does*, inferred from what it is** — `goal` ≡
+  `workflow`, the waiting step re-executes, ordering is unbypassable, agent calls
+  overlap — **failed every time they were asserted, in all three audits.**
+- **Counts and inventories** — all three wrong, all three different, none matching
+  the docs (which said 47 at that commit: the #366 bug, since fixed and now
+  gate-enforced).
+
+So: trust a convergent *structural* claim. Test every *behavioural* one, however
+many auditors agree. And never take a count on trust — generate it.
+
+### Where they disagreed, the disagreement marked a real defect — every time
+
+| Question | 01 | 02 | 03 | Truth |
+|---|---|---|---|---|
+| Is step ordering bypassable? | **yes** | no | no | 01 — #394 |
+| Do concurrent agent calls overlap? | yes | **no** | — | 02 — #398 |
+| Does a waiting step re-execute? | yes | yes | **unsure** | 03 — #404 |
+
+Three for three. None of the errors was careless: each auditor read real code
+correctly and drew the natural inference from it.
+
+### The best single finding came from an auditor saying "I don't know"
+
+Audit 03 §16 flagged the waiting-step question as unverifiable by reading and
+asked for a test. That produced **#404**, the most severe defect in the series —
+a `critical` correctness bug in the durability feature, silently returning
+`ok: true`. The two audits that were *confident* about the same question were both
+wrong.
+
+An explicitly-flagged uncertainty is worth more than a confident finding, because
+it is already pointing at the exact experiment to run. When reading a future
+audit, **sort the unverified flags to the top.**
 
 ## Patterns across the series
 
-*Status after two audits. P1 partly refuted, P2 and P3 strengthened, P4 added.*
+*Status after three audits. P1 partly refuted, P2/P3/P4 confirmed, P5 added.*
 
 **P1 — Negative findings cluster on "searched the expected location."** All five
 factual errors in Audit 01 are the same shape: validation was sought in the
@@ -304,6 +390,33 @@ both audits fell in under five minutes to a test of the user-facing path.
 
 It also predicts where to look next: any capability whose issue was closed on one
 entry point (P3) is a candidate to be unreachable from the documented one (P4).
+
+Audit 03 confirms P4 twice more — *"`nodus graph` renders the DAG from source…
+inspectable without executing anything"* (it executes: #400) and *"'Run A before
+B' becomes unviolatable"* (it doesn't: #394). **P4 is now the dominant error mode
+across the series**, and the first argument in Hermes §8 for owning a compiler
+rests on one of these.
+
+**P5 — The tests that would catch this class of defect assert the wrong thing.**
+Every wait/resume test in the suite has a downstream step that returns a constant:
+
+```nodus
+step gate   { return workflow_wait("approval.granted", "req-42", {kind: "approval"}) }
+step finish after gate { return "done" }
+```
+
+The suite covers the state transition, the persistence, the claim/lease, the
+deadline sweeper and replay — and never asserts what a dependent *receives*. So
+#404 was untestable-by-existing-coverage, not merely untested.
+
+The same shape as #226 (fixed on one entry point, tested on that one) and as the
+repo's own long-running "a check that cannot fail" theme. The generalisation:
+**a feature's tests must exercise the reason the feature exists**, not the
+mechanism it uses. Wait/resume exists so a value arrives from outside; no test
+asserted a value arriving.
+
+This is the pattern most worth acting on, because unlike P1–P4 it is not about how
+outsiders read the code — it is about coverage we own.
 
 ---
 

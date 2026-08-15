@@ -367,6 +367,20 @@
   analyzer never enters workflow step bodies (#401), and channels have no
   backpressure (#402).
 
+  A third audit of the same commit found the most serious defect in the series,
+  which anyone using `workflow_wait` should know about now:
+
+  - **A waiting step's dependents run with `nil`.** On resume the waiting step
+    never re-executes, so every downstream step receives `nil` where the awaited
+    value should be — and the run reports `ok: true` with no failures. Supplying a
+    resume payload does not help. Until #404 is fixed, do not rely on a value
+    reaching a step that comes after a `workflow_wait`.
+
+  Also filed: the host-function chokepoint is built but performs no authorisation
+  — `register_function` takes no permission metadata and the capability defaults
+  are permissive (#405). All three audits independently name this the
+  highest-leverage change available.
+
 - **The doc gate's closed-issues phase penalised honest changelog prose, and
   timed out on its own slowest regression test.** Two fixes to
   `tools/nodus_gate/closed_issues_phase.py`, both found by running it against

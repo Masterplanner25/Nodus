@@ -570,6 +570,56 @@ compounds with the P3 pattern — #226 and #294 were both closed on one entry po
 out of several. **Any capability closed on one entry point is a candidate to be
 unreachable from the documented one.**
 
+## Findings from external Architecture Audit 03 (2026-08-15)
+
+Third audit of `3376702`, by a third auditor. Verification record in
+[EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md).
+
+- **#404 (CRITICAL) — a waiting step's dependents run with `nil`.**
+  `_pause_for_wait` marks the waiting task `done` with result `None` before
+  persisting (`task_graph.py:834`). `ready_tasks()` keys readiness on
+  `task_id in results`, so on resume the waiting task is treated as completed work
+  and skipped; the step body **never re-executes** and every dependent receives
+  `nil`. The run reports `ok: true`, `failed: []`. Supplying `resume_payload`
+  changes nothing, because `workflow_resume_payload()` is never reached.
+
+  The third `ok: true`-for-work-not-done this cycle (#376, #392, #404) and the
+  worst: a human approves something, the workflow resumes, reports success, and
+  every step after the approval ran on nothing.
+
+  **Audits 01 and 02 both asserted the opposite from reading** ("the waiting
+  step's body runs again from the top"). Audit 03 flagged it as unverifiable by
+  reading and asked for a test. The honest uncertainty was worth more than both
+  confident findings.
+
+- **#405 (HIGH, design) — the host-function chokepoint is built and ungoverned.**
+  `_invoke_host_function` (`embedding.py:878`) is 8 lines, is the single path for
+  every host-function call, and cannot be bypassed by guest code — Nodus has no
+  imports into the host, no `eval`, no cross-boundary attribute access. It
+  performs no authorisation. `register_function` takes no permission metadata, and
+  `allow_subprocess`/`allow_network`/`allow_env` all default to `True`.
+
+  **All three audits independently name this the highest-leverage change
+  available** — the only finding in the series with unanimous convergence. Both
+  audit 01 §8 and audit 03 §8 separately conclude that in-process capability
+  confinement is one of only two things Nodus offers that Python structurally
+  cannot. The mechanism is built and unused.
+
+- **Two orchestration engines (audit 03, F1).** `orchestration/task_graph.py`
+  (1,375 lines) and `nodus_lang_workflow/` (~1,900) are separately maintained
+  engines over the same domain. Audit 03: *"two engines is not a position you can
+  defend."* Not filed — it needs a direction before it needs an issue, and it
+  overlaps #390 (process-global workflow state with no owner).
+
+**Test-coverage pattern worth acting on (P5 in the ledger).** Every wait/resume
+test has a downstream step returning a constant — `step finish after gate { return
+"done" }`. The suite covers the transition, persistence, claim/lease, deadline
+sweeper and replay, and never asserts what a dependent *receives*. #404 was
+untestable by existing coverage, not merely untested. The rule this suggests: **a
+feature's tests must exercise the reason the feature exists, not the mechanism it
+uses.** Same family as #226 (fixed and tested on one entry point of five) and the
+repo's long-running "a check that cannot fail" theme.
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.
