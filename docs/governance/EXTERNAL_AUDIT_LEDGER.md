@@ -43,12 +43,47 @@ changes that conclusion.
 | 06 | No model anywhere in the core | grep for openai/anthropic/llm/inference across `src/nodus/`: **0 hits** |
 | 15 | No cancellation | grep `cancel` across `src/nodus/`: **1 hit**, `print("Login cancelled.")` → **#395** |
 | 18 | Step ordering is bypassable | Executed: `build["steps"][1]["fn"](nil)` ran `test` with `lint` never having run → **#394** |
-| 04 | No orchestration opcodes | Dispatch table holds no SPAWN/AWAIT/TASK/DEPEND/RETRY/WAIT/STEP |
+| 04 | No orchestration opcodes | See below — verified from emitted bytecode, not from the dispatch table |
 | 04 | `workflow`/`goal` lower to a plain map before compilation | `workflow_lowering.py:78`; confirmed by printing `keys(build)` from guest code |
 | 13 | A goal's completion is structural, never semantic | Confirmed — nothing evaluates an objective |
 | 23 | Cycles are not caught at compile time | `nodus check` passes a cyclic workflow → **#396** (narrower than the audit states, see below) |
 
-### Wrong
+#### §04 in detail — the orchestration-opcode claim
+
+Worth recording how this one was settled, because the first attempt used the same
+method that produced every error in the **Wrong** table below: a grep of the two
+directories where the answer *ought* to live.
+
+The claim is that no orchestration semantics reach the instruction set. Verified
+by compiling a program that exercises every relevant construct:
+
+```
+workflow ship {
+    step build { return 1i }
+    step test after build { return 2i }
+    step review after test { return action agent "reviewer" with { diff: "x" } }
+}
+let c = coroutine(fn() { return 1i })
+spawn(c)
+let ch = channel()
+send(ch, 1i)
+let v = recv(ch)
+let r = run_workflow(ship)
+```
+
+`nodus dis` emits 13 opcodes, all ordinary — `BUILD_LIST BUILD_MAP CALL
+FRAME_SIZE HALT JUMP LOAD MAKE_CLOSURE POP PUSH_CONST RETURN STORE STORE_ARG` —
+with every construct appearing as a builtin call (`CALL coroutine 1`, `CALL spawn
+1`, `CALL channel 0`, `CALL send 2`, `CALL recv 1`, `CALL __action_agent 2`,
+`CALL run_workflow 1`). The workflow is `BUILD_MAP`/`BUILD_LIST`/`MAKE_CLOSURE`
+— a data structure. **Confirmed.**
+
+Doing it properly surfaced a defect in our own tracker: **#336 asserted a `SPAWN`
+opcode that does not exist**, in both its title and its "no new opcode" scoping
+note. It was the only thing in the repo contradicting §04, and as written it
+would have sent a v5 implementer looking for a dispatch entry that isn't there —
+and, if they concluded they had to add one, into the frozen-set amendment
+process (#366) for no reason. Corrected and retitled.
 
 | § | Claim | Reality |
 |---|---|---|
@@ -109,6 +144,18 @@ analyzer and lowering but lives in the parser; the disassembler was sought as
 compiler lowering; the version field was sought in a bytecode header and lives in
 the compiler. No error came from misreading code that was found — every one came
 from not finding code that exists.
+
+P1 is not only an auditor's problem. **#336 asserted a `SPAWN` opcode that does
+not exist** — written by us, about our own instruction set, and it sat there
+through the opcode-freeze work of #366. The audit was right and our tracker was
+wrong. Treat P1 as a property of the codebase's discoverability, not of any
+particular reader's care.
+
+The method that settles these is not grep. For §04 it was *compile a program
+using every construct and read the emitted opcodes*; for §13 it was *run the same
+source as a `goal` and as a `workflow` and compare*; for §18 it was *call the step
+closure and see whether the dependency ran*. Each took a few minutes and each
+produced an answer a search could not.
 
 **P2 — The missing artifact behind P1: nothing states where a guarantee is
 enforced.** An auditor asking "is ordering an invariant?" or "is there a version
