@@ -15,6 +15,22 @@ from pathlib import Path
 _ISSUE_REF_RE = re.compile(r'(?:closes?\s+#|(?<!\w)#)(\d+)', re.IGNORECASE)
 _CLOSES_MARKER_RE = re.compile(r'#\s*closes:\s*#?(\d+)', re.IGNORECASE)
 
+# A CHANGELOG entry is a list item, and its issue reference is the claim that the
+# issue was addressed. Only a claim needs a regression test. Prose *inside* an
+# entry cross-references freely — a known issue that shipped unfixed, the
+# follow-up tracking the root cause, an older issue of the same shape — and
+# demanding a test for each of those makes the honest write-up the thing that
+# fails the gate. So: scan list-item lines, skip the paragraphs under them.
+_ENTRY_LEAD_RE = re.compile(r'^\s*[-*]\s+\S')
+
+# Regression tests for closed issues are allowed to be slow: several run the real
+# CLI in a subprocess, which costs seconds per invocation before any assertion.
+# The #348 suite takes ~41s on an unloaded machine, so the previous 60s cap gave
+# it 1.4x headroom and it timed out under gate load — reported as a failing
+# regression test when nothing had regressed. Same insufficient-headroom trap the
+# suite's own flaky tests keep hitting; CLAUDE.md asks for 5-10x.
+_TEST_TIMEOUT_S = 300
+
 
 @dataclass
 class IssueStatus:
@@ -54,11 +70,14 @@ def parse_changelog_issues(changelog_path: str, *, section: str = "Unreleased") 
     body = m.group(1)
     numbers: list[int] = []
     seen: set[int] = set()
-    for m2 in _ISSUE_REF_RE.finditer(body):
-        n = int(m2.group(1))
-        if n not in seen:
-            seen.add(n)
-            numbers.append(n)
+    for line in body.splitlines():
+        if not _ENTRY_LEAD_RE.match(line):
+            continue  # prose, not a claim — see _ENTRY_LEAD_RE
+        for m2 in _ISSUE_REF_RE.finditer(line):
+            n = int(m2.group(1))
+            if n not in seen:
+                seen.add(n)
+                numbers.append(n)
     return numbers
 
 
@@ -119,12 +138,14 @@ def run_test(
         cmd.append(f"-k={test_function}")
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, timeout=_TEST_TIMEOUT_S
+        )
         if proc.returncode == 0:
             return True, ""
         return False, (proc.stdout + proc.stderr)[:2000]
     except subprocess.TimeoutExpired:
-        return False, "Test timed out after 60 seconds"
+        return False, f"Test timed out after {_TEST_TIMEOUT_S} seconds"
     except Exception as exc:
         return False, str(exc)
 

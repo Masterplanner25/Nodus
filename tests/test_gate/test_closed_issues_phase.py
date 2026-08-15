@@ -71,6 +71,44 @@ class ParseChangelogTests(unittest.TestCase):
         issues = parse_changelog_issues("/nonexistent/CHANGELOG.md")
         self.assertEqual(issues, [])
 
+    def test_prose_under_an_entry_is_not_a_claim(self):
+        """Only the entry itself claims an issue was fixed; its prose may cite anything.
+
+        An entry that ships a defect downgraded, or names the follow-up tracking
+        the root cause, is doing exactly what it should. Scanning that prose made
+        the gate demand a regression test for an issue nobody claimed to have
+        fixed — so writing the honest note was what failed the gate (#376/#390).
+        """
+        content = """## [Unreleased]
+
+### Fixes
+
+- **#75: the thing was broken.** Three causes, all fixed.
+
+  **Known issue.** #76 is closed but not proven zero, and the root cause is
+  tracked separately as **#77** — the same shape as #78.
+"""
+        path = _make_changelog(content)
+        try:
+            issues = parse_changelog_issues(path)
+            self.assertEqual([75], issues)
+        finally:
+            os.unlink(path)
+
+    def test_a_nested_bullet_is_still_an_entry(self):
+        """Sub-bullets break a multi-cause entry down; each one is still a claim."""
+        content = """## [Unreleased]
+
+- **#75: several things.**
+
+  - the first, which also fixed #76
+"""
+        path = _make_changelog(content)
+        try:
+            self.assertEqual([75, 76], parse_changelog_issues(path))
+        finally:
+            os.unlink(path)
+
     def test_specific_section(self):
         content = """## [Unreleased]
 

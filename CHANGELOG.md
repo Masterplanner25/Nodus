@@ -2,7 +2,72 @@
 
 ## [Unreleased]
 
+### Changed — breaking for anything parsing stderr
+
+- **#342: every error now reports the resolved absolute path.** Runtime errors
+  already did; syntax errors echoed the path exactly as typed, so the same
+  command printed two conventions depending on which phase failed. `run` and
+  `check` now agree, and so does the fallback used by errors that carry no path
+  of their own (a sandbox limit).
+
+  ```
+  # before, same directory, same invocation style
+  Name error at /abs/path/err.nd:2:7: Undefined variable: y
+  Syntax error at err.nd:1:9: Unexpected '=' in expression
+
+  # after
+  Syntax error at /abs/path/err.nd:1:9: Unexpected '=' in expression
+  ```
+
+  **This breaks stderr consumers that pass a relative path and expect that exact
+  string back.** Checked before landing: the VS Code extension passes
+  `document.uri.fsPath`, already absolute, so its diagnostic regex is unaffected.
+
+  `nodus check <file>` still echoes the given path in its `: OK` line — that is
+  not an error location.
+
 ### Fixes
+
+- **#376: a background sweeper hijacked workflow runs it did not own, a store
+  write could fail on Windows, and resuming timed out on its own bookkeeping.**
+  Four causes behind one intermittent failure whose signature was a resume
+  returning `ok: true` with the result keys missing. Three are below; the fourth
+  was unbounded store growth, entered separately under #380.
+
+  - **A `RuntimeService` sweeper adopted every non-terminal run in the store**,
+    every 500ms, including runs it never created. Rehydration is not read-only:
+    it calls `register_graph()`/`register_graph_vm()`, which replace the
+    process-global registry entry for a run and bind it to the sweeper's own
+    throwaway VM. Landing that on a run another participant is mid-way through
+    hands them a graph pointed at the wrong VM. `rehydrate_run()` now claims the
+    run first — `resume_workflow()` always did — and `sweep()` takes
+    `min_idle_ms` so a run touched moments ago is not treated as abandoned.
+  - **`LocalWorkflowStore.list_runs()` scanned without the store lock**, so a
+    scan could hold a run file open while another thread replaced it. On Windows
+    `os.replace` onto an open path fails with `[WinError 5] Access is denied` and
+    the record is lost; POSIX permits it, which is why this never appeared in
+    CI. Reads take the lock, and the replace retries briefly for handles held by
+    scanners or indexers.
+  - **Resuming ran under a 200ms wall-clock budget** (`EXECUTION_TIMEOUT_MS`),
+    sized for running a script. A resume first reads state and checkpoint from
+    disk and rebuilds the graph — recompiling the stored workflow source — before
+    any step executes, all charged to that budget. New `RESUME_TIMEOUT_MS` (30s)
+    covers the resume paths; nothing else changes.
+
+  All three are user-facing correctness bugs, not test-only flakiness: a host
+  doing run-then-resume under concurrent load could hit any of them, and the
+  failure presented as `ok: true`, so the caller had no way to detect it.
+
+  **Known issue.** #376 is closed and downgraded from release blocker, but not
+  claimed as proven-zero: the flake rate on the affected tests fell from roughly
+  6-in-10 to 2-in-20 and a full suite run reached zero failures for the first
+  time this cycle. The residual failures name a different test each run, which
+  suggests several small independent races rather than one remaining cause. All
+  four causes trace to the same root — workflow state is process-global with no
+  owner, so any two participants in a process share a store, a graph registry
+  and a sweeper. That refactor is tracked separately as **#390**; it needs the
+  VM to resolve the runner from execution context rather than module state, the
+  same shape as #339, so it is design work rather than another patch.
 
 - **#106: the DAP debug console could not see a function's own locals.** The
   `evaluate` request has existed since 2026-06-06 and works — for module
@@ -31,90 +96,6 @@
   module-level `let`, which passes on globals alone. Added tests for a function
   local and for evaluation being read-only against the paused program.
 
-### Performance
-
-- **#380 (part 2): `LocalWorkflowStore` scans got 4x cheaper, and the sweep 11x.**
-  Listing runs cost ~1.3 ms per file, and a background sweeper calls it on a
-  timer, so an accumulated store slowed everything touching workflow state.
-
-  | files | `list_runs()` before | after | `expire_wait_timeouts()` before | after |
-  |------:|--------------------:|------:|-------------------------------:|------:|
-  | 300 | 304 ms | **60 ms** | — | 48 ms |
-  | 3,000 | 3,223 ms | **863 ms** | 6,600 ms | **579 ms** |
-  | 10,000 | 13,459 ms | 3,840 ms | — | 2,591 ms |
-
-  It was never the parsing. Profiling 3,000 records put 1.7 s of 4.2 s in
-  `nt.mkdir` — `_runs_root()` re-created the store's own directory on every call,
-  and `_run_path()` calls it once per record, so listing 3,000 runs issued 6,000
-  mkdir syscalls — and 1.6 s in `nt.stat`, from an `os.path.exists` before an
-  `open` that already reports a missing file (also a race: the file could vanish
-  between the two). `expire_wait_timeouts()` additionally re-read every record it
-  had just been handed, for every run rather than only the waiting ones.
-
-  New opt-in `max_terminal_runs` caps how many finished runs are kept, oldest
-  deleted first. **Off by default**: run records are history a host may rely on,
-  and silently deleting them is not a decision the store should make on anyone's
-  behalf. Live runs are never pruned.
-
-  Regression tests assert the *syscall behaviour* rather than elapsed time — a
-  timing assertion would be flaky on shared CI and would not say which of the
-  three regressed (`tests/test_workflow_store_scan_cost.py`, 10 tests).
-
-### Tooling
-
-- **#357: the VS Code grammar did not highlight `match`, `break` or
-  `continue`.** They shipped in v4.1.0 and rendered as plain identifiers, so a
-  reader following the Control Flow docs sees their `match` expression
-  un-highlighted and reasonably concludes the syntax is not real yet — on the
-  most externally visible surface the language has.
-
-  They are *contextual* keywords: recognised by the parser from identifier
-  tokens rather than reserved by the lexer, so they existed only as string
-  literals at two `if` statements in `parser.py` and nowhere a tool could read.
-  `nodus.frontend.lexer` now exports `ALL_KEYWORDS` (with
-  `CONTEXTUAL_KEYWORDS`, `LOOP_CONTROL_KEYWORDS` and `EXPRESSION_KEYWORDS`), and
-  the parser reads its recognition sets from them, so the list cannot drift from
-  what the parser accepts.
-
-  `tests/test_keyword_coverage.py` holds both ends: the parser accepts every
-  contextual keyword the list names, and the shipped grammar highlights every
-  keyword in the list. The grammar check needs the `nodus-vscode` checkout, so it
-  skips in CI and runs for whoever publishes — recorded as Gate 3b in
-  `RELEASE_GATES.md` rather than left to memory.
-
-  The duplicate grammar under `tools/vscode/` is **removed**. The two copies had
-  diverged with neither a superset of the other, and the in-repo one was missing
-  17 of the language's 31 keywords. `nodus-vscode` is now the only grammar.
-
-  The extension fix is prepared as **nodus-vscode v0.1.1** and needs a Marketplace
-  republish, which is a manual upload.
-
-### Changed — breaking for anything parsing stderr
-
-- **#342: every error now reports the resolved absolute path.** Runtime errors
-  already did; syntax errors echoed the path exactly as typed, so the same
-  command printed two conventions depending on which phase failed. `run` and
-  `check` now agree, and so does the fallback used by errors that carry no path
-  of their own (a sandbox limit).
-
-  ```
-  # before, same directory, same invocation style
-  Name error at /abs/path/err.nd:2:7: Undefined variable: y
-  Syntax error at err.nd:1:9: Unexpected '=' in expression
-
-  # after
-  Syntax error at /abs/path/err.nd:1:9: Unexpected '=' in expression
-  ```
-
-  **This breaks stderr consumers that pass a relative path and expect that exact
-  string back.** Checked before landing: the VS Code extension passes
-  `document.uri.fsPath`, already absolute, so its diagnostic regex is unaffected.
-
-  `nodus check <file>` still echoes the given path in its `: OK` line — that is
-  not an error location.
-
-### Fixes
-
 - **#342: a syntax error in an imported module named the wrong file.** Not in
   the issue as filed, and the more serious half. Syntax errors carried no path,
   so the reporter fell back to the path the CLI was given — printing the **entry
@@ -133,38 +114,6 @@
   before the fix), including one that reads the reported line and column out of
   the file the error *names* — reading them out of the file the test expects
   would pass either way, since the position was always the module's.
-
-### Tooling
-
-- **#380 (part 1): the test suite and doc gate no longer leave workflow-run
-  files in the repo.** The default workflow store root is CWD-relative, so
-  anything running a workflow from the repo root wrote into
-  `.nodus/workflow_framework/runs/`. Retention is 30 days, so nothing was ever
-  cleaned; the directory reached 299 files.
-
-  That matters because `LocalWorkflowStore.list_runs()` parses every file on
-  every call — ~1.3 ms each, measured linear to 10,000 files (13.5 s). At 299
-  files a single scan costs **540 ms**, past the 500 ms sweep interval
-  deadline-sensitive tests assume. The suite was degrading its own later runs,
-  surfacing as unrelated-looking flakes that passed on re-run: a server endpoint
-  test, a doc-gate block, and a scheduler fairness test, all from one cause.
-
-  A session fixture now removes what a pytest run added, and the gate's runtime
-  phase runs doc blocks against a throwaway store. Cleanup rather than
-  redirection, because several tests build a project directory, chdir into it,
-  and assert the default runner wrote under *that* root — pointing the default
-  elsewhere broke 26 of them, and their behavior is the documented one.
-
-  `NODUS_WORKFLOW_STORE_ROOT` now overrides the default store root, for hosts
-  whose working directory is read-only or ephemeral.
-
-  Corrected in `CLAUDE.md` and `test_task_graph.py`: both said "670+ files cause
-  >2s per sweep", which understates it about 2x in the direction that matters.
-
-  Bounding the store's cost — pruning by count, or an index instead of a full
-  rescan — remains open in #380.
-
-### Fixes
 
 - **#348: `--trace-imports` printed nothing once the bytecode cache was warm.**
   `ModuleLoader._build_metadata()` returns early on an on-disk cache hit, and
@@ -355,7 +304,108 @@
   `tests/test_finally.py::test_exception_from_outer_try_still_caught` asserted the
   buggy output (no `finally` line) as expected behavior; corrected.
 
+### Performance
+
+- **#380 (part 2): `LocalWorkflowStore` scans got 4x cheaper, and the sweep 11x.**
+  Listing runs cost ~1.3 ms per file, and a background sweeper calls it on a
+  timer, so an accumulated store slowed everything touching workflow state.
+
+  | files | `list_runs()` before | after | `expire_wait_timeouts()` before | after |
+  |------:|--------------------:|------:|-------------------------------:|------:|
+  | 300 | 304 ms | **60 ms** | — | 48 ms |
+  | 3,000 | 3,223 ms | **863 ms** | 6,600 ms | **579 ms** |
+  | 10,000 | 13,459 ms | 3,840 ms | — | 2,591 ms |
+
+  It was never the parsing. Profiling 3,000 records put 1.7 s of 4.2 s in
+  `nt.mkdir` — `_runs_root()` re-created the store's own directory on every call,
+  and `_run_path()` calls it once per record, so listing 3,000 runs issued 6,000
+  mkdir syscalls — and 1.6 s in `nt.stat`, from an `os.path.exists` before an
+  `open` that already reports a missing file (also a race: the file could vanish
+  between the two). `expire_wait_timeouts()` additionally re-read every record it
+  had just been handed, for every run rather than only the waiting ones.
+
+  New opt-in `max_terminal_runs` caps how many finished runs are kept, oldest
+  deleted first. **Off by default**: run records are history a host may rely on,
+  and silently deleting them is not a decision the store should make on anyone's
+  behalf. Live runs are never pruned.
+
+  Regression tests assert the *syscall behaviour* rather than elapsed time — a
+  timing assertion would be flaky on shared CI and would not say which of the
+  three regressed (`tests/test_workflow_store_scan_cost.py`, 10 tests).
+
 ### Tooling
+
+- **The doc gate's closed-issues phase penalised honest changelog prose, and
+  timed out on its own slowest regression test.** Two fixes to
+  `tools/nodus_gate/closed_issues_phase.py`, both found by running it against
+  this release's own `[Unreleased]` section.
+
+  - It scanned every `#N` in the section, including references inside an entry's
+    prose, and demanded a passing regression test for each. An entry that names a
+    known issue or the follow-up tracking a root cause is doing the right thing —
+    but doing it made the gate fail, which is an incentive to write a worse
+    changelog. It now reads issue references from entry lines only; a claim needs
+    a test, a cross-reference does not.
+  - Its per-test budget was 60s. The #348 suite runs the real CLI in a subprocess
+    eight times and takes ~41s unloaded, so it had 1.4x headroom and timed out
+    under gate load — reported as a failing regression test with nothing
+    regressed. Raised to 300s, which is the 5-10x the repo's own flaky-test rule
+    asks for.
+
+- **#357: the VS Code grammar did not highlight `match`, `break` or
+  `continue`.** They shipped in v4.1.0 and rendered as plain identifiers, so a
+  reader following the Control Flow docs sees their `match` expression
+  un-highlighted and reasonably concludes the syntax is not real yet — on the
+  most externally visible surface the language has.
+
+  They are *contextual* keywords: recognised by the parser from identifier
+  tokens rather than reserved by the lexer, so they existed only as string
+  literals at two `if` statements in `parser.py` and nowhere a tool could read.
+  `nodus.frontend.lexer` now exports `ALL_KEYWORDS` (with
+  `CONTEXTUAL_KEYWORDS`, `LOOP_CONTROL_KEYWORDS` and `EXPRESSION_KEYWORDS`), and
+  the parser reads its recognition sets from them, so the list cannot drift from
+  what the parser accepts.
+
+  `tests/test_keyword_coverage.py` holds both ends: the parser accepts every
+  contextual keyword the list names, and the shipped grammar highlights every
+  keyword in the list. The grammar check needs the `nodus-vscode` checkout, so it
+  skips in CI and runs for whoever publishes — recorded as Gate 3b in
+  `RELEASE_GATES.md` rather than left to memory.
+
+  The duplicate grammar under `tools/vscode/` is **removed**. The two copies had
+  diverged with neither a superset of the other, and the in-repo one was missing
+  17 of the language's 31 keywords. `nodus-vscode` is now the only grammar.
+
+  The extension fix is prepared as **nodus-vscode v0.1.1** and needs a Marketplace
+  republish, which is a manual upload.
+
+- **#380 (part 1): the test suite and doc gate no longer leave workflow-run
+  files in the repo.** The default workflow store root is CWD-relative, so
+  anything running a workflow from the repo root wrote into
+  `.nodus/workflow_framework/runs/`. Retention is 30 days, so nothing was ever
+  cleaned; the directory reached 299 files.
+
+  That matters because `LocalWorkflowStore.list_runs()` parses every file on
+  every call — ~1.3 ms each, measured linear to 10,000 files (13.5 s). At 299
+  files a single scan costs **540 ms**, past the 500 ms sweep interval
+  deadline-sensitive tests assume. The suite was degrading its own later runs,
+  surfacing as unrelated-looking flakes that passed on re-run: a server endpoint
+  test, a doc-gate block, and a scheduler fairness test, all from one cause.
+
+  A session fixture now removes what a pytest run added, and the gate's runtime
+  phase runs doc blocks against a throwaway store. Cleanup rather than
+  redirection, because several tests build a project directory, chdir into it,
+  and assert the default runner wrote under *that* root — pointing the default
+  elsewhere broke 26 of them, and their behavior is the documented one.
+
+  `NODUS_WORKFLOW_STORE_ROOT` now overrides the default store root, for hosts
+  whose working directory is read-only or ephemeral.
+
+  Corrected in `CLAUDE.md` and `test_task_graph.py`: both said "670+ files cause
+  >2s per sweep", which understates it about 2x in the direction that matters.
+
+  Bounding the store's cost — pruning by count, or an index instead of a full
+  rescan — remains open in #380.
 
 - **#366: the opcode freeze is now enforced by a gate instead of by prose.**
   `tools/nodus_gate/opcode_phase.py` adds a `--opcodes` phase (included in

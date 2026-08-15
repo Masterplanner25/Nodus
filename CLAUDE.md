@@ -298,6 +298,34 @@ Workflow:
 
 Never attempt `git push origin main` directly — it will be rejected.
 
+## CHANGELOG — update it in the same PR as the change
+
+**Every user-visible change gets a `CHANGELOG.md` `[Unreleased]` entry in the PR that
+makes the change** — not in a later sweep. Behaviour changes, bug fixes, new flags, new
+gate phases, error-message format changes, performance work users would notice. Pure
+refactors and test-only changes do not need one.
+
+Why it must be same-PR: the release process reads `[Unreleased]` to build the release
+notes, and the doc gate's `--closed-issues` phase reads issue references out of it to find
+the regression tests. A change that lands without an entry is invisible to both. Three PRs
+in the #376 series (#384, #388, #389) shipped real correctness fixes with no entry and had
+to be reconstructed from `git log` afterwards.
+
+Two conventions that keep the file usable:
+
+- **Merge into the existing section; do not append a new one.** `[Unreleased]` should have
+  at most one `### Fixes`, one `### Tooling`, and so on. Appending a fresh `### Fixes`
+  per PR produced three of each and had to be untangled by script. Section order:
+  `Changed` → `Fixes` → `Performance` → `Tooling`.
+- **Reference the issue number on the entry line** (`- **#NNN: one-line summary.**`).
+  That reference is what links the entry to its regression test via the `# closes: #N`
+  marker (see the gate section below), and the gate reads issue numbers from **entry
+  lines only** — so `#N` inside an entry's prose is a free cross-reference and does not
+  demand a test. Put the claim on the bullet, discussion underneath.
+
+Known issues belong here too — if something ships with a defect downgraded rather than
+fixed, say so in the entry and name the follow-up issue, so it does not vanish at release.
+
 ## Doc-vs-code gate (nodus_gate)
 
 The gate is mandatory before any release. Run from the nodus-lang root:
