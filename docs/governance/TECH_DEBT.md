@@ -512,6 +512,64 @@ here.
   building agentic hosts**. Deferred until more of the audit series is in, so the
   wording answers all of them at once.
 
+## Findings from external Architecture Audit 02 (2026-08-15)
+
+Second audit of the same commit (`3376702`) by a different auditor. Verification
+record in [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md); debt only here.
+
+- **#398 (HIGH) — `action agent` serialises concurrent workflow steps.** Two 1.0s
+  agent calls in independent steps take **2.73s**; handler overlap −0.01s.
+  `action agent` lowers to `__action_agent` → `builtin_agent_call`, the
+  *synchronous* path. `builtin_agent_call_async` (#294) exists but is never
+  reached from a workflow, and its own docstring notes it falls back to sync in
+  graph contexts because `run_closure`/`execute` cannot yield. So the concurrency
+  the dependency graph exists to express is not delivered on the one operation the
+  project is for. The audit calls this the single most damaging gap relative to
+  the stated purpose; measurement agrees.
+
+- **#399 (HIGH) — cross-process resume fails whenever the script reads the
+  `run_workflow` result.** Which is how every guide example is written. Rebuild
+  suppression makes `run_workflow` return nil, the next line indexes nil, a bare
+  `except Exception: return None` swallows it, and the caller reports
+  `Unknown graph` for a run `nodus workflow runs` lists as `waiting`. Discard the
+  result and the identical workflow resumes fine. **Every failed attempt also
+  re-runs the module's top-level side effects** — suppression covers
+  `run_workflow`/`run_goal`/`print` and nothing else; five failed resumes produced
+  five filesystem writes.
+
+- **#400 (MEDIUM) — `nodus graph` executes the file it is asked to inspect.**
+  Proved with an `fs.write` probe that fired while the command reported "No graph
+  plan produced". `ast`, `check` and `dis` do not execute; `graph` is the odd one
+  out, and it is the command you would reach for to inspect untrusted or generated
+  source before running it.
+
+- **#401 (MEDIUM) — the analyzer never enters workflow step bodies**, and
+  `nodus check` reports no undefined symbol in ordinary code either. Step bodies
+  get no unused-variable, unreachable-code, undefined-symbol or type diagnostics.
+  With #396 this raises the prior question: **what is `nodus check` contracted to
+  catch?** Currently unwritten.
+
+- **#402 (LOW) — channels have no backpressure.** `Channel.waiting_senders` is
+  declared and never read; `send` on a full channel raises rather than blocking.
+  Either implement blocking send using the deque that is already there, or drop it
+  and document the raise as the contract.
+
+**Cross-audit result, and the reason to keep running these.** Two independent
+audits of the same commit disagreed twice, and **both disagreements marked a real
+defect**: ordering bypassable (Audit 01 right, #394) and agent calls serialising
+(Audit 02 right, #398). Where they *agreed*, they were both wrong twice —
+`goal` ≡ `workflow` (#393) and the opcode count (43 vs 39; actual 49). Convergent
+findings are unverified, not corroborated; divergent findings are the high-value
+leads.
+
+**New failure mode to design against (P4 in the ledger): existence read as
+reachability.** A capability is present in the source and assumed to be on the
+documented path. `agent_call_async` exists but `action agent` cannot reach it;
+`ready_tasks()` gates dispatch but the step closure is reachable around it. This
+compounds with the P3 pattern — #226 and #294 were both closed on one entry point
+out of several. **Any capability closed on one entry point is a candidate to be
+unreachable from the documented one.**
+
 ## Open Items (not yet complete)
 
 - ✅ compile_source() fully removed in v1.0. Internal callers migrated to ModuleLoader in v0.8. Public stub removed from nodus.__init__ in v0.9.0. Loader body and last test caller (test_import_containment.py) removed in v1.0. 0 remaining references.

@@ -353,6 +353,20 @@
   invariant (#394), there is no cancellation anywhere (#395), and `nodus check`
   does not catch dependency cycles (#396).
 
+  A second audit of the same commit by a different auditor added five more, two of
+  which affect anyone running workflows:
+
+  - `action agent` runs synchronously, so workflow steps the dependency graph
+    identifies as concurrent execute serially — two 1s agent calls take 2.7s
+    (#398).
+  - Cross-process resume fails with `Unknown graph` whenever the script reads the
+    value `run_workflow` returns, which is how the guide examples are written; and
+    every failed attempt re-runs the module's top-level side effects (#399).
+
+  Also: `nodus graph` executes the file it is asked to inspect (#400), the
+  analyzer never enters workflow step bodies (#401), and channels have no
+  backpressure (#402).
+
 - **The doc gate's closed-issues phase penalised honest changelog prose, and
   timed out on its own slowest regression test.** Two fixes to
   `tools/nodus_gate/closed_issues_phase.py`, both found by running it against
