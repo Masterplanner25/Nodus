@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#357: the VS Code grammar did not highlight `match`, `break` or
+  `continue`.** They shipped in v4.1.0 and rendered as plain identifiers, so a
+  reader following the Control Flow docs sees their `match` expression
+  un-highlighted and reasonably concludes the syntax is not real yet — on the
+  most externally visible surface the language has.
+
+  They are *contextual* keywords: recognised by the parser from identifier
+  tokens rather than reserved by the lexer, so they existed only as string
+  literals at two `if` statements in `parser.py` and nowhere a tool could read.
+  `nodus.frontend.lexer` now exports `ALL_KEYWORDS` (with
+  `CONTEXTUAL_KEYWORDS`, `LOOP_CONTROL_KEYWORDS` and `EXPRESSION_KEYWORDS`), and
+  the parser reads its recognition sets from them, so the list cannot drift from
+  what the parser accepts.
+
+  `tests/test_keyword_coverage.py` holds both ends: the parser accepts every
+  contextual keyword the list names, and the shipped grammar highlights every
+  keyword in the list. The grammar check needs the `nodus-vscode` checkout, so it
+  skips in CI and runs for whoever publishes — recorded as Gate 3b in
+  `RELEASE_GATES.md` rather than left to memory.
+
+  The duplicate grammar under `tools/vscode/` is **removed**. The two copies had
+  diverged with neither a superset of the other, and the in-repo one was missing
+  17 of the language's 31 keywords. `nodus-vscode` is now the only grammar.
+
+  The extension fix is prepared as **nodus-vscode v0.1.1** and needs a Marketplace
+  republish, which is a manual upload.
+
 ### Changed — breaking for anything parsing stderr
 
 - **#342: every error now reports the resolved absolute path.** Runtime errors

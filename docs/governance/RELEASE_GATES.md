@@ -78,6 +78,31 @@ No silent additions to the allowlist.
 
 ---
 
+## Gate 3b: Editor grammar keeps up with the language
+
+**Standard (established after #357):**
+
+A release that adds or removes a language keyword must update the VS Code
+grammar in the `nodus-vscode` repository and republish the extension.
+
+`match`, `break` and `continue` shipped in v4.1.0 and were not highlighted for
+two releases, because contextual keywords live in the parser rather than the
+lexer's reserved set and nothing listed them where a tool could read them.
+
+**Check:**
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m pytest tests/test_keyword_coverage.py -q
+```
+
+`nodus.frontend.lexer.ALL_KEYWORDS` is the source of truth. The grammar check
+needs the `nodus-vscode` checkout and **skips without it**, so it does not run in
+this repository's CI — run it locally before a release that touched syntax.
+
+---
+
 ## Gate 4: Closed-issue regression test gate
 
 **Standard (established after v3.0.1 incident):**

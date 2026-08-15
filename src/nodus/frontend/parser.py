@@ -1,7 +1,7 @@
 """Parser for Nodus syntax."""
 
 from nodus.runtime.diagnostics import LangSyntaxError
-from nodus.frontend.lexer import Tok
+from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, Tok
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
     Assign,
@@ -338,7 +338,10 @@ class Parser:
         if self.at("{"):
             return self.block()
 
-        if self.at("ID") and self.peek().val in ("break", "continue"):
+        # Contextual keywords: read from CONTEXTUAL_KEYWORDS so tooling that
+        # needs the keyword list (the editor grammar) cannot fall behind the
+        # parser without a test noticing (#357).
+        if self.at("ID") and self.peek().val in LOOP_CONTROL_KEYWORDS:
             tok = self.eat("ID")
             node = Break() if tok.val == "break" else Continue()
             return self.mark(node, tok)
@@ -856,7 +859,7 @@ class Parser:
         if self.at("STRING_START"):
             return self.parse_interpolated_string()
 
-        if self.at("ID") and self.peek().val == "match":
+        if self.at("ID") and self.peek().val in EXPRESSION_KEYWORDS:
             return self.parse_match()
 
         if self.at("ID"):
