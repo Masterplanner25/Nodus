@@ -43,9 +43,13 @@ def run_cli(source: str) -> tuple[str, str, int]:
         f.write(source)
         path = f.name
     try:
+        # --time-limit: the CLI's default deadline is EXECUTION_TIMEOUT_MS
+        # (200ms), and the coroutine cases here sleep. On a loaded machine the
+        # run dies with "Execution timed out" before it proves anything, which
+        # is how this file came to fail intermittently in full-suite runs.
         proc = subprocess.run(
-            [sys.executable, _NODUS_PY, "run", path],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, _NODUS_PY, "run", "--time-limit", "30", path],
+            capture_output=True, text=True, timeout=60,
         )
         return proc.stdout, proc.stderr, proc.returncode
     finally:
@@ -73,6 +77,36 @@ class FinallyRethrowTestCase(unittest.TestCase):
         stdout, ok, errors = run_embedded(source)
         self.assertTrue(ok, f"embedded run failed: {errors}")
         self.assert_lines(stdout, expected, context="embedded")
+
+    def assert_per_tag_order_both_modes(self, source: str, expected: list[str],
+                                        tags: tuple[str, ...]) -> None:
+        """Assert the whole line set, plus each tag's own lines in order.
+
+        Two coroutines that both sleep interleave in whatever order the
+        scheduler picks, so asserting one global sequence is a timing bet — it
+        failed on a loaded machine. What these two tests prove is that each
+        coroutine keeps *its own* deferred action: a statement about pairing and
+        about each tag's internal order, not about which coroutine wakes first.
+        Cross-talk (A reporting B's value) still fails, which is the bug.
+        """
+        def check(stdout: str, context: str) -> None:
+            lines = [ln for ln in stdout.splitlines() if ln.strip()]
+            self.assertEqual(sorted(expected), sorted(lines),
+                             f"{context}\nstdout={stdout!r}")
+            for tag in tags:
+                own = [ln for ln in lines if tag in ln]
+                own_expected = [ln for ln in expected if tag in ln]
+                self.assertEqual(own_expected, own,
+                                 f"{context}: {tag}'s own lines are out of order "
+                                 f"or crossed\nstdout={stdout!r}")
+
+        stdout, stderr, rc = run_cli(source)
+        self.assertEqual(0, rc, f"CLI exit {rc}; stderr={stderr!r}")
+        check(stdout, "CLI")
+
+        stdout, ok, errors = run_embedded(source)
+        self.assertTrue(ok, f"embedded run failed: {errors}")
+        check(stdout, "embedded")
 
 
 # closes: #361
@@ -253,7 +287,7 @@ class DeferredReturnDoesNotOutliveItsFinallyTests(FinallyRethrowTestCase):
 # closes: #371
 class DeferredStateIsPerCoroutineTests(FinallyRethrowTestCase):
     def test_two_coroutines_suspended_in_a_finally_keep_their_own_return(self):
-        self.assert_both_modes(
+        self.assert_per_tag_order_both_modes(
             """
             fn work(tag) {
                 try { return "ret-\\(tag)" }
@@ -268,10 +302,11 @@ class DeferredStateIsPerCoroutineTests(FinallyRethrowTestCase):
             print("done")
             """,
             ["A finally", "ret-A", "B finally", "ret-B", "done"],
+            ("A", "B"),
         )
 
     def test_two_coroutines_suspended_in_a_finally_keep_their_own_rethrow(self):
-        self.assert_both_modes(
+        self.assert_per_tag_order_both_modes(
             """
             fn work(tag) {
                 try {
@@ -288,6 +323,7 @@ class DeferredStateIsPerCoroutineTests(FinallyRethrowTestCase):
             print("done")
             """,
             ["A finally", "A outer: err-A", "B finally", "B outer: err-B", "done"],
+            ("A", "B"),
         )
 
 

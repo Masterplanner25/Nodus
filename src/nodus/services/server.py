@@ -394,7 +394,17 @@ class RuntimeService:
 
     def _run_workflow_sweep_once(self) -> dict[str, object]:
         try:
-            self._last_workflow_sweep = self.workflow_runner.sweep(self._workflow_vm_factory)
+            # #376: this runs on a 500ms timer against whatever store the
+            # process-global runner points at, which may hold runs this service
+            # never created — another service's, or the CLI's. Only adopt runs
+            # that have been idle for a claim TTL: past that, their owner is
+            # presumed gone, which is what rehydration is for. Without the gate
+            # the sweeper re-registered live runs mid-flight and their next
+            # resume returned ok:true with no steps.
+            idle_ms = float(getattr(self.workflow_runner.store, "claim_ttl_ms", 30_000.0))
+            self._last_workflow_sweep = self.workflow_runner.sweep(
+                self._workflow_vm_factory, min_idle_ms=idle_ms
+            )
         except OSError as err:
             self._last_workflow_sweep = {
                 "expired_waits": [],
