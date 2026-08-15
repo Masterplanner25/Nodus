@@ -84,7 +84,12 @@ class ScanDoesNotRepeatSyscallsPerRecordTests(StoreTestCase):
         finally:
             os.path.exists = real_exists
 
-        run_stats = [p for p in stats if p.endswith(".json")]
+        # Scoped to this store's own directory: the patch is process-wide, and
+        # anything else running concurrently — the graph store writing
+        # `.nodus/graphs/*.json`, a background sweep — also calls os.path.exists.
+        # Matching on ".json" alone made this fail in CI on an unrelated path.
+        run_stats = [p for p in stats
+                     if p.endswith(".json") and os.path.abspath(p).startswith(self.root)]
         self.assertEqual([], run_stats,
                          "each record is stat-ed before being opened; the open reports "
                          "a missing file on its own")
