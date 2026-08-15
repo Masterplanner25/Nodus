@@ -4,6 +4,28 @@
 
 ### Fixes
 
+- **#348: `--trace-imports` printed nothing once the bytecode cache was warm.**
+  `ModuleLoader._build_metadata()` returns early on an on-disk cache hit, and
+  `resolve_import()` — the only site that emits the trace — sits after that
+  return. The flag therefore worked only on the first run after `rm -rf .nodus`,
+  which is the run you are least likely to be debugging.
+
+  The early-return path now replays the imports the cached unit recorded,
+  including transitive ones, marked so the provenance is visible:
+
+  ```
+  [import] Resolved (from bytecode cache) "./helper" -> /abs/path/helper.nd
+  ```
+
+  Nothing is re-resolved and nothing is re-parsed — a debug flag must not change
+  what a run does, only what it reports, and a test asserts stdout and exit code
+  are identical with and without it.
+
+  Distinct from issue 51 (the in-memory cache within a single run), which
+  remains fixed. Regression tests run the CLI twice
+  (`tests/test_import_trace_warm_cache.py`, 8 tests): a cross-run bug is
+  invisible to any test that looks at a single run.
+
 - **#339: `std:async.worker_pool` and `pipeline` never ran their workers.** The
   other half of ASYNC-MOD-003 — `parallel` and `series` were fixed in 4.1.1.
   These two spawn coroutines *inside* the module and hand a channel back for the

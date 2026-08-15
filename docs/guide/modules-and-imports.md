@@ -420,14 +420,15 @@ F26: RESOLVED. Was "import inside an if/else block silently fails — binding
      error. Both rewritten; error-handling.md §6 carried the same stale claim
      and was corrected to match.
 
-F27: STILL PRESENT — now filed as #348. --trace-imports emits nothing once the
-     ON-DISK bytecode cache (.nodus/) is warm; it only works on the first run
+F27: RESOLVED 2026-08-15 (#348). --trace-imports emitted nothing once the
+     ON-DISK bytecode cache (.nodus/) was warm; it fired only on the first run
      after a cold cache. _build_metadata() returns early on a disk-cache hit,
      before the loop that calls resolve_import(), which is the only site
-     emitting the trace. NOT the same as #51 (closed/completed) — that was the
-     in-memory cache within a single run, and that fix works: a cold run
-     correctly prints both "Resolved" and "Cache hit". Workaround: rm -rf
-     .nodus before tracing.
+     emitting the trace. The early-return path now replays what the cached unit
+     recorded, marked "Resolved (from bytecode cache)" so provenance is visible.
+     NOT the same as #51 (closed/completed) — that was the in-memory cache
+     within a single run, and that fix works: a cold run correctly prints both
+     "Resolved" and "Cache hit".
 
 F28: STILL PRESENT. import "./path" with no 'as' clause executes the module
      (side effects run) but binds no name, and reports nothing. Verified on

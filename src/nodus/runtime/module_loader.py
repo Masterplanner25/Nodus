@@ -457,6 +457,26 @@ class ModuleLoader:
             parsed=None,
         )
 
+    def _trace_cached_imports(self, metadata: ModuleMetadata) -> None:
+        """Report imports recovered from the bytecode cache (#348).
+
+        The resolved paths come from the cached unit rather than the resolver,
+        so the line says so: a reader debugging resolution needs to know whether
+        a path was resolved on this run or recorded on an earlier one. Nothing is
+        re-resolved and nothing is re-parsed — tracing must not change what a run
+        does, only what it reports.
+        """
+        if self._import_trace_fn is None:
+            return
+        for spec in metadata.import_specs:
+            self._import_trace_fn(
+                f'[import] Resolved (from bytecode cache) "{spec.path}" -> {spec.resolved_path}'
+            )
+        for ef_spec in metadata.export_from_specs:
+            self._import_trace_fn(
+                f'[import] Resolved (from bytecode cache) "{ef_spec.path}" -> {ef_spec.resolved_path}'
+            )
+
     def _build_metadata(
         self,
         module_id: str,
@@ -486,6 +506,12 @@ class ModuleLoader:
                     cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
                     if cached_metadata is not None:
                         self._metadata[module_id] = cached_metadata
+                        # #348: this return skips the loop below, and
+                        # `resolve_import` is the only place the import trace is
+                        # emitted — so `--trace-imports` printed nothing at all
+                        # once the on-disk cache was warm, which is every run
+                        # after the first. Replay what the cached unit recorded.
+                        self._trace_cached_imports(cached_metadata)
                         return cached_metadata
 
             parsed = self._parse_module(module_id, base_dir=base_dir, source=source, source_path=source_path)
