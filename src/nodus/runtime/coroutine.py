@@ -2,6 +2,12 @@
 
 from dataclasses import dataclass, field
 
+# Sentinel for "no deferred return / no deferred re-raise pending". Defined here
+# rather than in vm.py because the deferred state is per-coroutine: it is saved
+# and restored with the rest of a coroutine's execution context, and `None` can
+# not stand in for "nothing pending" (a function may defer a return of nil).
+DEFERRED_NONE = object()
+
 
 @dataclass
 class Coroutine:
@@ -11,6 +17,14 @@ class Coroutine:
     stack: list = field(default_factory=list)
     frames: list = field(default_factory=list)
     handler_stack: list[tuple[int, int, int, int]] = field(default_factory=list)
+    # Actions owed to a finally block this coroutine suspended inside: a return
+    # deferred by RETURN, or an exception deferred by a raising catch (#361).
+    # Per-coroutine, so two coroutines suspended in a finally cannot consume each
+    # other's pending action (#371).
+    deferred_return: object = DEFERRED_NONE
+    deferred_return_depth: int = 0
+    deferred_error: object = DEFERRED_NONE
+    deferred_error_depth: int = 0
     id: int | None = None
     name: str | None = None
     module: str | None = None

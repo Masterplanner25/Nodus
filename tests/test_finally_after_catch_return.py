@@ -105,13 +105,19 @@ try {
 
 
 def test_finally_runs_when_inner_error_propagates():
-    """finally executes when inner error propagates to outer catch."""
+    """finally executes when inner error propagates to outer catch.
+
+    This test used to print the SAME marker from the catch and the finally and
+    assert `marker in stdout`, so the catch alone satisfied it — it could not
+    fail, and #361 (finally skipped entirely on the rethrow path) shipped past
+    it. Distinct markers, asserted as an ordered sequence.
+    """
     script = """
 try {
     try {
         throw "inner_error"
     } catch e {
-        print("inner_finally_ran")
+        print("inner_catch_ran")
         throw e
     } finally {
         print("inner_finally_ran")
@@ -122,8 +128,10 @@ try {
 """
     stdout, stderr, rc = run_nodus(script)
     assert rc == 0, f"unexpected exit code {rc}; stderr={stderr!r}"
-    assert "inner_finally_ran" in stdout, f"inner finally did not run; stdout={stdout!r}"
-    assert "outer_catch_ran" in stdout, f"outer catch did not run; stdout={stdout!r}"
+    lines = [ln for ln in stdout.splitlines() if ln.strip()]
+    assert lines == ["inner_catch_ran", "inner_finally_ran", "outer_catch_ran"], (
+        f"wrong order or missing step; stdout={stdout!r} stderr={stderr!r}"
+    )
 
 
 def test_finally_value_does_not_override_catch_return():

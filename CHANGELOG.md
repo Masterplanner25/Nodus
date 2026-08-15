@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#361: `finally` was skipped when `catch` re-threw** — the one exit path where
+  cleanup matters most. `handle_exception` leaves a finally-gate on the handler
+  stack while a `catch` block runs, so a `return` inside the catch defers to the
+  `finally`. An exception raised by that catch hit the same gate and *skipped* it,
+  so the error propagated outward with the `finally` never run:
+
+  ```nd
+  fn f() {
+      try { throw "boom" }
+      catch e { print("A caught"); throw e }
+      finally { print("B finally") }   // never ran
+  }
+  ```
+
+  The gate now defers the exception the way `RETURN` defers a return: unwind to
+  the catch's depths, jump into the `finally`, and resume propagation at
+  `FINALLY_END`. All five exit paths run `finally` exactly once. An exception
+  raised by the `finally` itself supersedes a pending re-throw or return.
+
+- **#370: a `return` deferred to a `finally` that then raised was applied by an
+  unrelated `finally` later.** The pending return lived in a single VM-wide slot
+  cleared only by `FINALLY_END`. If the `finally` raised instead of completing,
+  the return stayed pending and the next `FINALLY_END` anywhere in the program
+  acted on it — at module level that surfaced as the internal error
+  `FINALLY_END deferred return outside function`. Deferred state is now discarded
+  when an exception escapes the region that owes it, identified by the
+  handler-stack depth recorded at deferral. An error raised *and caught* inside
+  the `finally` leaves the region intact and the return still lands.
+
+- **#371: deferred state was VM-wide, not per-coroutine.** `stack`, `frames` and
+  `handler_stack` are all saved per coroutine; the deferred return was not. Two
+  coroutines suspended inside a `finally` consumed each other's pending action —
+  the first to resume returned the other's value, and the second returned `nil`.
+  The deferred return and the new deferred re-throw now travel on the `Coroutine`
+  alongside `handler_stack`, through `save_current_coroutine_state`,
+  `load_coroutine_context` and `save_execution_context`. The `DEFERRED_NONE`
+  sentinel moved to `runtime/coroutine.py`, since `None` cannot mean "nothing
+  pending" when a function may defer a return of nil.
+
+  Regression tests: `tests/test_finally_rethrow.py` (14 tests, CLI **and**
+  embedded for every case, asserting ordered output rather than membership).
+  12 of the 14 fail against the unfixed VM.
+
+  `tests/test_finally_after_catch_return.py::test_finally_runs_when_inner_error_propagates`
+  — the test written for exactly this path — printed the same marker from its
+  `catch` and its `finally` and asserted membership, so the catch alone satisfied
+  it and it could not fail. It now asserts the ordered sequence.
+  `tests/test_finally.py::test_exception_from_outer_try_still_caught` asserted the
+  buggy output (no `finally` line) as expected behavior; corrected.
+
 ### Tooling
 
 - **#366: the opcode freeze is now enforced by a gate instead of by prose.**
