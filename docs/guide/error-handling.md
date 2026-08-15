@@ -101,8 +101,24 @@ if (type(result) == "error") {
 ### finally semantics
 
 `finally` runs after `try` completes (with or without an error) and after
-`catch` completes — including when `catch` contains a `return`. All five exit
-paths from a `try/catch/finally` block correctly execute `finally`.
+`catch` completes. All five exit paths from a `try/catch/finally` block execute
+`finally` exactly once:
+
+| Exit path | `finally` runs |
+|---|---|
+| `try` completes normally | ✅ |
+| `try` throws, `catch` handles it | ✅ |
+| `return` from `try` | ✅ (the return is deferred until `finally` finishes) |
+| `return` from `catch` | ✅ (same deferral) |
+| `catch` throws or re-throws | ✅ — before the error continues outward |
+
+The re-throw path was broken through v4.1.1: `finally` was skipped entirely when
+`catch` raised, which is the one path where cleanup matters most
+([#361](https://github.com/Masterplanner25/Nodus/issues/361)). On 4.1.1 or
+earlier, do not put cleanup on a re-throw path.
+
+An error raised by the `finally` block itself replaces whatever was pending —
+the re-thrown error, or a deferred `return`.
 
 ```nd
 fn divide(a, b) {
@@ -160,6 +176,36 @@ Output:
 ```
 outer caught: inner error
 top caught: thrown - inner error
+```
+
+A `finally` on the same `try` runs before the re-thrown error reaches the next
+handler:
+
+```nd-expect=output
+fn risky() {
+    try {
+        throw "boom"
+    } catch err {
+        print("catch: " + err.message)
+        throw err
+    } finally {
+        print("cleanup")
+    }
+}
+
+try {
+    risky()
+} catch err {
+    print("outer: " + err.message)
+}
+```
+
+Output:
+
+```
+catch: boom
+cleanup
+outer: boom
 ```
 
 ---
@@ -438,7 +484,8 @@ is unchanged — `err.message` still contains only the Nodus message.
 TESTED EXAMPLES (v3.0 — all code blocks verified)
 1. try/catch/finally basic — confirmed
 2. err.line, err.stack — confirmed (note: err.line is now "int" in v3.0, not "number")
-3. finally semantics — confirmed (finally skipped when catch returns — known bug)
+3. finally semantics — confirmed; all five exit paths run finally (the re-throw
+   path was broken through v4.1.1, #361)
 4. rethrow — confirmed
 5. string throw — confirmed (payload is nil, not absent)
 6. record throw — confirmed

@@ -41,7 +41,7 @@ import threading
 import time
 from typing import Any, Callable, cast
 
-from nodus.runtime.coroutine import Coroutine
+from nodus.runtime.coroutine import Coroutine, DEFERRED_NONE
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state
 from nodus.builtins.nodus_builtins import BuiltinInfo
@@ -60,8 +60,8 @@ from nodus.services.tool_runtime import available_tools, call_tool, describe_too
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
 
-_DEFERRED_NONE = object()  # sentinel: no deferred return pending
-_FINALLY_GATE = -1         # handler_ip sentinel: RETURN defers to finally; exception propagates past
+_DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pending
+_FINALLY_GATE = -1         # handler_ip sentinel: RETURN and THROW inside a catch defer to finally
 
 from nodus.vm.types import Cell, Closure, _ClosureProxy, Record, BuiltinMethod, Frame  # noqa: E402
 
@@ -176,7 +176,13 @@ class VM:
         self.debug = debug or debugger is not None
         self.debugger = debugger
         self.handler_stack: list[tuple[int, int, int, int]] = []
+        # Pending actions owed to a finally block, with the handler-stack depth
+        # each was deferred at so _discard_stale_deferrals can tell whether an
+        # exception has escaped the region that owes it.
         self._deferred_return = _DEFERRED_NONE
+        self._deferred_return_depth = 0
+        self._deferred_error = _DEFERRED_NONE
+        self._deferred_error_depth = 0
         self.current_coroutine: Coroutine | None = None
         # ASYNC-MOD-003: set by NodusModule.invoke_function on a detached module
         # VM. Declared here so the CALL_VALUE hot path is a plain attribute read
@@ -395,23 +401,54 @@ class VM:
         self.event_bus.emit_event("runtime_error", coroutine_id=coroutine_id, name=name, data=data)
         setattr(err, "_event_emitted", True)
 
+    def _unwind_to(self, frame_depth: int, stack_depth: int) -> None:
+        """Drop frames, handlers and stack values below a handler's recorded depths."""
+        while len(self.frames) > frame_depth:
+            frame = self.frames.pop()
+            if frame.cross_module_ctx is not None:
+                self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore on unwind
+            self._profiler_exit_frame(frame)
+        while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
+            self.handler_stack.pop()
+        if len(self.stack) > stack_depth:
+            self.stack = self.stack[:stack_depth]
+
+    def _discard_stale_deferrals(self) -> None:
+        """Drop deferred state owned by a finally block we just unwound out of.
+
+        A deferred return and a deferred re-raise each belong to exactly one
+        finally region, and are acted on when that region reaches its
+        `FINALLY_END`. If the exception now being delivered escaped that region —
+        the handler receiving it sits outside the region's enclosing handlers —
+        the region never reaches its `FINALLY_END` and the pending action is
+        superseded by this exception. Left set, it is acted on by whatever
+        unrelated `FINALLY_END` runs next: before this guard,
+        `fn f() { try { return 1 } catch e {} finally { throw "x" } }` left the
+        return pending, and the next `finally` in the program died with the
+        internal error "FINALLY_END deferred return outside function" (#370).
+        """
+        depth = len(self.handler_stack)
+        if self._deferred_error is not _DEFERRED_NONE and depth < self._deferred_error_depth:
+            self._deferred_error = _DEFERRED_NONE
+        if self._deferred_return is not _DEFERRED_NONE and depth < self._deferred_return_depth:
+            self._deferred_return = _DEFERRED_NONE
+
     def handle_exception(self, err: LangRuntimeError) -> bool:
         while self.handler_stack:
             handler_ip, _finally_ip, stack_depth, frame_depth = self.handler_stack.pop()
             if handler_ip == _FINALLY_GATE:
                 # Finally-gate entries are left by a catch block that has a finally.
-                # They are consumed by RETURN (see _op_return); skip them during
-                # exception propagation so the exception reaches the next real handler.
-                continue
-            while len(self.frames) > frame_depth:
-                frame = self.frames.pop()
-                if frame.cross_module_ctx is not None:
-                    self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore on unwind
-                self._profiler_exit_frame(frame)
-            while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
-                self.handler_stack.pop()
-            if len(self.stack) > stack_depth:
-                self.stack = self.stack[:stack_depth]
+                # RETURN inside the catch consumes them (see _op_return); reaching
+                # one here means the catch block itself raised. The finally must
+                # still run before the exception continues outward (#361), so jump
+                # into it and re-raise at FINALLY_END rather than skipping past.
+                self._unwind_to(frame_depth, stack_depth)
+                self._deferred_error = err
+                self._deferred_error_depth = len(self.handler_stack)
+                self.ip = _finally_ip
+                return True
+            self._unwind_to(frame_depth, stack_depth)
+            self._discard_stale_deferrals()
             err_fields = {
                 "kind": err.kind,
                 "message": str(err),
@@ -425,8 +462,14 @@ class VM:
             err_record = Record(err_fields, kind="error")
             self.stack.append(err_record)
             if _finally_ip != 0:
-                # Push a finally-gate so RETURN inside the catch block defers to finally.
-                self.handler_stack.append((_FINALLY_GATE, _finally_ip, len(self.stack), len(self.frames)))
+                # Push a finally-gate so RETURN inside the catch block defers to
+                # finally, and so a raise inside it still runs finally (#361).
+                # Its stack_depth is the depth the finally block should start
+                # from: the catch's first instruction stores the error record
+                # just pushed, so that is one below the current depth.
+                self.handler_stack.append(
+                    (_FINALLY_GATE, _finally_ip, len(self.stack) - 1, len(self.frames))
+                )
             self.ip = handler_ip
             return True
         return False
@@ -894,6 +937,10 @@ class VM:
             self.frames,
             self.handler_stack,
             self.current_coroutine,
+            self._deferred_return,
+            self._deferred_return_depth,
+            self._deferred_error,
+            self._deferred_error_depth,
         )
 
     def restore_execution_context(self, ctx) -> None:
@@ -903,12 +950,23 @@ class VM:
             self.frames,
             self.handler_stack,
             self.current_coroutine,
+            self._deferred_return,
+            self._deferred_return_depth,
+            self._deferred_error,
+            self._deferred_error_depth,
         ) = ctx
 
     def load_coroutine_context(self, coroutine: Coroutine) -> None:
         self.stack = coroutine.stack
         self.frames = coroutine.frames
         self.handler_stack = coroutine.handler_stack
+        # #371: a coroutine suspended inside a finally block is owed a return or a
+        # re-raise. Carry it with the coroutine, or the next one to reach a
+        # FINALLY_END acts on an action that belongs to someone else.
+        self._deferred_return = coroutine.deferred_return
+        self._deferred_return_depth = coroutine.deferred_return_depth
+        self._deferred_error = coroutine.deferred_error
+        self._deferred_error_depth = coroutine.deferred_error_depth
         self.current_coroutine = coroutine
         self.ip = coroutine.ip if coroutine.ip is not None else 0
         # ASYNC-MOD-001: restore the module context this coroutine runs in, so a
@@ -948,6 +1006,9 @@ class VM:
         self.frames = []
         self.handler_stack = []
         self._deferred_return = _DEFERRED_NONE
+        self._deferred_return_depth = 0
+        self._deferred_error = _DEFERRED_NONE
+        self._deferred_error_depth = 0
         self.current_coroutine = None
         self.scheduler = Scheduler(self, trace=self.trace_scheduler, trace_output=self.scheduler_output)
         self._last_batch_emit = 0
@@ -963,6 +1024,10 @@ class VM:
         coroutine.stack = self.stack
         coroutine.frames = self.frames
         coroutine.handler_stack = self.handler_stack
+        coroutine.deferred_return = self._deferred_return
+        coroutine.deferred_return_depth = self._deferred_return_depth
+        coroutine.deferred_error = self._deferred_error
+        coroutine.deferred_error_depth = self._deferred_error_depth
         # ASYNC-MOD-001: remember the module context this coroutine suspended in,
         # so it is restored on resume (not whatever another coroutine left).
         coroutine.module_ctx = self._capture_module_ctx()
@@ -1833,6 +1898,10 @@ class VM:
             self.stack = []
             self.frames = []
             self.handler_stack = []
+            self._deferred_return = _DEFERRED_NONE
+            self._deferred_return_depth = 0
+            self._deferred_error = _DEFERRED_NONE
+            self._deferred_error_depth = 0
             temp_coroutine = Coroutine(closure)
             temp_coroutine.state = "running"
             temp_coroutine.workflow_context = workflow_context
@@ -2265,6 +2334,17 @@ class VM:
             self.ip += 1
 
     def _op_finally_end(self, instr):
+        # Deferred re-raise first, and before touching the handler stack:
+        # handle_exception already popped this region's finally-gate, so the top
+        # entry now belongs to an enclosing catch and must not be consumed here.
+        if self._deferred_error is not _DEFERRED_NONE:
+            # The catch block raised and this finally ran on the way out (#361).
+            # Cleanup has happened; resume propagation.
+            err = self._deferred_error
+            self._deferred_error = _DEFERRED_NONE
+            if self.handle_exception(err):
+                return None
+            raise err
         # On the normal catch-exit path (JUMP finally_ip), the finally-gate pushed
         # by handle_exception was not consumed by _op_return. Pop it now so it
         # doesn't pollute the outer handler stack.
@@ -2711,6 +2791,7 @@ class VM:
                 self.handler_stack[-1][1] != 0):
             _, finally_ip, _, _ = self.handler_stack.pop()
             self._deferred_return = ret_value
+            self._deferred_return_depth = len(self.handler_stack)
             self.ip = finally_ip
             return
         frame = self.frames.pop()

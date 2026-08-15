@@ -64,20 +64,31 @@ If a `try/finally` block is entered and control leaves (via `return`, `throw`, n
 exit, or exception), the `finally` block executes exactly once. The deferred-return
 mechanism ensures `return` inside a `try` does not skip `finally`.
 
-> ⚠️ **This invariant is currently violated on one path.** When a `catch` block
-> rethrows, the `finally` block is skipped
-> ([#361](https://github.com/Masterplanner25/Nodus/issues/361), open, reproduces on
-> published 4.1.1 and on dev source, CLI and embedded alike). Every other exit path —
-> catch without rethrow, `return` from `try`, normal exit, uncaught exception — runs
-> `finally` correctly.
->
-> Per this document's own framing, that is a bug and not a design decision. It is
-> recorded here rather than silently softening the invariant: hosts that rely on
-> `finally` for cleanup must not place cleanup on a rethrow path until #361 is fixed.
-> Note also that resource-limit termination bypasses `finally` by design — that case
-> is documented separately in
-> [`FAILURE_AND_DEGRADATION_MODEL.md`](FAILURE_AND_DEGRADATION_MODEL.md) §5 and is not
-> a violation of this invariant.
+This held on every path except one through v4.1.1: a `catch` block that threw skipped
+its own `finally` ([#361](https://github.com/Masterplanner25/Nodus/issues/361),
+reproduced on published 4.1.1, on dev source, CLI and embedded alike). The
+finally-gate entry that `handle_exception` leaves for a catch-with-finally was
+skipped during propagation instead of being run. It now defers the exception the
+way `return` is deferred and re-raises at `FINALLY_END`. Hosts on 4.1.1 or earlier
+must not place cleanup on a re-throw path.
+
+Two consequences of the same single-slot deferral were fixed with it: a deferred
+`return` stranded by a raising `finally` was applied by an unrelated `finally`
+later ([#370](https://github.com/Masterplanner25/Nodus/issues/370)), and the
+deferred slot was VM-wide rather than per-coroutine, so two coroutines suspended
+inside a `finally` consumed each other's pending action
+([#371](https://github.com/Masterplanner25/Nodus/issues/371)).
+
+An exception raised by the `finally` block itself replaces whatever was pending —
+a re-thrown error or a deferred `return`. That is the intended precedence, not a
+violation: `finally` still executed.
+
+Resource-limit termination bypasses `finally` by design — that case is documented
+separately in [`FAILURE_AND_DEGRADATION_MODEL.md`](FAILURE_AND_DEGRADATION_MODEL.md)
+§5 and is not a violation of this invariant.
+
+**Tests:** `tests/test_finally_rethrow.py` (14 tests, CLI and embedded for each
+case, asserting ordered output rather than membership).
 
 **Code:** `vm.py::_op_pop_try` (normal exit → `finally_ip`), `vm.py::_op_return`
 (deferred-return path), `vm.py::handle_exception` (exception path → `finally_ip`).
@@ -316,11 +327,12 @@ instruction after `YIELD`. The coroutine is not terminated by `yield`.
 
 Most of these invariants have direct test coverage. Known test gaps:
 
-- I-VM-06 (finally always runs): **violated on the rethrow path — #361, open.** This is a
-  live defect, not a coverage gap. The gap that let it ship is also recorded: the
-  regression test written for it asserts on a string its own `catch` block prints, so it
-  passes whether or not `finally` runs. Other edge cases (return inside try, exception
-  inside finally) remain partially covered — see `docs/governance/TEST_GAP_BACKLOG.md`.
+- I-VM-06 (finally always runs): **holds on all five exit paths** (#361, #370, #371
+  fixed on `main`; the last release affected is v4.1.1). Covered by `tests/test_finally_rethrow.py`, which asserts the
+  ordered output of each path under CLI and embedded modes. The gap that let #361 ship
+  is worth remembering: the regression test written for that exact path printed the
+  same marker from its `catch` and its `finally` and asserted membership, so the catch
+  alone satisfied it — it could not fail. It now asserts the ordered sequence.
 - I-SAND-03 (max_frames caps stack depth): holds only when `max_frames` is passed. The
   embedded default installs no cap (#350).
 - I-MOD-02 (import containment): covered by `tests/test_import_containment.py`.

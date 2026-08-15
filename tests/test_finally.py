@@ -313,7 +313,14 @@ print(scan([1, 0, 2]))
         self.assertEqual(run_program(src), ["1.0", "check", "bad", "check", "stopped"])
 
     def test_exception_from_outer_try_still_caught(self):
-        """Exception propagation through a finally-gate reaches the outer handler."""
+        """Exception propagation through a finally-gate runs the finally, then
+        reaches the outer handler.
+
+        This asserted `["outer caught: from-catch"]` — no `inner-finally` — which
+        encoded #361 as expected behavior: a `catch` that raises skipped its own
+        `finally` entirely. The finally now runs before the exception continues
+        outward, so it appears first.
+        """
         src = """
 fn f() {
     try {
@@ -330,7 +337,7 @@ fn f() {
 }
 f()
 """
-        self.assertEqual(run_program(src), ["outer caught: from-catch"])
+        self.assertEqual(run_program(src), ["inner-finally", "outer caught: from-catch"])
 
     def test_finally_without_catch_return_unaffected(self):
         """Return from try block still defers to finally correctly (regression)."""

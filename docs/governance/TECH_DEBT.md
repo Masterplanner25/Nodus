@@ -195,20 +195,37 @@ describe the workaround patterns used until these are fixed.
 ## Open findings from the 2026-08-06 documentation sweep
 
 Nine issues surfaced while verifying the docset against shipped behavior. All are
-filed; none is fixed. Ordered by severity.
+filed. #361 is fixed (2026-08-14, along with the sibling defects #370 and #371 it
+exposed); the rest are open. Ordered by severity.
 
-- **#361 (HIGH, open) — `finally` is skipped when `catch` rethrows.** The other
-  three exit paths run `finally` correctly. Contradicts `error-handling.md`,
-  which claims all five paths do. The acquire/`try`/`finally`-release idiom
-  therefore leaks on exactly the path where cleanup matters, and silently, since
-  it only manifests under error conditions. Found by running Gate 10 against the
-  published 4.1.1 wheel.
+- **#361 (HIGH, fixed 2026-08-14) — `finally` was skipped when `catch` rethrew.**
+  The other four exit paths ran `finally` correctly. It contradicted
+  `error-handling.md`, which claims all five paths do, so the
+  acquire/`try`/`finally`-release idiom leaked on exactly the path where cleanup
+  matters — silently, since it only manifests under error conditions. Found by
+  running Gate 10 against the published 4.1.1 wheel.
 
-  **The regression test for this path cannot fail.**
-  `test_finally_runs_when_inner_error_propagates` has a `catch` block that prints
-  the same string as its `finally` block and asserts only membership, so the
-  catch's output satisfies the assertion. Fixing the runtime without fixing the
-  test leaves the hole open.
+  **The regression test for this path could not fail.**
+  `test_finally_runs_when_inner_error_propagates` had a `catch` block printing the
+  same string as its `finally` and asserted only membership, so the catch's output
+  satisfied the assertion. `test_finally.py::test_exception_from_outer_try_still_caught`
+  was worse: it asserted the buggy output — no `finally` line — as expected
+  behavior. Both corrected; the new tests assert ordered sequences.
+
+  Fixing it surfaced two more defects in the same single-slot deferral mechanism,
+  both fixed in the same change:
+
+  - **#370 (HIGH, fixed 2026-08-14)** — a `return` deferred to a `finally` that
+    then raised stayed pending in the VM-wide slot and was applied by whatever
+    unrelated `FINALLY_END` ran next, surfacing at module level as the internal
+    error `FINALLY_END deferred return outside function`.
+  - **#371 (HIGH, fixed 2026-08-14)** — the deferred slot was not part of the
+    per-coroutine context that carries `stack`, `frames` and `handler_stack`, so
+    two coroutines suspended inside a `finally` consumed each other's pending
+    action.
+
+  Regression tests: `tests/test_finally_rethrow.py`, 14 tests across CLI and
+  embedded, of which 12 fail against the unfixed VM — checked, not assumed.
 
 - **#350 (HIGH, open) — `NodusRuntime` applies no `max_frames` cap**, despite its
   docstring stating `None` means `MAX_STACK_DEPTH`. Unbounded recursion hangs the
@@ -268,7 +285,10 @@ precisely why they missed #361. The sweep was run afterwards and recorded in
 `nodus run` on a test file exits 0 even when assertions fail; the `finally`
 regression test asserts on a string its own `catch` prints; allowlisted doc
 blocks hid a genuine syntax error in STYLE_GUIDE. When adding coverage, verify
-the new test fails against the unfixed code before trusting it.
+the new test fails against the unfixed code before trusting it — the #361 fix
+did exactly that (12 of its 14 new tests fail against the unfixed VM), and the
+opcode gate (#366) was run against the pre-sweep tree to confirm it reports the
+drift it was written for.
 
 ## Findings from the 2026-08-07 `docs/runtime/` sweep
 
@@ -304,11 +324,12 @@ the new test fails against the unfixed code before trusting it.
   freeze"). Rewording a policed sentence is itself reported, so a claim cannot
   drop out of coverage silently — the failure the anchor design exists to prevent.
 
-- **`EXECUTION_INVARIANTS.md` asserted a guarantee that #361 disproves.** I-VM-06
+- **`EXECUTION_INVARIANTS.md` asserted a guarantee that #361 disproved.** I-VM-06
   ("`finally` blocks always execute") was stated unconditionally in the governing
   invariants document, which opens by saying a violated invariant is a bug. The
   violation was already filed. §8 listed I-VM-06 as a *coverage gap* rather than a
-  live defect. Now annotated inline.
+  live defect. Annotated inline on 2026-08-07; the invariant holds again as of the
+  #361/#370/#371 fix, and §8 now points at the tests that hold it.
 
 - **The embedding docs omitted every capability parameter.** `EMBEDDING.md` and
   `OPERATOR_OR_EMBEDDER_RUNBOOK.md` documented 8 of the 17 `NodusRuntime`
