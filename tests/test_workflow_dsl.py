@@ -468,7 +468,7 @@ workflow demo {
 """
         status, payload = self.request("POST", "/workflow/run", {"code": code, "filename": "wait_api.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["status"], "waiting")
         graph_id = payload["result"]["graph_id"]
 
@@ -483,7 +483,7 @@ workflow demo {
             },
         )
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["steps"]["finish"], "api-user")
 
     def test_workflow_api_endpoints(self):
@@ -499,7 +499,7 @@ workflow demo {
 """
         status, payload = self.request("POST", "/workflow/run", {"code": code, "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["steps"]["b"], 2)
         self.assertEqual(payload["result"]["state"]["x"], 1)
         self.assertEqual(payload["result"]["checkpoints"][0]["label"], "after_a")
@@ -507,19 +507,19 @@ workflow demo {
 
         status, payload = self.request("POST", "/workflow/plan", {"code": code, "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["plan"]["parallel_groups"][1], ["b"])
 
         status, payload = self.request("GET", f"/workflow/checkpoints/{graph_id}")
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["checkpoints"][0]["label"], "after_a")
 
         task_graph._GRAPH_REGISTRY.pop(graph_id, None)
         task_graph._GRAPH_VMS.pop(graph_id, None)
         status, payload = self.request("POST", "/workflow/resume", {"graph_id": graph_id, "checkpoint": "after_a"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["result"]["state"]["x"], 1)
         self.assertEqual(payload["result"]["checkpoints"][0]["label"], "after_a")
         self.assertEqual(payload["result"]["steps"]["a"], 1)
@@ -570,6 +570,7 @@ workflow demo {
                 resume_exit = lang.main(["nodus", "workflow-resume", graph_id, "--checkpoint", "after_a"])
             self.assertEqual(resume_exit, 0)
             resume_payload = json.loads(out.getvalue().strip())
+            self.assertIn("steps", resume_payload, resume_payload)
             self.assertEqual(resume_payload["steps"]["b"], 2)
 
 

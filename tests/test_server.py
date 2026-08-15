@@ -50,7 +50,7 @@ class ServerTests(unittest.TestCase):
     def test_execute(self):
         status, payload = self.request("POST", "/execute", {"code": "print(1 + 1)", "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["stdout"], "2.0\n")
 
     def test_syntax_error(self):
@@ -62,7 +62,7 @@ class ServerTests(unittest.TestCase):
     def test_ast(self):
         status, payload = self.request("POST", "/ast", {"code": "let x = 1", "filename": "inline.nd"})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
         self.assertIn("Module", payload["ast_pretty"])
         self.assertEqual(payload["ast"][0]["type"], "Let")
 
@@ -103,7 +103,7 @@ workflow demo {
             {"code": workflow_code, "filename": "runs_filter.nd"},
         )
         self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload)
 
         status, runs = self.request("GET", "/workflow/runs?status=waiting")
         self.assertEqual(status, 200)
@@ -129,7 +129,7 @@ workflow paging_demo {
                 {"code": workflow_code, "filename": f"runs_filter_{idx}.nd"},
             )
             self.assertEqual(status, 200)
-            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["ok"], payload)
 
         status, runs = self.request("GET", "/workflow/runs?status=waiting&workflow=paging_demo&execution_kind=workflow&limit=1&offset=0")
         self.assertEqual(status, 200)
@@ -310,7 +310,7 @@ workflow demo {
                         {"code": workflow_code, "filename": "sqlite_workflow.nd"},
                     )
                     self.assertEqual(status, 200)
-                    self.assertTrue(payload["ok"])
+                    self.assertTrue(payload["ok"], payload)
                     graph_id = payload["result"]["graph_id"]
 
                     store = SQLiteWorkflowStore(path=db_path)
@@ -359,7 +359,7 @@ workflow demo {
                         {"code": workflow_code, "filename": "sqlite_wait_workflow.nd"},
                     )
                     self.assertEqual(status, 200)
-                    self.assertTrue(payload["ok"])
+                    self.assertTrue(payload["ok"], payload)
                     graph_id = payload["result"]["graph_id"]
 
                     service = server.service
