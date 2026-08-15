@@ -219,12 +219,23 @@ When `max_frames` is set, any function call that would exceed the limit raises a
 error with `kind="sandbox"` before executing. The VM does not crash or overflow Python's
 call stack; the sandbox error is catchable via `try/catch` in script code.
 
-**This invariant is conditional on `max_frames` being set, and it is not set by default
-in embedded mode.** `NodusRuntime` defaults `max_frames` to `None` and never installs
-`MAX_STACK_DEPTH`; only the CLI path (`tooling/sandbox.py`) applies that constant. See
-[#350](https://github.com/Masterplanner25/Nodus/issues/350) and `EMBEDDING.md` §2.
+`max_frames` is always set: both entry paths default it to `MAX_STACK_DEPTH` (10,000).
+Through v4.1.1 the invariant was conditional in embedded mode — `NodusRuntime` defaulted
+`max_frames` to `None` and overwrote the cap `configure_vm_limits` had installed, so
+embedded runs had no call-depth guard at all
+([#350](https://github.com/Masterplanner25/Nodus/issues/350)). The overwrite is now
+conditional on the caller passing a value.
 
-**Code:** `vm.py::call_closure`, `vm.py::_op_call`; `tooling/sandbox.py` (CLI default).
+There is deliberately no "unlimited" setting: this is the only limit still in force when
+`max_steps` and `timeout_ms` are both `None`, the configuration `EMBEDDING.md` §2
+recommends for long-lived hosts. A host that wants an effectively unbounded stack passes
+a large integer.
+
+**Tests:** `tests/test_max_frames_default.py` (embedded default, per-call override, and
+the CLI paths, so the two contexts cannot drift apart again).
+
+**Code:** `vm.py::call_closure`, `vm.py::_op_call`; `tooling/sandbox.py::configure_vm_limits`
+(the single place the default lives, used by both CLI and embedded).
 
 ### I-SAND-04: Bytecode cache is checksum-validated
 
@@ -333,8 +344,9 @@ Most of these invariants have direct test coverage. Known test gaps:
   is worth remembering: the regression test written for that exact path printed the
   same marker from its `catch` and its `finally` and asserted membership, so the catch
   alone satisfied it — it could not fail. It now asserts the ordered sequence.
-- I-SAND-03 (max_frames caps stack depth): holds only when `max_frames` is passed. The
-  embedded default installs no cap (#350).
+- I-SAND-03 (max_frames caps stack depth): **holds unconditionally** as of the #350 fix —
+  both CLI and embedded default to `MAX_STACK_DEPTH`. Covered by
+  `tests/test_max_frames_default.py` in both contexts.
 - I-MOD-02 (import containment): covered by `tests/test_import_containment.py`.
 - I-SAND-01 (allowed_paths): requires CLI-mode and embedded-mode tests. See
   TECH_DEBT.md §Security boundary test rule.

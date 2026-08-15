@@ -72,7 +72,7 @@ to the tests that verify it, and notes where coverage is absent or weak.
 |-----------|-----|----------|-------------|-------|
 | `allowed_paths` restricts filesystem | I-SAND-01 | ✅* | `test_sandbox.py` | *Requires both CLI and embedded mode coverage; verify both paths are tested |
 | `allow_input=False` blocks `input()` | I-SAND-02 | 🔍 | Sandbox tests | Likely tested; confirm explicitly |
-| `max_frames` caps call stack | I-SAND-03 | 🔍 | Sandbox/recursion tests | May be tested via stack overflow tests |
+| `max_frames` caps call stack | I-SAND-03 | ✅ | `test_max_frames_default.py` | Covers the embedded default, per-call override, and both CLI paths (#350) |
 | Bytecode cache checksum verified | I-SAND-04 | 🔍 | Cache tests | Checksum mechanism tested; tamper case may not be |
 
 ---

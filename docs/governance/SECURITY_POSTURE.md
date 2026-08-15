@@ -80,23 +80,22 @@ behalf of users or services. The security controls available are:
 | Subprocess block | `allow_subprocess` | `True` | Set `False` to disable all `subprocess_*` builtins |
 | Network block | `allow_network` | `True` | Set `False` to disable all `http_*` builtins |
 | Env block | `allow_env` | `True` | Set `False` to disable all `env_*` builtins (read/write/delete of `os.environ`) |
-| Call stack cap | `max_frames` | `None` — ⚠️ **no cap applied**, see below | Prevents deep recursion from exhausting Python's stack **only when set explicitly** |
+| Call stack cap | `max_frames` | `None` → `MAX_STACK_DEPTH` (10,000) | Deep recursion raises `Call stack overflow`; tighten to 200–1000 for untrusted code |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
 | Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |
 
-> **⚠️ `max_frames` has no working default
-> ([#350](https://github.com/Masterplanner25/Nodus/issues/350)).** This row
-> previously read "`None` (uses `MAX_STACK_DEPTH`)". It does not. A bare
-> `NodusRuntime()` leaves `vm.max_frames` at `None`, so unbounded recursion
-> grows the frame stack until the host stops responding rather than raising
-> `Call stack overflow`. `configure_vm_limits()` does install `MAX_STACK_DEPTH`,
-> and `embedding.py` overwrites it with `self.max_frames` on the next line.
+> **`max_frames` had no working default through v4.1.1**
+> ([#350](https://github.com/Masterplanner25/Nodus/issues/350), fixed). A bare
+> `NodusRuntime()` left `vm.max_frames` at `None`, so unbounded recursion grew the
+> frame stack until the host stopped responding rather than raising
+> `Call stack overflow`: `configure_vm_limits()` installed `MAX_STACK_DEPTH` and
+> `embedding.py` overwrote it with `self.max_frames` on the next line. That
+> assignment is now conditional, so `None` means the documented 10,000.
 >
-> The CLI is unaffected — `nodus run` caps correctly. This is embedded-mode only,
-> and it bites hardest in the configuration recommended for long-lived hosts
-> (`timeout_ms=None, max_steps=None`, per #97), which removes the other two
-> guards by design. **Until it is fixed, always pass `max_frames` explicitly when
-> embedding untrusted code** — as the recommended configuration below does.
+> The CLI was never affected. If you are pinned to v4.1.1 or earlier, pass
+> `max_frames` explicitly — most of all in the configuration recommended for
+> long-lived hosts (`timeout_ms=None, max_steps=None`, per #97), which removes the
+> other two guards by design and so had no guard at all.
 
 **Minimum recommended configuration for untrusted code:**
 ```python

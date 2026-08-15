@@ -105,15 +105,17 @@ in a `NodusRuntime(allow_input=False)` context and asserts a sandbox error.
 
 ---
 
-### TG-007: `max_frames` call stack cap
+### TG-007: `max_frames` call stack cap — ✅ CLOSED (2026-08-14)
 
 **Priority:** Medium
 **Invariant:** I-SAND-03
-**Gap:** May be tested. Confirm by running recursive scripts against `NodusRuntime(max_frames=N)`
-and asserting the sandbox error fires at the right depth.
+**Gap:** It was not tested, and the gap hid a real defect: the embedded default applied
+no cap at all (#350). Closed by `tests/test_max_frames_default.py` — 9 tests covering the
+embedded default, an explicit override, a per-call override, a large cap allowing deeper
+recursion than the default, and the two CLI paths that already behaved correctly.
 
-**Test file to add/extend:** `tests/test_sandbox.py`
-**Effort:** Small
+**Test file:** `tests/test_max_frames_default.py`
+**Effort:** Small (as estimated)
 
 ---
 

@@ -702,19 +702,23 @@ trap is gone; `NodusRuntime()` applies no wall-clock deadline. Verified 2026-08-
 already the default. (SCHED-001 also means cooperative sleep no longer consumes the
 budget even when a deadline *is* set.)
 
-**The live trap is now the opposite one — `max_frames` (#350, open).** It defaults to
-`None`, which applies **no cap at all**; `MAX_STACK_DEPTH` is installed only by the CLI
-path (`tooling/sandbox.py`), never by `NodusRuntime`. With the default `max_steps` a
-runaway recursion still dies on the step limit, but the recommended long-lived config
-has no guard whatsoever:
+**`max_frames` (#350) — FIXED.** `None` now means `MAX_STACK_DEPTH` (10,000), the
+same cap the CLI applies, so `NodusRuntime(max_steps=None, timeout_ms=None)` raises
+`Call stack overflow` on runaway recursion instead of growing frames until OOM. The
+cap lives in one place, `configure_vm_limits` in `tooling/sandbox.py`; `embedding.py`
+only overwrites it when the caller passed a value. Do not "fix" this by making the
+assignment unconditional again — that is the bug.
 
 ```python
-# HANGS FOREVER on runaway recursion — no step limit, no deadline, no frame cap:
+# Fine as of the #350 fix — capped at 10,000 frames:
 rt = NodusRuntime(max_steps=None, timeout_ms=None)
 
-# CORRECT for servers, MCP hosts, workflow engines:
+# Tighter, for untrusted scripts:
 rt = NodusRuntime(max_steps=None, timeout_ms=None, max_frames=1000)
 ```
+
+There is no "unlimited" setting — pass a large integer if you genuinely want one.
+v4.1.1 and earlier are affected; hosts pinned there must pass `max_frames`.
 
 **Capability switches default to permissive:** `allow_subprocess`, `allow_network`, and
 `allow_env` are all `True`. A bare `NodusRuntime()` can shell out, open sockets, and read

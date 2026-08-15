@@ -4,6 +4,35 @@
 
 ### Fixes
 
+- **#350: `NodusRuntime` applied no call-depth cap, contradicting its own
+  docstring.** `configure_vm_limits()` installs `MAX_STACK_DEPTH` (10,000) — and
+  `embedding.py` then overwrote it unconditionally with `self.max_frames`, `None`
+  by default, which means *no cap*. With the default `max_steps` a runaway
+  recursion still died on the step limit, so the hole only showed in the
+  configuration `EMBEDDING.md` recommends for long-lived hosts:
+
+  ```python
+  rt = NodusRuntime(max_steps=None, timeout_ms=None)   # no step limit, no deadline…
+  rt.run_source("fn f(n) { return f(n + 1i) }\nf(0i)")  # …and no frame cap either
+  ```
+
+  That grew the frame stack until the process was killed — VM frames are
+  heap-allocated, so Python's own recursion limit never fires. It now raises
+  `Call stack overflow` in 0.2s. The assignment is conditional on the caller
+  having passed a value, so the default lives in exactly one place and the CLI
+  and embedded paths cannot drift apart again. The CLI was never affected.
+
+  **Behavior change:** an embedded run that recursed deeper than 10,000 frames
+  previously succeeded and now raises. Pass an explicit `max_frames` to raise the
+  ceiling — there is deliberately no "unlimited" setting, since this is the only
+  guard left when `max_steps` and `timeout_ms` are both `None`.
+
+  Regression tests: `tests/test_max_frames_default.py` (9 tests, embedded **and**
+  CLI per the security-boundary rule). The 4 covering the embedded default fail
+  against the unfixed code. The recursion cases run in subprocesses with timeouts
+  on purpose: an uncapped run does not raise, it grows, so an in-process test
+  would hang CI rather than fail it.
+
 - **#361: `finally` was skipped when `catch` re-threw** — the one exit path where
   cleanup matters most. `handle_exception` leaves a finally-gate on the handler
   stack while a `catch` block runs, so a `return` inside the catch defers to the

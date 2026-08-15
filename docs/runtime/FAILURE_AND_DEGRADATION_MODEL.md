@@ -73,7 +73,7 @@ result["stderr"] = "<stderr captured before error>"
 | Nil dereference | Accessing `.field` on `nil` | `"runtime"` |
 | Type error | Arithmetic on a string | `"runtime"` |
 | Division by zero | `x / 0` | `"runtime"` |
-| Stack overflow (uncaught) | Deep recursion without `max_frames` | No `RecursionError` — VM frames are heap-allocated, so Python's stack is never consumed. With the default `max_steps` you get `kind="sandbox"`, *"Execution step limit exceeded"*. With `max_steps=None` **nothing stops it** and the process grows until memory is exhausted (#350). |
+| Stack overflow (uncaught) | Deep recursion past `max_frames` | `kind="sandbox"`, *"Call stack overflow"*. Never a Python `RecursionError` — VM frames are heap-allocated, so Python's stack is never consumed. `max_frames` defaults to `MAX_STACK_DEPTH` (10,000) in both CLI and embedded mode, so this fires even with `max_steps=None` and `timeout_ms=None`. Through v4.1.1 the embedded default applied no cap and that configuration grew until memory was exhausted (#350). |
 | Index out of bounds | `list[100]` on a short list | `"runtime"` |
 
 **Degradation behavior:** Execution stops at the point of the uncaught error. Stdout

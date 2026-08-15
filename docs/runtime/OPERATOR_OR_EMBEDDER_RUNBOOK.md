@@ -33,7 +33,7 @@ runtime = NodusRuntime(
     timeout_ms=5_000,
     allowed_paths=["/app/scripts"],
     allow_input=False,
-    max_frames=500,
+    max_frames=500,   # tighter than the 10,000 default
 )
 result = runtime.run_source(source_code)
 if not result["ok"]:
@@ -60,7 +60,7 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | `project_root` | `str \| None` | `None` | Set to project directory when scripts use imports |
 | `allowed_paths` | `list[str] \| None` | `[os.getcwd()]` (CWD jail) | Default jails to working directory. Pass `None` to allow unrestricted access. Set explicit paths for untrusted scripts that need access outside CWD. |
 | `allow_input` | `bool` | `False` | Keep `False`; set `True` only for interactive use cases |
-| `max_frames` | `int \| None` | `None` — **no cap applied** (#350) | Set to 200–1000 for untrusted code, and **always** when `max_steps` is `None` |
+| `max_frames` | `int \| None` | `None` → `MAX_STACK_DEPTH` (10,000) | Tighten to 200–1000 for untrusted code. This is the only limit left when `max_steps` and `timeout_ms` are both `None` |
 | `allow_subprocess` | `bool` | `True` | Set `False` unless scripts must shell out |
 | `allow_network` | `bool` | `True` | Set `False` unless scripts must make HTTP calls |
 | `allow_env` | `bool` | `True` | Set `False` to keep scripts away from host credentials |
@@ -75,10 +75,11 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 > connections, and read the process environment. Sandboxing filesystem access alone does
 > not sandbox the runtime.
 
-> **`max_frames=None` means no call-depth cap**, not `MAX_STACK_DEPTH`. That constant is
-> applied only on the CLI path. With the default `max_steps` a runaway recursion stops on
-> the step limit; with `max_steps=None` it grows frames until the process runs out of
-> memory. See [#350](https://github.com/Masterplanner25/Nodus/issues/350).
+> **`max_frames=None` means `MAX_STACK_DEPTH` (10,000)**, the same cap the CLI applies,
+> so runaway recursion raises `Call stack overflow` even with `max_steps=None` and
+> `timeout_ms=None`. Through v4.1.1 it meant *no cap at all* and that configuration grew
+> frames until the process ran out of memory — if you are pinned to 4.1.1 or earlier, pass
+> `max_frames` explicitly. See [#350](https://github.com/Masterplanner25/Nodus/issues/350).
 
 ---
 
@@ -206,8 +207,8 @@ Before deploying a Nodus-embedded application to production:
 - [ ] `NodusRuntime` is configured with explicit `max_steps` and `timeout_ms`
 - [ ] `allowed_paths` is set if the application handles untrusted scripts
 - [ ] `allow_input=False` (the default; verify it has not been overridden)
-- [ ] `max_frames` is set explicitly — the default is no cap, and it is **required**
-      if `max_steps=None`
+- [ ] `max_frames` is tightened for untrusted scripts (the default is 10,000 — a real
+      cap, but a generous one)
 - [ ] `allow_subprocess=False` unless scripts genuinely need to shell out
       (default is `True`)
 - [ ] `allow_network=False` unless scripts genuinely need network access

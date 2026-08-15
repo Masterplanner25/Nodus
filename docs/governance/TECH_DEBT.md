@@ -36,7 +36,7 @@ Items below were raised in a third-party review and are now validated with concr
 - File I/O builtins are unrestricted by default (`src/nodus/vm/vm.py:1464-1510`). An allowlist hook is available (`VM.allowed_paths`) and now wired into CLI/server; it remains opt-in.
 - ✅ Relative import containment implemented: non-std, non-package relative paths are guarded by project-root containment checks in `src/nodus/tooling/loader.py` and `src/nodus/runtime/module_loader.py`. Error messages now name the offending path (`"Invalid import: path '../outside.nd' escapes the project root."`). Check applies in project mode, single-file mode, and the REPL — all using the same `resolve_import_path` code path (Phase 5, 2026-05-23).
 - ✅ HTTP bearer-token auth implemented: `src/nodus/services/server.py` enforces token authentication. Non-local binding requires a token; local-only binding remains opt-in.
-- ✅ VM call stack max depth check: enforced in `call_closure` (`src/nodus/vm/vm.py:1518`) and the `CALL` opcode path (`src/nodus/vm/vm.py:2071`). `self.max_frames` guard raises `sandbox / Call stack overflow` if exceeded. Remains opt-in (`max_frames` defaults to `None`).
+- ✅ VM call stack max depth check: enforced in `call_closure` and the `CALL` opcode path. The `self.max_frames` guard raises `sandbox / Call stack overflow` if exceeded. On by default in both contexts since the #350 fix — `None` resolves to `MAX_STACK_DEPTH` (10,000) via `configure_vm_limits`.
 - `input()` uses `input_fn` defaulting to Python `input()` (`src/nodus/vm/vm.py:137` and `src/nodus/vm/vm.py:162`). Server mode now blocks `input()` by default, but embedding still uses the default unless configured.
 
 ## Additional Validated Items
@@ -227,13 +227,19 @@ exposed); the rest are open. Ordered by severity.
   Regression tests: `tests/test_finally_rethrow.py`, 14 tests across CLI and
   embedded, of which 12 fail against the unfixed VM — checked, not assumed.
 
-- **#350 (HIGH, open) — `NodusRuntime` applies no `max_frames` cap**, despite its
-  docstring stating `None` means `MAX_STACK_DEPTH`. Unbounded recursion hangs the
-  host instead of raising. `configure_vm_limits()` installs the cap;
-  `embedding.py` overwrites it with `None` on the next line, so the fix is a
-  three-line conditional. CLI is unaffected. Per the security-boundary rule
-  below, the fix needs an **embedded-mode** regression test — the CLI side is
-  already covered.
+- **#350 (HIGH, fixed 2026-08-14) — `NodusRuntime` applied no `max_frames` cap**,
+  despite its docstring stating `None` means `MAX_STACK_DEPTH`. Unbounded recursion
+  hung the host instead of raising. `configure_vm_limits()` installs the cap and
+  `embedding.py` overwrote it with `None` on the next line; that assignment is now
+  conditional on the caller having passed a value, so the default lives in exactly
+  one place and the two contexts cannot drift again. CLI was unaffected throughout.
+
+  Per the security-boundary rule below, `tests/test_max_frames_default.py` covers
+  both contexts (9 tests); the 4 that assert the embedded default fail against the
+  unfixed code, and the recursion cases run in subprocesses with timeouts so a
+  regression fails CI instead of hanging it. Note there is deliberately no
+  "unlimited" setting — `max_frames` is the only guard left when `max_steps` and
+  `timeout_ms` are both `None`, which is the recommended long-lived-host config.
 
 - **#353 (HIGH, open) — `--help` is unguarded across the package-manager
   commands.** `nodus logout --help` **performs the logout** and deletes the saved
@@ -340,18 +346,18 @@ drift it was written for.
   meanwhile claimed the constructor surface was stable and documented. Both now
   list all parameters; the checklist covers the capability switches.
 
-- **`max_frames`: root cause found.** The false "`None` means `MAX_STACK_DEPTH`"
-  claim originated in the **`embedding.py` docstring**, which is why five
-  documents carried it — they were copying the source. `MAX_STACK_DEPTH` has
-  exactly one enforcement site, `tooling/sandbox.py:37` (CLI only). Docstring
-  fixed alongside the docs. See #350, which now also records the measured
-  consequence: the documented long-lived config (`max_steps=None,
-  timeout_ms=None`) has no recursion guard at all and hangs until OOM.
+- **`max_frames`: root cause found.** The "`None` means `MAX_STACK_DEPTH`" claim
+  originated in the **`embedding.py` docstring**, which is why five documents
+  carried it — they were copying the source. At the time it was false:
+  `MAX_STACK_DEPTH` had exactly one enforcement site, `tooling/sandbox.py:37`
+  (CLI only). The docstring was corrected to describe the broken behavior on
+  2026-08-07, and the behavior was fixed on 2026-08-14 (#350) — the docstring's
+  original claim is now true, and all five documents have been swept back.
 
 - **`FAILURE_AND_DEGRADATION_MODEL.md` described a `RecursionError` that never
   fires.** VM frames are heap-allocated, so Python's recursion limit is never
-  reached. The real outcomes are a step-limit sandbox error (default) or an
-  unbounded hang (`max_steps=None`). Corrected.
+  reached. Corrected then to the two real outcomes, and again after the #350 fix:
+  the outcome is now `sandbox / Call stack overflow` in every configuration.
 
 - **The runbook documented an API that `pip install nodus-a2a` does not provide.**
   §7 described `A2AHttpServer.serve_in_thread()` and `token_validator` — the wire
