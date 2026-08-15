@@ -588,22 +588,27 @@ They are **design references / API contracts**, not production implementations.
 - **Server flags:** `--workflow-store-backend {local|sqlite}`, `--workflow-store-path PATH`
 
 **Operational gotcha — local store scan performance:**
-`LocalWorkflowStore.list_runs()` parses every `.nodus/workflow_framework/runs/*.json`
-on every sweep. Measured 2026-08-15, ~1.3 ms per file, linear:
+`LocalWorkflowStore.list_runs()` reads every `.nodus/workflow_framework/runs/*.json`
+on every sweep, so cost is linear in the number of accumulated runs. Measured
+2026-08-15, before and after the #380 syscall fix:
 
-| files | `list_runs()` |
-|------:|--------------:|
-| 299 | **540 ms** |
-| 1,000 | 906 ms |
-| 3,000 | 3,223 ms |
-| 10,000 | 13,459 ms |
+| files | `list_runs()` before | after | `expire_wait_timeouts()` after |
+|------:|--------------------:|------:|-------------------------------:|
+| 300 | 304 ms | **60 ms** | 48 ms |
+| 1,000 | 906 ms | 238 ms | 225 ms |
+| 3,000 | 3,223 ms | 863 ms | 579 ms |
+| 10,000 | 13,459 ms | 3,840 ms | 2,591 ms |
 
-An earlier revision of this section said "670+ files cause >2s per sweep". That
-understates it by about 2x in the direction that matters: **299 files already
-exceed the 500 ms sweep interval** that `test_worker_death_detected_by_sweeper`
-depends on, so flakes appear well below the count anyone is watching for. They
-look unrelated to each other — a server endpoint test, a doc-gate block, a
-scheduler fairness test — because the shared cause is the directory, not the code.
+The cost was never parsing — profiling 3,000 records put 1.7 s of 4.2 s in
+`nt.mkdir` (the store re-created its own directory once per record) and 1.6 s in
+`nt.stat` (an `os.path.exists` before every `open`). Both are gone; the sweeper
+also no longer re-reads every record to find the waiting ones.
+
+Two earlier revisions of this section were wrong in the same direction. The first
+said "670+ files cause >2s per sweep"; measurement put the 500 ms sweep interval
+at ~299 files, so flakes appeared well below the count anyone watched for. Do not
+quote a threshold here without re-measuring — the numbers above are cheap to
+regenerate and have now moved twice.
 
 The default store root is **CWD-relative**, so anything running a workflow from
 the repo root writes there. As of #380 the suite and the doc gate clean up after

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **#380 (part 2): `LocalWorkflowStore` scans got 4x cheaper, and the sweep 11x.**
+  Listing runs cost ~1.3 ms per file, and a background sweeper calls it on a
+  timer, so an accumulated store slowed everything touching workflow state.
+
+  | files | `list_runs()` before | after | `expire_wait_timeouts()` before | after |
+  |------:|--------------------:|------:|-------------------------------:|------:|
+  | 300 | 304 ms | **60 ms** | — | 48 ms |
+  | 3,000 | 3,223 ms | **863 ms** | 6,600 ms | **579 ms** |
+  | 10,000 | 13,459 ms | 3,840 ms | — | 2,591 ms |
+
+  It was never the parsing. Profiling 3,000 records put 1.7 s of 4.2 s in
+  `nt.mkdir` — `_runs_root()` re-created the store's own directory on every call,
+  and `_run_path()` calls it once per record, so listing 3,000 runs issued 6,000
+  mkdir syscalls — and 1.6 s in `nt.stat`, from an `os.path.exists` before an
+  `open` that already reports a missing file (also a race: the file could vanish
+  between the two). `expire_wait_timeouts()` additionally re-read every record it
+  had just been handed, for every run rather than only the waiting ones.
+
+  New opt-in `max_terminal_runs` caps how many finished runs are kept, oldest
+  deleted first. **Off by default**: run records are history a host may rely on,
+  and silently deleting them is not a decision the store should make on anyone's
+  behalf. Live runs are never pruned.
+
+  Regression tests assert the *syscall behaviour* rather than elapsed time — a
+  timing assertion would be flaky on shared CI and would not say which of the
+  three regressed (`tests/test_workflow_store_scan_cost.py`, 10 tests).
+
 ### Tooling
 
 - **#357: the VS Code grammar did not highlight `match`, `break` or
