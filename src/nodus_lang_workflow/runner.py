@@ -841,6 +841,22 @@ class WorkflowFrameworkRunner:
         return self.store.store_info()
 
 
+def default_store_root() -> str:
+    """Root directory for the default local workflow store.
+
+    ``NODUS_WORKFLOW_STORE_ROOT`` overrides the CWD-relative default. Without it,
+    every process that runs a workflow writes into `.nodus/workflow_framework`
+    under whatever its working directory happens to be — which is how the test
+    suite came to accumulate hundreds of run files inside the repo and slow its
+    own later runs (#380). Also useful when the working directory is read-only or
+    ephemeral and run state needs to outlive it.
+    """
+    override = os.environ.get("NODUS_WORKFLOW_STORE_ROOT", "").strip()
+    if override:
+        return override
+    return os.path.join(".nodus", "workflow_framework")
+
+
 def get_default_workflow_runner() -> WorkflowFrameworkRunner:
     global _DEFAULT_RUNNER, _DEFAULT_RUNNER_ROOT, _DEFAULT_SWEEP_THREAD, _DEFAULT_SWEEP_STOP
     with _DEFAULT_RUNNER_LOCK:
@@ -851,7 +867,7 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # the new store on the same files (see _stop_default_sweep_locked).
             _stop_default_sweep_locked()
             _DEFAULT_RUNNER = WorkflowFrameworkRunner(
-                LocalWorkflowStore(root=os.path.join(".nodus", "workflow_framework"))
+                LocalWorkflowStore(root=default_store_root())
             )
             _DEFAULT_RUNNER_ROOT = root
             # Auto-start a daemon thread that expires wait-timeouts periodically so

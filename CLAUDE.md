@@ -588,10 +588,36 @@ They are **design references / API contracts**, not production implementations.
 - **Server flags:** `--workflow-store-backend {local|sqlite}`, `--workflow-store-path PATH`
 
 **Operational gotcha — local store scan performance:**
-The `LocalWorkflowStore` scans all `.nodus/workflow_framework/runs/*.json` on every sweep.
-670+ accumulated files cause >2s per sweep, breaking the `test_worker_death_detected_by_sweeper`
-test (500ms deadline). Fix: use SQLite temp store in tests, OR clean `.nodus/workflow_framework/runs/`
-(safe — test artifacts only).
+`LocalWorkflowStore.list_runs()` parses every `.nodus/workflow_framework/runs/*.json`
+on every sweep. Measured 2026-08-15, ~1.3 ms per file, linear:
+
+| files | `list_runs()` |
+|------:|--------------:|
+| 299 | **540 ms** |
+| 1,000 | 906 ms |
+| 3,000 | 3,223 ms |
+| 10,000 | 13,459 ms |
+
+An earlier revision of this section said "670+ files cause >2s per sweep". That
+understates it by about 2x in the direction that matters: **299 files already
+exceed the 500 ms sweep interval** that `test_worker_death_detected_by_sweeper`
+depends on, so flakes appear well below the count anyone is watching for. They
+look unrelated to each other — a server endpoint test, a doc-gate block, a
+scheduler fairness test — because the shared cause is the directory, not the code.
+
+The default store root is **CWD-relative**, so anything running a workflow from
+the repo root writes there. As of #380 the suite and the doc gate clean up after
+themselves (`tests/conftest.py`, `tools/nodus_gate/runtime_phase.py`), so this
+should stay near zero — check it before blaming a flake on timing:
+
+```powershell
+ls .nodus/workflow_framework/runs | Measure-Object -Line
+```
+
+`rm -rf .nodus/workflow_framework/runs` is safe (test artifacts only).
+`NODUS_WORKFLOW_STORE_ROOT` relocates the default store for a process. Bounding
+the store's cost — pruning by count, or an index instead of a full rescan —
+is still open in #380.
 
 **Circular import (CIRC-001, #103) — FIXED** 2026-06-01. `nodus.vm.vm` no longer imports
 `get_default_workflow_runner` at module level; the imports are lazy, inside

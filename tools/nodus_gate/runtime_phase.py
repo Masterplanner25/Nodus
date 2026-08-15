@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from tools.nodus_gate.markdown_parser import CodeBlock, collect_doc_files, extract_blocks
+
+# Kept in step with nodus_lang_workflow.runner.default_store_root().
+_WORKFLOW_STORE_ENV = "NODUS_WORKFLOW_STORE_ROOT"
 
 
 @dataclass
@@ -101,6 +106,32 @@ def run_runtime_phase(
     result = RuntimeResult()
     allowlist = allowlist or set()
 
+    # #380: doc blocks run in this process with the repo as CWD, and the default
+    # workflow store root is CWD-relative — so every workflow example left a run
+    # file in `.nodus/workflow_framework/runs/`, which `list_runs()` then rescans
+    # on every sweep for the rest of the repo's life. Gate runs are throwaway;
+    # give them a throwaway store.
+    with tempfile.TemporaryDirectory(prefix="nodus-gate-workflow-store-") as store_root:
+        previous = os.environ.get(_WORKFLOW_STORE_ENV)
+        os.environ[_WORKFLOW_STORE_ENV] = store_root
+        try:
+            return _run_blocks(result, root, include_design=include_design,
+                               allowlist=allowlist, verbose=verbose)
+        finally:
+            if previous is None:
+                os.environ.pop(_WORKFLOW_STORE_ENV, None)
+            else:
+                os.environ[_WORKFLOW_STORE_ENV] = previous
+
+
+def _run_blocks(
+    result: RuntimeResult,
+    root: str,
+    *,
+    include_design: bool,
+    allowlist: set[str],
+    verbose: bool,
+) -> RuntimeResult:
     doc_files = collect_doc_files(root, include_design=include_design)
     result.scanned_files = len(doc_files)
 

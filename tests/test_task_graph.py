@@ -462,9 +462,11 @@ print(result["tasks"]["task_1"])
     def test_worker_death_detected_by_sweeper(self):
         import tempfile
         from nodus.services.server import RuntimeService
-        # Use a temp SQLite store so the sweep stays fast — accumulated local
-        # store JSON files (670+ from test runs) add >2s per scan, causing the
-        # 500ms sweep interval to be exceeded and the test to time out.
+        # Use a temp SQLite store so the sweep stays fast — LocalWorkflowStore
+        # parses every run file on every scan, ~1.3 ms each, so ~400 accumulated
+        # files already exceed this 500ms sweep interval and time the test out.
+        # (An earlier comment here said 670+ files / >2s; measured 2026-08-15,
+        # 299 files cost 540 ms. See #380.)
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         try:

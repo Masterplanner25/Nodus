@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#380 (part 1): the test suite and doc gate no longer leave workflow-run
+  files in the repo.** The default workflow store root is CWD-relative, so
+  anything running a workflow from the repo root wrote into
+  `.nodus/workflow_framework/runs/`. Retention is 30 days, so nothing was ever
+  cleaned; the directory reached 299 files.
+
+  That matters because `LocalWorkflowStore.list_runs()` parses every file on
+  every call — ~1.3 ms each, measured linear to 10,000 files (13.5 s). At 299
+  files a single scan costs **540 ms**, past the 500 ms sweep interval
+  deadline-sensitive tests assume. The suite was degrading its own later runs,
+  surfacing as unrelated-looking flakes that passed on re-run: a server endpoint
+  test, a doc-gate block, and a scheduler fairness test, all from one cause.
+
+  A session fixture now removes what a pytest run added, and the gate's runtime
+  phase runs doc blocks against a throwaway store. Cleanup rather than
+  redirection, because several tests build a project directory, chdir into it,
+  and assert the default runner wrote under *that* root — pointing the default
+  elsewhere broke 26 of them, and their behavior is the documented one.
+
+  `NODUS_WORKFLOW_STORE_ROOT` now overrides the default store root, for hosts
+  whose working directory is read-only or ephemeral.
+
+  Corrected in `CLAUDE.md` and `test_task_graph.py`: both said "670+ files cause
+  >2s per sweep", which understates it about 2x in the direction that matters.
+
+  Bounding the store's cost — pruning by count, or an index instead of a full
+  rescan — remains open in #380.
+
 ### Fixes
 
 - **#348: `--trace-imports` printed nothing once the bytecode cache was warm.**
