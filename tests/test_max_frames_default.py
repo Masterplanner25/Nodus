@@ -142,9 +142,14 @@ class CliFrameCapTests(unittest.TestCase):
             f.write(_RUNAWAY)
             path = f.name
         try:
+            # --time-limit for headroom: the CLI's default deadline is
+            # EXECUTION_TIMEOUT_MS (200ms), and building 10,000 frames takes
+            # longer than that under full-suite load, so the deadline wins the
+            # race and the error is "Execution timed out" instead. 30s is well
+            # past the 5-10x headroom rule in CLAUDE.md.
             proc = subprocess.run(
-                [sys.executable, _NODUS_PY, "run", path],
-                capture_output=True, text=True, timeout=60, env=_child_env(),
+                [sys.executable, _NODUS_PY, "run", "--time-limit", "30", path],
+                capture_output=True, text=True, timeout=120, env=_child_env(),
             )
         finally:
             Path(path).unlink()

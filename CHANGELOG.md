@@ -4,6 +4,38 @@
 
 ### Fixes
 
+- **#353 (and #345): `--help` ran the command instead of printing usage.**
+  `--help` was each subcommand's own responsibility, so every new subcommand
+  shipped unguarded and the fixes landed one at a time — issues 1 and 2
+  (`check`, `ast`, `dis`), then issue 268 (`serve`, `worker`), then #345
+  (`test`), and now the whole package-manager group. On v4.1.1:
+
+  ```
+  $ nodus logout --help
+  Token removed from ~/.nodus/config.toml     # it performed the logout
+  ```
+
+  `publish --help` crashed with an unhandled `FileNotFoundError` traceback,
+  `login --help` blocked on stdin, and `install` / `add` / `remove` / `update` /
+  `deps` / `test` all executed. `--help` must never mutate state.
+
+  `main()` now handles `--help`/`-h` centrally, before any subcommand body runs,
+  and the ten per-command guards are gone — one place to get it right, and the
+  next subcommand is correct by default. Every command in `KNOWN_COMMANDS` exits
+  0 with usage on stdout.
+
+  Added help text for `test`, `install`, `update`, `add`, `remove`, `deps`,
+  `cache`, `login`, `logout`, `publish`, `ast` and `dis`. Commands without a
+  hand-written entry fall back to usage derived from `nodus --help`, so the
+  fallback cannot drift from the command list.
+
+  `KNOWN_COMMANDS` is module-level so `tests/test_cli_help_guard.py` (11 tests)
+  can be table-driven over the registry rather than one case per command — a
+  subcommand added tomorrow is covered without anyone remembering. The sweep runs
+  out of process with a timeout: against the unfixed CLI `login --help` blocks on
+  input even with stdin at `/dev/null`, so an in-process table test would hang the
+  suite instead of failing it.
+
 - **#350: `NodusRuntime` applied no call-depth cap, contradicting its own
   docstring.** `configure_vm_limits()` installs `MAX_STACK_DEPTH` (10,000) — and
   `embedding.py` then overwrote it unconditionally with `self.max_frames`, `None`
