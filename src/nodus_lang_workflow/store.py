@@ -349,13 +349,23 @@ class LocalWorkflowStore(WorkflowStore):
     """File-backed local store for workflow runs and claims.
 
     Warning: intended for development and single-process use only.
-    ``list_runs()`` scans all run files on every call. Stores with more than
-    a few hundred historical terminal runs will degrade linearly. Set
-    ``terminal_max_age_days`` to skip files not modified in that many days
-    (they are almost certainly old completed/failed runs). Any non-terminal
-    run that goes un-updated for longer than ``terminal_max_age_days`` will
-    be excluded from sweeper queries — use SQLiteWorkflowStore for long-lived
-    or production deployments.
+    ``list_runs()`` reads every run file on every call, so cost is linear in the
+    number of accumulated runs — roughly 60 ms per 300 runs, 3.8 s per 10,000
+    (measured 2026-08-15, after #380 removed the per-record ``mkdir`` and
+    ``stat``). A sweeper calling it on a timer is the usual way this bites.
+
+    Two knobs bound it:
+
+    - ``terminal_max_age_days`` (default 30) skips files not modified in that
+      many days without parsing them. It bounds the *scan*, not the directory.
+      Note the edge: a non-terminal run left un-updated for longer is skipped
+      too, so it drops out of sweeper queries.
+    - ``max_terminal_runs`` (default ``None``, off) caps how many finished runs
+      are kept, deleting the oldest first as new ones complete. Off by default
+      because run records are history a host may rely on. Live runs are never
+      pruned.
+
+    Use ``SQLiteWorkflowStore`` for long-lived or production deployments.
     """
 
     def __init__(
@@ -364,12 +374,15 @@ class LocalWorkflowStore(WorkflowStore):
         *,
         claim_ttl_ms: float = 30_000.0,
         terminal_max_age_days: float = 30.0,
+        max_terminal_runs: int | None = None,
     ) -> None:
         resolved = root or os.path.join(".nodus", "workflow_framework")
         self.root = os.path.abspath(resolved)
         self.claim_ttl_ms = claim_ttl_ms
         self.terminal_max_age_days = terminal_max_age_days
+        self.max_terminal_runs = max_terminal_runs
         self._lock = threading.Lock()
+        self._runs_root_cache: str | None = None
 
     def _ensure_root(self) -> str:
         try:
@@ -380,6 +393,20 @@ class LocalWorkflowStore(WorkflowStore):
         return self.root
 
     def _runs_root(self) -> str:
+        """The runs directory, created once per store instance.
+
+        #380: this used to `makedirs` both the root and the runs directory on
+        every call, and it is called once per record via `_run_path` — so
+        listing 3,000 runs made 6,000 mkdir syscalls and spent 1.7 of its 4.2
+        seconds there. The directory cannot stop existing under a live store
+        that already created it; `_runs_root_uncached` restores the guarantee if
+        something removes it.
+        """
+        if self._runs_root_cache is None:
+            self._runs_root_cache = self._runs_root_uncached()
+        return self._runs_root_cache
+
+    def _runs_root_uncached(self) -> str:
         root = os.path.join(self._ensure_root(), "runs")
         try:
             os.makedirs(root, exist_ok=True)
@@ -400,11 +427,11 @@ class LocalWorkflowStore(WorkflowStore):
         os.replace(tmp_path, path)
 
     def _load_run_unlocked(self, run_id: str) -> WorkflowRunRecord | None:
-        path = self._run_path(run_id)
-        if not os.path.exists(path):
-            return None
+        # #380: no `os.path.exists` pre-check — the open below already reports a
+        # missing file, and the extra stat doubled the syscalls per record in
+        # list_runs(). It was also a race: the file could vanish between the two.
         try:
-            with open(path, "r", encoding="utf-8") as handle:
+            with open(self._run_path(run_id), "r", encoding="utf-8") as handle:
                 return WorkflowRunRecord.from_dict(json.load(handle))
         except FileNotFoundError:
             return None
@@ -419,7 +446,36 @@ class LocalWorkflowStore(WorkflowStore):
             if record.created_at is None:
                 record.created_at = record.updated_at
             self._atomic_write_json(self._run_path(record.run_id), record.to_dict())
+        if record.status in TERMINAL_RUN_STATUSES:
+            self._prune_terminal_runs()
         return record
+
+    def _prune_terminal_runs(self) -> None:
+        """Keep at most ``max_terminal_runs`` finished runs, oldest deleted first.
+
+        Opt-in, and off by default: run records are a history a host may be
+        relying on, and silently deleting them is not a decision this store
+        should make on anyone's behalf. Age-based retention
+        (``terminal_max_age_days``) bounds the *scan* cost but not the directory,
+        so a host that keeps a store for years and wants a hard ceiling sets this
+        (#380).
+
+        Only terminal runs are ever removed — a waiting or retrying run is live
+        state, whatever the count.
+        """
+        limit = self.max_terminal_runs
+        if limit is None or limit < 0:
+            return
+        with self._lock:
+            terminal = sorted(
+                (r for r in self._list_runs_unlocked() if r.status in TERMINAL_RUN_STATUSES),
+                key=lambda r: (r.updated_at or 0, r.run_id),
+            )
+            for stale in terminal[: max(0, len(terminal) - limit)]:
+                try:
+                    os.remove(self._run_path(stale.run_id))
+                except OSError:
+                    pass
 
     def create_run(
         self,
@@ -608,14 +664,24 @@ class LocalWorkflowStore(WorkflowStore):
         return self.save_run(expired)
 
     def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
+        # #380: only runs that are actually waiting can expire. This used to call
+        # expire_wait_timeout() for every run, and that re-reads the file it was
+        # just handed — two full reads of the whole directory per sweep, on a
+        # background timer. Filtering first makes the common case (nothing
+        # waiting) cost one pass instead of two.
         expired: list[WorkflowRunRecord] = []
         for record in self.list_runs():
+            if record.status != RUN_STATUS_WAITING:
+                continue
             updated = self.expire_wait_timeout(record.run_id, now_ms=now_ms)
             if updated is not None:
                 expired.append(updated)
         return _sorted_run_records(expired)
 
     def list_runs(self) -> list[WorkflowRunRecord]:
+        return self._list_runs_unlocked()
+
+    def _list_runs_unlocked(self) -> list[WorkflowRunRecord]:
         root = self._runs_root()
         records: list[WorkflowRunRecord] = []
         cutoff_s: float | None = None
@@ -951,8 +1017,15 @@ class SQLiteWorkflowStore(WorkflowStore):
         return self.save_run(expired)
 
     def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
+        # #380: only runs that are actually waiting can expire. This used to call
+        # expire_wait_timeout() for every run, and that re-reads the file it was
+        # just handed — two full reads of the whole directory per sweep, on a
+        # background timer. Filtering first makes the common case (nothing
+        # waiting) cost one pass instead of two.
         expired: list[WorkflowRunRecord] = []
         for record in self.list_runs():
+            if record.status != RUN_STATUS_WAITING:
+                continue
             updated = self.expire_wait_timeout(record.run_id, now_ms=now_ms)
             if updated is not None:
                 expired.append(updated)
