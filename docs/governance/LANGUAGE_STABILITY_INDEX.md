@@ -117,7 +117,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| Opcode set (47 opcodes) | Stable | Frozen at v1.0 (2026-03-15); `RESET_LOCAL_IDX` added v4.0.3 |
+| Opcode set (49 opcodes) | Stable | Frozen at v1.0 (2026-03-15) with 47; `MOD` and `RESET_LOCAL_IDX` added post-freeze — see [#366](https://github.com/Masterplanner25/Nodus/issues/366) |
 | `BYTECODE_VERSION = 4` | Stable | Bumped for `finally` support; frozen |
 | Bytecode cache format | Mostly Stable | Uses `marshal` + SHA-256 + `NDSC` magic; invalidated on version change |
 | `FunctionInfo` serialization | Internal | Cache format; may change without notice on `BYTECODE_VERSION` bump |

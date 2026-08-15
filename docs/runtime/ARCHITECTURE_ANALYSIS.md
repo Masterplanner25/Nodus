@@ -49,7 +49,7 @@ Opcode families (from VM dispatch):
 
 Notes:
 - Imports are handled at compile time; the VM does not execute module load opcodes.
-- Bytecode is versioned: `BYTECODE_VERSION = 4` (frozen at v1.0). All 47 active opcodes
+- Bytecode is versioned: `BYTECODE_VERSION = 4` (frozen at v1.0). All 49 active opcodes
   are stable. `LOAD_LOCAL` was removed in v1.0; `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`,
   and `FRAME_SIZE` are the canonical slot-indexed local variable opcodes. `FINALLY_END`
   was added at v1.0 for `try/catch/finally` support.

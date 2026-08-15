@@ -235,10 +235,13 @@ Items marked ✅ were completed in v0.8.
 
 | Classification | Count |
 |---|---|
-| **stable** | **47** |
+| **stable** | **49** |
 | provisional | 0 |
 | removed | 1 (`LOAD_LOCAL`) |
-| **Total (active)** | **47** |
+| **Total (active)** | **49** |
+
+(47 at the v1.0 freeze, plus the two post-freeze additions `MOD` and
+`RESET_LOCAL_IDX` — see the amendment below.)
 
 (Stable count — the 47 opcodes active at the v1.0 freeze:
 PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
@@ -437,6 +440,29 @@ After v1.0 opcode freeze, new opcodes must follow this process:
 Removing a stable opcode after freeze is not permitted. Deprecated opcodes must
 survive at least one full release cycle after deprecation before removal.
 
+### The gate enforces steps 2, 4 and 5
+
+Steps 2, 4 and 5 are checked mechanically by the `--opcodes` phase of the
+doc-vs-code gate, which runs in CI as part of `--all`:
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --opcodes
+```
+
+It reads the dispatch table out of a constructed `VM` and requires
+`BYTECODE_REFERENCE.md` §3, the appendix quick table, and the stability tables in
+this document to name exactly the same opcodes — plus the declared counts and
+`BYTECODE_VERSION` values in both files to match the live ones. Registering a
+handler without documenting it fails CI on the commit that does it, which is the
+check that was missing when `MOD` and `RESET_LOCAL_IDX` went in (see the
+amendment below).
+
+Steps 1, 3, 6 and 7 remain human judgment. Step 3 in particular is not
+mechanised: the gate verifies that the version claimed in the docs is the version
+in the code, not that a bump was warranted.
+
 ---
 
 ## Amendment 2026-08-07 — two opcodes bypassed this process
@@ -454,7 +480,8 @@ Both are stable, reachable, and behaviourally correct. What failed was the recor
 issue proposing them, no `BYTECODE_REFERENCE.md` entry, no `BYTECODE_VERSION` bump, no
 amendment here. They are now documented in `BYTECODE_REFERENCE.md` §3 and counted above.
 
-**`BYTECODE_VERSION` was not bumped retroactively** and remains `4`. Bumping it now
+**Decision (2026-08-14): `BYTECODE_VERSION` stays at 4.** It was not bumped
+retroactively for either addition and will not be. Bumping it now
 would invalidate every cached bytecode file in the field to fix a window that has
 already closed for anyone on current 4.x. The residual risk is a *downgrade*: an older
 4.x nodus accepts a version-4 cache entry containing `MOD` and fails with
@@ -465,6 +492,11 @@ The process gap this exposes is that nothing enforced step 2 or 3 — the freeze
 declared in prose and checked by nobody. A gate comparing `_build_dispatch_table()`
 against this document's inventory would have caught both additions the day they landed.
 Tracked as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
+
+**Closed 2026-08-14.** That gate now exists as `tools/nodus_gate/opcode_phase.py`
+and runs in CI — see "The gate enforces steps 2, 4 and 5" above. Re-running it
+against the tree as it stood on 2026-08-07 reports both `MOD` and
+`RESET_LOCAL_IDX` as undocumented, plus every stale count they left behind.
 
 ---
 

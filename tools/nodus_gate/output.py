@@ -137,8 +137,31 @@ def format_contracts(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_opcodes(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    lines = []
+    if not quiet:
+        lines.append(
+            f"Ran {result.checks_run} opcode inventory check(s) against "
+            f"{result.dispatch_count} dispatched opcode(s), "
+            f"BYTECODE_VERSION {result.bytecode_version}"
+        )
+        lines.append("")
+
+    for f in result.findings:
+        lines.append(_c(f"FAIL {f.message}", _RED, use_color=use_color))
+        if f.detail:
+            lines.append(f"  {f.detail}")
+        lines.append("")
+
+    if not quiet:
+        n_fail = len(result.findings)
+        status = _c("PASS", _GREEN, use_color=use_color) if n_fail == 0 else _c("FAIL", _RED, use_color=use_color)
+        lines.append(f"Opcodes: {status} — {result.passed}/{result.checks_run} checks passed")
+    return "\n".join(lines)
+
+
 def format_json_results(
-    static=None, runtime=None, closed=None, contracts=None
+    static=None, runtime=None, closed=None, contracts=None, opcodes=None
 ) -> str:
     obj: dict[str, Any] = {"phases": {}}
 
@@ -193,11 +216,25 @@ def format_json_results(
             ],
         }
 
+    if opcodes is not None:
+        obj["phases"]["opcodes"] = {
+            "checks_run": opcodes.checks_run,
+            "passed": opcodes.passed,
+            "dispatch_count": opcodes.dispatch_count,
+            "bytecode_version": opcodes.bytecode_version,
+            "failures": len(opcodes.findings),
+            "findings": [
+                {"message": f.message, "detail": f.detail}
+                for f in opcodes.findings
+            ],
+        }
+
     total_failures = sum([
         len(static.findings) if static else 0,
         len(runtime.findings) if runtime else 0,
         (closed.failed + closed.missing_tests) if closed else 0,
         len(contracts.findings) if contracts else 0,
+        len(opcodes.findings) if opcodes else 0,
     ])
     obj["total_failures"] = total_failures
     obj["passed"] = total_failures == 0
