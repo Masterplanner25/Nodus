@@ -86,7 +86,10 @@ Full release checklist: `docs/release.md`.
 Every code example in `docs/guide/` must be run and produce verbatim output.
 Protocol for each guide file:
 
-1. Create a temp test directory: `/tmp/<guide-name>-tests/`
+1. Create a temp test directory **outside the repo** — use the session scratchpad,
+   not `/tmp` (which resolves to `C:\tmp` here) and not the repo root. Writing test
+   files into the repo leaves untracked junk; the doc gate already does this, which is
+   why `notes.txt`, `output.json`, and `tmp_demo/` are now gitignored.
 2. Run each example against dev source using the `PYTHONPATH` prefix above
 3. Paste output verbatim into the doc — no invented output
 4. Any surprising behavior gets a numbered finding (F32, F33, …) in a
@@ -160,7 +163,8 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-Coverage baseline: 76% overall (19,126 stmts, 1,645 tests). Gate: 70% (raised from 60% on 2026-05-31).
+Coverage baseline: **76.82%** overall (20,184 stmts, **1,878 tests**, 3 skipped).
+Verified 2026-08-07. Gate: 70% (raised from 60% on 2026-05-31).
 See `docs/governance/TECH_DEBT.md` for the per-module breakdown and the three deselected flaky tests.
 
 **Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
@@ -222,13 +226,13 @@ Two rules come up repeatedly:
   Suppress with `# noqa: E402` on each affected import line. Do not
   restructure the path manipulation to avoid it.
 
-**Pre-existing violations:** `ruff check src/` always shows ~33 pre-existing
-errors in `src/nodus/vm/vm.py` (E702), `src/nodus/builtins/time_module.py`
-(E701, F841), `src/nodus/builtins/encoding_module.py` (F401), and
-`src/nodus/builtins/secrets_module.py` (F401). These pre-date Phase 3C and
-are known. Do not introduce them into new code, but do not treat them as a
-blocker for your own changes. When verifying a commit, run ruff scoped to the
-files you actually changed rather than the whole `src/` tree.
+**`ruff check src/ tests/` is clean — 0 errors.** Verified 2026-08-07.
+
+Earlier revisions of this file claimed ~33 pre-existing violations in `vm.py`,
+`time_module.py`, `encoding_module.py`, and `secrets_module.py`, and told you to
+scope ruff to the files you changed rather than run the whole tree. Those
+violations have since been fixed, so that guidance now only hides real
+regressions. **Run the full-tree check and treat any output as yours.**
 
 ## Git commit syntax (PowerShell)
 
@@ -241,14 +245,42 @@ Subject line here
 
 Body paragraph here.
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude <MODEL> <noreply@anthropic.com>
 '@
 ```
+
+**Use the model you are actually running as** — check the environment block at the start
+of the session and copy that name verbatim (e.g. `Claude Opus 5 (1M context)`). Do not
+copy a model name out of this file or out of `git log`; both go stale at every release,
+and a hardcoded name silently misattributes the work. This has already happened once:
+commits on 2026-08-07 were trailed `Opus 4.8` while running Opus 5, because this example
+named a specific version.
 
 The closing `'@` must be at column 0 with no leading whitespace. For commits
 that need a file (e.g. cross-repo where stdin is awkward), write the message
 to `.git\COMMIT_MSG_TEMP` with `Out-File -Encoding utf8` then use
 `git commit -F ".git\COMMIT_MSG_TEMP"`.
+
+## ⚠️ `nodus <cmd> --help` is not safe to run (#353, open)
+
+**`--help` is not a global flag — it is handled per-command, and several commands
+ignore it and just run.** Verified 2026-08-06:
+
+| Command | What `--help` actually does |
+|---|---|
+| `nodus logout --help` | **Performs the logout.** Deletes the saved registry token from `~/.nodus/config.toml` |
+| `nodus publish --help` | Crashes with an unhandled traceback |
+| `nodus login --help` | Blocks waiting on stdin |
+| `install` / `add` / `remove` / `update` / `deps` | Run for real |
+
+This bit during this session: `nodus logout --help`, run to read the help text, deleted
+the user's registry token. `~/.pypirc` was unaffected.
+
+**To learn what a command does, read `src/nodus/cli/cli.py` — do not run `--help` on any
+package-manager or registry command.** `nodus --help` (no subcommand) is safe.
+
+This is the fourth fix in this area (#1/#2, #268, #345, now #353); the guard is
+per-command, so each new subcommand ships unguarded until someone notices.
 
 ## PR workflow — required (enforce_admins is ON)
 
@@ -273,9 +305,10 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   -m tools.nodus_gate.cli --all
 ```
 
-- `--static`: verifies documented symbols exist in the codebase (76 symbols)
+- `--static`: verifies documented symbols exist in the codebase (133 symbols
+  across 38 docs as of 2026-08-07)
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (180 blocks); expects 0 failures with the `.nodusgate-allow`
+  in docs (233 blocks); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 
@@ -403,10 +436,17 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 
 - **`docs/governance/DOCSET_INDEX.md`** — the reader entry point and precedence list.
   When docs conflict, DOCSET_INDEX.md defines which wins.
-- **`docs/governance/DOCSET_ALIGNMENT_AUDIT.md`** — 14 findings from the sweep;
-  tracks what still needs fixing.
-- **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — ranked list
-  of still-unresolved doc conflicts.
+- **`docs/governance/DOCSET_ALIGNMENT_AUDIT.md`** — 14 findings from that sweep.
+- **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — **closed.** All
+  seven conflicts were verified resolved on 2026-08-07. Its status flags had said
+  "ACTION REQUIRED" for months after the fixes landed, because the tracker was
+  maintained by hand separately from the work. Do not use it as a to-do list.
+
+**19 governance docs still open with `<!-- Authored by Codex during non coding
+session. Needs review before repo commit and push. -->`** — including
+`DOCSET_INDEX.md`, which is the reader entry point, and `SECURITY_POSTURE.md`. They
+were committed and pushed on 2026-05-29, so the marker is self-contradicting. Left in
+place pending a decision on whether to strip them.
 
 ## nodus-memory companion library
 
@@ -493,8 +533,11 @@ install-order collision is now resolved.
 - `nodus_lang_workflow` = full orchestration framework wired into the nodus-lang server (7-state lifecycle, SQLite store, HTTP/CLI)
 - `nodus_workflow` (standalone) = lightweight workflow primitives (FlowDefinition, SchedulerEngine, no server wiring)
 
-**Option C consolidation** (post-publish): make standalone packages canonical, remove in-tree
-modules, have nodus-lang depend on them. Tracked in GitHub #104 and skill `/nodus-name-col-consolidation`.
+**Option C consolidation** (make standalone packages canonical, remove in-tree modules,
+have nodus-lang depend on them) is **deferred indefinitely** — #104 was closed as
+completed on 2026-06-06 because the rename above resolved the collision by construction.
+The skill `/nodus-name-col-consolidation` still exists if the decision is ever revisited,
+but there is no open work item.
 
 ## Ecosystem incubators (`packages/` in this repo)
 
@@ -542,9 +585,11 @@ The `LocalWorkflowStore` scans all `.nodus/workflow_framework/runs/*.json` on ev
 test (500ms deadline). Fix: use SQLite temp store in tests, OR clean `.nodus/workflow_framework/runs/`
 (safe — test artifacts only).
 
-**Circular import:** `nodus.vm.vm` imports `get_default_workflow_runner` from `nodus_lang_workflow.runner`
-at top level. Works at runtime (nodus initializes first) but fails if `nodus_lang_workflow` is imported
-before `nodus` in a fresh process. Fix tracked as CIRC-001 (#103), skill `/nodus-scheduler-freeze` Phase A.
+**Circular import (CIRC-001, #103) — FIXED** 2026-06-01. `nodus.vm.vm` no longer imports
+`get_default_workflow_runner` at module level; the imports are lazy, inside
+`builtin_run_workflow` / `builtin_resume_workflow` (`vm.py:1077`, `:1139`, `:1154`).
+Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do not
+"fix" this again by hoisting the import.
 
 ## nodus_lang_schema (in-tree ABI contracts package)
 
@@ -670,9 +715,22 @@ rt = NodusRuntime(max_steps=None, timeout_ms=None, max_frames=1000)
 `allow_env` are all `True`. A bare `NodusRuntime()` can shell out, open sockets, and read
 the process environment. `allowed_paths` does default to a CWD jail (`[os.getcwd()]`).
 
-**SPAWN-001 (#117, open):** `spawn().wait_async()` is sync — blocks scheduler thread. Low severity; does not affect `subprocess_run_async`.
+**SPAWN-001 — FIXED.** Tracked as **#116** (closed), not #117 (which was closed as a
+duplicate of it). `wait_async()` now suspends properly: it runs `proc.wait()` on a
+worker thread, registers a result channel with `scheduler._io_channels`, and sets
+`coroutine.state = "suspended"`. See `builtins/subprocess_module.py::_wait_async`.
 
-**CHAN-001 (open):** `recv()` on empty channel strands the coroutine silently — pre-populate the channel or use the subprocess-pipe pattern. See `docs/governance/TECH_DEBT.md`.
+**CHAN-001 (#107) — FIXED** in PR #137, verified 2026-08-07. A coroutine blocked on
+`recv()` with no possible sender now raises a deadlock error instead of being silently
+orphaned:
+
+```
+Deadlock: 1 coroutine(s) blocked on recv() with no possible sender: __anon_1
+```
+
+Note when testing this: the scheduler must actually be driven. `spawn(c)` alone does not
+run the coroutine — without a `run_loop()` the script exits 0 and the coroutine never
+starts, which *looks* like the original bug. Use `spawn(c)` then `run_loop()`.
 
 ## Published ecosystem — current state (verified against PyPI 2026-08-05)
 

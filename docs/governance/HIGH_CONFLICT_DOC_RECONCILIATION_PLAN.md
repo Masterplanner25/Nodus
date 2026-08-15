@@ -3,7 +3,7 @@
 # High-Conflict Doc Reconciliation Plan
 
 **Date:** 2026-05-29
-**Status:** Working document — track reconciliation progress here
+**Status:** ✅ CLOSED 2026-08-07 — all seven conflicts resolved. Kept as a record of the 2026-05-29 sweep.
 **Maintainer:** Shawn Knight (Masterplanner25)
 
 This document identifies the highest-conflict documentation areas — where docs
@@ -31,7 +31,7 @@ of the current state, or will be unable to determine what is authoritative.
 
 ## Conflict 1: LIBRARY_ECOSYSTEM.md nodus-a2a overclaim
 
-**Status:** ACTION REQUIRED (not yet reconciled)
+**Status:** ✅ RESOLVED (verified 2026-08-07 — see the tracking table below)
 
 **Problem:** The nodus-a2a entry in `LIBRARY_ECOSYSTEM.md` claims:
 > "All three protocol bindings (JSON-RPC, gRPC, HTTP+JSON/REST). Full A2A v1.0.0 spec
@@ -65,7 +65,7 @@ The architectural commitment section is accurate and does not need changes.
 
 ## Conflict 2: README.md version drift
 
-**Status:** ACTION REQUIRED (not yet reconciled)
+**Status:** ✅ RESOLVED (verified 2026-08-07 — see the tracking table below)
 
 **Problem:** `README.md` JSON-LD block has `"version": "2.1.0"` while the current
 release is 3.0.2.
@@ -85,7 +85,7 @@ gate check (Gate 7 in `RELEASE_GATES.md`).
 
 ## Conflict 3: COMPATIBILITY.md vs actual compatibility model
 
-**Status:** New governing document created; cross-reference needed
+**Status:** ✅ RESOLVED — governing document created and cross-reference added
 
 **Problem:** `COMPATIBILITY.md` is a deprecation timeline. Readers looking for the
 compatibility policy (what counts as breaking, semver rules, bytecode compatibility)
@@ -97,13 +97,13 @@ find only a timeline of deprecation decisions.
 3. Rename the file to `DEPRECATION_TIMELINE.md` (optional — preserves the existing name
    for continuity if external links exist)
 
-**Status:** `COMPATIBILITY_MODEL.md` created. Preamble addition to `COMPATIBILITY.md` pending.
+**Status:** ✅ RESOLVED — `COMPATIBILITY_MODEL.md` created and the `COMPATIBILITY.md` preamble is in place.
 
 ---
 
 ## Conflict 4: STABILITY.md vs surface-by-surface reality
 
-**Status:** New governing document created; cross-reference needed
+**Status:** ✅ RESOLVED — governing document created and cross-reference added
 
 **Problem:** `STABILITY.md` provides a useful but thin three-tier classification.
 The Experimental tier lists workflows and coroutines without graduation criteria.
@@ -114,13 +114,13 @@ The Stable tier does not distinguish between language syntax stability and API s
 2. Add a preamble to `STABILITY.md` directing readers to `LANGUAGE_STABILITY_INDEX.md`
 3. Keep `STABILITY.md` as a quick-reference summary
 
-**Status:** `LANGUAGE_STABILITY_INDEX.md` created. Preamble addition to `STABILITY.md` pending.
+**Status:** ✅ RESOLVED — `LANGUAGE_STABILITY_INDEX.md` created and the `STABILITY.md` preamble is in place.
 
 ---
 
 ## Conflict 5: RELEASE_CHECKLIST.md stale commands
 
-**Status:** ACTION REQUIRED (not yet reconciled)
+**Status:** ✅ RESOLVED (verified 2026-08-07 — see the tracking table below)
 
 **Problem:** The checklist uses `python nodus.py` (pre-v1.0 command) and
 `python -m unittest discover -s tests -v` (not used since pytest migration). It also
@@ -186,15 +186,26 @@ Option 1 is cleaner. Estimated effort: 30 minutes.
 
 ## Reconciliation tracking
 
-| Doc | Status | Action |
-|-----|--------|--------|
-| `LIBRARY_ECOSYSTEM.md` | ❌ Not reconciled | Update nodus-a2a entry |
-| `README.md` JSON-LD | ❌ Not reconciled | Fix version |
-| `COMPATIBILITY.md` | 🟡 Partially reconciled | Add preamble pointing to COMPATIBILITY_MODEL.md |
-| `STABILITY.md` | 🟡 Partially reconciled | Add preamble pointing to LANGUAGE_STABILITY_INDEX.md |
-| `RELEASE_CHECKLIST.md` | ❌ Not reconciled | Update commands |
-| `LANGUAGE_VISION.md` | 🟢 Acceptable as-is | Update post v4.0 launch |
-| `STDLIB_PHILOSOPHY.md` | ❌ Missing | Create stub or remove references |
+**All seven conflicts are resolved. This plan is closed.** Re-verified 2026-08-07
+against the working tree — every item below was fixed at some point after the
+2026-05-29 sweep, but the tracker was never updated, so it spent months reporting
+finished work as outstanding.
+
+| Doc | Status | Verified 2026-08-07 |
+|-----|--------|---------------------|
+| `LIBRARY_ECOSYSTEM.md` | ✅ Reconciled | nodus-a2a entry now scopes v0.1.0 to HTTP+JSON/REST, message-only, with Task lifecycle / SSE / JSON-RPC / gRPC / OAuth explicitly listed as v0.2+ |
+| `README.md` JSON-LD | ✅ Reconciled | The stale JSON-LD version block is gone; README states v4.1.1 |
+| `COMPATIBILITY.md` | ✅ Reconciled | Preamble present: *"This document is a deprecation timeline record, not a compatibility policy"* |
+| `STABILITY.md` | ✅ Reconciled | Preamble present, pointing at `LANGUAGE_STABILITY_INDEX.md` as governing |
+| `RELEASE_CHECKLIST.md` | ✅ Reconciled | Uses `pytest` and `tools.nodus_gate.cli --all`; no `unittest discover` |
+| `LANGUAGE_VISION.md` | ✅ Acceptable as-is | Unchanged; was never a blocker |
+| `STDLIB_PHILOSOPHY.md` | ✅ Created | `docs/governance/STDLIB_PHILOSOPHY.md` exists |
+
+**Why this sat stale:** the per-conflict `**Status:**` lines and this table were
+maintained by hand, separately from the fixes themselves, and nothing tied one to the
+other. A tracker that is not updated by the act of fixing reports the state of the
+world when someone last remembered it. Same shape as the "check that cannot fail"
+pattern in `TECH_DEBT.md` — this one could not *succeed*.
 
 ---
 
