@@ -1,8 +1,9 @@
 # What is the domain? — design input for #409 Part B
 
-**Status:** proposal. Nothing here is committed to. This is a draft to react to,
-written because #409 Part B names an unanswered question and says answering it is
-prerequisite to deciding which surfaces deserve language-level work.
+**Status:** proposal. The domain statement in §3 is put forward for decision; the
+agent-boundary question it produced is **decided** in §4.1. Written because #409
+Part B names an unanswered question and says answering it is prerequisite to
+deciding which surfaces deserve language-level work.
 
 ---
 
@@ -118,7 +119,7 @@ Both columns must be yes.
 | **Orchestration** | deps resolved, acyclic, reachable | Bounded, Inspectable | yes — parse-time; partial today | **in, partial** (#396) |
 | **Goal** | a stopping condition and a budget | Bounded, Inspectable | yes — checkpoint labels are literals | **in, specified** (`01-…`) |
 | **Capability** | the grant is checked before the call; refusal is recorded | Bounded | runtime half yes (#405); static half needs effects in signatures | **in, not started** |
-| **Agent boundary** | timeout; JSON-safety; paired start/complete events; trace id | Bounded, Inspectable | *only if* `agent` becomes a language concept — today it is a string-compared `ID` (`parser.py:1003`) | **candidate — needs a decision** |
+| **Agent boundary** | a declared bound on the call | Bounded | the compiler can require the *declaration*; the runtime must do the *enforcement* | **in — narrowly** (§4.1) |
 | **Memory** | address validity | none of the three | a MAS path typo is a correctness bug, not a bound or a survival property | **out — library** |
 
 **Memory falls out, and that is the point.** A domain statement that admits
@@ -127,10 +128,69 @@ with a reason: `nodus-memory` is already a separate package, and validating an
 address string is ordinary correctness rather than a guarantee only a compiler
 can make unforgettable.
 
-**Agent boundary is the one genuine open question this produces.** Its
-must-never-forget list is real and currently enforced only at runtime inside
-`_run_goal_action`. Making `agent` a language concept would move it in; leaving it
-as a soft `ActionStmt(kind=...)` keeps it out. That is a decision, not a fact.
+### 4.1 The agent boundary — decided, after reading the code
+
+**Decision: in, narrowly.** Not "make `agent` a language concept" — it already is
+— but "the compiler must not let you omit the bound."
+
+The premise this was going to be decided on was wrong. #409's table describes the
+agent surface as *soft — string-compared `ID`s after `ACTION`*, and lists
+*timeout, JSON-safety, paired events, trace id* as the must-never-forget set.
+An earlier revision of this document repeated both without checking. Measured
+against `803b4af`:
+
+| Audit 02 F4 claim | Reality |
+|---|---|
+| *"not a keyword"* | **wrong** — `ACTION` is a token (`parser.py:94`) |
+| *"not an AST node"* | **wrong** — `ActionStmt(kind, target, payload)` |
+| *"not an opcode"* | correct |
+
+And the surface is stricter than "soft" suggests. Verified:
+
+- The kind set is **closed and parse-enforced** —
+  `action frobnicate "x" with {…}` → `Syntax error: Unsupported action kind: frobnicate`
+- The target is a **string literal** —
+  `action agent n with {…}` → `Syntax error: Expected string literal, got identifier ('n')`
+
+That is the same mechanism as the annotation allowlist this document cites
+approvingly in §2. *"String-compared ID"* is accurate about how the kind is
+matched and misleading about what it means.
+
+The runtime side is also in better shape than claimed:
+
+| Claimed must-never-forget | Reality |
+|---|---|
+| JSON-safety | **enforced**, both directions — payload in and handler result out |
+| paired start/complete events | **enforced** unconditionally in `call_agent`; `goal_action_*` additionally inside a goal |
+| **timeout** | **does not exist** — no deadline anywhere in `agent_runtime.py` |
+| trace id | **does not exist** in this path |
+
+Two of the four items were never real. **One gap is, and it is a bound:** a host
+handler can block forever. Measured — a `NodusRuntime(timeout_ms=200)` run whose
+handler slept 3 s took 3.77 s and returned `ok: True`. Filed as **#424**.
+
+Applying the two tests to that gap:
+
+1. **Does forgetting it break bounded?** Yes, and it produces the
+   success-shaped-failure signature this codebase has spent a cycle removing.
+2. **Can the compiler or the instruction stream make forgetting impossible?**
+   Not the *enforcement*. A handler is a host function, executed outside the
+   instruction stream, so the VM cannot preempt it — the same structural limit as
+   #405's chokepoint, and the reason every other bound misses it. But the
+   compiler **can** make the *declaration* impossible to omit: `action` payload
+   keys are currently unvalidated (`with { nonsense_key: 1i }` parses clean) even
+   though `parse_named_map_literal` already supports a key allowlist.
+
+So the boundary is in the domain on a **split rule**, which is worth stating
+generally because it recurs:
+
+> When a guarantee must hold across the host boundary, the language owns the
+> **declaration** and the runtime owns the **enforcement**. The compiler's job is
+> that you cannot forget to declare the bound.
+
+That is the identical shape to `budget` being mandatory on a goal
+(`01-goal-stopping-condition.md` §4), and it is the honest version of test 2 for
+anything that leaves the instruction stream.
 
 ## 5. Re-reading the six moves through it
 
@@ -162,9 +222,15 @@ Two of those five hold today, verified. One is specified. Two are open issues.
 That is a defensible claim with a known gap, which is a better position than a
 claim that sounds complete and is not — the thing all three audits caught.
 
+**One caveat that must be stated wherever the bounds are claimed:** `timeout_ms`
+is a bound on VM execution, not wall clock. A host call — an agent handler, a
+tool handler — runs outside the instruction stream and no deadline reaches it
+(#424). Until that is fixed, "bounded" is true of Nodus code and false of the
+host functions it calls, and the guide should say so rather than let an embedder
+read it as a request deadline.
+
 ## 7. What this does not settle
 
-- **The agent-boundary decision** (§4). Genuinely open.
 - **Whether move 4 survives.** It needs an Inspectable argument or it should be
   reclassified as general-purpose type-system work — worth doing, but not
   evidence for the DSL thesis.
