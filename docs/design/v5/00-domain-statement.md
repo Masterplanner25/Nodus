@@ -1,0 +1,176 @@
+# What is the domain? — design input for #409 Part B
+
+**Status:** proposal. Nothing here is committed to. This is a draft to react to,
+written because #409 Part B names an unanswered question and says answering it is
+prerequisite to deciding which surfaces deserve language-level work.
+
+---
+
+## 1. The question, and what it is not
+
+All three external architecture audits tested Nodus against *"an orchestration
+DSL and embedded runtime for building agentic systems"* and all three rejected
+the last clause. The positioning half of that was fixed on 2026-08-15 (`649a2ed`)
+— the docs now say **hosting**, not building.
+
+**That was a positioning fix, not a domain answer.** They are different questions:
+
+| | Question | Answered? |
+|---|---|---|
+| Positioning | Who is this for and what does it claim? | Yes — *"durable, inspectable, capability-jailed task orchestration, with a clean handoff boundary to model-driven decisions your host supplies"* |
+| **Domain** | **What class of concept must this language make unforgettable?** | **No** |
+
+The domain question is the operational one. #409's central observation is that
+`@exactly_once` is the best DSL feature in the project and it is not in the
+headline:
+
+> *"the compiler lowering guarantees every annotated function gets the
+> resolve→pending→execute→complete envelope with a content-addressed action id.
+> **You cannot forget it.**"* — Audit 03 §8
+
+**"You cannot forget it" is the DSL property in four words.** A library gives you
+a facility you must remember to use correctly; a DSL makes the concept
+unforgettable and rejects the program, or corrects the execution, if you try. So
+the domain is not a topic — it is **the set of things this language refuses to let
+you forget**.
+
+## 2. Method: derive it from what verifiably works
+
+Rather than assert a domain and check whether the language serves it, this derives
+the domain from the features that already qualify. Each was verified against
+`main` at `803b4af`.
+
+| Verified feature | Mechanism | What forgetting it would break |
+|---|---|---|
+| `@exactly_once` | compiler lowering (`compiler.py:441`) | a side effect double-fires across retry and resume |
+| `@retry` | compiler lowering | failure handling is absent or unbounded |
+| Closed annotation set | parse-time — `@nonsense` → `Syntax error: Unknown annotation: @nonsense` | a misspelled guarantee silently does nothing |
+| `TASK_STEP_BUDGET = 1000` | instruction stream (`scheduler.py:266`) | a CPU-bound coroutine starves every other |
+| Deadlock detector | instruction stream (`scheduler.py:229`) | a silent hang instead of a typed error naming the blocked coroutines |
+| `max_steps` / `max_frames` / `deadline` | runtime limits, applied by default | unbounded resource use |
+| Duplicate step names, unknown dependencies | parse-time (`parser.py:531`, `:537`) | a malformed plan is discovered only when it runs |
+| `checkpoint` labels are literals | parse-time (`parser.py:330`) | — enables the total static check in `01-goal-stopping-condition.md` |
+
+Three properties account for all of them:
+
+- **Bounded** — step budget, deadlock detection, `max_steps`/`max_frames`/
+  `deadline`, `@retry`, acyclicity (an acyclic graph terminates).
+- **Durable** — `@exactly_once`: progress and side effects survive interruption,
+  exactly once.
+- **Inspectable** — parse-time step and dependency checks (the plan is
+  well-formed and knowable *before* it runs); the deadlock detector *naming* the
+  blocked coroutines (what happened is recoverable *after*).
+
+These are the same three words already in the positioning — *durable,
+inspectable, capability-jailed* — with "capability-jailed" generalised to
+**bounded**, of which reach is one bound among several.
+
+## 3. Proposed domain statement
+
+> **The domain is work that will be interrupted, that you did not fully author,
+> and that touches the world.**
+>
+> A concept belongs in the language when **both** hold:
+>
+> 1. Forgetting it breaks **bounded**, **durable**, or **inspectable**; and
+> 2. The **compiler** or the **instruction stream** can make forgetting
+>    impossible.
+>
+> Everything else is a library.
+
+Test 2 is what keeps this honest. "Important to agentic systems" is not
+sufficient — a great many things are. The question is whether the property can be
+*enforced at compile time or in the instruction stream*, because that is the only
+thing a host-language library structurally cannot reproduce. A Python decorator
+cannot preempt the interpreter; `asyncio` cannot detect this class of deadlock;
+and no library can reject a program.
+
+### Why "agentic" is not the domain
+
+Under this statement, agentic systems are the **application**, not the domain.
+That is consistent with what all three audits found independently, with the
+positioning fix already made, and with the fact that there is no model in the
+core and should not be. Nodus is not a DSL for agents; it is a DSL for running
+work under guarantees, and agentic systems are the current best example of work
+that needs them — generated, long-running, and effectful.
+
+### Why the general-purpose surface is not a problem
+
+Audit 01 flagged general-purpose expressiveness as *"scope that works against the
+thesis."* #409 already rejected that inference; the domain statement explains
+why. General computation **inside** a bounded, durable, inspectable unit is the
+payload, not a widening of the domain. Audit 01 argues against itself at §09: a
+graph API makes you write control flow in the host language, *"at which point you
+have two abstractions, two error models, and two places state can live. Nodus is
+one."*
+
+What must grow faster than the general-purpose surface is not the language's
+size but **the number of things it refuses to let you forget**.
+
+## 4. Applying it — the scoping answer
+
+Both columns must be yes.
+
+| Surface | Must never be forgotten | Property | Enforceable by compiler / instruction stream? | Verdict |
+|---|---|---|---|---|
+| **Effects** | resolve→pending→execute→complete, content-addressed | Durable | yes — lowering | **in, done** |
+| **Concurrency** | fairness; no silent deadlock; bounded task time | Bounded, Inspectable | yes — instruction stream | **in, done** |
+| **Orchestration** | deps resolved, acyclic, reachable | Bounded, Inspectable | yes — parse-time; partial today | **in, partial** (#396) |
+| **Goal** | a stopping condition and a budget | Bounded, Inspectable | yes — checkpoint labels are literals | **in, specified** (`01-…`) |
+| **Capability** | the grant is checked before the call; refusal is recorded | Bounded | runtime half yes (#405); static half needs effects in signatures | **in, not started** |
+| **Agent boundary** | timeout; JSON-safety; paired start/complete events; trace id | Bounded, Inspectable | *only if* `agent` becomes a language concept — today it is a string-compared `ID` (`parser.py:1003`) | **candidate — needs a decision** |
+| **Memory** | address validity | none of the three | a MAS path typo is a correctness bug, not a bound or a survival property | **out — library** |
+
+**Memory falls out, and that is the point.** A domain statement that admits
+everything is a slogan. This one excludes a surface the issue's table listed,
+with a reason: `nodus-memory` is already a separate package, and validating an
+address string is ordinary correctness rather than a guarantee only a compiler
+can make unforgettable.
+
+**Agent boundary is the one genuine open question this produces.** Its
+must-never-forget list is real and currently enforced only at runtime inside
+`_run_goal_action`. Making `agent` a language concept would move it in; leaving it
+as a soft `ActionStmt(kind=...)` keeps it out. That is a decision, not a fact.
+
+## 5. Re-reading the six moves through it
+
+| Move | Serves | Verdict |
+|---|---|---|
+| 1. Orchestration static analysis | Inspectable, Bounded | **in** — cheapest, in flight (#396) |
+| 2. Effect and capability typing on steps | Bounded | **in — highest value.** Turns #405's runtime enforcement into something checkable *before* execution: *"this generated workflow provably cannot touch the network"* is a claim only a compiler can make |
+| 3. `goal` as a bounded, declared loop | Bounded, Inspectable | **in** — specified in `01-goal-stopping-condition.md` |
+| 4. Typed dataflow between steps | *contested* | **Weakest under this statement.** Rejecting `b` for misusing what `a` returns is ordinary type checking — value typing, not domain typing. #409 itself says *"a general-purpose language types its values; a DSL types its domain."* It may serve Inspectable (knowing what crosses an edge is part of knowing what a plan does), which is why this is contested rather than out — but it should be argued on that basis, not on "it makes the compiler necessary" |
+| 5. Workflow composition as a language operation | Inspectable | **in, marginal** — composed workflows staying analysable is the whole justification; without that it is convenience |
+| 6. Orchestration-aware opcodes | *mechanism, not a claim* | **Reframe.** This is test 2's second half, not a goal in itself. Each guarantee moved into the instruction stream needs its own justification; "zero of 48 opcodes are orchestration-aware" is an observation, not a requirement. #366 already makes adding one a governed process, which forces exactly that argument |
+
+The uncomfortable result — move 4 being the weakest rather than the pivotal one —
+is the kind of answer a domain statement is supposed to produce. If it only
+ratified the existing plan it would not be doing any work.
+
+## 6. The consequence for "why not just write this in Python?"
+
+The answer this statement licenses:
+
+> Because the compiler and the instruction stream enforce things about your
+> orchestration that no Python library structurally can — the plan is resolved,
+> acyclic and inspectable before it runs; the effects are declared and checked
+> against the grant; the loop has a declared predicate and a bounded budget; a
+> CPU-bound task cannot starve the others; a deadlock names itself instead of
+> hanging. **You cannot forget any of it, and you cannot opt out.**
+
+Two of those five hold today, verified. One is specified. Two are open issues.
+That is a defensible claim with a known gap, which is a better position than a
+claim that sounds complete and is not — the thing all three audits caught.
+
+## 7. What this does not settle
+
+- **The agent-boundary decision** (§4). Genuinely open.
+- **Whether move 4 survives.** It needs an Inspectable argument or it should be
+  reclassified as general-purpose type-system work — worth doing, but not
+  evidence for the DSL thesis.
+- **Sequencing.** The domain statement says what is in; it does not say in what
+  order. Current backlog order is #399 → Part A → #405/move 2.
+- **Whether this is the right domain at all.** It is derived from what already
+  works, which is a good way to be self-consistent and a poor way to be
+  ambitious. A domain chosen for where the project is going rather than where it
+  has been would look different, and that is a call this document cannot make.
