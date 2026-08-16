@@ -43,7 +43,7 @@ from typing import Any, Callable, cast
 
 from nodus.runtime.coroutine import Coroutine, DEFERRED_NONE
 from nodus.runtime.channel import Channel, ChannelRecvRequest
-from nodus.orchestration.task_graph import TaskNode, TaskGraph, run_task_graph, plan_graph, resume_graph, load_graph_state
+from nodus.orchestration.task_graph import TaskNode, TaskGraph, WorkflowRebuildError, run_task_graph, plan_graph, resume_graph, load_graph_state
 from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
@@ -1122,11 +1122,27 @@ class VM:
         a module is being re-executed only to re-bind its definitions during
         resume-rebuild (#322). Carries the keys top-level code commonly reads so a
         `let r = run_workflow(x)` followed by `r["steps"]` etc. does not crash the
-        rebuild."""
+        rebuild.
+
+        **Every key any real result can carry must appear here.** Nodus maps raise
+        on a missing key, so one absent key turns a resume into a hard failure —
+        and #399 was exactly that: `status`, `wait`, `retry` and `error` were
+        missing, which are the keys present precisely when a run *defers*. So the
+        one shape a script inspects before resuming was the one shape this could
+        not survive, and the resulting `Missing map key: "status"` was swallowed
+        and reported as `Unknown graph`.
+
+        `test_resume_rebuild.py` asserts this key set covers every shape
+        `run_task_graph` actually returns, so adding a result key without adding it
+        here fails the suite instead of breaking resume silently.
+        """
         return {
             "steps": {}, "failed": [], "tasks": {}, "timings": {}, "attempts": {},
             "cache_hits": [], "graph_id": "", "state": {}, "checkpoints": [],
             "workflow": "", "goal": "",
+            # Deferral / failure keys — absent from a completed result, present on
+            # exactly the runs a resume is issued for (#399).
+            "status": "", "wait": {}, "retry": {}, "error": "",
         }
 
     def builtin_run_workflow(self, workflow):
@@ -1270,12 +1286,18 @@ class VM:
         execution_kind = metadata.get("execution_kind")
         flow_name = goal_name if isinstance(goal_name, str) and goal_name else workflow_name
         if not isinstance(flow_name, str) or not flow_name:
-            return None
+            raise WorkflowRebuildError(
+                "persisted run names no workflow or goal to rebuild"
+            )
         source_code = metadata.get("workflow_source_code")
         source_path = metadata.get("workflow_source_path")
         if not isinstance(source_code, str):
             if not isinstance(source_path, str) or not source_path or not os.path.exists(source_path):
-                return None
+                raise WorkflowRebuildError(
+                    f"no source to rebuild '{flow_name}' from — the run stored no "
+                    f"source code and its path is missing or unreadable "
+                    f"({source_path!r})"
+                )
             with open(source_path, "r", encoding="utf-8") as f:
                 source_code = f.read()
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
@@ -1320,15 +1342,28 @@ class VM:
                 _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
             finally:
                 self._suppress_flow_execution = _prev_suppress
-        except Exception:
-            return None
+        except WorkflowRebuildError:
+            raise
+        except Exception as err:
+            # #399: this used to be `except Exception: return None`, and the caller
+            # turned None into "Unknown graph" — so a rebuild that failed for any
+            # reason reported that the run did not exist, and the actual cause was
+            # discarded. Carry it instead; the diagnosis is the whole value here.
+            raise WorkflowRebuildError(
+                f"re-executing the module to rebuild '{flow_name}' failed",
+                cause=err,
+            ) from err
         self.event_bus = event_bus
         self.source_code = source_code
         if worker_dispatcher is not None:
             self.worker_dispatcher = worker_dispatcher
         workflow = find_goal_value(self.globals, flow_name) if execution_kind == "goal" else find_workflow_value(self.globals, flow_name)
         if workflow is None:
-            return None
+            kind_word = "goal" if execution_kind == "goal" else "workflow"
+            raise WorkflowRebuildError(
+                f"{kind_word} '{flow_name}' is not defined by the rebuilt module — "
+                f"it may have been renamed or removed since the run started"
+            )
         _stt_raw = metadata.get("step_to_task")
         step_to_task: dict[str, Any] | None = _stt_raw if isinstance(_stt_raw, dict) else None
         graph = workflow_to_graph(self, workflow, init_state=False, task_ids_by_step=step_to_task)

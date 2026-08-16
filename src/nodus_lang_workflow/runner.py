@@ -8,6 +8,7 @@ from contextlib import contextmanager
 
 from nodus.orchestration.task_graph import (
     TaskGraph,
+    WorkflowRebuildError,
     get_registered_graph,
     get_registered_vm,
     load_graph_state,
@@ -651,7 +652,15 @@ class WorkflowFrameworkRunner:
         graph = get_registered_graph(run_id)
         registered_vm = get_registered_vm(run_id)
         if graph is None or (registered_vm is not None and registered_vm is not vm):
-            graph = rebuild_graph(run_id, state)
+            try:
+                graph = rebuild_graph(run_id, state)
+            except WorkflowRebuildError as err:
+                # #399: record why. A sweeper adopting an orphan is the one caller
+                # with nobody watching, so a bare "Failed to rehydrate" here is a
+                # dead end — this is the only place the reason survives.
+                record.last_error = f"Failed to rehydrate workflow run '{run_id}': {err.describe()}"
+                self.store.save_run(record)
+                return None
         if graph is None:
             record.last_error = f"Failed to rehydrate workflow run '{run_id}'"
             self.store.save_run(record)
@@ -846,7 +855,18 @@ class WorkflowFrameworkRunner:
             graph = get_registered_graph(graph_id)
             registered_vm = get_registered_vm(graph_id)
             if graph is None or (registered_vm is not None and registered_vm is not vm):
-                graph = rebuild_graph(graph_id, state)
+                try:
+                    graph = rebuild_graph(graph_id, state)
+                except WorkflowRebuildError as err:
+                    # #399: report why, not "Unknown graph". The run exists — it is
+                    # in the store and its state is on disk — so claiming otherwise
+                    # sends the reader looking in the wrong place entirely.
+                    return {
+                        "ok": False,
+                        "error": f"Could not rebuild run '{graph_id}': {err.describe()}",
+                        "graph_id": graph_id,
+                        "category": "workflow_rebuild_failed",
+                    }
             if graph is None:
                 return {"ok": False, "error": "Unknown graph"}
             metadata = state.get("metadata")

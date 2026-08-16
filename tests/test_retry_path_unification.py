@@ -90,6 +90,22 @@ class _TempProject:
         return path
 
 
+# _TIMING — why these tests pin an explicit time limit.
+#
+# The CLI's default deadline is 200 ms (`EXECUTION_TIMEOUT_MS`). Measured on an
+# idle machine, three attempts of a *trivial* retrying step cost ~110 ms warm and
+# 801 ms on the first (cold) run — mostly graph-state persistence, one write per
+# attempt. That is ~1.5x headroom warm and negative cold, against CLAUDE.md's
+# rule of 5-10x.
+#
+# This is a consequence of #392 rather than a quirk of the tests: retries used to
+# be deferred (and dropped), so they cost nothing; now they are taken in-process
+# and spend the budget. These tests are about retry *semantics*, so they pin a
+# generous limit and leave deadline behaviour to the tests that are about
+# deadlines. `nodus workflow-run` gained `--time-limit` for this — it was the one
+# run command without it.
+
+
 def _cli(argv) -> tuple[int, str]:
     buf = io.StringIO()
     old = sys.stdout
@@ -129,6 +145,7 @@ class RetriesHonouredOnEveryEntryPointTests(unittest.TestCase):
                 source,
                 filename=path,
                 project_root=project.root,
+                timeout_ms=None,   # see _TIMING note below
             )
         self.assertTrue(result.get("ok"), result)
         self.assertEqual(_attempts(result["stdout"]), 3)
@@ -148,7 +165,7 @@ class RetriesHonouredOnEveryEntryPointTests(unittest.TestCase):
         # `nodus run` on a script that calls run_workflow() in-language.
         with _TempProject() as project:
             path = project.write("wf_run.nd", _source("workflow", driver=True))
-            rc, out = _cli(["nodus", "run", path])
+            rc, out = _cli(["nodus", "run", path, "--time-limit", "30000"])
         self.assertEqual(rc, 0, out)
         self.assertEqual(_attempts(out), 3)
         self.assertIn("attempts=3", out)
@@ -158,7 +175,7 @@ class RetriesHonouredOnEveryEntryPointTests(unittest.TestCase):
         # loop is gone and the callee retries instead.
         with _TempProject() as project:
             path = project.write("wf.nd", _source("workflow", driver=False))
-            rc, out = _cli(["nodus", "workflow-run", path])
+            rc, out = _cli(["nodus", "workflow-run", path, "--time-limit", "30000"])
         self.assertEqual(rc, 0, out)
         self.assertEqual(_attempts(out), 3)
 
