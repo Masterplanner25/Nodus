@@ -263,6 +263,50 @@ upload, when fixes are still cheap.
 
 ---
 
+## Stage 5: Post-publish eval
+
+**When:** immediately after `twine upload` succeeds, before announcing the release.
+
+**Purpose:** Gate 10 asks *"what can I make fail?"* against a locally-built wheel.
+This stage asks a different question — **"does this work as a new user would
+expect?"** — against the package as actually published. It catches the class of
+problem a local wheel cannot: a bad upload, a missing file in the sdist, a
+dependency that resolves differently from PyPI, or a README instruction that no
+longer matches the shipped CLI.
+
+**Protocol:**
+
+1. Fresh virtualenv, nothing else installed, **no `PYTHONPATH`**:
+   ```powershell
+   python -m venv .venv-postpublish
+   .venv-postpublish/Scripts/pip install nodus-lang==X.Y.Z
+   ```
+2. `nodus --version` matches the release.
+3. **Run the README quickstart verbatim** in an empty directory. If the README
+   says `nodus init` then `nodus run`, type exactly that and nothing else — the
+   point is to find the gap between what the docs say and what ships.
+4. Verify every user-facing claim the release advertises — the CHANGELOG headline
+   entries and the README's "Recent" line. Each one, against the published
+   package, not dev source.
+5. Confirm the known issues shipped in the CHANGELOG are the ones you actually
+   hit, and that none of them blocks the new-user path.
+6. Record in `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md` — **even if everything
+   passes.** A clean run is evidence, not silence.
+
+**Passing criteria:**
+- Installs from PyPI into a clean environment.
+- The README quickstart works as written.
+- Every advertised claim verified against the published artifact.
+- Findings filed as issues; a finding here does not un-publish the release, but it
+  does set the priority for the next patch.
+
+**Why this stage exists:** Gate 10 validates a wheel on the maintainer's disk.
+Everything between that wheel and `pip install` — the upload, the sdist contents,
+dependency resolution — is untested until someone installs it, and historically
+that someone was a user.
+
+---
+
 ## Gate failure handling
 
 A failed gate blocks the release. The options are:
@@ -292,6 +336,11 @@ doc-vs-code failures cannot be deferred.
 | Companion library tests | Coordinated release | No |
 | Spec version verification | Companion library releases | No |
 | **Pre-publish creator validation** | All releases (abbreviated for security patches) | No |
+| **Post-publish eval (Stage 5)** | All releases | No — runs *after* upload, so it cannot block it; a finding sets the next patch's priority |
+
+Both validation stages produce a document in `docs/evals/vX.Y.Z/`:
+`CREATOR_VALIDATION.md` (Gate 10) and `POSTPUBLISH_EVAL.md` (Stage 5). **A release
+is not finished until both exist**, whether or not either found anything.
 
 ---
 
