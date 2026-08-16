@@ -19,7 +19,11 @@ nodus run
 nodus repl
 ```
 
-Nodus is an **orchestration DSL and embedded runtime** for building agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar. It gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, and goals are language-level constructs rather than library conventions layered over Python.
+Nodus is an **orchestration DSL and embedded runtime** for *hosting* agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar.
+
+**There is no model in the core, and that is the design.** Nodus contains no LLM client, no agent loop and no tool-selection logic; `action agent "name" with {...}` hands a JSON-safe payload to a handler your host registers, and takes a result back. Because the runtime cannot perform inference, every semantic decision *must* cross that boundary — so deterministic structure never guesses, and the model never controls sequencing.
+
+What the language contributes: `workflow`, `goal`, `step` and `after` are real keywords with real AST nodes, and dependency names are resolved and checked at parse time — `after typo` is a syntax error, which LangGraph, Prefect and Airflow all discover at run time. Coroutines are a hybrid: one `YIELD` opcode and a VM-level `Coroutine` that saves `ip`/`stack`/`frames`, with `spawn`/`channel`/`send`/`recv` as builtins. **Task graphs are a runtime library** (`orchestration/task_graph.py`) operating on data the compiler emits — genuine deterministic sequencing, but not language-level, and the README said otherwise until v4.2.0.
 
 If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A (through the `nodus-mcp` and `nodus-a2a` companion packages — the core language ships neither protocol), Nodus is the execution layer.
 

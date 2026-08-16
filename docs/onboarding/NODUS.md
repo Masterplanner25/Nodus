@@ -2,7 +2,7 @@
 
 ## What Nodus Is
 
-An orchestration DSL and embedded runtime for building agentic systems. Nodus gives AI workflows, tool chains, and agent pipelines a proper language — one where coroutines, task graphs, workflows, goals, and namespaced tool registries are language-level constructs, not library conventions. The tool registry is MCP-shaped and bridged to the MCP protocol by the `nodus-mcp` companion package.
+An orchestration DSL and embedded runtime for hosting agentic systems. `workflow`, `goal`, `step` and `after` are real keywords with parse-time dependency checking; coroutines are a hybrid (a `YIELD` opcode and a VM-level `Coroutine`, with `spawn`/`channel`/`send`/`recv` as builtins); task graphs are a runtime library the compiler feeds. There is no model in the core — agent calls cross a typed boundary to a handler your host registers. The tool registry is MCP-shaped and bridged to the MCP protocol by the `nodus-mcp` companion package.
 
 ## Who It Is For
 
