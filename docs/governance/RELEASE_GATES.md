@@ -119,6 +119,29 @@ the **installed wheel**, not just the dev source.
 **Why this gate exists:** v3.0.1 shipped without a fix that was present in source but
 not in the wheel (missing push before PyPI upload). This gate catches that class of error.
 
+**The trap: this gate goes vacuous the moment the CHANGELOG is cut.** The
+`--closed-issues` phase scans `[Unreleased]` by default. Once that section has
+been moved to `[X.Y.Z]` as part of release prep, the default scan finds an empty
+section and reports:
+
+```
+Scanning CHANGELOG [Unreleased] section
+Found 0 issue reference(s)
+Closed-issues: PASS - 0 passed, 0 failed, 0 missing (of 0 referenced issues)
+```
+
+That is a **pass that checked nothing**, and a green `--all` run after the version
+cut is not evidence the regression tests were verified. At release time it must be
+run against the release section:
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --closed-issues --section "X.Y.Z"
+```
+
+Found during the v4.2.0 release (16 issues, all passing once scanned correctly).
+
 ---
 
 ## Gate 5: Version sync check

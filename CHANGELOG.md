@@ -4,6 +4,21 @@
 
 ## [4.2.0] - 2026-08-15
 
+### Known issues
+
+Found by Gate 10 pre-publish creator validation against the built wheel
+(`docs/evals/v4.2.0/CREATOR_VALIDATION.md`). Both are long-standing limitations
+rather than regressions, and both fail at compile time — no silent wrong answers.
+
+- **`try { } finally { }` without `catch` is a syntax error** (#415). `catch` is
+  mandatory, so cleanup-without-handling must be written
+  `catch e { throw e }` + `finally` — which routes it through the re-throw path
+  that this release fixes (#361).
+- **A closure inside a loop body at module top level cannot capture that body's
+  variables** (#416). The same loop inside a function works, with correct
+  per-iteration binding. The error is `Undefined variable: <name>` for a variable
+  declared on the line above.
+
 ### Changed — breaking for anything parsing stderr
 
 - **#342: every error now reports the resolved absolute path.** Runtime errors
