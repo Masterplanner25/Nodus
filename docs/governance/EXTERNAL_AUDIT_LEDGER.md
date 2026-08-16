@@ -434,14 +434,25 @@ Touches README, `llms.txt`, `llms-full.txt`, PyPI description, wiki. **Not yet
 decided** — deferred until more of the audit series is in, since positioning
 should answer all of them at once rather than one.
 
-### D2 — `goal` after unification
+### D2 — `goal` after unification — proposed as #409
 
 Once #393 lands, `goal` and `workflow` are the same construct with two spellings.
-Either give `goal` something a workflow lacks — a completion predicate
-re-evaluated after each step is the natural candidate, and the readiness loop is
-already shaped for it — or deprecate it and let a workflow's name carry the
-intent. Shipping both as distinct keywords while the implementation makes no
-distinction is what produced this ledger entry.
+**Proposed direction: make `goal` a stopping condition** — a declared predicate
+plus a budget, which the runtime loops on. That is also the answer to Audit 02's
+F22 (*"the plan→act→verify→replan loop is inexpressible… the defining control
+structure of agentic systems cannot be written in the orchestration language for
+agentic systems"*) and to Audit 01 §13 (*"no representation of an objective, no
+predicate over world state, no success criterion"*).
+
+It does not weaken the acyclicity invariant: a goal loop re-runs the DAG rather
+than being a cycle in it, so `_detect_cycle_task_ids` is untouched.
+
+#409 carries the proposal, together with the larger thesis it exposed — that all
+three audits circle without naming: the language is *incidental* to the
+orchestration (Audit 03's word), joined to it "by a MapLit and a convention", and
+the test is Audit 01 §04's demolition — *hand `run_task_graph` a list of
+`TaskNode`s built from Python callables and the orchestration is unchanged*. The
+measure of success is that this stops being true.
 
 ---
 
