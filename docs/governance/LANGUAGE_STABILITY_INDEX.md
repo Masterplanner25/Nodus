@@ -47,6 +47,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | Export syntax | Mostly Stable | Visibility rules may be refined |
 | String interpolation `"\(expr)"` | Stable | Implemented in v4.0; syntax frozen |
 | `workflow`, `goal`, `step` | Mostly Stable | Graduated v4.0.5; WorkflowFrameworkRunner path unified; checkpoint API documented |
+| `goal … over …` (stopping condition) | Experimental | New in this release (#409 Part A) and **additive** — the `goal g { step … }` form above is unchanged. `until` accepts `reached("literal")` composed with `&&`/`\|\|`/`!`; `budget` is mandatory. Not yet frozen: state-at-checkpoint predicates, ordered history (*reached A then B*), a cost bound, and pursuing a workflow declared in another module are all unimplemented and would extend the surface. |
 | `action` expressions in steps | Experimental | Step modifier; API not yet frozen |
 | `yield expr` | Stable | Promoted v4.0.5; `YIELD` opcode stable since v1.0; no further changes planned |
 | `spawn`, `coroutine`, `channel` | Mostly Stable | Graduated v4.0.5; SCHED-001/002, CHAN-001, CIRC-001 all resolved |

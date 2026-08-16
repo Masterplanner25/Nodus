@@ -21,6 +21,7 @@ from nodus.frontend.ast.ast_nodes import (
     FnDef,
     FnExpr,
     GoalDef,
+    GoalPursuit,
     If,
     Import,
     Index,
@@ -62,7 +63,7 @@ from nodus.frontend.ast.ast_nodes import (
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
-from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_workflow_ast
+from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_goal_pursuit_ast, lower_workflow_ast
 
 
 BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode added
@@ -393,6 +394,9 @@ class Compiler:
             if isinstance(stmt, GoalDef):
                 self.symbols.define(stmt.name)
                 continue
+            if isinstance(stmt, GoalPursuit):
+                self.symbols.define(stmt.name)
+                continue
             if isinstance(stmt, ExprStmt) and isinstance(stmt.expr, Assign):
                 self.symbols.define(stmt.expr.name)
                 continue
@@ -564,6 +568,16 @@ class Compiler:
             # Same as WorkflowDef above: goal steps are lowered to a MapLit
             # via _StateRewriter before bytecode compilation.
             self.compile_expr(lower_goal_ast(stmt))
+            self.emit("STORE", self.resolve_store_name(stmt.name))
+            return
+
+        if isinstance(stmt, GoalPursuit):
+            if self.symbols is not None:
+                self.symbols.define(stmt.name)
+            # #409: the stopping-condition form of `goal`. Lowers to a map whose
+            # `until` is a nested predicate map rather than compiled code, so the
+            # condition stays readable before the goal runs.
+            self.compile_expr(lower_goal_pursuit_ast(stmt))
             self.emit("STORE", self.resolve_store_name(stmt.name))
             return
 

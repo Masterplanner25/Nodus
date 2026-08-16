@@ -2,6 +2,60 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#409: `goal … over …` — a goal can now declare a stopping condition.**
+  Experimental, and **additive**: `goal g { step … }` is unchanged.
+
+  A workflow finishes when every step has run. A goal finishes when its condition
+  holds, or its budget runs out. It contains no steps of its own — it names a
+  workflow, and watches the checkpoints that workflow records:
+
+  ```nd
+  goal reach_quality over tune {
+      until reached("good_enough")
+      budget { max_iterations: 5, deadline_ms: 30000 }
+  }
+  ```
+
+  Each pass resumes the workflow from the last checkpoint it reached, so `state`
+  carries forward and successive passes differ. `retry from "label"` pins the
+  re-entry point. `until` composes `reached("literal")` with `&&`, `||`, `!`.
+
+  This is the loop two of the three external audits said was missing — audit 02's
+  *"the plan→act→verify→replan loop is inexpressible"* and audit 01's *"no
+  representation of an objective, no predicate over world state"*. It answers the
+  **verify→replan** half; dynamic fan-out and conditional edges remain out of
+  scope, and the DAG stays lexically fixed and acyclic.
+
+  **The compiler checks the waypoints exist.** Naming a checkpoint the workflow
+  never records is a compile error, not a goal that quietly never finishes:
+
+  ```
+  Syntax error at g.nd:5:11: goal 'ship' waits on checkpoint "verifed", which
+  'deploy' never records. It records "attempted", "verified".
+  ```
+
+  That check is **exact, not best-effort**, because neither `checkpoint` nor
+  `reached` accepts a computed label — and it is the thing a library structurally
+  cannot do: a planner can watch checkpoints as they happen, but it cannot refuse
+  to start.
+
+  **`budget` is mandatory** (`max_iterations` and `deadline_ms`), and exhausting
+  it is a **failure**: the goal returns an err record
+  (`kind: "goal_error"`, `payload.category: "budget_exhausted"`, with the
+  iterations and waypoints reached) rather than a result map, so it cannot be
+  mistaken for success.
+
+  Not implemented, each of which would extend the surface: pursuing a workflow
+  declared in another module; predicates over the state *at* a checkpoint or over
+  the *order* checkpoints were reached; a cost bound. Design record and the
+  deviations from it: `docs/design/v5/01-goal-stopping-condition.md`.
+
+  **`over`, `until`, `budget`, `reached` and `retry` are contextual keywords** —
+  still usable as ordinary identifiers. The VS Code grammar was updated in the
+  same change; the extension needs republishing for the highlighting to ship.
+
 ### Changed
 
 - **`nodus workflow-run` accepts `--time-limit <ms>`.** It was the one run command

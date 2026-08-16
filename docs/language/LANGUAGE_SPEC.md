@@ -561,6 +561,46 @@ Supported step options:
 
 ## Goal DSL
 
+`goal` has two forms.
+
+**`goal NAME over WORKFLOW { ... }`** — a stopping condition (Experimental,
+#409). The goal owns the criteria; the workflow it names owns the work:
+
+```nd
+workflow tune {
+    state score = 0
+    step adjust {
+        score = score + 40
+        let s = workflow_state()
+        checkpoint "adjusted"
+        if (s["score"] >= 100) { checkpoint "good_enough" }
+        return s["score"]
+    }
+}
+
+goal reach_quality over tune {
+    until reached("good_enough")
+    budget { max_iterations: 5, deadline_ms: 30000 }
+    retry from "adjusted"
+}
+```
+
+- `over <workflow>` names a workflow **declared in the same module**.
+- `until <predicate>` — `reached("literal")` composed with `&&`, `||`, `!` and
+  parentheses. The label is a string literal, matching `checkpoint`'s own rule;
+  that is what makes the check below exact.
+- **A checkpoint the workflow never records is a compile error.**
+- `budget { max_iterations: N, deadline_ms: M }` is **mandatory**; both bounds
+  are required. Exhausting it returns an err record with
+  `payload.category: "budget_exhausted"`, never a result map.
+- Each pass resumes the workflow from a checkpoint, so `state` carries forward.
+- `over`, `until`, `budget`, `reached` and `retry` are contextual keywords —
+  still valid identifiers elsewhere.
+
+**`goal NAME { step ... }`** — the original form, below. Since the retry paths
+were unified (#393) this is a `workflow` with a different event prefix, and is a
+naming convention rather than a distinct construct.
+
 Goals are a semantic wrapper over the same durable workflow/task graph runtime.
 
 ```nd

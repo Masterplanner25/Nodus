@@ -57,7 +57,7 @@ from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_
 from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
-from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_value, is_workflow_value, workflow_to_graph
+from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_pursuit_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
 
 _DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pending
@@ -1226,7 +1226,163 @@ class VM:
             rebuild_graph=target._rebuild_workflow_graph,
         )
 
+    # --- goal as a stopping condition (#409 Part A) -----------------------
+
+    @staticmethod
+    def _evaluate_goal_predicate(node, reached: set[str]) -> bool:
+        """Walk the lowered `until` map against the checkpoints reached so far.
+
+        The predicate is data (see `lower_goal_pursuit_ast`), so this is a small
+        interpreter rather than a call into compiled code — which is what keeps a
+        goal's stopping condition readable before it runs.
+        """
+        if not isinstance(node, dict):
+            raise ValueError(f"goal predicate node is not a map: {node!r}")
+        op = node.get("op")
+        if op == "reached":
+            return node.get("label") in reached
+        if op == "not":
+            return not VM._evaluate_goal_predicate(node.get("operand"), reached)
+        if op == "and":
+            return VM._evaluate_goal_predicate(node.get("left"), reached) and VM._evaluate_goal_predicate(node.get("right"), reached)
+        if op == "or":
+            return VM._evaluate_goal_predicate(node.get("left"), reached) or VM._evaluate_goal_predicate(node.get("right"), reached)
+        # Not `return False`. An unrecognised operator would read as "condition not
+        # yet met", so the goal would run to its budget and report exhaustion —
+        # blaming the workflow for a malformed predicate. Say which it is.
+        raise ValueError(f"unsupported goal predicate operator: {op!r}")
+
+    @staticmethod
+    def _checkpoint_labels(result) -> list[str]:
+        entries = result.get("checkpoints") if isinstance(result, dict) else None
+        if not isinstance(entries, list):
+            return []
+        return [e["label"] for e in entries if isinstance(e, dict) and isinstance(e.get("label"), str)]
+
+    def builtin_run_goal_pursuit(self, pursuit):
+        """Run a workflow repeatedly until the goal's predicate holds or its budget runs out.
+
+        The loop is `run_workflow` then `resume_workflow(graph_id, label)`, which
+        re-executes forward carrying the state captured at that checkpoint. No new
+        execution mode is involved — that mechanism has been there all along.
+        """
+        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
+
+        if getattr(self, "_suppress_flow_execution", False):
+            return self._suppressed_flow_result()   # resume-rebuild (#322/#399)
+
+        goal_name = pursuit.get("name")
+        flow_name = pursuit.get("workflow")
+        workflow = find_workflow_value(self.globals, flow_name)
+        if workflow is None:
+            return self.make_err(
+                "goal_error",
+                f"goal '{goal_name}' pursues workflow '{flow_name}', which is not defined here",
+                payload={"category": "unknown_workflow", "goal": goal_name, "workflow": flow_name},
+            )
+
+        budget = pursuit.get("budget") if isinstance(pursuit.get("budget"), dict) else {}
+        max_iterations = int(budget.get("max_iterations") or 0)
+        deadline_ms = float(budget.get("deadline_ms") or 0)
+        until = pursuit.get("until")
+        retry_from = pursuit.get("retry_from")
+
+        started_at = runtime_time_ms()
+        runner = get_default_workflow_runner()
+        reached: set[str] = set()
+        history: list[str] = []
+        iterations = 0
+
+        self.event_bus.emit_event(
+            "goal_start",
+            data={"goal": goal_name, "workflow": flow_name,
+                  "max_iterations": float(max_iterations), "deadline_ms": deadline_ms},
+        )
+        graph = workflow_to_graph(self, workflow, init_state=True)
+        result = runner.start_graph(self, graph)
+        if getattr(result, "kind", None) == "error":
+            return result
+        graph_id = result.get("graph_id") if isinstance(result, dict) else None
+
+        while True:
+            iterations += 1
+            pass_labels = self._checkpoint_labels(result)
+            reached.update(pass_labels)
+            history.extend(pass_labels)
+
+            if self._evaluate_goal_predicate(until, reached):
+                payload = dict(result) if isinstance(result, dict) else {}
+                payload.update({
+                    "goal": goal_name,
+                    "goal_satisfied": True,
+                    "iterations": float(iterations),
+                    "reached": sorted(reached),
+                })
+                self.event_bus.emit_event(
+                    "goal_complete",
+                    data={"goal": goal_name, "workflow": flow_name, "graph_id": graph_id,
+                          "iterations": float(iterations)},
+                )
+                return payload
+
+            elapsed = runtime_time_ms() - started_at
+            over_budget = iterations >= max_iterations or (deadline_ms > 0 and elapsed >= deadline_ms)
+            if over_budget:
+                # A goal that ran out of budget has NOT met its objective, and must
+                # never return a success-shaped result — that is the defect class
+                # this cycle exists to close (#392, #376, #399).
+                self.event_bus.emit_event(
+                    "goal_fail",
+                    data={"goal": goal_name, "workflow": flow_name, "graph_id": graph_id,
+                          "iterations": float(iterations), "reason": "budget_exhausted"},
+                )
+                return self.make_err(
+                    "goal_error",
+                    f"goal '{goal_name}' exhausted its budget after {iterations} "
+                    f"iteration(s) without satisfying its condition",
+                    payload={
+                        "category": "budget_exhausted",
+                        "goal": goal_name,
+                        "workflow": flow_name,
+                        "graph_id": graph_id,
+                        "iterations": float(iterations),
+                        "reached": sorted(reached),
+                        "max_iterations": float(max_iterations),
+                        "deadline_ms": deadline_ms,
+                        "elapsed_ms": elapsed,
+                    },
+                )
+
+            resume_label = retry_from if isinstance(retry_from, str) else (history[-1] if history else None)
+            if resume_label is None:
+                # Nothing to re-enter from: without a checkpoint there is no
+                # carried state, so another pass would repeat this one exactly.
+                # Say so rather than spin until the budget runs out.
+                return self.make_err(
+                    "goal_error",
+                    f"goal '{goal_name}' cannot advance: '{flow_name}' recorded no "
+                    f"checkpoint to resume from",
+                    payload={"category": "no_checkpoint_reached", "goal": goal_name,
+                             "workflow": flow_name, "graph_id": graph_id},
+                )
+
+            result = runner.resume_workflow(
+                self, graph_id, resume_label, rebuild_graph=self._rebuild_workflow_graph
+            )
+            if getattr(result, "kind", None) == "error":
+                return result
+            if isinstance(result, dict) and result.get("ok") is False:
+                return self.make_err(
+                    "goal_error",
+                    f"goal '{goal_name}' could not resume '{flow_name}': {result.get('error')}",
+                    payload={"category": "resume_failed", "goal": goal_name,
+                             "workflow": flow_name, "graph_id": graph_id,
+                             "iterations": float(iterations)},
+                )
+
     def builtin_run_goal(self, goal):
+        if is_goal_pursuit_value(goal):
+            return self.builtin_run_goal_pursuit(goal)
         if not is_goal_value(goal):
             self.runtime_error("type", "run_goal(goal) expects a goal")
         if getattr(self, "_suppress_flow_execution", False):

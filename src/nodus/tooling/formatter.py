@@ -20,6 +20,7 @@ from nodus.frontend.ast.ast_nodes import (
     For,
     ForEach,
     GoalDef,
+    GoalPursuit,
     GoalStep,
     If,
     Import,
@@ -86,6 +87,32 @@ def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
         prev_fn = is_fn
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def format_goal_predicate(node, *, parent: str | None = None) -> str:
+    """Print a goal `until` predicate.
+
+    Its own printer rather than `format_expr` because the predicate is a
+    restricted grammar (`reached("literal")` with `&&`, `||`, `!`), not a general
+    expression — the restriction is what makes the compile-time checkpoint check
+    exact, so the formatter must not widen it by accident.
+    """
+    kind = type(node).__name__
+    if kind == "Reached":
+        return f'reached({format_expr(node.label)})'
+    if kind == "PredicateNot":
+        return f"!{format_goal_predicate(node.operand, parent='not')}"
+    if kind in ("PredicateAnd", "PredicateOr"):
+        op = "&&" if kind == "PredicateAnd" else "||"
+        text = (
+            f"{format_goal_predicate(node.left, parent=kind)} {op} "
+            f"{format_goal_predicate(node.right, parent=kind)}"
+        )
+        # Parenthesise when nesting could change how it reads back.
+        if parent is not None and parent != kind:
+            return f"({text})"
+        return text
+    raise TypeError(f"Unknown goal predicate node: {node!r}")
 
 
 def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list[str]:
@@ -180,6 +207,18 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
         for goal_step in stmt.steps:
             body_lines.extend(format_stmt(goal_step, indent + 1, keep_trailing_comments=keep_trailing_comments))
+        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+
+    if isinstance(stmt, GoalPursuit):
+        header = f"{prefix}goal {stmt.name} over {stmt.workflow_name} {{"
+        inner = "    " * (indent + 1)
+        body_lines = [f"{inner}until {format_goal_predicate(stmt.until)}"]
+        body_lines.append(
+            f"{inner}budget {{ max_iterations: {format_expr(stmt.budget.max_iterations)}, "
+            f"deadline_ms: {format_expr(stmt.budget.deadline_ms)} }}"
+        )
+        if stmt.retry_from is not None:
+            body_lines.append(f"{inner}retry from {format_expr(stmt.retry_from)}")
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, WorkflowStateDecl):

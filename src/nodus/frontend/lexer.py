@@ -79,7 +79,18 @@ EXPRESSION_KEYWORDS = {
     "match",
 }
 
-CONTEXTUAL_KEYWORDS = LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS
+# Recognised only inside `goal NAME over WORKFLOW { ... }` (#409). Contextual for
+# the same reason as the sets above: `until`, `budget` and `over` are plausible
+# variable names and reserving them would break existing programs for no gain.
+GOAL_KEYWORDS = {
+    "over",
+    "until",
+    "budget",
+    "reached",
+    "retry",
+}
+
+CONTEXTUAL_KEYWORDS = LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS
 
 # Every word the language treats as a keyword, reserved or contextual. This is
 # what editor grammars, docs and tooling should read.
