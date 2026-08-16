@@ -134,6 +134,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Eval results (per-version) | `docs/evals/` — e.g. `docs/evals/v4.0.0/CREATOR_VALIDATION.md` |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
+| Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
 | Issue response policy | `docs/governance/ISSUE_RESPONSE_POLICY.md` |
 | AI discoverability (canonical map) | `llms.txt` |
