@@ -66,9 +66,28 @@ Two files must always match:
 - `src/nodus/support/version.py` — `__version__ = "X.Y.Z"`
 - `pyproject.toml` — `version = "X.Y.Z"`
 
-Release order: bump both files → move `[Unreleased]` in `CHANGELOG.md` to
-the new version section → commit → `git tag vX.Y.Z` → `git push origin main
---tags` → build wheel → upload to PyPI.
+Release order — the whole sequence, not just the publish half:
+
+1. Run the gates (`RELEASE_GATES.md`): suite, ruff, `nodus_gate --all`, keyword coverage
+2. Bump both version files
+3. Move `[Unreleased]` in `CHANGELOG.md` to the new version section
+4. **Re-run the closed-issues gate as `--closed-issues --section X.Y.Z`.** After the
+   cut it scans an empty `[Unreleased]` and reports a pass that checked nothing
+5. Commit, PR, CI, merge
+6. `git tag vX.Y.Z` → `git push origin vX.Y.Z`
+7. Build the wheel **from the tagged tree**
+8. **Gate 10** — adversarial validation against that wheel in a clean venv →
+   write `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`
+9. Upload to PyPI
+10. **Stage 5** — install the *published* package in a fresh venv and check it works
+    as a new user would expect → write `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md`
+11. `gh release create vX.Y.Z --verify-tag` — **only after PyPI succeeds**, since
+    release immutability is permanent (see the gotcha above)
+
+**Both eval documents are part of the release, not optional write-ups.** A clean run
+is evidence; silence is not. Steps 8 and 10 answer different questions — "what can I
+make fail?" against a local wheel, and "does this work as a new user would expect?"
+against the published one.
 
 PyPI upload — use explicit flags; `~/.pypirc` may have an empty password field
 which causes a 403:
@@ -131,7 +150,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
-| Eval results (per-version) | `docs/evals/` — e.g. `docs/evals/v4.0.0/CREATOR_VALIDATION.md` |
+| Eval results (per-version) | `docs/evals/vX.Y.Z/` — **two documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel) and `POSTPUBLISH_EVAL.md` (Stage 5, against the published package). See `docs/evals/v4.2.0/` for the current shape |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
 | Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint |
