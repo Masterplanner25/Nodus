@@ -1032,8 +1032,14 @@ def _run_workflow(
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    kwargs = {} if time_limit_ms is None else {"timeout_ms": time_limit_ms}
-    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root, **kwargs)
+    result, _vm = run_workflow_code(
+        VM([], {}, code_locs=[], source_path=None),
+        code,
+        filename=path,
+        workflow_name=workflow_name,
+        project_root=project_root,
+        timeout_ms=EXECUTION_TIMEOUT_MS if time_limit_ms is None else time_limit_ms,
+    )
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
