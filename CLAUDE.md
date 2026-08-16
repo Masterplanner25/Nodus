@@ -697,13 +697,32 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-vscode VS Code extension
 
 - Repo: `C:\dev\nodus-vscode` / `github.com/Masterplanner25/nodus-vscode`
-- **Status: v0.1.0 PUBLISHED — live on VS Code Marketplace 2026-06-15 under publisher `MasterplanInfiniteWeave`.**
+- **Status: v0.1.1 PUBLISHED — live on VS Code Marketplace under publisher `MasterplanInfiniteWeave`** (0.1.0 2026-06-15; 0.1.1 2026-08-15, the #357 grammar fix).
 - **Phase 1:** TextMate grammar, 23 snippets, bracket/fold config
 - **Phase 2:** Diagnostics via `nodus check` (fallback; skipped once LSP starts)
 - **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
 - **Phase 4:** LSP via `nodus lsp` — hover docs, go-to-definition, completions
 - **Build:** `cd C:\dev\nodus-vscode && npm run package` (requires `@vscode/vsce`)
-- **Publish:** upload VSIX at marketplace.visualstudio.com → Manage Publishers & Extensions → `+ New extension` → `Visual Studio Code`. Publisher ID must be `MasterplanInfiniteWeave` in package.json.
+- **Publish — the update path is not the first-publish path.** `package.json`
+  `publisher` must be `MasterplanInfiniteWeave`, and bump `version` before packaging.
+  - **Updating an existing extension** (the normal case): go to
+    <https://marketplace.visualstudio.com/manage/publishers/MasterplanInfiniteWeave>,
+    find **Nodus Language** in the list, use the row's **`…` menu → Update**, and
+    upload the new `.vsix`. Validation takes a few minutes.
+  - **First publish only:** `+ New extension` → `Visual Studio Code`. Using this for
+    an update is wrong — the extension already exists.
+  - **Or by CLI:** `npx vsce publish -p <PAT>` from the repo (`vsce` is already in
+    `node_modules`). The PAT is an Azure DevOps token with **Marketplace → Manage**
+    scope and organization set to **All accessible organizations** — scoping it to a
+    single org is the failure that looks like a bad token.
+- **Verify a publish** without opening a browser:
+  ```powershell
+  # POST to the gallery API; latest version is versions[0]
+  # https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery
+  # filterType 7 = extension name, value "MasterplanInfiniteWeave.nodus-lang"
+  ```
+- **This extension is not on PyPI**, so the Stage 6 content-hash sweep cannot see it.
+  A release that adds or removes a keyword must republish it — see Gate 3b.
 - **Key settings:** `nodus.executablePath` (default: `nodus`), `nodus.lspCommand` (array, overrides LSP command — useful for dev source: `["C:/dev/Coding Language/.venv/Scripts/python.exe", "C:/dev/Coding Language/nodus.py", "lsp"]`)
 - **LSP note:** VS Code spawns the INSTALLED `nodus.exe`, not dev source. LSP server changes require a new nodus-lang release to take effect in the extension.
 
