@@ -17,6 +17,30 @@ from nodus.runtime.coroutine import Coroutine
 from nodus.orchestration.workflow_state import clone_state, checkpoints_public
 
 
+class WorkflowRebuildError(Exception):
+    """Rebuilding a persisted run's graph from its source failed.
+
+    Distinct from "this graph_id is not known" (#399). Resume used to answer both
+    with ``Unknown graph``, because the rebuild swallowed every exception and
+    returned ``None`` — so a run that ``nodus workflow runs`` listed as waiting,
+    whose state file was on disk, reported that it did not exist. The real cause
+    was discarded, which is why the defect survived across releases.
+
+    ``reason`` is the short, user-facing explanation; ``cause`` is the underlying
+    exception when the failure came from re-executing the module.
+    """
+
+    def __init__(self, reason: str, *, cause: BaseException | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.cause = cause
+
+    def describe(self) -> str:
+        if self.cause is None:
+            return self.reason
+        return f"{self.reason}: {type(self.cause).__name__}: {self.cause}"
+
+
 @dataclass
 class TaskNode:
     task_id: str

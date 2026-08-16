@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **`nodus workflow-run` accepts `--time-limit <ms>`.** It was the one run command
+  without it (`run`, `check`, `debug` and `profile` all had it), and the #392 fix
+  below made the gap bite: step retries are now taken in-process, so a step with
+  `with { retries: N }` spends wall-clock budget it previously deferred out of.
+  Measured on an idle machine, three attempts of a *trivial* retrying step cost
+  ~110 ms warm and 801 ms cold — against a 200 ms default — and there was no flag
+  to raise it. Behaviour is unchanged when the flag is omitted.
+
 - **#393: `goal` and `workflow` now retry identically.** `run_task_graph`
   branched on `execution_kind` to decide how a failed step retries — a
   `workflow` persisted `retry_scheduled` and ended the run for a sweeper to
@@ -27,6 +35,47 @@
   default now get retries honoured, which is the fix.
 
 ### Fixes
+
+- **#399: cross-process resume works for a script that reads the `run_workflow`
+  result — the shape every guide example uses.** Resume in a fresh process
+  rebuilds the graph by re-executing the module, during which
+  `run_workflow`/`run_goal` are replaced by an index-safe placeholder result. The
+  placeholder was missing `status`, `wait`, `retry` and `error` — precisely the
+  keys a result carries when a run **defers**, which is the only kind of run
+  anyone resumes. So `let r = run_workflow(w)` followed by `r["status"]` raised
+  `Missing map key` during every rebuild.
+
+  The placeholder now carries every key a real result can. A test generates each
+  shape `run_task_graph` actually returns — completed, waiting, retry_scheduled,
+  failed, goal — and requires the placeholder to cover all of them, so adding a
+  result key without adding it there fails the suite instead of breaking resume
+  in the field.
+
+- **#399: a failed rebuild says why, instead of `Unknown graph`.** The rebuild
+  swallowed every exception (`except Exception: return None`) and the caller
+  turned `None` into `Unknown graph` — reported for a run the store lists as
+  waiting, whose state file is on disk. The diagnosis was discarded, which is why
+  this survived releases.
+
+  ```
+  # before
+  {"ok": false, "error": "Unknown graph"}
+
+  # after
+  {"ok": false, "error": "Could not rebuild run 'g_80613ca6': re-executing the
+   module to rebuild 'w' failed: LangRuntimeError: module top level ran a second
+   time", "graph_id": "g_80613ca6", "category": "workflow_rebuild_failed"}
+  ```
+
+  New `WorkflowRebuildError` distinguishes the four ways a rebuild can fail from
+  "this graph_id is genuinely unknown". `rehydrate_run` records the reason on the
+  run record, which is the only place it survives for a sweeper.
+
+  **Known issue, unchanged by this release:** module top level still re-executes
+  once per resume, so side effects there repeat — on completed runs too.
+  `docs/guide/workflows-and-tasks.md §8` now documents this and says to keep top
+  level side-effect-free or use `@exactly_once`. Deciding whether to rebuild
+  definitions without a full re-execution is still open on #399.
 
 - **#392: step-level `with { retries: N }` is honoured on every entry point.**
   #226's fix lived in a wrapper — an `inline_retries=True` loop in

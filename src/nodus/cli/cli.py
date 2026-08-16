@@ -1021,12 +1021,25 @@ def _resolve_server_host_port(flags: dict) -> tuple[str, int] | tuple[None, None
         return None, None
 
 
-def _run_workflow(path: str, workflow_name: str | None = None, *, project_root: str | None = None) -> int:
+def _run_workflow(
+    path: str,
+    workflow_name: str | None = None,
+    *,
+    project_root: str | None = None,
+    time_limit_ms: int | None = None,
+) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = run_workflow_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, workflow_name=workflow_name, project_root=project_root)
+    result, _vm = run_workflow_code(
+        VM([], {}, code_locs=[], source_path=None),
+        code,
+        filename=path,
+        workflow_name=workflow_name,
+        project_root=project_root,
+        timeout_ms=EXECUTION_TIMEOUT_MS if time_limit_ms is None else time_limit_ms,
+    )
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
@@ -2246,17 +2259,35 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if command == "workflow-run":
-        flags_with_values = {"--workflow", "--project-root"}
+        flags_with_values = {"--workflow", "--project-root", "--time-limit"}
         positional, flags = _parse_flags(cmd_args, flags_with_values, set())
         if not positional:
-            _print_stderr("Usage: nodus workflow-run <script.nd> [--workflow <name>]")
+            _print_stderr("Usage: nodus workflow-run <script.nd> [--workflow <name>] [--time-limit <ms>]")
             return 1
         script = positional[0]
         project_root, err = _resolve_project_root(flags.get("--project-root"))
         if err:
             _print_stderr(err)
             return 1
-        return _run_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root)
+        # `--time-limit` was missing here while `run`, `check`, `debug` and
+        # `profile` all had it, and #392 made that gap bite: step retries are now
+        # taken in-process, so a `with { retries: N }` step spends the wall-clock
+        # budget it used to defer out of. Three attempts of a trivial step cost
+        # ~110 ms against the 200 ms default — measured, idle machine — so a real
+        # step with real work exceeds it and there was no flag to raise it.
+        time_limit = None
+        if "--time-limit" in flags:
+            try:
+                time_limit = _parse_int(str(flags["--time-limit"]), "--time-limit")
+            except ValueError as exc:
+                _print_stderr(str(exc))
+                return 1
+        return _run_workflow(
+            script,
+            workflow_name=flags.get("--workflow"),
+            project_root=project_root,
+            time_limit_ms=time_limit,
+        )
 
     if command == "workflow-plan":
         flags_with_values = {"--workflow", "--project-root"}

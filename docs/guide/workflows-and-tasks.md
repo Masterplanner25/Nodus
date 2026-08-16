@@ -351,6 +351,28 @@ $ nodus workflow resume <graph_id>
 $ nodus workflow resume <graph_id> --checkpoint after-phase1
 ```
 
+> **Keep module top level side-effect-free in a script you intend to resume.**
+> A resume in a *different process* has nothing in memory, so it rebuilds the
+> graph by **re-executing your module** to re-bind the workflow and function
+> definitions. `run_workflow`, `run_goal` and `print` are suppressed during that
+> rebuild — nothing else is. An `fs.write`, `http.post` or `subprocess.run` at
+> module top level therefore runs again, **once per resume**, on completed runs
+> as well:
+>
+> ```
+> after the run:      X
+> after one resume:   XX
+> after two resumes:  XXX
+> ```
+>
+> Put effects inside steps, where the graph tracks whether they already ran, or
+> behind `@exactly_once`. Definitions, imports and pure setup at top level are
+> fine — that is what the re-execution is for.
+>
+> If the rebuild fails, the resume now tells you why
+> (`Could not rebuild run '<id>': …`). Before #399 every rebuild failure was
+> reported as `Unknown graph`, including for runs that plainly existed.
+
 ---
 
 ## 9. Common patterns
