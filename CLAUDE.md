@@ -746,19 +746,33 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 - **goal vs workflow naming convention:** `goal` = outcome-oriented, single-shot (steps are impl details);
   `workflow` = process-oriented, resumable (pipeline itself is the point, returns `graph_id`).
 
-  **The runtime does *not* treat them identically** — earlier revisions of this file said it did,
-  and that claim is what gets read before writing host wrappers. `run_task_graph` branches on
-  `execution_kind` at `task_graph.py:1101` for **retry scheduling**: a `workflow` defers
-  (`retry_scheduled`, the run ends, a sweeper must resume it) while a `goal` retries in-process.
-  Same source, same step, same `retries: 2`, one `nodus run` → workflow **1 attempt**, goal **3**.
-  So `goal` is currently the more reliable of the two for retries, which is the opposite of what
-  the names suggest. Their result maps also differ in key set: `status`/`retry` appear only on a
-  workflow result, `goal` only on a goal result — so `result["status"]` works for one and errors
-  on the other.
+  **Retry behaviour is now unified (#392/#393, 2026-08-16).** `run_task_graph` used to branch on
+  `execution_kind` — a `workflow` deferred (`retry_scheduled`, run ends, a sweeper must resume it)
+  while a `goal` retried in-process — so the same source with `retries: 2` gave workflow **1
+  attempt**, goal **3**. That branch is gone. Both kinds now defer if and only if **(a)** the run
+  is durably tracked — a `workflow` or `goal`, never a bare `run_graph`, which no store knows
+  about — and **(b)** a retry sweeper is registered on the runner owning that store
+  (`nodus_lang_workflow.runner.register_retry_sweeper(runner)`, held by `RuntimeService` for its
+  lifetime). Otherwise the retry is taken in-process and the run completes before returning.
+  `run_workflow_code`'s `inline_retries` parameter is removed.
 
-  Tracked in #393 (**decision: unify the retry path**) and #392 (`retries` are honoured only by
-  `nodus workflow-run`; the embedding API returns `ok: True` after one attempt). Until those land,
-  do not assume a behaviour holds for one kind because you observed it on the other.
+  Registration is **per-runner, not per-process** — and the default runner is rebuilt per working
+  directory. If you write a test that registers a sweeper, chdir *first*: `retry_sweeper()`
+  binds to the runner for the cwd at the moment you enter it, so
+  `with retry_sweeper(), _project_root_context(td)` silently registers on the wrong store.
+  That ordering bug cost a full suite run.
+
+  **Do not reintroduce the decision anywhere but `_retry_is_swept()`.** The wrapper-level version
+  of this guard (`inline_retries`, passed by one of five callers) is exactly how the bug survived
+  ten weeks. `tests/test_retry_path_unification.py` asserts on the source of the retry branch as
+  well as its behaviour, because a behaviour-only test passes on the goal side alone.
+
+  The result-shape half of #393 was **wrong and was retracted on the issue**: `status`/`retry`
+  appear on both kinds when a run defers and on neither when it completes. A goal result is a
+  workflow result plus a `goal` key. Only the entry points and the event prefix are kind-specific.
+
+  Still open: **#409** — after unification `goal` is a workflow with different event names, so it
+  needs a stopping condition to mean anything distinct.
 - Run tests: `cd C:\dev\nodus-mcp-server && python -m pytest -q`
 
 ## nodus-jupyter

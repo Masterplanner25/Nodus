@@ -85,6 +85,11 @@ written to `.nodus/graphs/<id>.json` on every failure. A process crash between
 retries does not reset the counter. This fixes the most common prototype bug:
 an in-memory dict that resets to zero on restart.
 
+The retries are honoured on whichever entry point you call — `run_workflow_code`
+below, `NodusRuntime`, the CLI, or `run_workflow()` from inside the script. Up to
+v4.2.0 only `nodus workflow-run` ran them; every other path made one attempt and
+returned `ok: True` (#392).
+
 `checkpoint "after_analyze"` — records a recovery point in the graph JSON.
 After a process restart, the host can resume from the last checkpoint rather
 than re-running steps that already succeeded.

@@ -193,16 +193,8 @@ Downstream steps run normally when the step completes without re-throwing.
 mutations from failing attempts persist into the next attempt — design retry
 logic with this in mind.
 
-> **Retries are asynchronous. One `run_workflow()` call does not exhaust them.**
-> When a step with `retries` throws, the run **suspends**: `run_workflow()`
-> returns immediately with `status = "retry_scheduled"` and a `graph_id`, and
-> the step's own result is not yet in `r["steps"]`. Each retry needs an explicit
-> `resume_workflow(graph_id)`. This is true whether or not you set
-> `retry_delay_ms`.
->
-> The trap: on that first return `r["failed"]` is `[]` and `r["steps"]` is `{}`,
-> so a caller that only checks `failed` sees a *clean* result and never learns
-> the step has not finished. Check `r["status"]` too.
+One `run_workflow()` call exhausts the retries. The step below fails twice and
+succeeds on the third attempt, all inside the one call:
 
 ```nd
 workflow with_retries {
@@ -219,27 +211,43 @@ workflow with_retries {
 }
 
 let r = run_workflow(with_retries)
-print(r["status"])
-
-let r2 = resume_workflow(r["graph_id"])
-print(r2["status"])
-
-let r3 = resume_workflow(r["graph_id"])
-print(r3["steps"])
+print(r["steps"])
+print(r["failed"])
 ```
 
 Output:
 
 ```
-retry_scheduled
-retry_scheduled
 succeeded on attempt 3.0
 {"flaky": nil}
+[]
 ```
 
-Two `resume_workflow` calls, because the step fails twice before succeeding on
-the third attempt. For a retry that completes inside a single `run_workflow()`,
-use `try`/`catch` inside the step body instead of the `retries` option.
+When the attempts run out, the run fails: `r["failed"]` names the step and
+`r["retry"]["classification"]` is `"exhausted"`, and the last error is also
+printed to stderr with a stack trace. A retry that eventually succeeds writes
+nothing to stderr — measured, both streams, 2026-08-16.
+
+`goal` behaves identically here — `run_goal()` retries the same way
+`run_workflow()` does (#393).
+
+> **One exception: under a running service, retries are deferred, not immediate.**
+> `nodus serve` runs a sweeper, and a step retry is handed to it rather than
+> taken in-process: `run_workflow()` returns straight away with
+> `status = "retry_scheduled"` and a `graph_id`, the step's result is not yet in
+> `r["steps"]`, and the sweeper resumes the run when the delay is up (or you call
+> `resume_workflow(graph_id)` yourself). Nowhere else — `nodus run`,
+> `nodus workflow-run`, `NodusRuntime`, in-language `run_workflow`/`run_goal` —
+> does this happen, because nothing there would resume the run. Nor does a bare
+> `run_graph([...])` ever defer, in a service or out of one: task graphs built
+> that way are not registered in the workflow store, so there would be no record
+> for a sweeper to find.
+>
+> The trap if you do embed in a service: on that deferred return `r["failed"]` is
+> `[]` and `r["steps"]` is `{}`, so a caller that only checks `failed` sees a
+> *clean* result and never learns the step has not finished. Check `r["status"]`
+> too. Before #392 this deferral happened on every entry point and nothing
+> resumed it, so the retry was simply dropped.
 
 **Step options** (`with { ... }`): `retries` (max retry count), `retry_delay_ms`
 (ms between retries), `timeout_ms` (per-step timeout), `cache` (skip on re-run
@@ -575,16 +583,23 @@ F34: OBSOLETE as of v4.1.0 (#323) — do not follow this entry. It described the
      message="Dependency cycle detected: a -> b -> a". Detect it with
      `type(r) == "error"`. Sections 3 and 11 already document this correctly.
 
-F36 (2026-08-05, DOC FIXED): The §5 retry example claimed a single
-     run_workflow() call prints "succeeded on attempt 3.0". It does not.
-     Retries are ASYNCHRONOUS regardless of retry_delay_ms: the first
-     run_workflow() returns status="retry_scheduled" with a graph_id, and each
-     retry needs an explicit resume_workflow(graph_id). Verified identical
-     under `nodus run` and embedded NodusRuntime. The trap worth knowing: on
-     that first return r["failed"] is [] and r["steps"] is {}, so a caller
+F36 (2026-08-05, DOC FIXED — then SUPERSEDED 2026-08-16 by the #392 fix): The
+     §5 retry example originally claimed a single run_workflow() call prints
+     "succeeded on attempt 3.0". At the time it did not: the first
+     run_workflow() returned status="retry_scheduled" with a graph_id and each
+     retry needed an explicit resume_workflow(graph_id) — so §5 was rewritten
+     as a three-call sequence.
+
+     That deferral turned out to be the #392 bug, not the design: nothing on
+     those entry points ever resumed the run, so a caller who did NOT make the
+     extra resume calls silently lost the retries and got ok:True. Deferral now
+     happens only under a running service, which has a sweeper to resume it.
+     §5 is back to a single run_workflow() call, re-measured verbatim.
+
+     The trap the finding names still holds wherever deferral does happen: on a
+     deferred return r["failed"] is [] and r["steps"] is {}, so a caller
      checking only `failed` sees a clean result while the step has not run to
-     completion. §5 now shows the real three-call sequence with verbatim
-     output.
+     completion. Check r["status"].
 
 F35: State mutations in a failed retry attempt persist into the next attempt.
      Undocumented; can cause surprising counter accumulation in retry loops.

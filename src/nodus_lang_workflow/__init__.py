@@ -16,6 +16,10 @@ from .runner import (
     WorkflowFrameworkRunner,
     configure_default_workflow_runner,
     get_default_workflow_runner,
+    register_retry_sweeper,
+    retry_sweeper,
+    retry_sweeper_active,
+    unregister_retry_sweeper,
 )
 from .store import LocalWorkflowStore, SQLiteWorkflowStore, WorkflowStore, create_workflow_store
 
@@ -37,4 +41,8 @@ __all__ = [
     "LocalWorkflowStore",
     "SQLiteWorkflowStore",
     "get_default_workflow_runner",
+    "register_retry_sweeper",
+    "retry_sweeper",
+    "retry_sweeper_active",
+    "unregister_retry_sweeper",
 ]
