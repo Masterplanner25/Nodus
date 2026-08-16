@@ -386,12 +386,11 @@ workflow fetch_with_retry {
 }
 ```
 
-The step throws; the runtime retries it. Note that retries are **asynchronous**:
-`run_workflow()` returns `status = "retry_scheduled"` and each attempt needs an
-explicit `resume_workflow(graph_id)`. See
-[workflows-and-tasks.md §5](../guide/workflows-and-tasks.md) for the full
-sequence. For a retry that completes inside one call, use `try`/`catch` in the
-step body instead.
+The step throws; the runtime retries it, and one `run_workflow()` call exhausts
+the attempts. The exception is a run under `nodus serve`, where the retry is
+deferred to the service's sweeper and `run_workflow()` returns
+`status = "retry_scheduled"` with a `graph_id`. See
+[workflows-and-tasks.md §5](../guide/workflows-and-tasks.md) for both cases.
 
 > Earlier revisions of this guide showed `return retry(attempt, max_attempts: 3,
 > delay_ms: 1000)`. That is not valid Nodus — there is no `retry` builtin and the

@@ -491,6 +491,30 @@ def _detect_cycle_task_ids(tasks: list, results: dict) -> list[str] | None:
     return None
 
 
+def _retry_is_swept() -> bool:
+    """Is a sweeper registered to resume runs deferred to ``retry_scheduled``?
+
+    #392/#393. The retry decision used to read ``execution_kind == "workflow"``,
+    so it depended on which keyword you wrote and — for `workflow` — on which of
+    five entry points you called. Only `nodus workflow-run` had an inline retry
+    loop, and only a running `RuntimeService` drives ``sweep()``; everywhere else
+    the deferral was simply dropped, and the run returned ``ok: True`` having made
+    one attempt.
+
+    Deferral is not a property of the construct. Persisting ``retry_scheduled``
+    and returning is correct exactly when something will pick the run back up, so
+    ask that instead, for both kinds alike.
+
+    Lazy import for the same reason as ``vm.py``'s workflow-runner imports
+    (CIRC-001, #103): ``nodus_lang_workflow`` imports this module.
+    """
+    try:
+        from nodus_lang_workflow.runner import retry_sweeper_active  # noqa: E402
+    except ImportError:
+        return False
+    return retry_sweeper_active()
+
+
 def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> dict:
     tasks = list(graph.tasks)
     graph = register_graph(graph)
@@ -540,6 +564,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     workflow_name = graph.metadata.get("workflow_name") if isinstance(graph.metadata, dict) else None
     execution_kind = graph.metadata.get("execution_kind") if isinstance(graph.metadata, dict) else None
     goal_name = graph.metadata.get("goal_name") if isinstance(graph.metadata, dict) else None
+    # Can a failed step's retry be *deferred* — persisted as `retry_scheduled` and
+    # left for a sweeper — rather than taken in-process? Only if the run is durably
+    # tracked at all. `workflow` and `goal` both go through
+    # `WorkflowFrameworkRunner.start_graph`, which registers them in the workflow
+    # store; a bare `run_graph([...])` is registered nowhere, so deferring one
+    # loses it outright. This asks whether the run is durable, NOT which keyword
+    # was written — the two flow kinds are treated alike (#392, #393).
+    run_is_durable = execution_kind in ("workflow", "goal")
 
     # ENH-323 (#323): reject dependency cycles up front, before the scheduler runs.
     # A cyclic `after` graph used to be caught only after the run loop drained with
@@ -1101,7 +1133,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if task.attempts <= task.max_retries:
             setattr(err, "_retry_pending", True)
             vm.event_bus.emit_event("task_retry", name=task.task_id, data={"attempt": float(task.attempts + 1)})
-            if execution_kind == "workflow":
+            if run_is_durable and _retry_is_swept():
                 task.status = "retry_scheduled"
                 task.finished_at = runtime_time_ms()
                 task.retry_classification = "retryable"
@@ -1131,6 +1163,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     retry_data = dict(workflow_data)
                     retry_data.update(retry_info)
                     vm.event_bus.emit_event("workflow_retry_scheduled", name=task.step_name, data=retry_data)
+                if goal_data is not None:
+                    retry_data = dict(goal_data)
+                    retry_data.update(retry_info)
+                    vm.event_bus.emit_event("goal_retry_scheduled", name=task.step_name, data=retry_data)
                 return True
             task.status = "retrying"
             _mark_task_pending(task.task_id)

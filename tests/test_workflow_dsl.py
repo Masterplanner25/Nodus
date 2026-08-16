@@ -281,13 +281,14 @@ workflow demo {
                 vm.run()
                 workflow = find_workflow_value(vm.globals, "demo")
                 first = vm.builtin_run_workflow(workflow)
-                self.assertEqual(first["status"], "retry_scheduled")
-                self.assertEqual(first["retry"]["step"], "flaky")
-                self.assertEqual(first["retry"]["attempt"], 1.0)
-                time.sleep(0.01)
-                resumed = vm.builtin_resume_workflow(first["graph_id"])
-            self.assertEqual(resumed["steps"]["flaky"], 5)
-            self.assertEqual(resumed["attempts"]["task_1"], 2.0)
+            # One call exhausts the retries (#392). This used to return
+            # status="retry_scheduled" and need an explicit resume_workflow() —
+            # which nothing on this path ever issued, so the retry was dropped.
+            # The deferred path is covered by test_nodus_workflow_framework.py,
+            # which registers a sweeper to make deferral correct.
+            self.assertNotIn("status", first)
+            self.assertEqual(first["steps"]["flaky"], 5)
+            self.assertEqual(first["attempts"]["task_1"], 2.0)
 
     def test_workflow_resume(self):
         src = """

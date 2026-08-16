@@ -477,6 +477,11 @@ print(result["tasks"]["task_1"])
             )
         finally:
             pass  # keep the file alive until after the test
+        # Close it: the service holds a retry-sweeper registration on the default
+        # runner for its lifetime, and leaving that registered would make later
+        # workflow retries in this process defer to a sweeper that stopped
+        # existing when the test ended (#392).
+        self.addCleanup(service.close)
         service.workers.event_bus = RuntimeEventBus()
         service.workers._worker_heartbeat_timeout_ms = 10
         # _startup_grace_ms (default 250ms) overrides the timeout for workers

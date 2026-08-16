@@ -50,7 +50,12 @@ from nodus.runtime.snapshots import SnapshotManager
 from nodus.vm.vm import VM
 import time
 from nodus.orchestration.task_graph import set_default_dispatcher
-from nodus_lang_workflow.runner import configure_default_workflow_runner, get_default_workflow_runner
+from nodus_lang_workflow.runner import (
+    configure_default_workflow_runner,
+    get_default_workflow_runner,
+    register_retry_sweeper,
+    unregister_retry_sweeper,
+)
 
 
 class WorkerManager:
@@ -365,6 +370,13 @@ class RuntimeService:
         self.allowed_paths = allowed_paths
         self.allow_input = allow_input
         self.auth_token = auth_token
+        # #392/#393: this service drives `sweep()` on `self.workflow_runner`, so
+        # it is what makes deferring a step retry to `retry_scheduled` correct —
+        # but only for runs in *that* runner's store. Registering here is what
+        # lets `run_task_graph` keep the durable path under a service while
+        # retrying in-process everywhere else. Withdrawn in close().
+        register_retry_sweeper(self.workflow_runner)
+        self._retry_sweeper_registered = True
         self._run_workflow_sweep_once()
         self._sweeper_thread = threading.Thread(target=self._worker_sweeper_loop, daemon=True)
         self._sweeper_thread.start()
@@ -383,6 +395,9 @@ class RuntimeService:
 
     def close(self) -> None:
         self._stop_event.set()
+        if getattr(self, "_retry_sweeper_registered", False):
+            self._retry_sweeper_registered = False
+            unregister_retry_sweeper(self.workflow_runner)
         with self.workers._cond:
             self.workers._cond.notify_all()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+from contextlib import contextmanager
 
 from nodus.orchestration.task_graph import (
     TaskGraph,
@@ -89,6 +90,72 @@ def _start_default_sweep_locked(runner: "WorkflowFrameworkRunner") -> None:
     _DEFAULT_SWEEP_STOP = stop_event
     _DEFAULT_SWEEP_THREAD = thread
     thread.start()
+
+
+def register_retry_sweeper(runner: "WorkflowFrameworkRunner | None" = None) -> "WorkflowFrameworkRunner":
+    """Declare that something will resume ``retry_scheduled`` runs in *runner*'s store.
+
+    A step retry can be handled two ways: taken in-process, or persisted as
+    ``retry_scheduled`` for a sweeper to pick up later. The second is only
+    correct if a sweeper actually exists — otherwise the deferral is dropped and
+    the run reports success having made one attempt (#392).
+
+    Nothing but the presence of a sweeper should decide that, which is why the
+    registration lives here rather than as a parameter each caller passes. Only
+    ``RuntimeService`` drives ``sweep()``, so only it registers; every other
+    entry point (CLI, embedding, in-language ``run_workflow``/``run_goal``)
+    retries in-process and completes before returning.
+
+    Registered **on a runner**, not on the process: a service sweeping one store
+    says nothing about runs in another. That distinction is load-bearing — the
+    default runner is rebuilt per working directory, so a service started in one
+    project must not change retry behaviour for a run in a different one.
+
+    Reentrant by count, so nested or multiple services compose. Returns the
+    runner it registered on, which is what ``unregister_retry_sweeper`` wants.
+    """
+    resolved = runner if runner is not None else get_default_workflow_runner()
+    resolved.register_sweeper()
+    return resolved
+
+
+def unregister_retry_sweeper(runner: "WorkflowFrameworkRunner | None" = None) -> None:
+    """Withdraw one ``register_retry_sweeper()`` registration."""
+    resolved = runner if runner is not None else get_default_workflow_runner()
+    resolved.unregister_sweeper()
+
+
+def retry_sweeper_active() -> bool:
+    """True when a sweeper is registered for the store the *current* runs use.
+
+    Peeks at the cached default runner rather than calling
+    ``get_default_workflow_runner()``, which would build a store and start an
+    auto-sweep thread as a side effect of a step failing. No cached runner means
+    nothing has registered a run durably yet, so there is nothing to sweep.
+
+    Every uncertain case answers False, and that is the safe direction: False
+    means the retry is taken in-process and the run finishes, which is at worst
+    slower than deferring. True on a wrong guess means the run ends and nobody
+    resumes it — the #392 failure.
+    """
+    with _DEFAULT_RUNNER_LOCK:
+        runner = _DEFAULT_RUNNER
+        root = _DEFAULT_RUNNER_ROOT
+    if runner is None:
+        return False
+    if root is not None and root != os.path.abspath(os.getcwd()):
+        return False  # cached runner belongs to another project root
+    return runner.has_sweeper()
+
+
+@contextmanager
+def retry_sweeper(runner: "WorkflowFrameworkRunner | None" = None):
+    """Scope a retry-sweeper registration."""
+    resolved = register_retry_sweeper(runner)
+    try:
+        yield resolved
+    finally:
+        unregister_retry_sweeper(resolved)
 
 
 def reset_default_workflow_runner() -> None:
@@ -367,6 +434,23 @@ def _metadata_from_graph(graph: TaskGraph, vm) -> dict[str, object]:
 class WorkflowFrameworkRunner:
     def __init__(self, store: WorkflowStore | None = None) -> None:
         self.store = store or LocalWorkflowStore()
+        self._sweeper_lock = threading.Lock()
+        self._sweeper_count = 0
+
+    def register_sweeper(self) -> None:
+        """Count one participant that will call ``sweep()`` on this runner."""
+        with self._sweeper_lock:
+            self._sweeper_count += 1
+
+    def unregister_sweeper(self) -> None:
+        with self._sweeper_lock:
+            if self._sweeper_count > 0:
+                self._sweeper_count -= 1
+
+    def has_sweeper(self) -> bool:
+        """True while something is sweeping this runner's store (#392, #393)."""
+        with self._sweeper_lock:
+            return self._sweeper_count > 0
 
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
         return self.store.get_run(run_id)

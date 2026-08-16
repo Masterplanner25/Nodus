@@ -459,23 +459,48 @@ Full verification record, including the audit's own errors, is in
 [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md). Only the debt is listed
 here.
 
-- **#392 (HIGH) — step-level `retries` are dropped on four of five entry points.**
-  #226 fixed this by adding `inline_retries=True` to `run_workflow_code`; exactly
-  one caller passes it (`cli.py:1029`, serving `nodus workflow-run`). The
-  embedding API — the path `nodus-mcp-server` uses — does one attempt, drops the
-  retry, and returns **`ok: True`**. Same success-shaped-failure signature as
+- **#392 (HIGH) — step-level `retries` were dropped on four of five entry points.
+  FIXED.** #226 fixed this by adding `inline_retries=True` to `run_workflow_code`;
+  exactly one caller passed it (`cli.py:1029`, serving `nodus workflow-run`). The
+  embedding API — the path `nodus-mcp-server` uses — did one attempt, dropped the
+  retry, and returned **`ok: True`**. Same success-shaped-failure signature as
   #376. The closing comment on #226 said "used by `nodus run`", which is not the
   command that was fixed.
 
-- **#393 (HIGH) — `goal` and `workflow` are documented as identical and are not.**
-  `task_graph.py:1101` branches on `execution_kind` for retry scheduling: a
-  workflow defers to a sweeper, a goal retries in-process. Measured, same source,
-  one `nodus run`: workflow **1 attempt**, goal **3**. So `goal` is currently the
-  *more* reliable of the two for retries, inverting the documented intuition. The
-  result maps also differ in key set (`status`/`retry` vs `goal`). Introduced by
-  `7367ef1` (2026-05-30) when durable retry was added for workflows only;
-  `test_goal_dsl.py` has no retry test, so nothing caught it for ten weeks.
-  **Decision: unify the retry path.**
+  The guard was in a wrapper, so every entry point that did not go through that
+  wrapper bypassed it — the recurring shape in this file. It now lives in the
+  callee: `run_task_graph` defers a retry only when the run is durably tracked
+  *and* a sweeper is registered on the runner owning that store
+  (`register_retry_sweeper(runner)`, held by `RuntimeService` for its lifetime).
+  Otherwise it retries in-process. `inline_retries` is removed; no caller opts
+  in. Regression tests: `tests/test_retry_path_unification.py`, which assert on
+  the *source* of the retry branch as well as its behaviour — a behaviour-only
+  test passes on the goal side alone.
+
+  The first attempt at this fix used a process-global flag and no durability
+  check. Both were wrong, and the full suite is what said so: a bare
+  `run_graph([...])` is in no store, so deferring one loses the retry outright —
+  #392 reproduced one layer down — and a service sweeping one project's store
+  must not change retry behaviour for a run in another.
+
+- **#393 (HIGH) — `goal` and `workflow` were documented as identical and were
+  not. FIXED.** `task_graph.py` branched on `execution_kind` for retry
+  scheduling: a workflow deferred to a sweeper, a goal retried in-process.
+  Measured, same source, one `nodus run`: workflow **1 attempt**, goal **3**. So
+  `goal` was the *more* reliable of the two for retries, inverting the documented
+  intuition. Introduced by `7367ef1` (2026-05-30) when durable retry was added
+  for workflows only; `test_goal_dsl.py` had no retry test, so nothing caught it
+  for ten weeks. Fixed with #392 — one retry decision, taken on sweeper presence
+  rather than on which keyword was written.
+
+  The result-shape half of the original report did not hold up on measurement:
+  `status`/`retry` appear on both kinds when a run defers and on neither when it
+  completes. A goal result is a workflow result plus a `goal` key. That was
+  corrected on the issue before the fix landed.
+
+  **Follow-on, still open (#409):** after unification, `goal` is a workflow with
+  different event names. Giving it a stopping condition is what would make it
+  mean "an objective" rather than "a pipeline".
 
 - **#394 (MEDIUM) — step ordering is a default, not an invariant.** A lowered
   workflow is a reachable map; `build["steps"][1]["fn"](nil)` runs a step whose

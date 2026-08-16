@@ -19,7 +19,7 @@ from nodus_lang_workflow.models import (  # noqa: E402
     RUN_STATUS_WAITING,
 )
 import nodus_lang_workflow.runner as _wf_runner  # noqa: E402
-from nodus_lang_workflow.runner import WorkflowFrameworkRunner  # noqa: E402
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner, retry_sweeper  # noqa: E402
 from nodus_lang_workflow.store import LocalWorkflowStore, SQLiteWorkflowStore, WorkflowStore, create_workflow_store  # noqa: E402
 
 
@@ -957,7 +957,7 @@ workflow demo {
 """
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(code)
-            with nodus_cli._project_root_context(td):
+            with nodus_cli._project_root_context(td), retry_sweeper():
                 result, _vm = run_workflow_code(
                     VM([], {}, code_locs=[], source_path=None),
                     code,
@@ -996,7 +996,7 @@ workflow demo {
 """
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(code)
-            with nodus_cli._project_root_context(td):
+            with nodus_cli._project_root_context(td), retry_sweeper():
                 result, _vm = run_workflow_code(
                     VM([], {}, code_locs=[], source_path=None),
                     code,
@@ -1036,7 +1036,7 @@ workflow demo {
 """
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(code)
-            with nodus_cli._project_root_context(td):
+            with nodus_cli._project_root_context(td), retry_sweeper():
                 result, _vm = run_workflow_code(
                     VM([], {}, code_locs=[], source_path=None),
                     code,
@@ -1099,7 +1099,7 @@ workflow wait_demo {
                 handle.write(retry_code)
             with open(wait_path, "w", encoding="utf-8") as handle:
                 handle.write(wait_code)
-            with nodus_cli._project_root_context(td):
+            with nodus_cli._project_root_context(td), retry_sweeper():
                 retry_result, _vm = run_workflow_code(
                     VM([], {}, code_locs=[], source_path=None),
                     retry_code,

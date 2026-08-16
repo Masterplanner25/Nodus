@@ -705,7 +705,7 @@ Runtime events are emitted for:
 - `memory_put`, `memory_get`, `memory_delete`
 - `agent_call_start`, `agent_call_complete`, `agent_call_fail`
 - `goal_start`, `goal_complete`, `goal_fail`
-- `goal_step_start`, `goal_step_complete`, `goal_step_fail`
+- `goal_step_start`, `goal_step_complete`, `goal_step_fail`, `goal_retry_scheduled`
 - `goal_action_start`, `goal_action_complete`, `goal_action_fail`
 
 Task states:
@@ -714,7 +714,11 @@ Task states:
 - `running`
 - `completed`
 - `failed`
-- `retrying`
+- `retrying` — a retry being taken in-process; the run continues
+- `retry_scheduled` — a retry handed to a sweeper; the run ends here and is
+  resumed later. Only reachable while a retry sweeper is registered, which
+  `nodus serve` does for its lifetime. Both `workflow` and `goal` follow the
+  same rule (#392, #393).
 
 ## Distributed Workers
 

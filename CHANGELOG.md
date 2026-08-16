@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#393: `goal` and `workflow` now retry identically.** `run_task_graph`
+  branched on `execution_kind` to decide how a failed step retries — a
+  `workflow` persisted `retry_scheduled` and ended the run for a sweeper to
+  resume, a `goal` retried in-process and completed. Two constructs that lower
+  through the same function and are documented as identical differed in exactly
+  the place nobody thinks to check, and in the direction opposite to their names:
+  `goal` was the more reliable of the two for retries. The branch is gone. Both
+  kinds now take the same decision, and it is made on the one thing that
+  actually matters — see #392 below. `goal_retry_scheduled` is emitted alongside
+  `workflow_retry_scheduled` so the two kinds' telemetry stays symmetric too.
+
+  **What changes for you:** a `goal` with `retries` running under
+  `nodus serve` now defers to the sweeper the way a workflow always has,
+  instead of retrying in-process. Everywhere else — CLI, embedding, in-language
+  `run_goal` — it retries in-process as before.
+
+- **`run_workflow_code`'s `inline_retries` parameter is removed.** It existed to
+  turn on the retry loop that is now unconditional inside the runtime, and
+  passing it is no longer meaningful. Callers passing `inline_retries=True` get
+  the same behaviour by dropping the argument; callers relying on the `False`
+  default now get retries honoured, which is the fix.
+
+### Fixes
+
+- **#392: step-level `with { retries: N }` is honoured on every entry point.**
+  #226's fix lived in a wrapper — an `inline_retries=True` loop in
+  `run_workflow_code`, passed by one caller (`nodus workflow-run`). The default
+  was `False`, so the other four entry points made one attempt, dropped the
+  scheduled retry, and reported success. Through `NodusRuntime.run_source` — the
+  path `nodus-mcp-server` and embedding hosts use — that meant `ok: True`,
+  `failed: []`, and a declared retry policy that never ran.
+
+  A deferred retry is only correct if something will resume it, so the runtime
+  now asks that directly instead of taking a caller's word for it.
+  `run_task_graph` defers only when both hold: the run is durably tracked (a
+  `workflow` or `goal`, which the workflow framework registers in its store — a
+  bare `run_graph([...])` is registered nowhere, so deferring one would lose it),
+  and a sweeper is registered on the runner owning that store. `RuntimeService`
+  registers on its own runner for its lifetime and withdraws in `close()`;
+  registration is per-runner, not per-process, so a service sweeping one
+  project's store does not change retry behaviour for a run in another.
+
+  With no sweeper — CLI, embedding, in-language `run_workflow`/`run_goal` — the
+  retry happens in-process and the run finishes before returning. Exhausted
+  retries still report `failed`, so the honest outcome is preserved in both
+  directions.
+
+  ```python
+  # same script, same NodusRuntime, before → after
+  # step flaky with { retries: 2, retry_delay_ms: 1 }
+  ok: True   stdout: "attempt 1"                          # retry silently dropped
+  ok: True   stdout: "attempt 1\nattempt 2\nattempt 3"    # policy honoured
+  ```
+
+  The deferred path is unchanged under a running service, and is now reachable
+  by goals as well (#393).
+
 ## [4.2.0] - 2026-08-15
 
 ### Known issues

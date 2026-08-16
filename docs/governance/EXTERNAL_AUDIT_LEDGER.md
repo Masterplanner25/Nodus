@@ -112,6 +112,12 @@ Two issues came out of it, and they share a root:
 - **#393** — unify the retry path. **Decision taken: unify**, rather than
   document the difference.
 
+Both **fixed 2026-08-16**. The `execution_kind` branch is gone; the retry
+decision now reads whether a sweeper is registered to resume a deferred run,
+which is the only thing that ever made deferral correct. This is the audit
+series' best yield so far — a structural claim the auditor read correctly out of
+the code, whose behavioural consequence none of the three predicted.
+
 `CLAUDE.md` asserted the audit's error as fact — *"Runtime treats them
 identically; convention is semantic"* — which is what a contributor or agent
 reads before writing host wrappers. Corrected.
@@ -167,7 +173,7 @@ execution"* — agrees with Audit 01's on the substance.
 
 | F | Claim | Reality |
 |---|---|---|
-| **F3** | *"`goal` is `workflow` with a different marker string… same execution path"* | The same error Audit 01 made at §13. `task_graph.py:1101` branches on `execution_kind` for retry: workflow **1 attempt**, goal **3**. See #393 |
+| **F3** | *"`goal` is `workflow` with a different marker string… same execution path"* | The same error Audit 01 made at §13. `task_graph.py:1101` branches on `execution_kind` for retry: workflow **1 attempt**, goal **3**. See #393. **Wrong when made; true since the #393 fix on 2026-08-16** — the verdict stands as a record of what held at commit `3376702`, and the finding is why the branch was found and removed |
 | **F9** | *"Dependency ordering… none is bypassable from Nodus code. This is the project's strongest and most defensible claim."* | Ordering **is** bypassable — `build["steps"][1]["fn"](nil)` runs a step whose dependency never ran (#394). Audit 01 got this right at §18 |
 | **F2** | *"The full 39-opcode set"* | **49.** Audit 01 said 43. Two auditors, same commit, two different undercounts |
 
@@ -275,7 +281,7 @@ Three samples is enough to say something the individual audits cannot.
 | Claim | 01 | 02 | 03 | Truth |
 |---|---|---|---|---|
 | Opcode count | 43 | 39 | 48 | **49** |
-| `goal` ≡ `workflow` | §13 ✓ | F3 ✓ | — | Diverge on retry — #393 |
+| `goal` ≡ `workflow` | §13 ✓ | F3 ✓ | — | Diverged on retry at audit time — #393; unified 2026-08-16 |
 | Waiting step re-executes on resume | §16 ✓ | F7 ✓ | *flagged unverified* | **False** — #404 |
 | Host-function chokepoint is single and ungoverned | §19 ✓ | F21 ✓ | Final ✓ | **True** — #405 |
 | No model in the core | ✓ | ✓ | ✓ | **True** |
@@ -445,7 +451,8 @@ should answer all of them at once rather than one.
 
 ### D2 — `goal` after unification — proposed as #409
 
-Once #393 lands, `goal` and `workflow` are the same construct with two spellings.
+#393 landed 2026-08-16, so `goal` and `workflow` are now the same construct with
+two spellings — the event prefix and the entry-point names are all that differ.
 **Proposed direction: make `goal` a stopping condition** — a declared predicate
 plus a budget, which the runtime loops on. That is also the answer to Audit 02's
 F22 (*"the plan→act→verify→replan loop is inexpressible… the defining control
