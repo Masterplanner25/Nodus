@@ -307,6 +307,52 @@ that someone was a user.
 
 ---
 
+## Stage 6: Downstream republish sweep
+
+**When:** after Stage 5, once the release is published and verified.
+
+**Purpose:** a nodus-lang release can leave companion packages stale in two ways —
+a pinned dependency range that no longer admits the new version, or a fix that was
+committed to a companion during the release cycle and never published. Both are
+invisible from this repository.
+
+**Protocol:**
+
+1. **Dependency ranges.** For every companion declaring `nodus-lang`, confirm the
+   range admits the new version. A `>=X,<5.0.0` style range needs nothing; a pin
+   needs a bump and a republish.
+2. **Content drift — compare the published artifact, not version strings and not
+   git history.** Download each package's sdist (or wheel) from PyPI and hash its
+   `.py` / `.nd` / `.toml` / `.rs` files against the local checkout. Equal hashes
+   mean the publish is current; any difference is unpublished work.
+3. **Uncommitted work in companion checkouts.** `git status` each one. A fix
+   written during a release cycle and left in a working tree is the most common
+   miss, and the one this stage exists for.
+4. **Editor and CI surfaces.** `nodus-vscode` republishes via a manual VSIX
+   upload; `nodus-run-action` pins a nodus-lang version for reproducible CI.
+   Neither is on PyPI, so neither shows up in step 2.
+
+> **Do not use git heuristics to detect drift.** "Commits since the last
+> version-bump commit" looks like the right test and is not: a version line is
+> often set early in a cycle and published from a later commit, so the heuristic
+> reports every fix in between as unpublished. During the v4.2.0 sweep this
+> produced **four false positives**, including a claim that a published kernel was
+> broken when the published artifact already contained the fix. Hashing the
+> published files gave the correct answer — zero drift — in one pass.
+
+**Passing criteria:**
+- Every companion's dependency range admits the new nodus-lang version.
+- Zero content drift between published artifacts and local source, or a republish
+  for each package that has drift.
+- No uncommitted work left in a companion checkout.
+
+**Why this stage exists:** the v4.2.0 sweep found the #357 VS Code grammar fix
+sitting uncommitted in the `nodus-vscode` working tree — the nodus-lang half had
+shipped in the release while the half users actually see had not. Nothing in the
+release process would have caught it, because it was not in this repository.
+
+---
+
 ## Gate failure handling
 
 A failed gate blocks the release. The options are:
@@ -337,6 +383,7 @@ doc-vs-code failures cannot be deferred.
 | Spec version verification | Companion library releases | No |
 | **Pre-publish creator validation** | All releases (abbreviated for security patches) | No |
 | **Post-publish eval (Stage 5)** | All releases | No — runs *after* upload, so it cannot block it; a finding sets the next patch's priority |
+| **Downstream republish sweep (Stage 6)** | All releases | No — companions can be stale independently of this repo |
 
 Both validation stages produce a document in `docs/evals/vX.Y.Z/`:
 `CREATOR_VALIDATION.md` (Gate 10) and `POSTPUBLISH_EVAL.md` (Stage 5). **A release

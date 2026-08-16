@@ -7,9 +7,14 @@ __pycache__/
 .venv/
 venv/
 cleanenv/
+# All throwaway validation venvs -- glob, not one entry per venv.
+# Release validation creates several (.venv-validation, .venv-postpublish,
+# .venv-jup, ...); adding them one at a time meant `git add -A` swept two
+# of them into the index during the v4.2.0 release.
+.venv-*/
 .release-venv/
+cleanenv/
 .release-smoke/
-.venv-validation/
 
 # Test cache
 .pytest_cache/
@@ -58,4 +63,3 @@ STRESS-TEST USER EVALUATION*
 notes.txt
 output.json
 tmp_demo/
-.venv-postpublish/
