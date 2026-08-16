@@ -288,8 +288,15 @@ print(plan["levels"])
 
 ## 7. workflow vs goal
 
-`workflow` and `goal` use identical syntax and have identical runtime
-behavior. They are the same feature with two names:
+`goal` has two forms. The **stopping-condition** form (§7.1) is a genuinely
+different construct: it declares *when you are done* and runs a workflow until
+that holds. The original form, below, is the same feature as `workflow` with a
+different name.
+
+### The original form — a naming convention
+
+`workflow` and `goal NAME { step … }` use identical syntax and have identical
+runtime behavior. They are the same feature with two names:
 
 ```nd
 goal release {
@@ -318,6 +325,121 @@ CLI commands mirror the keyword: `nodus workflow run` / `nodus workflow plan` /
 `nodus goal resume` for goals. `nodus workflow run` prints step stdout then
 a JSON result payload. Using `nodus run` with `run_workflow()` in the script
 gives you control over what to print.
+
+### 7.1 `goal … over …` — a stopping condition (Experimental)
+
+A workflow finishes when **every step has run**. A goal finishes when **its
+condition holds**, or its budget runs out. It does not contain steps: it names a
+workflow, and the checkpoints that workflow records are the waypoints it watches.
+
+```nd
+workflow tune {
+    state score = 0
+    step adjust {
+        score = score + 40
+        let s = workflow_state()
+        print("score is now " + str(s["score"]))
+        checkpoint "adjusted"
+        if (s["score"] >= 100) { checkpoint "good_enough" }
+        return s["score"]
+    }
+}
+
+goal reach_quality over tune {
+    until reached("good_enough")
+    budget { max_iterations: 5, deadline_ms: 30000 }
+}
+
+let r = run_goal(reach_quality)
+print(r["goal_satisfied"])
+print(r["iterations"])
+print(r["reached"])
+```
+
+Output:
+
+```
+score is now 40.0
+score is now 80.0
+score is now 120.0
+true
+3.0
+["adjusted", "good_enough"]
+```
+
+Each pass resumes the workflow from the last checkpoint it reached, so `state`
+carries forward and successive passes differ — that is what stops the loop
+repeating itself. Run it with `nodus run --time-limit`, since several passes
+exceed the 200 ms default.
+
+**`until` takes `reached("label")`**, composed with `&&`, `||`, `!` and
+parentheses. The label is a string literal, like `checkpoint`'s own.
+
+**The compiler checks your waypoints exist.** Naming a checkpoint the workflow
+never records is a compile error, not a goal that quietly never finishes:
+
+```
+Syntax error at g.nd:12:11: goal 'ship' waits on checkpoint "verifed", which
+'deploy' never records. It records "attempted", "verified".
+```
+
+That check is exact rather than best-effort, because neither `checkpoint` nor
+`reached` accepts a computed label. It is also the thing a library cannot do for
+you — a planner can watch checkpoints as they happen, but it cannot refuse to
+start.
+
+**`budget` is mandatory** — `max_iterations` and `deadline_ms` both. An unbounded
+goal is a hang.
+
+**Running out of budget is a failure.** The goal returns an err record rather
+than a result, so it cannot be mistaken for success:
+
+```nd
+workflow probe {
+    state tries = 0
+    step look {
+        tries = tries + 1
+        let s = workflow_state()
+        checkpoint "looked"
+        if (s["tries"] > 99) { checkpoint "found" }
+        return s["tries"]
+    }
+}
+
+goal find_it over probe {
+    until reached("found")
+    budget { max_iterations: 2, deadline_ms: 5000 }
+}
+
+let r = run_goal(find_it)
+if (type(r) == "error") {
+    print(r.message)
+    print(r.payload["category"])
+    print(r.payload["reached"])
+}
+```
+
+Output:
+
+```
+goal 'find_it' exhausted its budget after 2 iteration(s) without satisfying its condition
+budget_exhausted
+["looked"]
+```
+
+Note that `probe` still has to *contain* `checkpoint "found"` even though this
+run never reaches it — the compile-time check is about what the workflow can
+record, not what it did.
+
+**`retry from "label"`** pins where each pass re-enters. The default is the last
+checkpoint reached, which keeps progress monotonic; pin it earlier when a failed
+pass leaves work that must be redone.
+
+Current limits, all of which would extend the surface and so are not yet
+implemented: the workflow must be declared in the same file as the goal; `until`
+reads *which* checkpoints were reached, not the state at them, and not their
+order; and there is no cost bound. See
+[`docs/design/v5/01-goal-stopping-condition.md`](../design/v5/01-goal-stopping-condition.md).
 
 ---
 

@@ -214,6 +214,63 @@ class GoalDef(Base):
     steps: list[GoalStep]
 
 
+# --- goal-as-stopping-condition (#409 Part A) -------------------------------
+# A second, additive form of `goal`. The original `goal g { step ... }` above is
+# unchanged and still valid — it is Mostly Stable (graduated v4.0.5) — but since
+# #393 unified retries it is a `workflow` with a different event prefix. This
+# form gives `goal` a job `workflow` structurally cannot have: it owns the
+# *criteria*, and the workflow it names owns the work.
+
+
+@dataclass
+class Reached(Base):
+    """`reached("label")` — did the pursued workflow record this checkpoint?
+
+    The label is a `Str`, never an expression, for the same reason `checkpoint`
+    requires a literal (`parser.py`): it makes the set of checkpoints a goal
+    depends on knowable at parse time, so naming one the workflow never records
+    is a compile error rather than a run that quietly never finishes.
+    """
+
+    label: object
+
+
+@dataclass
+class PredicateNot(Base):
+    operand: object
+
+
+@dataclass
+class PredicateAnd(Base):
+    left: object
+    right: object
+
+
+@dataclass
+class PredicateOr(Base):
+    left: object
+    right: object
+
+
+@dataclass
+class GoalBudget(Base):
+    """Bounds on the pursuit. Mandatory — an unbounded goal is a hang."""
+
+    max_iterations: object
+    deadline_ms: object
+
+
+@dataclass
+class GoalPursuit(Base):
+    """`goal NAME over WORKFLOW { until <pred> budget { ... } }`."""
+
+    name: str
+    workflow_name: str
+    until: object
+    budget: GoalBudget
+    retry_from: object | None = None
+
+
 @dataclass
 class Call(Base):
     callee: object

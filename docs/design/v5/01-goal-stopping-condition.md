@@ -1,7 +1,8 @@
 # Goal as a stopping condition — design for #409 Part A
 
-**Status:** proposal. Nothing here is committed to. v5 scope — new syntax and new
-execution semantics, not a patch.
+**Status: implemented** and shipping Experimental. This document is kept as the
+design record; §12 lists where the implementation departed from the proposal and
+why. The syntax is additive — `goal g { step … }` is unchanged.
 
 **Prerequisite:** #393 (landed 2026-08-16). Until the `goal`/`workflow` retry
 divergence was unified, `goal` had an accidental meaning rather than no meaning,
@@ -363,3 +364,61 @@ delivery:
 > workflow does not record — and no Python program constructing the same graph by
 > hand can be rejected the same way, because the labels it would be checked
 > against exist only in a parse tree.
+
+---
+
+## 12. What shipped, and where it departed from this proposal
+
+Implemented in the PR that closes #409 Part A. Four deviations, all discovered by
+building it.
+
+### 12.1 The predicate uses `&&`, `||`, `!` — not `and`, `or`, `not`
+
+§4 sketched `until deployed and tests_green`. Nodus spells logical operators
+`&&`/`||`/`!` everywhere else, verified before choosing. Introducing English
+spellings only inside `until` would give the language two ways to write the same
+operator, and would have added three contextual keywords for no gain.
+
+### 12.2 The pursued workflow must be declared in the same module
+
+§5's check is total only because it can see both halves. A goal pursuing an
+imported workflow cannot be checked at parse time, and the two honest options
+were to error or to silently skip the check. Skipping would make the guarantee
+best-effort *and quiet about it*, which is the failure mode this feature exists
+to remove — so an unresolvable target is a compile error naming the restriction.
+Lifting it needs cross-module resolution at parse time and is future work.
+
+### 12.3 Budget exhaustion returns an err record, not a `status` field
+
+§6 said exhaustion carries `status: "budget_exhausted"`. It returns an **err
+record** (`kind: "goal_error"`, `payload.category: "budget_exhausted"`) instead,
+matching how a dependency cycle already reports (`workflow_error`). A `status`
+field on an otherwise ordinary result map is exactly the shape a caller forgets
+to check — the #392/#376/#399 signature. `type(r) == "error"` cannot be
+mistaken for success.
+
+The payload carries `iterations`, `reached`, `max_iterations`, `deadline_ms` and
+`elapsed_ms`, so the failure is diagnosable rather than merely reported.
+
+### 12.4 A pass that records no checkpoint stops immediately
+
+Not specified. Without a checkpoint there is nothing to resume from, so the next
+pass would repeat the previous one exactly and the goal would spin until its
+budget ran out. It now returns an err record naming that
+(`category: "no_checkpoint_reached"`) on the first such pass.
+
+### 12.5 Two things the build confirmed rather than changed
+
+- **The static check really is total.** `checkpoint` requires a string literal
+  (`parser.py`), and `reached()` was given the same rule, so neither half can be
+  computed. Both are pinned by tests.
+- **No new execution mode was needed**, as §3.2 predicted: the loop is
+  `run_workflow` followed by `resume_workflow(graph_id, label)`.
+
+### 12.6 Downstream
+
+Adding `over`, `until`, `budget`, `reached` and `retry` as contextual keywords
+tripped the #357 keyword-coverage gate, which requires the VS Code grammar to
+highlight every keyword the language has. `nodus-vscode`'s
+`syntaxes/nodus.tmLanguage.json` was updated in the same change; **the extension
+still needs republishing** (Gate 3b) for the highlighting to reach users.

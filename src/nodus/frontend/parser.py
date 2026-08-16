@@ -1,5 +1,7 @@
 """Parser for Nodus syntax."""
 
+from typing import NoReturn
+
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, Tok
 from nodus.frontend.ast.ast_nodes import (
@@ -19,9 +21,15 @@ from nodus.frontend.ast.ast_nodes import (
     ExprStmt,
     FnDef,
     FnExpr,
+    GoalBudget,
     GoalDef,
+    GoalPursuit,
     GoalStep,
     If,
+    PredicateAnd,
+    PredicateNot,
+    PredicateOr,
+    Reached,
     Import,
     Index,
     IndexAssign,
@@ -60,6 +68,7 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowStateDecl,
     CheckpointStmt,
 )
+from nodus.frontend.goal_validation import validate_goal_pursuits
 from nodus.orchestration.workflow_lowering import STEP_OPTION_KEYS
 
 # Human-readable display names for token kinds used in error messages.
@@ -128,7 +137,10 @@ class Parser:
         self.goal_depth = 0
         self._parse_depth = 0
 
-    def error(self, message: str, tok: Tok | None = None):
+    def error(self, message: str, tok: Tok | None = None) -> NoReturn:
+        # Annotated NoReturn so type checking understands that every `self.error()`
+        # call ends the path — without it mypy treats values guarded by an error
+        # branch as still possibly-None at the next use.
         t = self.peek() if tok is None else tok
         raise LangSyntaxError(message, line=t.line, col=t.col)
 
@@ -194,6 +206,10 @@ class Parser:
             for tok in self.pending_comments:
                 stmts.append(Comment(tok.val))
             self.pending_comments.clear()
+        # #409: a goal's checkpoints are checked against the workflow it pursues.
+        # Module-level rather than inside `goal_pursuit`, because the workflow may
+        # be declared after the goal that pursues it.
+        validate_goal_pursuits(stmts)
         return stmts
 
     def handle_comment(self, tok: Tok) -> None:
@@ -495,7 +511,140 @@ class Parser:
 
     def goal_def(self):
         start = self.eat("GOAL")
+        # `goal NAME over WORKFLOW { ... }` is the stopping-condition form (#409).
+        # `goal NAME { step ... }` is the original and is unchanged — it is Mostly
+        # Stable, graduated v4.0.5, so this is additive rather than a replacement.
+        if self.at("ID") and self.peek_ahead(1).kind == "ID" and self.peek_ahead(1).val == "over":
+            return self.goal_pursuit(start)
         return self.flow_def(start, GoalDef, GoalStep, "goal")
+
+    def goal_pursuit(self, start: Tok):
+        name = self.eat("ID").val
+        self.eat("ID")  # `over` — checked by the caller
+        workflow_tok = self.eat("ID")
+        workflow_name = workflow_tok.val
+        self.eat("{")
+        self.skip_seps()
+
+        until = None
+        budget = None
+        retry_from = None
+        while not self.at("}"):
+            if self.at("EOF"):
+                self.error("Unterminated goal", start)
+            if not self.at("ID"):
+                self.error(
+                    "goal body must contain `until`, `budget` or `retry from`",
+                    self.peek(),
+                )
+            clause_tok = self.peek()
+            clause = clause_tok.val
+            if clause == "until":
+                if until is not None:
+                    self.error("Duplicate `until` in goal", clause_tok)
+                self.eat("ID")
+                until = self.goal_predicate()
+            elif clause == "budget":
+                if budget is not None:
+                    self.error("Duplicate `budget` in goal", clause_tok)
+                self.eat("ID")
+                budget = self.goal_budget(clause_tok)
+            elif clause == "retry":
+                if retry_from is not None:
+                    self.error("Duplicate `retry from` in goal", clause_tok)
+                self.eat("ID")
+                if not self.at("FROM"):
+                    self.error("Expected `from` after `retry`", self.peek())
+                self.eat("FROM")
+                if not self.at("STR"):
+                    self.error("retry from label must be a string", self.peek())
+                label_tok = self.eat("STR")
+                retry_from = self.mark(Str(label_tok.val), label_tok)
+            else:
+                self.error(f"Unsupported goal clause: {clause}", clause_tok)
+            self.skip_seps()
+        self.eat("}")
+
+        if until is None:
+            self.error(
+                f"goal '{name}' has no `until` - a goal without a stopping "
+                f"condition is a workflow, so write it as one",
+                start,
+            )
+        if budget is None:
+            # Deliberately not defaulted. An unbounded pursuit is a hang, and
+            # bounded execution is the runtime's whole proposition, so the bound
+            # is declared or the program is rejected.
+            self.error(
+                f"goal '{name}' has no `budget` - declare "
+                f"`budget {{ max_iterations: N, deadline_ms: M }}`",
+                start,
+            )
+        return self.mark(
+            GoalPursuit(name, workflow_name, until, budget, retry_from=retry_from),
+            start,
+        )
+
+    def goal_budget(self, start: Tok):
+        options = self.parse_named_map_literal(
+            error_keys={"max_iterations", "deadline_ms"},
+            error_template="Unsupported budget option: {key}",
+        )
+        found: dict[str, object] = {}
+        for key_node, value_node in options.items:
+            key = getattr(key_node, "v", None)
+            if isinstance(key, str):
+                found[key] = value_node
+        for required in ("max_iterations", "deadline_ms"):
+            if required not in found:
+                self.error(f"goal budget must set `{required}`", start)
+        return self.mark(GoalBudget(found["max_iterations"], found["deadline_ms"]), start)
+
+    # --- the `until` predicate -------------------------------------------
+    # A restricted grammar rather than a general expression. `reached("L")` takes
+    # a string literal only, so the complete set of checkpoints a goal depends on
+    # is known at parse time and can be checked against the workflow it pursues
+    # (#409). A general expression would make that check best-effort.
+
+    def goal_predicate(self):
+        node = self.goal_predicate_and()
+        while self.at("||"):
+            tok = self.eat("||")
+            node = self.mark(PredicateOr(node, self.goal_predicate_and()), tok)
+        return node
+
+    def goal_predicate_and(self):
+        node = self.goal_predicate_unary()
+        while self.at("&&"):
+            tok = self.eat("&&")
+            node = self.mark(PredicateAnd(node, self.goal_predicate_unary()), tok)
+        return node
+
+    def goal_predicate_unary(self):
+        if self.at("!"):
+            tok = self.eat("!")
+            return self.mark(PredicateNot(self.goal_predicate_unary()), tok)
+        return self.goal_predicate_primary()
+
+    def goal_predicate_primary(self):
+        if self.at("("):
+            self.eat("(")
+            node = self.goal_predicate()
+            self.eat(")")
+            return node
+        tok = self.peek()
+        if self.at("ID") and tok.val == "reached":
+            self.eat("ID")
+            self.eat("(")
+            if not self.at("STR"):
+                self.error("reached() takes a string literal checkpoint label", self.peek())
+            label_tok = self.eat("STR")
+            self.eat(")")
+            return self.mark(Reached(self.mark(Str(label_tok.val), label_tok)), tok)
+        self.error(
+            "goal `until` supports reached(\"label\"), &&, ||, ! and parentheses",
+            tok,
+        )
 
     def flow_def(self, start: Tok, def_type, step_type, label: str):
         name = self.eat("ID").val

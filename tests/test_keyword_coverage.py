@@ -35,6 +35,7 @@ from nodus.frontend.lexer import (  # noqa: E402
     ALL_KEYWORDS,
     CONTEXTUAL_KEYWORDS,
     EXPRESSION_KEYWORDS,
+    GOAL_KEYWORDS,
     KEYWORDS,
     LOOP_CONTROL_KEYWORDS,
 )
@@ -81,7 +82,7 @@ class KeywordListTests(unittest.TestCase):
         self.assertEqual(set(), CONTEXTUAL_KEYWORDS & KEYWORDS)
 
     def test_contextual_keywords_are_split_by_where_they_parse(self):
-        self.assertEqual(LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS,
+        self.assertEqual(LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS,
                          CONTEXTUAL_KEYWORDS)
 
 
@@ -102,6 +103,33 @@ class ParserRecognisesEveryContextualKeywordTests(unittest.TestCase):
                 self.assertTrue(
                     self._parses("while (true) { %s }" % word),
                     f"parser does not accept `{word}` but the keyword list names it",
+                )
+
+    def test_goal_keywords_parse_inside_a_goal_pursuit(self):
+        source = """
+workflow w { step a { checkpoint "done"; return 1i } }
+goal g over w {
+    until reached("done")
+    budget { max_iterations: 2, deadline_ms: 10 }
+    retry from "done"
+}
+"""
+        self.assertTrue(
+            self._parses(source),
+            "parser does not accept the goal-pursuit form but GOAL_KEYWORDS names its words",
+        )
+        for word in sorted(GOAL_KEYWORDS):
+            with self.subTest(keyword=word):
+                self.assertIn(word, source, f"`{word}` is listed but unused by the check above")
+
+    def test_goal_keywords_are_still_usable_as_variable_names(self):
+        # Contextual, not reserved: making `until` or `budget` a hard keyword
+        # would break existing programs for no benefit.
+        for word in sorted(GOAL_KEYWORDS):
+            with self.subTest(keyword=word):
+                self.assertTrue(
+                    self._parses("let %s = 1i\nprint(%s)" % (word, word)),
+                    f"`{word}` should remain usable as an identifier",
                 )
 
     def test_expression_keywords_parse_as_expressions(self):

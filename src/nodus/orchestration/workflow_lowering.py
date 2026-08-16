@@ -56,6 +56,7 @@ from nodus.orchestration.task_graph import TaskGraph, TaskNode
 
 WORKFLOW_MARKER = "__workflow__"
 GOAL_MARKER = "__goal__"
+GOAL_PURSUIT_MARKER = "__goal_pursuit__"
 STEP_OPTION_KEYS = {
     "timeout_ms",
     "retries",
@@ -73,6 +74,66 @@ def lower_workflow_ast(workflow: WorkflowDef) -> MapLit:
 
 def lower_goal_ast(goal: GoalDef) -> MapLit:
     return _lower_flow_ast(goal, marker=GOAL_MARKER, execution_kind="goal")
+
+
+def lower_goal_pursuit_ast(pursuit) -> MapLit:
+    """Lower `goal NAME over WORKFLOW { until ... budget ... }` (#409 Part A).
+
+    The predicate becomes **data**, not code: a nested map the runtime walks
+    against the set of checkpoints reached so far. That keeps a goal's stopping
+    condition inspectable before it runs, which is the property the whole feature
+    exists for — a compiled-away predicate would be no better than a callback.
+    """
+    items: list[tuple[object, object]] = [
+        (Str(GOAL_PURSUIT_MARKER), Str("goal_pursuit")),
+        (Str("name"), Str(pursuit.name)),
+        (Str("execution_kind"), Str("goal")),
+        (Str("workflow"), Str(pursuit.workflow_name)),
+        (Str("until"), _lower_predicate(pursuit.until)),
+        (
+            Str("budget"),
+            MapLit(
+                [
+                    (Str("max_iterations"), pursuit.budget.max_iterations),
+                    (Str("deadline_ms"), pursuit.budget.deadline_ms),
+                ]
+            ),
+        ),
+    ]
+    if pursuit.retry_from is not None:
+        items.append((Str("retry_from"), pursuit.retry_from))
+    return MapLit(items)
+
+
+def _lower_predicate(node) -> MapLit:
+    kind = type(node).__name__
+    if kind == "Reached":
+        return MapLit([(Str("op"), Str("reached")), (Str("label"), node.label)])
+    if kind == "PredicateNot":
+        return MapLit(
+            [(Str("op"), Str("not")), (Str("operand"), _lower_predicate(node.operand))]
+        )
+    if kind == "PredicateAnd":
+        return MapLit(
+            [
+                (Str("op"), Str("and")),
+                (Str("left"), _lower_predicate(node.left)),
+                (Str("right"), _lower_predicate(node.right)),
+            ]
+        )
+    if kind == "PredicateOr":
+        return MapLit(
+            [
+                (Str("op"), Str("or")),
+                (Str("left"), _lower_predicate(node.left)),
+                (Str("right"), _lower_predicate(node.right)),
+            ]
+        )
+    raise ValueError(f"Unsupported goal predicate node: {kind}")
+
+
+def is_goal_pursuit_value(value) -> bool:
+    return isinstance(value, dict) and value.get(GOAL_PURSUIT_MARKER) == "goal_pursuit"
 
 
 def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
