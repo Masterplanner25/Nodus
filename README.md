@@ -4,11 +4,13 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.1.1 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v4.2.0 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
-**Recent:** 4.1.0 added `match` expressions for value dispatch and `break` / `continue`
-in every loop form; 4.1.1 fixes closures passed to a module function inside a list, map,
-or record. See the [changelog](CHANGELOG.md).
+**Recent:** 4.2.0 is a correctness release — `finally` now runs when `catch`
+re-throws, `std:async` worker pools actually run their workers, `--help` no
+longer executes the command it documents, and the embedded runtime applies a
+call-depth cap by default. It also adds an opcode-freeze gate phase and DAP
+locals. See the [changelog](CHANGELOG.md).
 
 ```bash
 pip install nodus-lang
