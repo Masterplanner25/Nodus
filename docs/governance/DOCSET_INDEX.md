@@ -146,6 +146,7 @@ When two documents make conflicting claims, the document higher in this list win
 
 | Directory | Role |
 |-----------|------|
+| `docs/design/v5/` | v5.0 design proposals — **not decided**; each states its open decisions |
 | `docs/design/v4/` | v4.0 design decisions (Phase 0 + Phase 1 docs) |
 | `docs/design/v3/` | v3.0 design decisions |
 
