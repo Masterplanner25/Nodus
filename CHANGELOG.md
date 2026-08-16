@@ -367,19 +367,19 @@
   analyzer never enters workflow step bodies (#401), and channels have no
   backpressure (#402).
 
-  A third audit of the same commit found the most serious defect in the series,
-  which anyone using `workflow_wait` should know about now:
+  A third audit of the same commit added the capability finding below, and one
+  claim that verification retracted:
 
-  - **A waiting step's dependents run with `nil`.** On resume the waiting step
-    never re-executes, so every downstream step receives `nil` where the awaited
-    value should be — and the run reports `ok: true` with no failures. Supplying a
-    resume payload does not help. Until #404 is fixed, do not rely on a value
-    reaching a step that comes after a `workflow_wait`.
-
-  Also filed: the host-function chokepoint is built but performs no authorisation
-  — `register_function` takes no permission metadata and the capability defaults
-  are permissive (#405). All three audits independently name this the
-  highest-leverage change available.
+  - **`workflow_wait` behaves as documented.** #404 was filed against it and is
+    **closed as invalid** — a waiting step completing with `nil` is the design, and
+    the resumed value reaches later steps through `workflow_resume_payload()`, per
+    `docs/guide/real-world-integration.md`. No code changed.
+    `tests/test_workflow_wait_resume.py` now pins that contract, including the
+    case that reads the dependency value instead and gets `nil`.
+  - **The host-function chokepoint performs no authorisation** —
+    `register_function` takes no permission metadata and the capability defaults
+    are permissive (#405). All three audits independently name this the
+    highest-leverage change available.
 
 - **The doc gate's closed-issues phase penalised honest changelog prose, and
   timed out on its own slowest regression test.** Two fixes to

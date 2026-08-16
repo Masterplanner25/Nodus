@@ -575,22 +575,22 @@ unreachable from the documented one.**
 Third audit of `3376702`, by a third auditor. Verification record in
 [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md).
 
-- **#404 (CRITICAL) — a waiting step's dependents run with `nil`.**
-  `_pause_for_wait` marks the waiting task `done` with result `None` before
-  persisting (`task_graph.py:834`). `ready_tasks()` keys readiness on
-  `task_id in results`, so on resume the waiting task is treated as completed work
-  and skipped; the step body **never re-executes** and every dependent receives
-  `nil`. The run reports `ok: true`, `failed: []`. Supplying `resume_payload`
-  changes nothing, because `workflow_resume_payload()` is never reached.
+- **#404 — CLOSED AS INVALID (2026-08-15). Not a defect; my error.** A waiting
+  step completing with `nil` is the design: the resumed value reaches later steps
+  through `workflow_resume_payload()`, a separate channel from the dependency
+  edge, documented in `docs/guide/real-world-integration.md`. I filed it critical
+  and called it release-blocking after reproducing a symptom without exercising
+  the documented path. The "fix" broke 7 existing tests, which encode the correct
+  design; it is reverted and the source is unmodified.
 
-  The third `ok: true`-for-work-not-done this cycle (#376, #392, #404) and the
-  worst: a human approves something, the workflow resumes, reports success, and
-  every step after the approval ran on nothing.
-
-  **Audits 01 and 02 both asserted the opposite from reading** ("the waiting
-  step's body runs again from the top"). Audit 03 flagged it as unverifiable by
-  reading and asked for a test. The honest uncertainty was worth more than both
-  confident findings.
+  Worth keeping the surrounding fact: **four independent readers reached four
+  different wrong conclusions about this same area** — audits 01 and 02 both said
+  the waiting step re-executes (it does not), audit 03 said dependents-see-nil is
+  a bug (it is the design), and I said it was critical. No code defect, but
+  nothing in the runtime distinguishes the two channels at use time, and a
+  dependent that reads a waited step's value gets `nil` with no diagnostic.
+  `tests/test_workflow_wait_resume.py` now pins the contract, including the
+  mistake case.
 
 - **#405 (HIGH, design) — the host-function chokepoint is built and ungoverned.**
   `_invoke_host_function` (`embedding.py:878`) is 8 lines, is the single path for

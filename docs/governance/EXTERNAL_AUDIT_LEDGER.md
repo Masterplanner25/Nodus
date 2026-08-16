@@ -202,44 +202,53 @@ returning `ok: false`, produced five filesystem writes. Filed as **#399**.
 Verdict: *"two-thirds confirmed and one-third misdescribed"* — agrees with 01 and
 02 on substance. Proposes the tagline **"for orchestrating agentic systems."**
 
-### The most valuable finding in the entire series
+### The finding four readers each got wrong differently — and the record correction
 
-**§16 — flagged as unverified, and correct to doubt.** Hermes could not settle
-from reading whether a waiting step re-executes on resume or its dependents
-proceed with `nil`, and said so:
+**Audit 03 §16** flagged, honestly, that it could not tell from reading whether a
+waiting step re-executes on resume or its dependents proceed with `nil`, and asked
+for a test:
 
-> *"I could not convince myself from reading alone… Flagging as unverified —
-> worth a test. If dependents can observe nil from a waiting step, that's a
-> correctness bug in the durability story."*
+> *"I could not convince myself from reading alone… If dependents can observe nil
+> from a waiting step, that's a correctness bug in the durability story."*
 
-They can, and it is. Measured:
+Dependents **do** observe `nil` — and it is **the design**, not a bug. The resumed
+value reaches later steps through `workflow_resume_payload()`, a separate channel
+from the dependency edge, documented in
+`docs/guide/real-world-integration.md`. Verified end-to-end against unmodified
+source: `steps: {'gate': None, 'finish': 'finish_saw=alice'}`.
 
-```
-step a { return workflow_wait("approval", "k3") }
-step b after a { return "b_saw_type=\(type(a))" }
+**Scorecard for this one area, across four independent readers:**
 
-resume → {"steps": {"a": null, "b": "b_saw_type=nil"},
-          "attempts": {"task_1": 1.0}, "failed": [], "ok": true}
-```
+| Reader | Claim | Verdict |
+|---|---|---|
+| Audit 01 §16 | *"the waiting step's body runs again from the top"* | **wrong** — it does not re-execute |
+| Audit 02 F7 | *"On resume the step body re-executes from the top"* | **wrong** — same error |
+| Audit 03 §16 | *"dependents observing nil ⇒ correctness bug"* | **wrong** — that is the design |
+| This ledger, first pass | filed **#404 (critical)**, called it release-blocking | **wrong** — my error |
 
-`a` never re-executes; `b` runs on `nil`; the run reports success. Supplying an
-explicit `resume_payload` changes nothing, because the step body is never entered
-and `workflow_resume_payload()` is never called. Filed **#404 (critical)**.
+My verification reproduced a symptom by reading the *dependency value* rather than
+the payload channel, and never exercised the documented path — the P4 error
+described three sections below, committed while writing the section that describes
+it. The "fix" I wrote broke 7 existing tests, which is what settled it; those tests
+encode the correct design. #404 is closed as invalid and the source is unmodified.
 
-**Audits 01 and 02 both asserted the opposite from reading.** Audit 01 §16: *"the
-waiting step's body runs again from the top."* Audit 02 F7: *"On resume the step
-body re-executes from the top."* Two confident wrong answers; one honest "I don't
-know, test it." The honest one was worth more than both.
+**There is no code defect here, and the strike rate is still the finding.** Four
+independent readers, four different wrong conclusions about the same twenty lines.
+Nothing in the runtime distinguishes the two channels at use time: a dependent that
+reads a waited step's value gets `nil` silently — no error, no diagnostic, no
+event. `tests/test_workflow_wait_resume.py` now pins the contract in executable
+form, including the mistake case.
 
-Every wait/resume test in the suite has a downstream step returning a constant
-(`step finish after gate { return "done" }`), so nothing could have caught it.
+**Method note for the next audit.** An explicitly-flagged uncertainty is still
+worth more than a confident claim — Audit 03 was right to doubt. But "reproduce
+the symptom" is not verification. The test has to exercise the **documented,
+supported path**, not the path that produces the surprising output.
 
 ### Confirmed
 
 | § | Finding | Verification | Issue |
 |---|---|---|---|
 | Final | `_invoke_host_function` is a single unbypassable, **ungoverned** chokepoint | 8 lines at `embedding.py:878`; no policy check; `register_function` takes no permission metadata; `allow_subprocess/network/env` all default `True` | **#405** |
-| §16 | Waiting-step nil propagation | Above | **#404** |
 | §6 | No agentic machinery in the core | Third independent confirmation | D1 |
 | F1 | Two orchestration engines — `orchestration/task_graph` and `nodus_lang_workflow` — *"two engines is not a position you can defend"* | Both exist and are separately maintained | — |
 | §19 | `register_function` has no permission metadata | Confirmed at `embedding.py:384` | #405 |
