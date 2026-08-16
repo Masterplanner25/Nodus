@@ -83,6 +83,12 @@ Release order — the whole sequence, not just the publish half:
     as a new user would expect → write `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md`
 11. `gh release create vX.Y.Z --verify-tag` — **only after PyPI succeeds**, since
     release immutability is permanent (see the gotcha above)
+12. **Stage 6 — downstream republish sweep.** Check every companion's `nodus-lang`
+    range still admits the new version; `git status` each checkout for work left
+    behind; and detect drift by **hashing the published sdist/wheel against local
+    source**, never by git heuristics — "commits since the version bump" gave four
+    false positives during the v4.2.0 sweep. `nodus-vscode` (manual VSIX) and
+    `nodus-run-action` (pins a version) are not on PyPI and need checking by hand
 
 **Both eval documents are part of the release, not optional write-ups.** A clean run
 is evidence; silence is not. Steps 8 and 10 answer different questions — "what can I
