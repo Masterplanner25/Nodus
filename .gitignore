@@ -58,3 +58,4 @@ STRESS-TEST USER EVALUATION*
 notes.txt
 output.json
 tmp_demo/
+.venv-postpublish/
