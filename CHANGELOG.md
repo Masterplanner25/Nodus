@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-08-15
+
 ### Changed — breaking for anything parsing stderr
 
 - **#342: every error now reports the resolved absolute path.** Runtime errors
