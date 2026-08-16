@@ -203,10 +203,41 @@ policy language into a runtime whose selling point is a small closed surface.
 Adding Starlark to Nodus would widen exactly the surface §2 says is the
 advantage.
 
-`nodus-governance` already has `policy.py` / `scope.py` / `trust.py` / `audit.py`
-for the **operator management plane** — who may configure what. It does not do
-runtime enforcement. The two should meet: governance declares, the chokepoint
-enforces.
+### 5.1 Decision — the `nodus-governance` seam
+
+**Decided 2026-08-15.** There is no design conflict to resolve; the two answer
+different questions and share only the word "policy".
+
+`nodus-governance` is 442 lines across `policy.py` / `scope.py` / `trust.py` /
+`audit.py`. Its central type is `PolicyBundle`, whose central method is
+`can_manage(operator_id)` — **which operator may manage this bundle**. Nothing in
+it evaluates a guest call. It is the operator management plane.
+
+The rules that follow, in priority order:
+
+1. **The enforcement plane must not depend on the management plane.** A bare
+   `NodusRuntime()`, in a process with no companion package installed, must still
+   enforce. All three Nodus audits identified in-process capability confinement as
+   the differentiator; a differentiator cannot be an optional dependency. So the
+   decision model — the three-valued verdict, rule matching, and the floor — lives
+   **in core**, stdlib-only, alongside the chokepoint it guards.
+2. **`nodus-governance` becomes a rule *source*, not the evaluator.** Under the
+   layered-sources model above it is one high-precedence, operator-managed tier.
+   It supplies rules; core decides. This is the same direction of dependency the
+   ecosystem already uses — core never imports a companion.
+3. **`audit.py` is the sink for the denial events, not their producer.** Core
+   emits `capability_denied` on the event bus it already has (§6);
+   `nodus-governance` persists it tamper-evidently for operators who want that.
+   Core does not require it to have been persisted.
+4. **Rename to remove the collision.** Core's type should be
+   `CapabilityPolicy` / `CapabilityDecision`, never `Policy` — two things named
+   `Policy` in one ecosystem, meaning "operator authority" and "guest authority",
+   is a NAME-COL-001 repeat waiting to happen.
+5. **Scope and trust stay where they are.** `scope.py` and `trust.py` are about
+   operators and channel peers. Neither belongs at the VM boundary.
+
+The seam in one line: **governance declares who may set the rules; core decides
+whether a call proceeds.** Neither needs the other to function.
 
 ---
 
