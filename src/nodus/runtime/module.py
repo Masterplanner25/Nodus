@@ -209,6 +209,10 @@ class NodusModule:
             allowed_commands=getattr(caller_vm, "allowed_commands", None) if caller_vm is not None else None,
             allowed_hosts=getattr(caller_vm, "allowed_hosts", None) if caller_vm is not None else None,
         )
+        # #405: authority must not be shed by crossing into a module or a tool
+        # handler. A policy that applied only to the top-level VM would be
+        # bypassed by `import "std:subprocess"`, which is how everyone calls it.
+        vm.capability_policy = getattr(caller_vm, "capability_policy", None) if caller_vm is not None else None
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)
             vm.trace_id = getattr(caller_vm, "trace_id", None)

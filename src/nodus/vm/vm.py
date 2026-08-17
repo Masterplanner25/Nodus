@@ -52,6 +52,7 @@ from nodus.services.agent_runtime import available_agents, call_agent, describe_
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
+from nodus.runtime.capability import BUILTIN_CAPABILITIES, CapabilityPolicy, CapabilityRequest, emit_denied
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
@@ -196,6 +197,9 @@ class VM:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        # #405. `None` means no policy — the default, and a single attribute test
+        # on the dispatch path rather than a call into an allow-everything object.
+        self.capability_policy: "CapabilityPolicy | None" = None
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.memory_store = GLOBAL_MEMORY_STORE
@@ -2043,6 +2047,27 @@ class VM:
 
         self.runtime_error("type", "Index assignment is only supported on lists and maps")
 
+    def check_capability(self, capability: str | None, target: str, kind: str, args=()) -> None:
+        """Consult the capability policy, or return immediately if there is none.
+
+        Raises a sandbox error on refusal, after recording it on the event bus —
+        a denial that is only raised cannot be audited, and "what did this program
+        try that it was not allowed to?" is the question an operator running
+        generated code actually has (#405).
+        """
+        policy = self.capability_policy
+        if policy is None:
+            return
+        request = CapabilityRequest(
+            capability=capability, target=target, kind=kind, args=tuple(args)
+        )
+        decision = policy.check(request)
+        if decision.allowed:
+            return
+        reason = decision.reason or f"{capability or target} is not granted"
+        emit_denied(self.event_bus, request, reason)
+        self.runtime_error("sandbox", f"Blocked: {reason}")
+
     def call_builtin(self, fn_name: str, arg_count: int):
         builtin = self.builtins[fn_name]
         expected = builtin.arity
@@ -2054,6 +2079,14 @@ class VM:
             self.runtime_error("call", f"{fn_name} expected {expected} args, got {arg_count}")
         args = [self.pop() for _ in range(arg_count)]
         args.reverse()
+        # #405: the builtin dispatch site is one of the two chokepoints a guest
+        # cannot route around. Only capability-bearing builtins consult the
+        # policy — `len` and `push` carry no authority, and making the hottest
+        # path in the interpreter pay a policy lookup for them would cost real
+        # time for nothing. See BUILTIN_CAPABILITIES.
+        _cap = BUILTIN_CAPABILITIES.get(fn_name)
+        if _cap is not None:
+            self.check_capability(_cap, fn_name, "builtin", args)
         profiler = self.profiler
         if profiler is not None and profiler.enabled:
             profiler.enter_function(fn_name)

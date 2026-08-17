@@ -4,6 +4,46 @@
 
 ### Added
 
+- **#405: a capability policy can now be consulted at the host boundary.**
+  Experimental, and additive — the default is no policy, and a runtime without
+  one behaves exactly as before.
+
+  ```python
+  from nodus.runtime.capability import DenyList, SUBPROCESS
+  rt = NodusRuntime(capability_policy=DenyList(SUBPROCESS))
+  ```
+
+  All three external architecture audits identified this boundary as the
+  highest-leverage change available. Stages 1–2 of the staging in
+  `CAPABILITY_POLICY_DESIGN.md`: a policy consulted at the chokepoints, denials
+  recorded, and capability metadata on `register_function`.
+
+  **Both chokepoints, not one.** That document stages builtins fourth, after host
+  functions — which would have covered nothing that matters, because
+  `subprocess_run`, `http_get` and `env_get` are *builtins* dispatched by
+  `VM.call_builtin` and never touch `_invoke_host_function`. Both are covered
+  from the start, and the policy travels with the VM so it is not shed by
+  crossing into a module or a tool handler.
+
+  What this adds over the existing `allow_subprocess` / `allow_network` /
+  `allow_env` flags, which are registration-time and binary per category:
+  per-call decisions, per-function authority via
+  `register_function(..., requires=…)`, decisions that can read the call's
+  arguments (permit `sp.run(["echo", …])`, refuse `sp.run(["hostname"])`), and a
+  **`capability_denied` event** — including for those pre-existing flags, whose
+  denials until now emitted nothing structured at all.
+
+  Only capability-bearing builtins consult the policy; `len` and `push` do not,
+  so the hot path pays one dict miss. That mapping is also the language's
+  capability surface in one readable place.
+
+  **Not built, deliberately:** the three-valued `allow | ask | deny` cascade and
+  its unbypassable floor, layered rule sources, approval caching, attenuation,
+  and deny-by-default. Defaults are unchanged and still permissive, so this
+  builds the lock and leaves the door open — see
+  `docs/design/v5/02-capability-policy.md` §6–7 for what that does and does not
+  license claiming.
+
 - **#409: `goal … over …` — a goal can now declare a stopping condition.**
   Experimental, and **additive**: `goal g { step … }` is unchanged.
 

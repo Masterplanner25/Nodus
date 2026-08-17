@@ -15,6 +15,7 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFun
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
+from nodus.runtime.capability import ALL_CAPABILITIES, CapabilityPolicy
 from nodus.vm.vm import VM
 from nodus.vm.types import Record, Closure
 
@@ -240,6 +241,7 @@ class NodusRuntime:
         allow_subprocess: bool = True,
         allow_network: bool = True,
         allow_env: bool = True,
+        capability_policy: "CapabilityPolicy | None" = None,
         allowed_commands: list[str] | None = None,
         allowed_hosts: list[str] | None = None,
         max_frames: int | None = None,
@@ -376,12 +378,14 @@ class NodusRuntime:
         self.coroutine_timeout_ms = coroutine_timeout_ms
         self._event_sinks: list = list(event_sinks) if event_sinks else []
         self._host_functions: dict[str, BuiltinInfo] = {}
+        self._host_capabilities: dict[str, str | None] = {}
+        self.capability_policy: CapabilityPolicy | None = capability_policy
         self._python_registered_tools: dict[str, dict] = {}
         self.__last_vm: VM | None = None
         self._tool_registry: ToolRegistry = ToolRegistry(self)
         self._run_lock = threading.Lock()
 
-    def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None) -> None:
+    def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None, requires: str | None = None) -> None:
         """Register a Python callable as a host function available to Nodus scripts.
 
         The function will be available in every subsequent ``run_source`` /
@@ -416,13 +420,25 @@ class NodusRuntime:
         Example::
 
             runtime.register_function("fetch", my_fetch_fn, arity=1)
+
+        requires:
+            The capability this function needs, consulted against the runtime's
+            ``capability_policy`` before every call (#405). ``None`` — the default
+            — means the function declares none and is always permitted, which is
+            the pre-existing behaviour. Declaring one makes authority a property
+            of the function rather than of the runtime.
         """
         if not isinstance(name, str) or not name:
             raise ValueError("Host function name must be a non-empty string")
         if name in BUILTIN_NAMES:
             raise ValueError(f"Cannot override built-in function: {name}")
+        if requires is not None and requires not in ALL_CAPABILITIES:
+            raise ValueError(
+                f"unknown capability {requires!r}; known: {sorted(ALL_CAPABILITIES)}"
+            )
         resolved_arity = self._resolve_arity(fn, arity)
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
+        self._host_capabilities[name] = requires
 
     @property
     def tool_registry(self) -> ToolRegistry:
@@ -498,6 +514,7 @@ class NodusRuntime:
         _drain_spawned(self.__last_vm)
         self.__last_vm = None
         self._host_functions.clear()
+        self._host_capabilities.clear()
         self._python_registered_tools.clear()
 
     def get_execution_stats(self) -> dict:
@@ -748,6 +765,9 @@ class NodusRuntime:
             module_globals=initial_globals,
             host_globals=host_globals,
         )
+        # #405: the policy rides on the VM, so the builtin dispatch site can
+        # consult it without reaching back into the embedding layer.
+        vm.capability_policy = self.capability_policy
         if not self.allow_input:
             vm.input_fn = self._blocked_input
         if debugger is not None:
@@ -773,7 +793,7 @@ class NodusRuntime:
             name: BuiltinInfo(
                 info.name,
                 info.arity,
-                lambda *args, _fn=info.fn, _vm=vm: self._invoke_host_function(_vm, _fn, *args),
+                lambda *args, _fn=info.fn, _vm=vm, _name=name: self._invoke_host_function(_vm, _fn, *args, name=_name),
             )
             for name, info in self._host_functions.items()
         }
@@ -851,7 +871,7 @@ class NodusRuntime:
             vm.builtins[name] = BuiltinInfo(
                 info.name,
                 info.arity,
-                lambda *args, _fn=info.fn, _vm=vm: self._invoke_host_function(_vm, _fn, *args),
+                lambda *args, _fn=info.fn, _vm=vm, _name=name: self._invoke_host_function(_vm, _fn, *args, name=_name),
             )
 
     def _resolve_arity(self, fn, arity: int | tuple[int, ...] | None) -> int | tuple[int, ...]:
@@ -875,8 +895,18 @@ class NodusRuntime:
                 raise ValueError("Host function has default args. Provide explicit arity.")
         return len(params)
 
-    def _invoke_host_function(self, vm: VM, fn, *args):
+    def _invoke_host_function(self, vm: VM, fn, *args, name: str | None = None):
         host_args = [self._to_host_value(arg) for arg in args]
+        # #405: the other of the two chokepoints a guest cannot route around.
+        # A host function declares its capability via `register_function(...,
+        # requires=...)`; one that declares none is permitted, which keeps this
+        # additive.
+        if self.capability_policy is not None:
+            vm.check_capability(
+                self._host_capabilities.get(name) if name else None,
+                name or "<host function>",
+                "host_function", host_args,
+            )
         try:
             result = fn(*host_args)
         except (LangRuntimeError, LangSyntaxError):

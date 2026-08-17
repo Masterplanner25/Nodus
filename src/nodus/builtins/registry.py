@@ -1,11 +1,27 @@
 """BuiltinRegistry: collects builtin function registrations from category modules."""
 
 from nodus.builtins.nodus_builtins import BuiltinInfo
+from nodus.runtime.capability import ENV, NETWORK, SUBPROCESS
 
 
-def _make_blocked_stub(vm, reason: str):
-    """Return a callable that raises a sandbox error for any number of args."""
+def _make_blocked_stub(vm, reason: str, capability: str | None = None):
+    """Return a callable that raises a sandbox error for any number of args.
+
+    #405: it now also records the refusal on the event bus. Until this, a denial
+    was *raised* and nothing else — so "what did this program try to do that it
+    was not allowed to?" had no answer, which is the question an operator running
+    generated code actually has. The registration-time gates below
+    (`allow_subprocess=False` and friends) are the oldest capability mechanism in
+    the runtime and were the least visible.
+    """
     def _blocked(*_args):
+        from nodus.runtime.capability import CapabilityRequest, emit_denied
+
+        emit_denied(
+            getattr(vm, "event_bus", None),
+            CapabilityRequest(capability=capability, target=reason, kind="builtin"),
+            reason,
+        )
         vm.runtime_error("sandbox", f"Blocked: {reason}")
     return _blocked
 
@@ -51,7 +67,7 @@ class BuiltinRegistry:
             from nodus.builtins import env as _env
             _env.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "environment variable access (allow_env=False)")
+            _blocked = _make_blocked_stub(vm, "environment variable access (allow_env=False)", ENV)
             for _name in ("env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys"):
                 self.add(_name, (0, 1, 2), _blocked)
         from nodus.builtins import time_module as _time
@@ -66,7 +82,7 @@ class BuiltinRegistry:
             from nodus.builtins import http_module as _http
             _http.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "network access (allow_network=False)")
+            _blocked = _make_blocked_stub(vm, "network access (allow_network=False)", NETWORK)
             for _name in (
                 "http_get", "http_post", "http_put", "http_delete", "http_patch",
                 "http_head", "http_options_verb", "http_request",
@@ -80,7 +96,7 @@ class BuiltinRegistry:
             from nodus.builtins import subprocess_module as _subprocess
             _subprocess.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "subprocess execution (allow_subprocess=False)")
+            _blocked = _make_blocked_stub(vm, "subprocess execution (allow_subprocess=False)", SUBPROCESS)
             for _name in (
                 "subprocess_run", "subprocess_run_async", "subprocess_shell",
                 "subprocess_shell_async", "subprocess_spawn", "subprocess_spawn_shell",
