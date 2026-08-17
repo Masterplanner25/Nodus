@@ -40,10 +40,21 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.0.1 is additive — it publishes the capability surfaces embedders were
-previously reaching by scraping our source (`GATED_BUILTINS`, `active_vm()`, and a
-stated denial contract), and it is the release that makes the companion ecosystem
-installable alongside 5.0.0. Upgrading from 5.0.0 requires nothing.
+**Recent:** 5.0.2 closes two correctness holes worth upgrading for. `@exactly_once`
+and `@retry` were **forgeable** — their lowerings called shadowable names, so three
+lines of user code replaced the envelope the compiler had injected, and the
+annotated body never ran. The workflow lowering had the same hole via
+`workflow_state()`. Separately, the bytecode cache was not keyed on the nodus-lang
+version, so upgrading silently left cached modules compiled by the *old* compiler —
+meaning compiler fixes did not apply until `.nodus/` was cleared.
+
+**If you rely on `@exactly_once` for idempotency, upgrade.** No behaviour change for
+anyone not shadowing those names, no new syntax, no bytecode change.
+
+5.0.1 is additive — it publishes the capability surfaces embedders were previously
+reaching by scraping our source (`GATED_BUILTINS`, `active_vm()`, and a stated
+denial contract), and it is the release that makes the companion ecosystem
+installable alongside 5.0.0.
 
 5.0.0 is the first major. It carries exactly one breaking change —
 the deny-by-default above — and the bytecode format is untouched
