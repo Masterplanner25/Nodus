@@ -919,9 +919,9 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.0.0** (live on PyPI, published 2026-08-17). Both files must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.0.0"`
-- `pyproject.toml` — `version = "5.0.0"`
+The current published version is **v5.0.1** (live on PyPI, published 2026-08-17). Both files must stay in sync:
+- `src/nodus/support/version.py` — `__version__ = "5.0.1"`
+- `pyproject.toml` — `version = "5.0.1"`
 
 Patch releases (5.0.x) for bug fixes and stability graduations. A minor bump (5.1.0) requires a
 substantive feature addition. Never bump without a corresponding PyPI publish. If you see these
@@ -931,6 +931,10 @@ files at different values, fix the mismatch before doing anything else.
 subprocess/network/env by default (see the embedding section below). The bytecode format did not
 change: `BYTECODE_VERSION` is still **4** and the 49-opcode set is untouched, so a major bump does
 not imply recompilation.
+
+**v5.0.1 is additive only** — new exports (`GATED_BUILTINS`, `active_vm()`), new tests, docs.
+No behaviour change, no new syntax. Upgrading from 5.0.0 requires nothing. It exists because five
+companions capped `nodus-lang<5.0.0` and made 5.0.0 unadoptable; see the ecosystem section.
 
 **`README.md` still advertises 4.2.0 as the stable version** (its banner and its "Recent:"
 paragraph) — left through the 5.0.0 cut deliberately, and the first task of the next cycle.

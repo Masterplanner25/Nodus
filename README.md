@@ -4,7 +4,11 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v5.0.0 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **Stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+>
+> <sub>The badge above carries the current version. This line deliberately does not: it named a
+> stale release through three consecutive cycles, most recently advertising 4.2.0 for the whole
+> of the 5.0.0 cycle. A doc that cannot go stale beats a gate that catches it going stale.</sub>
 
 > [!IMPORTANT]
 > ### Breaking in v5.0.0: `NodusRuntime` denies capabilities by default
@@ -36,7 +40,12 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.0.0 is the first major. It carries exactly one breaking change —
+**Recent:** 5.0.1 is additive — it publishes the capability surfaces embedders were
+previously reaching by scraping our source (`GATED_BUILTINS`, `active_vm()`, and a
+stated denial contract), and it is the release that makes the companion ecosystem
+installable alongside 5.0.0. Upgrading from 5.0.0 requires nothing.
+
+5.0.0 is the first major. It carries exactly one breaking change —
 the deny-by-default above — and the bytecode format is untouched
 (`BYTECODE_VERSION` is still 4, the 49-opcode set unchanged), so the major bump
 does not imply recompilation. Alongside it: `goal … over …` gives a goal a real
