@@ -3,7 +3,8 @@
 Run after PyPI publication and the GitHub release. Purpose: find companions that
 the new release breaks, admits by accident, or leaves behind.
 
-**Date:** 2026-08-17 · **Verdict: one outstanding item** (`nodus-vscode`).
+**Date:** 2026-08-17 · **Verdict at sweep time: one outstanding item** (`nodus-vscode`).
+**Closed the same day** — see §5.
 
 This release is the first **major**, so the sweep carries a question the previous
 ones did not: every companion pins `nodus-lang` with an **open-ended** range, so
@@ -74,7 +75,19 @@ point of `CLAUDE.md`'s instruction to hash content rather than count commits
 ("commits since the version bump" produced four false positives in the v4.2.0
 sweep).
 
-## 5. Outstanding
+## 5. Outstanding — resolved
+
+> **Closed 2026-08-17.** `nodus-vscode` **0.1.2** is live on the Marketplace
+> (`MasterplanInfiniteWeave.nodus-lang`, updated `2026-08-17T15:37:26Z`, verified
+> via the gallery API). The five keywords highlight; nothing from this release is
+> outstanding.
+>
+> One operational note for the next cycle: Marketplace validation took **~4
+> minutes**, and a gallery-API check run immediately after upload still reported
+> `0.1.1`. That is validation in progress, not a failed publish — do not re-upload
+> on the strength of the first check.
+
+The item as recorded at sweep time:
 
 - **`nodus-vscode` needs its VSIX republished.** The grammar was updated for the
   five new `goal` keywords — `over`, `until`, `budget`, `reached`, `retry` —

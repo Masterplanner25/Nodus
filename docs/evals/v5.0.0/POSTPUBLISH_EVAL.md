@@ -79,10 +79,9 @@ published artifact.
 Carried from [`CREATOR_VALIDATION.md`](CREATOR_VALIDATION.md) §4 so this document
 stands alone:
 
-- **`nodus-vscode` is not republished.** The grammar carries the five new `goal`
-  keywords (`0aa588c`) but the VSIX upload is manual, so `over`, `until`,
-  `budget`, `reached` and `retry` do not highlight yet. **Outstanding Stage 6
-  item.**
+- ~~**`nodus-vscode` is not republished.**~~ **Resolved 2026-08-17** — 0.1.2 is
+  live on the Marketplace and the five `goal` keywords highlight. See
+  [`STAGE6_DOWNSTREAM_SWEEP.md`](STAGE6_DOWNSTREAM_SWEEP.md) §5.
 - **Three docs still reference 4.2.0** as current — `README.md`,
   `RELEASE_GATES.md`, `real-world-integration.md`. Deliberately deferred: no gate
   checks version strings, so this is cosmetic and is the first task of the next
