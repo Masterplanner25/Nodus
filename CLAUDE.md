@@ -210,7 +210,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,114 tests collected** (2026-08-17). Coverage baseline: **76.82%** overall (20,184 stmts) —
+**2,140 tests collected** (2026-08-17, during the 5.0.1 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
 that figure was measured 2026-08-07 at 1,878 tests and has **not** been re-measured since the
 v5.0.0 work, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -226,8 +226,12 @@ and without** the change under test. **CI on a clean runner passed every PR in 5
 
 If you see this pattern — failures that move between runs and a suite that is suddenly 2× slower —
 do not start bisecting your own change. Re-run the failing test alone, then push and let CI
-arbitrate. Whether the degradation was transient has not been established; re-measure the
-wall-clock before assuming it is still present.
+arbitrate.
+
+**It was transient. Re-measured 2026-08-17 during the 5.0.1 cut: 2,138 passed, 3 skipped, 0
+failures, in 7 min 46 s** — back to the normal ~7 min, with no intermittent subprocess failures
+and no flake from `test_scheduler_fairness.py`. So the degradation was environmental and is gone;
+keep the advice above for the next time it appears, but do not expect it as the current baseline.
 
 **Flaky test fix pattern — timing headroom:**
 Tests that race a sleep against a timeout need **5–10x headroom**, not 2x. Under full-suite parallel
@@ -449,7 +453,8 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- **Status: v0.1.0 PUBLISHED on PyPI.**  BYTECODE_VERSION 4, no new opcodes.
+- **Status: v0.1.3 PUBLISHED on PyPI** (0.1.3, 2026-08-17, floated the `nodus-lang` cap).
+  BYTECODE_VERSION 4, no new opcodes.
 - **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
   `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
   The pyproject.toml `where = ["src"]` installs the Phase A–N library; the aindy
@@ -619,7 +624,7 @@ or give it its own repo the way `nodus-a2a-wire` got one.
 ## nodus-native-memory-engine companion library
 
 - Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
-- **Status: v0.1.0 PUBLISHED on PyPI.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
+- **Status: v0.1.1 PUBLISHED on PyPI.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
 - **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
   Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
 - Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
@@ -627,7 +632,7 @@ or give it its own repo the way `nodus-a2a-wire` got one.
 ## nodus-extension companion library
 
 - Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Status: v0.1.0 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
+- **Status: v0.1.1 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
 - **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
   write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
 - **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
@@ -818,7 +823,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-mcp-server
 
 - Repo: `C:\dev\nodus-mcp-server` / `github.com/Masterplanner25/nodus-mcp-server`
-- **Status: v0.1.11 PUBLISHED on PyPI.** Install via `pipx install nodus-mcp-server`.
+- **Status: v0.1.12 PUBLISHED on PyPI.** Install via `pipx install nodus-mcp-server`.
 - **Supports two transports:**
   - **Claude Desktop (stdio):** Add to `claude_desktop_config.json` under `mcpServers`
   - **ChatGPT Desktop (HTTP/SSE):** Run `nodus-mcp-server --http --port 8765`, tunnel via ngrok
@@ -887,8 +892,11 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-sdk companion package
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
-- **Status: v0.1.0 PUBLISHED on PyPI.**
+- **Status: v0.1.2 PUBLISHED on PyPI.**
   99 tests. Unified platform SDK auto-wiring the 32-package companion ecosystem.
+  Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
+  suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
+  recorded it as a known-stale test rather than fixing it. Fixed in 0.1.2.
 - **Install:** `pip install nodus-sdk[agent,sql,fastapi]` (extras-based)
 - **Key exports:** `NodusSDKRuntime`, `create_runtime(**kwargs)`, `detect_available()`
 - **9 bridges:** redis, http, llm, observability (wrappers), sql, vector, scheduler, webhook, api (new)
@@ -999,6 +1007,31 @@ Three related surfaces, all in `src/nodus/runtime/capability.py`:
 
 Migration: `docs/migration/v5.0-deny-by-default.md`. Design: `docs/design/v5/02-capability-policy.md`.
 
+**What is promised to embedders (5.0.1, #441–#444).** Added after aindy-runtime reported four
+places where it was coupled to something we had never published as a surface:
+
+- **`GATED_BUILTINS` / `GATED_BUILTIN_NAMES`** — the registration-time gates as data, flag →
+  `GatedBuiltinGroup(flag, capability, description, arity, names)`. `register_all` builds its
+  refusing stubs *from* this, so the published list and the enforced gate cannot disagree.
+  **This is not `BUILTIN_CAPABILITIES`** — that one is what consults the policy at call time.
+  The two differ by exactly one entry (`subprocess_shell_quote`, string manipulation that runs
+  nothing) and `tests/test_downstream_contracts.py` pins the relationship, because before that
+  they were two hand-maintained lists with nothing checking they agreed.
+- **The denial contract is `kind` and the flag name, not the sentence.** `error["kind"]` is
+  `"sandbox"`; `error["message"]` contains the granting flag. The wording changed in 5.0.0 and
+  turned four downstream confinement tests red **while the guest was fully confined**. If you
+  rephrase a denial, keep the flag name in it.
+- **`NodusRuntime.active_vm()`** is supported; the `VM` it returns is not. `_get_active_vm()` is
+  retained as an alias because downstream pins it — do not "clean it up".
+- **Do not add `**kwargs` to `NodusRuntime.__init__`, and keep the confinement flags
+  keyword-only.** Both are load-bearing: with a catch-all, a renamed flag is silently swallowed
+  and the guest runs unconfined with every mock-based test on the embedder's side still green.
+  Pinned by test so it cannot be undone casually.
+- **`register_function` refusing to override a builtin is a security boundary**, not a
+  convenience check. Because a builtin cannot be aliased, a host can install a fail-loud guard
+  under a guest-reachable name (aindy does this for `syscall`) and know the guard is the only
+  thing there. Also now pinned.
+
 **SPAWN-001 — FIXED.** Tracked as **#116** (closed), not #117 (which was closed as a
 duplicate of it). `wait_async()` now suspends properly: it runs `proc.wait()` on a
 worker thread, registers a result channel with `scheduler._io_channels`, and sets
@@ -1024,11 +1057,38 @@ of already-published packages is not session-limited.
 
 **nodus-lang:** **v5.0.0** on PyPI (2026-08-17). nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
 
-**Every companion pins `nodus-lang` with an open-ended range** (`>=4.0.0` or `>=4.0.5`) — none
-caps it, so all six dependents picked up the 5.0.0 **major** automatically. The Stage 6 sweep ran
-each dependent suite against 5.0.0 and none broke, but the general point stands: an unbounded
-range means pip installs a breaking release without asking. Check ranges before assuming a
-companion is insulated.
+**Companion `nodus-lang` ranges — do not read them by eye. Run the check:**
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_downstream_constraints
+```
+
+All six dependents now float (`>=4.0.0`, or `>=4.0.5` for `nodus-mcp-server`) and admit 5.0.0.
+
+That is true **as of 2026-08-17 and not before it.** An earlier revision of this section said
+"none caps it, so all six dependents picked up the 5.0.0 major automatically." The exact
+opposite was true: five of the six published `nodus-lang<5.0.0`, so
+`pip install nodus-lang==5.0.0 nodus-mcp` was `ResolutionImpossible` and 5.0.0 was unadoptable
+for anyone using the ecosystem. Only `nodus-jupyter` floated. It was found by the aindy-runtime
+team, not by us — the Stage 6 sweep asked exactly this question and transcribed five of six
+ranges with the upper bound dropped. Fixed by republishing all five (#445).
+
+Two durable lessons, both of which cost a day:
+
+- **`>=4.0.0,<5.0.0` reads as "admits 4.x", which is what the eye checks for.** The clause that
+  forbids the new version is at the far end of the string. This is not a lapse more care fixes;
+  resolve it with `packaging`, which is what the script does. It reads **published** PyPI
+  metadata, because a floated cap sitting unreleased in a companion's `main` helps nobody.
+- **A passing companion suite says nothing about installability.** The sweep correctly recorded
+  every dependent suite passing against 5.0.0 — they were run against the dev source. They could
+  not have been reached through a normal `pip install` at all, and noticing that would have
+  exposed the cap immediately.
+
+**Policy, decided 2026-08-17: companions do not cap `nodus-lang`.** A hard upper bound on a
+first-party dependency turns every major into a two-repo release train with consumers frozen in
+between. The companion's own suite is the check that catches a real break; a cap earns its place
+once a break is known, not before.
 
 **Standalone companion packages — 32 live on PyPI** (33 projects counting nodus-lang).
 All at v0.1.0 except where noted:
@@ -1041,8 +1101,9 @@ nodus-observability-framework, nodus-workflow, nodus-store-sql
 nodus-extension, nodus-native-memory-engine, nodus-jupyter
 nodus-governance, nodus-memory, nodus-a2a
 ```
-Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.2**, `nodus-gateway` **0.1.1**,
-`nodus-sdk` **0.1.1**, `nodus-mcp-server` **0.1.11**.
+Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.3**, `nodus-gateway` **0.1.1**,
+`nodus-sdk` **0.1.2**, `nodus-mcp-server` **0.1.12**, `nodus-extension` **0.1.1**,
+`nodus-native-memory-engine` **0.1.1**.
 
 Note: the published `nodus-memory` and `nodus-a2a` are the **Tier 2 rewrites** — the same
 thing as the local `C:\dev` checkouts, not the nodus-lang adapters. Verified against PyPI

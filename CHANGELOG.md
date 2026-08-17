@@ -2,6 +2,108 @@
 
 ## [Unreleased]
 
+## [5.0.1] - 2026-08-17
+
+Every item here came from a downstream adoption report on 5.0.0 (aindy-runtime).
+None is a defect in what 5.0.0 does; all are places where a consumer was coupled
+to something that was never published as a surface.
+
+### Added
+
+- **#441: `GATED_BUILTINS` and `GATED_BUILTIN_NAMES`** in `nodus.runtime.capability`.
+  The registration-time capability gates, as data: flag → `GatedBuiltinGroup`
+  with `flag`, `capability`, `description`, `arity` and `names`.
+
+  There was no way to enumerate the gated surface, so an embedder asserting its
+  own confinement regexed the source of `BuiltinRegistry.register_all`. The 5.0.0
+  refactor moved those names into the `else:` branch and the regex broke —
+  silently, then loudly: it began capturing flag names out of `_denied_reason()`
+  and reporting them as three phantom leaked builtins.
+
+  `register_all` now builds its refusing stubs *from* this data rather than from
+  its own copy of the names, so the published list and the enforced gate cannot
+  disagree. Note it is a different list from `BUILTIN_CAPABILITIES` — that one is
+  what consults the policy at call time — and the two differ by exactly one entry
+  (`subprocess_shell_quote`, string manipulation that runs nothing). They were
+  previously maintained separately with nothing checking they agreed;
+  `tests/test_downstream_contracts.py` now pins the relationship.
+
+- **#442: `NodusRuntime.active_vm()`** — a supported accessor for the VM of the most
+  recent run. Embedders were reaching it through `_get_active_vm()`, which carried
+  no compatibility promise. That name is retained as an alias, un-deprecated,
+  because downstream pins it. The promise is narrow and stated as such: the
+  accessor is stable, the `VM` object it returns is internal.
+
+- **A capability-policy section in `LANGUAGE_STABILITY_INDEX.md`.** The whole
+  `nodus.runtime.capability` surface shipped in 5.0.0 unindexed — no tier for
+  `CapabilityPolicy`, `DEFAULT_FLOOR`, the labels, or the denial contract. Being
+  absent from the index is why scraping the source looked like the only option.
+
+### Changed
+
+- **#444: the denial contract is now stated.** Two fields are contractual: `error["kind"]`
+  is `"sandbox"` for every capability refusal, and `error["message"]` contains the
+  name of the flag that grants the capability. The wording around the flag name is
+  **not** contractual and did change in 5.0.0 — which cost a downstream embedder
+  four red confinement tests while its guest was fully confined, refusals firing
+  correctly with `kind: "sandbox"` and `capability_denied` on the bus. Documented
+  in the embedder runbook §3.3 and pinned by test.
+
+### Fixes
+
+- **#445: five companion packages could not be installed alongside 5.0.0.** No change to
+  this package, but the most user-visible problem with the 5.0.0 release:
+  `nodus-mcp`, `nodus-mcp-server`, `nodus-extension`, `nodus-sdk` and
+  `nodus-native-memory-engine` all published a `nodus-lang<5.0.0` cap, so
+  `pip install nodus-lang==5.0.0 nodus-mcp` failed with `ResolutionImpossible`.
+  Only `nodus-jupyter` was installable. Every cap was prophylactic — no 5.x break
+  was ever recorded in any of them, and all five suites pass against 5.0.0
+  unchanged (363 / 25 / 126 / 99 / 76).
+
+  All five have been republished with the cap floated: nodus-mcp 0.1.3,
+  nodus-mcp-server 0.1.12, nodus-extension 0.1.1, nodus-sdk 0.1.2,
+  nodus-native-memory-engine 0.1.1.
+
+  The Stage 6 sweep that was supposed to catch this recorded five of the six
+  ranges with the upper bound dropped, and concluded the opposite of the truth.
+  `docs/evals/v5.0.0/STAGE6_DOWNSTREAM_SWEEP.md` carries a dated correction.
+
+- **`README.md` advertised 4.2.0 as the current stable release** through the whole
+  5.0.0 cycle — its banner, and a "Recent:" paragraph describing 4.2.0's contents.
+  It also still framed deny-by-default as "breaking in the next release" after that
+  release had shipped.
+
+### Tooling
+
+- **#443: `tests/test_downstream_contracts.py`** — pins the surfaces above, plus three
+  properties of `NodusRuntime.__init__` that an embedder asked us to *keep* and
+  that nothing protected: it takes no `**kwargs` (so a renamed confinement flag
+  raises `TypeError` instead of being silently swallowed while the guest runs
+  unconfined), its confinement flags are keyword-only (so an argument reorder
+  cannot change which boundary is denied), and they still default to `False`.
+
+  Also pins `register_function`'s refusal to override a builtin name. That refusal
+  is load-bearing as a security boundary — because a builtin cannot be aliased, a
+  host can install a fail-loud guard under a guest-reachable name and know the
+  guard is the only thing there — and it was documented in a docstring and never
+  asserted.
+
+  Following this codebase's rule: where a behaviour test would pass on whichever
+  path already works, the test asserts on the source instead. The gate-list test
+  fails against the 5.0.0 registry and passes against the refactored one; verified
+  both ways rather than assumed.
+
+- **`tools/check_downstream_constraints.py`** — Stage 6's dependency-range check,
+  as a command. It reads *published* PyPI metadata and resolves it with
+  `packaging`, rather than reading `pyproject.toml` by eye. `RELEASE_GATES.md`
+  Stage 6 step 1 now requires running it and pasting the output; its former
+  wording offered `>=X,<5.0.0` as the example of a range that "needs nothing",
+  which is precisely the range that blocked this release.
+
+  `tests/test_downstream_constraints_tool.py` runs it against the six requirement
+  strings as they were actually published on 2026-08-17, so the check is pinned to
+  fail on the metadata that fooled a careful reader — not merely to pass today.
+
 ## [5.0.0] - 2026-08-17
 
 ### Changed — BREAKING

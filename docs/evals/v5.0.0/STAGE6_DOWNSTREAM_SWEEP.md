@@ -15,6 +15,57 @@ unbounded range means pip installs a breaking release without asking.
 
 ## 1. Dependency ranges
 
+> ### ⚠️ Corrected 2026-08-17 — this section was wrong, in the reassuring direction
+>
+> **Five of the six ranges below are transcribed with their upper bound dropped.**
+> The actual published metadata was:
+>
+> | Companion | Recorded here | Actually published | Admits 5.0.0 |
+> |---|---|---|---|
+> | nodus-mcp | `>=4.0.0` | `>=4.0.0,<5.0.0` | **no** |
+> | nodus-mcp-server | `>=4.0.5` | `>=4.0.5,<5.0.0` | **no** |
+> | nodus-extension | `>=4.0.0` | `>=4.0.0,<5.0.0` | **no** |
+> | nodus-sdk | `>=4.0.0` | `>=4.0.0,<5.0.0` | **no** |
+> | nodus-native-memory-engine | `>=4.0.0` | `>=4.0.0,<5.0.0` (extra) | **no** |
+> | nodus-jupyter | `>=4.0.0` | `>=4.0.0` | yes |
+>
+> So the conclusion drawn — *"no companion caps its range, so all six pick up
+> 5.0.0 on a fresh install"* — was the exact inverse of the truth. Only
+> `nodus-jupyter` could install alongside 5.0.0. For every other companion,
+> `pip install nodus-lang==5.0.0 nodus-<companion>` was `ResolutionImpossible`,
+> which made 5.0.0 effectively unadoptable for anyone using the ecosystem.
+>
+> This was **not** found by the sweep. It was reported on 2026-08-17 by the
+> aindy-runtime team, who pin `nodus-lang` exactly and ship an optional `[mcp]`
+> extra; the cap held them on 4.2.0 with their upgrade PR blocked. They found one
+> instance; the systemic version is above.
+>
+> **Resolved the same day** by floating the cap in all five and republishing:
+> nodus-mcp 0.1.3, nodus-extension 0.1.1, nodus-mcp-server 0.1.12, nodus-sdk
+> 0.1.2, nodus-native-memory-engine 0.1.1. All five suites were re-run against
+> 5.0.0 first (363 / 126 / 25 / 99 / 76 passed) — the code was compatible
+> throughout; only the metadata blocked. Verified afterwards:
+> `pip install --dry-run nodus-lang==5.0.0` with all six companions now resolves.
+>
+> **Why it happened, and the fix that outlasts it.** The ranges were read by eye
+> out of six `pyproject.toml` files and transcribed into a table. The lower bound
+> is at the start of the string and the upper bound is at the end; reading for
+> "does it admit 5.0.0" while looking at `>=4.0.0` is exactly the shape of error
+> that survives a careful reader. This section asked the single most important
+> question in the sweep and answered it from memory rather than from a command.
+>
+> `tools/check_downstream_constraints.py` now answers it by resolving against the
+> live index instead. Stage 6 runs that script and pastes its output; the table
+> below is retained unaltered as the record of what was claimed.
+>
+> One further consequence worth stating plainly: §2 recorded every dependent suite
+> passing "with `nodus-lang==5.0.0` installed". That was true — the suites were run
+> against the dev source — but it cannot have been reached through a normal `pip
+> install`, and noticing that would have exposed the cap. A green suite was taken
+> as evidence about installability, which it never was.
+
+*The table as recorded at sweep time, retained unaltered:*
+
 | Companion | `nodus-lang` range | Admits 5.0.0 |
 |---|---|---|
 | nodus-mcp | `>=4.0.0` | yes |

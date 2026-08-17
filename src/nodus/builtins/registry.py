@@ -1,7 +1,7 @@
 """BuiltinRegistry: collects builtin function registrations from category modules."""
 
 from nodus.builtins.nodus_builtins import BuiltinInfo
-from nodus.runtime.capability import ENV, NETWORK, SUBPROCESS
+from nodus.runtime.capability import GATED_BUILTINS, GatedBuiltinGroup
 
 
 def _denied_reason(what: str, flag: str) -> str:
@@ -51,6 +51,19 @@ class BuiltinRegistry:
         """Register a single builtin by name, arity, and callable."""
         self._entries[name] = BuiltinInfo(name, arity, fn)
 
+    def block_group(self, vm, group: GatedBuiltinGroup) -> None:
+        """Register refusing stubs for every builtin in a withheld capability group.
+
+        The names, arity and denial wording all come from `GATED_BUILTINS`, so the
+        gate and the published surface cannot disagree: there is one list, and both
+        this and any embedder enumerating the gated builtins read it.
+        """
+        blocked = _make_blocked_stub(
+            vm, _denied_reason(group.description, group.flag), group.capability
+        )
+        for name in group.names:
+            self.add(name, group.arity, blocked)
+
     @property
     def entries(self) -> dict[str, BuiltinInfo]:
         return self._entries
@@ -77,9 +90,7 @@ class BuiltinRegistry:
             from nodus.builtins import env as _env
             _env.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, _denied_reason("environment variable access", "allow_env"), ENV)
-            for _name in ("env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys"):
-                self.add(_name, (0, 1, 2), _blocked)
+            self.block_group(vm, GATED_BUILTINS["allow_env"])
         from nodus.builtins import time_module as _time
         _time.register(vm, self)
         from nodus.builtins import hash_module as _hash
@@ -92,27 +103,12 @@ class BuiltinRegistry:
             from nodus.builtins import http_module as _http
             _http.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, _denied_reason("network access", "allow_network"), NETWORK)
-            for _name in (
-                "http_get", "http_post", "http_put", "http_delete", "http_patch",
-                "http_head", "http_options_verb", "http_request",
-                "http_get_async", "http_post_async", "http_put_async",
-                "http_delete_async", "http_patch_async", "http_head_async",
-                "http_options_async", "http_request_async",
-                "http_stream", "http_sse",
-            ):
-                self.add(_name, (1, 2, 3), _blocked)
+            self.block_group(vm, GATED_BUILTINS["allow_network"])
         if getattr(vm, "allow_subprocess", True):
             from nodus.builtins import subprocess_module as _subprocess
             _subprocess.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, _denied_reason("subprocess execution", "allow_subprocess"), SUBPROCESS)
-            for _name in (
-                "subprocess_run", "subprocess_run_async", "subprocess_shell",
-                "subprocess_shell_async", "subprocess_spawn", "subprocess_spawn_shell",
-                "subprocess_shell_quote",
-            ):
-                self.add(_name, (1, 2, 3), _blocked)
+            self.block_group(vm, GATED_BUILTINS["allow_subprocess"])
         from nodus.builtins import tool_module as _tool
         _tool.register(vm, self)
         from nodus.builtins import test_module as _test

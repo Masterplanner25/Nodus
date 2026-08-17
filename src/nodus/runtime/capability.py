@@ -97,6 +97,88 @@ BUILTIN_CAPABILITIES.update({
 
 
 @dataclass(frozen=True)
+class GatedBuiltinGroup:
+    """One registration-time capability gate: a flag, and what it withholds."""
+
+    flag: str
+    """The `NodusRuntime` keyword that grants this group — e.g. `allow_subprocess`."""
+
+    capability: str
+    """The capability label recorded on the `capability_denied` event."""
+
+    description: str
+    """The human phrase used in the denial message ("subprocess execution")."""
+
+    arity: tuple[int, ...]
+    """Arity accepted by the blocked stubs. Wide on purpose: the stub must accept
+    whatever the real builtin would, so the caller gets the sandbox refusal rather
+    than an arity error that hides it."""
+
+    names: tuple[str, ...]
+    """The builtins withheld when the flag is False."""
+
+
+# The registration-time gates, as data.
+#
+# This is a *different* list from `BUILTIN_CAPABILITIES` above, and the difference
+# is the point. `BUILTIN_CAPABILITIES` says which builtins consult the policy at
+# call time; this says which are never registered at all when the corresponding
+# flag is False. The two overlap but are not identical — see the
+# `subprocess_shell_quote` note above and `tests/test_gated_builtins.py`, which
+# pins the relationship so a new builtin added to one list and not the other
+# fails the suite instead of drifting quietly.
+#
+# Exposed as data because downstream embedders need to enumerate the gated surface
+# to assert their own confinement. Before this, the only way to get these names was
+# to regex the source of `BuiltinRegistry.register_all` — which aindy-runtime did,
+# and which broke on the 5.0.0 refactor that moved the names into the `else:`
+# branch, silently capturing flag names out of `_denied_reason` and reporting them
+# as leaked builtins. A list that downstream must scrape is a list that breaks
+# quietly on our refactors and loudly on theirs.
+GATED_BUILTINS: dict[str, GatedBuiltinGroup] = {
+    "allow_env": GatedBuiltinGroup(
+        flag="allow_env",
+        capability=ENV,
+        description="environment variable access",
+        arity=(0, 1, 2),
+        names=(
+            "env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys",
+        ),
+    ),
+    "allow_network": GatedBuiltinGroup(
+        flag="allow_network",
+        capability=NETWORK,
+        description="network access",
+        arity=(1, 2, 3),
+        names=(
+            "http_get", "http_post", "http_put", "http_delete", "http_patch",
+            "http_head", "http_options_verb", "http_request",
+            "http_get_async", "http_post_async", "http_put_async",
+            "http_delete_async", "http_patch_async", "http_head_async",
+            "http_options_async", "http_request_async",
+            "http_stream", "http_sse",
+        ),
+    ),
+    "allow_subprocess": GatedBuiltinGroup(
+        flag="allow_subprocess",
+        capability=SUBPROCESS,
+        description="subprocess execution",
+        arity=(1, 2, 3),
+        names=(
+            "subprocess_run", "subprocess_run_async", "subprocess_shell",
+            "subprocess_shell_async", "subprocess_spawn", "subprocess_spawn_shell",
+            "subprocess_shell_quote",
+        ),
+    ),
+}
+
+GATED_BUILTIN_NAMES: frozenset[str] = frozenset(
+    name for group in GATED_BUILTINS.values() for name in group.names
+)
+"""Every builtin withheld by some capability flag, flattened."""
+
+
+@dataclass(frozen=True)
 class CapabilityRequest:
     """What is being asked for, at the moment of asking."""
 

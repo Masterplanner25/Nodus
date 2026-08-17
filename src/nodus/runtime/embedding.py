@@ -488,7 +488,33 @@ class NodusRuntime:
         )
         return self.__last_vm
 
+    def active_vm(self) -> "VM | None":
+        """The VM from the most recent run, or ``None`` before the first one.
+
+        Supported, and the way to reach the VM from a host function that needs to
+        inspect the live execution — checking the sandbox flags actually in force,
+        reading the event bus, or asserting confinement from an embedder's own test
+        suite. Before this existed the only route was ``_get_active_vm()``, which
+        carried no compatibility promise; embedders were calling it anyway.
+
+        The promise is deliberately narrow: **this accessor** is stable, the ``VM``
+        object it hands back is not. `VM` is internal, its attributes move between
+        releases, and nothing here commits them. What is safe to rely on is that
+        this returns the same object the runtime just executed with, or ``None``.
+
+        Called during a run — from inside a host function — it returns the VM
+        executing that call. Called after ``reset()`` or ``shutdown()``, it returns
+        ``None``.
+        """
+        return self.__last_vm
+
     def _get_active_vm(self) -> "VM | None":
+        """Retained alias for :meth:`active_vm`.
+
+        Kept, un-deprecated, because downstream embedders pin it (aindy-runtime
+        pins it with a test). Renaming it would break them for no gain; new code
+        should call ``active_vm()``.
+        """
         return self.__last_vm
 
     def reset(self) -> None:
