@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
 from nodus.frontend.ast.ast_nodes import (
+    builtin_call,
     ActionStmt,
     Assign,
     Attr,
@@ -176,7 +178,7 @@ def _lower_step_ast(step: WorkflowStep | GoalStep, state_names: list[str]) -> Ma
     rewriter = _StateRewriter(set(state_names), state_var, initial_locals=set(step.deps) | ({state_var} if state_names else set()))
     rewritten_body = rewriter.rewrite_stmt(body)
     if state_names:
-        prelude = Let(state_var, Call(Var("workflow_state"), []))
+        prelude = Let(state_var, builtin_call("workflow_state", []))
         body_stmts = rewritten_body.stmts if isinstance(rewritten_body, Block) else [rewritten_body]
         rewritten_body = Block([prelude] + body_stmts)
     body = _return_last_action(rewritten_body)
@@ -200,14 +202,34 @@ def _return_last_action(body: object) -> Block:
     return body
 
 
+ACTION_BUILTINS = frozenset({
+    "__action_tool",
+    "__action_agent",
+    "__action_memory_put",
+    "__action_memory_get",
+    "__action_emit",
+})
+
+
 def _is_action_builtin(expr: Call) -> bool:
-    return isinstance(expr.callee, Var) and expr.callee.name in {
-        "__action_tool",
-        "__action_agent",
-        "__action_memory_put",
-        "__action_memory_get",
-        "__action_emit",
-    }
+    """Is this the action call a step body ends with?
+
+    Must strip `BUILTIN_CALL_PREFIX` first (#411). The lowering emits these through
+    `builtin_call()` so a program cannot shadow them, and this matcher runs *after*
+    that rewrite — so comparing the raw callee name silently stopped matching, the
+    trailing action was no longer turned into a `Return`, and every step ending in
+    an action returned nil instead of its result.
+
+    That is the same defect as #411 in miniature: a name-based decision broken by a
+    rename. Strip rather than compare against both spellings, so this keeps working
+    if a lowering is ever changed back or a new prefix is introduced.
+    """
+    if not isinstance(expr.callee, Var):
+        return False
+    name = expr.callee.name
+    if name.startswith(BUILTIN_CALL_PREFIX):
+        name = name[len(BUILTIN_CALL_PREFIX):]
+    return name in ACTION_BUILTINS
 
 
 def runtime_flow_kind(value) -> str | None:
@@ -424,15 +446,15 @@ def _collect_pattern_names(pattern) -> list[str]:
 def _lower_action_expr(expr: ActionStmt):
     target = Str(expr.target) if expr.target is not None else Nil()
     if expr.kind == "tool":
-        return _mark_from(Call(Var("__action_tool"), [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
+        return _mark_from(builtin_call("__action_tool", [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
     if expr.kind == "agent":
-        return _mark_from(Call(Var("__action_agent"), [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
+        return _mark_from(builtin_call("__action_agent", [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
     if expr.kind == "memory_put":
-        return _mark_from(Call(Var("__action_memory_put"), [target, expr.payload if expr.payload is not None else Nil()]), expr)
+        return _mark_from(builtin_call("__action_memory_put", [target, expr.payload if expr.payload is not None else Nil()]), expr)
     if expr.kind == "memory_get":
-        return _mark_from(Call(Var("__action_memory_get"), [target]), expr)
+        return _mark_from(builtin_call("__action_memory_get", [target]), expr)
     if expr.kind == "emit":
-        return _mark_from(Call(Var("__action_emit"), [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
+        return _mark_from(builtin_call("__action_emit", [target, expr.payload if expr.payload is not None else MapLit([])]), expr)
     return expr
 
 

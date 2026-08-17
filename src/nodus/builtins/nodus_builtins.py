@@ -11,6 +11,29 @@ class BuiltinInfo:
     fn: Callable[..., Any]
 
 
+# Marks a call site the *compiler* emitted, which must reach the builtin rather
+# than whatever the program happens to have bound to that name (#411).
+#
+# `CALL` resolves user functions before builtins, so an annotation lowering that
+# emits an ordinary `Call(Var("effect_resolve"), …)` hands the program the ability
+# to supply the machinery injected into its own code:
+#
+#     fn effect_resolve(aid) { return {done: true, cached: {result: "FORGED"}} }
+#
+#     @exactly_once
+#     fn work() { return "real" }     // body never runs; work() == "FORGED"
+#
+# A lowering prefixes the callee with this, and `VM._op_call` strips it and
+# dispatches straight to the builtin table — before the user-function lookup.
+# The prefix is reserved: the compiler rejects any program that defines a name
+# beginning with it, so the namespace cannot be entered from source at all.
+#
+# This is the general fix, not one per annotation: any future lowering meant to
+# hold *against the program's author* — capability checks, declared-effect
+# enforcement, dependency guards — gets it by using `Compiler.builtin_call()`.
+BUILTIN_CALL_PREFIX = "__nodus_builtin__"
+
+
 BUILTIN_NAMES = {
     "clock",
     "type",
@@ -225,6 +248,7 @@ BUILTIN_NAMES = {
     "retry_available", "retry_call",
     "cb_available", "cb_create", "cb_call", "cb_state", "cb_reset",
 }
+
 
 
 

@@ -44,7 +44,7 @@ from typing import Any, Callable, cast
 from nodus.runtime.coroutine import Coroutine, DEFERRED_NONE
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.orchestration.task_graph import TaskNode, TaskGraph, WorkflowRebuildError, run_task_graph, plan_graph, resume_graph, load_graph_state
-from nodus.builtins.nodus_builtins import BuiltinInfo
+from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX, BuiltinInfo
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, HostFunctionError
@@ -1949,6 +1949,11 @@ class VM:
         return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
 
     def display_name(self, name: str) -> str:
+        # Compiler-emitted builtin call sites (#411) are an implementation detail of
+        # the lowering; a trace or stack frame should say `effect_resolve`, not the
+        # mangled call site the reader never wrote.
+        if name.startswith(BUILTIN_CALL_PREFIX):
+            return name[len(BUILTIN_CALL_PREFIX):]
         if "__fn" in name:
             name = name.split("__fn", 1)[0]
         if name.startswith("__mod") and "__" in name[5:]:
@@ -2808,6 +2813,38 @@ class VM:
     def _op_call(self, instr):
         fn_name = instr[1]
         arg_count = instr[2]
+
+        # Compiler-emitted builtin call site (#411). Checked FIRST, before the
+        # user-function lookup below, because that ordering is the whole bug: an
+        # annotation or workflow lowering that resolves through normal scoping lets
+        # the program supply the machinery the compiler injected into its own code.
+        #
+        # The prefix cannot appear in source — `Compiler.reject_reserved_name`
+        # refuses it — so reaching here means the compiler emitted it.
+        #
+        # Resolved here rather than pre-aliased into `self.builtins` at construction
+        # so there is no ordering dependency: builtins merged later (host builtins,
+        # module loading) are reachable too. Measured cost of the added `startswith`
+        # is ~81 ns/call — 0.08% of a call-heavy loop, i.e. immaterial. An earlier
+        # reading of ~8% was machine noise; this box's timing instability is
+        # documented in CLAUDE.md and was active during the measurement.
+        if fn_name.startswith(BUILTIN_CALL_PREFIX):
+            builtin_name = fn_name[len(BUILTIN_CALL_PREFIX):]
+            self.record_vm_call(builtin_name, "call")
+            if builtin_name in self.builtins:
+                status = self.call_builtin(builtin_name, arg_count)
+                if status is not None:
+                    return status
+                self.ip += 1
+                return None
+            # Only reachable if a lowering names a builtin this VM lacks. Name the
+            # builtin, not the mangled call site.
+            self.runtime_error(
+                "name",
+                f"Undefined function: {builtin_name} "
+                "(required by a compiler-generated call)",
+            )
+
         self.record_vm_call(self.display_name(fn_name), "call")
 
         if fn_name in self.functions:
