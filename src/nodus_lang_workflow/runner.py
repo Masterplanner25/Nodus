@@ -816,6 +816,16 @@ class WorkflowFrameworkRunner:
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": expired.last_error or f"Wait timeout expired for '{graph_id}'"}
         record = self.store.get_run(graph_id)
+        if record is None:
+            # #425: say the run does not exist, rather than blaming a claim.
+            #
+            # Every check below is guarded on `record is not None`, so an unknown
+            # graph_id used to fall through all of them to `claim_run`, which
+            # returns None both for "someone else holds the claim" and for "there
+            # is nothing to claim". Reporting the first for the second sent readers
+            # looking for a concurrent run that was never there — and a typo'd id
+            # is far likelier than a claim conflict.
+            return {"ok": False, "error": f"Workflow run '{graph_id}' not found"}
         if record is not None and record.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": record.last_error or f"Workflow run '{graph_id}' is dead-lettered"}
         if record is not None and record.status == RUN_STATUS_RETRY_SCHEDULED and not self.store.retry_due(graph_id, now_ms=now_ms):

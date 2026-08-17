@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#396: `nodus check` now reports a workflow dependency cycle.** It previously
+  printed `OK` for a workflow whose steps depend on each other in a loop — the one
+  structural property of a workflow knowable from the source alone:
+
+  ```
+  $ nodus check cyc.nd
+  Dependency cycle in workflow 'w': a -> b -> a
+  ```
+
+  The detector was not written for this. `_detect_cycle_task_ids` has run at
+  *execution* time since #323; both callers now route through one implementation
+  in `support/graph_cycles.py`, so the check-time and run-time notions of a cycle
+  cannot drift.
+
+  **Deliberately not a parse error.** Rejecting the cycle in the parser also works,
+  and breaks 14 tests in `tests/test_cyclic_workflow_err.py` — because #323
+  established on purpose that `run_workflow` returns an inspectable `err` record
+  with `category: "cyclic_workflow"` that scripts test against. The right reading
+  of those failures is that the runtime behaviour is load-bearing, not that the
+  tests were stale. `check` gains the diagnosis; `run` keeps the recoverable error.
+  Both halves are pinned by test.
+
+- **#425: resuming a workflow run that does not exist now says so.** It reported
+  `Workflow run 'g_x' is already claimed`, sending the reader to look for a
+  concurrent run that was never there. Every status check on the resume path is
+  guarded on `record is not None`, so an unknown `graph_id` fell through all of
+  them to `claim_run`, which returns `None` both for "someone else holds the claim"
+  and for "there is nothing to claim". A typo'd id is far likelier than a claim
+  conflict.
+
+- **Backlog: a duplicate issue closed.** The same closure-mutation defect was
+  filed twice in the 2026-06-07 audit batch under two headings — #177 (LIMITS-005)
+  is closed in favour of #156 (DESIGN-006), which carries the fuller reproduction.
+  Verified still reproducing on 5.0.2 before closing. No code change; the defect
+  itself remains open on #156.
+
+### Tooling
+
+- **`src/nodus/support/graph_cycles.py`** — the cycle algorithm, extracted so the
+  checker and the runtime share it. Iterative rather than recursive: a long
+  dependency chain would otherwise be bounded by Python's recursion limit, and a
+  `RecursionError` surfacing from `nodus check` is a poor way to learn that. Tested
+  against a 5,000-node chain.
+
 ## [5.0.2] - 2026-08-17
 
 ### Fixes

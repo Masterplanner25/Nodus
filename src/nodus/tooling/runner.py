@@ -498,10 +498,53 @@ def check_source(
             builtin_names=set(BUILTIN_NAMES),
         )
         compiler.compile_program(ast)
+        cycle_err = _first_workflow_cycle(ast)
+        if cycle_err is not None:
+            return _error_result(
+                stage="check", filename=filename, stdout="", stderr="",
+                err=cycle_err, code=code,
+            )
         return _success_result(stage="check", filename=filename, stdout="", stderr="")
     except Exception as err:
         stage = _compile_stage(err)
         return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)
+
+
+def _first_workflow_cycle(ast) -> "LangSyntaxError | None":
+    """Report a cyclic `after` graph at check time (#396).
+
+    Acyclicity is knowable from the source alone — it is the one structural
+    property of a workflow that `nodus check` could settle and did not, so a
+    workflow that can never run reported `OK`.
+
+    **Deliberately here and not in the parser.** Making a cycle a parse error would
+    also make it unreachable at run time, and #323 established the opposite
+    contract on purpose: `run_workflow` returns an inspectable `err` record with
+    `category: "cyclic_workflow"`, which scripts test against
+    (`tests/test_cyclic_workflow_err.py`). Moving the check into the parser broke
+    14 of those tests — the right reading of that is that the runtime behaviour is
+    load-bearing, not that the tests were stale. `check` gains the diagnosis;
+    `run` keeps the recoverable error.
+    """
+    from nodus.frontend.ast.ast_nodes import GoalDef, WorkflowDef
+    from nodus.support.graph_cycles import detect_cycle, format_cycle
+
+    for node in ast:
+        if not isinstance(node, (WorkflowDef, GoalDef)):
+            continue
+        steps = getattr(node, "steps", None) or []
+        cycle = detect_cycle({s.name: list(s.deps) for s in steps})
+        if not cycle:
+            continue
+        label = "workflow" if isinstance(node, WorkflowDef) else "goal"
+        offender = next((s for s in steps if s.name == cycle[0]), None)
+        tok = getattr(offender, "_tok", None) or getattr(node, "_tok", None)
+        return LangSyntaxError(
+            f"Dependency cycle in {label} '{node.name}': {format_cycle(cycle)}",
+            line=getattr(tok, "line", None),
+            col=getattr(tok, "col", None),
+        )
+    return None
 
 
 def build_ast(code: str, filename: str | None = None, *, compact: bool = False):
