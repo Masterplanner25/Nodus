@@ -37,6 +37,13 @@ import unittest
 from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
 from nodus.runtime.embedding import NodusRuntime
 
+try:  # `@retry` lowers onto nodus-retry, which is an optional extra.
+    import nodus_retry  # noqa: F401
+
+    HAS_NODUS_RETRY = True
+except ImportError:  # pragma: no cover - depends on the install
+    HAS_NODUS_RETRY = False
+
 
 def run(source: str) -> dict:
     rt = NodusRuntime(timeout_ms=None)
@@ -167,6 +174,18 @@ class TestModuleBoundary(unittest.TestCase):
 class TestRetryIsNotForgeable(unittest.TestCase):
     # closes: #411
     def test_shadowing_retry_call_does_not_defeat_the_annotation(self):
+        """Asserted on the forgery, not on success — so it holds either way.
+
+        `@retry` needs the optional `nodus-lang[retry]` extra. Without it the run
+        fails with a dependency error, which is *also* "not forged"; with it, the
+        real body runs. Both are correct outcomes and both are regressions from
+        what happened before the fix, where the shadow was simply called and
+        printed FORGED-RETRY — including on a machine with no nodus-retry at all,
+        because the shadow replaced the builtin that would have raised.
+
+        Checking `ok` here is what made this fail on CI while passing locally: the
+        dev venv has nodus-retry installed and a clean runner does not.
+        """
         result = run(
             'fn retry_call(f, policy) { return "FORGED-RETRY" }\n'
             "\n"
@@ -175,10 +194,14 @@ class TestRetryIsNotForgeable(unittest.TestCase):
             "\n"
             'print(work())\n'
         )
-        self.assertTrue(result.get("ok"), result)
-        self.assertIn("real", result["stdout"])
         self.assertNotIn("FORGED", result["stdout"])
+        if result.get("ok"):
+            self.assertIn("real", result["stdout"])
+        else:
+            # The only acceptable failure is the missing optional dependency.
+            self.assertEqual(result["error"].get("kind"), "dependency", result)
 
+    @unittest.skipUnless(HAS_NODUS_RETRY, "requires the optional nodus-lang[retry] extra")
     def test_positive_control_retry_still_retries(self):
         result = run(
             'let state = {"n": 0i}\n'
