@@ -89,6 +89,34 @@ def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_named_map(node) -> str:
+    """Print a `with { ... }` map with BARE identifier keys.
+
+    These positions — step options, action payloads, goal budgets — are parsed by
+    `parse_named_map_literal`, which requires identifier keys and rejects string
+    ones. `format_expr` prints a `MapLit` with quoted keys, which is correct for a
+    map literal and produces a file that no longer parses here:
+
+        step a with { retries: 2 }   ->   step a with {"retries": 2}
+        Syntax error: Expected identifier, got string literal ('retries')
+
+    `nodus fmt` writes in place, so that turned a valid file into a broken one.
+    Found by the #427 completeness sweep; no `.nd` file in this repo uses
+    `with { }`, which is why the format gate never saw it.
+    """
+    if not isinstance(node, MapLit):
+        return format_expr(node)
+    parts = []
+    for key, value in node.items:
+        name = getattr(key, "v", None)
+        if not isinstance(name, str) or not name.isidentifier():
+            # Not representable as a bare key — fall back rather than emit
+            # something that silently means a different thing.
+            return format_expr(node)
+        parts.append(f"{name}: {format_expr(value)}")
+    return "{ " + ", ".join(parts) + " }" if parts else "{}"
+
+
 def format_goal_predicate(node, *, parent: str | None = None) -> str:
     """Print a goal `until` predicate.
 
@@ -231,7 +259,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
             deps = " after " + ", ".join(stmt.deps)
         options = ""
         if stmt.options is not None:
-            options = f" with {format_expr(stmt.options)}"
+            options = f" with {format_named_map(stmt.options)}"
         header = f"{prefix}step {stmt.name}{deps}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
@@ -242,7 +270,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
             deps = " after " + ", ".join(stmt.deps)
         options = ""
         if stmt.options is not None:
-            options = f" with {format_expr(stmt.options)}"
+            options = f" with {format_named_map(stmt.options)}"
         header = f"{prefix}step {stmt.name}{deps}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
@@ -379,7 +407,7 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         if expr.target is not None:
             text += f" {format_string(expr.target)}"
         if expr.kind in {"tool", "agent", "emit"}:
-            text += f" with {format_expr(expr.payload if expr.payload is not None else MapLit([]))}"
+            text += f" with {format_named_map(expr.payload if expr.payload is not None else MapLit([]))}"
             return text
         if expr.kind == "memory_put":
             text += f" {format_expr(expr.payload)}"

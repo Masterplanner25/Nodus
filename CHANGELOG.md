@@ -4,6 +4,35 @@
 
 ### Fixes
 
+- **#427: `nodus fmt` no longer writes a file that stops parsing.** `with { ... }`
+  is parsed by `parse_named_map_literal`, which requires **identifier** keys —
+  and the formatter printed the resulting map through `format_expr`, which quotes
+  them:
+
+  ```
+  step a with { retries: 2 }   ->   step a with {"retries": 2}
+  Syntax error: Expected identifier, got string literal ('retries')
+  ```
+
+  `nodus fmt` writes in place, so it turned a valid file into a broken one, on the
+  headline workflow syntax. It affected step options, `action … with { … }`
+  payloads and goal budgets. The format gate never caught it because no `.nd` file
+  in this repo uses `with { }`.
+
+- **#427: nothing forced a new AST node to have a formatter case.** `nodus fmt`
+  raises `TypeError: Unknown stmt node: …` for one it does not handle, and CI
+  format-checks every `.nd` file — so the omission is a crash for whoever writes
+  the new syntax first. It happened with `GoalPursuit` (#409): it parsed, compiled
+  and ran, the full suite was green, and `fmt` died with a raw traceback, because
+  the formatter tests are per-node *examples* and a node with no example has no
+  test.
+
+  Now every AST node must be either handled by `format_stmt` or named in an
+  explicit `NOT_STATEMENTS` list with a reason, and the test names any node that
+  is neither. The exclusions are checked too: a stale name fails, and
+  `ActionStmt`'s excuse — that `format_expr` handles it — is verified rather than
+  trusted. **The bug above was found by writing this guard.**
+
 - **#405: a derived VM no longer sheds the sandbox it was derived from.** Found by
   sweeping every site that builds a VM from another, after the same bug shape
   turned up three times in one day (#392, #399, and the capability policy's own
