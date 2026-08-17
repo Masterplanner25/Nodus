@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.0.2] - 2026-08-17
+
 ### Fixes
 
 - **#411: `@exactly_once` and `@retry` were forgeable.** Both lower to calls on
