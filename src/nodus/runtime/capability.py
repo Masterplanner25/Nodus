@@ -87,6 +87,10 @@ BUILTIN_CAPABILITIES.update({
     name: ENV
     for name in ("env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys")
 })
+BUILTIN_CAPABILITIES.update({
+    name: FS_WRITE
+    for name in ("write_file", "append_file", "mkdir", "fs_mkdir", "fs_delete")
+})
 
 # `subprocess_shell_quote` is deliberately absent: it is string manipulation and
 # runs nothing. Gating it would train readers that the list is approximate.
@@ -112,26 +116,44 @@ class CapabilityRequest:
     site; runtime values at the builtin site."""
 
 
+ALLOW = "allow"
+ASK = "ask"
+DENY = "deny"
+
+
 @dataclass(frozen=True)
 class CapabilityDecision:
-    """A policy's answer.
+    """A policy's answer: `allow`, `ask` or `deny`.
 
-    Two-valued for now. The third value — `ask`, routed to an approval pause —
-    is stage 3, and is deliberately not stubbed here: a placeholder that always
-    resolves one way would be indistinguishable from the decision having been
-    made, which is the failure this whole issue is about.
+    The middle value is the load-bearing one, and all three reference systems in
+    `CAPABILITY_POLICY_DESIGN.md` have it. `ask` means *this needs a human*, and
+    what happens when there is nobody to ask is the decision that matters:
+    **`ask` with no approval channel is `deny`, never "run anyway."** Codex
+    reaches the same answer (`Prompt` under `AskForApproval::Never` becomes
+    `Forbidden`), and the alternative silently converts an unanswered question
+    into permission.
     """
 
-    allowed: bool
+    outcome: str = ALLOW
     reason: str = ""
+
+    @property
+    def allowed(self) -> bool:
+        """Kept so existing callers reading `.allowed` stay correct: only an
+        outright allow is permission. `ask` is not."""
+        return self.outcome == ALLOW
 
     @staticmethod
     def allow() -> "CapabilityDecision":
-        return CapabilityDecision(True)
+        return CapabilityDecision(ALLOW)
+
+    @staticmethod
+    def ask(reason: str) -> "CapabilityDecision":
+        return CapabilityDecision(ASK, reason)
 
     @staticmethod
     def deny(reason: str) -> "CapabilityDecision":
-        return CapabilityDecision(False, reason)
+        return CapabilityDecision(DENY, reason)
 
 
 class CapabilityPolicy:
@@ -178,6 +200,78 @@ class DenyList(CapabilityPolicy):
         return CapabilityDecision.allow()
 
 
+class ApprovalChannel:
+    """Where an `ask` decision goes.
+
+    An embedder supplies one to make `ask` mean something. Without one there is
+    nobody to ask, and an unanswered question must not become permission — see
+    `CapabilityDecision`.
+    """
+
+    def request(self, request: "CapabilityRequest", reason: str) -> bool:
+        raise NotImplementedError
+
+
+class Floor:
+    """Consulted before any policy, and **it can only restrict**.
+
+    The reason this exists now rather than later: all three systems in
+    `CAPABILITY_POLICY_DESIGN.md` added a bypass mode under pressure and
+    retrofitted a floor beneath it afterwards. Nodus has no bypass mode yet, so
+    building the floor first is free; retrofitting is not.
+
+    `check` returns a decision to impose, or `None` to abstain. **There is no way
+    for a floor to return `allow`** — a floor that could grant would let it
+    override a policy's refusal, which is the opposite of a floor. It can only
+    make the answer stricter than the policy would have.
+    """
+
+    def check(self, request: "CapabilityRequest") -> "CapabilityDecision | None":
+        return None
+
+
+class NodusStateFloor(Floor):
+    """Refuse guest writes into the runtime's own durable state.
+
+    `.nodus/` holds the workflow store, graph state and the bytecode cache. A
+    guest that can write there can forge run records — verified before writing
+    this: with default settings a script overwrote
+    `.nodus/workflow_framework/runs/<id>.json` with `{"forged": true}` and the
+    run reported success.
+
+    This is Nodus's equivalent of the paths Claude Code protects even under
+    `bypassPermissions` (`.git/`, shell rc files). Reads are untouched; only
+    writes are refused.
+    """
+
+    def check(self, request: "CapabilityRequest") -> "CapabilityDecision | None":
+        if request.capability != FS_WRITE:
+            return None
+        for arg in request.args:
+            if isinstance(arg, str) and _is_inside_nodus_state(arg):
+                return CapabilityDecision.deny(
+                    f"writing to the runtime's own state directory is never permitted "
+                    f"({arg!r})"
+                )
+        return None
+
+
+def _is_inside_nodus_state(path: str) -> bool:
+    """True when *path* points inside a `.nodus/` directory.
+
+    Compares normalised path segments rather than substrings, so a file
+    innocently named `my.nodus-notes.txt` is not caught and
+    `../.nodus/x` is.
+    """
+    import os
+
+    normalised = os.path.normpath(path).replace("\\", "/")
+    return any(segment == ".nodus" for segment in normalised.split("/"))
+
+
+DEFAULT_FLOOR = NodusStateFloor()
+
+
 # Every piece of VM state that carries authority. A VM derived from another must
 # inherit all of it, or the derivation is a sandbox escape.
 #
@@ -200,6 +294,8 @@ AUTHORITY_ATTRIBUTES: tuple[str, ...] = (
     "allowed_commands",
     "allowed_hosts",
     "capability_policy",
+    "capability_floor",
+    "approval_channel",
 )
 
 

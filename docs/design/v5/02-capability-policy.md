@@ -1,6 +1,6 @@
-# Capability policy at the host boundary — #405, stages 1–2
+# Capability policy at the host boundary — #405, stages 1–3
 
-**Status: stages 1–2 implemented, Experimental.** The design input this builds on
+**Status: stages 1–3 implemented, Experimental.** The design input this builds on
 is [`CAPABILITY_POLICY_DESIGN.md`](../../governance/CAPABILITY_POLICY_DESIGN.md),
 extracted from Codex, Hermes and Claude Code; the seam against `nodus-governance`
 was decided there on 2026-08-15 and is unchanged. This document records what
@@ -125,6 +125,58 @@ every new boundary rather than rediscovering.
 
 A test reverting only `module.py` fails five cases, so the guard is guarded.
 
+## 5b. Stage 3 — the three-valued decision and the floor
+
+### The decision is `allow | ask | deny`
+
+`ask` means *this needs a human*, and what happens when there is nobody to ask is
+the decision that matters: **`ask` with no approval channel is `deny`, never "run
+anyway."** Codex reaches the same answer — `Prompt` under `AskForApproval::Never`
+becomes `Forbidden` — and the alternative silently converts an unanswered
+question into permission. `CapabilityDecision.allowed` stays true only for an
+outright allow, so existing callers reading it cannot mistake `ask` for a yes.
+
+An embedder supplies an `ApprovalChannel` to make `ask` mean something. It is
+told what it is approving — capability, target and reason — not merely asked.
+
+Routing `ask` to the durable `workflow_wait` pause, which audit 02 correctly
+noted is already approval-shaped, is **not** built. It only exists inside a
+workflow step, and a capability check can happen anywhere; a top-level script
+calling `http_get` has nothing to suspend into. That is a later increment, not a
+hole in this one — the synchronous channel is the general case and the durable
+pause is the specialisation.
+
+### The floor is consulted first and can only restrict
+
+`Floor.check` returns a decision to impose or `None` to abstain. **There is no
+way for a floor to return `allow`** — one that could grant would override a
+policy's refusal, which is the opposite of a floor. It can only make the answer
+stricter.
+
+**Why now:** all three reference systems added a bypass mode under pressure and
+retrofitted a floor beneath it afterwards. Nodus has no bypass mode, so building
+the floor first is free.
+
+**The default floor refuses guest writes into `.nodus/`** — the workflow store,
+graph state and bytecode cache. This is deliberately not an empty mechanism: a
+floor that never fires is itself the "check that cannot fail" this codebase keeps
+finding. Verified before building it, with every default in place:
+
+```
+ok: True   stdout: overwrote run state
+file now: {"forged": true}
+```
+
+A guest script overwrote a workflow run record and the run reported success. That
+is forging durable state, and it is Nodus's equivalent of the paths Claude Code
+protects even under `bypassPermissions`. Reads are untouched; only writes are
+refused, and matching is on normalised path *segments*, so `my.nodus-notes.txt`
+is not caught and `../.nodus/x` is.
+
+**This is the one part of #405 that is not purely additive.** A program that
+wrote into `.nodus/` now fails. That is the intended behaviour change and the
+only one in stages 1–3.
+
 ## 6. Deliberately not built
 
 Each of these is where the design questions are, and shipping a stub of any of
@@ -132,15 +184,8 @@ them would be worse than shipping none: a placeholder that always resolves one
 way is indistinguishable from the decision having been made, which is the failure
 this whole issue is about.
 
-- **The three-valued cascade.** `allow | ask | deny`, where the middle value
-  routes to an approval pause. `CapabilityDecision` is two-valued and says so.
-  Audit 02's observation that `workflow_wait` is already approval-shaped is the
-  useful lead: an approval flow does not need new machinery, it needs the policy
-  hook to be able to reach the pause that already exists.
-- **The unbypassable floor.** All three reference systems added a bypass mode
-  under pressure and retrofitted a floor beneath it afterwards. **Nodus has no
-  bypass mode yet**, so designing the floor before one exists is free. That is an
-  argument for doing it soon, not for doing it now, badly.
+- **Routing `ask` to `workflow_wait`**, so an approval is durable rather than a
+  blocking callback. See §5b for why the synchronous channel came first.
 - **Layered rule sources with fixed precedence**, and approval caching on a
   canonical key.
 - **Attenuation** — running a sub-computation under reduced authority. Nothing
