@@ -52,7 +52,7 @@ from nodus.services.agent_runtime import available_agents, call_agent, describe_
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
-from nodus.runtime.capability import BUILTIN_CAPABILITIES, CapabilityPolicy, CapabilityRequest, emit_denied
+from nodus.runtime.capability import BUILTIN_CAPABILITIES, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
@@ -1198,6 +1198,11 @@ class VM:
             return self
         child = VM([], {}, code_locs=[], host_globals=self.host_globals,
                    source_path=self.source_path, event_bus=self.event_bus)
+        # #405: a resume must not be a way out of the jail. This child was
+        # inheriting host_globals, memory_store, the dispatcher and the builtins
+        # — and none of the sandbox: `allowed_paths` went from a jail to None and
+        # `allow_subprocess` from False to True.
+        inherit_authority(child, self)
         child.memory_store = self.memory_store
         if getattr(self, "worker_dispatcher", None) is not None:
             child.worker_dispatcher = self.worker_dispatcher

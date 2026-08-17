@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#405: a derived VM no longer sheds the sandbox it was derived from.** Found by
+  sweeping every site that builds a VM from another, after the same bug shape
+  turned up three times in one day (#392, #399, and the capability policy's own
+  first version): **a check that lives on one path while a sibling path bypasses
+  it.**
+
+  Two sites were losing authority, neither related to the policy work:
+
+  | Site | Was |
+  |---|---|
+  | `VM._resume_target_vm` | lost **7 of 8** — `allowed_paths` jail → `None`, `allow_subprocess` `False` → `True`, plus commands/hosts/env/network |
+  | DAP `evaluate` | carried `allowed_paths` only — the debug console could shell out of a jailed program |
+
+  `_resume_target_vm` builds the child used when resuming a run **this VM did not
+  create**, which is the ordinary cross-process durable-workflow case. It was
+  inheriting `host_globals`, `memory_store`, the worker dispatcher and the
+  builtins — and none of the sandbox.
+
+  Authority is now one list (`AUTHORITY_ATTRIBUTES`) copied by one helper
+  (`inherit_authority`) at all four derivation sites, and
+  `tests/test_vm_authority_inheritance.py` reads the sandbox arguments **out of
+  `VM.__init__`'s signature** and fails when one is not in that list — so a new
+  sandbox knob cannot be added without every derived VM inheriting it. Covered in
+  both CLI and embedded mode, per the security-boundary rule.
+
 ### Added
 
 - **#405: a capability policy can now be consulted at the host boundary.**
