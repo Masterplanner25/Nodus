@@ -233,10 +233,32 @@ If you see this pattern — failures that move between runs and a suite that is 
 do not start bisecting your own change. Re-run the failing test alone, then push and let CI
 arbitrate.
 
-**It was transient. Re-measured 2026-08-17 during the 5.0.1 cut: 2,138 passed, 3 skipped, 0
-failures, in 7 min 46 s** — back to the normal ~7 min, with no intermittent subprocess failures
-and no flake from `test_scheduler_fairness.py`. So the degradation was environmental and is gone;
-keep the advice above for the next time it appears, but do not expect it as the current baseline.
+**It comes and goes within a single day. Do not record it as "fixed."**
+
+Measured 2026-08-17, all on the same machine with nothing else running:
+
+| When | Result |
+|---|---|
+| 5.0.1 cut, morning | 2,138 passed, 3 skipped, **7 min 46 s** — clean |
+| #411 work, afternoon | **15 min 11 s**, 13 failures |
+| Those 13, re-run in isolation | a *different* 3 failed; the rest passed |
+| Immediately after, same file again | all 8 passed, faster than the "good" tree |
+| Three later full-suite runs | **killed** partway through, twice by `pytest` and once by `unittest discover` |
+
+An earlier revision of this section said the degradation "was environmental and is gone" on the
+strength of the 7:46 reading. That was written hours before the same box produced a 15-minute run
+and then stopped finishing at all. **One clean measurement does not clear this**; the failure mode
+is intermittent, so a good run is not evidence of a good machine.
+
+Two practical consequences:
+
+- **A local full-suite run is not a gate here.** Prefer targeted runs over the areas you touched,
+  then push and let CI arbitrate. CI on a clean runner finishes in 5–6 min and has been reliable.
+- **CI runs `python -m unittest discover -s tests` *and* `pytest`** (`.github/workflows/ci.yml`).
+  They are not interchangeable: during the #411 work, CI's unittest step caught two failures that
+  `pytest` passed locally — the cause was the environment (`nodus-retry` installed locally, absent
+  on a clean runner), not the runner, so **a local pytest run cannot substitute for either.**
+  Optional extras are the thing to watch: `@retry` needs `nodus-lang[retry]`.
 
 **Flaky test fix pattern — timing headroom:**
 Tests that race a sleep against a timeout need **5–10x headroom**, not 2x. Under full-suite parallel
