@@ -27,6 +27,7 @@ sys.path.insert(0, "C:/dev/Coding Language/src")
 
 from nodus.runtime.capability import (  # noqa: E402
     ALL_CAPABILITIES,
+    ApprovalChannel,
     BUILTIN_CAPABILITIES,
     ENV,
     NETWORK,
@@ -220,6 +221,134 @@ class PolicySeesTheCallNotJustTheCapabilityTests(unittest.TestCase):
         refused, denials = _run(source, capability_policy=OnlyEcho())
         self.assertFalse(refused.get("ok"), refused)
         self.assertIn("only echo is permitted", denials[0]["reason"])
+
+
+# closes: #405
+class TheFloorHoldsRegardlessTests(unittest.TestCase):
+    """Consulted before any policy, and it can only restrict.
+
+    Built now because all three systems in `CAPABILITY_POLICY_DESIGN.md` added a
+    bypass mode under pressure and retrofitted a floor beneath it afterwards.
+    Nodus has no bypass mode yet, so building the floor first is free.
+    """
+
+    FORGE = (
+        'import "std:fs" as fs\n'
+        'fs.write(".nodus/x.json", "forged")\n'
+        'print("wrote")\n'
+    )
+
+    def _forge(self, **kwargs):
+        with _Sandbox():
+            os.makedirs(".nodus", exist_ok=True)
+            runtime = NodusRuntime(timeout_ms=None, **kwargs)
+            return runtime.run_source(self.FORGE, filename="t.nd")
+
+    def test_a_guest_cannot_write_into_the_runtimes_own_state(self):
+        # Verified before building this: with defaults, a script overwrote
+        # .nodus/workflow_framework/runs/<id>.json with {"forged": true} and the
+        # run reported success. That is forging durable run records.
+        result = self._forge()
+        self.assertFalse(result.get("ok"), result)
+
+    def test_the_floor_beats_a_policy_that_allows_everything(self):
+        class AllowEverything(CapabilityPolicy):
+            def check(self, request):
+                return CapabilityDecision.allow()
+
+        result = self._forge(capability_policy=AllowEverything())
+        self.assertFalse(
+            result.get("ok"),
+            "a permissive policy overrode the floor; the floor is not a floor",
+        )
+
+    def test_a_floor_cannot_grant_what_a_policy_refuses(self):
+        # Structural: `Floor.check` returns a decision to impose or None to
+        # abstain, and there is no allow to return. A floor that could grant
+        # would override a refusal, which is the opposite of a floor.
+        from nodus.runtime.capability import Floor
+
+        self.assertIsNone(Floor().check(CapabilityRequest(SUBPROCESS, "t", "builtin")))
+
+    def test_ordinary_writes_are_untouched(self):
+        with _Sandbox():
+            result = NodusRuntime(timeout_ms=None).run_source(
+                'import "std:fs" as fs\n'
+                'fs.write("ok.txt", "hi")\n'
+                'print("wrote")\n',
+                filename="t.nd",
+            )
+        self.assertTrue(result.get("ok"), result)
+
+    def test_a_path_merely_containing_the_word_is_not_caught(self):
+        from nodus.runtime.capability import NodusStateFloor
+
+        floor = NodusStateFloor()
+        innocent = CapabilityRequest("fs.write", "write_file", "builtin", ("my.nodus-notes.txt",))
+        self.assertIsNone(floor.check(innocent))
+        traversal = CapabilityRequest("fs.write", "write_file", "builtin", ("../.nodus/runs/x",))
+        self.assertIsNotNone(floor.check(traversal))
+
+
+# closes: #405
+class AskNeedsSomebodyToAskTests(unittest.TestCase):
+    """An unanswered question is not permission."""
+
+    SUBPROCESS_CALL = SUBPROCESS_CALL
+
+    class _Ask(CapabilityPolicy):
+        def check(self, request):
+            return CapabilityDecision.ask("needs a human")
+
+    def _run_with(self, channel):
+        with _Sandbox():
+            runtime = NodusRuntime(timeout_ms=None, capability_policy=self._Ask())
+            runtime.approval_channel = channel
+            return runtime.run_source(SUBPROCESS_CALL, filename="t.nd")
+
+    def test_ask_with_no_channel_is_denied(self):
+        # Codex reaches the same answer: Prompt under AskForApproval::Never
+        # becomes Forbidden, not "run anyway".
+        result = self._run_with(None)
+        self.assertFalse(result.get("ok"), result)
+        self.assertTrue(
+            any("no approval channel" in m for m in _errors(result)), _errors(result)
+        )
+
+    def test_ask_with_an_approver_proceeds(self):
+        class Yes(ApprovalChannel):
+            def request(self, request, reason):
+                return True
+
+        result = self._run_with(Yes())
+        self.assertTrue(result.get("ok"), result)
+        self.assertIn("ran", result["stdout"])
+
+    def test_ask_with_a_refuser_is_denied(self):
+        class No(ApprovalChannel):
+            def request(self, request, reason):
+                return False
+
+        self.assertFalse(self._run_with(No()).get("ok"))
+
+    def test_the_approver_is_told_what_it_is_approving(self):
+        seen = []
+
+        class Recording(ApprovalChannel):
+            def request(self, request, reason):
+                seen.append((request.capability, request.target, reason))
+                return True
+
+        self._run_with(Recording())
+        self.assertEqual(seen[0][0], SUBPROCESS)
+        self.assertEqual(seen[0][1], "subprocess_run")
+        self.assertEqual(seen[0][2], "needs a human")
+
+    def test_ask_is_not_allowed(self):
+        # `.allowed` must mean permission, so `ask` is not it.
+        self.assertFalse(CapabilityDecision.ask("x").allowed)
+        self.assertTrue(CapabilityDecision.allow().allowed)
+        self.assertFalse(CapabilityDecision.deny("x").allowed)
 
 
 if __name__ == "__main__":

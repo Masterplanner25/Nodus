@@ -52,7 +52,7 @@ from nodus.services.agent_runtime import available_agents, call_agent, describe_
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
-from nodus.runtime.capability import BUILTIN_CAPABILITIES, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority
+from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
@@ -200,6 +200,12 @@ class VM:
         # #405. `None` means no policy — the default, and a single attribute test
         # on the dispatch path rather than a call into an allow-everything object.
         self.capability_policy: "CapabilityPolicy | None" = None
+        # The floor is on by default and is not part of the "no policy set, no
+        # behaviour change" contract: it refuses guest writes into `.nodus/`,
+        # which a program has no legitimate reason to make and which lets it
+        # forge run records. Set to None only if you mean to remove that.
+        self.capability_floor = DEFAULT_FLOOR
+        self.approval_channel: "ApprovalChannel | None" = None
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.memory_store = GLOBAL_MEMORY_STORE
@@ -2061,14 +2067,34 @@ class VM:
         generated code actually has (#405).
         """
         policy = self.capability_policy
-        if policy is None:
+        floor = self.capability_floor
+        if policy is None and floor is None:
             return
         request = CapabilityRequest(
             capability=capability, target=target, kind=kind, args=tuple(args)
         )
-        decision = policy.check(request)
-        if decision.allowed:
+
+        # The floor is consulted FIRST and can only restrict — it has no way to
+        # return `allow`, so it can never grant what the policy would refuse.
+        # Ordering it ahead of the policy is the whole point: it must hold
+        # regardless of what any policy, or any future bypass switch, says.
+        decision = floor.check(request) if floor is not None else None
+        if decision is None and policy is not None:
+            decision = policy.check(request)
+        if decision is None or decision.outcome == ALLOW:
             return
+
+        if decision.outcome == ASK:
+            channel = self.approval_channel
+            if channel is not None and channel.request(request, decision.reason):
+                return
+            # Nobody to ask, or asked and refused. An unanswered question is not
+            # permission.
+            reason = decision.reason or f"{capability or target} requires approval"
+            suffix = "" if channel is not None else " (no approval channel configured)"
+            emit_denied(self.event_bus, request, reason + suffix)
+            self.runtime_error("sandbox", f"Blocked: {reason}{suffix}")
+
         reason = decision.reason or f"{capability or target} is not granted"
         emit_denied(self.event_bus, request, reason)
         self.runtime_error("sandbox", f"Blocked: {reason}")

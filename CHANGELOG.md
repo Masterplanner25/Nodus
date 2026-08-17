@@ -64,12 +64,37 @@
   so the hot path pays one dict miss. That mapping is also the language's
   capability surface in one readable place.
 
-  **Not built, deliberately:** the three-valued `allow | ask | deny` cascade and
-  its unbypassable floor, layered rule sources, approval caching, attenuation,
-  and deny-by-default. Defaults are unchanged and still permissive, so this
-  builds the lock and leaves the door open — see
-  `docs/design/v5/02-capability-policy.md` §6–7 for what that does and does not
-  license claiming.
+  **The decision is three-valued** — `allow | ask | deny`. `ask` means *this
+  needs a human*, and an embedder supplies an `approval_channel` to answer it.
+  **`ask` with no channel is `deny`, never "run anyway"** — the alternative
+  silently turns an unanswered question into permission.
+
+  **A floor is consulted before any policy and can only restrict.** `Floor.check`
+  returns a decision to impose or abstains; there is no way for it to return
+  `allow`, so it can never grant what a policy would refuse. Built now because
+  every reference system added a bypass mode under pressure and retrofitted a
+  floor afterwards — Nodus has no bypass mode, so building it first is free.
+
+  **Not built, deliberately:** routing `ask` to the durable `workflow_wait` pause
+  (it only exists inside a step, and a capability check can happen anywhere),
+  layered rule sources, approval caching, attenuation, and deny-by-default.
+  Defaults otherwise stay permissive, so this builds the lock and leaves the door
+  open — see `docs/design/v5/02-capability-policy.md` §6–7 for what that does and
+  does not license claiming.
+
+### Changed — one behaviour change
+
+- **#405: a Nodus program can no longer write into `.nodus/`.** That directory is
+  the workflow store, graph state and bytecode cache. Until now a guest script
+  could overwrite a run record with defaults in place — verified: it wrote
+  `{"forged": true}` over `.nodus/workflow_framework/runs/<id>.json` and the run
+  reported success. That is forging durable state.
+
+  This is the default capability **floor**, and the only non-additive part of
+  #405. Reads are untouched; only writes are refused, matched on normalised path
+  segments so `my.nodus-notes.txt` is unaffected and `../.nodus/x` is not. A
+  floor that never fires would be the "check that cannot fail" this codebase
+  keeps finding, so it ships with one real rule rather than empty.
 
 - **#409: `goal … over …` — a goal can now declare a stopping condition.**
   Experimental, and **additive**: `goal g { step … }` is unchanged.

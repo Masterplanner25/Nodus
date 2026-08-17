@@ -15,7 +15,7 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFun
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
-from nodus.runtime.capability import ALL_CAPABILITIES, CapabilityPolicy
+from nodus.runtime.capability import ALL_CAPABILITIES, ApprovalChannel, CapabilityPolicy
 from nodus.vm.vm import VM
 from nodus.vm.types import Record, Closure
 
@@ -242,6 +242,7 @@ class NodusRuntime:
         allow_network: bool = True,
         allow_env: bool = True,
         capability_policy: "CapabilityPolicy | None" = None,
+        approval_channel: "ApprovalChannel | None" = None,
         allowed_commands: list[str] | None = None,
         allowed_hosts: list[str] | None = None,
         max_frames: int | None = None,
@@ -380,6 +381,7 @@ class NodusRuntime:
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._host_capabilities: dict[str, str | None] = {}
         self.capability_policy: CapabilityPolicy | None = capability_policy
+        self.approval_channel: ApprovalChannel | None = approval_channel
         self._python_registered_tools: dict[str, dict] = {}
         self.__last_vm: VM | None = None
         self._tool_registry: ToolRegistry = ToolRegistry(self)
@@ -768,6 +770,7 @@ class NodusRuntime:
         # #405: the policy rides on the VM, so the builtin dispatch site can
         # consult it without reaching back into the embedding layer.
         vm.capability_policy = self.capability_policy
+        vm.approval_channel = self.approval_channel
         if not self.allow_input:
             vm.input_fn = self._blocked_input
         if debugger is not None:
