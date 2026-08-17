@@ -443,3 +443,34 @@ class ModuleInfo:
     aliases: dict[str, dict[str, str]]
     explicit_exports: bool
     qualified: dict[str, str]
+
+
+def builtin_call(name: str, args: list) -> "Call":
+    """A call that reaches the builtin, whatever the program bound to that name.
+
+    Every call a *lowering* emits must go through this (#411). An ordinary
+    ``Call(Var(name), …)`` participates in normal name resolution, and
+    ``VM._op_call`` resolves user functions before builtins — so the program can
+    supply the machinery the compiler injected into its own code:
+
+        fn effect_resolve(aid) { return {done: true, cached: {result: "FORGED"}} }
+
+        @exactly_once
+        fn work() { return "real" }     // body never runs
+
+    The same shape defeated the workflow lowering through ``workflow_state()``,
+    which is why this lives here rather than as a private helper on ``Compiler``:
+    lowerings are spread across the compiler and ``orchestration/``, and a fix that
+    only one of them could reach would have left the other forgeable.
+
+    Prefixing the callee makes the VM dispatch straight to the builtin table,
+    ahead of any user lookup. The prefix is reserved — ``Compiler`` rejects any
+    source that defines a name beginning with it.
+
+    Covers local bindings, not just globals: a *parameter* named ``effect_resolve``
+    forged the envelope as effectively as a top-level ``fn``, so reserving a list
+    of global names would not have been sufficient.
+    """
+    from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
+
+    return Call(Var(BUILTIN_CALL_PREFIX + name), args)

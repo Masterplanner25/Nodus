@@ -2,6 +2,125 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#411: `@exactly_once` and `@retry` were forgeable.** Both lower to calls on
+  builtins (`effect_action_id` / `effect_resolve` / `effect_pending` /
+  `effect_complete`, and `retry_call`). Those calls went through ordinary name
+  resolution, and `VM._op_call` resolves user functions **before** builtins — so a
+  program could supply the machinery the compiler had injected into its own code:
+
+  ```nodus
+  fn effect_resolve(aid) { return {done: true, cached: {result: "FORGED"}} }
+
+  @exactly_once
+  fn work() { return "real" }
+
+  print(work())        // -> FORGED. The annotated body never ran.
+  ```
+
+  Lowerings now emit their calls through a reserved prefix that `_op_call`
+  dispatches straight to the builtin table, ahead of the user-function lookup.
+  Names beginning with that prefix are rejected in source, so the namespace cannot
+  be entered from a program.
+
+  **The workflow lowering had the same hole, and it was live.** #411 mentioned
+  `workflow_state` in passing as "same for any builtin a lowering depends on"
+  without demonstrating it; asking *what else has this shape* found that every step
+  body begins `let __workflow_state = workflow_state()`, so three lines replaced
+  the state map every step reads:
+
+  ```nodus
+  fn workflow_state() { return {"total": 9999i} }
+
+  workflow w {
+      state total = 0i
+      step add { total = total + 1i; print("total is \(total)") }   // -> 10000
+  }
+  ```
+
+  Fixed with the same helper, along with the five `__action_*` calls the lowering
+  emits. The helper therefore lives in the AST module rather than on `Compiler`:
+  lowerings are split across the compiler and `orchestration/`, and a fix only one
+  of them could reach would have left the other forgeable.
+
+  Binding those action calls also required teaching `_is_action_builtin` to look
+  past the prefix. It decides whether a step body's trailing action becomes a
+  `Return`, and it compared the raw callee name — so prefixing the call silently
+  stopped it matching and every step ending in an action returned nil. The symptom
+  surfaced a full call away, as `Indexing is only supported on lists, maps, and
+  strings`. That is #411's own defect in miniature — a name-based decision broken
+  by a rename — which is why the matcher now strips the prefix rather than
+  comparing against both spellings.
+
+  **A fourth vector, not in the issue: a *parameter* named `effect_resolve` forged
+  the envelope just as well.** A parameter is a local binding, so it resolves ahead
+  of both globals and builtins — which is why the issue's alternative fix,
+  reserving a list of global builtin names, would not have closed this. The fix
+  covers it because the emitted name never participates in resolution at all.
+
+  Scope unchanged in one respect, and pinned by test: this never crossed a module
+  boundary. A caller could not forge an *imported* module's envelope, because the
+  library resolved the builtins in its own module scope.
+
+  No new opcode and no bytecode change — still 49 opcodes at `BYTECODE_VERSION` 4.
+
+  The general rule matters more than the annotation: **a compiler-applied guarantee
+  is only as strong as the name resolution of the calls it emits.** Any future
+  lowering intended to hold against the program's author must use
+  `Compiler.builtin_call()`. `docs/design/v5/00-domain-statement.md` — which rests
+  its whole argument on `@exactly_once` being unforgettable — now records that the
+  claim was false when written and what makes it true.
+
+- **#449: the bytecode cache was not keyed on the nodus-lang version, so compiler
+  fixes silently did not apply after an upgrade.** Found while verifying the #411
+  fix, and it is the more dangerous of the two.
+
+  `.nodus/cache` entries are keyed on `sha256(absolute_path + mtime_ns)` and
+  validated against `NODUS_BYTECODE_VERSION` — the *bytecode format* version,
+  frozen at 4 since v1.0 and governed by #366, which by policy does not move when
+  the compiler changes. So after an upgrade every cached module stayed compiled by
+  the **old** compiler until its source was touched:
+
+  ```
+  old compiler populates cache      -> result: FORGED
+  upgraded compiler, cache present  -> result: FORGED   # fix did not apply
+  same, after rm -rf .nodus         -> result: real
+  ```
+
+  A host upgrading to pick up a compiler fix, with a warm cache, kept executing the
+  vulnerable lowering — no error, no warning, and `nodus --version` reporting the
+  new release. The cache payload now records the nodus-lang version and a mismatch
+  invalidates the entry. Compared strictly, not "newer than": a downgrade must miss
+  too, since that bytecode came from a compiler this one does not match either.
+
+  Existing coverage read as though this were handled —
+  `test_bytecode_cache_invalidates_when_version_changes` bumps
+  `NODUS_BYTECODE_VERSION`, the one version that never changes for a compiler fix.
+  The case that happens on *every* upgrade had no test; it does now, with a
+  positive control so a change that made every load miss cannot pass by turning the
+  cache off.
+
+### Tooling
+
+- **`tests/test_annotation_forgery.py`** — the forgery vectors, each with a
+  positive control, because a lowering that stopped calling the effect builtins
+  altogether would pass every negative test. Also asserts on the *source* of both
+  lowerings: a future lowering that emits an ordinary `Call(Var("effect_…"))` fails
+  the suite even if nothing yet exploits it. 10 of its 14 cases were verified to
+  fail against 5.0.1 and pass after the fix; the 5 that pass either way are the
+  pre-existing properties, including the module boundary.
+
+  One measurement worth recording, because it nearly drove a worse design. The
+  added `startswith` on the call path first appeared to cost ~8% on a call-heavy
+  loop, which prompted a more complicated fix (pre-aliasing every builtin under
+  the prefix at VM construction). Measured directly with `timeit`, the check costs
+  **~81 ns/call** — 0.08% of that loop. The 8% was noise from this machine's
+  documented timing instability, which was active at the time (the suite ran 15:11
+  against 7:46 earlier the same day). The simpler call-time resolution was kept,
+  and it is also the more robust one: it has no construction-order dependency, so
+  builtins merged later are reachable.
+
 ## [5.0.1] - 2026-08-17
 
 Every item here came from a downstream adoption report on 5.0.0 (aindy-runtime).

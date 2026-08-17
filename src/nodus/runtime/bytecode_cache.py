@@ -18,6 +18,7 @@ import os
 import struct
 
 from nodus.runtime.module import ModuleBytecode, NODUS_BYTECODE_VERSION
+from nodus.support.version import __version__
 from nodus.tooling.project import NODUS_DIRNAME
 
 
@@ -85,6 +86,7 @@ def write_cached_bytecode(project_root: str | None, module_path: str, module_byt
     ensure_cache_dir(project_root)
     payload = {
         "cache_version": NODUS_BYTECODE_VERSION,
+        "compiler_version": __version__,
         "module_path": os.path.abspath(module_path),
         "mtime_ns": mtime_ns,
         "module_bytecode": module_bytecode.to_cache_payload(),
@@ -140,6 +142,23 @@ def _is_valid_cache_payload(payload: object, module_path: str, mtime_ns: int) ->
         return False
     return (
         payload.get("cache_version") == NODUS_BYTECODE_VERSION
+        # Entries written by a different nodus-lang are not reusable, even when the
+        # source is byte-identical (#411 follow-up).
+        #
+        # The key is (path, mtime) and `cache_version` is the *bytecode format*
+        # version, frozen at 4 since v1.0 and governed by #366. Neither changes when
+        # the compiler changes, so upgrading nodus-lang used to leave every cached
+        # module compiled by the old compiler until its source was touched — which
+        # means a compiler-level correctness fix silently did not apply.
+        #
+        # Demonstrated with the #411 fix itself: with a populated cache, an upgraded
+        # runtime kept running the forgeable `@exactly_once` envelope and printed
+        # FORGED. Deleting `.nodus/` was the only thing that applied the fix.
+        #
+        # Comparing the version is deliberately strict — not "newer than". A
+        # downgrade must also miss, since that bytecode came from a compiler this
+        # one does not match either.
+        and payload.get("compiler_version") == __version__
         and payload.get("module_path") == os.path.abspath(module_path)
         and payload.get("mtime_ns") == mtime_ns
     )

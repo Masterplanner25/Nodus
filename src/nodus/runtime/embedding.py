@@ -8,7 +8,7 @@ import threading
 import warnings
 from typing import Any, Callable
 
-from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
+from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX, BUILTIN_NAMES, BuiltinInfo
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
@@ -434,6 +434,15 @@ class NodusRuntime:
             raise ValueError("Host function name must be a non-empty string")
         if name in BUILTIN_NAMES:
             raise ValueError(f"Cannot override built-in function: {name}")
+        if name.startswith(BUILTIN_CALL_PREFIX):
+            # The namespace compiler lowerings use to reach builtins past whatever
+            # the program bound to that name (#411). A host is trusted and this is
+            # not the threat model, but overwriting one of these aliases would
+            # quietly re-open the hole for every annotated function.
+            raise ValueError(
+                f"Cannot register {name!r}: names beginning with "
+                f"{BUILTIN_CALL_PREFIX!r} are reserved for the compiler."
+            )
         if requires is not None and requires not in ALL_CAPABILITIES:
             raise ValueError(
                 f"unknown capability {requires!r}; known: {sorted(ALL_CAPABILITIES)}"

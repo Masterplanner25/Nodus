@@ -35,6 +35,29 @@ unforgettable and rejects the program, or corrects the execution, if you try. So
 the domain is not a topic — it is **the set of things this language refuses to let
 you forget**.
 
+> **This claim was false when written. It is true as of the #411 fix.** The
+> lowering emitted ordinary calls on `effect_resolve` and friends, and `CALL`
+> resolves user functions before builtins — so a program could supply the envelope
+> the compiler had injected into its own code, in three lines, and the annotated
+> body never ran. You could not forget it; you could *defeat* it. A guarantee that
+> the program's author can switch off is a convention, not a language property, and
+> the whole argument on this page rests on the difference.
+>
+> Lowerings now emit calls the VM binds straight to the builtin table, ahead of any
+> user lookup. The general rule matters more than the one annotation: **a
+> compiler-applied guarantee is only as strong as the name resolution of the calls
+> it emits.** Any future lowering meant to hold against the program's author —
+> capability checks, declared-effect enforcement, the dependency guards
+> contemplated in `01-goal-stopping-condition.md` — must use `builtin_call()` from
+> `frontend/ast/ast_nodes.py` rather than an ordinary call to a shadowable name.
+>
+> The rule was not hypothetical even at the time of the fix. Asking *what else has
+> this shape* found the **workflow lowering** carrying the same hole: every step
+> body opens with `let __workflow_state = workflow_state()`, so defining
+> `fn workflow_state()` replaced the state map every step reads. Two of the four
+> rows in the table below — `@exactly_once` and `@retry` — plus the workflow state
+> machinery were all forgeable by the same three-line move.
+
 ## 2. Method: derive it from what verifiably works
 
 Rather than assert a domain and check whether the language serves it, this derives
