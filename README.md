@@ -4,10 +4,10 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **v4.2.0 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **v5.0.0 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
 > [!IMPORTANT]
-> ### Breaking in the next release: `NodusRuntime` denies capabilities by default
+> ### Breaking in v5.0.0: `NodusRuntime` denies capabilities by default
 >
 > **Embedding only.** A `NodusRuntime()` can no longer run subprocesses, open
 > sockets, or read the process environment unless you say so:
@@ -36,11 +36,14 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 4.2.0 is a correctness release — `finally` now runs when `catch`
-re-throws, `std:async` worker pools actually run their workers, `--help` no
-longer executes the command it documents, and the embedded runtime applies a
-call-depth cap by default. It also adds an opcode-freeze gate phase and DAP
-locals. See the [changelog](CHANGELOG.md).
+**Recent:** 5.0.0 is the first major. It carries exactly one breaking change —
+the deny-by-default above — and the bytecode format is untouched
+(`BYTECODE_VERSION` is still 4, the 49-opcode set unchanged), so the major bump
+does not imply recompilation. Alongside it: `goal … over …` gives a goal a real
+stopping condition, so it is a workflow *plus a predicate and a budget* rather
+than a workflow with different event names; `retries: N` now means the same thing
+for goals and workflows; and `nodus fmt` refuses to write a file it cannot fully
+represent instead of corrupting it. See the [changelog](CHANGELOG.md).
 
 ```bash
 pip install nodus-lang

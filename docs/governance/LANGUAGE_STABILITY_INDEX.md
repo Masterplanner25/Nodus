@@ -100,6 +100,10 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `run_source(source, ...)` | Stable | Returns `{"ok", "stdout", "stderr", "error"}` |
 | `run_file(path, ...)` | Stable | |
 | `register_function(name, fn, arity)` | Stable | |
+| `register_function` refusing builtin names | Stable | Raises `ValueError` for any builtin name. A security boundary for hosts installing fail-loud guards under a guest-reachable name; pinned by `tests/test_downstream_contracts.py`, not only documented |
+| `active_vm()` | Mostly Stable | Added v5.0.1. The **accessor** is supported; the `VM` it returns is Internal and its attributes are not. `_get_active_vm()` retained as an alias for existing pinners |
+| `NodusRuntime.__init__` taking no `**kwargs` | Stable | Deliberate: with a catch-all, a renamed confinement flag would be silently swallowed and the guest would run unconfined. A rename must raise `TypeError` so the embedder fails closed |
+| Confinement flags keyword-only | Stable | `allow_subprocess`, `allow_network`, `allow_env`. Positional acceptance would let an argument reorder silently change which boundary is denied |
 | `reset()` | Stable | |
 | `shutdown()` | Stable | Added v4.0; clears last_vm, host functions, tools |
 | `set_trace_id(id)` | Mostly Stable | Added v4.0 |
@@ -111,6 +115,27 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `host_globals` parameter | Mostly Stable | |
 | `initial_globals` parameter | Mostly Stable | |
 | `nodus.tooling.loader.run_source()` | Internal | Low-level; no sandbox controls; prefer `NodusRuntime` |
+
+### 3.1 Capability policy (`nodus.runtime.capability`)
+
+Added in v5.0.0 (#405); this table added in v5.0.1, which is late — the surface
+shipped a major release before it was indexed, and a downstream embedder scraped
+our source for want of it.
+
+| Surface | Tier | Notes |
+|---------|------|-------|
+| `SUBPROCESS`, `NETWORK`, `ENV`, `FS_READ`, `FS_WRITE` | Stable | Capability labels; closed set |
+| `ALL_CAPABILITIES` | Stable | The closed set, as a frozenset |
+| `GATED_BUILTINS` | Mostly Stable | Added v5.0.1. Flag → `GatedBuiltinGroup(flag, capability, description, arity, names)`. The registry builds its refusing stubs from this, so the published list and the enforced gate cannot disagree. **Membership may change** as builtins are added — that is the list changing, not the contract |
+| `GATED_BUILTIN_NAMES` | Mostly Stable | Added v5.0.1. All gated builtins, flattened |
+| `BUILTIN_CAPABILITIES` | Mostly Stable | Which builtins consult the policy at call time. Distinct from `GATED_BUILTINS`; see the runbook §3.3.1 |
+| `CapabilityRequest` fields | Mostly Stable | `capability`, `target`, `kind`, `args` |
+| `CapabilityPolicy`, `DenyList`, `Floor` | Experimental | The three-valued cascade is stage 1–2 of the design; attenuation and layered rule sources are not implemented |
+| `DEFAULT_FLOOR` | Mostly Stable | Unbypassable. Its one rule: a Nodus program cannot *write* into `.nodus/` |
+| `inherit_authority()` | Experimental | |
+| `capability_denied` event | Mostly Stable | Emitted at both chokepoints on refusal |
+| Denial `error["kind"] == "sandbox"` | Stable | Classify on this |
+| Denial message **naming the flag** | Stable | The flag name is contractual; the surrounding wording is not |
 
 ---
 

@@ -111,6 +111,66 @@ if not result["ok"] and "RuntimeLimitExceeded" in result.get("error", ""):
 
 `kind="sandbox"` in the error indicates a script tried to access a restricted resource.
 
+**What a refusal promises — and what it does not.** Two fields are contractual:
+
+| Field | Promise |
+|---|---|
+| `error["kind"]` | `"sandbox"` for every capability refusal. Classify on this. |
+| `error["message"]` | **Contains the name of the flag that grants the capability** — `allow_subprocess`, `allow_network`, `allow_env`. |
+
+The *wording* around the flag name is not contractual and has changed: v5.0.0
+rephrased refusals to `Blocked: subprocess execution is not granted; pass
+allow_subprocess=True to NodusRuntime to allow it`. An embedder matching the old
+sentence saw four confinement tests go red while its guest was fully confined —
+the refusals were firing correctly, with `kind: "sandbox"` and `capability_denied`
+on the event bus. Assert on the flag name or on `kind`, never on the sentence.
+
+`tests/test_downstream_contracts.py` pins both fields.
+
+### 3.3.1 Enumerating the gated surface
+
+To assert confinement from your own test suite, read the gate list as data rather
+than scraping our source:
+
+```python
+from nodus.runtime.capability import GATED_BUILTINS, GATED_BUILTIN_NAMES
+
+GATED_BUILTIN_NAMES                     # frozenset of all 31 gated builtins
+GATED_BUILTINS["allow_subprocess"].names       # the 7 subprocess builtins
+GATED_BUILTINS["allow_network"].capability     # "network" — the event-bus label
+```
+
+Each entry carries `flag`, `capability`, `description`, `arity` and `names`. The
+registry builds its refusing stubs from this same data, so the published list and
+the enforced gate cannot disagree.
+
+Added in v5.0.1. Before it, the only route was a regex over
+`BuiltinRegistry.register_all` — which broke on the v5.0.0 refactor that moved the
+names into the `else:` branch, and began capturing flag names out of the denial
+helper and reporting them as leaked builtins.
+
+Note that `GATED_BUILTINS` is a *different* list from `BUILTIN_CAPABILITIES`:
+the former is what is never registered when a flag is `False`, the latter is what
+consults the capability policy at call time. They overlap by design and differ by
+one entry (`subprocess_shell_quote`, which is string manipulation and runs
+nothing).
+
+### 3.3.2 Reaching the live VM
+
+`runtime.active_vm()` returns the VM from the most recent run, or `None` before
+the first one — for reading the event bus or asserting the sandbox flags actually
+in force. The accessor is supported; the `VM` object it returns is internal and
+its attributes are not. `_get_active_vm()` is retained as an alias for embedders
+that already pin it.
+
+### 3.3.3 Builtin names cannot be overridden
+
+`register_function()` raises `ValueError: Cannot override built-in function: <name>`
+for any name in the builtin set. This is relied on as a security boundary: because
+a builtin cannot be aliased, a host can install a fail-loud guard under a name a
+guest might otherwise reach and know the guard is the only thing there. It is
+pinned by test, not merely documented.
+
 ### 3.4 Stdout/stderr size
 
 Monitor `len(result["stdout"])` relative to `max_stdout_chars`. If scripts frequently

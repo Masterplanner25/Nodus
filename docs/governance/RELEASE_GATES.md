@@ -318,9 +318,21 @@ invisible from this repository.
 
 **Protocol:**
 
-1. **Dependency ranges.** For every companion declaring `nodus-lang`, confirm the
-   range admits the new version. A `>=X,<5.0.0` style range needs nothing; a pin
-   needs a bump and a republish.
+1. **Dependency ranges — run the script, do not read the files.**
+
+   ```powershell
+   PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+     "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+     -m tools.check_downstream_constraints
+   ```
+
+   Paste its output into the sweep document. Exit 0 means every published
+   companion admits the new version; exit 1 lists the ones that do not; exit 2
+   means the index was unreachable, which is not a pass.
+
+   It reads **published** metadata from PyPI, because that is what a user's `pip
+   install` resolves against. A cap floated in a companion's `main` but not
+   released helps nobody — the check must fail until the companion is republished.
 2. **Content drift — compare the published artifact, not version strings and not
    git history.** Download each package's sdist (or wheel) from PyPI and hash its
    `.py` / `.nd` / `.toml` / `.rs` files against the local checkout. Equal hashes
@@ -331,6 +343,24 @@ invisible from this repository.
 4. **Editor and CI surfaces.** `nodus-vscode` republishes via a manual VSIX
    upload; `nodus-run-action` pins a nodus-lang version for reproducible CI.
    Neither is on PyPI, so neither shows up in step 2.
+
+> **Do not read dependency ranges by eye.** The v5.0.0 sweep did, and transcribed
+> **five of six** with the upper bound dropped — recording `>=4.0.0` where the
+> published metadata said `>=4.0.0,<5.0.0`. It then concluded "no companion caps
+> its range" when in truth only one of the six could install alongside the new
+> release; `pip install nodus-lang==5.0.0 nodus-mcp` was `ResolutionImpossible`
+> for a day, until a downstream team reported it.
+>
+> This is not a lapse that more care prevents. `>=4.0.0,<5.0.0` reads as admitting
+> 4.x — which is what the eye is checking — and the clause that forbids the new
+> version sits at the far end of the string. Resolve it with `packaging`; that is
+> what the script does.
+>
+> A second lesson from the same miss: **a passing companion suite says nothing
+> about installability.** §2 of that sweep correctly recorded every dependent
+> suite passing against 5.0.0, because they were run against the dev source. The
+> suites could not have been reached through a normal `pip install` at all, and
+> noticing that would have exposed the cap a day earlier.
 
 > **Do not use git heuristics to detect drift.** "Commits since the last
 > version-bump commit" looks like the right test and is not: a version line is
