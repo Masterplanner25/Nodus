@@ -76,7 +76,12 @@ Two files must always match:
 Release order — the whole sequence, not just the publish half:
 
 1. Run the gates (`RELEASE_GATES.md`): suite, ruff, `nodus_gate --all`, keyword coverage
-2. Bump both version files
+2. Bump both version files — **and finish every `README.md` edit now, before step 6.**
+   `pyproject.toml` sets `readme = "README.md"`, so the README *is* the PyPI long
+   description: whatever it says at tag time is what the project page shows forever, and
+   release immutability means no re-upload. This was missed at 5.0.1 — the banner fix
+   landed after the tag, so <https://pypi.org/project/nodus-lang/5.0.1/> still displays
+   "v5.0.0 stable on PyPI" while `main` is correct. Cosmetic, but permanent.
 3. Move `[Unreleased]` in `CHANGELOG.md` to the new version section
 4. **Re-run the closed-issues gate as `--closed-issues --section X.Y.Z`.** After the
    cut it scans an empty `[Unreleased]` and reports a pass that checked nothing

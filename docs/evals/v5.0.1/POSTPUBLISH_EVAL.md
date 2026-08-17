@@ -129,6 +129,26 @@ beats a gate that catches it going stale.
 Not blocking: the badge is correct, PyPI is correct, and no install path is
 affected.
 
+> **Addendum, same day — the fix landed too late for this release.**
+>
+> The banner was changed to drop the version entirely, as recommended. But it was
+> changed **after** `v5.0.1` was tagged and built, and `pyproject.toml` sets
+> `readme = "README.md"` — so the README is the PyPI *long description*.
+> <https://pypi.org/project/nodus-lang/5.0.1/> therefore still displays
+> "**v5.0.0** stable on PyPI" while `main` is correct. Verified against the
+> published metadata, not assumed.
+>
+> Not fixable: PyPI rejects a re-upload of an existing version, and cutting a
+> 5.0.2 for a banner is not proportionate. The corrected README ships with the
+> next release.
+>
+> The durable lesson is a sequencing one, now in `CLAUDE.md` step 2: **finish
+> README edits before tagging.** Anything else in the repo can be fixed in the
+> next commit; the README cannot, because the release carries a frozen copy of it.
+> This eval caught the staleness and then reintroduced it by fixing it at the
+> wrong moment — which is worth recording precisely because the finding and the
+> mistake had the same author.
+
 ## 7. Known issues shipping, restated
 
 Unchanged from 5.0.0; none introduced here. #411 (`@exactly_once` is forgeable) is
