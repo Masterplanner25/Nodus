@@ -56,6 +56,39 @@
   still usable as ordinary identifiers. The VS Code grammar was updated in the
   same change; the extension needs republishing for the highlighting to ship.
 
+### Performance
+
+- **#398: independent steps that call agents now run concurrently.** `plan_graph`
+  identified the concurrent steps and `ready_tasks()` returned them together, and
+  then they executed strictly serially, because `action agent` was wired to the
+  synchronous `agent_call`. Measured, two 1-second agent calls in two independent
+  steps:
+
+  ```
+  before   2.44s   handler overlap -0.01s  (serial)
+  after    1.15s   handler overlap +1.01s  (parallel)
+  ```
+
+  `action agent` now dispatches the handler off the scheduler thread and suspends
+  the step until it lands — the mechanism `agent_call_async` has used since #294.
+
+  **The cause was not what the issue said**, which is why the fix is small. #398
+  reported that the async path was unavailable inside a workflow step because "a
+  workflow step **is** a graph context" and graph contexts cannot yield. They can:
+  `spawn_task` runs a step body *as a scheduler coroutine*, so calling
+  `agent_call_async` from inside a step already overlapped. Only the wiring was
+  missing.
+
+  **Behaviour change worth naming:** agent handlers for independent steps may now
+  execute on overlapping threads. A handler that was implicitly relying on being
+  called one at a time needs to be thread-safe. `action tool` is unchanged and
+  still serial.
+
+  Paired `goal_action_start`/`_complete` events are preserved, and the completion
+  is emitted when the handler finishes rather than when the call suspends — the
+  naive wiring emits it at suspend time carrying the suspension marker, and three
+  tests guard against exactly that.
+
 ### Changed
 
 - **`nodus workflow-run` accepts `--time-limit <ms>`.** It was the one run command

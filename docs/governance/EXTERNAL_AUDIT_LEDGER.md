@@ -403,6 +403,25 @@ the mechanism — call `action agent` from a workflow step and time it; call
 `run_workflow` and `run_goal` on the same source and compare. Every P4 error in
 both audits fell in under five minutes to a test of the user-facing path.
 
+**P4 has a mirror, and we made it ourselves.** Fixing #398 on 2026-08-16: Audit
+02 was *right* that agent calls serialised, and wrong about why. It read
+`agent_call_async`'s docstring caveat — *"falls back to sync in graph
+contexts"* — as proof the async path was **unreachable** from a workflow step,
+and prescribed a large fix on that basis: dispatch agent steps onto the
+worker-thread path, or make step bodies yieldable. Measured, a step body **is** a
+scheduler coroutine (`spawn_task` → `Coroutine(task.function)` →
+`scheduler.spawn`), so calling `agent_call_async` inside a step already overlapped
+by a full second. The fix was one line of wiring.
+
+**Existence read as reachability, and a caveat read as unreachability, are the
+same error with the sign flipped.** Both are claims about behaviour taken from
+source without running it, and both cost a wrong remedy. The parenthetical in the
+paragraph above — *"and the async one falls back to sync in graph contexts
+anyway"* — is itself an instance: this ledger repeated the claim while cataloguing
+the error it exemplifies. It stood for a day, in the issue and in `TECH_DEBT.md`,
+until the fix was attempted. The defence is unchanged and applies to us: **time
+the documented path.**
+
 It also predicts where to look next: any capability whose issue was closed on one
 entry point (P3) is a candidate to be unreachable from the documented one (P4).
 

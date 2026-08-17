@@ -1774,29 +1774,53 @@ class VM:
         return call_agent(name, payload, vm=self)
 
     def builtin_agent_call_async(self, name, payload):
-        """Async variant of agent_call (#294).
+        """Async variant of agent_call (#294)."""
+        return self._dispatch_agent_async(name, payload)
 
-        Runs the agent handler on a daemon thread and suspends the calling
-        coroutine until it completes, so concurrent agent calls under ``spawn()``
-        overlap instead of serializing on the single scheduler thread. Mirrors the
-        thread + ``_io_channels`` pattern of ``subprocess_run_async`` /
-        ``http_*_async``.
+    def _dispatch_agent_async(self, name, payload, on_complete=None):
+        """Run an agent handler off the scheduler thread and suspend until it lands.
+
+        Runs the handler on a daemon thread and suspends the calling coroutine, so
+        concurrent agent calls overlap instead of serializing on the single
+        scheduler thread. Mirrors the thread + ``_io_channels`` pattern of
+        ``subprocess_run_async`` / ``http_*_async``.
 
         Falls back to the synchronous ``call_agent`` when not running inside the
-        scheduler's own coroutine (module-function or graph contexts drive the VM
-        through ``run_closure``/``execute``, which cannot yield — same guard as
-        ``_do_async_run``).
+        scheduler's own coroutine — same guard as ``_do_async_run``.
+
+        Note for anyone reading #398: an earlier revision of this docstring said
+        the fallback covers "module-function or **graph contexts**", and the issue
+        took that to mean workflow steps could not use this path. Measured, they
+        can: ``spawn_task`` runs a step body as a scheduler coroutine, so the
+        guard passes and two independent agent steps overlap by a full second.
+
+        ``on_complete`` is invoked exactly once with the handler's result, on
+        whichever path is taken — the worker thread when suspended, inline when
+        not. It exists so a caller that emits paired start/complete events can
+        emit the completion when the result actually arrives rather than when the
+        call suspends.
         """
         scheduler = getattr(self, "scheduler", None)
         coroutine = getattr(self, "current_coroutine", None)
         if (scheduler is None or coroutine is None or
                 coroutine is not getattr(scheduler, "current_task", None)):
-            return call_agent(name, payload, vm=self)
+            result = call_agent(name, payload, vm=self)
+            if on_complete is not None:
+                on_complete(result)
+            return result
 
         result_ch = Channel()
 
         def _worker() -> None:
-            result_ch.queue.append(call_agent(name, payload, vm=self))
+            result = call_agent(name, payload, vm=self)
+            if on_complete is not None:
+                # Before publishing to the channel, so the completion event cannot
+                # be observed after the value it describes has been consumed.
+                try:
+                    on_complete(result)
+                except Exception:
+                    pass
+            result_ch.queue.append(result)
             result_ch.closed = True
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -1814,7 +1838,44 @@ class VM:
         return self._run_goal_action("tool", name, lambda: self.builtin_tool_call(name, args))
 
     def builtin_action_agent(self, name, payload):
-        return self._run_goal_action("agent", name, lambda: self.builtin_agent_call(name, payload))
+        """#398: dispatch the handler off the scheduler thread so independent
+        steps that call agents actually overlap.
+
+        Not `_run_goal_action`, because that emits the completion event around
+        `fn()` returning — and when the call suspends, `fn()` returns a
+        suspension marker rather than the handler's result. That would fire
+        `goal_action_complete` at suspend time, carrying the marker, and nothing
+        when the value really arrived. Paired start/complete events are one of the
+        few guarantees this boundary actually makes, so the completion is emitted
+        from the worker instead, via `on_complete`.
+        """
+        meta = self._goal_action_meta("agent", name)
+        if meta is not None:
+            self.event_bus.emit_event("goal_action_start", name=name, data=meta)
+
+        def _complete(result):
+            if meta is None:
+                return
+            ok = not (isinstance(result, dict) and result.get("ok") is False)
+            data = dict(meta)
+            if not ok:
+                err = result.get("error") if isinstance(result, dict) else None
+                if isinstance(err, dict):
+                    data["message"] = err.get("message")
+            self.event_bus.emit_event(
+                "goal_action_complete" if ok else "goal_action_fail",
+                name=name,
+                data=data,
+            )
+
+        try:
+            return self._dispatch_agent_async(name, payload, on_complete=_complete)
+        except Exception as _e:
+            if meta is not None:
+                fail = dict(meta)
+                fail["message"] = str(_e)
+                self.event_bus.emit_event("goal_action_fail", name=name, data=fail)
+            raise
 
     def builtin_action_memory_put(self, key, value):
         return self._run_goal_action("memory_put", key, lambda: self.builtin_memory_put(key, value))

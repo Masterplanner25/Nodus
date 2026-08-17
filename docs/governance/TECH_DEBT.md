@@ -542,15 +542,38 @@ here.
 Second audit of the same commit (`3376702`) by a different auditor. Verification
 record in [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md); debt only here.
 
-- **#398 (HIGH) — `action agent` serialises concurrent workflow steps.** Two 1.0s
-  agent calls in independent steps take **2.73s**; handler overlap −0.01s.
-  `action agent` lowers to `__action_agent` → `builtin_agent_call`, the
-  *synchronous* path. `builtin_agent_call_async` (#294) exists but is never
-  reached from a workflow, and its own docstring notes it falls back to sync in
-  graph contexts because `run_closure`/`execute` cannot yield. So the concurrency
-  the dependency graph exists to express is not delivered on the one operation the
-  project is for. The audit calls this the single most damaging gap relative to
-  the stated purpose; measurement agrees.
+- **#398 (HIGH) — `action agent` serialised concurrent workflow steps. FIXED
+  2026-08-16.** Two 1.0s agent calls in independent steps took **2.44s**; handler
+  overlap −0.01s. `action agent` lowered to `__action_agent` →
+  `builtin_agent_call`, the *synchronous* path. The audit called this the single
+  most damaging gap relative to the stated purpose; measurement agreed.
+
+  ```
+  before   2.44s   overlap -0.01s  (serial)
+  after    1.15s   overlap +1.01s  (parallel)
+  ```
+
+  **The diagnosis in the issue was wrong, and correcting it is what made the fix
+  one line of wiring.** #398 said the async path was unavailable inside a step
+  because "a workflow step **is** a graph context" and graph contexts cannot
+  yield — reading that from `builtin_agent_call_async`'s own docstring. Measured,
+  a step body *is* a scheduler coroutine (`spawn_task` → `Coroutine(task.function)`
+  → `scheduler.spawn`), so calling `agent_call_async` from inside a step already
+  overlapped by a full second before any change. Only `__action_agent`'s wiring
+  was missing. The proposed remedy — dispatching agent steps onto the worker-thread
+  path, or "making step bodies yieldable" — was not needed.
+
+  **This is P4 (existence read as reachability) in its mirror form.** The ledger
+  records audit 01 reading a capability's *existence* as its reachability. Here
+  audit 02 read a docstring's *caveat* as an unreachability, and it went into the
+  issue and this file unverified. Same root: a claim about behaviour taken from
+  source without running it.
+
+  The care went into events, not concurrency: `_run_goal_action` emits its
+  completion around `fn()` returning, and an async `fn()` returns a suspension
+  marker — so the obvious wiring fires `goal_action_complete` at suspend time
+  carrying the marker. Completion is emitted from the worker instead; three tests
+  fail against the naive version. `action tool` is unchanged and still serial.
 
 - **#399 (HIGH) — cross-process resume fails whenever the script reads the
   `run_workflow` result.** Which is how every guide example is written. Rebuild
