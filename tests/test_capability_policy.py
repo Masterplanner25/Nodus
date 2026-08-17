@@ -71,11 +71,30 @@ SUBPROCESS_CALL = 'import "std:subprocess" as sp\nlet r = sp.run(["echo", "hi"])
 
 
 # closes: #405
-class NoPolicyChangesNothingTests(unittest.TestCase):
-    """The default must be indistinguishable from before, or this is not additive."""
+class TheDefaultIsDenyTests(unittest.TestCase):
+    """Stage 5: capabilities are refused unless granted.
 
-    def test_a_bare_runtime_still_runs_subprocess(self):
-        result, denials = _run(SUBPROCESS_CALL)
+    Until this, a bare `NodusRuntime()` could shell out, open sockets and read
+    the process environment. Audit 03: *"the chokepoint is built; the door is
+    propped open by registering subprocess and http by default."* The door is
+    shut. `nodus run` is deliberately unaffected — see
+    `TheCliIsNotSandboxedByDefaultTests`.
+    """
+
+    def test_a_bare_runtime_refuses_subprocess(self):
+        result, _denials = _run(SUBPROCESS_CALL)
+        self.assertFalse(result.get("ok"), result)
+
+    def test_the_message_says_how_to_grant_it(self):
+        # With deny-by-default most readers never set the flag to False
+        # themselves, so "allow_subprocess=False" as an explanation is useless.
+        result, _ = _run(SUBPROCESS_CALL)
+        self.assertTrue(
+            any("allow_subprocess=True" in m for m in _errors(result)), _errors(result)
+        )
+
+    def test_granting_it_explicitly_works(self):
+        result, denials = _run(SUBPROCESS_CALL, allow_subprocess=True)
         self.assertTrue(result.get("ok"), result)
         self.assertIn("ran", result["stdout"])
         self.assertEqual(denials, [])
@@ -108,7 +127,8 @@ class TheBuiltinChokepointIsCoveredTests(unittest.TestCase):
     def test_denial_is_per_capability_not_all_or_nothing(self):
         # Denying network must leave subprocess working — the pre-existing
         # mechanism is three coarse booleans fixed at construction.
-        result, denials = _run(SUBPROCESS_CALL, capability_policy=DenyList(NETWORK))
+        result, denials = _run(SUBPROCESS_CALL, allow_subprocess=True,
+                               capability_policy=DenyList(NETWORK))
         self.assertTrue(result.get("ok"), result)
         self.assertIn("ran", result["stdout"])
         self.assertEqual(denials, [])
@@ -214,11 +234,13 @@ class PolicySeesTheCallNotJustTheCapabilityTests(unittest.TestCase):
                     return CapabilityDecision.allow()
                 return CapabilityDecision.deny("only echo is permitted")
 
-        allowed, _ = _run(SUBPROCESS_CALL, capability_policy=OnlyEcho())
+        allowed, _ = _run(SUBPROCESS_CALL, allow_subprocess=True,
+                          capability_policy=OnlyEcho())
         self.assertTrue(allowed.get("ok"), allowed)
 
         source = 'import "std:subprocess" as sp\nlet r = sp.run(["hostname"])\nprint("ran")\n'
-        refused, denials = _run(source, capability_policy=OnlyEcho())
+        refused, denials = _run(source, allow_subprocess=True,
+                                capability_policy=OnlyEcho())
         self.assertFalse(refused.get("ok"), refused)
         self.assertIn("only echo is permitted", denials[0]["reason"])
 
@@ -302,7 +324,8 @@ class AskNeedsSomebodyToAskTests(unittest.TestCase):
 
     def _run_with(self, channel):
         with _Sandbox():
-            runtime = NodusRuntime(timeout_ms=None, capability_policy=self._Ask())
+            runtime = NodusRuntime(timeout_ms=None, allow_subprocess=True,
+                                   capability_policy=self._Ask())
             runtime.approval_channel = channel
             return runtime.run_source(SUBPROCESS_CALL, filename="t.nd")
 
@@ -349,6 +372,53 @@ class AskNeedsSomebodyToAskTests(unittest.TestCase):
         self.assertFalse(CapabilityDecision.ask("x").allowed)
         self.assertTrue(CapabilityDecision.allow().allowed)
         self.assertFalse(CapabilityDecision.deny("x").allowed)
+
+
+# closes: #405
+class TheCliIsNotSandboxedByDefaultTests(unittest.TestCase):
+    """`nodus run` is deliberately unaffected by deny-by-default.
+
+    The domain this protects is *work you did not fully author* — which is the
+    embedding case. A developer running a script they just wrote is not that, and
+    a CLI that refused to shell out would be like `python` refusing to open
+    sockets. The two paths are genuinely separate: `nodus run` builds a `VM`
+    directly and never constructs a `NodusRuntime`.
+
+    Pinned as a test because it is a design decision, not an oversight, and the
+    obvious "fix" is to make them consistent.
+    """
+
+    def test_nodus_run_can_still_shell_out(self):
+        import subprocess
+
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "t.nd")
+            with open(script, "w", encoding="utf-8") as handle:
+                handle.write(
+                    'import "std:subprocess" as sp\n'
+                    'let r = sp.run(["echo", "hi"])\n'
+                    'print("ran")\n'
+                )
+            env = dict(os.environ)
+            env["PYTHONPATH"] = os.path.join(repo, "src")
+            proc = subprocess.run(
+                [sys.executable, os.path.join(repo, "nodus.py"), "run", script],
+                cwd=td, env=env, capture_output=True, text=True, timeout=120,
+            )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("ran", proc.stdout)
+
+    def test_the_cli_does_not_build_a_nodus_runtime(self):
+        # The separation is what makes the split possible rather than a special
+        # case; if the CLI ever routed through NodusRuntime this would silently
+        # sandbox every script.
+        import inspect
+
+        from nodus.cli import cli
+
+        source = inspect.getsource(cli)
+        self.assertNotIn("NodusRuntime(", source)
 
 
 if __name__ == "__main__":

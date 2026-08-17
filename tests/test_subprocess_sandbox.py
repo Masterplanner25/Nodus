@@ -40,7 +40,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
     # ── embedded mode ──────────────────────────────────────────────────────
 
     def test_stdout_redirect_forbidden_blocked_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "print(1)"], {{stdout: "{self.forbidden_out}"}})'
         r = rt.run_source(src)
         self.assertFalse(r["ok"], "stdout redirect to forbidden path should be blocked")
@@ -48,7 +48,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.forbidden_out), "file must not have been created")
 
     def test_stderr_redirect_forbidden_blocked_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "import sys; sys.stderr.write(\'x\')"], {{stderr: "{self.forbidden_out}", check: false}})'
         r = rt.run_source(src)
         self.assertFalse(r["ok"], "stderr redirect to forbidden path should be blocked")
@@ -56,7 +56,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.forbidden_out), "file must not have been created")
 
     def test_stdout_redirect_allowed_succeeds_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "print(\'written\')"], {{stdout: "{self.allowed_out}", check: false}})'
         r = rt.run_source(src)
         self.assertTrue(r["ok"], f"stdout redirect to allowed path should succeed: {r}")
@@ -64,7 +64,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
         self.assertIn("written", open(self.allowed_out, encoding="utf-8").read())
 
     def test_stdout_append_redirect_forbidden_blocked_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         # ">>" prefix means append mode
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "print(1)"], {{stdout: ">>{self.forbidden_out}"}})'
         r = rt.run_source(src)
@@ -72,7 +72,7 @@ class SubprocessRedirectSandboxTests(unittest.TestCase):
         self.assertEqual((r.get("error") or {}).get("kind"), "sandbox")
 
     def test_no_restriction_when_unrestricted_embedded(self):
-        rt = NodusRuntime(allowed_paths=None, timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=None, allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "print(\'ok\')"], {{stdout: "{self.allowed_out}", check: false}})'
         r = rt.run_source(src)
         self.assertTrue(r["ok"], "unrestricted mode should allow any path")
@@ -117,7 +117,7 @@ class SubprocessCwdSandboxTests(unittest.TestCase):
     # ── embedded mode ──────────────────────────────────────────────────────
 
     def test_cwd_outside_allowed_blocked_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         outside_fwd = _fwd(self.outside_dir)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "pass"], {{cwd: "{outside_fwd}"}})'
         r = rt.run_source(src)
@@ -125,14 +125,14 @@ class SubprocessCwdSandboxTests(unittest.TestCase):
         self.assertEqual((r.get("error") or {}).get("kind"), "sandbox")
 
     def test_cwd_within_allowed_succeeds_embedded(self):
-        rt = NodusRuntime(allowed_paths=[self.allowed_dir], timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=[self.allowed_dir], allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         allowed_fwd = _fwd(self.allowed_dir)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "pass"], {{cwd: "{allowed_fwd}", check: false}})'
         r = rt.run_source(src)
         self.assertTrue(r["ok"], f"cwd within allowed_paths should succeed: {r}")
 
     def test_cwd_no_restriction_when_unrestricted_embedded(self):
-        rt = NodusRuntime(allowed_paths=None, timeout_ms=10_000, max_steps=500_000)
+        rt = NodusRuntime(allowed_paths=None, allow_subprocess=True, timeout_ms=10_000, max_steps=500_000)
         outside_fwd = _fwd(self.outside_dir)
         src = _IMPORT + f'sp.run(["{_PY}", "-c", "pass"], {{cwd: "{outside_fwd}", check: false}})'
         r = rt.run_source(src)

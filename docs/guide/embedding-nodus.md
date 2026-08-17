@@ -256,7 +256,44 @@ call uses the original construction-time values.
 
 ---
 
-## 5. Sandboxing with allowed_paths
+## 5. Sandboxing
+
+### Capabilities are denied by default
+
+A `NodusRuntime()` **cannot** run subprocesses, open sockets, or read the process
+environment. Grant what the script you are hosting actually needs:
+
+```python
+rt = NodusRuntime(allow_subprocess=True, allow_network=True)
+```
+
+If you forget, the error names the flag:
+
+```
+Blocked: subprocess execution is not granted;
+         pass allow_subprocess=True to NodusRuntime to allow it
+```
+
+Grant the narrowest set that works — a script that only fetches URLs does not
+need `allow_subprocess`.
+
+> **This is embedding-only.** `nodus run` is unchanged: a script you wrote and
+> chose to run is not the threat model, hosting code you did not author is. The
+> two are separate code paths.
+>
+> Changing from a previous version? See
+> [the migration note](../migration/v5.0-deny-by-default.md).
+
+These three flags are all-or-nothing per category. For per-call decisions — permit
+`sp.run(["echo", …])` and refuse `sp.run(["hostname"])` — pass a
+`capability_policy`; see
+[`docs/design/v5/02-capability-policy.md`](../design/v5/02-capability-policy.md).
+
+**A Nodus program can never write into `.nodus/`**, regardless of flags or
+policy. That directory holds the workflow store and graph state, and a guest that
+can write there can forge run records.
+
+### Restricting paths with allowed_paths
 
 Pass `allowed_paths` to restrict which directories the script can access:
 

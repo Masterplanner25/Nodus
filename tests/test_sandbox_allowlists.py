@@ -4,6 +4,8 @@ from nodus.runtime.embedding import NodusRuntime
 
 
 def _run(source, **kwargs):
+    kwargs.setdefault("allow_subprocess", True)   # #405: deny-by-default
+    kwargs.setdefault("allow_network", True)
     rt = NodusRuntime(timeout_ms=None, max_steps=None, **kwargs)
     return rt.run_source(source)
 
@@ -14,7 +16,7 @@ def _run(source, **kwargs):
 
 class TestAllowedCommands:
     def test_allowed_command_runs(self):
-        rt = NodusRuntime(timeout_ms=None, allowed_commands=["python"])
+        rt = NodusRuntime(timeout_ms=None, allow_subprocess=True, allowed_commands=["python"])
         # Just check construction and that the param is stored
         assert rt.allowed_commands == ["python"]
 
@@ -33,7 +35,7 @@ class TestAllowedCommands:
 
     def test_allowed_command_basename_match(self):
         """allowed_commands=["echo"] should match /bin/echo or echo."""
-        rt = NodusRuntime(timeout_ms=None, allowed_commands=["echo"])
+        rt = NodusRuntime(timeout_ms=None, allow_subprocess=True, allowed_commands=["echo"])
         assert "echo" in rt.allowed_commands
 
     def test_shell_mode_blocked_when_allowed_commands_set(self):
@@ -83,7 +85,7 @@ class TestAllowedCommands:
     # closes: #209
     def test_allowed_commands_propagated_to_child_vm(self):
         """Child VM created by invoke_function must inherit allowed_commands from caller."""
-        rt = NodusRuntime(timeout_ms=None, allowed_commands=["python"])
+        rt = NodusRuntime(timeout_ms=None, allow_subprocess=True, allowed_commands=["python"])
         rt.run_source("print(1)")
         assert rt._last_vm.allowed_commands == ["python"]
 

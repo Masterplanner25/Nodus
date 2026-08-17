@@ -96,4 +96,6 @@ class EnvBlockedTests(unittest.TestCase):
     def test_allow_env_false_error_message(self):
         r = _run('env_has("X")', allow_env=False)
         errors = r.get("errors", [])
-        self.assertTrue(any("allow_env=False" in (e.get("message") or "") for e in errors))
+        # #405: the message now says how to GRANT the capability, because with
+        # deny-by-default most readers never set the flag to False themselves.
+        self.assertTrue(any("allow_env=True" in (e.get("message") or "") for e in errors))
