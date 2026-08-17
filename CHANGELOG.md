@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Changed — BREAKING: `NodusRuntime` denies capabilities by default
+
+**This requires a major version bump.** It changes the default behaviour of every
+embedding of Nodus.
+
+- **#405 stage 5.** `allow_subprocess`, `allow_network` and `allow_env` now
+  default to **`False`** on `NodusRuntime`. A bare `NodusRuntime()` cannot shell
+  out, open sockets, or read the process environment.
+
+  ```python
+  # before — worked
+  NodusRuntime().run_source(script)
+
+  # now — grant what the script needs
+  NodusRuntime(allow_subprocess=True, allow_network=True).run_source(script)
+  ```
+
+  The error names the flag rather than merely reporting the absence, because with
+  deny-by-default most readers never set it to `False` themselves:
+
+  ```
+  Blocked: subprocess execution is not granted;
+           pass allow_subprocess=True to NodusRuntime to allow it
+  ```
+
+  `allowed_paths` is unchanged — it already defaulted to a CWD jail.
+
+  **`nodus run` and the other CLI commands are deliberately unaffected.** The
+  domain this protects is *work you did not fully author*; a developer running a
+  script they just wrote is not that, and a CLI that refused to shell out would
+  be like `python` refusing to open sockets. The paths are genuinely separate —
+  `nodus run` builds a `VM` directly and never constructs a `NodusRuntime` — and
+  a test pins both halves so the "inconsistency" is not later tidied away.
+
+  Why now: all three external architecture audits identified the host-function
+  boundary as the highest-leverage change available, and audit 03 named the gap
+  exactly — *"the chokepoint is built; the door is propped open by registering
+  subprocess and http by default."* Stages 1–4 built the lock; leaving the
+  defaults permissive would have shipped a lock on an open door.
+
+  **Migration:** [`docs/migration/v5.0-deny-by-default.md`](docs/migration/v5.0-deny-by-default.md).
+  Restoring the previous behaviour is one constructor call; there is deliberately
+  no global switch.
+
+  Blast radius, measured on this repo's own suite: **11 tests** assumed a bare
+  runtime could shell out.
+
 ### Fixes
 
 - **#427: `nodus fmt` no longer writes a file that stops parsing.** `with { ... }`

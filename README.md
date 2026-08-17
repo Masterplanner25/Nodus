@@ -6,6 +6,36 @@
 
 > **v4.2.0 stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 
+> [!IMPORTANT]
+> ### Breaking in the next release: `NodusRuntime` denies capabilities by default
+>
+> **Embedding only.** A `NodusRuntime()` can no longer run subprocesses, open
+> sockets, or read the process environment unless you say so:
+>
+> ```python
+> # before — worked
+> NodusRuntime().run_source(script)
+>
+> # now — grant what the script actually needs
+> NodusRuntime(allow_subprocess=True, allow_network=True).run_source(script)
+> ```
+>
+> The error names the flag:
+> `Blocked: subprocess execution is not granted; pass allow_subprocess=True to NodusRuntime to allow it`
+>
+> **`nodus run` is unaffected.** A script you wrote and chose to run is not the
+> threat model; hosting code you did not author is. The CLI never constructs a
+> `NodusRuntime`.
+>
+> Also: a Nodus program can no longer write into `.nodus/` — the workflow store
+> and graph state — because it could previously forge run records.
+>
+> Why: all three external architecture audits found the same thing — the
+> capability chokepoint was built and unused, with *"the door propped open by
+> registering subprocess and http by default."* See
+> [the migration note](docs/migration/v5.0-deny-by-default.md) and
+> [#405](https://github.com/Masterplanner25/Nodus/issues/405).
+
 **Recent:** 4.2.0 is a correctness release — `finally` now runs when `catch`
 re-throws, `std:async` worker pools actually run their workers, `--help` no
 longer executes the command it documents, and the embedded runtime applies a

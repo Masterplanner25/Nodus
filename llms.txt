@@ -4,7 +4,7 @@
 > Created by Shawn Knight — [Masterplan Infinite Weave](https://www.the-master-plan.com/)
 
 Nodus is the execution layer of the Masterplan Infinite Weave ecosystem — a bytecode-compiled
-language whose runtime provides durable, inspectable, capability-jailed task orchestration,
+language whose runtime provides durable, inspectable, capability-jailed task orchestration (embedded runtimes deny subprocess, network and env by default),
 with a clean handoff boundary to model-driven decisions your host supplies. `workflow`, `goal`,
 `step` and `after` are language constructs; task graphs are a runtime library the compiler
 feeds. There is no model in the core. It embeds in Python via `NodusRuntime` and

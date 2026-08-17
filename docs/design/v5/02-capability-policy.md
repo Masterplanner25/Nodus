@@ -204,12 +204,31 @@ call's arguments, and get a structured record of every refusal — in-process,
 against code it did not write, with no way for that code to route around the
 decision.
 
-**Cannot yet be said:** that Nodus is capability-jailed by default. The defaults
-are still `allow_subprocess=True`, `allow_network=True`, `allow_env=True`, and a
-runtime with no policy set enforces nothing new. Audit 03's framing — *"the
-chokepoint is built; the door is propped open by registering subprocess and http
-by default"* — remains accurate about the defaults. This stage builds the lock
-and leaves the door open; §6's deny-by-default is what closes it.
+**Can now also be said, since stage 5:** that an *embedded* Nodus runtime is
+capability-jailed by default. `allow_subprocess`, `allow_network` and `allow_env`
+default to `False`; a bare `NodusRuntime()` refuses all three. Audit 03's framing
+— *"the chokepoint is built; the door is propped open by registering subprocess
+and http by default"* — no longer describes the embedding API.
 
-Claiming otherwise would be the same error the positioning fix corrected in
-`649a2ed`.
+**Still cannot be said:** that *Nodus* is capability-jailed by default, without
+the qualifier. `nodus run` is unchanged and intentionally so (§7.1), so the
+accurate sentence names the surface: **embedded runtimes deny by default; the CLI
+does not.** Dropping the qualifier would be the same error the positioning fix
+corrected in `649a2ed` — a true claim about one surface stated as a claim about
+the project.
+
+### 7.1 Why the CLI is exempt
+
+The domain is *work you did not fully author*. A developer running a script they
+just wrote is not that, and a CLI that refused to shell out would be like
+`python` refusing to open sockets — friction with no threat model behind it.
+
+This is a boundary rather than a special case: `nodus run` builds a `VM` directly
+and never constructs a `NodusRuntime`, so the two defaults live in different
+places by construction. Both halves are pinned by tests, including one asserting
+the CLI does not route through `NodusRuntime` — because the obvious "fix" for the
+apparent inconsistency is to make them the same, and that would sandbox every
+script anyone runs.
+
+The one control that spans both is the floor: neither surface may write into
+`.nodus/`.

@@ -65,6 +65,16 @@ def _run_block_with_timeout(
                 timeout_ms=timeout_ms,
                 max_steps=1_000_000,
                 allow_input=False,
+                # #405: `NodusRuntime` denies these by default. Documentation
+                # blocks are this repo's own trusted content, and the gate's job
+                # is to check that the examples we publish actually run — a doc
+                # showing `subprocess.run` must be allowed to execute it, or the
+                # gate reports a failure that says nothing about the docs. Same
+                # reasoning as the CLI exemption: the default protects against
+                # code you did not author, and these are ours.
+                allow_subprocess=True,
+                allow_network=True,
+                allow_env=True,
             )
             res = runtime.run_source(source, filename="<gate>")
             result_holder[0] = res

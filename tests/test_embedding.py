@@ -184,7 +184,9 @@ class SpawnThreadLeakTests(unittest.TestCase):
 
     def test_reset_joins_pump_threads(self):
         """reset() must drain _spawned_handles so threads are not left alive."""
-        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        # #405: subprocess is denied by default now; this test is about handle
+        # tracking, not about the default, so it opts in.
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
         vm = rt._last_vm
         self.assertIsNotNone(vm)
@@ -196,7 +198,9 @@ class SpawnThreadLeakTests(unittest.TestCase):
 
     def test_shutdown_joins_pump_threads(self):
         """shutdown() must also drain _spawned_handles."""
-        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        # #405: subprocess is denied by default now; this test is about handle
+        # tracking, not about the default, so it opts in.
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
         vm = rt._last_vm
         self.assertIsNotNone(vm)
@@ -206,7 +210,9 @@ class SpawnThreadLeakTests(unittest.TestCase):
 
     def test_spawned_handles_populated_after_spawn(self):
         """_spawned_handles must have one entry per subprocess_spawn call."""
-        rt = NodusRuntime(timeout_ms=None, allowed_paths=None)
+        # #405: subprocess is denied by default now; this test is about handle
+        # tracking, not about the default, so it opts in.
+        rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
         vm = rt._last_vm
         self.assertIsNotNone(vm)

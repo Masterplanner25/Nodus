@@ -4,6 +4,16 @@ from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.runtime.capability import ENV, NETWORK, SUBPROCESS
 
 
+def _denied_reason(what: str, flag: str) -> str:
+    """Say how to grant the capability, not merely that it is absent.
+
+    `NodusRuntime` denies these by default (#405 stage 5), so most readers of
+    this message never set the flag to False — it was off before they arrived,
+    and the useful thing to tell them is how to turn it on.
+    """
+    return f"{what} is not granted; pass {flag}=True to NodusRuntime to allow it"
+
+
 def _make_blocked_stub(vm, reason: str, capability: str | None = None):
     """Return a callable that raises a sandbox error for any number of args.
 
@@ -67,7 +77,7 @@ class BuiltinRegistry:
             from nodus.builtins import env as _env
             _env.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "environment variable access (allow_env=False)", ENV)
+            _blocked = _make_blocked_stub(vm, _denied_reason("environment variable access", "allow_env"), ENV)
             for _name in ("env_get", "env_set", "env_unset", "env_has", "env_list", "env_list_keys"):
                 self.add(_name, (0, 1, 2), _blocked)
         from nodus.builtins import time_module as _time
@@ -82,7 +92,7 @@ class BuiltinRegistry:
             from nodus.builtins import http_module as _http
             _http.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "network access (allow_network=False)", NETWORK)
+            _blocked = _make_blocked_stub(vm, _denied_reason("network access", "allow_network"), NETWORK)
             for _name in (
                 "http_get", "http_post", "http_put", "http_delete", "http_patch",
                 "http_head", "http_options_verb", "http_request",
@@ -96,7 +106,7 @@ class BuiltinRegistry:
             from nodus.builtins import subprocess_module as _subprocess
             _subprocess.register(vm, self)
         else:
-            _blocked = _make_blocked_stub(vm, "subprocess execution (allow_subprocess=False)", SUBPROCESS)
+            _blocked = _make_blocked_stub(vm, _denied_reason("subprocess execution", "allow_subprocess"), SUBPROCESS)
             for _name in (
                 "subprocess_run", "subprocess_run_async", "subprocess_shell",
                 "subprocess_shell_async", "subprocess_spawn", "subprocess_spawn_shell",

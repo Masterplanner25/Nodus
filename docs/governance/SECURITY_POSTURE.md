@@ -38,8 +38,16 @@ are applied by default. The script can:
 - Make network calls (via `std:http` when available)
 - Block indefinitely (no timeout by default)
 
-**This is intentional.** CLI mode is a developer tool, equivalent to running a Python
-script. Treat it with the same security assumptions as `python script.py`.
+**This is intentional, and was reaffirmed when embedded mode moved to
+deny-by-default (#405).** CLI mode is a developer tool, equivalent to running a
+Python script. Treat it with the same security assumptions as `python script.py`.
+The threat model that motivates the embedded default — *hosting code you did not
+author* — does not describe a developer running a script they just wrote, and the
+two are separate code paths: `nodus run` never constructs a `NodusRuntime`.
+
+The one control that applies in **both** modes is the capability floor: a Nodus
+program cannot write into `.nodus/`, because a guest that can write there can
+forge workflow run records.
 
 **What CLI mode does protect against:**
 - Relative import path traversal (cannot escape the project root)
@@ -68,18 +76,31 @@ that configuration. See GitHub #192 for the long-term unification plan (v5 scope
 
 ## 4. Embedded mode security posture
 
-**Threat level: Configurable, up to semi-untrusted code.**
+**Threat level: Configurable, up to semi-untrusted code. Denies by default.**
 
 `NodusRuntime` is designed for host applications that want to run Nodus scripts on
-behalf of users or services. The security controls available are:
+behalf of users or services.
+
+> **Changed in #405.** `allow_subprocess`, `allow_network` and `allow_env` all
+> default to **`False`**. A bare `NodusRuntime()` cannot shell out, open sockets,
+> or read the environment. Previously all three defaulted to `True`, which is
+> what audit 03 meant by *"the chokepoint is built; the door is propped open by
+> registering subprocess and http by default."*
+>
+> Migration: [`docs/migration/v5.0-deny-by-default.md`](../migration/v5.0-deny-by-default.md).
+
+The security controls available are:
 
 | Control | Parameter | Default | Effect |
 |---------|-----------|---------|--------|
 | Filesystem restriction | `allowed_paths` | `[os.getcwd()]` | Restricts `read_file`, `write_file`, `append_file`, `mkdir`, `list_dir`, `exists` to listed directories |
 | stdin block | `allow_input` | `False` | Blocks `input()` — cannot block on stdin in embedded mode |
-| Subprocess block | `allow_subprocess` | `True` | Set `False` to disable all `subprocess_*` builtins |
-| Network block | `allow_network` | `True` | Set `False` to disable all `http_*` builtins |
-| Env block | `allow_env` | `True` | Set `False` to disable all `env_*` builtins (read/write/delete of `os.environ`) |
+| Subprocess | `allow_subprocess` | **`False`** | Denied unless granted (#405). Pass `True` to enable `subprocess_*` |
+| Network | `allow_network` | **`False`** | Denied unless granted. Pass `True` to enable `http_*` |
+| Env | `allow_env` | **`False`** | Denied unless granted. Pass `True` to enable `env_*` (read/write/delete of `os.environ`) |
+| Per-call policy | `capability_policy` | `None` | Decides per call and can read the call's arguments — finer than the all-or-nothing flags above |
+| Approval channel | `approval_channel` | `None` | Answers an `ask` decision. **With no channel, `ask` is `deny`** |
+| Runtime-state floor | — | always on | Guest writes into `.nodus/` are refused; no policy can override it |
 | Call stack cap | `max_frames` | `None` → `MAX_STACK_DEPTH` (10,000) | Deep recursion raises `Call stack overflow`; tighten to 200–1000 for untrusted code |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
 | Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |

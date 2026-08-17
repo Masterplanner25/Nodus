@@ -19,7 +19,7 @@ primitives — not library conventions. The core language (types, functions, con
 minimal and conventional; it exists to serve the orchestration constructs.
 
 Nodus compiles to bytecode and runs on a deterministic stack-based VM with a cooperative
-scheduler. It embeds in Python via `NodusRuntime` and can sandbox execution, enforce resource
+scheduler. It embeds in Python via `NodusRuntime`, which denies subprocess/network/env by default, and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
 **Current version:** v4.1.1 — published to PyPI 2026-08-05. Install: `pip install nodus-lang`. Full 32-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
@@ -190,11 +190,21 @@ rt = NodusRuntime(
     timeout_ms=None,          # None = unlimited (required for long-lived sessions)
     max_steps=None,           # None = unlimited
     allowed_paths=["/safe"],  # filesystem sandbox; None = unrestricted
+    allow_subprocess=True,    # DENIED BY DEFAULT (#405) - grant explicitly
+    allow_network=True,       # DENIED BY DEFAULT - grant explicitly
+    allow_env=True,           # DENIED BY DEFAULT - grant explicitly
     on_error=my_fn,           # fn(coroutine, error) -> bool; True = stop scheduler
 )
 
-# Register Python function callable from Nodus scripts
-rt.register_function("fetch", my_fetch_fn, arity=1)
+# Capabilities are denied unless granted. A bare NodusRuntime() cannot run
+# subprocesses, open sockets or read the environment; the error names the flag:
+#   Blocked: subprocess execution is not granted; pass allow_subprocess=True ...
+# `nodus run` is NOT affected - the CLI never constructs a NodusRuntime.
+# A Nodus program can never write into .nodus/ (workflow store), in either mode.
+
+# Register Python function callable from Nodus scripts; `requires` declares the
+# capability the host function needs, checked against `capability_policy`.
+rt.register_function("fetch", my_fetch_fn, arity=1, requires="network")
 
 # Register MCP-style tool
 rt.tool_registry.register({

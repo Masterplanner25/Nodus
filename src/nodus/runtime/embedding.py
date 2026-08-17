@@ -238,9 +238,9 @@ class NodusRuntime:
         project_root: str | None = None,
         allowed_paths: list[str] | None = _SANDBOX_DEFAULT,  # type: ignore[assignment]
         allow_input: bool = False,
-        allow_subprocess: bool = True,
-        allow_network: bool = True,
-        allow_env: bool = True,
+        allow_subprocess: bool = False,
+        allow_network: bool = False,
+        allow_env: bool = False,
         capability_policy: "CapabilityPolicy | None" = None,
         approval_channel: "ApprovalChannel | None" = None,
         allowed_commands: list[str] | None = None,
