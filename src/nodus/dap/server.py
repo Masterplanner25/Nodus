@@ -15,6 +15,7 @@ from nodus.runtime.debugger import Debugger, DebuggerQuit, PauseState
 from nodus.runtime.debugger import get_locals as debugger_locals
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.module_loader import ModuleLoader
+from nodus.runtime.capability import inherit_authority
 from nodus.vm.vm import VM
 
 
@@ -435,6 +436,10 @@ class DebugSession:
             host_globals=dict(getattr(vm, "host_globals", {})),
             allowed_paths=getattr(vm, "allowed_paths", None),
         )
+        # #405: the debug console evaluates guest expressions on this VM, so it
+        # must not carry more authority than the program being debugged. It was
+        # inheriting `allowed_paths` and nothing else.
+        inherit_authority(child_vm, vm)
         try:
             child_vm.run()
             result_val = child_vm.globals.get("__eval_result__")

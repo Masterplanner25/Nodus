@@ -178,6 +178,45 @@ class DenyList(CapabilityPolicy):
         return CapabilityDecision.allow()
 
 
+# Every piece of VM state that carries authority. A VM derived from another must
+# inherit all of it, or the derivation is a sandbox escape.
+#
+# This list exists because the same bug shipped three times in one day — a check
+# that lives on one path while a sibling path bypasses it (#392's
+# `inline_retries`, #399's rebuild guard, and this module's own first version,
+# where `import "std:subprocess"` ran on a child VM that had not inherited the
+# policy). Derivation sites are where it recurs, because each one hand-copies
+# whatever its author remembered.
+#
+# `tests/test_vm_authority_inheritance.py` asserts every derivation site
+# preserves every attribute named here, so adding one without teaching the sites
+# about it fails the suite rather than opening a hole.
+AUTHORITY_ATTRIBUTES: tuple[str, ...] = (
+    "allowed_paths",
+    "fs_root",
+    "allow_subprocess",
+    "allow_network",
+    "allow_env",
+    "allowed_commands",
+    "allowed_hosts",
+    "capability_policy",
+)
+
+
+def inherit_authority(child, parent) -> None:
+    """Copy every authority-bearing attribute from *parent* to *child*.
+
+    Use this at any site that derives a VM from another. Copying by list rather
+    than by hand is the point: the failure mode is not getting one wrong, it is
+    forgetting that a new one exists.
+    """
+    if parent is None or child is None:
+        return
+    for attribute in AUTHORITY_ATTRIBUTES:
+        if hasattr(parent, attribute):
+            setattr(child, attribute, getattr(parent, attribute))
+
+
 def emit_denied(event_bus, request: CapabilityRequest, reason: str) -> None:
     """Record a refusal on the event bus.
 

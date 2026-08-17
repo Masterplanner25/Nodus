@@ -212,7 +212,9 @@ class NodusModule:
         # #405: authority must not be shed by crossing into a module or a tool
         # handler. A policy that applied only to the top-level VM would be
         # bypassed by `import "std:subprocess"`, which is how everyone calls it.
-        vm.capability_policy = getattr(caller_vm, "capability_policy", None) if caller_vm is not None else None
+        from nodus.runtime.capability import inherit_authority  # noqa: E402
+
+        inherit_authority(vm, caller_vm)
         if caller_vm is not None:
             vm.trace_errors = getattr(caller_vm, "trace_errors", False)
             vm.trace_id = getattr(caller_vm, "trace_id", None)

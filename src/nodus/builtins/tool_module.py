@@ -380,7 +380,9 @@ def register(vm, registry) -> None:
                 )
                 # #405: see module.py — authority is not shed by crossing into
                 # a tool handler.
-                child_vm.capability_policy = getattr(rvm, "capability_policy", None)
+                from nodus.runtime.capability import inherit_authority  # noqa: E402
+
+                inherit_authority(child_vm, rvm)
                 child_vm.trace_errors = getattr(rvm, "trace_errors", False)
                 child_vm.trace_id = getattr(rvm, "trace_id", None)
                 child_vm.execution_unit_id = getattr(rvm, "execution_unit_id", child_vm.execution_unit_id)
