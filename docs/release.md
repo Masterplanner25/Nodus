@@ -115,7 +115,7 @@ releases with no CRITICAL findings from independent evaluation.
 
 ## Version
 
-Release target: `4.1.1`
+Release target: `5.0.0`
 
 ## Clean Build Preparation
 
@@ -177,7 +177,7 @@ nodus run invalid_import.nd
 
 Expected outcomes:
 
-- `nodus --version` reports `4.1.1`
+- `nodus --version` reports `5.0.0`
 - `nodus repl` starts successfully from the installed package
 - `nodus run main.nd` runs only the explicit file
 - `nodus run` runs only `src/main.nd` inside a project root
