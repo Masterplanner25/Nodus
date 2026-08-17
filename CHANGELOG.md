@@ -2,10 +2,9 @@
 
 ## [Unreleased]
 
-### Changed — BREAKING: `NodusRuntime` denies capabilities by default
+## [5.0.0] - 2026-08-17
 
-**This requires a major version bump.** It changes the default behaviour of every
-embedding of Nodus.
+### Changed — BREAKING
 
 - **#405 stage 5.** `allow_subprocess`, `allow_network` and `allow_env` now
   default to **`False`** on `NodusRuntime`. A bare `NodusRuntime()` cannot shell
@@ -48,6 +47,155 @@ embedding of Nodus.
 
   Blast radius, measured on this repo's own suite: **11 tests** assumed a bare
   runtime could shell out.
+
+- **#405: a Nodus program can no longer write into `.nodus/`.** That directory is
+  the workflow store, graph state and bytecode cache. Until now a guest script
+  could overwrite a run record with defaults in place — verified: it wrote
+  `{"forged": true}` over `.nodus/workflow_framework/runs/<id>.json` and the run
+  reported success. That is forging durable state.
+
+  This is the default capability **floor**, and the only non-additive part of
+  #405. Reads are untouched; only writes are refused, matched on normalised path
+  segments so `my.nodus-notes.txt` is unaffected and `../.nodus/x` is not. A
+  floor that never fires would be the "check that cannot fail" this codebase
+  keeps finding, so it ships with one real rule rather than empty.
+
+### Added
+
+- **#405: a capability policy can now be consulted at the host boundary.**
+  Experimental, and additive — the default is no policy, and a runtime without
+  one behaves exactly as before.
+
+  ```python
+  from nodus.runtime.capability import DenyList, SUBPROCESS
+  rt = NodusRuntime(capability_policy=DenyList(SUBPROCESS))
+  ```
+
+  All three external architecture audits identified this boundary as the
+  highest-leverage change available. Stages 1–2 of the staging in
+  `CAPABILITY_POLICY_DESIGN.md`: a policy consulted at the chokepoints, denials
+  recorded, and capability metadata on `register_function`.
+
+  **Both chokepoints, not one.** That document stages builtins fourth, after host
+  functions — which would have covered nothing that matters, because
+  `subprocess_run`, `http_get` and `env_get` are *builtins* dispatched by
+  `VM.call_builtin` and never touch `_invoke_host_function`. Both are covered
+  from the start, and the policy travels with the VM so it is not shed by
+  crossing into a module or a tool handler.
+
+  What this adds over the existing `allow_subprocess` / `allow_network` /
+  `allow_env` flags, which are registration-time and binary per category:
+  per-call decisions, per-function authority via
+  `register_function(..., requires=…)`, decisions that can read the call's
+  arguments (permit `sp.run(["echo", …])`, refuse `sp.run(["hostname"])`), and a
+  **`capability_denied` event** — including for those pre-existing flags, whose
+  denials until now emitted nothing structured at all.
+
+  Only capability-bearing builtins consult the policy; `len` and `push` do not,
+  so the hot path pays one dict miss. That mapping is also the language's
+  capability surface in one readable place.
+
+  **The decision is three-valued** — `allow | ask | deny`. `ask` means *this
+  needs a human*, and an embedder supplies an `approval_channel` to answer it.
+  **`ask` with no channel is `deny`, never "run anyway"** — the alternative
+  silently turns an unanswered question into permission.
+
+  **A floor is consulted before any policy and can only restrict.** `Floor.check`
+  returns a decision to impose or abstains; there is no way for it to return
+  `allow`, so it can never grant what a policy would refuse. Built now because
+  every reference system added a bypass mode under pressure and retrofitted a
+  floor afterwards — Nodus has no bypass mode, so building it first is free.
+
+  **Not built, deliberately:** routing `ask` to the durable `workflow_wait` pause
+  (it only exists inside a step, and a capability check can happen anywhere),
+  layered rule sources, approval caching, attenuation, and deny-by-default.
+  Defaults otherwise stay permissive, so this builds the lock and leaves the door
+  open — see `docs/design/v5/02-capability-policy.md` §6–7 for what that does and
+  does not license claiming.
+
+- **#409: `goal … over …` — a goal can now declare a stopping condition.**
+  Experimental, and **additive**: `goal g { step … }` is unchanged.
+
+  A workflow finishes when every step has run. A goal finishes when its condition
+  holds, or its budget runs out. It contains no steps of its own — it names a
+  workflow, and watches the checkpoints that workflow records:
+
+  ```nd
+  goal reach_quality over tune {
+      until reached("good_enough")
+      budget { max_iterations: 5, deadline_ms: 30000 }
+  }
+  ```
+
+  Each pass resumes the workflow from the last checkpoint it reached, so `state`
+  carries forward and successive passes differ. `retry from "label"` pins the
+  re-entry point. `until` composes `reached("literal")` with `&&`, `||`, `!`.
+
+  This is the loop two of the three external audits said was missing — audit 02's
+  *"the plan→act→verify→replan loop is inexpressible"* and audit 01's *"no
+  representation of an objective, no predicate over world state"*. It answers the
+  **verify→replan** half; dynamic fan-out and conditional edges remain out of
+  scope, and the DAG stays lexically fixed and acyclic.
+
+  **The compiler checks the waypoints exist.** Naming a checkpoint the workflow
+  never records is a compile error, not a goal that quietly never finishes:
+
+  ```
+  Syntax error at g.nd:5:11: goal 'ship' waits on checkpoint "verifed", which
+  'deploy' never records. It records "attempted", "verified".
+  ```
+
+  That check is **exact, not best-effort**, because neither `checkpoint` nor
+  `reached` accepts a computed label — and it is the thing a library structurally
+  cannot do: a planner can watch checkpoints as they happen, but it cannot refuse
+  to start.
+
+  **`budget` is mandatory** (`max_iterations` and `deadline_ms`), and exhausting
+  it is a **failure**: the goal returns an err record
+  (`kind: "goal_error"`, `payload.category: "budget_exhausted"`, with the
+  iterations and waypoints reached) rather than a result map, so it cannot be
+  mistaken for success.
+
+  Not implemented, each of which would extend the surface: pursuing a workflow
+  declared in another module; predicates over the state *at* a checkpoint or over
+  the *order* checkpoints were reached; a cost bound. Design record and the
+  deviations from it: `docs/design/v5/01-goal-stopping-condition.md`.
+
+  **`over`, `until`, `budget`, `reached` and `retry` are contextual keywords** —
+  still usable as ordinary identifiers. The VS Code grammar was updated in the
+  same change; the extension needs republishing for the highlighting to ship.
+
+### Changed
+
+- **`nodus workflow-run` accepts `--time-limit <ms>`.** It was the one run command
+  without it (`run`, `check`, `debug` and `profile` all had it), and the #392 fix
+  below made the gap bite: step retries are now taken in-process, so a step with
+  `with { retries: N }` spends wall-clock budget it previously deferred out of.
+  Measured on an idle machine, three attempts of a *trivial* retrying step cost
+  ~110 ms warm and 801 ms cold — against a 200 ms default — and there was no flag
+  to raise it. Behaviour is unchanged when the flag is omitted.
+
+- **#393: `goal` and `workflow` now retry identically.** `run_task_graph`
+  branched on `execution_kind` to decide how a failed step retries — a
+  `workflow` persisted `retry_scheduled` and ended the run for a sweeper to
+  resume, a `goal` retried in-process and completed. Two constructs that lower
+  through the same function and are documented as identical differed in exactly
+  the place nobody thinks to check, and in the direction opposite to their names:
+  `goal` was the more reliable of the two for retries. The branch is gone. Both
+  kinds now take the same decision, and it is made on the one thing that
+  actually matters — see #392 below. `goal_retry_scheduled` is emitted alongside
+  `workflow_retry_scheduled` so the two kinds' telemetry stays symmetric too.
+
+  **What changes for you:** a `goal` with `retries` running under
+  `nodus serve` now defers to the sweeper the way a workflow always has,
+  instead of retrying in-process. Everywhere else — CLI, embedding, in-language
+  `run_goal` — it retries in-process as before.
+
+- **`run_workflow_code`'s `inline_retries` parameter is removed.** It existed to
+  turn on the retry loop that is now unconditional inside the runtime, and
+  passing it is no longer meaningful. Callers passing `inline_retries=True` get
+  the same behaviour by dropping the argument; callers relying on the `False`
+  default now get retries honoured, which is the fix.
 
 ### Fixes
 
@@ -104,192 +252,6 @@ embedding of Nodus.
   `VM.__init__`'s signature** and fails when one is not in that list — so a new
   sandbox knob cannot be added without every derived VM inheriting it. Covered in
   both CLI and embedded mode, per the security-boundary rule.
-
-### Added
-
-- **#405: a capability policy can now be consulted at the host boundary.**
-  Experimental, and additive — the default is no policy, and a runtime without
-  one behaves exactly as before.
-
-  ```python
-  from nodus.runtime.capability import DenyList, SUBPROCESS
-  rt = NodusRuntime(capability_policy=DenyList(SUBPROCESS))
-  ```
-
-  All three external architecture audits identified this boundary as the
-  highest-leverage change available. Stages 1–2 of the staging in
-  `CAPABILITY_POLICY_DESIGN.md`: a policy consulted at the chokepoints, denials
-  recorded, and capability metadata on `register_function`.
-
-  **Both chokepoints, not one.** That document stages builtins fourth, after host
-  functions — which would have covered nothing that matters, because
-  `subprocess_run`, `http_get` and `env_get` are *builtins* dispatched by
-  `VM.call_builtin` and never touch `_invoke_host_function`. Both are covered
-  from the start, and the policy travels with the VM so it is not shed by
-  crossing into a module or a tool handler.
-
-  What this adds over the existing `allow_subprocess` / `allow_network` /
-  `allow_env` flags, which are registration-time and binary per category:
-  per-call decisions, per-function authority via
-  `register_function(..., requires=…)`, decisions that can read the call's
-  arguments (permit `sp.run(["echo", …])`, refuse `sp.run(["hostname"])`), and a
-  **`capability_denied` event** — including for those pre-existing flags, whose
-  denials until now emitted nothing structured at all.
-
-  Only capability-bearing builtins consult the policy; `len` and `push` do not,
-  so the hot path pays one dict miss. That mapping is also the language's
-  capability surface in one readable place.
-
-  **The decision is three-valued** — `allow | ask | deny`. `ask` means *this
-  needs a human*, and an embedder supplies an `approval_channel` to answer it.
-  **`ask` with no channel is `deny`, never "run anyway"** — the alternative
-  silently turns an unanswered question into permission.
-
-  **A floor is consulted before any policy and can only restrict.** `Floor.check`
-  returns a decision to impose or abstains; there is no way for it to return
-  `allow`, so it can never grant what a policy would refuse. Built now because
-  every reference system added a bypass mode under pressure and retrofitted a
-  floor afterwards — Nodus has no bypass mode, so building it first is free.
-
-  **Not built, deliberately:** routing `ask` to the durable `workflow_wait` pause
-  (it only exists inside a step, and a capability check can happen anywhere),
-  layered rule sources, approval caching, attenuation, and deny-by-default.
-  Defaults otherwise stay permissive, so this builds the lock and leaves the door
-  open — see `docs/design/v5/02-capability-policy.md` §6–7 for what that does and
-  does not license claiming.
-
-### Changed — one behaviour change
-
-- **#405: a Nodus program can no longer write into `.nodus/`.** That directory is
-  the workflow store, graph state and bytecode cache. Until now a guest script
-  could overwrite a run record with defaults in place — verified: it wrote
-  `{"forged": true}` over `.nodus/workflow_framework/runs/<id>.json` and the run
-  reported success. That is forging durable state.
-
-  This is the default capability **floor**, and the only non-additive part of
-  #405. Reads are untouched; only writes are refused, matched on normalised path
-  segments so `my.nodus-notes.txt` is unaffected and `../.nodus/x` is not. A
-  floor that never fires would be the "check that cannot fail" this codebase
-  keeps finding, so it ships with one real rule rather than empty.
-
-- **#409: `goal … over …` — a goal can now declare a stopping condition.**
-  Experimental, and **additive**: `goal g { step … }` is unchanged.
-
-  A workflow finishes when every step has run. A goal finishes when its condition
-  holds, or its budget runs out. It contains no steps of its own — it names a
-  workflow, and watches the checkpoints that workflow records:
-
-  ```nd
-  goal reach_quality over tune {
-      until reached("good_enough")
-      budget { max_iterations: 5, deadline_ms: 30000 }
-  }
-  ```
-
-  Each pass resumes the workflow from the last checkpoint it reached, so `state`
-  carries forward and successive passes differ. `retry from "label"` pins the
-  re-entry point. `until` composes `reached("literal")` with `&&`, `||`, `!`.
-
-  This is the loop two of the three external audits said was missing — audit 02's
-  *"the plan→act→verify→replan loop is inexpressible"* and audit 01's *"no
-  representation of an objective, no predicate over world state"*. It answers the
-  **verify→replan** half; dynamic fan-out and conditional edges remain out of
-  scope, and the DAG stays lexically fixed and acyclic.
-
-  **The compiler checks the waypoints exist.** Naming a checkpoint the workflow
-  never records is a compile error, not a goal that quietly never finishes:
-
-  ```
-  Syntax error at g.nd:5:11: goal 'ship' waits on checkpoint "verifed", which
-  'deploy' never records. It records "attempted", "verified".
-  ```
-
-  That check is **exact, not best-effort**, because neither `checkpoint` nor
-  `reached` accepts a computed label — and it is the thing a library structurally
-  cannot do: a planner can watch checkpoints as they happen, but it cannot refuse
-  to start.
-
-  **`budget` is mandatory** (`max_iterations` and `deadline_ms`), and exhausting
-  it is a **failure**: the goal returns an err record
-  (`kind: "goal_error"`, `payload.category: "budget_exhausted"`, with the
-  iterations and waypoints reached) rather than a result map, so it cannot be
-  mistaken for success.
-
-  Not implemented, each of which would extend the surface: pursuing a workflow
-  declared in another module; predicates over the state *at* a checkpoint or over
-  the *order* checkpoints were reached; a cost bound. Design record and the
-  deviations from it: `docs/design/v5/01-goal-stopping-condition.md`.
-
-  **`over`, `until`, `budget`, `reached` and `retry` are contextual keywords** —
-  still usable as ordinary identifiers. The VS Code grammar was updated in the
-  same change; the extension needs republishing for the highlighting to ship.
-
-### Performance
-
-- **#398: independent steps that call agents now run concurrently.** `plan_graph`
-  identified the concurrent steps and `ready_tasks()` returned them together, and
-  then they executed strictly serially, because `action agent` was wired to the
-  synchronous `agent_call`. Measured, two 1-second agent calls in two independent
-  steps:
-
-  ```
-  before   2.44s   handler overlap -0.01s  (serial)
-  after    1.15s   handler overlap +1.01s  (parallel)
-  ```
-
-  `action agent` now dispatches the handler off the scheduler thread and suspends
-  the step until it lands — the mechanism `agent_call_async` has used since #294.
-
-  **The cause was not what the issue said**, which is why the fix is small. #398
-  reported that the async path was unavailable inside a workflow step because "a
-  workflow step **is** a graph context" and graph contexts cannot yield. They can:
-  `spawn_task` runs a step body *as a scheduler coroutine*, so calling
-  `agent_call_async` from inside a step already overlapped. Only the wiring was
-  missing.
-
-  **Behaviour change worth naming:** agent handlers for independent steps may now
-  execute on overlapping threads. A handler that was implicitly relying on being
-  called one at a time needs to be thread-safe. `action tool` is unchanged and
-  still serial.
-
-  Paired `goal_action_start`/`_complete` events are preserved, and the completion
-  is emitted when the handler finishes rather than when the call suspends — the
-  naive wiring emits it at suspend time carrying the suspension marker, and three
-  tests guard against exactly that.
-
-### Changed
-
-- **`nodus workflow-run` accepts `--time-limit <ms>`.** It was the one run command
-  without it (`run`, `check`, `debug` and `profile` all had it), and the #392 fix
-  below made the gap bite: step retries are now taken in-process, so a step with
-  `with { retries: N }` spends wall-clock budget it previously deferred out of.
-  Measured on an idle machine, three attempts of a *trivial* retrying step cost
-  ~110 ms warm and 801 ms cold — against a 200 ms default — and there was no flag
-  to raise it. Behaviour is unchanged when the flag is omitted.
-
-- **#393: `goal` and `workflow` now retry identically.** `run_task_graph`
-  branched on `execution_kind` to decide how a failed step retries — a
-  `workflow` persisted `retry_scheduled` and ended the run for a sweeper to
-  resume, a `goal` retried in-process and completed. Two constructs that lower
-  through the same function and are documented as identical differed in exactly
-  the place nobody thinks to check, and in the direction opposite to their names:
-  `goal` was the more reliable of the two for retries. The branch is gone. Both
-  kinds now take the same decision, and it is made on the one thing that
-  actually matters — see #392 below. `goal_retry_scheduled` is emitted alongside
-  `workflow_retry_scheduled` so the two kinds' telemetry stays symmetric too.
-
-  **What changes for you:** a `goal` with `retries` running under
-  `nodus serve` now defers to the sweeper the way a workflow always has,
-  instead of retrying in-process. Everywhere else — CLI, embedding, in-language
-  `run_goal` — it retries in-process as before.
-
-- **`run_workflow_code`'s `inline_retries` parameter is removed.** It existed to
-  turn on the retry loop that is now unconditional inside the runtime, and
-  passing it is no longer meaningful. Callers passing `inline_retries=True` get
-  the same behaviour by dropping the argument; callers relying on the `False`
-  default now get retries honoured, which is the fix.
-
-### Fixes
 
 - **#399: cross-process resume works for a script that reads the `run_workflow`
   result — the shape every guide example uses.** Resume in a fresh process
@@ -364,6 +326,40 @@ embedding of Nodus.
 
   The deferred path is unchanged under a running service, and is now reachable
   by goals as well (#393).
+
+### Performance
+
+- **#398: independent steps that call agents now run concurrently.** `plan_graph`
+  identified the concurrent steps and `ready_tasks()` returned them together, and
+  then they executed strictly serially, because `action agent` was wired to the
+  synchronous `agent_call`. Measured, two 1-second agent calls in two independent
+  steps:
+
+  ```
+  before   2.44s   handler overlap -0.01s  (serial)
+  after    1.15s   handler overlap +1.01s  (parallel)
+  ```
+
+  `action agent` now dispatches the handler off the scheduler thread and suspends
+  the step until it lands — the mechanism `agent_call_async` has used since #294.
+
+  **The cause was not what the issue said**, which is why the fix is small. #398
+  reported that the async path was unavailable inside a workflow step because "a
+  workflow step **is** a graph context" and graph contexts cannot yield. They can:
+  `spawn_task` runs a step body *as a scheduler coroutine*, so calling
+  `agent_call_async` from inside a step already overlapped. Only the wiring was
+  missing.
+
+  **Behaviour change worth naming:** agent handlers for independent steps may now
+  execute on overlapping threads. A handler that was implicitly relying on being
+  called one at a time needs to be thread-safe. `action tool` is unchanged and
+  still serial.
+
+  Paired `goal_action_start`/`_complete` events are preserved, and the completion
+  is emitted when the handler finishes rather than when the call suspends — the
+  naive wiring emits it at suspend time carrying the suspension marker, and three
+  tests guard against exactly that.
+
 
 ## [4.2.0] - 2026-08-15
 
