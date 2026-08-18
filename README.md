@@ -40,16 +40,23 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.0.2 closes two correctness holes worth upgrading for. `@exactly_once`
-and `@retry` were **forgeable** — their lowerings called shadowable names, so three
-lines of user code replaced the envelope the compiler had injected, and the
-annotated body never ran. The workflow lowering had the same hole via
-`workflow_state()`. Separately, the bytecode cache was not keyed on the nodus-lang
-version, so upgrading silently left cached modules compiled by the *old* compiler —
-meaning compiler fixes did not apply until `.nodus/` was cleared.
+**Recent:** 5.0.3 is seven fixes with a common shape — a guarantee that held on one
+path and not its sibling. A script ending in `main()` ran it **twice** on every run
+after the first, because the guard against that read the AST and a cached module has
+none. A directly constructed `VM()` had **no call-depth cap**, so runaway recursion
+grew until the OS killed the process instead of raising. A host **agent handler had
+no timeout at all** — every other bound in the runtime is a property of the
+instruction stream, and a host handler is not in it. And two runtimes in one process
+**shared memory**, so one request's script could read another's.
 
-**If you rely on `@exactly_once` for idempotency, upgrade.** No behaviour change for
-anyone not shadowing those names, no new syntax, no bytecode change.
+Also: `nodus check` now reports a workflow dependency cycle, resuming a run that does
+not exist says so instead of blaming a claim, and workflow runs have an owner rather
+than a process-global one.
+
+**Multi-tenant hosts should upgrade** — the shared-memory fix is the one with a
+security edge. One behaviour change to know about: each `NodusRuntime` now gets its
+own memory store; pass `share_process_state=True` if you were relying on the old
+sharing. No new syntax, no bytecode change.
 
 5.0.1 is additive — it publishes the capability surfaces embedders were previously
 reaching by scraping our source (`GATED_BUILTINS`, `active_vm()`, and a stated

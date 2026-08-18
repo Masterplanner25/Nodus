@@ -946,9 +946,15 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.0.1** (live on PyPI, published 2026-08-17). Both files must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.0.1"`
-- `pyproject.toml` — `version = "5.0.1"`
+The current published version is **v5.0.2** (live on PyPI, published 2026-08-17); **5.0.3 is
+cut and in flight**. Both files must stay in sync:
+- `src/nodus/support/version.py` — `__version__ = "5.0.3"`
+- `pyproject.toml` — `version = "5.0.3"`
+
+**This section went stale during the 5.0.2 release** — it still read 5.0.1 afterwards, because
+the release PR bumped the two version files and the CHANGELOG but not this paragraph. That is the
+third time a version string in prose has gone stale in three releases, and it is exactly what the
+note below predicts. Update it in the release PR, alongside the version bump, not afterwards.
 
 Patch releases (5.0.x) for bug fixes and stability graduations. A minor bump (5.1.0) requires a
 substantive feature addition. Never bump without a corresponding PyPI publish. If you see these
