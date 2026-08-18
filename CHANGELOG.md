@@ -4,6 +4,42 @@
 
 ### Fixes
 
+- **#453: a script ending in `main()` executed it twice on every run after the
+  first.** Silently — no error, and nothing in the output to suggest a second
+  execution:
+
+  ```
+  $ nodus run script.nd      # cold cache
+  M
+  $ nodus run script.nd      # warm cache
+  M
+  M
+  ```
+
+  `auto_run_main` exists so a script that merely *defines* `main()` still runs it,
+  and is suppressed when the module's own top level already calls `main()`. That
+  suppression read the AST and returned `False` whenever `parsed is None` — which
+  is exactly the state of a module loaded from the bytecode cache. So the guard
+  held on the first run and was bypassed on every run after it.
+
+  This codebase's recurring shape: a correct check that one path goes through and
+  a sibling path skips. The answer now travels with the bytecode
+  (`has_top_level_main_call` in the cached module metadata) instead of being
+  recomputed from an AST that is not always there. Where it is genuinely unknown,
+  the loader now assumes the top level *did* call `main` — running it once too few
+  produces a script that visibly does nothing, while once too many silently
+  repeats every side effect.
+
+  **Blast radius was wider than the issue recorded.** It was filed as "running a
+  script by path from inside a Nodus project", because a project directory is
+  where a `.nodus/` cache tends to exist. The real trigger is the warm cache, so
+  it applied to any repeated run anywhere — and doubled side effects are precisely
+  what `@exactly_once` exists to prevent, arriving by an unrelated route.
+
+  It also means **every Gate 10 before v5.0.2 read doubled eval output** without
+  noticing, because those evals compared the wheel against dev source and found
+  them byte-identical. They were: both sides doubled equally.
+
 - **#396: `nodus check` now reports a workflow dependency cycle.** It previously
   printed `OK` for a workflow whose steps depend on each other in a loop — the one
   structural property of a workflow knowable from the source alone:

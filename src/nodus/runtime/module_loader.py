@@ -85,6 +85,14 @@ class ModuleMetadata:
     export_from_specs: list[ExportFromSpec]
     module_info: ModuleInfo
     parsed: ParsedModule | None
+    # Whether the module's top level calls `main()` itself (#453).
+    #
+    # Must be carried explicitly rather than derived on demand: it is read from the
+    # AST, and a module loaded from the bytecode cache has `parsed is None`. Leaving
+    # it to be recomputed meant the cached path silently answered "no", so the
+    # loader ran `main()` a second time on top of the call the body had already
+    # made. `None` means "not yet determined" — the AST is still available.
+    has_top_level_main_call: bool | None = None
 
 
 class ModuleLoader:
@@ -319,15 +327,40 @@ class ModuleLoader:
             vm.run_closure(Closure(module.functions["main"], []), [])
 
     def _has_top_level_main_call(self, metadata: ModuleMetadata) -> bool:
+        """Does the module's own top level call `main()`?
+
+        Used to suppress `auto_run_main`, so a script that calls `main()` itself is
+        not run twice.
+
+        The recorded answer wins when present (#453). This used to read only the
+        AST and return `False` whenever `parsed is None` — which is exactly the
+        state of a module loaded from the bytecode cache. So the guard held on the
+        cold path and was bypassed on the warm one: the second and every subsequent
+        run of any script ending in `main()` executed it twice, doubling its side
+        effects with no error and no output to suggest anything was wrong.
+
+        A correct check that one path went through and a sibling path skipped —
+        the shape `CLAUDE.md` documents. The answer now travels with the bytecode
+        instead of being recomputed from an AST that is not always there.
+        """
+        if metadata.has_top_level_main_call is not None:
+            return metadata.has_top_level_main_call
         if metadata.parsed is None:
-            return False
+            # Neither a recorded answer nor an AST. Assume the top level *does*
+            # call main: running it once too few is a script that appears to do
+            # nothing, which is obvious; running it once too many silently repeats
+            # every side effect, which is not.
+            return True
+        result = False
         for stmt in metadata.parsed.ast:
             if not isinstance(stmt, ExprStmt):
                 continue
             expr = stmt.expr
             if isinstance(expr, Call) and isinstance(expr.callee, Var) and expr.callee.name == "main":
-                return True
-        return False
+                result = True
+                break
+        metadata.has_top_level_main_call = result
+        return result
 
     def _ensure_dependency_graph(self) -> DependencyGraph | None:
         if self.project_root is None:
@@ -380,6 +413,9 @@ class ModuleLoader:
     def _serialize_module_metadata(self, metadata: ModuleMetadata) -> dict[str, object]:
         return {
             "module_id": metadata.module_id,
+            # #453: carried through the cache because a cached module is never
+            # parsed, and recomputing this from a missing AST answered "no".
+            "has_top_level_main_call": bool(self._has_top_level_main_call(metadata)),
             "exports": sorted(metadata.exports),
             "import_names": sorted(metadata.import_names),
             "import_specs": [
@@ -455,6 +491,14 @@ class ModuleLoader:
             export_from_specs=export_from_specs,
             module_info=module_info,
             parsed=None,
+            # #453: recovered from the payload. `parsed` is None on this path, so
+            # without it the auto-run-main guard has nothing to read and a script
+            # ending in `main()` runs it twice on every cached run.
+            has_top_level_main_call=(
+                bool(payload["has_top_level_main_call"])
+                if isinstance(payload.get("has_top_level_main_call"), bool)
+                else None
+            ),
         )
 
     def _trace_cached_imports(self, metadata: ModuleMetadata) -> None:
