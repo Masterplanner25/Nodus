@@ -4,6 +4,56 @@
 
 ### Fixes
 
+- **#185: two `NodusRuntime` instances in one process shared guest-writable memory.**
+  `GLOBAL_MEMORY_STORE` was bound at import and shared by every runtime, so in a
+  multi-tenant host — the nodus-sdk FastAPI bridge, say — one request's script
+  could read another's. Verified before the fix:
+
+  ```python
+  rt_a.run_source('memory_put("secret", "password123")')
+  rt_b.run_source('print(memory_get("secret"))')      # -> password123
+  ```
+
+  Each runtime now gets its own store. Sharing is still available, deliberately:
+  pass `memory_store=` to hand two runtimes the same one, or
+  `share_process_state=True` to restore the previous behaviour in one word. A bare
+  `VM` and the CLI keep the process-global store — single-tenant by construction,
+  so changing them would be churn without a threat model.
+
+  **Agents are deliberately *not* isolated**, though the issue groups them with
+  memory as "similar process-level scope". They are not the same: a guest script
+  *writes* memory (`memory_put` is a builtin), but cannot register an agent at all
+  — the only agent builtins are `agent_call`, `agent_available` and
+  `agent_describe`, and registration is host-only from Python. So a shared agent
+  registry holds what the *host* put there, and isolating it by default would break
+  the ordinary `register_agent(...)` then `run_source(...)` flow — it broke 11
+  existing tests when tried — to prevent a leak guests have no way to cause. Hosts
+  that do want per-tenant agent sets pass `agent_registry=`.
+
+- **#390: workflow state was process-global with no owner.** Every workflow builtin
+  resolved the runner through `get_default_workflow_runner()`, so the VM had no
+  handle on which runner it belonged to, and any two participants in a process — a
+  service, an embedded runtime, a test — shared one store, one graph registry and
+  one sweeper thread with no way to tell whose run was whose.
+
+  Four separate bugs in #376 traced back to this, and each was fixed with a
+  *timing* defence (`min_idle_ms`, claim-before-rehydrate) against a *structural*
+  problem. Ownership makes the class unreachable rather than individually
+  patchable: a sweeper that can only see its own runner's runs cannot adopt
+  someone else's.
+
+  A VM now resolves its runner from context (`VM.resolve_workflow_runner()`), and
+  `RuntimeService` threads its own runner into every VM it builds — previously
+  eight separate `VM(...)` constructions, now one factory, so a ninth call site
+  cannot forget. `NodusRuntime(workflow_runner=…)` injects one for embedded use.
+
+  The fallback is kept: a VM with no runner uses the process-global one, so a bare
+  embedded runtime and the CLI behave exactly as before and no embedding API
+  breaks. Tests assert on the *source* as well as the behaviour — a sixth builtin
+  reaching for the global directly fails the suite, which a behaviour test would
+  not catch while the other five stayed routed.
+
+
 - **#424: a host agent handler could hang the run forever.** `call_agent` invoked
   the registered handler with no deadline of any kind, so a hung HTTP call, a model
   provider that never responds, or a `while True` blocked the run indefinitely.

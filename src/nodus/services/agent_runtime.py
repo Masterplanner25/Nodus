@@ -11,8 +11,25 @@ from nodus.vm.runtime_values import clone_json_value, is_json_safe, payload_keys
 AGENT_REGISTRY: dict[str, dict] = {}
 
 
-def register_agent(name: str, handler, *, description: str | None = None, payload_schema: dict | None = None) -> None:
-    AGENT_REGISTRY[name] = {
+def get_registry(vm=None) -> dict:
+    """The agent registry that applies to this VM (#185).
+
+    Mirrors `memory_runtime.get_store(vm)`: a VM may carry its own registry, and
+    falls back to the process-global one when it does not. Without this, every
+    `NodusRuntime` in a process shared one registry — verified before the fix, a
+    second runtime could both see *and call* an agent the first had registered,
+    which for a multi-tenant host is a cross-tenant capability leak rather than
+    merely shared state.
+    """
+    registry = getattr(vm, "agent_registry", None) if vm is not None else None
+    if isinstance(registry, dict):
+        return registry
+    return AGENT_REGISTRY
+
+
+def register_agent(name: str, handler, *, description: str | None = None, payload_schema: dict | None = None, registry: dict | None = None) -> None:
+    target = AGENT_REGISTRY if registry is None else registry
+    target[name] = {
         "handler": handler,
         "spec": {
             "name": name,
@@ -22,18 +39,18 @@ def register_agent(name: str, handler, *, description: str | None = None, payloa
     }
 
 
-def unregister_agent(name: str) -> None:
-    AGENT_REGISTRY.pop(name, None)
+def unregister_agent(name: str, *, registry: dict | None = None) -> None:
+    (AGENT_REGISTRY if registry is None else registry).pop(name, None)
 
 
-def available_agents() -> list[str]:
-    return sorted(AGENT_REGISTRY.keys())
+def available_agents(vm=None) -> list[str]:
+    return sorted(get_registry(vm).keys())
 
 
-def describe_agent(name: str):
+def describe_agent(name: str, vm=None):
     if not isinstance(name, str):
         return None
-    entry = AGENT_REGISTRY.get(name)
+    entry = get_registry(vm).get(name)
     if entry is None:
         return None
     return dict(entry["spec"])
@@ -175,7 +192,7 @@ def call_agent(name, payload, *, vm=None) -> dict:
         return _agent_error("Agent payload must be JSON-safe", filename, name=name)
 
     _emit(vm, "agent_call_start", name=name, payload=payload)
-    entry = AGENT_REGISTRY.get(name)
+    entry = get_registry(vm).get(name)
     if entry is None:
         result = _agent_error(f"No handler registered for agent '{name}'", filename, name=name)
         _emit(vm, "agent_call_fail", name=name, payload=payload, ok=False, error=_error_message(result))

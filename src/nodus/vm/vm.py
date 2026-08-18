@@ -236,6 +236,13 @@ class VM:
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.memory_store = GLOBAL_MEMORY_STORE
+        # Per-VM agent registry (#185). None = fall back to the process-global
+        # one, which is what the CLI and a bare VM want. `NodusRuntime` installs
+        # its own so two runtimes in a process cannot see each other's agents.
+        self.agent_registry: dict | None = None
+        # The workflow runner this VM belongs to (#390). None = fall back to the
+        # process-global one, which is what the CLI and a bare VM want.
+        self.workflow_runner = None
         self.effect_store = InMemoryEffectStore()
         self.circuit_breakers: dict = {}
         self.session_id: str | None = None
@@ -1195,6 +1202,25 @@ class VM:
             "status": "", "wait": {}, "retry": {}, "error": "",
         }
 
+    def resolve_workflow_runner(self):
+        """The workflow runner that owns this VM's runs (#390).
+
+        Every workflow builtin used to call `get_default_workflow_runner()`
+        directly, so the VM had no handle on which runner it belonged to and any
+        two participants in a process — a service, an embedded runtime, a test —
+        shared one store, one graph registry and one sweeper thread with no way to
+        tell whose run was whose. Four separate bugs in #376 traced back to that,
+        and each was fixed with a timing defence rather than by ownership.
+
+        Resolving from the VM keeps the fallback intact: a bare VM or the CLI still
+        gets the process-global runner, so nothing that worked before changes.
+        """
+        if self.workflow_runner is not None:
+            return self.workflow_runner
+        from nodus_lang_workflow.runner import get_default_workflow_runner
+
+        return get_default_workflow_runner()
+
     def builtin_run_workflow(self, workflow):
         if not is_workflow_value(workflow):
             self.runtime_error("type", "run_workflow(workflow) expects a workflow")
@@ -1205,8 +1231,7 @@ class VM:
             # effects), which is the bug this guard fixes. Skip it.
             return self._suppressed_flow_result()
         graph = workflow_to_graph(self, workflow, init_state=True)
-        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
-        return get_default_workflow_runner().start_graph(self, graph)
+        return self.resolve_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_workflow(self, workflow):
         if not is_workflow_value(workflow):
@@ -1272,8 +1297,7 @@ class VM:
         if resume_payload is not None and not isinstance(resume_payload, dict):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects payload as map or nil")
         target = self._resume_target_vm(graph_id)
-        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
-        return get_default_workflow_runner().resume_workflow(
+        return self.resolve_workflow_runner().resume_workflow(
             target,
             graph_id,
             checkpoint,
@@ -1321,8 +1345,6 @@ class VM:
         re-executes forward carrying the state captured at that checkpoint. No new
         execution mode is involved — that mechanism has been there all along.
         """
-        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
-
         if getattr(self, "_suppress_flow_execution", False):
             return self._suppressed_flow_result()   # resume-rebuild (#322/#399)
 
@@ -1343,7 +1365,7 @@ class VM:
         retry_from = pursuit.get("retry_from")
 
         started_at = runtime_time_ms()
-        runner = get_default_workflow_runner()
+        runner = self.resolve_workflow_runner()
         reached: set[str] = set()
         history: list[str] = []
         iterations = 0
@@ -1443,8 +1465,7 @@ class VM:
         if getattr(self, "_suppress_flow_execution", False):
             return self._suppressed_flow_result()   # resume-rebuild — see run_workflow (#322)
         graph = workflow_to_graph(self, goal, init_state=True)
-        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
-        return get_default_workflow_runner().start_graph(self, graph)
+        return self.resolve_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_goal(self, goal):
         if not is_goal_value(goal):
@@ -1464,8 +1485,7 @@ class VM:
         if checkpoint is not None and not isinstance(checkpoint, str):
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
         target = self._resume_target_vm(graph_id)
-        from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
-        return get_default_workflow_runner().resume_workflow(
+        return self.resolve_workflow_runner().resume_workflow(
             target,
             graph_id,
             checkpoint,
@@ -1942,12 +1962,12 @@ class VM:
         return self._run_goal_action("emit", name, lambda: self.builtin_emit(name, payload))
 
     def builtin_agent_available(self):
-        return available_agents()
+        return available_agents(self)
 
     def builtin_agent_describe(self, name):
         if not isinstance(name, str):
             self.runtime_error("type", "agent_describe(name) expects a string")
-        return describe_agent(name)
+        return describe_agent(name, self)
 
     # Backward-compatible wrappers for methods accessed directly in tests or
     # internal callers (e.g. scheduler.py).
