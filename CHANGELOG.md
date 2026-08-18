@@ -4,6 +4,47 @@
 
 ### Fixes
 
+- **#424: a host agent handler could hang the run forever.** `call_agent` invoked
+  the registered handler with no deadline of any kind, so a hung HTTP call, a model
+  provider that never responds, or a `while True` blocked the run indefinitely.
+
+  Every other bound in this runtime is a property of the **instruction stream**,
+  and a host handler is not in it. Measured with the same step option and the same
+  value:
+
+  | `step … with { timeout_ms: 500 }` | elapsed |
+  |---|---|
+  | around a pure-Nodus busy loop | **0.59 s** — bounded |
+  | around a handler blocking 3 s | **3.76 s** — not bounded |
+
+  Worse than merely absent: the blocked step *did* fail as timed-out, but only
+  after the handler ran to completion. The bound was **reported without being
+  enforced**.
+
+  A deadline now applies, from the tightest of two sources: the step's existing
+  `timeout_ms` (minus what the step has already spent), and a new runtime-level
+  default, `NodusRuntime(agent_timeout_ms=…)`, for `agent_call()` made outside any
+  step. No new per-step syntax — the knob users already reach for now does what it
+  says. Same handler, before and after: **3.50 s → 0.34 s**.
+
+  **What this does not do, stated plainly.** Arbitrary Python cannot be preempted.
+  The handler runs on a daemon thread and the caller stops waiting at the deadline;
+  the handler itself keeps running and cannot be cancelled. The *run* becomes
+  bounded, which is the property that was missing. The thread is not reclaimed,
+  which is the price — so abandoned handlers are recorded and countable
+  (`abandoned_agent_calls()`, `abandoned_agent_call_count()`), and the record is
+  itself bounded to 100 entries, because an unbounded one would be this same defect
+  one level up.
+
+  A timeout is reported as an ordinary agent failure, so a step's `retries` and the
+  retry classifier act on it exactly as they do on any other. Unbounded remains the
+  default: nothing changes for a host that does not ask for a deadline.
+
+  Note this is **not** covered by `goal … over … { budget { deadline_ms } }`.
+  That budget is evaluated between iterations, after the workflow hands control
+  back — verified: a 0.5 s budget over a 3 s handler still took 3.10 s.
+
+
 - **#387: a directly constructed `VM()` had no call-depth cap.** `max_frames` now
   defaults to `MAX_STACK_DEPTH` (10,000) instead of `None`, matching what the CLI,
   the HTTP server and `NodusRuntime` all already install.

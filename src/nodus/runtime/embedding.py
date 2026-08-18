@@ -241,6 +241,7 @@ class NodusRuntime:
         allow_subprocess: bool = False,
         allow_network: bool = False,
         allow_env: bool = False,
+        agent_timeout_ms: int | float | None = None,
         capability_policy: "CapabilityPolicy | None" = None,
         approval_channel: "ApprovalChannel | None" = None,
         allowed_commands: list[str] | None = None,
@@ -372,6 +373,10 @@ class NodusRuntime:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        # Default deadline for host agent handlers (#424). None = unbounded,
+        # which is the pre-existing behaviour. A step's `timeout_ms` still wins
+        # when tighter; this covers agent_call() made outside any step.
+        self.agent_timeout_ms = agent_timeout_ms
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
@@ -806,6 +811,9 @@ class NodusRuntime:
         # consult it without reaching back into the embedding layer.
         vm.capability_policy = self.capability_policy
         vm.approval_channel = self.approval_channel
+        # #424: the default agent deadline rides on the VM for the same reason —
+        # `call_agent` is handed the VM and nothing else.
+        vm.agent_timeout_ms = self.agent_timeout_ms
         if not self.allow_input:
             vm.input_fn = self._blocked_input
         if debugger is not None:

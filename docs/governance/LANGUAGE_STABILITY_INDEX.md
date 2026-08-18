@@ -100,6 +100,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `run_source(source, ...)` | Stable | Returns `{"ok", "stdout", "stderr", "error"}` |
 | `run_file(path, ...)` | Stable | |
 | `register_function(name, fn, arity)` | Stable | |
+| `agent_timeout_ms` constructor param | Mostly Stable | Added post-5.0.2 (#424). Default deadline for host agent handlers; `None` (unbounded) preserves prior behaviour. A step's `timeout_ms` wins when tighter. Bounds the *wait*, not the handler — an over-deadline handler keeps running on a daemon thread |
 | `register_function` refusing builtin names | Stable | Raises `ValueError` for any builtin name. A security boundary for hosts installing fail-loud guards under a guest-reachable name; pinned by `tests/test_downstream_contracts.py`, not only documented |
 | `active_vm()` | Mostly Stable | Added v5.0.1. The **accessor** is supported; the `VM` it returns is Internal and its attributes are not. `_get_active_vm()` retained as an alias for existing pinners |
 | `NodusRuntime.__init__` taking no `**kwargs` | Stable | Deliberate: with a catch-all, a renamed confinement flag would be silently swallowed and the guest would run unconfined. A rename must raise `TypeError` so the embedder fails closed |
