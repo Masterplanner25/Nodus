@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.0.3] - 2026-08-17
+
 ### Fixes
 
 - **#185: two `NodusRuntime` instances in one process shared guest-writable memory.**

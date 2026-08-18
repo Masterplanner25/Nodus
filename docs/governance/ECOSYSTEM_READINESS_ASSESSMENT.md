@@ -10,7 +10,7 @@
 ## Summary
 
 The Nodus ecosystem is **published, real, and awaiting real-world validation.**
-nodus-lang is at **v4.1.1** (current stable on PyPI). The ecosystem spans **32 standalone
+nodus-lang is at **v5.0.2** (current stable on PyPI; 5.0.3 in flight). The ecosystem spans **32 standalone
 companion packages** — 33 PyPI projects counting nodus-lang itself — all published under
 Masterplanner25. The coordinated launch is
 complete. No package has yet seen significant real-world traffic; that is the honest
