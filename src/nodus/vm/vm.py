@@ -220,6 +220,10 @@ class VM:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        # Default deadline for host agent handlers, ms (#424). None = unbounded.
+        # A step's `timeout_ms` still wins when tighter; this covers agent_call()
+        # made outside any step, where there is no step budget to inherit.
+        self.agent_timeout_ms: float | None = None
         # #405. `None` means no policy — the default, and a single attribute test
         # on the dispatch path rather than a call into an allow-everything object.
         self.capability_policy: "CapabilityPolicy | None" = None
