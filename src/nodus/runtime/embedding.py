@@ -398,12 +398,25 @@ class NodusRuntime:
         # store or registry explicitly lets two runtimes share deliberately.
         from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE
 
+        # Stored privately, and deliberately NOT as `self.memory_store` (#185).
+        #
+        # `memory_store` is already a public name downstream meaning something else:
+        # `nodus_sdk.NodusSDKRuntime` subclasses this and defines `memory_store` as
+        # a read-only property returning *its* vector store. Assigning the attribute
+        # here raised `AttributeError: property 'memory_store' ... has no setter` and
+        # broke every construction of that subclass — caught by the v5.0.3 Stage 6
+        # sweep, after 5.0.3 had shipped.
+        #
+        # Two lessons, both cheap to honour: a base class adding a public attribute
+        # can break a subclass that made the same name a property, and picking a name
+        # already used downstream for a different concept invites exactly that. The
+        # VM-side name stays `vm.memory_store`, which is fine — nothing subclasses VM.
         if memory_store is not None:
-            self.memory_store = memory_store
+            self._memory_store = memory_store
         elif share_process_state:
-            self.memory_store = GLOBAL_MEMORY_STORE
+            self._memory_store = GLOBAL_MEMORY_STORE
         else:
-            self.memory_store = MemoryStore()
+            self._memory_store = MemoryStore()
 
         # Agents are deliberately NOT isolated by default, unlike memory above.
         #
@@ -862,7 +875,7 @@ class NodusRuntime:
         # #424: the default agent deadline rides on the VM for the same reason —
         # `call_agent` is handed the VM and nothing else.
         vm.agent_timeout_ms = self.agent_timeout_ms
-        vm.memory_store = self.memory_store
+        vm.memory_store = self._memory_store
         vm.agent_registry = self.agent_registry
         vm.workflow_runner = self.workflow_runner
         if not self.allow_input:

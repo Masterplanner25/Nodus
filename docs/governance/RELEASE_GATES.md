@@ -221,6 +221,34 @@ Gate 4): that stage evaluates "does this work as a new user would expect?" This 
 
 **Protocol:**
 
+0. **Run every dependent suite — before the upload, not after.**
+
+   ```powershell
+   PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+     "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+     -m tools.check_dependent_suites
+   ```
+
+   Exit 0 means every companion still passes against this tree. Exit 1 lists the
+   ones that do not; exit 2 means a checkout was missing, which is not a pass — an
+   unrun suite covers nothing.
+
+   > **This step exists because v5.0.3 shipped without it.** A change to
+   > `NodusRuntime.__init__` assigned `self.memory_store`, and
+   > `nodus_sdk.NodusSDKRuntime` subclasses it with `memory_store` as a *read-only
+   > property* holding its own vector store. Every construction of that subclass
+   > raised `AttributeError: ... has no setter`; nodus-sdk went from 99 passed to
+   > 29 failed and 10 errors.
+   >
+   > Gate 10 validates nodus-lang **against itself** and passed cleanly — 32
+   > adversarial probes, all green. Stage 6 runs the dependents and caught it, but
+   > Stage 6 is **post-publish**, and PyPI is immutable. The break was found one
+   > release too late and needed 5.0.4.
+   >
+   > The lesson generalises beyond that bug: a base class adding a public attribute
+   > can break a subclass that made the same name a property, and no amount of
+   > testing nodus-lang against nodus-lang will reveal it.
+
 1. Build the wheel: `python -m build`
 2. Install in a **clean virtualenv** (not the dev venv):
    ```powershell

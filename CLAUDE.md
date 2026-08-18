@@ -946,10 +946,15 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.0.2** (live on PyPI, published 2026-08-17); **5.0.3 is
+The current published version is **v5.0.3** (live on PyPI, published 2026-08-17); **5.0.4 is
 cut and in flight**. Both files must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.0.3"`
-- `pyproject.toml` — `version = "5.0.3"`
+- `src/nodus/support/version.py` — `__version__ = "5.0.4"`
+- `pyproject.toml` — `version = "5.0.4"`
+
+**Do not install 5.0.3 alongside `nodus-sdk`** — it assigns a `memory_store` attribute that
+`NodusSDKRuntime` defines as a read-only property, so every construction of that subclass
+raises. Fixed in 5.0.4. Gate 10 now runs every dependent suite *before* the upload
+(`tools/check_dependent_suites.py`), which is the check that would have caught it.
 
 **This section went stale during the 5.0.2 release** — it still read 5.0.1 afterwards, because
 the release PR bumped the two version files and the CHANGELOG but not this paragraph. That is the
