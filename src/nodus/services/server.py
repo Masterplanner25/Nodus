@@ -381,6 +381,23 @@ class RuntimeService:
         self._sweeper_thread = threading.Thread(target=self._worker_sweeper_loop, daemon=True)
         self._sweeper_thread.start()
 
+    def _new_vm(self):
+        """A VM that knows which service it belongs to (#390).
+
+        Every VM the service builds used to resolve the workflow runner from module
+        state, so a service, an embedded runtime and a test in one process shared a
+        store, a graph registry and a sweeper with no way to tell whose run was
+        whose. Four bugs in #376 came out of that, each fixed with a timing defence
+        (`min_idle_ms`, claim-before-rehydrate) rather than by ownership.
+
+        Threading the runner here is the ownership half. It is the same move as
+        `memory_store` and `agent_registry` (#185): the VM asks its own context
+        instead of reaching for a process global.
+        """
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm.workflow_runner = self.workflow_runner
+        return vm
+
     def _worker_sweeper_loop(self):
         while not self._stop_event.is_set():
             self.workers.sweep()
@@ -402,7 +419,7 @@ class RuntimeService:
             self.workers._cond.notify_all()
 
     def _workflow_vm_factory(self, _record=None) -> VM:
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         return vm
@@ -504,7 +521,7 @@ class RuntimeService:
             self.sessions.record_execution(session)
             self.last_vm = vm
             return result
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_graph_code(vm, code, filename, trace=self.trace)
@@ -587,7 +604,7 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, result.get("plan", {}).get("graph_id")))
             return result
-        plan_vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        plan_vm = self._new_vm()
         self._apply_runtime_policies(plan_vm)
         result, vm = plan_graph_code(plan_vm, code, filename, trace=self.trace)
         if vm is not None:
@@ -622,7 +639,7 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self.last_vm or self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = resume_graph_in_vm(vm, graph_id)
         if vm is not None:
@@ -638,7 +655,7 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
@@ -652,7 +669,7 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = plan_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
         if vm is not None:
@@ -665,7 +682,7 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
         result, vm = run_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
@@ -679,7 +696,7 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = plan_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
         if vm is not None:
@@ -725,7 +742,7 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self.last_vm or self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = resume_workflow_in_vm(
             vm,
@@ -824,7 +841,7 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self.last_vm or self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = replay_workflow_in_vm(
             vm,
@@ -868,7 +885,7 @@ class RuntimeService:
             if result.get("ok"):
                 result.update(self._graph_metadata(vm, graph_id))
             return result
-        vm = self.last_vm or VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self.last_vm or self._new_vm()
         self._apply_runtime_policies(vm)
         result, vm = resume_goal_in_vm(vm, graph_id, checkpoint)
         if vm is not None:
@@ -921,7 +938,7 @@ class RuntimeService:
         return memory_delete_result(key, vm=self.last_vm)
 
     def create_session(self):
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = self._new_vm()
         self._apply_runtime_policies(vm)
         session = self.sessions.create(vm)
         return {"session": session.id}

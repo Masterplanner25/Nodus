@@ -16,6 +16,7 @@ from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.runtime.capability import ALL_CAPABILITIES, ApprovalChannel, CapabilityPolicy
+from nodus.services.memory_runtime import MemoryStore
 from nodus.vm.vm import VM
 from nodus.vm.types import Record, Closure
 
@@ -242,6 +243,10 @@ class NodusRuntime:
         allow_network: bool = False,
         allow_env: bool = False,
         agent_timeout_ms: int | float | None = None,
+        memory_store: "MemoryStore | None" = None,
+        agent_registry: dict | None = None,
+        share_process_state: bool = False,
+        workflow_runner=None,
         capability_policy: "CapabilityPolicy | None" = None,
         approval_channel: "ApprovalChannel | None" = None,
         allowed_commands: list[str] | None = None,
@@ -377,6 +382,49 @@ class NodusRuntime:
         # which is the pre-existing behaviour. A step's `timeout_ms` still wins
         # when tighter; this covers agent_call() made outside any step.
         self.agent_timeout_ms = agent_timeout_ms
+        # Per-runtime memory and agent state (#185).
+        #
+        # Both used to be process-global, so two runtimes in one process shared
+        # them: verified before the fix, runtime B read runtime A's
+        # `memory_put("secret", ...)`, and a second runtime could both see *and
+        # call* an agent the first had registered. For a multi-tenant host — the
+        # nodus-sdk FastAPI bridge, say — that is a cross-tenant leak, not merely
+        # surprising state.
+        #
+        # Isolated by default, matching the call 5.0.0 made for capabilities
+        # (#405): the safe reading of an ambiguous default is the one that does not
+        # silently cross a tenant boundary. `share_process_state=True` restores the
+        # old behaviour in one word for anyone who was relying on it, and passing a
+        # store or registry explicitly lets two runtimes share deliberately.
+        from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE
+
+        if memory_store is not None:
+            self.memory_store = memory_store
+        elif share_process_state:
+            self.memory_store = GLOBAL_MEMORY_STORE
+        else:
+            self.memory_store = MemoryStore()
+
+        # Agents are deliberately NOT isolated by default, unlike memory above.
+        #
+        # #185 treats the two as one defect ("similar process-level scope"). They
+        # are not. A guest script can *write* memory — `memory_put` is a builtin —
+        # so a shared store is a channel one tenant's script can push data through
+        # to another's. A guest cannot register an agent at all: the only agent
+        # builtins are `agent_call`, `agent_available` and `agent_describe`, and
+        # registration is host-only, from Python.
+        #
+        # So a shared agent registry holds what the *host* put there, and isolating
+        # it by default would break the ordinary `register_agent(...)` then
+        # `run_source(...)` flow to prevent a leak guests cannot cause. Hosts that
+        # do want per-tenant agent sets pass one explicitly.
+        self.agent_registry: dict | None = agent_registry
+        # #390: the runner this runtime's workflow runs belong to. None keeps the
+        # process-global one, which is the pre-existing behaviour and what a bare
+        # embedded runtime wants. A host running several runtimes in one process
+        # can give each its own so their stores, graph registries and sweepers do
+        # not overlap.
+        self.workflow_runner = workflow_runner
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
@@ -814,6 +862,9 @@ class NodusRuntime:
         # #424: the default agent deadline rides on the VM for the same reason —
         # `call_agent` is handed the VM and nothing else.
         vm.agent_timeout_ms = self.agent_timeout_ms
+        vm.memory_store = self.memory_store
+        vm.agent_registry = self.agent_registry
+        vm.workflow_runner = self.workflow_runner
         if not self.allow_input:
             vm.input_fn = self._blocked_input
         if debugger is not None:
