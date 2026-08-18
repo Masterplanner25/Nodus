@@ -129,5 +129,45 @@ class AgentRegistryTests(unittest.TestCase):
             rt.shutdown()
 
 
+class SubclassSafetyTests(unittest.TestCase):
+    """A subclass may already use `memory_store` for something else (#185 follow-up).
+
+    `nodus_sdk.NodusSDKRuntime` subclasses `NodusRuntime` and defines
+    `memory_store` as a **read-only property** returning its own vector store — a
+    different concept from Nodus script memory. The first version of #185 assigned
+    `self.memory_store` in `__init__`, which raised
+
+        AttributeError: property 'memory_store' of 'NodusSDKRuntime' object has no setter
+
+    and broke *every* construction of that subclass. It shipped in 5.0.3 and was
+    caught by the Stage 6 sweep, after publication.
+
+    Two lessons worth keeping: a base class adding a public attribute can break a
+    subclass that made the same name a property, and taking a name already used
+    downstream for a different concept is how you end up there.
+    """
+
+    def test_a_subclass_may_define_memory_store_as_a_read_only_property(self):
+        class HostRuntime(NodusRuntime):
+            @property
+            def memory_store(self):          # noqa: D401 - mirrors nodus-sdk
+                return "the host's own store"
+
+        rt = HostRuntime(timeout_ms=None)
+        try:
+            self.assertEqual(rt.memory_store, "the host's own store")
+            rt.run_source('memory_put("k", "v")', filename="t.nd")
+            self.assertEqual(read_back(rt), "v", "Nodus memory must still work")
+        finally:
+            rt.shutdown()
+
+    def test_the_runtime_keeps_its_store_privately(self):
+        rt = NodusRuntime(timeout_ms=None)
+        try:
+            self.assertIsInstance(rt._memory_store, MemoryStore)
+        finally:
+            rt.shutdown()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,7 +40,12 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.0.3 is seven fixes with a common shape — a guarantee that held on one
+**Recent:** 5.0.4 repairs one thing 5.0.3 broke — constructing a
+`nodus_sdk.NodusSDKRuntime` raised, because 5.0.3 assigned a `memory_store`
+attribute that subclass already defines as a read-only property. **If you use
+`nodus-sdk`, skip 5.0.3.**
+
+5.0.3 is seven fixes with a common shape — a guarantee that held on one
 path and not its sibling. A script ending in `main()` ran it **twice** on every run
 after the first, because the guard against that read the AST and a cached module has
 none. A directly constructed `VM()` had **no call-depth cap**, so runaway recursion

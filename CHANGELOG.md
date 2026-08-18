@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [5.0.4] - 2026-08-17
+
+### Fixes
+
+- **5.0.3 broke `nodus-sdk` at construction.** `NodusRuntime.__init__` assigned
+  `self.memory_store` (#185), and `nodus_sdk.NodusSDKRuntime` subclasses it with
+  `memory_store` as a **read-only property** returning its own vector store — a
+  different concept from Nodus script memory. Every construction raised:
+
+  ```
+  AttributeError: property 'memory_store' of 'NodusSDKRuntime' object has no setter
+  ```
+
+  nodus-sdk went from 99 passed to **29 failed, 10 errors**. The store is now held
+  privately as `_memory_store`, leaving the public name free; nodus-sdk is back to
+  99 passed with no change needed on its side, so the fix reaches users through a
+  nodus-lang release rather than requiring every companion to move.
+
+  Two things worth keeping from it: a base class adding a public attribute can
+  break a subclass that made the same name a property, and taking a name already
+  used downstream for a different concept is how you get there.
+
+### Tooling
+
+- **`tools/check_dependent_suites.py`, and Gate 10 now runs it before the upload.**
+  Gate 10 validates nodus-lang against itself and passed 5.0.3 cleanly — 32
+  adversarial probes, all green. Nothing in it executes a *dependent*. Stage 6
+  does, and caught this, but Stage 6 is post-publish and PyPI is immutable, so the
+  break was found one release too late.
+
+  Running the six dependent suites is now step 0 of Gate 10. A missing checkout
+  exits 2 rather than passing: an unrun suite covers nothing.
+
+
 ## [5.0.3] - 2026-08-17
 
 ### Fixes
