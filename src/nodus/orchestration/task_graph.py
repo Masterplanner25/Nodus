@@ -485,35 +485,17 @@ def _workflow_wait_info(value) -> dict | None:
 
 
 def _detect_cycle_task_ids(tasks: list, results: dict) -> list[str] | None:
-    adj = {t.task_id: [dep.task_id for dep in t.dependencies] for t in tasks}
-    visited: set[str] = set()
-    path: list[str] = []
-    path_set: set[str] = set()
+    """Return one dependency cycle as task ids, or None.
 
-    def dfs(node: str) -> list[str] | None:
-        if node in path_set:
-            start = path.index(node)
-            return path[start:]
-        if node in visited:
-            return None
-        visited.add(node)
-        path.append(node)
-        path_set.add(node)
-        for dep in adj.get(node, []):
-            found = dfs(dep)
-            if found is not None:
-                return found
-        path.pop()
-        path_set.discard(node)
-        return None
+    Delegates to `support.graph_cycles.detect_cycle` so the parser (#396) and the
+    runtime (#323) cannot disagree about what counts as a cycle. `results` is
+    unused and kept for call-site compatibility.
+    """
+    from nodus.support.graph_cycles import detect_cycle
 
-    for task in tasks:
-        if task.task_id not in results:
-            found = dfs(task.task_id)
-            if found is not None:
-                return found
-    return None
-
+    return detect_cycle(
+        {t.task_id: [dep.task_id for dep in t.dependencies] for t in tasks}
+    )
 
 def _retry_is_swept() -> bool:
     """Is a sweeper registered to resume runs deferred to ``retry_scheduled``?
