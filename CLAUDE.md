@@ -14,12 +14,14 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The `.venv` install was 4.0.8 — five releases behind — until 2026-08-17**, when the Stage 6
-sweep upgraded it to 5.0.0. So it currently matches `src/`, and the usual symptom of forgetting
-`PYTHONPATH` (behaviour from an old release) will not appear until the next version bump. Do not
-read "the versions match today" as "the prefix is optional": the moment `src/` moves ahead, the
-gap is silent again. **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting
-this paragraph.**
+**The gap is live: `.venv` is at 5.0.0, `src/` is at 5.0.4** (checked 2026-08-17, end of the
+5.0.4 cut). Forgetting the prefix gets you four-releases-old behaviour — no `@exactly_once`
+forgery fix, no call-depth cap, doubled `main()` on cached runs. The symptom is behaviour that
+contradicts the code you are reading.
+
+**Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
+has been wrong in both directions. Do not read "the versions match today" as "the prefix is
+optional" either; the moment `src/` moves ahead the gap is silent again.
 
 ## GitHub API
 
@@ -88,8 +90,24 @@ Release order — the whole sequence, not just the publish half:
 5. Commit, PR, CI, merge
 6. `git tag vX.Y.Z` → `git push origin vX.Y.Z`
 7. Build the wheel **from the tagged tree**
-8. **Gate 10** — adversarial validation against that wheel in a clean venv →
-   write `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`
+8. **Gate 10.** Two parts, and the first one is not optional:
+
+   a. **Run every dependent suite — before the upload.**
+      ```powershell
+      PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+        "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_dependent_suites
+      ```
+      Exit 2 means a checkout was missing — not a pass; an unrun suite covers nothing.
+
+      **5.0.3 shipped without this and broke `nodus-sdk` at construction.** #185 assigned
+      `self.memory_store` on `NodusRuntime`, and `NodusSDKRuntime` subclasses it with
+      `memory_store` as a read-only property. Gate 10 passed with **32 green adversarial
+      probes**, because it validates nodus-lang *against itself* and nothing in it
+      constructs a dependent. Stage 6 caught it — post-publish, against an immutable
+      PyPI — and it cost a 5.0.4.
+
+   b. Adversarial validation against the wheel in a clean venv →
+      write `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`
 9. Upload to PyPI
 10. **Stage 5** — install the *published* package in a fresh venv and check it works
     as a new user would expect → write `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md`
@@ -171,6 +189,8 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Release playbook | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Skills | `.claude/commands/` |
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
+| Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload |
+| Downstream range check | `tools/check_downstream_constraints.py` — Stage 6 step 1; resolves *published* metadata |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
 | Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
@@ -215,13 +235,30 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,140 tests collected** (2026-08-17, during the 5.0.1 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
+**2,216 tests collected** (2026-08-17, at the 5.0.4 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
 that figure was measured 2026-08-07 at 1,878 tests and has **not** been re-measured since the
 v5.0.0 work, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
 
 **Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
 - `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
+
+**Never run two suites at once — they share `.nodus/` and corrupt each other.**
+
+The workflow store, graph registry and bytecode cache all live under the repo-root `.nodus/`,
+CWD-relative. A background full-suite run and a foreground targeted run therefore write the same
+files. The result looks exactly like a real race: `PermissionError: [WinError 5] Access is denied`
+on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing each run**.
+
+This bit twice in one session, and both times the first reading was "the #376 race class is back."
+It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
+your own change, check whether anything else is running: `TaskStop` the background job, then
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 239 blocks and writes to
+the store) — do not run it alongside the suite.
+
+**How much of the "flaky machine" is actually this is not established.** Two clean full-suite runs
+on 2026-08-17 (2,214 passed / 0 failed in 7m47s, and 2,213 / 3 in 10m11s) bracket a lot of noisy
+runs that had something else running alongside them.
 
 **The local suite was unreliable on this machine during the v5.0.0 cut (2026-08-16/17).**
 Subprocess-based tests with 10 s timeouts failed intermittently, naming a *different* test each
@@ -371,20 +408,11 @@ what a command does is safe.
 times (#1/#2, #268, #345, #353): each new subcommand shipped unguarded until someone
 noticed. The ten per-command guards were deleted with the fix.
 
-What it used to do, through v4.1.1. The `.venv` install is now 5.0.0, so this is history rather
-than a live hazard here — but it is still live for **any pinned-older environment**, and the
-`nodus logout --help` row is the reason to check before running `--help` against an unknown build:
-
-| Command | What `--help` did |
-|---|---|
-| `nodus logout --help` | **Performed the logout.** Deleted the saved registry token from `~/.nodus/config.toml` |
-| `nodus publish --help` | Crashed with an unhandled traceback |
-| `nodus login --help` | Blocked waiting on stdin |
-| `install` / `add` / `remove` / `update` / `deps` / `test` | Ran for real |
-
-This bit a session on 2026-08-06: `nodus logout --help`, run to read the help text,
-deleted the user's registry token. `~/.pypirc` was unaffected. If you need to check
-against an installed build, use a throwaway `HOME`/`USERPROFILE`.
+**Still live for any pinned-older environment (through v4.1.1).** There, `--help` *ran the
+command*: `nodus logout --help` deleted the saved registry token from `~/.nodus/config.toml`
+(this happened, 2026-08-06); `publish` crashed; `login` blocked on stdin; `install` / `add` /
+`remove` / `update` / `deps` / `test` ran for real. Against an unknown build, use a throwaway
+`HOME`/`USERPROFILE` before running `--help`.
 
 ## PR workflow — required (enforce_admins is ON)
 
@@ -585,31 +613,45 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It surfaced five times in the v5.0.0 cycle alone, which is why
-it gets its own section: when you find one, the next question is always *"what else has this
-shape?"* — not *"is this fixed?"*
+of several paths goes through**. It has now surfaced **eleven** times across the v5.0.0–5.0.4
+cycles, which is why it gets its own section: when you find one, the next question is always
+*"what else has this shape?"* — not *"is this fixed?"*
 
 Instances, all confirmed by reading the code rather than inferred:
 
 | # | The check | The path that skipped it |
 |---|---|---|
 | #392/#393 | retry-vs-defer decision | lived in an `inline_retries` wrapper argument passed by **1 of 5** callers |
-| #405 | sandbox / authority | a **derived** VM (`_resume_target_vm`) built a fresh VM and shed the parent's limits |
-| #405 | capability policy | consulted at `_invoke_host_function` but **not** `VM.call_builtin` — and the builtins are where `subprocess`/`http` live |
-| #427 | formatter round-trip | `nodus fmt` **corrupted** files whose nodes the formatter did not know (`GoalPursuit`, `with { }`), writing output that no longer parsed |
+| #405 | sandbox / authority | a **derived** VM built a fresh VM and shed the parent's limits |
+| #405 | capability policy | consulted at `_invoke_host_function` but **not** `VM.call_builtin` — where `subprocess`/`http` live |
+| #427 | formatter round-trip | `nodus fmt` corrupted files whose nodes it did not know |
 | #353 | `--help` handling | a per-command guard, so every new subcommand shipped unguarded — recurred **four** times |
-
-Two still open with this exact shape, and worth reading before adding any new guard:
-
-- **#387** — a directly constructed `VM()` has no limits at all; every guard lives in a wrapper.
-- **#411** — `@exactly_once` is forgeable: the lowering calls **shadowable** names, so a program
-  can replace the envelope the compiler injected into it.
+| #411 | `@exactly_once` / `@retry` envelope | lowerings called **shadowable** names; a program could replace its own envelope |
+| #411 | workflow state | same defect via `workflow_state()` — found only by asking what else had the shape |
+| #453 | auto-run-`main` suppression | read the AST; a **cached** module has none, so it ran `main()` twice from the second run on |
+| #387 | call-depth cap | lived in wrappers; a directly constructed `VM()` had none |
+| #424 | every timeout | all of them bound the **instruction stream**; a host agent handler is not in it |
+| #185 / #390 | per-tenant memory, run ownership | module-scope globals, so every participant in a process shared them |
 
 **The fix is always the same: move the decision to one place, then assert on the source.** A
-behaviour-only test passes on whichever path is already correct — `test_retry_path_unification.py`
-asserts on where the retry branch *lives*, and `test_vm_authority_inheritance.py` reads the
-sandbox arguments straight out of `VM.__init__`'s signature so a **new** parameter that nothing
-propagates fails the test. Copy that pattern rather than writing another end-to-end case.
+behaviour-only test passes on whichever path is already correct. Working examples to copy:
+`test_retry_path_unification.py` asserts where the retry branch *lives*;
+`test_vm_authority_inheritance.py` reads `VM.__init__`'s signature so a **new** parameter nothing
+propagates fails; `test_annotation_forgery.py` fails if any lowering emits an unbound
+`Call(Var(...))`; `test_workflow_runner_ownership.py` fails if a **sixth** builtin resolves the
+runner from module state while the other five stay routed.
+
+**A source assertion can be unfalsifiable — check that it fails.** Three written in one session
+could not: one matched a substring of the very function it tested (`"detect_cycle"` is inside
+`_detect_cycle_task_ids`), and one asserted `ok is False` that was true for an unrelated reason
+(the script never imported `std:fs`, so the Floor was never reached). For every negative
+assertion, run it against the unfixed tree and confirm it goes red.
+
+**Testing a project against itself cannot find what it breaks in consumers.** #185's fix assigned
+`self.memory_store` on `NodusRuntime`; `nodus_sdk.NodusSDKRuntime` subclasses it with
+`memory_store` as a read-only property. Gate 10 passed 5.0.3 with 32 green probes and nodus-sdk
+was broken at construction. That is why the dependent suites now run *before* the upload — see
+the release sequence.
 
 ## Documentation governance
 
@@ -659,7 +701,7 @@ or give it its own repo the way `nodus-a2a-wire` got one.
 ## nodus-extension companion library
 
 - Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Status: v0.1.1 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
+- **Status: v0.1.2 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
 - **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
   write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
 - **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
@@ -946,15 +988,19 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.0.3** (live on PyPI, published 2026-08-17); **5.0.4 is
-cut and in flight**. Both files must stay in sync:
+The current published version is **v5.0.4** (live on PyPI, published 2026-08-17). Both files
+must stay in sync:
 - `src/nodus/support/version.py` — `__version__ = "5.0.4"`
 - `pyproject.toml` — `version = "5.0.4"`
 
-**Do not install 5.0.3 alongside `nodus-sdk`** — it assigns a `memory_store` attribute that
-`NodusSDKRuntime` defines as a read-only property, so every construction of that subclass
-raises. Fixed in 5.0.4. Gate 10 now runs every dependent suite *before* the upload
-(`tools/check_dependent_suites.py`), which is the check that would have caught it.
+**Treat 5.0.3 as superseded, not merely older.** It assigns a `memory_store` attribute that
+`nodus_sdk.NodusSDKRuntime` defines as a read-only property, so every construction of that
+subclass raises `AttributeError: ... has no setter`. It is the one release in the 5.0.x line
+that breaks a first-party companion. Fixed in 5.0.4.
+
+**Update this paragraph in the release PR, not afterwards.** It read 5.0.1 through the whole
+of 5.0.2, and `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four releases. Three stale
+version strings in three releases; no gate checks them.
 
 **This section went stale during the 5.0.2 release** — it still read 5.0.1 afterwards, because
 the release PR bumped the two version files and the CHANGELOG but not this paragraph. That is the
@@ -997,23 +1043,21 @@ trap is gone; `NodusRuntime()` applies no wall-clock deadline. Verified 2026-08-
 already the default. (SCHED-001 also means cooperative sleep no longer consumes the
 budget even when a deadline *is* set.)
 
-**`max_frames` (#350) — FIXED.** `None` now means `MAX_STACK_DEPTH` (10,000), the
-same cap the CLI applies, so `NodusRuntime(max_steps=None, timeout_ms=None)` raises
-`Call stack overflow` on runaway recursion instead of growing frames until OOM. The
-cap lives in one place, `configure_vm_limits` in `tooling/sandbox.py`; `embedding.py`
-only overwrites it when the caller passed a value. Do not "fix" this by making the
-assignment unconditional again — that is the bug.
+**`max_frames` (#350, then #387) — FIXED at both layers.** `NodusRuntime` honours
+`MAX_STACK_DEPTH` (10,000), and as of 5.0.3 so does a directly constructed `VM()` — #350 fixed
+the wrapper and left the engine underneath uncapped, which is the wrapper/sibling shape again.
+Runaway recursion now raises `Call stack overflow` instead of growing frames until the OS kills
+the process; VM frames are heap-allocated, so Python's own recursion limit never fires.
 
 ```python
-# Fine as of the #350 fix — capped at 10,000 frames:
-rt = NodusRuntime(max_steps=None, timeout_ms=None)
-
-# Tighter, for untrusted scripts:
-rt = NodusRuntime(max_steps=None, timeout_ms=None, max_frames=1000)
+rt = NodusRuntime(max_steps=None, timeout_ms=None)                  # capped at 10,000
+rt = NodusRuntime(max_steps=None, timeout_ms=None, max_frames=1000) # tighter
 ```
 
-There is no "unlimited" setting — pass a large integer if you genuinely want one.
-v4.1.1 and earlier are affected; hosts pinned there must pass `max_frames`.
+There is no "unlimited" setting — pass a large integer if you genuinely want one. **Only the
+call-depth cap defaults on**; `max_steps` and `deadline` stay unbounded on a bare VM because
+`EXECUTION_TIMEOUT_MS` is 200 ms and a step budget is host policy. v4.1.1 and earlier are
+affected at the runtime layer; anything before 5.0.3 at the VM layer.
 
 **Capability switches deny by default as of v5.0.0 (#405).** `allow_subprocess`,
 `allow_network` and `allow_env` are all **`False`**. A bare `NodusRuntime()` cannot shell out,
@@ -1048,6 +1092,31 @@ Three related surfaces, all in `src/nodus/runtime/capability.py`:
   see the recurring bug shape section.
 
 Migration: `docs/migration/v5.0-deny-by-default.md`. Design: `docs/design/v5/02-capability-policy.md`.
+
+**Per-runtime state, and one breaking default (5.0.3+, #185/#390/#424).**
+
+- **Memory is isolated per `NodusRuntime`.** Two runtimes in a process no longer share it — a
+  guest script writes memory via `memory_put`, so a shared store was a channel between tenants.
+  `share_process_state=True` restores the old sharing; `memory_store=` injects a specific store.
+  **A bare `VM` and the CLI keep the process-global store** — single-tenant by construction.
+- **Agents are deliberately NOT isolated.** A guest cannot register one: the only agent builtins
+  are `agent_call` / `agent_available` / `agent_describe`, and registration is host-only from
+  Python. A shared registry holds what the *host* put there, so isolating it by default would
+  break `register_agent(...)` → `run_source(...)` — it broke 11 tests when tried — to prevent a
+  leak guests cannot cause. `agent_registry=` scopes it for hosts that want per-tenant sets.
+- **`agent_timeout_ms=`** bounds a host agent handler. The tightest of the step's `timeout_ms`
+  (minus time already spent) and this default wins. It stops the **wait**, not the handler:
+  arbitrary Python cannot be preempted, so the handler runs on a daemon thread and is abandoned
+  at the deadline. Abandoned handlers are recorded — `abandoned_agent_calls()`,
+  `abandoned_agent_call_count()`.
+- **`workflow_runner=`** gives a runtime its own runner. Unset keeps the process-global one, so
+  nothing that worked before changes.
+
+**Do not store new runtime state under a public attribute name without checking downstream.**
+`self.memory_store` collided with a read-only property of the same name on
+`nodus_sdk.NodusSDKRuntime` and broke every construction of that subclass in 5.0.3. It is
+`self._memory_store` now. A base class adding a public attribute can break any subclass that
+made the same name a property.
 
 **What is promised to embedders (5.0.1, #441–#444).** Added after aindy-runtime reported four
 places where it was coupled to something we had never published as a surface:
@@ -1144,7 +1213,7 @@ nodus-extension, nodus-native-memory-engine, nodus-jupyter
 nodus-governance, nodus-memory, nodus-a2a
 ```
 Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.3**, `nodus-gateway` **0.1.1**,
-`nodus-sdk` **0.1.2**, `nodus-mcp-server` **0.1.12**, `nodus-extension` **0.1.1**,
+`nodus-sdk` **0.1.2**, `nodus-mcp-server` **0.1.12**, `nodus-extension` **0.1.2**,
 `nodus-native-memory-engine` **0.1.1**.
 
 Note: the published `nodus-memory` and `nodus-a2a` are the **Tier 2 rewrites** — the same
