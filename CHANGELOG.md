@@ -4,6 +4,32 @@
 
 ### Fixes
 
+- **#387: a directly constructed `VM()` had no call-depth cap.** `max_frames` now
+  defaults to `MAX_STACK_DEPTH` (10,000) instead of `None`, matching what the CLI,
+  the HTTP server and `NodusRuntime` all already install.
+
+  This is #350 one layer down. That issue was "`NodusRuntime` applies no
+  `max_frames` cap despite documenting one", and the fix put the cap in the
+  embedding path — but the defect was never really about `NodusRuntime`: the guard
+  lived in a wrapper and every other entry point bypassed it. A real consumer was
+  already exposed; `nodus-jupyter`'s kernel runs every notebook cell on a bare
+  `VM(...)` and never calls `configure_vm_limits`.
+
+  **Why this limit and not the other two.** VM frames are heap-allocated, so
+  Python's own recursion limit never fires — measured before the fix, depth 5,000
+  completed on a bare VM against a `sys.getrecursionlimit()` of 1,000. Unbounded
+  recursion does not raise; it grows until the OS kills the process, which a host
+  cannot catch, log, or recover from. `max_steps` and `deadline` stay `None` on
+  purpose: `EXECUTION_TIMEOUT_MS` is 200 ms and would break most in-process
+  consumers, and a step budget is host policy. Both are pinned by test so
+  "give the VM limits" is not over-applied later.
+
+  Hosts can still opt out — `vm.max_frames = <large int>` — exactly as with
+  `NodusRuntime`. `VM` also gains a class docstring saying plainly that
+  constructing one directly opts out of the remaining limits and of
+  deny-by-default, and pointing at `NodusRuntime` or `configure_vm_limits`.
+
+
 - **#453: a script ending in `main()` executed it twice on every run after the
   first.** Silently — no error, and nothing in the output to suggest a second
   execution:

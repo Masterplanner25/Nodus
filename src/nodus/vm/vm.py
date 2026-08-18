@@ -45,6 +45,7 @@ from nodus.runtime.coroutine import Coroutine, DEFERRED_NONE
 from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.orchestration.task_graph import TaskNode, TaskGraph, WorkflowRebuildError, run_task_graph, plan_graph, resume_graph, load_graph_state
 from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX, BuiltinInfo
+from nodus.support.config import MAX_STACK_DEPTH
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, HostFunctionError
@@ -127,6 +128,28 @@ def _is_stdlib_path(path: str | None) -> bool:
 
 
 class VM:
+    """The Nodus bytecode virtual machine.
+
+    **Constructing a `VM` directly opts out of most limits.** Only the call-depth
+    cap is on by default (`max_frames`, `MAX_STACK_DEPTH`); `max_steps` and
+    `deadline` default to `None`, meaning unbounded, and the capability flags
+    (`allow_subprocess`, `allow_network`, `allow_env`) default to permissive —
+    the opposite of `NodusRuntime`, which denies them (#405).
+
+    That asymmetry is deliberate. `NodusRuntime` is the supported embedding entry
+    point and is where a host's threat model is expressed; the VM is the execution
+    engine underneath it, and the CLI builds one directly on purpose because a
+    developer running a script they just wrote is not the threat model
+    deny-by-default exists for.
+
+    So: hosting code you did not author means using `NodusRuntime`, or installing
+    limits yourself with `tooling.sandbox.configure_vm_limits(vm, ...)`. The
+    call-depth cap is the one exception (#387) because its absence is
+    unrecoverable rather than merely permissive — frames are heap-allocated, so
+    runaway recursion grows until the OS kills the process instead of raising
+    something a host could catch.
+    """
+
     def __init__(
         self,
         code: list[tuple],
@@ -224,7 +247,20 @@ class VM:
         self._last_batch_emit = 0
         self._deadline_check_interval = 100
         self._last_deadline_check = 0
-        self.max_frames: int | None = None
+        # Call-depth cap, on by default (#387). See the class docstring.
+        #
+        # Deliberately the *only* limit defaulted here. `max_steps` and `deadline`
+        # stay `None` because they are host policy: `EXECUTION_TIMEOUT_MS` is
+        # 200 ms, which would break any in-process consumer running something
+        # non-trivial, and `MAX_STEPS` is a budget the host should choose.
+        #
+        # The call-depth cap is different in kind. VM frames are heap-allocated, so
+        # Python's own recursion limit never fires — measured: depth 5,000 completes
+        # on a bare VM against a `sys.getrecursionlimit()` of 1,000. Unbounded
+        # recursion therefore does not raise; it grows until the OS kills the
+        # process. That is the one limit whose absence costs the host the process
+        # rather than the request, and so the one that cannot sensibly default off.
+        self.max_frames: int | None = MAX_STACK_DEPTH
         self.max_steps: int | None = None
         self.deadline: float | None = None
         self.trace_errors: bool = False
