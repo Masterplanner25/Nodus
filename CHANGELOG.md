@@ -33,6 +33,44 @@
 
 ### Added
 
+- **A step can declare which dependency outcomes satisfy its join — `with { on: [...] }`.**
+  `step b after a` has always meant *and a produced a value*. That is a join policy,
+  and it was the only one, so the cleanup step every pipeline needs — run this when
+  the deploy fails — could not be expressed in the graph at all (#475).
+
+  ```nd
+  step rollback after deploy with { on: ["completed", "failed"] } { ... }
+  ```
+
+  Valid outcomes are `completed` and `failed`: the two a dependency can reach while
+  the run is going. `upstream_failed` and `cancelled` are conclusions drawn once the
+  run winds down, so a step waiting on one could never become ready — accepting them
+  would ship a knob that silently never fires. An outcome outside the vocabulary is
+  refused where it is declared rather than quietly never matching.
+
+  The default is `["completed"]`, so existing workflows are unchanged.
+
+  Three consequences worth knowing:
+
+  - **A step whose condition is not met reports `omitted`, not failed.** That is
+    distinct from `upstream_failed` — a decision excluded me, versus something above
+    me broke — and keeping them apart is the point of declaring a policy at all. It
+    also means such a step no longer turns the run into a "Missing task dependencies"
+    error, which is what a step left pending used to do.
+  - **Fail-fast exempts a step that opted in.** A failure otherwise stops the run
+    scheduling new work, which would make `on: ["failed"]` unreachable in exactly the
+    situation it exists for.
+  - **A failed dependency passes `nil`**, since it produced no value. The step is not
+    told *why*; that belongs with the partial-success envelope (#468).
+
+  No new syntax, no new keywords, and no opcode change — `with { ... }` and the
+  option-key validation already existed, and the policy is data, following the
+  precedent set by a goal's `until` predicate. `BYTECODE_VERSION` is still 4.
+
+  This answers the second half of #475. The first half — whether an independent
+  branch should run at all after a sibling fails — is still open, and is now visible
+  in the result as `cancelled` rather than silent.
+
 - **A resume says so when the file has changed since the run started.** Pinning is
   the right rule but a trap when it is silent — the natural debugging loop is *the
   workflow failed, so edit the step and resume*, and the edit appears to do nothing.
