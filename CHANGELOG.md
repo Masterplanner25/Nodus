@@ -172,8 +172,10 @@
   always a failure, and a `tracks` value the phase cannot measure is an error
   rather than a silent skip.
 
-  Both consumers are currently flagged, which is correct — neither has been
-  republished since the changes that invalidated them.
+  Both consumers were flagged on the gate's first run, and both have since been
+  republished — **nodus-vscode 0.1.3** (highlights `when`) and
+  **nodus-run-action v1.0.1** (README pins 5.0.4, `v1` moved). The manifest
+  records those, so the gate now reports 2/2 in step.
 
 ### Added
 

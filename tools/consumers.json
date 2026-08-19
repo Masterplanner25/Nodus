@@ -20,9 +20,9 @@
       "name": "nodus-vscode",
       "repo": "Masterplanner25/nodus-vscode",
       "kind": "VS Code extension (VSIX, Marketplace)",
-      "published": "0.1.2",
+      "published": "0.1.3",
       "tracks": "keywords",
-      "fingerprint": "8670d9baf85b0313",
+      "fingerprint": "602761bf77ebb21e",
       "why": "The TextMate grammar lists every keyword explicitly. A keyword the grammar does not name renders as a plain identifier, so any keyword added or removed here makes the published extension wrong.",
       "republish": "Bump version in package.json, `npm run package`, then upload the VSIX at https://marketplace.visualstudio.com/manage/publishers/MasterplanInfiniteWeave (row menu -> Update), or `npx vsce publish -p <PAT>`."
     },
@@ -30,9 +30,9 @@
       "name": "nodus-run-action",
       "repo": "Masterplanner25/nodus-run-action",
       "kind": "GitHub Action (not packaged)",
-      "published": "v1.0.0",
+      "published": "v1.0.1",
       "tracks": "nodus_version",
-      "fingerprint": "4.0.5",
+      "fingerprint": "5.0.4",
       "why": "Its README documents a pinned `version:` for reproducible CI. The pin is the version new users copy, so it going stale hands them an old runtime.",
       "republish": "Update the pinned `version:` in README.md examples, then tag the action."
     }
