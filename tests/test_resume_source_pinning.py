@@ -71,6 +71,7 @@ class RebuildHandleIsAConstructorArgumentTests(unittest.TestCase):
 
 
 class EveryEntryPointRecordsItsSourceTests(unittest.TestCase):
+    # closes: #469
     def test_run_source_run_is_resumable_in_a_fresh_runtime(self):
         """#469: `run_source` recorded no source, so the run was unresumable.
 
