@@ -1,0 +1,40 @@
+{
+  "_comment": [
+    "Consumers that a nodus-lang release can invalidate but the Stage 6 downstream",
+    "sweep cannot see. That sweep works by hashing published sdists/wheels against",
+    "local source, so anything not on PyPI is invisible to it -- a VS Code extension",
+    "and a GitHub Action are both outside its reach, and both have shipped stale.",
+    "",
+    "The check deliberately does NOT read the consumer's checkout. A gate that needs",
+    "a sibling clone skips on CI, and a check that skips where it matters is how a",
+    "keyword shipped unhighlighted in the first place. Instead each consumer records",
+    "the fingerprint of whatever it must stay in step with, measured HERE, at the",
+    "moment it was last published. When the live value moves, the consumer is stale.",
+    "",
+    "To add one: name what it tracks, run the gate, and paste the value it reports.",
+    "To clear a stale flag: republish the consumer, then update `fingerprint` and",
+    "`published` in the same commit."
+  ],
+  "consumers": [
+    {
+      "name": "nodus-vscode",
+      "repo": "Masterplanner25/nodus-vscode",
+      "kind": "VS Code extension (VSIX, Marketplace)",
+      "published": "0.1.2",
+      "tracks": "keywords",
+      "fingerprint": "8670d9baf85b0313",
+      "why": "The TextMate grammar lists every keyword explicitly. A keyword the grammar does not name renders as a plain identifier, so any keyword added or removed here makes the published extension wrong.",
+      "republish": "Bump version in package.json, `npm run package`, then upload the VSIX at https://marketplace.visualstudio.com/manage/publishers/MasterplanInfiniteWeave (row menu -> Update), or `npx vsce publish -p <PAT>`."
+    },
+    {
+      "name": "nodus-run-action",
+      "repo": "Masterplanner25/nodus-run-action",
+      "kind": "GitHub Action (not packaged)",
+      "published": "v1.0.0",
+      "tracks": "nodus_version",
+      "fingerprint": "4.0.5",
+      "why": "Its README documents a pinned `version:` for reproducible CI. The pin is the version new users copy, so it going stale hands them an old runtime.",
+      "republish": "Update the pinned `version:` in README.md examples, then tag the action."
+    }
+  ]
+}

@@ -142,6 +142,39 @@
   step rather than returning immediately, and `steps` now includes work that
   finished after the failure.
 
+### Tooling
+
+- **`nodus_gate --consumers`: which non-PyPI consumers a release has left behind.**
+  Stage 6's downstream sweep detects drift by hashing published sdists and wheels,
+  so anything not on PyPI is invisible to it — and two things are: `nodus-vscode`
+  (a Marketplace VSIX) and `nodus-run-action` (a GitHub Action). Both have shipped
+  stale with nothing to notice. Documented as Gate 3c.
+
+  Each consumer records in `tools/consumers.json` the fingerprint of whatever it
+  must stay in step with, measured in *this* repo when it was last published. When
+  the live value moves, the consumer needs republishing:
+
+  ```
+    [--] nodus-vscode (0.1.2) — NEEDS REPUBLISH
+         keywords moved: 8670d9baf85b0313 -> 602761bf77ebb21e
+    [--] nodus-run-action (v1.0.0) — NEEDS REPUBLISH
+         nodus_version moved: 4.0.5 -> 5.0.4
+  ```
+
+  It reads **no sibling checkout and makes no network call**, which is the whole
+  design. Gate 3b's keyword-highlighting check does read the `nodus-vscode`
+  grammar, and therefore skips on CI where the checkout is absent — which is
+  exactly how the `when` keyword shipped unhighlighted. A check that cannot run
+  where merges are gated is not a check.
+
+  **Advisory**: it prints and exits 0, so a stale consumer does not block an
+  unrelated merge; `--strict` makes it fail. A manifest that cannot be read is
+  always a failure, and a `tracks` value the phase cannot measure is an error
+  rather than a silent skip.
+
+  Both consumers are currently flagged, which is correct — neither has been
+  republished since the changes that invalidated them.
+
 ### Added
 
 - **Every task in a run now reports a status — `statuses` and `task_statuses`.**

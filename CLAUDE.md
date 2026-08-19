@@ -472,6 +472,16 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
+- `--consumers`: reports **non-PyPI consumers a release has left behind** —
+  `nodus-vscode` (VSIX) and `nodus-run-action`. Stage 6's sweep hashes published
+  sdists/wheels, so it structurally cannot see either, and both have shipped
+  stale. Each records in `tools/consumers.json` the fingerprint of what it must
+  stay in step with, measured **here**; when the live value moves, the consumer
+  needs republishing. Reads no sibling checkout on purpose — a gate that needs
+  one skips on CI, which is how `when` shipped unhighlighted. **Advisory**: it
+  prints and exits 0; `--strict` makes a stale consumer fail. A manifest that
+  cannot be read is always a failure. Clear a flag by republishing, then updating
+  `fingerprint` and `published` in the same commit.
 - `--opcodes`: verifies the frozen instruction set — reads the dispatch table
   out of a constructed `VM` and requires `BYTECODE_REFERENCE.md` §3, its
   appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
