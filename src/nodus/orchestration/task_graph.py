@@ -41,11 +41,30 @@ class WorkflowRebuildError(Exception):
         return f"{self.reason}: {type(self.cause).__name__}: {self.cause}"
 
 
+# The dependency outcomes a step may declare it accepts, via `with { on: [...] }`.
+# Deliberately the same names `statuses` reports, so what a run tells you and what
+# a step can ask for are one vocabulary rather than two that drift.
+#
+# Only the two a dependency can actually *reach while the run is going*. The other
+# reported statuses are conclusions drawn once the run winds down: `upstream_failed`
+# and `cancelled` are computed by walking the finished graph, so a step waiting on
+# one would never become ready and the option would be a knob that silently never
+# fires -- "declared but not enforced", which this codebase has five other instances
+# of. `skipped` and `omitted` are absent for the same reason: nothing produces them
+# until a conditional-edge design exists (#471).
+JOIN_ON_STATES = ("completed", "failed")
+
+# What `after` has always meant: every dependency must have produced a value.
+DEFAULT_JOIN_ON = frozenset({"completed"})
+
+
 @dataclass
 class TaskNode:
     task_id: str
     function: object
     dependencies: list["TaskNode"] = field(default_factory=list)
+    # Which dependency outcomes satisfy this task's join (#475).
+    on_states: frozenset[str] = DEFAULT_JOIN_ON
     step_name: str | None = None
     worker: str | None = None
     worker_timeout_ms: float | None = None
@@ -773,10 +792,36 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     active_workers = 0
     worker_mode = False
 
+    def _dep_satisfied(task: TaskNode, dep: TaskNode) -> bool:
+        """Has this dependency finished in a way this task declared it accepts?
+
+        The join policy used to be hardcoded here as `dep.task_id in results` --
+        every dependency must have produced a value. That is still the default, and
+        `with { on: [...] }` is how a step says otherwise (#475).
+        """
+        if dep.task_id in results:
+            return "completed" in task.on_states
+        if dep.status == "failed":
+            return "failed" in task.on_states
+        return False
+
+    def tolerates_failure(task: TaskNode) -> bool:
+        """Did this step explicitly ask to run on an outcome other than success?
+
+        Once a step fails the run stops scheduling new work, which is right for
+        ordinary steps but would make `on: ["failed"]` unreachable -- the one
+        policy whose entire purpose is to run *because* something failed. Opting
+        in has to be explicit, or relaxing the guard would quietly turn fail-fast
+        off for every independent branch as well.
+        """
+        return task.on_states != DEFAULT_JOIN_ON
+
     def ready_tasks():
         ready = []
         for task in tasks:
-            if task.task_id in pending and all(dep.task_id in results for dep in task.dependencies):
+            if task.task_id in pending and all(
+                _dep_satisfied(task, dep) for dep in task.dependencies
+            ):
                 ready.append(task)
         if scheduler_order_map:
             ready.sort(key=lambda task: scheduler_order_map.get(task.task_id, len(scheduler_order_map)))
@@ -790,25 +835,47 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         named only the step that threw. Four distinguishable outcomes, one
         reported. This names all of them (#475, #503).
 
-        The distinctions are the ones the runtime can already draw, and no
-        others -- `skipped` / `omitted` wait on a conditional-edge design
-        (#471) rather than being guessed at here.
+        The distinctions are the ones the runtime can draw, and no others.
+        `skipped` is still absent: it needs a guard on the step itself, which is
+        a conditional-edge design (#471). `omitted` is here because `on:` is a
+        construct that means it -- a join condition that was evaluated and not
+        met -- which is the bar a status has to clear.
         """
         failed_ids = {task.task_id for task in tasks if task.status == "failed"}
 
-        # Transitive closure over dependencies: a task is upstream_failed if any
-        # ancestor failed. Iterate to a fixed point rather than assuming the task
-        # list is topologically ordered -- `run_graph` takes an arbitrary list.
-        blocked: set[str] = set()
+        # Two transitive closures over dependencies, distinguishing *why* a task
+        # never ran. Iterate to a fixed point rather than assuming the task list
+        # is topologically ordered -- `run_graph` takes an arbitrary list.
+        #
+        # The distinction is Argo's, and it is the one that makes the report worth
+        # reading: `upstream_failed` means something above me broke, `omitted`
+        # means the condition I declared was not met. Collapsing them would lose
+        # exactly what a failure-tolerant join is for.
+        blocked: set[str] = set()   # -> upstream_failed
+        omitted: set[str] = set()   # -> omitted
         changed = True
         while changed:
             changed = False
             for task in tasks:
-                if task.task_id in failed_ids or task.task_id in blocked:
+                tid = task.task_id
+                if tid in results or tid in failed_ids or tid in blocked or tid in omitted:
                     continue
                 for dep in task.dependencies:
-                    if dep.task_id in failed_ids or dep.task_id in blocked:
-                        blocked.add(task.task_id)
+                    # Failure dominates: a task downstream of both a break and an
+                    # unmet condition reports the break.
+                    if dep.task_id in blocked or (
+                        dep.task_id in failed_ids and "failed" not in task.on_states
+                    ):
+                        blocked.add(tid)
+                        changed = True
+                        break
+                    # The dependency finished in a state this task said it does
+                    # not accept -- most often a step declaring `on: ["failed"]`
+                    # whose dependency succeeded, which is the whole point of it.
+                    if dep.task_id in omitted or (
+                        dep.task_id in results and "completed" not in task.on_states
+                    ):
+                        omitted.add(tid)
                         changed = True
                         break
 
@@ -820,6 +887,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 statuses[task.task_id] = "failed"
             elif task.task_id in blocked:
                 statuses[task.task_id] = "upstream_failed"
+            elif task.task_id in omitted:
+                statuses[task.task_id] = "omitted"
             elif task.status == "running":
                 # Still running when the run ended. Draining should make this
                 # unreachable for the failure path; if it appears, something
@@ -1007,7 +1076,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     def spawn_task(task: TaskNode, delay_ms: float = 0.0) -> None:
         nonlocal failed, waiting, active_workers, worker_mode
         with worker_lock:
-            if failed is not None or waiting is not None:
+            if waiting is not None:
+                return
+            if failed is not None and not tolerates_failure(task):
                 return
             _remove_task_from_pending(task.task_id)
             task.status = "running"
@@ -1022,7 +1093,15 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             goal_data = goal_event_payload(task)
             if goal_data is not None:
                 vm.event_bus.emit_event("goal_step_start", name=task.step_name, data=goal_data)
-            args = [results[dep.task_id] for dep in task.dependencies]
+            # `nil` for a dependency that finished without producing a value --
+            # reachable only for a step that declared `on: ["failed"]`, since any
+            # other step waits for every dependency to complete. The step is bound
+            # to its dependencies by name, so it needs an argument either way.
+            #
+            # This does not tell the step *why* the value is missing. Handing it
+            # the error belongs with the partial-success envelope (#468), which is
+            # where the shape of a "what happened" value gets decided.
+            args = [results.get(dep.task_id) for dep in task.dependencies]
         context = _workflow_context(task)
         if task.cache:
             key = task.cache_key or _default_cache_key(task, args)
@@ -1345,10 +1424,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 "goal_fail",
                 data={"goal": goal_name, "workflow": workflow_name, "graph_id": graph.graph_id, "failed": failed["failed"]},
             )
+        # A failure is a dependency outcome too. Steps declaring `on: ["failed"]`
+        # become ready exactly here, and nowhere else -- readiness is otherwise
+        # only re-evaluated when a step *completes*, which a failing step never
+        # does. `spawn_task` refuses everything that did not opt in, so this can
+        # be called unconditionally.
+        for next_task in ready_tasks():
+            spawn_task(next_task)
+
         # False, not True: `True` tells the scheduler to break its loop, which
         # dropped every other coroutine where it stood -- including healthy
         # independent branches, without unwinding them (#475, #502). New work is
-        # held back in `on_complete` instead, so the run stops advancing but
+        # held back in `spawn_task` instead, so the run stops advancing but
         # finishes what it started.
         return False
 
@@ -1428,7 +1515,16 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     if retry_scheduled is not None:
         return retry_scheduled
 
-    if pending:
+    # A task left pending because its declared join condition was not met is a
+    # reported outcome, not a broken graph. Only tasks with no explanation at all
+    # still mean the workflow could never have run -- a cycle, or a dependency
+    # that does not exist.
+    unexplained_pending = {
+        tid for tid, status in task_statuses().items()
+        if tid in pending and status not in ("omitted", "upstream_failed", "cancelled")
+    }
+
+    if unexplained_pending:
         cycle_ids = _detect_cycle_task_ids(tasks, results)
         _ts_raw = graph.metadata.get("task_to_step") if isinstance(graph.metadata, dict) else None
         task_to_step: dict[str, str] = _ts_raw if isinstance(_ts_raw, dict) else {}
@@ -1442,7 +1538,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 "workflow_name": workflow_name,
             }
         else:
-            pending_names = [task_to_step.get(tid, tid) for tid in pending]
+            pending_names = [task_to_step.get(tid, tid) for tid in unexplained_pending]
             message = f"Missing task dependencies: {', '.join(sorted(pending_names))}"
             err_payload = {
                 "category": "missing_tasks",

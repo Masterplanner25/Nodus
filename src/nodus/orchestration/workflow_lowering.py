@@ -53,7 +53,12 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowDef,
     WorkflowStep,
 )
-from nodus.orchestration.task_graph import TaskGraph, TaskNode
+from nodus.orchestration.task_graph import (
+    DEFAULT_JOIN_ON,
+    JOIN_ON_STATES,
+    TaskGraph,
+    TaskNode,
+)
 
 
 WORKFLOW_MARKER = "__workflow__"
@@ -67,6 +72,7 @@ STEP_OPTION_KEYS = {
     "cache_key",
     "worker",
     "worker_timeout_ms",
+    "on",
 }
 
 
@@ -362,6 +368,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             cache_key=options.get("cache_key"),
             worker=_string_option(vm, options, "worker", step_name),
             worker_timeout_ms=_number_option(vm, options, "worker_timeout_ms", step_name),
+            on_states=_on_option(vm, options, step_name),
             step_name=step_name,
         )
         tasks.append(task)
@@ -412,6 +419,50 @@ def _number_option(vm, options: dict, key: str, step_name: str, default=None):
     if value is None:
         return None
     return vm.ensure_number(value, f"workflow step '{step_name}' option {key}")
+
+
+def _on_option(vm, options: dict, step_name: str) -> frozenset[str]:
+    """Read `with { on: [...] }` -- which dependency outcomes satisfy this join.
+
+    A list for now. The per-dependency form (a map of dependency name to accepted
+    states) is the natural extension and can be added on this key without breaking
+    the list form, which is why the value shape is checked here rather than
+    assumed at the use site.
+
+    Unknown state names are refused rather than ignored: a step declaring
+    `on: ["suceeded"]` would otherwise be silently unsatisfiable, which is the
+    "declared but not enforced" failure this codebase has five other instances of.
+    """
+    value = options.get("on")
+    if value is None:
+        return DEFAULT_JOIN_ON
+    if not isinstance(value, list):
+        vm.runtime_error(
+            "type",
+            f"workflow step '{step_name}' option on expects a list of dependency "
+            f"outcomes, e.g. [\"completed\", \"failed\"]",
+        )
+    states = set()
+    for entry in value:
+        if not isinstance(entry, str):
+            vm.runtime_error(
+                "type",
+                f"workflow step '{step_name}' option on expects strings, got {type(entry).__name__}",
+            )
+        if entry not in JOIN_ON_STATES:
+            vm.runtime_error(
+                "type",
+                f"workflow step '{step_name}' option on: unknown outcome '{entry}'. "
+                f"Valid outcomes are {', '.join(JOIN_ON_STATES)}.",
+            )
+        states.add(entry)
+    if not states:
+        vm.runtime_error(
+            "type",
+            f"workflow step '{step_name}' option on is empty, so the step could never run. "
+            f"Omit it to accept the default, [\"completed\"].",
+        )
+    return frozenset(states)
 
 
 def _string_option(vm, options: dict, key: str, step_name: str):

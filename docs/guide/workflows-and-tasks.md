@@ -251,7 +251,57 @@ nothing to stderr — measured, both streams, 2026-08-16.
 
 **Step options** (`with { ... }`): `retries` (max retry count), `retry_delay_ms`
 (ms between retries), `timeout_ms` (per-step timeout), `cache` (skip on re-run
-if result is cached), `cache_key` (override the cache key).
+if result is cached), `cache_key` (override the cache key), `on` (which
+dependency outcomes satisfy this step's join — see below).
+
+### 4.1 `on` — running a step when something failed
+
+`step b after a` means *run b once a has produced a value*. `on` is how a step
+says otherwise:
+
+```nd-expect=output
+workflow deployment {
+    step deploy { throw "rollout rejected" }
+    step rollback after deploy with { on: ["completed", "failed"] } {
+        print("rolling back")
+        return "rolled back"
+    }
+    step announce after deploy { return "announced" }
+}
+
+let r = run_workflow(deployment)
+print(r["statuses"])
+```
+
+Output:
+
+```
+rolling back
+{"deploy": "failed", "rollback": "completed", "announce": "upstream_failed"}
+```
+
+`rollback` ran because it declared that a failed dependency satisfies it.
+`announce` did not, because it did not.
+
+The valid outcomes are **`completed`** and **`failed`** — the two states a
+dependency can reach while the run is going. The default is `["completed"]`,
+which is what `after` has always meant, so existing workflows are unchanged.
+An outcome that is not one of those is refused at the point of declaration
+rather than quietly never matching.
+
+**A step whose condition is not met is `omitted`, not failed.** If `deploy`
+above had succeeded and `rollback` declared `on: ["failed"]`, the run would
+complete normally with `"rollback": "omitted"`. That is different from
+`upstream_failed`, which means something above the step broke — the distinction
+is the point of declaring a policy at all.
+
+**A failure stops the run scheduling new work**, but a step that declared it
+tolerates failure is exempt — otherwise the option would be unreachable in
+exactly the situation it exists for.
+
+A dependency that failed passes `nil` to the step, since it produced no value.
+The step is not told *why*; see
+[#468](https://github.com/Masterplanner25/Nodus/issues/468).
 
 ---
 
