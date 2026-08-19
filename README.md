@@ -254,6 +254,22 @@ built-ins — always available, no import needed.
 |---|---|
 | `std:test` | `test.assert_eq`, `test.assert_err`, `test.flush_async` — built-in test framework |
 
+## Where This Is Going
+
+Nodus will bootstrap itself — compile itself in itself. The lexer, parser, AST
+lowering, bytecode generation and VM evaluation get rewritten in Nodus.
+
+It is a long-term goal rather than a near-term one, but it is a decided
+direction, and it constrains design now: a feature that would make bootstrapping
+impossible, or need a separate "systems" subset to work around, is treated as
+evidence the abstraction level is wrong.
+
+The proof-of-concept exists — [`examples/expr_compiler.nd`](examples/expr_compiler.nd)
+is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
+semantics are there and the 49-opcode instruction set has been frozen since v1.0.
+Runtime throughput is the honest blocker: roughly 314K instructions/sec on
+CPython today. See [Language Vision §Bootstrapping](docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
+
 ## Documentation
 
 - [User Guide](docs/guide/getting-started.md) — task-oriented walkthroughs; index in §7

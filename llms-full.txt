@@ -22,7 +22,7 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime`, which denies subprocess/network/env by default, and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
-**Current version:** v4.1.1 — published to PyPI 2026-08-05. Install: `pip install nodus-lang`. Full 32-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
+**Current version:** v5.0.4 — published to PyPI 2026-08-17. Install: `pip install nodus-lang`. Full 32-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
 
 ---
 
@@ -35,6 +35,23 @@ limits, and wire tool registries.
 - Anyone wiring together tools via MCP (Model Context Protocol) or A2A (Agent-to-Agent protocol)
 - Engineers who need deterministic coroutine scheduling, checkpoint/resume semantics, or
   EXACTLY_ONCE idempotency at the language level
+
+---
+
+## Where Nodus Is Going
+
+Nodus will bootstrap itself — compile itself in itself. The lexer, parser, AST lowering,
+bytecode generation and VM evaluation get rewritten in Nodus. This is a decided long-term
+direction rather than an open question, and it constrains design today: a feature that would
+make bootstrapping impossible, or need a separate "systems" subset to work around, is treated
+as evidence the abstraction level is wrong.
+
+Status: `examples/expr_compiler.nd` is a character-level lexer, recursive-descent parser and
+evaluator written entirely in Nodus, so the shape of the task is already expressible. The
+semantics are stable and the 49-opcode instruction set has been frozen at `BYTECODE_VERSION` 4
+since v1.0. The blocker is runtime throughput — roughly 314K instructions/sec on CPython —
+plus three expressiveness gaps: no string slice, no closure upvalue mutation (#156), and no
+module privacy (#158). See `docs/language/LANGUAGE_VISION.md`.
 
 ---
 
