@@ -2,7 +2,8 @@
 
 Verification record for audits performed **against** Nodus by an outside reader,
 as distinct from [AUDIT_INDEX.md](AUDIT_INDEX.md), which holds the prompts we run
-*ourselves*.
+*ourselves*, and from [CORPUS_SYNTHESIS.md](CORPUS_SYNTHESIS.md), which reads the whole
+research corpus as one body of evidence about the language rather than verdict-by-verdict.
 
 Every finding in an external audit gets a verdict here — **confirmed**,
 **wrong**, **partly wrong**, or **reframed** — with the command or code
