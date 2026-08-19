@@ -55,8 +55,18 @@ MAF's edge groups are `DictConvertible` specifically so the graph survives seria
 LangGraph's channels are declared cells with typed merge policies. ADK's edges are
 route-matched with a `DEFAULT_ROUTE` fallback. **Three independent teams built a
 declarative, serializable graph vocabulary inside Python** rather than in the host
-language's own control flow. That is the case for the language existing — weaker than
-proof, stronger than nothing.
+language's own control flow.
+
+Sharper still: **LangGraph and CrewAI are entire libraries that exist to give a host
+language something it structurally lacks.** LangGraph is a graph engine bolted onto
+Python; CrewAI is multi-agent coordination bolted onto Python. Neither team weighed a DSL
+and declined — they built the abstraction the long way because no other supply existed.
+Their existence *and adoption* is the demand signal. The DSL question is therefore not
+"does anyone want this" but "what form should the supply take" — which is a much narrower
+question, and one Nodus is allowed to answer differently.
+
+That is the case for the language existing: weaker than proof, considerably stronger than
+nothing.
 
 ---
 
@@ -74,9 +84,8 @@ signal. Stratified by what they own:
 | **ADK** | frontier scheduling, route-matched edges + `DEFAULT_ROUTE`, `JoinNode`, dynamic expansion | #479, #480 |
 | **Temporal** | durable execution, history-as-record, determinism boundary | #494 |
 
-**These four produced 11 of 30 findings from 24% of the corpus**, and a disproportionate
-share of the severe ones. They are the systems worth re-reading when workflow semantics
-change.
+These four are the systems worth re-reading when **workflow semantics** change. They are
+**not** where most findings came from — see the distribution below, which is the more surprising result.
 
 ### Tier 2 — partial or implicit orchestration; teach by their workarounds (5)
 
@@ -99,8 +108,43 @@ design input. Devika is the sharpest: nobody there chose to skip durable resume;
 accreted the fragments they could not avoid and omitted the rest silently. Linux is the
 outlier that contributed the single best design rule anyway (§6).
 
-**Practical consequence:** when a workflow-semantics question comes up, read Tier 1. When
-the question is "what does the absence cost", read Tier 3. Do not average them.
+### The distribution — most findings did not come from the systems that own orchestration
+
+The distribution is the opposite of what the tiering predicts:
+
+| Tier | Systems | Findings | Severity |
+|---|---|---|---|
+| 1 — owns an engine | 4 | **9** | 2 high, 3 medium, 4 low |
+| 2 — partial | 5 | **9** | 1 high, 7 medium, 1 low |
+| 3 — none | 8 | **12** | 7 medium, 4 low |
+
+**21 of 30 findings — 70% — came from systems that do not own orchestration.** Tier 1
+over-indexes on severity (2 of the 3 `high` issues), but that is a three-issue sample and
+too thin to carry an argument.
+
+**The mechanism explains it, and it is the most useful thing in this document.** The two
+tiers produce findings by different routes:
+
+- **Tier 1 findings are gap analysis.** *MAF has `graph_signature_hash`, Nodus does not*
+  → #470. Design in, gap out. These are the findings that tell you **what to build**.
+- **Tier 2 and 3 findings are probes.** The system raises a question, the question gets
+  run against Nodus, and the run finds something — often unrelated to the question that
+  prompted it. **#487**, the highest-severity defect in the sweep, came from MetaGPT's
+  *cost governor*: testing whether `budget` accepted a spend dimension revealed that a
+  `goal … over …` will not compile inside `main()` at all. **#489** came from asking what
+  a program can declare about its host. **#490** from reading claw's manifest. **#493**
+  from testing host-function contracts.
+
+So the corpus's value is mostly **not** in supplying designs. It is in generating *claims
+to test* — and a system with no orchestration generates those as well as a sophisticated
+peer does. The binding constraint on this sweep was never peer sophistication; it was
+running the probe.
+
+**Practical consequence, corrected.** Read Tier 1 when you need to know the **target
+shape**. But do not treat Tier 3 as low-yield — it produced the plurality of findings and
+the single worst defect. For finding defects, the tier does not matter; **what matters is
+whether a claim gets executed.** Future audits should optimise for testable claims, not
+for more sophisticated comparators.
 
 ---
 
