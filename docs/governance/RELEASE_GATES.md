@@ -101,6 +101,53 @@ PYTHONPATH="C:/dev/Coding Language/src" `
 needs the `nodus-vscode` checkout and **skips without it**, so it does not run in
 this repository's CI — run it locally before a release that touched syntax.
 
+**That skip is the hole, and Gate 3c closes it.** `when` shipped in the step-guard
+work with the grammar unupdated, precisely because the only check that would have
+caught it cannot run where merges are gated.
+
+---
+
+## Gate 3c: Non-PyPI consumers are in step
+
+**Standard (established after the `when` keyword shipped unhighlighted):**
+
+Stage 6's downstream sweep detects drift by hashing published sdists and wheels
+against local source. Anything **not on PyPI is invisible to it** — and two things
+are: `nodus-vscode` (a Marketplace VSIX) and `nodus-run-action` (a GitHub Action).
+Both have shipped stale with nothing to notice.
+
+**Check:**
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --consumers
+```
+
+Unlike Gate 3b this reads **no sibling checkout and makes no network call**, so it
+runs everywhere including CI. Each consumer records, in `tools/consumers.json`, the
+fingerprint of whatever it must stay in step with — measured in *this* repo at the
+moment it was last published. When the live value moves, the consumer is stale:
+
+```
+  [--] nodus-vscode (0.1.2) — NEEDS REPUBLISH
+       keywords moved: 8670d9baf85b0313 -> 602761bf77ebb21e
+```
+
+**Advisory by default** — it prints and exits 0. `--strict` makes a stale consumer
+fail the run. A stale consumer is a release obligation, not a broken tree, and
+flagging it weeks early is worth more than blocking an unrelated merge. A manifest
+that cannot be read is always a failure: a check is not allowed to pass by being
+unable to run.
+
+**Clearing a flag:** republish the consumer, then update its `fingerprint` and
+`published` in `tools/consumers.json` **in the same commit** — the manifest is the
+record of what was published, so letting it drift from reality defeats the gate.
+
+**Adding a consumer:** add an entry naming what it `tracks`, run the gate, and
+paste the value it reports. A `tracks` value the phase cannot measure is an error
+rather than a skipped check.
+
 ---
 
 ## Gate 4: Closed-issue regression test gate

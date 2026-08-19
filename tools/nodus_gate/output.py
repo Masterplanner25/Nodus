@@ -137,6 +137,47 @@ def format_contracts(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_consumers(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """A tick per consumer, and what to do about the ones that do not have one."""
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        return "\n".join(lines)
+
+    if not quiet:
+        lines.append(f"Checked {result.checks_run} non-PyPI consumer(s) against this tree")
+        lines.append("")
+
+    for s_ in result.statuses:
+        if s_.in_step:
+            mark = _c("[ok]", _GREEN, use_color=use_color)
+            lines.append(f"  {mark} {s_.name} ({s_.published}) — {s_.tracks} unchanged")
+            if verbose:
+                lines.append(f"       {s_.kind}")
+        else:
+            mark = _c("[--]", _YELLOW, use_color=use_color)
+            lines.append(f"  {mark} {s_.name} ({s_.published}) — NEEDS REPUBLISH")
+            lines.append(f"       {s_.tracks} moved: {s_.expected} -> {s_.actual}")
+            if s_.why:
+                lines.append(f"       {s_.why}")
+            if s_.republish:
+                lines.append(f"       how: {s_.republish}")
+        lines.append("")
+
+    if not quiet:
+        n_stale = len(result.stale)
+        if n_stale == 0:
+            status = _c("PASS", _GREEN, use_color=use_color)
+            lines.append(f"Consumers: {status} — {result.passed}/{result.checks_run} in step")
+        else:
+            status = _c("STALE", _YELLOW, use_color=use_color)
+            lines.append(
+                f"Consumers: {status} — {result.passed}/{result.checks_run} in step, "
+                f"{n_stale} need republishing (advisory; --strict to fail)"
+            )
+    return "\n".join(lines)
+
+
 def format_opcodes(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
     lines = []
     if not quiet:

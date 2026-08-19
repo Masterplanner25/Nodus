@@ -21,6 +21,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--runtime": False,
         "--closed-issues": False,
         "--contracts": False,
+        "--consumers": False,
         "--opcodes": False,
         "--all": False,
         "--include-design": False,
@@ -129,8 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     run_closed = args["--closed-issues"] or args["--all"]
     run_contracts = args["--contracts"] or args["--all"]
     run_opcodes = args["--opcodes"] or args["--all"]
+    run_consumers = args["--consumers"] or args["--all"]
 
-    if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes):
+    if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
+            or run_consumers):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
               "[--opcodes] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
@@ -138,7 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
         print("  --contracts      Verify HandlerContract infrastructure is wired correctly")
         print("  --opcodes        Verify the frozen opcode set matches its documented record")
-        print("  --all            Run all five phases")
+        print("  --consumers      Report non-PyPI consumers a release has left behind")
+        print("  --all            Run all six phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -166,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
-        format_opcodes, format_json_results,
+        format_opcodes, format_consumers, format_json_results,
     )
 
     static_result = runtime_result = closed_result = contracts_result = None
@@ -217,6 +221,21 @@ def main(argv: list[str] | None = None) -> int:
             print(format_opcodes(opcode_result, use_color=use_color,
                                  verbose=verbose, quiet=quiet))
         if opcode_result.findings:
+            any_failure = True
+
+    if run_consumers:
+        from tools.nodus_gate.consumers_phase import run_consumers_phase
+        consumers_result = run_consumers_phase(root)
+        if output_fmt != "json":
+            print(format_consumers(consumers_result, use_color=use_color,
+                                   verbose=verbose, quiet=quiet))
+        # Advisory: a stale consumer is a release obligation, not a broken tree.
+        # Flagging it early is the point; blocking an unrelated merge is not.
+        # A manifest that cannot be read *is* a failure -- the check is not
+        # allowed to pass by being unable to run.
+        if consumers_result.error:
+            any_failure = True
+        elif consumers_result.stale and strict:
             any_failure = True
 
     if output_fmt == "json":
