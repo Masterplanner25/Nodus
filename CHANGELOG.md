@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **A failed step no longer tears down the scheduler: the run drains, then reports.**
+  A terminal step failure told the scheduler to break its loop, which dropped every
+  other coroutine where it stood. A healthy independent branch that was mid-execution
+  was abandoned — its remaining statements never ran and its `finally` never
+  executed, so a step holding a lock or an open transaction lost its release in
+  exactly the circumstances cleanup exists for. That contradicted runtime invariant
+  I-VM-06 (`finally` blocks always execute); see #502, whose other trigger — a step's
+  own `timeout_ms` — is unchanged and still open.
+
+  The failure now stops the run from *advancing* without stopping it *finishing*:
+  no new work is scheduled, and whatever is already in flight runs to completion
+  before the run reports. This is Argo's `failFast: true`, which is stricter than
+  #475 asks for and looser than what shipped.
+
+  Nothing was added to hold work back — `spawn_task` has always refused to schedule
+  once a failure is recorded. Only the loop teardown was wrong.
+
+  Two visible consequences: a failing run takes as long as its slowest in-flight
+  step rather than returning immediately, and `steps` now includes work that
+  finished after the failure.
+
+### Added
+
+- **Every task in a run now reports a status — `statuses` and `task_statuses`.**
+  A failing run produced four distinguishable outcomes and named one of them:
+  `failed` listed the step that threw, and anything that never got a turn was simply
+  absent from the result. The two new keys mirror how `steps` and `tasks` are keyed
+  (by step name and by task id):
+
+  | status | meaning |
+  |---|---|
+  | `completed` | produced a value |
+  | `failed` | threw, retries exhausted |
+  | `upstream_failed` | a transitive dependency failed |
+  | `cancelled` | never started — the run had already failed |
+  | `abandoned` | still running when the run ended |
+
+  The vocabulary is deliberately limited to distinctions the runtime can already
+  draw. `skipped` and `omitted` wait on a conditional-edge design (#471) rather than
+  being guessed at now.
+
+  `cancelled` is the open half of #475 made visible: whether an independent branch
+  should run anyway is a design question, and it is easier to answer when the result
+  says which steps it applies to. `abandoned` should be unreachable on the failure
+  path after the change above — if it appears, something dropped a coroutine without
+  unwinding it.
+
+  Additive only: existing keys are unchanged and callers checking `failed` are
+  unaffected.
+
 ## [5.0.4] - 2026-08-17
 
 ### Fixes

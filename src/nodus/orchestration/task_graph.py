@@ -782,6 +782,94 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             ready.sort(key=lambda task: scheduler_order_map.get(task.task_id, len(scheduler_order_map)))
         return ready
 
+    def task_statuses() -> dict[str, str]:
+        """Classify every task in the graph once the run has drained.
+
+        A run used to end the moment a step failed, so a task that never got a
+        turn simply vanished from the result: `steps` omitted it and `failed`
+        named only the step that threw. Four distinguishable outcomes, one
+        reported. This names all of them (#475, #503).
+
+        The distinctions are the ones the runtime can already draw, and no
+        others -- `skipped` / `omitted` wait on a conditional-edge design
+        (#471) rather than being guessed at here.
+        """
+        failed_ids = {task.task_id for task in tasks if task.status == "failed"}
+
+        # Transitive closure over dependencies: a task is upstream_failed if any
+        # ancestor failed. Iterate to a fixed point rather than assuming the task
+        # list is topologically ordered -- `run_graph` takes an arbitrary list.
+        blocked: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for task in tasks:
+                if task.task_id in failed_ids or task.task_id in blocked:
+                    continue
+                for dep in task.dependencies:
+                    if dep.task_id in failed_ids or dep.task_id in blocked:
+                        blocked.add(task.task_id)
+                        changed = True
+                        break
+
+        statuses: dict[str, str] = {}
+        for task in tasks:
+            if task.task_id in results:
+                statuses[task.task_id] = "completed"
+            elif task.task_id in failed_ids:
+                statuses[task.task_id] = "failed"
+            elif task.task_id in blocked:
+                statuses[task.task_id] = "upstream_failed"
+            elif task.status == "running":
+                # Still running when the run ended. Draining should make this
+                # unreachable for the failure path; if it appears, something
+                # dropped a coroutine without unwinding it (#502).
+                statuses[task.task_id] = "abandoned"
+            elif failed_ids:
+                # Its dependencies were satisfiable, but the run stopped
+                # scheduling new work when the first step failed. Whether these
+                # should run anyway is the open half of #475 -- naming them makes
+                # the choice visible instead of silent.
+                statuses[task.task_id] = "cancelled"
+            else:
+                statuses[task.task_id] = task.status
+        return statuses
+
+    def step_statuses(by_task: dict[str, str]) -> dict[str, str]:
+        if not isinstance(graph.metadata, dict):
+            return {}
+        task_to_step = graph.metadata.get("task_to_step", {})
+        if not isinstance(task_to_step, dict):
+            return {}
+        mapped = {}
+        for task_id, status in by_task.items():
+            step_name = task_to_step.get(task_id)
+            if isinstance(step_name, str):
+                mapped[step_name] = status
+        return mapped
+
+    def _finalize_failed(payload: dict) -> dict:
+        """Refresh the snapshot fields of a failure payload built mid-run.
+
+        `_fail_task` builds the payload when the first step fails, but the run
+        now keeps draining afterwards, so anything captured by value there is
+        stale by the time it is returned. `tasks`, `timings`, `attempts` and
+        `cache_hits` hold live references and need no refresh; `steps` was a
+        snapshot, and `failed` named only the first casualty.
+        """
+        payload["steps"] = step_results()
+        payload["failed"] = [failed_id(task) for task in tasks if task.status == "failed"]
+        return payload
+
+    def with_statuses(payload: dict) -> dict:
+        """Attach the status report, mirroring how `tasks`/`steps` are keyed."""
+        by_task = task_statuses()
+        payload["task_statuses"] = by_task
+        by_step = step_statuses(by_task)
+        if by_step:
+            payload["statuses"] = by_step
+        return payload
+
     def _serialize_value(value):
         if value is None:
             return None
@@ -1090,7 +1178,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             tasks,
             attempts,
             results,
-            "running",
+            # A step completing after an earlier step failed must not overwrite
+            # the run's failed status with "running" -- the run is still failing,
+            # it is only draining.
+            "running" if failed is None else "failed",
             pending_queue,
             task_values,
             workflow_state,
@@ -1106,6 +1197,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         goal_data = goal_event_payload(task)
         if goal_data is not None:
             vm.event_bus.emit_event("goal_step_complete", name=task.step_name, data=goal_data)
+        # No failure guard here on purpose: `spawn_task` already refuses to
+        # schedule once `failed` is set, and that is the only place the decision
+        # should live. Adding a second check here is how a sibling path drifts
+        # out of step with it.
         for next_task in ready_tasks():
             spawn_task(next_task)
         return False
@@ -1196,6 +1291,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task.finished_at = runtime_time_ms()
         task.error = str(err)
         task.retry_classification = "exhausted" if task.max_retries > 0 else "non_retryable"
+        if failed is not None:
+            # A second failure while the run drains. The first one stays
+            # authoritative for `error` and `retry`; the full set of failed steps
+            # is recomputed from task state when the payload is finalised.
+            return False
         failed = {
             "tasks": task_values,
             "steps": step_results(),
@@ -1239,7 +1339,12 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 "goal_fail",
                 data={"goal": goal_name, "workflow": workflow_name, "graph_id": graph.graph_id, "failed": failed["failed"]},
             )
-        return True
+        # False, not True: `True` tells the scheduler to break its loop, which
+        # dropped every other coroutine where it stood -- including healthy
+        # independent branches, without unwinding them (#475, #502). New work is
+        # held back in `on_complete` instead, so the run stops advancing but
+        # finishes what it started.
+        return False
 
     def on_error(coroutine: Coroutine, err: Exception):
         task = running.pop(id(coroutine), None)
@@ -1266,6 +1371,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 task.status = "completed"
                 _remove_task_from_pending(task.task_id)
             elif saved.get("state") in {"failed"}:
+                task.status = "failed"
                 failed = {
                     "tasks": task_values,
                     "steps": step_results(),
@@ -1277,7 +1383,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     "graph_id": graph.graph_id,
                 }
                 failed.update(workflow_result_payload())
-                return failed
+                return with_statuses(failed)
             else:
                 task.status = "pending"
         for task in tasks:
@@ -1289,7 +1395,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
 
     if failed is not None:
         failed.update(workflow_result_payload())
-        return failed
+        return with_statuses(_finalize_failed(failed))
 
     if waiting is not None:
         return waiting
@@ -1299,14 +1405,16 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
 
     if worker_mode:
         with worker_cond:
-            while failed is None and waiting is None and (pending or active_workers > 0):
+            # Once a step has failed, no further work is scheduled, so `pending`
+            # can never drain -- wait only on what is still in flight.
+            while waiting is None and ((pending and failed is None) or active_workers > 0):
                 worker_cond.wait(timeout=0.05)
     else:
         vm.scheduler.run_loop(on_complete=on_complete, on_error=on_error)
 
     if failed is not None:
         failed.update(workflow_result_payload())
-        return failed
+        return with_statuses(_finalize_failed(failed))
 
     if waiting is not None:
         return waiting
@@ -1365,7 +1473,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         "graph_id": graph.graph_id,
     }
     payload.update(workflow_result_payload())
-    return payload
+    return with_statuses(payload)
 
 
 def resume_graph(vm, graph_id: str) -> dict:
