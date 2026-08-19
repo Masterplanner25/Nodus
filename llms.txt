@@ -114,10 +114,11 @@ Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave
 - **Coroutines** — cooperative, spawned with `spawn(coroutine(fn))`, scheduled with `run_loop()`. [Experimental]
 - **Channels** — typed message passing via `channel()`, `send()`, `recv()`, `close()`. [Experimental]
 - **Companion Library Contract** — companion libraries may only depend on APIs listed in `docs/governance/COMPANION_LIBRARY_CONTRACT.md`.
+- **Bootstrapping** — Nodus will compile itself in itself; a decided long-term direction, not a maybe. It constrains design now: a feature needing a separate "systems" subset signals the abstraction level is wrong. `examples/expr_compiler.nd` is a lexer/parser/evaluator already written in Nodus. Blocker is runtime throughput (~314K instr/sec), not semantics. See `docs/language/LANGUAGE_VISION.md`.
 
 ## Package
 
-- PyPI: `nodus-lang` (v4.1.1 — current stable, published 2026-08-05)
+- PyPI: `nodus-lang` (v5.0.4 — current stable, published 2026-08-17)
 - Install: `pip install nodus-lang`
 - Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 - Requires Python >= 3.10

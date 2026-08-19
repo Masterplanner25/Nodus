@@ -126,17 +126,38 @@ ecosystem architecture.
 
 ## Bootstrapping (long-term goal)
 
-A long-term aspirational goal for Nodus is to bootstrap itself — to rewrite
-the Nodus compiler and core runtime in Nodus. This would mean that the language
-is expressive and performant enough to implement its own compilation pipeline:
-lexer, parser, AST lowering, bytecode generation, and VM evaluation.
+Nodus is going to bootstrap itself — to compile itself in itself. The compiler
+and core runtime get rewritten in Nodus: lexer, parser, AST lowering, bytecode
+generation, and VM evaluation.
 
-Bootstrapping is a meaningful milestone in a language's maturity. It validates
-that the language is sufficiently complete, performant, and expressive to handle
-non-trivial systems programming tasks. It is not a near-term goal, but it
-informs design decisions: features that would make bootstrapping impossible
-(or require a separate "systems" subset) are treated as signals that the
-language's abstraction level is wrong.
+This is a long-term goal, not a near-term one, and the distinction matters in
+only one direction: it is far off, not undecided. It is a direction the language
+is being built toward, and it already constrains design today. A feature that
+would make bootstrapping impossible, or that would need a separate "systems"
+subset to work around, is treated as a signal that the abstraction level is
+wrong — that is a rule with teeth, not a preference.
+
+**Where it stands.** `examples/expr_compiler.nd` is a working lexer,
+recursive-descent parser and evaluator written entirely in Nodus, so the shape
+of the task is already expressible. What is not yet in place:
+
+- **Throughput.** Measured at roughly **314K instructions/sec** on CPython
+  (1,000,000 loop iterations = 17,000,021 instructions in 54s). Self-hosting
+  means the compiler compiling itself, and the pipeline is ~2,300 lines of
+  lexer/parser/AST plus ~1,900 lines of compiler. This is the real blocker —
+  see [#173](https://github.com/Masterplanner25/Nodus/issues/173).
+- **String slicing.** `std:strings` has no substring or slice, so a lexer must
+  index character by character. `expr_compiler.nd` does exactly that and says so.
+- **Closure upvalue mutation** ([#156](https://github.com/Masterplanner25/Nodus/issues/156)).
+  Compiler state threads through the map-mutation workaround instead of being
+  written directly.
+- **Module privacy** ([#158](https://github.com/Masterplanner25/Nodus/issues/158)).
+  Every top-level function is public, so a self-hosted compiler cannot keep
+  helpers internal.
+
+What *is* in place is the part usually hardest to retrofit: the semantics are
+stable, and the 49-opcode instruction set has been frozen at
+`BYTECODE_VERSION` 4 since v1.0.
 
 ---
 

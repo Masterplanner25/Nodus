@@ -452,6 +452,10 @@ Start with the foundation guides, then pick the topic you need:
 
 - **[LANGUAGE_SPEC.md](../language/LANGUAGE_SPEC.md)** — the authoritative
   reference for every operator, form, and builtin.
+- **[LANGUAGE_VISION.md](../language/LANGUAGE_VISION.md)** — what Nodus is for,
+  what it deliberately is not, and where it is going. Includes the
+  bootstrapping goal: Nodus will compile itself in itself, which is a decided
+  direction and already constrains what gets added to the language.
 
 ---
 
