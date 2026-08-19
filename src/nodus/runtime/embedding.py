@@ -859,6 +859,12 @@ class NodusRuntime:
             {},
             code_locs=[],
             source_path=filename,
+            # #469: the run's rebuild handle. Without this, an embedded run
+            # persisted `workflow_source_code: None` and could not be resumed in
+            # another process -- `run_source` not at all, `run_file` only by
+            # re-reading whatever was on disk at resume time. Passed here rather
+            # than assigned afterwards so it stays beside `source_path`.
+            source_code=source,
             allowed_paths=self.allowed_paths,
             allow_subprocess=self.allow_subprocess,
             allow_network=self.allow_network,

@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#469: a workflow started through `NodusRuntime` can now be resumed in another
+  process.** `vm.source_code` is what `_rebuild_workflow_graph` recompiles to resume
+  a run, and only `tooling/runner.py` and `dap/server.py` set it. Every embedded run
+  therefore recorded `workflow_source_code: None`, so one `resume_workflow` call meant
+  three different things depending on how the run had started:
+
+  | entry point | resume replayed |
+  |---|---|
+  | `nodus run`, `nodus dap` | the source stored with the run — edits ignored |
+  | `NodusRuntime.run_file` | whatever was on disk at resume time — edits picked up |
+  | `NodusRuntime.run_source` | nothing; the run could not be resumed at all |
+
+  All three are pinned now: **a resume replays the source the run was planned
+  against.** Re-executing against the program the run was planned for is what makes
+  checkpoint-restore mean anything, and it is the only reading compatible with a
+  determinism boundary (#494).
+
+  Same-process resume always worked — it succeeds off the in-memory graph registry
+  and never reaches the rebuild — which is why this went unnoticed.
+
+  `source_code` is now a `VM` constructor parameter beside `source_path` rather than
+  an attribute assignable only afterwards. That is the actual fix for the class of
+  bug: an entry point could pass `source_path`, look complete, and record no source.
+
+  **Behaviour change for embedders:** `NodusRuntime.run_file` no longer picks up
+  edits made between a run and its resume.
+
+### Added
+
+- **A resume says so when the file has changed since the run started.** Pinning is
+  the right rule but a trap when it is silent — the natural debugging loop is *the
+  workflow failed, so edit the step and resume*, and the edit appears to do nothing.
+  A resume whose stored source differs from the file now writes a warning to stderr
+  and emits a `workflow_source_drift` event:
+
+  ```
+  resume: 'w' is replaying the source stored when the run started; wf.nd has changed
+  since and those edits are not in this run. Start a new run to pick them up.
+  ```
+
+  Reported rather than refused: a resume that stops working because someone touched
+  the file would be worse than one that explains itself.
+
 ### Changed
 
 - **A failed step no longer tears down the scheduler: the run drains, then reports.**
