@@ -77,6 +77,37 @@ def _fail(message: str, node) -> None:
     )
 
 
+def validate_step_guards(stmts) -> None:
+    """Check every `step ... when reached("...")` against its own workflow (#471).
+
+    Same guarantee as a goal's `until`, and the reason the guard grammar is
+    restricted rather than a general expression: a step waiting on a checkpoint
+    nothing records would never run, silently, and would look exactly like a step
+    whose condition simply did not hold this time.
+
+    The check is local -- a step's guard can only name checkpoints from the flow
+    it belongs to -- so unlike `validate_goal_pursuits` there is no
+    cannot-see-the-target case to worry about.
+    """
+    for flow in walk(stmts):
+        if type(flow).__name__ not in ("WorkflowDef", "GoalDef"):
+            continue
+        available = checkpoint_labels(flow)
+        for step in getattr(flow, "steps", []) or []:
+            guard = getattr(step, "when", None)
+            if guard is None:
+                continue
+            for label, node in reached_labels(guard):
+                if label in available:
+                    continue
+                known = ", ".join(f'"{name}"' for name in sorted(available)) or "none"
+                _fail(
+                    f"step '{step.name}' waits on checkpoint \"{label}\", which "
+                    f"'{flow.name}' never records. It records {known}.",
+                    node,
+                )
+
+
 def validate_goal_pursuits(stmts) -> None:
     """Check every `goal ... over ...` in a parsed module.
 

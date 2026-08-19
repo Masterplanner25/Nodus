@@ -33,6 +33,40 @@
 
 ### Added
 
+- **A step can carry a guard — `step ship after review when reached("approved")`.**
+  Workflow edges were unconditional, so data-dependent branching was expressible
+  only *inside* a step body, where the graph cannot see it: `plan_workflow` reported
+  the same levels regardless of what the run would do (#471).
+
+  The guard takes the **same restricted predicate grammar** as a goal's `until` —
+  `reached("label")` composed with `&&`, `||`, `!` and parentheses — and for the
+  reason already recorded in the parser: a general expression would be compiled
+  code, invisible to `plan_workflow`, and would make the checkpoint check
+  best-effort. Restricted, the predicate stays *data*, so a guard naming a
+  checkpoint its workflow never records is a **compile error**:
+
+  ```
+  step 'deploy' waits on checkpoint "aproved", which 'deployment' never records.
+  It records "approved".
+  ```
+
+  A step whose guard does not hold is **`skipped`**, and the skip **cascades**:
+  a step whose dependency was skipped is skipped too, since `after` reads as
+  *needs*. `on: ["completed", "skipped"]` runs it anyway.
+
+  That default is Airflow's rather than Argo's, and it is a deliberate departure
+  from what the issue's earlier analysis suggested. Argo treats a skipped upstream
+  as *satisfying* the dependency because it has no way for the downstream task to
+  say otherwise; Nodus now does, so the safe default plus an explicit escape is
+  available and the surprising default is not needed.
+
+  `when` is contextual, so it stays usable as an identifier. No new opcodes;
+  `BYTECODE_VERSION` is still 4.
+
+  **`plan_workflow` becomes a superset once any step carries a guard** — every step
+  that could run, not every step that will. It remains exact about structure, and
+  every step still reaches a reported status.
+
 - **A step can declare which dependency outcomes satisfy its join — `with { on: [...] }`.**
   `step b after a` has always meant *and a produced a value*. That is a join policy,
   and it was the only one, so the cleanup step every pipeline needs — run this when

@@ -172,6 +172,11 @@ class WorkflowStep(Base):
     deps: list[str]
     body: Block
     options: object | None = None
+    # `when <predicate>` — a guard on the step itself (#471). The same restricted
+    # predicate grammar a goal's `until` uses, and for the same reason: a general
+    # expression would be compiled code, invisible to `plan_workflow` and beyond
+    # what `nodus check` can verify. Restricted, it stays data.
+    when: object | None = None
 
 
 @dataclass
@@ -205,6 +210,7 @@ class GoalStep(Base):
     deps: list[str]
     body: Block
     options: object | None = None
+    when: object | None = None
 
 
 @dataclass

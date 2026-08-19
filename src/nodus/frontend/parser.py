@@ -68,7 +68,7 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowStateDecl,
     CheckpointStmt,
 )
-from nodus.frontend.goal_validation import validate_goal_pursuits
+from nodus.frontend.goal_validation import validate_goal_pursuits, validate_step_guards
 from nodus.orchestration.workflow_lowering import STEP_OPTION_KEYS
 
 # Human-readable display names for token kinds used in error messages.
@@ -210,6 +210,8 @@ class Parser:
         # Module-level rather than inside `goal_pursuit`, because the workflow may
         # be declared after the goal that pursues it.
         validate_goal_pursuits(stmts)
+        # #471: a step guard's checkpoints are checked against its own flow.
+        validate_step_guards(stmts)
         return stmts
 
     def handle_comment(self, tok: Tok) -> None:
@@ -706,13 +708,20 @@ class Parser:
             while self.at(","):
                 self.eat(",")
                 deps.append(self.eat("ID").val)
+        # `when <predicate>` sits between `after` and `with`, which is how it
+        # reads: what this step depends on, whether it should run at all, then how
+        # it should be run. Contextual, so `when` stays usable as an identifier.
+        when = None
+        if self.at("ID") and self.peek().val == "when":
+            self.eat("ID")
+            when = self.goal_predicate()
         if self.at("WITH"):
             self.eat("WITH")
             options = self.parse_workflow_options()
         self.workflow_step_depth += 1
         body = self.block()
         self.workflow_step_depth -= 1
-        return self.mark(step_type(name, deps, body, options=options), start)
+        return self.mark(step_type(name, deps, body, options=options, when=when), start)
 
     def parse_workflow_options(self):
         return self.parse_named_map_literal(error_keys=STEP_OPTION_KEYS, error_template="Unsupported workflow step option: {key}")

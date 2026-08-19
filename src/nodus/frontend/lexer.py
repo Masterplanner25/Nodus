@@ -90,7 +90,16 @@ GOAL_KEYWORDS = {
     "retry",
 }
 
-CONTEXTUAL_KEYWORDS = LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS
+# Recognised only in a workflow step header, between `after` and `with` (#471):
+# `step deploy after review when reached("approved") { ... }`. Contextual for the
+# same reason -- `when` is a plausible variable name.
+STEP_GUARD_KEYWORDS = {
+    "when",
+}
+
+CONTEXTUAL_KEYWORDS = (
+    LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS | STEP_GUARD_KEYWORDS
+)
 
 # Every word the language treats as a keyword, reserved or contextual. This is
 # what editor grammars, docs and tooling should read.

@@ -52,7 +52,7 @@ class WorkflowRebuildError(Exception):
 # fires -- "declared but not enforced", which this codebase has five other instances
 # of. `skipped` and `omitted` are absent for the same reason: nothing produces them
 # until a conditional-edge design exists (#471).
-JOIN_ON_STATES = ("completed", "failed")
+JOIN_ON_STATES = ("completed", "failed", "skipped")
 
 # What `after` has always meant: every dependency must have produced a value.
 DEFAULT_JOIN_ON = frozenset({"completed"})
@@ -65,6 +65,9 @@ class TaskNode:
     dependencies: list["TaskNode"] = field(default_factory=list)
     # Which dependency outcomes satisfy this task's join (#475).
     on_states: frozenset[str] = DEFAULT_JOIN_ON
+    # `when <predicate>` as data -- a nested map the runtime walks against the
+    # checkpoints reached so far. None means unconditional (#471).
+    when: object | None = None
     step_name: str | None = None
     worker: str | None = None
     worker_timeout_ms: float | None = None
@@ -575,6 +578,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     waiting: dict | None = None
     retry_scheduled: dict | None = None
     cache_hits: list[str] = []
+    skipped_ids: set[str] = set()
     if not hasattr(vm, "task_cache"):
         vm.task_cache = {}
 
@@ -803,6 +807,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             return "completed" in task.on_states
         if dep.status == "failed":
             return "failed" in task.on_states
+        if dep.task_id in skipped_ids:
+            return "skipped" in task.on_states
         return False
 
     def tolerates_failure(task: TaskNode) -> bool:
@@ -826,6 +832,47 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if scheduler_order_map:
             ready.sort(key=lambda task: scheduler_order_map.get(task.task_id, len(scheduler_order_map)))
         return ready
+
+    def guard_holds(task: TaskNode) -> bool:
+        """Evaluate a step's `when` predicate against the checkpoints reached so far.
+
+        The predicate is data (a nested map), walked by the same interpreter a
+        goal's `until` uses. Evaluated at the moment the step becomes ready, so it
+        sees every checkpoint its dependencies recorded.
+        """
+        if task.when is None:
+            return True
+        reached = {
+            entry["label"]
+            for entry in (checkpoints or [])
+            if isinstance(entry, dict) and isinstance(entry.get("label"), str)
+        }
+        return bool(vm._evaluate_goal_predicate(task.when, reached))
+
+    def schedule_ready() -> None:
+        """Start everything that is ready, skipping whatever its guard excludes.
+
+        Loops because a skip resolves its dependents' joins: skipping `deploy` can
+        make `notify` classifiable in the same pass. Bounded -- every iteration
+        that repeats removes at least one task from `pending`.
+        """
+        while True:
+            skipped_any = False
+            for task in ready_tasks():
+                if not guard_holds(task):
+                    skipped_ids.add(task.task_id)
+                    _remove_task_from_pending(task.task_id)
+                    vm.event_bus.emit_event("task_skipped", name=task.task_id)
+                    workflow_data = workflow_event_payload(task)
+                    if workflow_data is not None:
+                        vm.event_bus.emit_event(
+                            "workflow_step_skipped", name=task.step_name, data=workflow_data
+                        )
+                    skipped_any = True
+                else:
+                    spawn_task(task)
+            if not skipped_any:
+                return
 
     def task_statuses() -> dict[str, str]:
         """Classify every task in the graph once the run has drained.
@@ -851,14 +898,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         # reading: `upstream_failed` means something above me broke, `omitted`
         # means the condition I declared was not met. Collapsing them would lose
         # exactly what a failure-tolerant join is for.
-        blocked: set[str] = set()   # -> upstream_failed
-        omitted: set[str] = set()   # -> omitted
+        blocked: set[str] = set()          # -> upstream_failed
+        omitted: set[str] = set()          # -> omitted
+        skipped: set[str] = set(skipped_ids)  # -> skipped, guard said no
         changed = True
         while changed:
             changed = False
             for task in tasks:
                 tid = task.task_id
-                if tid in results or tid in failed_ids or tid in blocked or tid in omitted:
+                if (
+                    tid in results or tid in failed_ids
+                    or tid in blocked or tid in omitted or tid in skipped
+                ):
                     continue
                 for dep in task.dependencies:
                     # Failure dominates: a task downstream of both a break and an
@@ -872,6 +923,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     # The dependency finished in a state this task said it does
                     # not accept -- most often a step declaring `on: ["failed"]`
                     # whose dependency succeeded, which is the whole point of it.
+                    # A skipped dependency cascades unless this step declared it
+                    # acceptable. `after` reads as *needs*, so a step whose
+                    # dependency never ran should not fire with `nil` for it --
+                    # `on: [..., "skipped"]` is how to say otherwise.
+                    if dep.task_id in skipped and "skipped" not in task.on_states:
+                        skipped.add(tid)
+                        changed = True
+                        break
                     if dep.task_id in omitted or (
                         dep.task_id in results and "completed" not in task.on_states
                     ):
@@ -887,6 +946,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 statuses[task.task_id] = "failed"
             elif task.task_id in blocked:
                 statuses[task.task_id] = "upstream_failed"
+            elif task.task_id in skipped:
+                statuses[task.task_id] = "skipped"
             elif task.task_id in omitted:
                 statuses[task.task_id] = "omitted"
             elif task.status == "running":
@@ -1139,8 +1200,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     goal_data = goal_event_payload(task)
                     if goal_data is not None:
                         vm.event_bus.emit_event("goal_step_complete", name=task.step_name, data=goal_data)
-                    for next_task in ready_tasks():
-                        spawn_task(next_task)
+                    schedule_ready()
                     worker_cond.notify_all()
                 return
         if dispatcher is not None:
@@ -1208,8 +1268,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                             goal_data = goal_event_payload(task)
                             if goal_data is not None:
                                 vm.event_bus.emit_event("goal_step_complete", name=task.step_name, data=goal_data)
-                            for next_task in ready_tasks():
-                                spawn_task(next_task)
+                            schedule_ready()
                     except Exception as _exc:
                         try:
                             _fail_task(task, _exc)
@@ -1286,8 +1345,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         # schedule once `failed` is set, and that is the only place the decision
         # should live. Adding a second check here is how a sibling path drifts
         # out of step with it.
-        for next_task in ready_tasks():
-            spawn_task(next_task)
+        schedule_ready()
         return False
 
     def _fail_task(task: TaskNode, err: Exception):
@@ -1429,8 +1487,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         # only re-evaluated when a step *completes*, which a failing step never
         # does. `spawn_task` refuses everything that did not opt in, so this can
         # be called unconditionally.
-        for next_task in ready_tasks():
-            spawn_task(next_task)
+        schedule_ready()
 
         # False, not True: `True` tells the scheduler to break its loop, which
         # dropped every other coroutine where it stood -- including healthy
@@ -1483,8 +1540,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             if task.task_id not in results and task.task_id not in pending:
                 _mark_task_pending(task.task_id)
 
-    for task in ready_tasks():
-        spawn_task(task)
+    schedule_ready()
 
     if failed is not None:
         failed.update(workflow_result_payload())
@@ -1521,7 +1577,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     # that does not exist.
     unexplained_pending = {
         tid for tid, status in task_statuses().items()
-        if tid in pending and status not in ("omitted", "upstream_failed", "cancelled")
+        if tid in pending and status not in ("omitted", "upstream_failed", "cancelled", "skipped")
     }
 
     if unexplained_pending:

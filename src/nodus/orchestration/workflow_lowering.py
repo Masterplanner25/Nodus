@@ -188,14 +188,19 @@ def _lower_step_ast(step: WorkflowStep | GoalStep, state_names: list[str]) -> Ma
         body_stmts = rewritten_body.stmts if isinstance(rewritten_body, Block) else [rewritten_body]
         rewritten_body = Block([prelude] + body_stmts)
     body = _return_last_action(rewritten_body)
-    return MapLit(
-        [
-            (Str("name"), Str(step.name)),
-            (Str("deps"), ListLit([Str(dep) for dep in step.deps])),
-            (Str("fn"), FnExpr([Param(dep) for dep in step.deps], body, return_type=None)),
-            (Str("options"), step.options if step.options is not None else MapLit([])),
-        ]
-    )
+    items: list[tuple[object, object]] = [
+        (Str("name"), Str(step.name)),
+        (Str("deps"), ListLit([Str(dep) for dep in step.deps])),
+        (Str("fn"), FnExpr([Param(dep) for dep in step.deps], body, return_type=None)),
+        (Str("options"), step.options if step.options is not None else MapLit([])),
+    ]
+    when = getattr(step, "when", None)
+    if when is not None:
+        # Data, not a compiled closure -- the same treatment a goal's `until` gets,
+        # so the condition stays readable before the run and `nodus check` can
+        # verify the labels it names.
+        items.append((Str("when"), _lower_predicate(when)))
+    return MapLit(items)
 
 
 def _return_last_action(body: object) -> Block:
@@ -369,6 +374,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             worker=_string_option(vm, options, "worker", step_name),
             worker_timeout_ms=_number_option(vm, options, "worker_timeout_ms", step_name),
             on_states=_on_option(vm, options, step_name),
+            when=step.get("when"),
             step_name=step_name,
         )
         tasks.append(task)
