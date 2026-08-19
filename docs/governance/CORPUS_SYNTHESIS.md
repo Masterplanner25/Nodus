@@ -1,4 +1,4 @@
-# What seventeen systems say about Nodus
+# What eighteen systems say about Nodus
 
 > Synthesis of the 2026-08-17/18 research-corpus sweep: every folder under `C:\codev\*
 > research` cross-checked against **Nodus 5.0.4**, with 30 issues filed (#465–#494).
@@ -21,7 +21,7 @@ Thirty issues, by subsystem:
  0   lexer / parser / vm / type-system
 ```
 
-**Seventeen adversarial reads — four of them auditing Nodus directly — produced zero
+**Eighteen adversarial reads — four of them auditing Nodus directly — produced zero
 findings about the language core.** Nothing about closures, control flow, types, the VM
 or bytecode. The two compiler issues are both about the workflow/host boundary (#487's
 missing analyzer binding, #489's absent extern declarations), not about language
@@ -34,13 +34,14 @@ VM are not where the risk is. **The `workflow` DSL and its runtime semantics are
 
 ## 2. What the absence of competitors does and does not prove
 
-Not one of the seventeen has an orchestration *language*:
+Not one of the eighteen has an orchestration *language*:
 
 - **Nine have no graph engine at all** — Aider, Devika, gpt-engineer, OpenHands,
   OpenClaw, Open Interpreter, SWE-agent, MetaGPT, Hermes.
 - **Five have a graph API hosted in a general-purpose language** — LangGraph, MAF, ADK,
   CrewAI, Temporal.
 - **Three are not agent orchestrators** — Linux, Claude Code, Codex.
+- **One is a peer of the *runtime*, not the language** — Pi (§3.5).
 
 **The tempting reading is wrong.** "Nobody built a DSL" is not evidence that a DSL is the
 wrong shape. Building a language is an undertaking almost nobody attempts, with or
@@ -72,7 +73,7 @@ nothing.
 
 ## 3. Which systems can actually teach us about orchestration
 
-Not all seventeen are equally informative, and treating them as one corpus flattens the
+Not all eighteen are equally informative, and treating them as one corpus flattens the
 signal. Stratified by what they own:
 
 ### Tier 1 — own a real orchestration engine (4)
@@ -107,6 +108,49 @@ Still useful, but as negative evidence — *what it costs to have no boundary* �
 design input. Devika is the sharpest: nobody there chose to skip durable resume; they
 accreted the fragments they could not avoid and omitted the rest silently. Linux is the
 outlier that contributed the single best design rule anyway (§6).
+
+### The one system on a different axis — Pi
+
+**Pi** (`C:\codev\openclaw_research\Pi Architecture, Agent & Runtime Audit.md`, ~106,500
+LOC across 10 packages) does not fit the tiers, because it is not a peer of the workflow
+DSL at all. `OPENCLAW_ANALYSIS.md` maps it as *"Pi agent RPC runtime → NodusRuntime"* —
+it is the only system in the corpus that is a direct peer of the **embedding runtime**.
+
+Its own audit verifies **zero** orchestration: *"zero plans/DAGs/tasks/joins at both
+revisions — verified by exhaustive search."* Where it has an opinion, that opinion is
+about the host/guest boundary, and it is worth having:
+
+- **`createToolDefinitionFromAgentTool`** normalises a host-supplied tool into the same
+  definition type as a built-in, *"dispatched identically to built-ins."* That is the
+  unification #493 asks for. Its audit finishes the sentence with *"there is no privilege
+  distinction"* — as a finding, not a boast, since its `bash` tool has *"no allowlist, no
+  approval, no sandbox."* Nodus should take the unification and keep the privilege
+  distinction it already has in `requires=`.
+- **`file-mutation-queue.ts`** — *"serializes concurrent writes to one path — the invariant
+  that makes parallel tool execution safe for edits."* A second working answer to #485's
+  problem class, though it serialises rather than merges and so does not fix
+  read-modify-write across a yield. Recorded on the issue with that caveat.
+- **`Record log + reduceLaneState + resume()`, status: "implemented, unwired"** — and its
+  reified action list includes **`apply_pending_write`**, LangGraph's mechanism arrived at
+  independently under the same name.
+
+**That last one is the sharpest parallel in the corpus.** Pi built a record log with a
+reducer and a resume, and does not use it. Nodus has `RuntimeEventBus` with structured,
+serialisable events and pluggable sinks, and nothing that persists or replays them. Two
+projects, same substrate built, same place stopped — which suggests the hard part is not
+building the journal but **committing that recovery reads from the log rather than from
+source.** That is the same commitment #470 asks for on topology and #494 on observations.
+
+Pi is also a useful negative control: with no orchestration whatsoever, it still needed a
+record-and-resume story for one agent's own operation. The requirement does not come from
+having a task graph.
+
+**Method note.** Pi was nearly missed. It was skipped on a first pass because a grep for
+"nodus" over its audit returns zero — the same screen that correctly cleared the Linux and
+Codex documents. It is the one case where that screen was wrong, because the folder's own
+mapping document names Pi as the `NodusRuntime` analogue. Zero mentions means *nobody has
+compared them*, which for a direct peer is a reason to look harder, not to move on.
+
 
 ### The distribution — most findings did not come from the systems that own orchestration
 
@@ -297,7 +341,7 @@ interface."* It is the missing type behind #492 and the natural interface for th
 ### Decline
 
 Anything re-implementing the ReAct loop, planners, prompt assembly, edit formats or
-repo-maps. All seventeen audits classify these as app-hosted content, and MetaGPT's is
+repo-maps. All eighteen audits classify these as app-hosted content, and MetaGPT's is
 explicit that its own `AgentExecutor` plan-once model is the least agentic component in
 its ecosystem. Absorbing agent *content* would negate the boundary that makes the rest
 defensible.
