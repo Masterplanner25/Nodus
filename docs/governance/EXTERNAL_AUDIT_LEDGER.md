@@ -256,8 +256,43 @@ supported path**, not the path that produces the surprising output.
 |---|---|---|---|
 | Final | `_invoke_host_function` is a single unbypassable, **ungoverned** chokepoint | 8 lines at `embedding.py:878`; no policy check; `register_function` takes no permission metadata; `allow_subprocess/network/env` all default `True` | **#405** |
 | §6 | No agentic machinery in the core | Third independent confirmation | D1 |
-| F1 | Two orchestration engines — `orchestration/task_graph` and `nodus_lang_workflow` — *"two engines is not a position you can defend"* | Both exist and are separately maintained | — |
+| F1 | Two orchestration engines — *"two engines is not a position you can defend"* | **Misattributed — see below.** The audit was reading the standalone `C:\dev
+odus-workflow` package, not the in-tree module | **#483** |
 | §19 | `register_function` has no permission metadata | Confirmed at `embedding.py:384` | #405 |
+
+#### F1 re-verified at 5.0.4 — right conclusion, wrong artifact
+
+The row above was the one confirmed finding in this audit with no issue attached,
+and re-checking it during the 2026-08-18 corpus sweep showed why: **the literal
+claim is wrong, and was wrong when written.**
+
+There is one execution engine. `nodus_lang_workflow/runner.py` imports and calls
+`run_task_graph` (`:17`, `:782`, `:929`), so it is a durability layer around the
+core engine rather than a competing one. And the core *does* import it —
+`cli.py:55`, `services/server.py:53`, `tooling/runner.py:35`, `vm/vm.py:1220` —
+directly contradicting *"nothing in the core imports nodus_workflow."*
+
+What the audit was reading was the **standalone `C:\dev
+odus-workflow` package.**
+Its LOC figure — 682 — matches that tree exactly, and `FlowExecutor`, `FlowRun` and
+`WorkflowWaitSignal` are all there and appear nowhere in `src/nodus_lang_workflow/`.
+So the claim was true of a different artifact, and true by design: the in-tree
+module was renamed away from that name in NAME-COL-001 precisely so the two would
+not collide.
+
+**The conclusion survives its own evidence.** *"A language whose flagship
+abstraction has a competing implementation in its own ecosystem cannot be explained
+to users"* still holds — the competitor is a PyPI listing rather than a fork in the
+tree. `pip install nodus-workflow` returns a package whose published summary is
+*"Declarative DAG workflows with WAIT/RESUME… for Nodus AI systems"* and which
+cannot run a `.nd` workflow, has no `nodus-lang` dependency, and shares no code with
+the engine. Filed as **#483**.
+
+This is a fourth instance of the pattern this ledger already records — *claims about
+what the code **is**, read directly, held every time; claims about what it **does**,
+inferred, failed every time.* F1 is a third kind: a claim about **which file you are
+looking at**, which no amount of careful reading of that file can correct. The two
+packages differ by one path segment.
 
 ### Wrong
 
