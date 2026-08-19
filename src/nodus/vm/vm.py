@@ -160,6 +160,7 @@ class VM:
         host_globals: dict | None = None,
         input_fn=None,
         source_path: str | None = None,
+        source_code: str | None = None,
         trace: bool = False,
         trace_no_loc: bool = False,
         trace_filter: str | None = None,
@@ -191,7 +192,13 @@ class VM:
         self.ip = 0
         self.input_fn = input_fn if input_fn is not None else input
         self.source_path = source_path
-        self.source_code: str | None = None
+        # Keep this beside `source_path`: the two are the run's rebuild handle and
+        # a resume needs at least one of them. `source_code` used to be
+        # assignable only after construction, so an entry point that passed
+        # `source_path` looked complete while recording no source at all -- which
+        # is how embedded runs became unresumable (#469). Both are parameters now
+        # so a new entry point meets them together.
+        self.source_code: str | None = source_code
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter
@@ -1511,6 +1518,49 @@ class VM:
             step_plan["workflow"] = flow_name
         return step_plan
 
+    def _warn_on_source_drift(
+        self, flow_name: str, source_path, stored_source: str, graph_id: str
+    ) -> bool:
+        """Say so when the file has changed since the run was planned.
+
+        A resume replays the source stored with the run, so edits made in between
+        have no effect. That is the right rule -- re-executing against the program
+        the run was planned for is what makes checkpoint-restore mean anything --
+        but it is a trap when it happens quietly, because the natural debugging
+        loop is *the workflow failed, so edit the step and resume*, and the edit
+        appears to do nothing.
+
+        Reported rather than refused: a resume that stops working because someone
+        touched the file would be worse than one that explains itself. Returns
+        whether drift was found, for tests.
+        """
+        if not isinstance(source_path, str) or not source_path:
+            return False
+        try:
+            with open(source_path, "r", encoding="utf-8") as handle:
+                current = handle.read()
+        except OSError:
+            # The file has moved or gone. The run is still resumable from its
+            # stored source, and a missing file is not drift.
+            return False
+        if current == stored_source:
+            return False
+        message = (
+            f"resume: '{flow_name}' is replaying the source stored when the run "
+            f"started; {source_path} has changed since and those edits are not in "
+            f"this run. Start a new run to pick them up."
+        )
+        print(message, file=sys.stderr)
+        self.event_bus.emit_event(
+            "workflow_source_drift",
+            data={
+                "workflow": flow_name,
+                "graph_id": graph_id,
+                "source_path": source_path,
+            },
+        )
+        return True
+
     def _rebuild_workflow_graph(self, graph_id: str, state: dict) -> TaskGraph | None:
         _meta_raw = state.get("metadata")
         metadata: dict[str, Any] = _meta_raw if isinstance(_meta_raw, dict) else {}
@@ -1525,6 +1575,10 @@ class VM:
         source_code = metadata.get("workflow_source_code")
         source_path = metadata.get("workflow_source_path")
         if not isinstance(source_code, str):
+            # Runs persisted before every entry point recorded its source (#469).
+            # Re-reading the file means the rebuild uses whatever is on disk now,
+            # which is the opposite of the pinned rule below -- kept only so those
+            # older runs stay resumable at all.
             if not isinstance(source_path, str) or not source_path or not os.path.exists(source_path):
                 raise WorkflowRebuildError(
                     f"no source to rebuild '{flow_name}' from — the run stored no "
@@ -1533,6 +1587,8 @@ class VM:
                 )
             with open(source_path, "r", encoding="utf-8") as f:
                 source_code = f.read()
+        else:
+            self._warn_on_source_drift(flow_name, source_path, source_code, graph_id)
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
         worker_dispatcher = getattr(self, "worker_dispatcher", None)
         event_bus = self.event_bus
