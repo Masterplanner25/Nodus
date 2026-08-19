@@ -1197,6 +1197,8 @@ class VM:
             "steps": {}, "failed": [], "tasks": {}, "timings": {}, "attempts": {},
             "cache_hits": [], "graph_id": "", "state": {}, "checkpoints": [],
             "workflow": "", "goal": "",
+            # Per-task outcome report, carried on every real result.
+            "statuses": {}, "task_statuses": {},
             # Deferral / failure keys — absent from a completed result, present on
             # exactly the runs a resume is issued for (#399).
             "status": "", "wait": {}, "retry": {}, "error": "",
