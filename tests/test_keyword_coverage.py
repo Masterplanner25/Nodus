@@ -36,6 +36,7 @@ from nodus.frontend.lexer import (  # noqa: E402
     CONTEXTUAL_KEYWORDS,
     EXPRESSION_KEYWORDS,
     GOAL_KEYWORDS,
+    STEP_GUARD_KEYWORDS,
     KEYWORDS,
     LOOP_CONTROL_KEYWORDS,
 )
@@ -82,8 +83,10 @@ class KeywordListTests(unittest.TestCase):
         self.assertEqual(set(), CONTEXTUAL_KEYWORDS & KEYWORDS)
 
     def test_contextual_keywords_are_split_by_where_they_parse(self):
-        self.assertEqual(LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS,
-                         CONTEXTUAL_KEYWORDS)
+        self.assertEqual(
+            LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS | STEP_GUARD_KEYWORDS,
+            CONTEXTUAL_KEYWORDS,
+        )
 
 
 # closes: #357
