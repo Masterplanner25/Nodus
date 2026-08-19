@@ -84,6 +84,10 @@ print(plan["levels"])
 // [["compile"], ["test", "package"], ["deploy"]]
 ```
 
+The plan is exact for a workflow with no guards. Once any step carries a
+`when` (§4.2) the levels become a **superset** — every step that *could* run,
+not every step that will.
+
 **Unknown dependency name** — caught at compile time:
 
 ```
@@ -302,6 +306,57 @@ exactly the situation it exists for.
 A dependency that failed passes `nil` to the step, since it produced no value.
 The step is not told *why*; see
 [#468](https://github.com/Masterplanner25/Nodus/issues/468).
+
+### 4.2 `when` — running a step only under a condition
+
+`on` is about *how a dependency finished*. `when` is about whether the step
+should run at all:
+
+```nd-expect=output
+workflow deployment {
+    state score = 0
+    step review {
+        score = 92
+        let s = workflow_state()
+        if (s["score"] > 80) { checkpoint "approved" }
+        return s["score"]
+    }
+    step ship after review when reached("approved") { return "shipped" }
+    step escalate after review when !reached("approved") { return "escalated" }
+}
+
+let r = run_workflow(deployment)
+print(r["statuses"])
+```
+
+Output:
+
+```
+{"review": "completed", "ship": "completed", "escalate": "skipped"}
+```
+
+The guard goes between `after` and `with`, and takes the **same restricted
+predicate grammar** as a goal's `until`: `reached("label")`, composed with
+`&&`, `||`, `!` and parentheses. Not a general expression — for the same
+reason `until` is not one. Because the labels are literals, a guard naming a
+checkpoint its workflow never records is a **compile error**:
+
+```
+Syntax error at w.nd:4:35: step 'deploy' waits on checkpoint "aproved", which
+'deployment' never records. It records "approved".
+```
+
+A step whose guard does not hold is **`skipped`**, and the skip **cascades** —
+a step whose dependency was skipped is skipped too, because `after` reads as
+*needs*. Say `on: ["completed", "skipped"]` to run anyway.
+
+**`plan_workflow` is now a superset, not an exact prediction.** Levels list
+every step that *could* run; guards are evaluated during the run, so which of
+them actually will is not known beforehand. The plan is still exact about
+structure — nothing appears or disappears — and every step reaches a reported
+status, so the result map tells you what happened.
+
+`when` is contextual, so it remains usable as an identifier.
 
 ---
 

@@ -174,8 +174,14 @@ fn main() {{ let r = run_workflow(w); print("ran") }}
     def test_the_accepted_vocabulary_is_only_what_a_dependency_can_reach(self):
         """`upstream_failed` and `cancelled` are conclusions drawn once the run
         winds down, so a step waiting on one would never become ready. Accepting
-        them here would ship a knob that silently never fires."""
-        self.assertEqual(set(JOIN_ON_STATES), {"completed", "failed"})
+        them here would ship a knob that silently never fires.
+
+        `skipped` joined the set when `when` shipped (#471) -- a guard evaluates
+        while the run is going, so a dependency really can reach it. That is the
+        bar for this list: a construct produces the state, not that the state
+        sounds useful.
+        """
+        self.assertEqual(set(JOIN_ON_STATES), {"completed", "failed", "skipped"})
 
 
 if __name__ == "__main__":

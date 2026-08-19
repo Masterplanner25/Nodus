@@ -257,10 +257,14 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         deps = ""
         if stmt.deps:
             deps = " after " + ", ".join(stmt.deps)
+        guard = ""
+        when = getattr(stmt, "when", None)
+        if when is not None:
+            guard = f" when {format_goal_predicate(when)}"
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{deps}{options} {{"
+        header = f"{prefix}step {stmt.name}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
@@ -268,10 +272,14 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         deps = ""
         if stmt.deps:
             deps = " after " + ", ".join(stmt.deps)
+        guard = ""
+        when = getattr(stmt, "when", None)
+        if when is not None:
+            guard = f" when {format_goal_predicate(when)}"
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{deps}{options} {{"
+        header = f"{prefix}step {stmt.name}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
