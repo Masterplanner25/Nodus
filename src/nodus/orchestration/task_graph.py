@@ -737,7 +737,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "graph_id": graph.graph_id,
         }
         payload.update(workflow_result_payload())
-        return payload
+        return with_statuses(payload)
 
     def retry_result_payload(task: TaskNode, retry_info: dict) -> dict:
         payload = {
@@ -761,7 +761,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "graph_id": graph.graph_id,
         }
         payload.update(workflow_result_payload())
-        return payload
+        return with_statuses(payload)
 
     def failed_id(task: TaskNode) -> str:
         if task.step_name is not None:
@@ -862,12 +862,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return payload
 
     def with_statuses(payload: dict) -> dict:
-        """Attach the status report, mirroring how `tasks`/`steps` are keyed."""
+        """Attach the status report, mirroring how `tasks`/`steps` are keyed.
+
+        Both keys are set unconditionally, empty if they have nothing to say.
+        `steps` behaves the same way -- present and `{}` for a bare `run_graph`,
+        which has no step names -- and the reason matters: Nodus maps raise on a
+        missing key, so a key that appears on some result shapes and not others
+        turns `r["statuses"]` into a crash that depends on how the run was
+        started. That is the #399 failure mode.
+        """
         by_task = task_statuses()
         payload["task_statuses"] = by_task
-        by_step = step_statuses(by_task)
-        if by_step:
-            payload["statuses"] = by_step
+        payload["statuses"] = step_statuses(by_task)
         return payload
 
     def _serialize_value(value):
