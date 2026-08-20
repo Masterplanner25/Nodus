@@ -43,6 +43,13 @@ class Coroutine:
     last_result: object | None = None
     task_timeout_ms: float | None = None
     task_started_at: float | None = None
+    # #502: a timeout the coroutine has been told about but not yet unwound for.
+    # The scheduler used to drop a timed-out coroutine where it stood, so its
+    # pending `finally` blocks never ran -- a step holding a lock lost its release
+    # in exactly the circumstances cleanup exists for, and runtime invariant
+    # I-VM-06 says `finally` always executes. Set here instead, so the coroutine
+    # is resumed once more to unwind before the error is delivered.
+    cancelling: object = None
     workflow_context: dict | None = None
     # ASYNC-MOD-001 (#105): the module execution context (code/functions/globals/
     # ...) this coroutine should run in. Captured at spawn and on every suspend,

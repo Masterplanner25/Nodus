@@ -4,6 +4,33 @@
 
 ### Fixes
 
+- **#502: a timed-out step now runs its `finally` blocks before it is dropped.**
+  `EXECUTION_INVARIANTS.md` **I-VM-06** states that `finally` blocks always
+  execute. The scheduler discarded a timed-out coroutine where it stood, so they
+  did not — a step holding a lock, an open transaction or a spawned subprocess
+  lost its release in exactly the circumstances cleanup exists for.
+
+  `timeout_ms` is the sharp case: it is a documented step option whose whole
+  purpose is to bound a step that might hang, so a user who bounds a hanging step
+  *and* wraps its resource in `try/finally` had done everything the documentation
+  asks and still leaked.
+
+  The coroutine is now resumed once more with a cancellation in flight, unwinds
+  through its pending `finally` blocks, and then delivers the timeout exactly as
+  before. Bounded by the same step budget as any other resume, so a `finally`
+  that loops cannot turn a timeout into a hang.
+
+  **A `catch` cannot swallow the deadline.** While cancelling, `handle_exception`
+  refuses to enter a catch handler: `finally` runs, `catch` does not. Unwinding
+  with an ordinary error would have let a step absorb its own timeout and carry
+  on past the bound it was given.
+
+  A step with no pending handlers takes the original path untouched — no extra
+  resume, no behaviour change for the common case.
+
+  The other trigger, a sibling step failing, was fixed earlier in this cycle by
+  draining the run rather than tearing down the scheduler.
+
 - **#469: a workflow started through `NodusRuntime` can now be resumed in another
   process.** `vm.source_code` is what `_rebuild_workflow_graph` recompiles to resume
   a run, and only `tooling/runner.py` and `dap/server.py` set it. Every embedded run
