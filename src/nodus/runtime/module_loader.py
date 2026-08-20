@@ -588,7 +588,7 @@ class ModuleLoader:
                 self.project_root = self._import_state.get("project_root")
             self._ensure_dependency_graph()
 
-            if self._cache_is_authoritative(source_path, source):
+            if source_path is not None and self._cache_is_authoritative(source_path, source):
                 cached = load_cached_bytecode(self.project_root, source_path)
                 if cached is not None:
                     cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
