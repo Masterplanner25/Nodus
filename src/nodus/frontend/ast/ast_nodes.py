@@ -511,3 +511,18 @@ def declared_flow_name(stmt) -> str | None:
         name = getattr(stmt, "name", None)
         return name if isinstance(name, str) else None
     return None
+
+
+# The forms that write to a name. Same shape of problem as FLOW_DECLARATIONS
+# above, in a different pass: the workflow state rewriter turns writes to a
+# `state` cell into writes on a hidden map, and it enumerated three of these
+# four. `CompoundAssign` was the one it had never heard of, so `counter += 1i`
+# in a step reached the compiler untouched, resolved as an undeclared local and
+# read nil (#518).
+#
+# These genuinely need different rewrites -- the node shapes differ -- so unlike
+# FLOW_DECLARATIONS there is no single shared answer to give. What the tuple buys
+# is the failure: `tests/test_state_compound_assign.py` demands a worked sample
+# per member, so a fifth form fails the suite until somebody has decided what it
+# means for state.
+ASSIGNMENT_FORMS = (Assign, CompoundAssign, IndexAssign, FieldAssign)

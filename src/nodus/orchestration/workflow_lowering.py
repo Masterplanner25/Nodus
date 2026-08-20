@@ -16,6 +16,7 @@ from nodus.frontend.ast.ast_nodes import (
     Call,
     CheckpointStmt,
     Comment,
+    CompoundAssign,
     DestructureLet,
     ExprStmt,
     FieldAssign,
@@ -751,6 +752,17 @@ class _StateRewriter:
             if expr.name in self.state_names and not self._is_local(expr.name):
                 return _mark_from(IndexAssign(Var(self.state_var), Str(expr.name), value), expr)
             return _mark_from(Assign(expr.name, value), expr)
+        if isinstance(expr, CompoundAssign):
+            value = self.rewrite_expr(expr.expr)
+            if expr.name in self.state_names and not self._is_local(expr.name):
+                # `x += e` is `x = x + e` everywhere else in the language, so it
+                # lowers to the shape the `Assign` case above already produces.
+                # Without this it reached the compiler untouched, resolved as an
+                # undeclared local, and read nil (#518).
+                cell = _mark_from(Index(Var(self.state_var), Str(expr.name)), expr)
+                folded = _mark_from(Bin(expr.op, cell, value), expr)
+                return _mark_from(IndexAssign(Var(self.state_var), Str(expr.name), folded), expr)
+            return _mark_from(CompoundAssign(expr.name, expr.op, value), expr)
         if isinstance(expr, Unary):
             return _mark_from(Unary(expr.op, self.rewrite_expr(expr.expr)), expr)
         if isinstance(expr, Bin):

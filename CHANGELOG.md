@@ -4,6 +4,36 @@
 
 ### Fixes
 
+- **#518: `counter += 1i` now reaches workflow state.** Compound assignment to a
+  `state` cell inside a step body did not lower at all. A `state` cell is not a
+  real variable — the lowering rewrites reads and writes of it into operations on
+  a hidden map — and the rewriter knew `=`, `x[i] =` and `x.f =` but had never
+  heard of `+=`. So the write passed through untouched, resolved as a local that
+  was never declared, and read `nil`:
+
+  ```
+  Type error at w.nd:3:25: Cannot add nil and int
+  ```
+
+  Accumulating into workflow state is the archetypal use of `+=`, and the error
+  blamed arithmetic rather than the rewrite that never happened. `nodus check`
+  reported `OK`. The workaround — write `counter = counter + 1i` — worked, which
+  is what kept this quiet: the two forms are documented as equivalent and are,
+  everywhere except here.
+
+  Three of four again, so the fix is the #487 fix: **`ASSIGNMENT_FORMS` in
+  `ast_nodes`** names the set. These genuinely need different rewrites, so unlike
+  `FLOW_DECLARATIONS` there is no shared answer to give — what the tuple buys is
+  the failure. `tests/test_state_compound_assign.py` demands a worked sample per
+  member, so a fifth form fails the suite until somebody has decided what it means
+  for a `state` cell.
+
+  The source assertion walks *identifiers*, not `Var` nodes, deliberately:
+  `CompoundAssign` carries its target as a bare `str` with no `Var` anywhere, so a
+  Var-only walk would have passed on the unfixed tree. Verified against it — only
+  the `CompoundAssign` subtest goes red, so the walk discriminates rather than
+  failing everything.
+
 - **#516: the SQLite workflow store closes its cursors instead of relying on
   refcounting.** `conn.execute(...)` returns a cursor; left unreferenced, CPython
   frees it at once and finalises the statement. A runtime without refcounting
