@@ -348,12 +348,16 @@
   | `completed` | produced a value |
   | `failed` | threw, retries exhausted |
   | `upstream_failed` | a transitive dependency failed |
+  | `skipped` | its guard was not satisfied |
+  | `omitted` | a step it depended on was skipped |
   | `cancelled` | never started — the run had already failed |
   | `abandoned` | still running when the run ended |
 
-  The vocabulary is deliberately limited to distinctions the runtime can already
-  draw. `skipped` and `omitted` wait on a conditional-edge design (#471) rather than
-  being guessed at now.
+  The vocabulary is limited to distinctions the runtime can actually draw. When this
+  entry was first written that was five values, and it said `skipped` and `omitted`
+  waited on a conditional-edge design — then step guards landed in this same release
+  and made both drawable, so they ship here too. `omitted` is the transitive closure
+  of `skipped`, the way `upstream_failed` is of `failed`.
 
   `cancelled` is the open half of #475 made visible: whether an independent branch
   should run anyway is a design question, and it is easier to answer when the result
