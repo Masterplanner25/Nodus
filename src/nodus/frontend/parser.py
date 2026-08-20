@@ -69,7 +69,7 @@ from nodus.frontend.ast.ast_nodes import (
     CheckpointStmt,
 )
 from nodus.frontend.goal_validation import validate_goal_pursuits, validate_step_guards
-from nodus.orchestration.workflow_lowering import STEP_OPTION_KEYS
+from nodus.orchestration.workflow_lowering import STATE_OPTION_KEYS, STEP_OPTION_KEYS
 
 # Human-readable display names for token kinds used in error messages.
 _TOKEN_DISPLAY: dict[str, str] = {
@@ -695,7 +695,20 @@ class Parser:
         name = self.eat("ID").val
         self.eat("=")
         expr = self.expr()
-        return self.mark(WorkflowStateDecl(name, expr), start)
+        # After the initializer, so the cell reads as "this is the value, and this
+        # is how it behaves" -- and so the `: type` slot stays free for typing
+        # state later, which is a separate question (#479 is about step outputs).
+        options = None
+        if self.at("WITH"):
+            self.eat("WITH")
+            options = self.parse_state_options()
+        return self.mark(WorkflowStateDecl(name, expr, options=options), start)
+
+    def parse_state_options(self):
+        return self.parse_named_map_literal(
+            error_keys=STATE_OPTION_KEYS,
+            error_template="Unsupported workflow state option: {key}",
+        )
 
     def flow_step(self, step_type):
         start = self.eat("STEP")

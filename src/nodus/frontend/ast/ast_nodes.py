@@ -183,6 +183,11 @@ class WorkflowStep(Base):
 class WorkflowStateDecl(Base):
     name: str
     value: object
+    # `with { merge: ..., durable: ... }` -- how concurrent writes to this cell
+    # combine (#485) and whether it is checkpointed (#498). A named map, like a
+    # step's options, so the policy stays data the plan can show rather than
+    # behaviour hidden in the runtime.
+    options: object | None = None
 
 
 @dataclass

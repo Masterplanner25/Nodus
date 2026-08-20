@@ -191,6 +191,34 @@ def get_registered_vm(graph_id: str):
     return _GRAPH_VMS.get(graph_id)
 
 
+def _durable_state(workflow_state, graph):
+    """Drop cells declared `durable: false` before the state is written to disk.
+
+    A cell holding a live handle -- a connection, a channel, a memoized comparator
+    -- has no meaning after a resume, and today there was no way to say so: every
+    cell was persisted, and a value `json` cannot encode killed the run at the
+    first persist with a message naming no cell (#498).
+
+    Excluded rather than emptied. A cell restored as `nil` would look like a value
+    the workflow had set, which is a different lie from the one being fixed; a
+    resumed step re-derives it instead.
+    """
+    if not isinstance(workflow_state, dict):
+        return workflow_state
+    policies = {}
+    if isinstance(graph.metadata, dict):
+        raw = graph.metadata.get("state_policies")
+        if isinstance(raw, dict):
+            policies = raw
+    skip = {
+        key for key, policy in policies.items()
+        if isinstance(policy, dict) and policy.get("durable") is False
+    }
+    if not skip:
+        return workflow_state
+    return {key: value for key, value in workflow_state.items() if key not in skip}
+
+
 def _persist_graph_state(
     graph: TaskGraph,
     tasks: list[TaskNode],
@@ -216,7 +244,7 @@ def _persist_graph_state(
         "scheduler_queue": _scheduler_queue_snapshot(vm),
         "task_outputs": {tid: task_values.get(tid) for tid in task_values},
         "results": {tid: results.get(tid) for tid in results},
-        "workflow_state": workflow_state,
+        "workflow_state": _durable_state(workflow_state, graph),
         "checkpoints": checkpoints,
         "engine_checkpoints": engine_checkpoints,
         "updated_at": runtime_time_ms(),
@@ -1037,14 +1065,37 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         conflicts = concurrent_write_conflicts(workflow_state, _ordered)
         if not conflicts:
             return
+        policies = {}
+        if isinstance(graph.metadata, dict):
+            raw = graph.metadata.get("state_policies")
+            if isinstance(raw, dict):
+                policies = raw
         task_to_step = {}
         if isinstance(graph.metadata, dict):
             raw = graph.metadata.get("task_to_step")
             if isinstance(raw, dict):
                 task_to_step = raw
         for conflict in conflicts:
+            # No default here on purpose. An *undeclared* cell behaves as `any`
+            # but still warns -- that warning is the only thing standing between a
+            # lost update and silence. Only an explicit `merge: "any"` silences it,
+            # so the warning is quieted by stating intent rather than by a default
+            # nobody wrote.
+            merge = policies.get(conflict["key"], {}).get("merge")
             names = [task_to_step.get(tid, tid) for tid in conflict["tasks"]]
             winner = task_to_step.get(conflict["winner"], conflict["winner"])
+            if merge == "once":
+                vm.runtime_error(
+                    "workflow_error",
+                    f"state '{conflict['key']}' is declared merge: \"once\", but "
+                    f"steps {' and '.join(names)} both wrote it while running "
+                    f"concurrently.",
+                )
+            if merge == "any":
+                # Declared last-write-wins. The author has said the branches agree,
+                # so the warning would be noise -- silencing it by *stating intent*
+                # is the whole reason `any` is sayable.
+                continue
             message = (
                 f"warning: steps {' and '.join(names)} both wrote state "
                 f"'{conflict['key']}' while running concurrently; only "

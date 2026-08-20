@@ -250,7 +250,10 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, WorkflowStateDecl):
-        lines.append(f"{prefix}state {stmt.name} = {format_expr(stmt.value)}")
+        opts = ""
+        if getattr(stmt, "options", None) is not None:
+            opts = f" with {format_named_map(stmt.options)}"
+        lines.append(f"{prefix}state {stmt.name} = {format_expr(stmt.value)}{opts}")
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
 
     if isinstance(stmt, WorkflowStep):

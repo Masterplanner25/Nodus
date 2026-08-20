@@ -87,6 +87,47 @@
 
 ### Added
 
+- **A `state` cell can declare how it merges and whether it is durable — D6.**
+
+  ```nd
+  state attempts = 0i  with { merge: "once" }
+  state client   = nil with { durable: false }
+  ```
+
+  Same `with { ... }` form steps take, so no new syntax and the policy stays
+  inspectable data. Two axes, **not three**: an earlier framing had typing here as
+  well, but #479 is about untyped *step outputs* and hand-written tool schemas and
+  never mentions state — the `: type` slot stays free for a separate decision.
+
+  **`merge`** — what happens when two steps the graph does not order write the
+  same cell:
+
+  | value | meaning |
+  |---|---|
+  | *(undeclared)* | last write wins, and a warning names both steps |
+  | `"any"` | last write wins, warning silenced |
+  | `"once"` | a second concurrent writer is an error |
+
+  Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
+  and silencing the warning by stating that is the point. An undeclared cell keeps
+  warning, since that warning is the only thing between a lost update and silence.
+
+  **Folding is not available**, deliberately. `sum` / `append` / `union` need a
+  branch to contribute a value the runtime applies at the join rather than
+  assigning into a shared slot — a change to what a state write *is* (#485).
+  `merge: "sum"` is refused where it is written, with that reason, rather than
+  quietly behaving as last-write-wins. When it lands it should stay a closed set:
+  a fold must be batching-invariant or a resume that regroups writes produces a
+  different total, silently.
+
+  **`durable: false`** keeps a cell out of the checkpoint (#498). A cell holding a
+  live handle has no meaning after a resume, and every cell was previously
+  persisted — so a value `json` could not encode killed the run at the first
+  checkpoint. A non-durable cell is **absent** from restored state rather than
+  restored as `nil`, because a `nil` would look like a value the workflow had set.
+
+  No new opcodes; `BYTECODE_VERSION` is still 4.
+
 - **Concurrent writes to one state key are now reported instead of silently losing
   one.** Two fan-out branches that read a `state` key, yield, and write it back
   lose one of the writes: the run reports `ok`, nothing appears in `failed`, and
