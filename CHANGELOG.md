@@ -17,9 +17,19 @@
   `ensure_name_access` refused it.
 
   That is the recurring shape in `CLAUDE.md`: a correct mechanism with sibling
-  paths that bypass it. The regression test asserts on the **source** of all four
-  sites, not only on behaviour, because a behaviour test passes as soon as the one
-  path under test is fixed — which is exactly how this survived.
+  paths that bypass it.
+
+  Adding the missing case to each site fixed the instance and left the class — four
+  places enumerating node types independently drift again the next time a form is
+  added. They now share one answer: **`FLOW_DECLARATIONS` and `declared_flow_name`
+  in `ast_nodes`**, with each site keeping its own action (define a symbol, add to a
+  defs set, bind a type) and none of them enumerating.
+
+  The tests drive off that tuple rather than grepping the files, so a form added to
+  it fails until every site handles it. One of them exercises the tooling collector
+  directly, because the end-to-end tests do not reach it: while consolidating, an
+  unimported name sat in `tooling/loader.py` and every behavioural test still
+  passed. Only `ruff` caught it, and a linter is not evidence that a path works.
 
 - **#502: a timed-out step now runs its `finally` blocks before it is dropped.**
   `EXECUTION_INVARIANTS.md` **I-VM-06** states that `finally` blocks always

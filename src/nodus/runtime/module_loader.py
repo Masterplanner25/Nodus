@@ -26,8 +26,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExportList,
     ExprStmt,
     FnDef,
-    GoalDef,
-    GoalPursuit,
+    declared_flow_name,
     If,
     Import,
     Index,
@@ -36,7 +35,6 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     MapLit,
     ModuleInfo,
-    WorkflowDef,
     Unary,
     Var,
     While,
@@ -1046,18 +1044,9 @@ def collect_module_info(stmts: list, module_id: str, prefix: str) -> ModuleInfo:
                 explicit.add(s.name)
             walk_expr(s.expr)
             return
-        if isinstance(s, WorkflowDef):
-            defs.add(s.name)
-            return
-        if isinstance(s, GoalDef):
-            defs.add(s.name)
-            return
-        if isinstance(s, GoalPursuit):
-            # #487: `goal NAME over WORKFLOW { ... }` defines NAME too. The
-            # compiler hoists it, but this collector did not, so the name was
-            # "defined somewhere" and absent from the module's defs -- and
-            # `ensure_name_access` refused it from inside a function.
-            defs.add(s.name)
+        flow_name = declared_flow_name(s)
+        if flow_name is not None:
+            defs.add(flow_name)
             return
         if isinstance(s, FnDef):
             defs.add(s.name)
