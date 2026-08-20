@@ -216,7 +216,7 @@ class ModuleLoader:
         self._loading_stack.append(module_id)
         try:
             metadata = self._build_metadata(module_id, base_dir=base_dir, source=source, source_path=source_path)
-            bytecode_unit = self._load_or_compile_module_bytecode(metadata, source_path=source_path)
+            bytecode_unit = self._load_or_compile_module_bytecode(metadata, source_path=source_path, source=source)
             module = NodusModule(
                 name=os.path.basename(module_id) if module_id not in {"<memory>"} else module_id,
                 path=module_id,
@@ -262,13 +262,54 @@ class ModuleLoader:
             stack=cycle,
         )
 
+    def _source_is_the_file(self, source_path: str | None, source: str | None) -> bool:
+        """Is ``source`` what ``source_path`` contains?
+
+        The bytecode cache is keyed on path + mtime (`bytecode_cache.cache_key`),
+        which identifies **the file**. It says nothing about a `source` string a
+        caller handed us under that file's name -- so without this question, a
+        warm entry for `x.nd` substitutes the file's program for the caller's,
+        and compiling the caller's source *poisons* that entry for everyone who
+        later reads the file. Both directions are #521 at the cache layer, and
+        both survive fixing the branch in `embedding.py` on its own.
+
+        Decided by comparing, not by a flag each call site sets. A flag would be
+        the wrong question: `tooling/runner.py` legitimately passes the file's own
+        text and must keep its cache, so it is not "did the caller supply source"
+        but "is it the same source". A call site getting that declaration wrong
+        would be silent, and would silently run the wrong program.
+        """
+        if source_path is None:
+            return False
+        if source is None:
+            # Loaded from the path -- the file *is* the source by construction.
+            return True
+        try:
+            with open(source_path, "r", encoding="utf-8-sig") as handle:
+                return handle.read() == source
+        except OSError:
+            return False
+
+    def _cache_is_authoritative(self, source_path: str | None, source: str | None) -> bool:
+        """May the on-disk cache for ``source_path`` stand in for this module?
+
+        Staleness *and* identity: an entry can be fresh with respect to the file
+        and still be the wrong program for this call. Both cache-consult sites
+        route through here because they used to compute this independently, which
+        is exactly how a fix lands on one path and not its sibling.
+        """
+        if source_path is None or not self._source_is_the_file(source_path, source):
+            return False
+        return self._can_skip_reprocessing(source_path)
+
     def _load_or_compile_module_bytecode(
         self,
         metadata: ModuleMetadata,
         *,
         source_path: str | None,
+        source: str | None = None,
     ) -> ModuleBytecode:
-        can_reuse_cache = source_path is not None and self._can_skip_reprocessing(source_path)
+        can_reuse_cache = self._cache_is_authoritative(source_path, source)
         if can_reuse_cache and source_path is not None:
             cached = load_cached_bytecode(self.project_root, source_path)
             if cached is not None:
@@ -289,7 +330,11 @@ class ModuleLoader:
             },
             module_metadata=self._serialize_module_metadata(metadata),
         )
-        if source_path is not None:
+        # Writing is gated on the same question as reading. A cache entry is
+        # keyed by path + mtime, so storing the compile of a *different* source
+        # under that key poisons it for everyone who later reads the file --
+        # including `run_file`. Guarding only the read leaves that half live.
+        if source_path is not None and self._source_is_the_file(source_path, source):
             write_cached_bytecode(self.project_root, source_path, bytecode_unit)
             self._record_dependency_graph(metadata, source_path)
             self._recompiled_modules.add(os.path.abspath(source_path))
@@ -543,7 +588,7 @@ class ModuleLoader:
                 self.project_root = self._import_state.get("project_root")
             self._ensure_dependency_graph()
 
-            if source_path is not None and self._can_skip_reprocessing(source_path):
+            if source_path is not None and self._cache_is_authoritative(source_path, source):
                 cached = load_cached_bytecode(self.project_root, source_path)
                 if cached is not None:
                     cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)

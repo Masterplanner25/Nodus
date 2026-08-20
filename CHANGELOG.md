@@ -4,6 +4,42 @@
 
 ### Fixes
 
+- **#521: `run_source` runs the source it is given.** If `filename` named an
+  existing file, `run_source` read that file and **discarded the `source`
+  argument**, returning `ok=True` with the other program's output. Which program
+  ran depended on the process CWD and on what happened to be sitting in it.
+
+  `filename` is a label — it is what error messages interpolate, and
+  `embedding-nodus.md` says so under a heading called "Passing a filename",
+  illustrated with `filename="myscript.nd"`. So a host following the guide was
+  told the safe thing and given the unsafe example. The docstring's *"the module
+  loader reads it directly (allowing relative imports)"* was the only warning, and
+  it does not read as *your source is ignored*.
+
+  A real path still resolves relative imports against its directory — that is the
+  half worth keeping, and deleting the branch outright would have broken it. It no
+  longer selects the program. `run_file` is unchanged and is still how you run a
+  file; it already read the file itself and forwarded the text, so the loader's
+  re-read was thrown away and its docstring's claim to be
+  `run_source(open(path).read(), filename=path)` was true only by accident.
+
+  **Two paths, as usual.** The bytecode cache is keyed on path + mtime, which
+  identifies *the file* — so a warm entry for `x.nd` would still be served to a
+  caller passing different source under that name, and fixing only the branch in
+  `embedding.py` leaves that live. Both cache-consult sites now route through one
+  predicate that asks whether the source *is* the file's content. Deciding by
+  comparison rather than by a flag each call site sets is deliberate: the CLI
+  legitimately passes a file's own text and must keep its cache, so the question
+  is not "did the caller supply source" but "is it the same source".
+
+  Guarding the read alone was not enough either — that was caught mid-fix by a
+  probe rather than by reasoning. Compiling a differing source under the file's
+  name **wrote** an entry under the file's key, so the next `run_file` got the
+  caller's program. The write is gated on the same predicate.
+
+  Present since **v0.4.0** (`c245d31`), so every published release. No first-party
+  companion passes `filename=` to `run_source`, so nothing we ship was affected.
+
 - **#518: `counter += 1i` now reaches workflow state.** Compound assignment to a
   `state` cell inside a step body did not lower at all. A `state` cell is not a
   real variable — the lowering rewrites reads and writes of it into operations on
