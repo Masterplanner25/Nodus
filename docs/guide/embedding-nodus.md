@@ -86,6 +86,18 @@ The `filename` keyword argument labels errors with a useful path instead of
 result = rt.run_source(source, filename="myscript.nd")
 ```
 
+It is a label. `run_source` always runs the string you passed, whether or not a
+file of that name exists — to run a file's contents, use `run_file`. The one
+extra thing a real path buys is import resolution: relative imports in `source`
+resolve against that file's directory rather than the process CWD.
+
+> **Before 5.1.0 this was not true.** If `filename` named an existing file, the
+> loader read that file and discarded `source`, returning `ok=True` with the
+> other program's output ([#521](https://github.com/Masterplanner25/Nodus/issues/521)).
+> Which program ran depended on the process CWD. If you are pinned to an older
+> release, pass a label that cannot exist on disk — `"<memory>"` or a name with a
+> prefix you control.
+
 ---
 
 ## 3. Handling errors

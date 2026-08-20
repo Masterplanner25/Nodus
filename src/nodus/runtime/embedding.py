@@ -771,9 +771,14 @@ class NodusRuntime:
             Nodus source code as a string.
         filename:
             Optional label used in error messages and the module loader's import
-            resolution.  If ``filename`` points to an existing file on disk, the
-            module loader reads it directly (allowing relative imports).  Pass
-            ``None`` or ``"<memory>"`` for in-memory snippets.
+            resolution.  If ``filename`` names an existing file, relative imports
+            in ``source`` resolve against that file's directory rather than the
+            process CWD; it does **not** change which program runs.  ``source`` is
+            always what executes -- use :meth:`run_file` to run a file's contents.
+            Pass ``None`` or ``"<memory>"`` for in-memory snippets.
+
+            Through 5.1.0 an existing path made the loader read the file and
+            discard ``source`` entirely, silently and with ``ok=True`` (#521).
         max_steps:
             Per-call override for ``self.max_steps``.
         timeout_ms:
@@ -937,10 +942,27 @@ class NodusRuntime:
                     debugger=debugger,
                     host_globals=host_globals,
                 )
+                # `filename` is a label, and `run_source` runs `source`. It used
+                # to run the *file* named by the label whenever one existed,
+                # discarding the source it was handed and reporting ok (#521) --
+                # so the program that ran depended on the process CWD and on what
+                # happened to be sitting in it.
+                #
+                # A real path is still worth honouring for what it legitimately
+                # tells us: where relative imports resolve from, and what to call
+                # the module. That is all it decides now.
+                module_name = filename or "<memory>"
+                base_dir = None
                 if filename and os.path.isfile(filename):
-                    loader.load_module_from_path(filename, auto_run_main=True, initial_globals=initial_globals)
-                else:
-                    loader.load_module_from_source(source, module_name=filename or "<memory>", auto_run_main=True, initial_globals=initial_globals)
+                    module_name = os.path.abspath(filename)
+                    base_dir = os.path.dirname(module_name)
+                loader.load_module_from_source(
+                    source,
+                    module_name=module_name,
+                    base_dir=base_dir,
+                    auto_run_main=True,
+                    initial_globals=initial_globals,
+                )
             except HostFunctionError as wrapped:
                 stage = "execute"
                 structured = coerce_error(wrapped.cause, stage=stage, filename=normalized)
