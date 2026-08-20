@@ -267,8 +267,11 @@ evidence the abstraction level is wrong.
 The proof-of-concept exists — [`examples/expr_compiler.nd`](examples/expr_compiler.nd)
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
 semantics are there and the 49-opcode instruction set has been frozen since v1.0.
-Runtime throughput is the honest blocker: roughly 314K instructions/sec on
-CPython today. See [Language Vision §Bootstrapping](docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
+Runtime throughput is the honest blocker: roughly **400K instructions/sec** on
+CPython. Measured under **PyPy it is ~23× that** — about 9.4M — with Nodus needing
+no changes to run there, which reframes the question from *can this ever be fast
+enough* to *which runtime*. See
+[Language Vision §Bootstrapping](docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
 
 ## Documentation
 

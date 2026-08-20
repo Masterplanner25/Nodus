@@ -141,11 +141,21 @@ wrong — that is a rule with teeth, not a preference.
 recursive-descent parser and evaluator written entirely in Nodus, so the shape
 of the task is already expressible. What is not yet in place:
 
-- **Throughput.** Measured at roughly **314K instructions/sec** on CPython
-  (1,000,000 loop iterations = 17,000,021 instructions in 54s). Self-hosting
+- **Throughput.** Roughly **400K instructions/sec** on CPython 3.11 (1,000,000
+  loop iterations = 17,000,021 instructions; best of three trials). Self-hosting
   means the compiler compiling itself, and the pipeline is ~2,300 lines of
-  lexer/parser/AST plus ~1,900 lines of compiler. This is the real blocker —
-  see [#173](https://github.com/Masterplanner25/Nodus/issues/173).
+  lexer/parser/AST plus ~1,900 lines of compiler.
+
+  **Under PyPy the same probe runs ~23× faster — about 9.4M instr/sec — and Nodus
+  needs no changes to run there** (its only dependency is `tzdata`). One bug
+  blocks the suite on PyPy, and it is a latent CPython defect rather than an
+  incompatibility: the SQLite workflow store relies on refcounting to close
+  cursors ([#516](https://github.com/Masterplanner25/Nodus/issues/516)).
+
+  So throughput is still the blocker, but the question has moved from *can this
+  ever be fast enough* to *which runtime*. See
+  [#173](https://github.com/Masterplanner25/Nodus/issues/173). CPython 3.14 is
+  within noise of 3.11 on this workload — there is no free win from upgrading.
 - **String slicing.** `std:strings` has no substring or slice, so a lexer must
   index character by character. `expr_compiler.nd` does exactly that and says so.
 - **Closure upvalue mutation** ([#156](https://github.com/Masterplanner25/Nodus/issues/156)).
