@@ -53,6 +53,9 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowDef,
     WorkflowStep,
 )
+from nodus.orchestration.workflow_state import (
+    STATE_MERGE_POLICIES,
+)
 from nodus.orchestration.task_graph import (
     DEFAULT_JOIN_ON,
     JOIN_ON_STATES,
@@ -64,6 +67,15 @@ from nodus.orchestration.task_graph import (
 WORKFLOW_MARKER = "__workflow__"
 GOAL_MARKER = "__goal__"
 GOAL_PURSUIT_MARKER = "__goal_pursuit__"
+# Policies a `state` cell may declare (#485, #498). Two axes, deliberately not
+# three: an earlier framing had typing here too, but #479 is about step outputs
+# and tool schemas and never mentions state -- so the `: type` slot stays free.
+STATE_OPTION_KEYS = {
+    "merge",
+    "durable",
+}
+
+
 STEP_OPTION_KEYS = {
     "timeout_ms",
     "retries",
@@ -160,7 +172,26 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
         items.append((Str("state_init"), state_init))
     if state_names:
         items.append((Str("state_keys"), ListLit([Str(name) for name in state_names])))
+        policies = _lower_state_policies(flow)
+        if policies is not None:
+            items.append((Str("state_policies"), policies))
     return MapLit(items)
+
+
+def _lower_state_policies(flow) -> MapLit | None:
+    """Per-cell `merge` / `durable` declarations, as data.
+
+    Emitted only when a cell actually declares something, so a workflow that says
+    nothing carries nothing -- the defaults live in one place at the runtime rather
+    than being baked into every lowered program.
+    """
+    entries: list[tuple[object, object]] = []
+    for state in flow.states:
+        options = getattr(state, "options", None)
+        if options is None:
+            continue
+        entries.append((Str(state.name), options))
+    return MapLit(entries) if entries else None
 
 
 def _lower_state_init(flow: WorkflowDef | GoalDef) -> FnExpr | None:
@@ -402,6 +433,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         "task_to_step": {task_id: step for step, task_id in step_to_task.items()},
         "workflow_source_path": getattr(vm, "source_path", None),
         "workflow_source_code": getattr(vm, "source_code", None),
+        "state_policies": _state_policies(vm, workflow_value, name),
     }
     if kind == "goal":
         metadata["goal_name"] = name
@@ -418,6 +450,49 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         metadata["checkpoints"] = []
 
     return TaskGraph(tasks, metadata=metadata)
+
+
+def _state_policies(vm, workflow_value, flow_name: str) -> dict:
+    """Validate and normalise the per-cell `with { ... }` declarations.
+
+    Refused where they are written, not ignored: a cell declaring
+    `merge: "sum"` -- a policy the runtime cannot yet honour -- would otherwise
+    read as a fold and behave as last-write-wins, which is the failure this whole
+    area is about.
+    """
+    raw = workflow_value.get("state_policies")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        vm.runtime_error("type", f"workflow '{flow_name}' state policies must be a map")
+    policies: dict[str, dict] = {}
+    for cell, options in raw.items():
+        if not isinstance(options, dict):
+            vm.runtime_error(
+                "type", f"state '{cell}' options must be a map"
+            )
+        entry: dict = {}
+        if "merge" in options:
+            merge = options["merge"]
+            if merge not in STATE_MERGE_POLICIES:
+                vm.runtime_error(
+                    "type",
+                    f"state '{cell}' merge: unknown policy {merge!r}. "
+                    f"Valid policies are {', '.join(STATE_MERGE_POLICIES)}. "
+                    f"Folding (sum/append/union) needs the write-at-join model and "
+                    f"is not available yet -- see issue #485.",
+                )
+            entry["merge"] = merge
+        if "durable" in options:
+            durable = options["durable"]
+            if not isinstance(durable, bool):
+                vm.runtime_error(
+                    "type", f"state '{cell}' durable expects true or false"
+                )
+            entry["durable"] = durable
+        if entry:
+            policies[str(cell)] = entry
+    return policies
 
 
 def _number_option(vm, options: dict, key: str, step_name: str, default=None):

@@ -152,6 +152,61 @@ load: carol@example.com
 Steps don't receive prior steps' return values as arguments — use state
 variables to pass data between steps.
 
+### 4.0 State policies — `merge` and `durable`
+
+A cell can declare how concurrent writes combine and whether it is checkpointed,
+using the same `with { ... }` form steps take:
+
+```nd-expect=output
+workflow deployment {
+    state attempts = 0i with { merge: "once" }
+    state client = nil with { durable: false }
+
+    step connect {
+        client = "live-handle"
+        attempts = 1i
+        return "connected"
+    }
+}
+
+let r = run_workflow(deployment)
+print(r["state"])
+```
+
+Output:
+
+```
+{"attempts": 1, "client": "live-handle"}
+```
+
+**`merge`** — what happens when two steps that the graph does not order both
+write the same cell:
+
+| value | meaning |
+|---|---|
+| *(undeclared)* | last write wins, and a **warning** names both steps |
+| `"any"` | last write wins, and the warning is silenced |
+| `"once"` | a second concurrent writer is an **error** |
+
+Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
+and silencing the warning by stating that is the point. An undeclared cell keeps
+warning, because that warning is the only thing between a lost update and
+silence.
+
+Folding (`sum`, `append`, `union`) is **not available**. A fold needs a branch to
+contribute a value the runtime applies at the join, rather than assigning into a
+shared slot — a change to what a state write is, tracked in
+[#485](https://github.com/Masterplanner25/Nodus/issues/485). Writing
+`merge: "sum"` is refused where you write it rather than quietly behaving as
+last-write-wins.
+
+**`durable: false`** keeps a cell out of the checkpoint. A cell holding a live
+handle — a connection, a channel — has no meaning after a resume, and every cell
+was previously persisted, so a value that cannot be serialised failed the run at
+the first checkpoint. A non-durable cell is **absent** from restored state rather
+than restored as `nil`, so a resumed step re-derives it instead of reading a
+value that looks set.
+
 ---
 
 ## 5. Failure and recovery

@@ -121,3 +121,26 @@ def concurrent_write_conflicts(state, ordered) -> list[dict]:
         if pair:
             conflicts.append({"key": key, "tasks": pair, "winner": task_ids[-1]})
     return conflicts
+
+
+# How concurrent writes to one cell combine.
+#
+#   any    last write wins. Today's behaviour and the default -- but saying it out
+#          loud is what silences the concurrent-write warning, so the warning is
+#          quieted by stating intent rather than by ignoring it.
+#   once   a second concurrent writer is an error.
+#
+# No fold (`sum`, `append`, `union`) yet, deliberately. Folding means a branch
+# contributes a value the runtime applies at the join rather than assigning into a
+# shared slot -- the emission model, which is a change to what a state write *is*
+# and not something a policy name can bolt on. Shipping `merge: "sum"` that
+# quietly still last-write-wins would be the "declared but not enforced" shape
+# this codebase already has five instances of, so it waits for the machinery.
+#
+# When it arrives it should be a closed set rather than a user function: a fold
+# must be batching-invariant -- reducer(reducer(s, xs), ys) == reducer(s, xs + ys)
+# -- or a resume that regroups writes produces a different total, silently.
+# LangGraph's DeltaChannel makes that the author's contract; a fixed set lets the
+# language guarantee it by construction.
+STATE_MERGE_POLICIES = ("any", "once")
+DEFAULT_STATE_MERGE = "any"
