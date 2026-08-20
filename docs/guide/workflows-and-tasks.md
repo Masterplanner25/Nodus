@@ -342,11 +342,20 @@ rolling back
 `rollback` ran because it declared that a failed dependency satisfies it.
 `announce` did not, because it did not.
 
-The valid outcomes are **`completed`** and **`failed`** — the two states a
-dependency can reach while the run is going. The default is `["completed"]`,
-which is what `after` has always meant, so existing workflows are unchanged.
-An outcome that is not one of those is refused at the point of declaration
-rather than quietly never matching.
+The valid outcomes are **`completed`**, **`failed`** and **`skipped`** — the three
+states a dependency can reach while the run is still going. The default is
+`["completed"]`, which is what `after` has always meant, so existing workflows are
+unchanged. An outcome that is not one of those is refused at the point of
+declaration rather than quietly never matching.
+
+`skipped` pairs with [`when`](#42-when--running-a-step-only-under-a-condition):
+`step cleanup after ship with { on: ["skipped"] }` runs exactly when `ship`'s guard
+was not met.
+
+`upstream_failed`, `omitted`, `cancelled` and `abandoned` are **not** admissible
+here, and the distinction is not arbitrary — they are conclusions drawn by walking
+the finished graph, so a step waiting on one could never become ready and the option
+would be a knob that never fires.
 
 **A step whose condition is not met is `omitted`, not failed.** If `deploy`
 above had succeeded and `rollback` declared `on: ["failed"]`, the run would

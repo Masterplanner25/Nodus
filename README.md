@@ -45,8 +45,9 @@ vocabulary it was missing at a join. A step can carry a guard
 (`step ship after review when reached("approved")`), declare which dependency
 outcomes satisfy it (`with { on: ["failed"] }`), and a `state` cell can declare how
 concurrent writes merge and whether it is durable. Every task in a run now reports a
-status — `completed`, `failed`, `upstream_failed`, `cancelled`, `abandoned` — where
-before, anything that never got a turn was simply absent from the result. A failed
+status — `completed`, `failed`, `upstream_failed`, `skipped`, `omitted`, `cancelled`
+or `abandoned` — where before, anything that never got a turn was simply absent from
+the result. A failed
 step no longer tears the scheduler down: the run drains and then reports, so a
 timed-out step gets its `finally` blocks and siblings finish.
 

@@ -56,9 +56,30 @@ class WorkflowRebuildError(Exception):
 # and `cancelled` are computed by walking the finished graph, so a step waiting on
 # one would never become ready and the option would be a knob that silently never
 # fires -- "declared but not enforced", which this codebase has five other instances
-# of. `skipped` and `omitted` are absent for the same reason: nothing produces them
-# until a conditional-edge design exists (#471).
+# of.
+#
+# `skipped` is admissible because a guard decides it *while the run is going*, which
+# is what separates it from the two above. `omitted` is not: it is the transitive
+# closure of `skipped`, drawn at the end, so it belongs with `upstream_failed`.
+#
+# This comment used to say `skipped` was absent "until a conditional-edge design
+# exists (#471)", one line above a tuple that contains it -- written before step
+# guards landed and not revisited when they did. `TASK_STATUSES` below now names the
+# reported vocabulary, and `tests/test_status_vocabulary.py` holds the guide to both
+# tuples, because the same staleness reached the CHANGELOG and the README.
 JOIN_ON_STATES = ("completed", "failed", "skipped")
+
+# Every value `task_statuses()` can report. Named here rather than left implicit in
+# that function's if-chain so the guide can be pinned to it.
+TASK_STATUSES = (
+    "completed",
+    "failed",
+    "upstream_failed",
+    "skipped",
+    "omitted",
+    "cancelled",
+    "abandoned",
+)
 
 # What `after` has always meant: every dependency must have produced a value.
 DEFAULT_JOIN_ON = frozenset({"completed"})
