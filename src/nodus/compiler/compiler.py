@@ -23,6 +23,7 @@ from nodus.frontend.ast.ast_nodes import (
     FnExpr,
     GoalDef,
     GoalPursuit,
+    declared_flow_name,
     If,
     Import,
     Index,
@@ -410,14 +411,9 @@ class Compiler:
             if isinstance(stmt, FnDef):
                 self.symbols.define_function(stmt.name)
                 continue
-            if isinstance(stmt, WorkflowDef):
-                self.symbols.define(stmt.name)
-                continue
-            if isinstance(stmt, GoalDef):
-                self.symbols.define(stmt.name)
-                continue
-            if isinstance(stmt, GoalPursuit):
-                self.symbols.define(stmt.name)
+            flow_name = declared_flow_name(stmt)
+            if flow_name is not None:
+                self.symbols.define(flow_name)
                 continue
             if isinstance(stmt, ExprStmt) and isinstance(stmt.expr, Assign):
                 self.symbols.define(stmt.expr.name)

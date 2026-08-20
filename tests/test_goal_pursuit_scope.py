@@ -8,8 +8,13 @@ undefined variable and it only worked at top level.
 The interesting part is *where* it was missing. The compiler's own hoisting pass
 had the case all along; three other places that register a declared name did not.
 That is the shape `CLAUDE.md § The recurring bug shape` describes -- a correct
-mechanism with sibling paths that bypass it -- so the structural test below
-asserts on the set of forms each collector handles rather than only on behaviour.
+mechanism with sibling paths that bypass it.
+
+Adding the missing case to each site fixes the instance and leaves the class: four
+places enumerating node types independently drift again the next time a form is
+added. They now share one answer to "does this declare a name" --
+`FLOW_DECLARATIONS` and `declared_flow_name` in `ast_nodes` -- and the tests here
+drive off that tuple, so a new form fails until every site handles it.
 """
 import os
 import sys
@@ -18,9 +23,17 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
+from nodus.frontend.ast.ast_nodes import (  # noqa: E402
+    FLOW_DECLARATIONS,
+    GoalDef,
+    GoalPursuit,
+    WorkflowDef,
+    declared_flow_name,
+)
 from nodus.frontend.lexer import tokenize  # noqa: E402
 from nodus.frontend.parser import Parser  # noqa: E402
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
+from nodus.tooling.loader import collect_module_info  # noqa: E402
 
 PURSUIT = """
 workflow tune {
@@ -107,39 +120,85 @@ fn main() { let r = run_goal(no_such_goal); return nil }
         self.assertIn("no_such_goal", message)
 
 
-class EveryCollectorKnowsEveryDeclaringFormTests(unittest.TestCase):
-    """Assert on the source, not the behaviour.
+class EveryDeclaringFormResolvesFromEverySiteTests(unittest.TestCase):
+    """Hold every name-declaring form to the same standard, behaviourally.
 
-    A behaviour test passes as soon as the one path under test is fixed, which is
-    how this survived: the compiler hoisted the name correctly, so the construct
-    worked at top level and nothing pointed at the collectors that did not.
+    Four places answer "does this statement declare a name": the compiler's
+    hoisting pass, the module loader's def collector, the tooling loader and the
+    analyzer. They agreed on `workflow` and `goal` and three of them had never
+    heard of `goal ... over ...`, so the name resolved at top level and nowhere
+    else.
 
-    These read the modules and require that anywhere `GoalDef` is registered as a
-    declared name, `GoalPursuit` is too -- so a fourth site cannot be added, or an
-    existing one extended, while quietly omitting the third form.
+    Asserting that each *file* contains a case would pin the current shape of the
+    code rather than the property, and would go green the moment someone wrote the
+    branch -- correct or not. So this drives off `FLOW_DECLARATIONS` instead and
+    exercises the real pipeline: a form added to that tuple fails
+    `test_every_declaring_form_is_covered` until someone writes its case here, and
+    then fails the resolution test until all four sites handle it.
     """
 
-    def _source(self, relative: str) -> str:
-        root = os.path.join(os.path.dirname(__file__), "..", "src", "nodus")
-        with open(os.path.join(root, relative), encoding="utf-8") as handle:
-            return handle.read()
+    SOURCES = {
+        WorkflowDef: """
+workflow thing { step s { return 1i } }
+fn main() { let r = run_workflow(thing); print("OK") }
+""",
+        GoalDef: """
+goal thing { step s { return 1i } }
+fn main() { let r = run_goal(thing); print("OK") }
+""",
+        # Rename only the declaration: a bare `reach` -> `thing` also rewrites
+        # `reached("good_enough")` inside the predicate and the goal stops parsing.
+        GoalPursuit: (
+            PURSUIT.replace("goal reach over", "goal thing over")
+            + '\nfn main() { let r = run_goal(thing); print("OK") }\n'
+        ),
+    }
 
-    def test_the_module_loader_collects_pursuit_names(self):
-        src = self._source(os.path.join("runtime", "module_loader.py"))
-        self.assertIn("isinstance(s, GoalPursuit)", src)
+    def test_every_declaring_form_is_covered(self):
+        """The guard that gives the tests below their reach."""
+        self.assertEqual(
+            set(FLOW_DECLARATIONS),
+            set(self.SOURCES),
+            "a form was added to FLOW_DECLARATIONS without a case here; add one so "
+            "the resolution test below actually exercises it",
+        )
 
-    def test_the_tooling_loader_collects_pursuit_names(self):
-        src = self._source(os.path.join("tooling", "loader.py"))
-        self.assertIn("def visit_GoalPursuit", src)
+    def test_each_form_resolves_from_inside_a_function(self):
+        for form, source in self.SOURCES.items():
+            with self.subTest(form=form.__name__):
+                result = _run(source)
+                self.assertIsNone(result.get("error"), msg=result.get("error"))
+                self.assertIn("OK", result.get("stdout") or "")
 
-    def test_the_analyzer_binds_pursuit_names(self):
-        src = self._source(os.path.join("tooling", "analyzer.py"))
-        self.assertIn("isinstance(stmt, GoalPursuit)", src)
+    def test_the_shared_predicate_answers_for_every_form(self):
+        """`declared_flow_name` is the single place the four sites now consult."""
+        for form in FLOW_DECLARATIONS:
+            with self.subTest(form=form.__name__):
+                stmts = Parser(tokenize(self.SOURCES[form])).parse()
+                declared = [
+                    declared_flow_name(s) for s in stmts if isinstance(s, form)
+                ]
+                self.assertEqual(["thing"], declared)
 
-    def test_the_compiler_hoists_pursuit_names(self):
-        """This one was already correct; pinned so it stays that way."""
-        src = self._source(os.path.join("compiler", "compiler.py"))
-        self.assertIn("isinstance(stmt, GoalPursuit)", src)
+    def test_it_answers_none_for_anything_else(self):
+        stmts = Parser(tokenize("let x = 1i\n")).parse()
+        self.assertTrue(all(declared_flow_name(s) is None for s in stmts))
+
+    def test_the_tooling_collector_sees_every_form(self):
+        """Covered directly, because the end-to-end tests do not reach it.
+
+        `tooling/loader.py` serves `nodus check`'s diagnostics and the LSP, not
+        `run_source` -- so the resolution tests above exercise the compiler and
+        the runtime module loader and never touch it. That gap is not
+        hypothetical: while consolidating these sites I left `declared_flow_name`
+        unimported there, and every test above still passed. Only `ruff` caught
+        the NameError, and a linter is not a guarantee that a code path works.
+        """
+        for form, source in self.SOURCES.items():
+            with self.subTest(form=form.__name__):
+                stmts = Parser(tokenize(source)).parse()
+                info = collect_module_info(stmts, "m", "m")
+                self.assertIn("thing", info.defs)
 
 
 class TheParserProducesThePursuitNodeTests(unittest.TestCase):

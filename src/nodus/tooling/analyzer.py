@@ -14,8 +14,7 @@ from nodus.frontend.ast.ast_nodes import (
     FnExpr,
     For,
     ForEach,
-    GoalDef,
-    GoalPursuit,
+    declared_flow_name,
     If,
     Import,
     Index,
@@ -36,7 +35,6 @@ from nodus.frontend.ast.ast_nodes import (
     TryCatch,
     Unary,
     Var,
-    WorkflowDef,
     WorkflowStateDecl,
     CheckpointStmt,
     While,
@@ -82,19 +80,9 @@ class Analyzer(NodeVisitor):
                 self.type_error(f"expected {expected.name} but got {value_type.name}", stmt)
             self.bind(stmt.name, expected if stmt.type_hint is not None else value_type)
             return
-        if isinstance(stmt, WorkflowDef):
-            self.bind(stmt.name, RECORD)
-            return
-        if isinstance(stmt, GoalDef):
-            self.bind(stmt.name, RECORD)
-            return
-        if isinstance(stmt, GoalPursuit):
-            # #487: `goal NAME over WORKFLOW { ... }` introduces NAME exactly as
-            # `workflow` and the plain `goal` form do. Without this case the name
-            # was never bound, so referencing it from inside a function -- the
-            # normal place to call it from -- failed as an undefined variable, and
-            # the v5 flagship construct only worked at top level.
-            self.bind(stmt.name, RECORD)
+        flow_name = declared_flow_name(stmt)
+        if flow_name is not None:
+            self.bind(flow_name, RECORD)
             return
         if isinstance(stmt, WorkflowStateDecl):
             self.infer_expr(stmt.value)

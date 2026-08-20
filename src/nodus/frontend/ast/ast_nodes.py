@@ -480,3 +480,29 @@ def builtin_call(name: str, args: list) -> "Call":
     from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
 
     return Call(Var(BUILTIN_CALL_PREFIX + name), args)
+
+
+# Every statement form that declares a flow and, with it, a name the rest of the
+# module can reference.
+#
+# One list because four separate places need this answer -- the compiler's
+# hoisting pass, the module loader's def collector, the tooling loader and the
+# analyzer -- and each of them used to enumerate the node types itself. They
+# agreed on `workflow` and `goal`, and three of the four had never heard of
+# `goal ... over ...`, so the name it declares resolved at top level and nowhere
+# else (#487). Adding the missing case to each site fixes that instance; keeping
+# the set here is what stops the next form drifting the same way.
+#
+# The sites still do different things with the name -- define a symbol, add to a
+# defs set, bind a type -- so this is deliberately the *question* they share and
+# not the answer. `tests/test_goal_pursuit_scope.py` holds every site to this
+# tuple, so adding a form here fails the suite until each one handles it.
+FLOW_DECLARATIONS = (WorkflowDef, GoalDef, GoalPursuit)
+
+
+def declared_flow_name(stmt) -> str | None:
+    """The name a workflow/goal declaration introduces, or None for anything else."""
+    if isinstance(stmt, FLOW_DECLARATIONS):
+        name = getattr(stmt, "name", None)
+        return name if isinstance(name, str) else None
+    return None

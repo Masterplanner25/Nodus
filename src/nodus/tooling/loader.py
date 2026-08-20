@@ -20,6 +20,7 @@ from typing import NoReturn
 
 from nodus.frontend.visitor import NodeVisitor
 from nodus.frontend.ast.ast_nodes import (
+    declared_flow_name,
     ExportList,
     ExportFrom,
     Import,
@@ -262,15 +263,19 @@ class InfoCollector(NodeVisitor):
             self.explicit.add(stmt.name)
         self.visit(stmt.expr)
 
-    def visit_WorkflowDef(self, stmt):
-        self.defs.add(stmt.name)
+    def _visit_flow_declaration(self, stmt):
+        """Every form in `FLOW_DECLARATIONS` declares a name, and they are handled
+        identically here. One implementation, aliased, so a form cannot be given a
+        method that quietly does something else."""
+        name = declared_flow_name(stmt)
+        if name is not None:
+            self.defs.add(name)
 
-    def visit_GoalDef(self, stmt):
-        self.defs.add(stmt.name)
-
-    def visit_GoalPursuit(self, stmt):
-        # #487: the third form that introduces a name, and the one that was missed.
-        self.defs.add(stmt.name)
+    # The visitor dispatches on class name, so each form needs an entry -- but they
+    # all point at the same implementation rather than repeating it.
+    visit_WorkflowDef = _visit_flow_declaration
+    visit_GoalDef = _visit_flow_declaration
+    visit_GoalPursuit = _visit_flow_declaration
 
     def visit_FnDef(self, stmt):
         self.defs.add(stmt.name)
