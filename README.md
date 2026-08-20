@@ -268,9 +268,12 @@ The proof-of-concept exists — [`examples/expr_compiler.nd`](examples/expr_comp
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
 semantics are there and the 49-opcode instruction set has been frozen since v1.0.
 Runtime throughput is the honest blocker: roughly **400K instructions/sec** on
-CPython. Measured under **PyPy it is ~23× that** — about 9.4M — with Nodus needing
-no changes to run there, which reframes the question from *can this ever be fast
-enough* to *which runtime*. See
+CPython for a hot arithmetic loop, **~320K on a compiler workload**. Nodus runs on
+**PyPy** unmodified, which is worth ~23× on that arithmetic loop but **~4–5× on the
+compiler workload** — a JIT is at its best on a tight loop, so the larger number is
+an upper bound rather than a promise. A further **1.5× is available with no new
+runtime at all**: the VM retains an event per function call and return, unbounded
+and unread ([#522](https://github.com/Masterplanner25/Nodus/issues/522)). See
 [Language Vision §Bootstrapping](docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
 
 ## Documentation
