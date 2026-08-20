@@ -4,6 +4,24 @@
 
 ### Fixes
 
+- **#516: the SQLite workflow store closes its cursors instead of relying on
+  refcounting.** `conn.execute(...)` returns a cursor; left unreferenced, CPython
+  frees it at once and finalises the statement. A runtime without refcounting
+  keeps it alive until the next GC, so the statement is still open at commit:
+
+  ```
+  sqlite3.OperationalError: cannot commit transaction - SQL statements in progress
+  ```
+
+  The store was depending on *when CPython happens to free an object* for
+  correctness — a latent defect there too, not a foreign-runtime quirk. All twelve
+  query sites now route through three helpers that own the cursor from creation,
+  so it closes on every exit including a statement that raises. A test asserts no
+  call site bypasses them, because on CPython an unclosed cursor is invisible.
+
+  Found by running the suite on PyPy while measuring throughput for #173: nine
+  tests failed there, every one from this single cause. They pass now.
+
 - **#487: `goal … over …` can now be used from inside a function.** `workflow` and
   the plain `goal` form both bound the name they declare; the stopping-condition
   form did not, so calling it from inside a function — the normal place to call it

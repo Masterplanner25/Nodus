@@ -742,6 +742,54 @@ class LocalWorkflowStore(WorkflowStore):
         }
 
 
+
+def _exec(conn: sqlite3.Connection, sql: str, params=()) -> None:
+    """Run a statement and close its cursor.
+
+    `conn.execute(...)` returns a cursor. Left unreferenced, CPython's refcounting
+    frees it at once, which finalises the statement; a runtime without refcounting
+    keeps it alive until the next GC, and the statement is still open when the
+    enclosing block commits:
+
+        sqlite3.OperationalError: cannot commit transaction - SQL statements in progress
+
+    So the store was depending on *when CPython happens to free an object* for
+    correctness (#516). These three helpers exist rather than a `close()` at each
+    of the twelve call sites, because twelve places remembering is twelve places
+    to forget and the thirteenth will.
+    """
+    _run(conn, sql, params, None)
+
+
+def _fetchone(conn: sqlite3.Connection, sql: str, params=()):
+    return _run(conn, sql, params, "one")
+
+
+def _fetchall(conn: sqlite3.Connection, sql: str, params=()) -> list:
+    return _run(conn, sql, params, "all") or []
+
+
+def _run(conn: sqlite3.Connection, sql: str, params, fetch):
+    """Own the cursor from creation so it closes even when the statement fails.
+
+    `cur = conn.execute(...)` would create the cursor *inside* the call, so a
+    statement that raises never returns one and there is nothing to close -- the
+    failure path would be back to relying on refcounting, which is the whole bug.
+    Taking the cursor first and executing on it puts every exit through the same
+    `finally`.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, params)
+        if fetch == "one":
+            return cur.fetchone()
+        if fetch == "all":
+            return cur.fetchall()
+        return None
+    finally:
+        cur.close()
+
+
 class SQLiteWorkflowStore(WorkflowStore):
     """SQLite-backed workflow store for cross-process coordination."""
 
@@ -761,8 +809,8 @@ class SQLiteWorkflowStore(WorkflowStore):
         self._ensure_parent()
         conn = sqlite3.connect(self.path, timeout=5.0, isolation_level=None)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        _exec(conn, "PRAGMA journal_mode=WAL")
+        _exec(conn, "PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
@@ -775,7 +823,8 @@ class SQLiteWorkflowStore(WorkflowStore):
 
     def _ensure_db(self) -> None:
         with self._managed_conn() as conn:
-            conn.execute(
+            _exec(
+                conn,
                 """
                 CREATE TABLE IF NOT EXISTS workflow_runs (
                     run_id TEXT PRIMARY KEY,
@@ -794,12 +843,14 @@ class SQLiteWorkflowStore(WorkflowStore):
                 )
                 """
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status)"
+            _exec(
+                conn,
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status)",
             )
 
     def _get_run_with_conn(self, conn: sqlite3.Connection, run_id: str) -> WorkflowRunRecord | None:
-        row = conn.execute(
+        row = _fetchone(
+            conn,
             """
             SELECT run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
                    current_checkpoint, resume_count, last_error, metadata_json, claim_json, wait_json
@@ -807,7 +858,7 @@ class SQLiteWorkflowStore(WorkflowStore):
             WHERE run_id = ?
             """,
             (run_id,),
-        ).fetchone()
+        )
         return _record_from_row(row)
 
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
@@ -819,7 +870,8 @@ class SQLiteWorkflowStore(WorkflowStore):
         if record.created_at is None:
             record.created_at = record.updated_at
         with self._managed_conn() as conn:
-            conn.execute(
+            _exec(
+                conn,
                 """
                 INSERT INTO workflow_runs (
                     run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
@@ -867,7 +919,8 @@ class SQLiteWorkflowStore(WorkflowStore):
             existing = self._get_run_with_conn(conn, run_id)
             if existing is not None:
                 return existing
-            conn.execute(
+            _exec(
+                conn,
                 """
                 INSERT INTO workflow_runs (
                     run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
@@ -892,7 +945,7 @@ class SQLiteWorkflowStore(WorkflowStore):
     ) -> WorkflowClaim | None:
         now = runtime_time_ms()
         with self._lock, self._managed_conn() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _exec(conn, "BEGIN IMMEDIATE")
             record = self._get_run_with_conn(conn, run_id)
             if record is None or record.status not in expected_statuses:
                 conn.rollback()
@@ -909,7 +962,8 @@ class SQLiteWorkflowStore(WorkflowStore):
             )
             record.claim = fresh
             record.updated_at = now
-            conn.execute(
+            _exec(
+                conn,
                 "UPDATE workflow_runs SET updated_at = ?, claim_json = ? WHERE run_id = ?",
                 (
                     record.updated_at,
@@ -922,7 +976,7 @@ class SQLiteWorkflowStore(WorkflowStore):
 
     def release_claim(self, run_id: str, token: str | None) -> WorkflowRunRecord | None:
         with self._lock, self._managed_conn() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _exec(conn, "BEGIN IMMEDIATE")
             record = self._get_run_with_conn(conn, run_id)
             if record is None:
                 conn.rollback()
@@ -930,7 +984,8 @@ class SQLiteWorkflowStore(WorkflowStore):
             if token is None or record.claim is None or record.claim.token == token:
                 record.claim = None
                 record.updated_at = runtime_time_ms()
-                conn.execute(
+                _exec(
+                    conn,
                     "UPDATE workflow_runs SET updated_at = ?, claim_json = NULL WHERE run_id = ?",
                     (record.updated_at, run_id),
                 )
@@ -1063,13 +1118,14 @@ class SQLiteWorkflowStore(WorkflowStore):
 
     def list_runs(self) -> list[WorkflowRunRecord]:
         with self._managed_conn() as conn:
-            rows = conn.execute(
+            rows = _fetchall(
+                conn,
                 """
                 SELECT run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
                        current_checkpoint, resume_count, last_error, metadata_json, claim_json, wait_json
                 FROM workflow_runs
-                """
-            ).fetchall()
+                """,
+            )
         records = [record for record in (_record_from_row(row) for row in rows) if record is not None]
         return _sorted_run_records(records)
 
