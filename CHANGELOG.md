@@ -60,6 +60,42 @@
 
 ### Added
 
+- **Concurrent writes to one state key are now reported instead of silently losing
+  one.** Two fan-out branches that read a `state` key, yield, and write it back
+  lose one of the writes: the run reports `ok`, nothing appears in `failed`, and
+  the value is wrong (#485).
+
+  ```
+  warning: steps a and b both wrote state 'counter' while running concurrently;
+  only b's write survives. If they each read it first, one update was lost.
+  ```
+
+  Also emitted as a `workflow_state_write_conflict` event.
+
+  **This reports; it does not repair.** Repairing means changing what a state
+  write *is* — a branch contributing a value the runtime applies at the join,
+  rather than assigning into a slot another branch is halfway through reading.
+  That is a state-model change, and it wants deciding alongside the type (#479)
+  and durability (#498) axes that attach to the same declaration. Turning a
+  silent wrong answer into a loud one is the half that is cheap now.
+
+  **The test is structural, not temporal.** A first attempt compared the recorded
+  start/finish timings and flagged a plain sequential `a → b → c` writing one key:
+  instant steps share a millisecond timestamp, so every interval overlaps every
+  other. Wall-clock cannot separate "sequential and fast" from "concurrent";
+  dependency order can, exactly.
+
+  **It warns before the bug happens.** Two independent steps that happen to be
+  serialised — because neither yielded — are still reported. That is deliberate:
+  the cooperative scheduler serialises a step body with no suspension, so the
+  obvious test passes and teaches you concurrent state writes are safe. They are
+  safe until a step does something real, and the warning has to arrive before the
+  step grows its first `sleep` or agent call.
+
+  A warning rather than an error, because two branches writing one key can be
+  deliberate when the author knows they agree — and there is currently no way to
+  say so. Once a declaration exists, the default can tighten.
+
 - **A step can carry a guard — `step ship after review when reached("approved")`.**
   Workflow edges were unconditional, so data-dependent branching was expressible
   only *inside* a step body, where the graph cannot see it: `plan_workflow` reported
