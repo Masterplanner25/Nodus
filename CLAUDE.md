@@ -14,10 +14,11 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live: `.venv` is at 5.0.0, `src/` is at 5.0.4** (checked 2026-08-17, end of the
-5.0.4 cut). Forgetting the prefix gets you four-releases-old behaviour — no `@exactly_once`
-forgery fix, no call-depth cap, doubled `main()` on cached runs. The symptom is behaviour that
-contradicts the code you are reading.
+**The gap is live and widening: `.venv` is at 5.0.0, `src/` is at 5.1.0** (re-checked
+2026-08-19 with `.venv/Scripts/nodus.exe --version`, at the 5.1.0 cut). Forgetting the prefix
+gets you five-releases-old behaviour — no `@exactly_once` forgery fix, no call-depth cap,
+doubled `main()` on cached runs, and `run_source` still running the file its `filename`
+happens to name (#521). The symptom is behaviour that contradicts the code you are reading.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -998,10 +999,16 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.0.4** (live on PyPI, published 2026-08-17). Both files
+The current published version is **v5.1.0** (live on PyPI, published 2026-08-19). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.0.4"`
-- `pyproject.toml` — `version = "5.0.4"`
+- `src/nodus/support/version.py` — `__version__ = "5.1.0"`
+- `pyproject.toml` — `version = "5.1.0"`
+
+**A `run_source` behaviour change ships in 5.1.0 (#521).** `filename=` used to select the
+program: if a file of that name existed, the loader read it and discarded the `source`
+argument, reporting `ok=True`. It is a label now, as the guide always said. Anything relying
+on the old behaviour to run a file should call `run_file`. Present since v0.4.0, so this
+is a change against every prior release, not just 5.0.x.
 
 **Treat 5.0.3 as superseded, not merely older.** It assigns a `memory_store` attribute that
 `nodus_sdk.NodusSDKRuntime` defines as a read-only property, so every construction of that
@@ -1009,15 +1016,23 @@ subclass raises `AttributeError: ... has no setter`. It is the one release in th
 that breaks a first-party companion. Fixed in 5.0.4.
 
 **Update this paragraph in the release PR, not afterwards.** It read 5.0.1 through the whole
-of 5.0.2, and `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four releases. Three stale
-version strings in three releases; no gate checks them.
+of 5.0.2, and `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four releases -- and was
+*still* stale at the 5.1.0 cut, reading v5.0.2 in one line and 4.1.1 in two others. No gate
+checks any of this.
+
+**The full set of places that claim a current version**, found by grep at the 5.1.0 cut and
+worth re-grepping rather than trusting: `src/nodus/support/version.py`, `pyproject.toml`,
+`README.md` (the "Recent:" paragraph), `llms.txt`, `llms-full.txt`, this paragraph, and
+`ECOSYSTEM_READINESS_ASSESSMENT.md` (three separate lines). The README *banner* deliberately
+names no version -- that is why it is the one that has never gone stale, and it is the
+pattern the rest should follow where it can.
 
 **This section went stale during the 5.0.2 release** — it still read 5.0.1 afterwards, because
 the release PR bumped the two version files and the CHANGELOG but not this paragraph. That is the
 third time a version string in prose has gone stale in three releases, and it is exactly what the
 note below predicts. Update it in the release PR, alongside the version bump, not afterwards.
 
-Patch releases (5.0.x) for bug fixes and stability graduations. A minor bump (5.1.0) requires a
+Patch releases (5.1.x) for bug fixes and stability graduations. A minor bump (5.2.0) requires a
 substantive feature addition. Never bump without a corresponding PyPI publish. If you see these
 files at different values, fix the mismatch before doing anything else.
 

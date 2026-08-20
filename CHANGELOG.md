@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-08-19
+
 ### Fixes
 
 - **#521: `run_source` runs the source it is given.** If `filename` named an
