@@ -8,13 +8,19 @@ import copy
 import dataclasses
 import hashlib
 import json
+import sys
 import os
 import threading
 import uuid
 
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.coroutine import Coroutine
-from nodus.orchestration.workflow_state import clone_state, checkpoints_public
+from nodus.orchestration.workflow_state import (
+    TrackedState,
+    checkpoints_public,
+    clone_state,
+    concurrent_write_conflicts,
+)
 
 
 class WorkflowRebuildError(Exception):
@@ -658,6 +664,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 engine_checkpoints = copy.deepcopy(cast(list, resume_meta.get("checkpoints") or []))
         if workflow_state is None:
             workflow_state = {}
+        # #485: wrap so each write records who made it. Two fan-out branches that
+        # read a key, yield, and write it back silently lose one of the writes;
+        # this cannot stop that, but it can stop it being silent.
+        if not isinstance(workflow_state, TrackedState):
+            workflow_state = TrackedState(workflow_state)
         if checkpoints is None:
             checkpoints = []
         if engine_checkpoints is None:
@@ -991,6 +1002,67 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         payload["failed"] = [failed_id(task) for task in tasks if task.status == "failed"]
         return payload
 
+    def report_write_conflicts() -> None:
+        """Say so when two concurrent steps wrote the same state key.
+
+        The write that lost is gone and cannot be recovered here -- this reports
+        rather than repairs, because repairing means changing what a state write
+        *is* (#485), which wants deciding with the type and durability axes that
+        attach to the same declaration.
+
+        Not an error. Two branches writing one key can be perfectly deliberate
+        when the author knows they agree, and there is currently no way to say so
+        -- refusing would break correct workflows to catch incorrect ones. Once a
+        declaration exists, the default can tighten.
+        """
+        ancestors: dict[str, set[str]] = {}
+
+        def _ancestors_of(task_id: str) -> set[str]:
+            """Every task that must finish before this one starts."""
+            if task_id in ancestors:
+                return ancestors[task_id]
+            ancestors[task_id] = set()  # guard against a cycle mid-walk
+            node = by_id.get(task_id)
+            found: set[str] = set()
+            if node is not None:
+                for dep in node.dependencies:
+                    found.add(dep.task_id)
+                    found |= _ancestors_of(dep.task_id)
+            ancestors[task_id] = found
+            return found
+
+        def _ordered(a: str, b: str) -> bool:
+            return b in _ancestors_of(a) or a in _ancestors_of(b)
+
+        conflicts = concurrent_write_conflicts(workflow_state, _ordered)
+        if not conflicts:
+            return
+        task_to_step = {}
+        if isinstance(graph.metadata, dict):
+            raw = graph.metadata.get("task_to_step")
+            if isinstance(raw, dict):
+                task_to_step = raw
+        for conflict in conflicts:
+            names = [task_to_step.get(tid, tid) for tid in conflict["tasks"]]
+            winner = task_to_step.get(conflict["winner"], conflict["winner"])
+            message = (
+                f"warning: steps {' and '.join(names)} both wrote state "
+                f"'{conflict['key']}' while running concurrently; only "
+                f"{winner}'s write survives. If they each read it first, one "
+                f"update was lost."
+            )
+            print(message, file=sys.stderr)
+            vm.event_bus.emit_event(
+                "workflow_state_write_conflict",
+                data={
+                    "workflow": workflow_name,
+                    "graph_id": graph.graph_id,
+                    "key": conflict["key"],
+                    "steps": names,
+                    "winner": winner,
+                },
+            )
+
     def with_statuses(payload: dict) -> dict:
         """Attach the status report, mirroring how `tasks`/`steps` are keyed.
 
@@ -1001,6 +1073,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         turns `r["statuses"]` into a crash that depends on how the run was
         started. That is the #399 failure mode.
         """
+        report_write_conflicts()
         by_task = task_statuses()
         payload["task_statuses"] = by_task
         payload["statuses"] = step_statuses(by_task)
@@ -1069,6 +1142,24 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         )
         persist_checkpoint_snapshot(cast(str, graph.graph_id), snapshot, label)
         vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
+
+    def _current_writer_task_id():
+        """Which task is writing state right now, if any.
+
+        Well-defined because the scheduler is cooperative: at any instant exactly
+        one coroutine is running, and its workflow context names its task. State
+        written outside a step -- by the initializer -- has no writer and is not a
+        conflict with anything.
+        """
+        ctx = vm.current_workflow_context()
+        if isinstance(ctx, dict):
+            task_id = ctx.get("task_id")
+            if isinstance(task_id, str):
+                return task_id
+        return None
+
+    if isinstance(workflow_state, TrackedState):
+        workflow_state.track_writes_with(_current_writer_task_id)
 
     def _workflow_context(task: TaskNode) -> dict | None:
         if workflow_name is None:
