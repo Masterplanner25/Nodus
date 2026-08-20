@@ -15,6 +15,7 @@ from nodus.frontend.ast.ast_nodes import (
     For,
     ForEach,
     GoalDef,
+    GoalPursuit,
     If,
     Import,
     Index,
@@ -85,6 +86,14 @@ class Analyzer(NodeVisitor):
             self.bind(stmt.name, RECORD)
             return
         if isinstance(stmt, GoalDef):
+            self.bind(stmt.name, RECORD)
+            return
+        if isinstance(stmt, GoalPursuit):
+            # #487: `goal NAME over WORKFLOW { ... }` introduces NAME exactly as
+            # `workflow` and the plain `goal` form do. Without this case the name
+            # was never bound, so referencing it from inside a function -- the
+            # normal place to call it from -- failed as an undefined variable, and
+            # the v5 flagship construct only worked at top level.
             self.bind(stmt.name, RECORD)
             return
         if isinstance(stmt, WorkflowStateDecl):

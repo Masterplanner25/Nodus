@@ -268,6 +268,10 @@ class InfoCollector(NodeVisitor):
     def visit_GoalDef(self, stmt):
         self.defs.add(stmt.name)
 
+    def visit_GoalPursuit(self, stmt):
+        # #487: the third form that introduces a name, and the one that was missed.
+        self.defs.add(stmt.name)
+
     def visit_FnDef(self, stmt):
         self.defs.add(stmt.name)
         if stmt.exported:
