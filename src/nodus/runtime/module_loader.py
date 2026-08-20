@@ -27,6 +27,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExprStmt,
     FnDef,
     GoalDef,
+    GoalPursuit,
     If,
     Import,
     Index,
@@ -1049,6 +1050,13 @@ def collect_module_info(stmts: list, module_id: str, prefix: str) -> ModuleInfo:
             defs.add(s.name)
             return
         if isinstance(s, GoalDef):
+            defs.add(s.name)
+            return
+        if isinstance(s, GoalPursuit):
+            # #487: `goal NAME over WORKFLOW { ... }` defines NAME too. The
+            # compiler hoists it, but this collector did not, so the name was
+            # "defined somewhere" and absent from the module's defs -- and
+            # `ensure_name_access` refused it from inside a function.
             defs.add(s.name)
             return
         if isinstance(s, FnDef):

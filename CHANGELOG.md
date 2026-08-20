@@ -4,6 +4,23 @@
 
 ### Fixes
 
+- **#487: `goal … over …` can now be used from inside a function.** `workflow` and
+  the plain `goal` form both bound the name they declare; the stopping-condition
+  form did not, so calling it from inside a function — the normal place to call it
+  from — failed with `Undefined variable`, and the v5 flagship construct only
+  worked at top level.
+
+  The compiler's own hoisting pass had the case all along. **Three other places
+  that register a declared name did not** — `runtime/module_loader.py`,
+  `tooling/loader.py` and `tooling/analyzer.py` — which is why the name was
+  "defined somewhere" and simultaneously absent from the module's defs, and
+  `ensure_name_access` refused it.
+
+  That is the recurring shape in `CLAUDE.md`: a correct mechanism with sibling
+  paths that bypass it. The regression test asserts on the **source** of all four
+  sites, not only on behaviour, because a behaviour test passes as soon as the one
+  path under test is fixed — which is exactly how this survived.
+
 - **#502: a timed-out step now runs its `finally` blocks before it is dropped.**
   `EXECUTION_INVARIANTS.md` **I-VM-06** states that `finally` blocks always
   execute. The scheduler discarded a timed-out coroutine where it stood, so they
