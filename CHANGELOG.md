@@ -298,6 +298,34 @@
   Reported rather than refused: a resume that stops working because someone touched
   the file would be worse than one that explains itself.
 
+
+- **Every task in a run now reports a status — `statuses` and `task_statuses`.**
+  A failing run produced four distinguishable outcomes and named one of them:
+  `failed` listed the step that threw, and anything that never got a turn was simply
+  absent from the result. The two new keys mirror how `steps` and `tasks` are keyed
+  (by step name and by task id):
+
+  | status | meaning |
+  |---|---|
+  | `completed` | produced a value |
+  | `failed` | threw, retries exhausted |
+  | `upstream_failed` | a transitive dependency failed |
+  | `cancelled` | never started — the run had already failed |
+  | `abandoned` | still running when the run ended |
+
+  The vocabulary is deliberately limited to distinctions the runtime can already
+  draw. `skipped` and `omitted` wait on a conditional-edge design (#471) rather than
+  being guessed at now.
+
+  `cancelled` is the open half of #475 made visible: whether an independent branch
+  should run anyway is a design question, and it is easier to answer when the result
+  says which steps it applies to. `abandoned` should be unreachable on the failure
+  path after the change above — if it appears, something dropped a coroutine without
+  unwinding it.
+
+  Additive only: existing keys are unchanged and callers checking `failed` are
+  unaffected.
+
 ### Changed
 
 - **A failed step no longer tears down the scheduler: the run drains, then reports.**
@@ -355,35 +383,6 @@
   republished — **nodus-vscode 0.1.3** (highlights `when`) and
   **nodus-run-action v1.0.1** (README pins 5.0.4, `v1` moved). The manifest
   records those, so the gate now reports 2/2 in step.
-
-### Added
-
-- **Every task in a run now reports a status — `statuses` and `task_statuses`.**
-  A failing run produced four distinguishable outcomes and named one of them:
-  `failed` listed the step that threw, and anything that never got a turn was simply
-  absent from the result. The two new keys mirror how `steps` and `tasks` are keyed
-  (by step name and by task id):
-
-  | status | meaning |
-  |---|---|
-  | `completed` | produced a value |
-  | `failed` | threw, retries exhausted |
-  | `upstream_failed` | a transitive dependency failed |
-  | `cancelled` | never started — the run had already failed |
-  | `abandoned` | still running when the run ended |
-
-  The vocabulary is deliberately limited to distinctions the runtime can already
-  draw. `skipped` and `omitted` wait on a conditional-edge design (#471) rather than
-  being guessed at now.
-
-  `cancelled` is the open half of #475 made visible: whether an independent branch
-  should run anyway is a design question, and it is easier to answer when the result
-  says which steps it applies to. `abandoned` should be unreachable on the failure
-  path after the change above — if it appears, something dropped a coroutine without
-  unwinding it.
-
-  Additive only: existing keys are unchanged and callers checking `failed` are
-  unaffected.
 
 ## [5.0.4] - 2026-08-17
 

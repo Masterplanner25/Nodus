@@ -141,21 +141,41 @@ wrong — that is a rule with teeth, not a preference.
 recursive-descent parser and evaluator written entirely in Nodus, so the shape
 of the task is already expressible. What is not yet in place:
 
-- **Throughput.** Roughly **400K instructions/sec** on CPython 3.11 (1,000,000
-  loop iterations = 17,000,021 instructions; best of three trials). Self-hosting
-  means the compiler compiling itself, and the pipeline is ~2,300 lines of
-  lexer/parser/AST plus ~1,900 lines of compiler.
+- **Throughput.** Roughly **400K instructions/sec** on CPython 3.11 for a hot
+  arithmetic loop (1,000,000 iterations = 17,000,021 instructions; best of three
+  trials), and about **320K/sec on a compiler workload** — `expr_compiler.nd`
+  driven over many expressions, which is the shape that actually matters here.
+  Self-hosting means the compiler compiling itself, and the pipeline is ~2,300
+  lines of lexer/parser/AST plus ~1,900 lines of compiler.
 
-  **Under PyPy the same probe runs ~23× faster — about 9.4M instr/sec — and Nodus
-  needs no changes to run there** (its only dependency is `tzdata`). One bug
-  blocks the suite on PyPy, and it is a latent CPython defect rather than an
-  incompatibility: the SQLite workflow store relies on refcounting to close
-  cursors ([#516](https://github.com/Masterplanner25/Nodus/issues/516)).
+  **Nodus runs on PyPy unmodified** (its only dependency is `tzdata`), and that is
+  worth having — but *how much* faster depends heavily on the workload, so the two
+  figures need keeping apart:
 
-  So throughput is still the blocker, but the question has moved from *can this
-  ever be fast enough* to *which runtime*. See
-  [#173](https://github.com/Masterplanner25/Nodus/issues/173). CPython 3.14 is
-  within noise of 3.11 on this workload — there is no free win from upgrading.
+  | workload | CPython | PyPy | ratio |
+  |---|---:|---:|---:|
+  | hot arithmetic loop | ~400K/s | ~9.4M/s | **~23×** |
+  | `expr_compiler.nd` | ~320K/s | ~1.7M/s | **~4–5×** |
+
+  A JIT is at its best on a tight loop, so the 23× is an upper bound rather than a
+  promise. A recursive-descent parser is many cold-ish paths and warms slowly: at
+  small inputs PyPy has no advantage at all, and it is still climbing at 3M
+  instructions. Measurements on
+  [#173](https://github.com/Masterplanner25/Nodus/issues/173).
+
+  There is also a **1.5× available with no new runtime at all**: the VM retains an
+  event object per function call and return, unbounded and unread, costing a third
+  of throughput and ~23 bytes per instruction of live memory
+  ([#522](https://github.com/Masterplanner25/Nodus/issues/522)). For a compiler
+  compiling itself the memory side is the harder wall of the two.
+
+  So throughput is still the blocker, and the honest statement of the question is
+  *how much of it comes back from the runtime, and how much from the runtime we
+  already have*. CPython 3.14 is within noise of 3.11 — there is no free win from
+  upgrading. One bug that blocked the suite on PyPy turned out to be a latent
+  CPython defect rather than an incompatibility, and is fixed: the SQLite workflow
+  store relied on refcounting to close cursors
+  ([#516](https://github.com/Masterplanner25/Nodus/issues/516)).
 - **String slicing.** `std:strings` has no substring or slice, so a lexer must
   index character by character. `expr_compiler.nd` does exactly that and says so.
 - **Closure upvalue mutation** ([#156](https://github.com/Masterplanner25/Nodus/issues/156)).
