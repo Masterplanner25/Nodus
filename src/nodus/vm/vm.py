@@ -498,8 +498,23 @@ class VM:
             self._deferred_return = _DEFERRED_NONE
 
     def handle_exception(self, err: LangRuntimeError) -> bool:
+        # #502: while unwinding a cancellation, `finally` runs and `catch` does not.
+        # A timeout that a `catch` could swallow would not be a timeout -- the step
+        # would carry on past the deadline that was supposed to bound it. So every
+        # handler is treated the way a finally-gate already is: jump into the
+        # finally if there is one, re-raise at FINALLY_END, and never hand the
+        # error to guest code as a catchable value.
+        cancelling = getattr(self, "_cancelling", False)
         while self.handler_stack:
             handler_ip, _finally_ip, stack_depth, frame_depth = self.handler_stack.pop()
+            if cancelling and handler_ip != _FINALLY_GATE:
+                if _finally_ip == 0:
+                    continue  # nothing to run for this scope; keep unwinding
+                self._unwind_to(frame_depth, stack_depth)
+                self._deferred_error = err
+                self._deferred_error_depth = len(self.handler_stack)
+                self.ip = _finally_ip
+                return True
             if handler_ip == _FINALLY_GATE:
                 # Finally-gate entries are left by a catch block that has a finally.
                 # RETURN inside the catch consumes them (see _op_return); reaching
@@ -1031,6 +1046,10 @@ class VM:
         self._deferred_return_depth = coroutine.deferred_return_depth
         self._deferred_error = coroutine.deferred_error
         self._deferred_error_depth = coroutine.deferred_error_depth
+        # #502: cancellation is a property of the coroutine being unwound, not of
+        # the VM, so it swaps in and out with everything else -- two coroutines,
+        # one cancelling and one not, must not see each other's state (#371).
+        self._cancelling = coroutine.cancelling is not None
         self.current_coroutine = coroutine
         self.ip = coroutine.ip if coroutine.ip is not None else 0
         # ASYNC-MOD-001: restore the module context this coroutine runs in, so a
@@ -1092,6 +1111,7 @@ class VM:
         coroutine.deferred_return_depth = self._deferred_return_depth
         coroutine.deferred_error = self._deferred_error
         coroutine.deferred_error_depth = self._deferred_error_depth
+        self._cancelling = False
         # ASYNC-MOD-001: remember the module context this coroutine suspended in,
         # so it is restored on resume (not whatever another coroutine left).
         coroutine.module_ctx = self._capture_module_ctx()
@@ -2059,6 +2079,40 @@ class VM:
         completion).
         """
         return self.builtins["resume"].fn(value)
+
+    def unwind_cancelled_coroutine(self, coroutine, err) -> None:
+        """Run a timed-out coroutine's pending `finally` blocks, then let the error out.
+
+        The scheduler used to drop a timed-out coroutine where it stood. Its
+        `finally` blocks never ran, so a step holding a lock, an open transaction
+        or a spawned subprocess lost its release -- and runtime invariant I-VM-06
+        states that `finally` always executes (#502).
+
+        Resuming it once more with `cancelling` set unwinds through the finallys
+        and nothing else: `handle_exception` refuses to enter a `catch` while
+        cancelling, so the step cannot swallow its own deadline and keep running.
+        The error then propagates out of the resume exactly as it did before, so
+        the caller's error handling is unchanged.
+
+        Bounded by the same `task_step_budget` as any other resume -- a `finally`
+        that loops forever must not turn a timeout into a hang.
+        """
+        coroutine.cancelling = err
+        # Save the caller's context first. `load_coroutine_context` overwrites the
+        # VM's stack, frames and ip wholesale -- the `resume` builtin pairs it with
+        # a save for exactly this reason, and skipping that here destroyed the
+        # frames of whatever called into the scheduler.
+        ctx = self.save_execution_context()
+        try:
+            self.load_coroutine_context(coroutine)
+            if not self.handle_exception(err):
+                return  # nothing pending; caller delivers the error as before
+            self.execute()
+        finally:
+            coroutine.cancelling = None
+            self._cancelling = False
+            coroutine.state = "finished"
+            self.restore_execution_context(ctx)
 
     def builtin_read_file(self, path):
         return self.builtins["read_file"].fn(path)

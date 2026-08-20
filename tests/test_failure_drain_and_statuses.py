@@ -68,7 +68,9 @@ fn main() {
         A sibling's failure used to drop an in-flight coroutine without
         unwinding it, so a step holding a resource lost its release in exactly
         the circumstances cleanup exists for. This covers the sibling-failure
-        trigger; the `timeout_ms` trigger is still open (#502).
+        trigger, which is fixed by keeping the coroutine alive; the `timeout_ms`
+        trigger needs the coroutine unwound instead, and is covered by
+        `test_cancellation_unwind.py`.
         """
         result = _run(
             """

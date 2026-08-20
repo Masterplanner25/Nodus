@@ -243,6 +243,33 @@ class Scheduler:
                 now = runtime_time_ms()
                 if now - coroutine.task_started_at > coroutine.task_timeout_ms:
                     err = LangRuntimeError("timeout", "Task timed out")
+                    # #502: unwind before dropping. This used to discard the
+                    # coroutine where it stood, so its pending `finally` blocks
+                    # never ran -- a step holding a lock or an open transaction
+                    # lost its release in exactly the circumstances cleanup exists
+                    # for, contradicting runtime invariant I-VM-06.
+                    #
+                    # Only when there is something to run: a coroutine with no
+                    # pending handlers takes the original path untouched, so the
+                    # common case gains no extra resume. `cancelling` guards
+                    # re-entry, since a `finally` that suspends would otherwise be
+                    # timed out again and unwound twice.
+                    if coroutine.cancelling is None and any(
+                        finally_ip for _h, finally_ip, _s, _f in coroutine.handler_stack
+                    ):
+                        owner = self._owner(coroutine)
+                        owner.task_step_budget = TASK_STEP_BUDGET
+                        owner._budget_exceeded = False
+                        try:
+                            owner.unwind_cancelled_coroutine(coroutine, err)
+                        except Exception:
+                            # The unwind delivers the timeout, or a `finally` threw
+                            # something else. Either way the coroutine is done and
+                            # `err` is what the step failed on.
+                            pass
+                        finally:
+                            owner.task_step_budget = None
+                            owner._budget_exceeded = False
                     self._mark_completed(coroutine)
                     if coroutine.id is not None:
                         self.sleeping_tasks.discard(coroutine.id)
