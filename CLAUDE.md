@@ -58,6 +58,13 @@ Standard issue shape:
 Write the script to a temp file and run it — inline heredocs with
 triple-quoted strings cause PowerShell/Bash quoting issues.
 
+**This applies to any Python-in-a-heredoc, not just `gh` scripts, and it fails
+*silently*.** A quoted `<<'PYEOF'` still mangles backslashes on the way in: a Windows path
+written `"C:\\dev\\nodus-x"` arrives as `C:\dev` + a newline, and the script then reports
+"not found" for a path that exists. It bit four times in one session. Use the **Edit/Write
+tools** for anything containing backslashes, `\n`, or nested quotes — they write the bytes
+you asked for. Reserve heredocs for plain prose (commit messages, issue bodies).
+
 ## GitHub release immutability — permanent gotcha
 
 **Once a release is created against a protected tag, the tag's immutable state is permanent.**
@@ -107,20 +114,43 @@ Release order — the whole sequence, not just the publish half:
       constructs a dependent. Stage 6 caught it — post-publish, against an immutable
       PyPI — and it cost a 5.0.4.
 
+      **Run it with nothing else going.** At 5.1.0 it reported `nodus-mcp FAIL — 1
+      failed` while a clean-venv install and probe suite ran alongside it; three serial
+      re-runs were green. It also does **not name the failing test** (#528), so a red
+      result cannot be triaged without re-running by hand — which makes running it
+      cleanly the first time worth more than it sounds.
+
    b. Adversarial validation against the wheel in a clean venv →
       write `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`
+
+      **Write the probes before step 6, not here.** They are the only check that reads
+      the release's *claims* rather than its code, and at 5.1.0 writing them early caught
+      four artifacts describing a task-status vocabulary the release did not have — one
+      of them `README.md`, which `readme = "README.md"` makes the permanent PyPI page.
+      Run after the tag, that correction would have been impossible. Nothing else caught
+      it: three features touched one vocabulary, landed in sequence, and the last
+      silently falsified prose written for the first two.
+
+      Probes must print the **resolved package path and version** before their results.
+      Gate 10 passed 5.0.3 with 32 green probes; validating the wrong tree is the failure
+      mode, and a header makes it visible.
 9. Upload to PyPI
 10. **Stage 5** — install the *published* package in a fresh venv and check it works
     as a new user would expect → write `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md`
 11. `gh release create vX.Y.Z --verify-tag` — **only after PyPI succeeds**, since
     release immutability is permanent (see the gotcha above)
-12. **Stage 6 — downstream republish sweep.** Check every companion's `nodus-lang`
-    range still admits the new version; `git status` each checkout for work left
-    behind; and detect drift by **hashing the published sdist/wheel against local
-    source**, never by git heuristics — "commits since the version bump" gave four
-    false positives during the v4.2.0 sweep. `nodus-vscode` (manual VSIX) and
-    `nodus-run-action` (pins a version) are not on PyPI and need checking by hand
+12. **Stage 6 — downstream republish sweep.** Four questions, three of them now tooled:
+
+    - ranges still admit the new version → `tools/check_downstream_constraints.py`
+    - has a companion drifted from what it published → `tools/check_publish_drift.py`
+    - non-PyPI consumers left stale → `nodus_gate --consumers`
+    - work left behind → `git status` each checkout by hand
+
     → write `docs/evals/vX.Y.Z/STAGE6_DOWNSTREAM_SWEEP.md`
+
+    **Clear a consumer's flag only after republishing it**, then update `fingerprint`
+    and `published` in the same commit. A flag cleared before the work is done is worse
+    than no flag.
 
 **All three eval documents are part of the release, not optional write-ups.** A clean run
 is evidence; silence is not. Steps 8, 10 and 12 answer different questions — "what can I
@@ -191,14 +221,15 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Skills | `.claude/commands/` |
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload |
-| Downstream range check | `tools/check_downstream_constraints.py` — Stage 6 step 1; resolves *published* metadata |
+| Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
+| Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
 | Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
 | Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
-| Eval results (per-version) | `docs/evals/vX.Y.Z/` — **three documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel), `POSTPUBLISH_EVAL.md` (Stage 5, against the published package), `STAGE6_DOWNSTREAM_SWEEP.md` (companions). See `docs/evals/v5.0.0/` for the current shape |
+| Eval results (per-version) | `docs/evals/vX.Y.Z/` — **three documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel), `POSTPUBLISH_EVAL.md` (Stage 5, against the published package), `STAGE6_DOWNSTREAM_SWEEP.md` (companions). See `docs/evals/v5.1.0/` for the current shape |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
 | Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint. **Its staging is not what shipped** — it puts builtins fourth; they had to come first |
@@ -236,7 +267,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,216 tests collected** (2026-08-17, at the 5.0.4 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
+**2,336 tests collected** (2026-08-20, at the 5.1.0 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
 that figure was measured 2026-08-07 at 1,878 tests and has **not** been re-measured since the
 v5.0.0 work, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -245,6 +276,11 @@ v5.0.0 work, so treat it as a floor, not a current reading. Gate: 70% (raised fr
 - `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
 
 **Never run two suites at once — they share `.nodus/` and corrupt each other.**
+
+This extends past `pytest`: the **dependent-suite gate** and the **doc gate** both run full
+suites, and the companion suites bind ports. Running the wheel probes alongside
+`check_dependent_suites` at 5.1.0 turned `nodus-mcp` red; three serial re-runs were green.
+One thing at a time when a gate's verdict is going to be believed.
 
 The workflow store, graph registry and bytecode cache all live under the repo-root `.nodus/`,
 CWD-relative. A background full-suite run and a foreground targeted run therefore write the same
@@ -257,36 +293,21 @@ your own change, check whether anything else is running: `TaskStop` the backgrou
 re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 239 blocks and writes to
 the store) — do not run it alongside the suite.
 
-**How much of the "flaky machine" is actually this is not established.** Two clean full-suite runs
-on 2026-08-17 (2,214 passed / 0 failed in 7m47s, and 2,213 / 3 in 10m11s) bracket a lot of noisy
-runs that had something else running alongside them.
+**How much of the "flaky machine" is actually this is not established**, and concurrency does
+not explain all of it: during the v5.0.0 cut, subprocess tests with 10 s timeouts failed
+intermittently with **a different test named each run**, and wall-clock drifted from ~7 to
+~18 minutes with nothing else running. Every such failure passed in isolation, and one
+(`test_len_returns_int.py`) was verified to fail identically **with and without** the change
+under test. CI on a clean runner passed every PR in 5–6 min throughout.
 
-**The local suite was unreliable on this machine during the v5.0.0 cut (2026-08-16/17).**
-Subprocess-based tests with 10 s timeouts failed intermittently, naming a *different* test each
-run, and wall-clock drifted from ~7 min to ~18 min with nothing else running. Every such failure
-passed in isolation, and one (`test_len_returns_int.py`) was verified to fail identically **with
-and without** the change under test. **CI on a clean runner passed every PR in 5–6 min.**
+**It comes and goes within a single day. Do not record it as "fixed."** An earlier revision
+of this section declared it "environmental and gone" on the strength of one clean 7:46 run —
+hours before the same box produced a 15-minute run with 13 failures and then stopped
+finishing at all. **One clean measurement does not clear this.** A good run is not evidence
+of a good machine, which is the whole reason CI arbitrates.
 
-If you see this pattern — failures that move between runs and a suite that is suddenly 2× slower —
-do not start bisecting your own change. Re-run the failing test alone, then push and let CI
-arbitrate.
-
-**It comes and goes within a single day. Do not record it as "fixed."**
-
-Measured 2026-08-17, all on the same machine with nothing else running:
-
-| When | Result |
-|---|---|
-| 5.0.1 cut, morning | 2,138 passed, 3 skipped, **7 min 46 s** — clean |
-| #411 work, afternoon | **15 min 11 s**, 13 failures |
-| Those 13, re-run in isolation | a *different* 3 failed; the rest passed |
-| Immediately after, same file again | all 8 passed, faster than the "good" tree |
-| Three later full-suite runs | **killed** partway through, twice by `pytest` and once by `unittest discover` |
-
-An earlier revision of this section said the degradation "was environmental and is gone" on the
-strength of the 7:46 reading. That was written hours before the same box produced a 15-minute run
-and then stopped finishing at all. **One clean measurement does not clear this**; the failure mode
-is intermittent, so a good run is not evidence of a good machine.
+If you see failures that move between runs and a suite that is suddenly 2× slower, do not
+start bisecting your own change. Re-run the failing test alone, then push.
 
 Two practical consequences:
 
@@ -348,7 +369,22 @@ A pre-commit hook enforces this: if staged `.nd` files fail `python nodus.py fmt
 the commit is blocked and the exact fix command is printed. Hook lives at `.git/hooks/pre-commit`
 (not tracked by git — reinstall after fresh clone with `chmod +x .git/hooks/pre-commit`).
 
-## Lint gate (ruff)
+## Lint gate (ruff **and mypy**)
+
+**Both run in CI and both block merges. Ruff passing is not evidence mypy will.**
+
+```powershell
+& "C:/dev/Coding Language/.venv/Scripts/python.exe" -m mypy src/nodus/ --ignore-missing-imports --no-error-summary
+```
+
+That is CI's invocation verbatim. It is clean today; ignore the `annotation-unchecked`
+notes, which are informational and not failures.
+
+The way this bites: **extracting a condition into a helper drops mypy's type narrowing.**
+Replacing `if source_path is not None and self._can_skip(...)` with
+`if self._cache_is_authoritative(source_path, source)` left `load_cached_bytecode` seeing
+`str | None`. Ruff was clean, the tests passed, and CI failed in 19 seconds. Keep the
+`is not None` at the call site when the narrowed value is used after the branch.
 
 Ruff runs in CI and blocks merges. Check locally before pushing:
 
@@ -519,7 +555,7 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 ## nodus-mcp companion library
 
 - Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- **Status: v0.1.3 PUBLISHED on PyPI** (0.1.3, 2026-08-17, floated the `nodus-lang` cap).
+- **Published on PyPI** (version: `check_publish_drift`). Its `nodus-lang` cap is floated.
   BYTECODE_VERSION 4, no new opcodes.
 - **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
   `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
@@ -584,6 +620,20 @@ These burn time when forgotten:
 - **`if` conditions with function calls require parentheses.** `if (module.fn(a, b))` works;
   `if module.fn(a, b)` gives "Expected '(', got identifier". Simple field access works without
   parens (`if record.field`), but call expressions need `if (expr)`.
+  **A bare `state` variable also needs them** inside a step body: `if approve { ... }` gives
+  "Expected '(', got identifier ('approve')"; `if (approve) { ... }` works.
+- **A `state` cell cannot hold a record.** The run aborts at persist time with
+  `Object of type Record is not JSON serializable`, blamed on the `run_workflow(...)` call
+  site rather than the assignment. Records are ordinary data with an obvious JSON shape, so
+  this reads as a plain gap rather than the live-handle case — but it is the same
+  undeclared serializability requirement as a closure or a channel (#498). Use a map.
+- **Seven task statuses, and `on:` admits three of them.** `statuses` reports `completed`,
+  `failed`, `upstream_failed`, `skipped`, `omitted`, `cancelled`, `abandoned`;
+  `with { on: [...] }` accepts only `completed`, `failed`, `skipped` — the three a dependency
+  can reach *while the run is going*. The rest are end-of-run conclusions, so a step waiting
+  on one could never become ready, and they are refused at declaration. The vocabulary is
+  named once in `TASK_STATUSES` / `JOIN_ON_STATES` and pinned by
+  `tests/test_status_vocabulary.py`; do not re-enumerate it in prose without checking those.
 - **Multiline list literals and function calls cannot span newlines.** Both
   `[1,\n2]` and `len(\n"hi"\n)` give "Unexpected end of statement". Keep on one line.
 - **`print()` is single-argument.** `print("label:", value)` → syntax error.
@@ -624,7 +674,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **eleven** times across the v5.0.0–5.0.4
+of several paths goes through**. It has now surfaced **fourteen** times across the v5.0.0–5.1.0
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -643,6 +693,22 @@ Instances, all confirmed by reading the code rather than inferred:
 | #387 | call-depth cap | lived in wrappers; a directly constructed `VM()` had none |
 | #424 | every timeout | all of them bound the **instruction stream**; a host agent handler is not in it |
 | #185 / #390 | per-tenant memory, run ownership | module-scope globals, so every participant in a process shared them |
+| #487 | which node declares a name | four sites enumerated declaration forms; three had never heard of `goal … over …` |
+| #518 | workflow-state rewriting | `_StateRewriter` knew `=`, `x[i] =`, `x.f =` — and not `+=`, so it read `nil` |
+| #521 | which program `run_source` runs | the `isfile` branch **and** the path+mtime bytecode cache, read **and** write |
+
+The last three all landed in 5.1.0, and two of them are *three of four* — an enumeration of
+node types with one member missing. The fix that generalises is not "add the case": it is to
+**name the set once** (`FLOW_DECLARATIONS`, `ASSIGNMENT_FORMS`, `TASK_STATUSES`) and make a
+test drive off the tuple, so a fifth form fails the suite until somebody handles it.
+
+**#521 is worth studying as the fullest example.** Three paths shared one question, and each
+had to be found separately: the explicit branch, the cache *read*, and the cache *write* —
+which was found only because a probe went red after the first two were fixed, not by
+inspection. And the decision belongs where it can be *computed*, not declared: a flag at each
+call site would have been wrong, because the CLI legitimately passes a file's own text and
+must keep its cache. The question is not "did the caller supply source" but "is it the same
+source".
 
 **The fix is always the same: move the decision to one place, then assert on the source.** A
 behaviour-only test passes on whichever path is already correct. Working examples to copy:
@@ -704,7 +770,7 @@ or give it its own repo the way `nodus-a2a-wire` got one.
 ## nodus-native-memory-engine companion library
 
 - Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
-- **Status: v0.1.1 PUBLISHED on PyPI.** PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
+- **Published on PyPI** (version: `check_publish_drift`). PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
 - **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
   Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
 - Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
@@ -712,7 +778,7 @@ or give it its own repo the way `nodus-a2a-wire` got one.
 ## nodus-extension companion library
 
 - Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Status: v0.1.2 PUBLISHED on PyPI.** BYTECODE_VERSION 4, no new opcodes.
+- **Published on PyPI** (version: `check_publish_drift`). BYTECODE_VERSION 4, no new opcodes.
 - **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
   write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
 - **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
@@ -815,26 +881,14 @@ They are **design references / API contracts**, not production implementations.
 
 **Operational gotcha — local store scan performance:**
 `LocalWorkflowStore.list_runs()` reads every `.nodus/workflow_framework/runs/*.json`
-on every sweep, so cost is linear in the number of accumulated runs. Measured
-2026-08-15, before and after the #380 syscall fix:
+on every sweep, so **cost is linear in the number of accumulated runs**. #380 made it
+roughly 4× cheaper — the cost was never parsing, it was `nt.mkdir` (the store re-created
+its own directory once per record) and an `os.path.exists` before every `open` — but
+linear it remains.
 
-| files | `list_runs()` before | after | `expire_wait_timeouts()` after |
-|------:|--------------------:|------:|-------------------------------:|
-| 300 | 304 ms | **60 ms** | 48 ms |
-| 1,000 | 906 ms | 238 ms | 225 ms |
-| 3,000 | 3,223 ms | 863 ms | 579 ms |
-| 10,000 | 13,459 ms | 3,840 ms | 2,591 ms |
-
-The cost was never parsing — profiling 3,000 records put 1.7 s of 4.2 s in
-`nt.mkdir` (the store re-created its own directory once per record) and 1.6 s in
-`nt.stat` (an `os.path.exists` before every `open`). Both are gone; the sweeper
-also no longer re-reads every record to find the waiting ones.
-
-Two earlier revisions of this section were wrong in the same direction. The first
-said "670+ files cause >2s per sweep"; measurement put the 500 ms sweep interval
-at ~299 files, so flakes appeared well below the count anyone watched for. Do not
-quote a threshold here without re-measuring — the numbers above are cheap to
-regenerate and have now moved twice.
+**Do not quote a file-count threshold here.** Two earlier revisions did and both were
+wrong in the same direction; the numbers are cheap to regenerate and have moved twice.
+Measure if you need one. The bound itself is still open in #380.
 
 The default store root is **CWD-relative**, so anything running a workflow from
 the repo root writes there. As of #380 the suite and the doc gate clean up after
@@ -868,10 +922,13 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-vscode VS Code extension
 
 - Repo: `C:\dev\nodus-vscode` / `github.com/Masterplanner25/nodus-vscode`
-- **Status: v0.1.2 PUBLISHED — live on VS Code Marketplace under publisher `MasterplanInfiniteWeave`**
-  (0.1.0 2026-06-15; 0.1.1 2026-08-15, the #357 grammar fix; **0.1.2 2026-08-17**, the five
-  `goal` stopping-condition keywords). Marketplace validation takes **~4 minutes** — a gallery-API
-  check immediately after upload will still report the previous version. That is not a failure.
+- **Live on the VS Code Marketplace** under publisher `MasterplanInfiniteWeave`. The
+  published version is recorded in `tools/consumers.json`, not here — this line said 0.1.2
+  for a full cycle after 0.1.3 shipped. Marketplace validation takes **~4 minutes**; a
+  gallery-API check immediately after upload still reports the previous version, which is
+  not a failure.
+- **It must be republished when the keyword set changes.** `nodus_gate --consumers`
+  fingerprints the keywords here and flags it when they move.
 - **Phase 1:** TextMate grammar, 23 snippets, bracket/fold config
 - **Phase 2:** Diagnostics via `nodus check` (fallback; skipped once LSP starts)
 - **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
@@ -903,7 +960,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-mcp-server
 
 - Repo: `C:\dev\nodus-mcp-server` / `github.com/Masterplanner25/nodus-mcp-server`
-- **Status: v0.1.12 PUBLISHED on PyPI.** Install via `pipx install nodus-mcp-server`.
+- **Published on PyPI** (version: `check_publish_drift`). Install via `pipx install nodus-mcp-server`.
 - **Supports two transports:**
   - **Claude Desktop (stdio):** Add to `claude_desktop_config.json` under `mcpServers`
   - **ChatGPT Desktop (HTTP/SSE):** Run `nodus-mcp-server --http --port 8765`, tunnel via ngrok
@@ -954,7 +1011,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-jupyter
 
 - Repo: `C:\dev\nodus-jupyter` / `github.com/Masterplanner25/nodus-jupyter`
-- **Status: v0.1.0 PUBLISHED on PyPI 2026-06-15.**
+- **Published on PyPI** (version: `check_publish_drift`).
 - **Install:** `pip install nodus-jupyter && python -m nodus_jupyter install`
 - **32 unit tests** — require `ipykernel` installed (`pip install ipykernel`).
 - Provides a Jupyter kernel for `.nd` files; works in JupyterLab, Jupyter Notebook, VS Code notebooks.
@@ -962,17 +1019,21 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-run-action
 
 - Repo: `C:\dev\nodus-run-action` / `github.com/Masterplanner25/nodus-run-action`
-- **Status: v1.0.0 — GitHub Action (not a PyPI package).**
+- **A GitHub Action, not a PyPI package.** Published version is in `tools/consumers.json`.
 - **Usage:** `uses: Masterplanner25/nodus-run-action@v1`
 - **Three modes:** `file` (run a .nd script), `test-path` (run test suite), `fmt-check` (format gate)
-- Pin the nodus-lang version with `version: '5.0.0'` for reproducible CI. **It pins a version, so
-  it is invisible to the Stage 6 content-hash sweep** — check it by hand at each release.
+- **Its README pins a `nodus-lang` version, and that pin is what new users copy**, so it goes
+  stale at every release and hands them an old runtime. Invisible to the Stage 6 content-hash
+  sweep because it is not on PyPI — `nodus_gate --consumers` is what catches it, and did, at
+  5.1.0. Republishing means: update the pins, tag, **and move the floating `v1` tag**; verify
+  with `git ls-remote origin 'refs/tags/v1^{}'`, since `rev-parse` on an annotated tag returns
+  the tag object rather than the commit.
 - No local test suite — tests run in CI via the action itself.
 
 ## nodus-sdk companion package
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
-- **Status: v0.1.2 PUBLISHED on PyPI.**
+- **Published on PyPI** (version: `check_publish_drift`).
   99 tests. Unified platform SDK auto-wiring the 32-package companion ecosystem.
   Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
   suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
@@ -988,7 +1049,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 ## nodus-store-sql companion package
 
 - Repo: `C:\dev\nodus-store-sql` / `github.com/Masterplanner25/nodus-store-sql`
-- **Status: v0.1.0 PUBLISHED on PyPI.**
+- **Published on PyPI** (version: `check_publish_drift`).
   47 tests (31 sync + 16 async). Promoted from `packages/nodus-store-sql` incubator scaffold.
 - **Async tests require `aiosqlite`** — not installed by default. Run `pip install aiosqlite` if async tests fail with `ModuleNotFoundError`.
 - **Three stores:** `RunStore` (optimistic locking), `EventStore` (append-only), `JobStore` (atomic claiming)
@@ -1061,6 +1122,20 @@ rewriting either.
 These were identified by a raw-path readiness probe and are filed as GitHub issues.
 Full analysis: `C:\dev\nodus-mcp\docs\design\06-embedding-runtime-blockers.md`.
 All entries are also in `docs/governance/TECH_DEBT.md`.
+
+**`run_source(source, filename=...)` runs `source`. It did not, before 5.1.0** (#521,
+present since v0.4.0): if a file of that name existed, the loader read *the file* and
+discarded the `source` argument, returning `ok=True` with the other program's output — so
+which program ran depended on the process CWD. `filename` is a label; a real path only
+decides where relative imports resolve from. Use `run_file` to run a file.
+
+Two things that make this worth remembering rather than just fixed. It was **documented
+backwards**: the guide has a section headed *"Passing a filename"* saying it labels errors,
+illustrated with `filename="myscript.nd"` — the safe statement and the unsafe example. And
+the bytecode cache is keyed on **path + mtime**, so it carried the same defect
+independently; fixing the branch in `embedding.py` alone left it reachable through a warm
+cache, and guarding the cache *read* alone still let a differing source poison the entry for
+the next `run_file`. Three paths, one question.
 
 **EMBED-001 (#97) — FIXED. `timeout_ms` now defaults to `None`.** The old 200ms-default
 trap is gone; `NodusRuntime()` applies no wall-clock deadline. Verified 2026-08-07:
@@ -1168,30 +1243,26 @@ places where it was coupled to something we had never published as a surface:
   under a guest-reachable name (aindy does this for `syscall`) and know the guard is the only
   thing there. Also now pinned.
 
-**SPAWN-001 — FIXED.** Tracked as **#116** (closed), not #117 (which was closed as a
-duplicate of it). `wait_async()` now suspends properly: it runs `proc.wait()` on a
-worker thread, registers a result channel with `scheduler._io_channels`, and sets
-`coroutine.state = "suspended"`. See `builtins/subprocess_module.py::_wait_async`.
+**SPAWN-001 (#116) and CHAN-001 (#107) — both FIXED.** `wait_async()` suspends properly,
+and a `recv()` with no possible sender raises a deadlock error rather than orphaning the
+coroutine. History and implementation notes are in `docs/governance/TECH_DEBT.md`.
 
-**CHAN-001 (#107) — FIXED** in PR #137, verified 2026-08-07. A coroutine blocked on
-`recv()` with no possible sender now raises a deadlock error instead of being silently
-orphaned:
+The one part still worth having here, because it wastes an afternoon: **testing the
+deadlock error requires driving the scheduler.** `spawn(c)` alone does not run the
+coroutine — without a `run_loop()` the script exits 0 and the coroutine never starts,
+which *looks exactly like* the original bug. Use `spawn(c)` then `run_loop()`.
 
-```
-Deadlock: 1 coroutine(s) blocked on recv() with no possible sender: __anon_1
-```
-
-Note when testing this: the scheduler must actually be driven. `spawn(c)` alone does not
-run the coroutine — without a `run_loop()` the script exits 0 and the coroutine never
-starts, which *looks* like the original bug. Use `spawn(c)` then `run_loop()`.
-
-## Published ecosystem — current state (nodus-lang verified 2026-08-17; companions 2026-08-05)
+## Published ecosystem — how to find out, not what it was
 
 All packages are live. PyPI rate limits apply to **new project creation** (~a few
 per hour), not to version uploads on existing projects — republishing new versions
 of already-published packages is not session-limited.
 
-**nodus-lang:** **v5.0.0** on PyPI (2026-08-17). nodus-retry is an optional dep (`nodus-lang[retry]`); runtime falls back to built-in `InMemoryEffectStore` when absent.
+**nodus-lang:** the current version lives in the *SemVer policy* section above and in
+`src/nodus/support/version.py` — not here, where it was a release behind. `nodus-retry` is
+an optional dep (`nodus-lang[retry]`); the runtime falls back to the built-in
+`InMemoryEffectStore` when it is absent, which is why CI's `unittest` step catches things
+`pytest` passes locally when you have it installed.
 
 **Companion `nodus-lang` ranges — do not read them by eye. Run the check:**
 
@@ -1200,9 +1271,10 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_downstream_constraints
 ```
 
-All six dependents now float (`>=4.0.0`, or `>=4.0.5` for `nodus-mcp-server`) and admit 5.0.0.
+All six dependents float and admit the current release; the script prints each range, so
+**do not transcribe them here** — a table of ranges in prose is the thing that failed below.
 
-That is true **as of 2026-08-17 and not before it.** An earlier revision of this section said
+That was true **as of 2026-08-17 and not before it.** An earlier revision of this section said
 "none caps it, so all six dependents picked up the 5.0.0 major automatically." The exact
 opposite was true: five of the six published `nodus-lang<5.0.0`, so
 `pip install nodus-lang==5.0.0 nodus-mcp` was `ResolutionImpossible` and 5.0.0 was unadoptable
@@ -1227,19 +1299,23 @@ between. The companion's own suite is the check that catches a real break; a cap
 once a break is known, not before.
 
 **Standalone companion packages — 32 live on PyPI** (33 projects counting nodus-lang).
-All at v0.1.0 except where noted:
+Names and tiers: `docs/ecosystem/PACKAGE_QUICK_REF.md`.
+
+**Version numbers are deliberately not listed here any more.** They were, and they went
+stale every cycle. Two scripts read them live and neither can be transcribed wrong:
+
+```powershell
+# published version of each companion, and whether its source has drifted from it
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_publish_drift
 ```
-nodus-schema, nodus-protocol, nodus-state, nodus-session, nodus-events
-nodus-channels, nodus-context, nodus-approvals, nodus-circuit-breaker
-nodus-agent, nodus-auth, nodus-observability, nodus-queue, nodus-router
-nodus-delivery, nodus-http, nodus-llm, nodus-adapter-base
-nodus-observability-framework, nodus-workflow, nodus-store-sql
-nodus-extension, nodus-native-memory-engine, nodus-jupyter
-nodus-governance, nodus-memory, nodus-a2a
-```
-Ahead of v0.1.0: `nodus-retry` **0.2.0**, `nodus-mcp` **0.1.3**, `nodus-gateway` **0.1.1**,
-`nodus-sdk` **0.1.2**, `nodus-mcp-server` **0.1.12**, `nodus-extension` **0.1.2**,
-`nodus-native-memory-engine` **0.1.1**.
+
+`check_publish_drift` prints each companion's **published version** as a side effect of
+answering the question Stage 6 actually asks — has the checkout drifted from what users
+can install. It compares file contents from the published sdist. Do not substitute a git
+heuristic: counting commits since the version bump gave **four false positives** at
+v4.2.0, because a commit can touch only docs, only CI, or only tests. It exits **2** on a
+skip, because a companion that could not be checked is not one that passed.
 
 Note: the published `nodus-memory` and `nodus-a2a` are the **Tier 2 rewrites** — the same
 thing as the local `C:\dev` checkouts, not the nodus-lang adapters. Verified against PyPI
@@ -1257,9 +1333,13 @@ exactly what is published. `pip install nodus-a2a` does not give you `A2AHttpSer
 the wire adapter is at `nodus-a2a-wire` (git only). The nodus-memory adapter exists only
 in history — `git show f02ab1e:src/nodus_memory/nodus_bindings.py`.
 
-**Other published artifacts:**
-- nodus-vscode **v0.1.2** — VS Code Marketplace (MasterplanInfiniteWeave), 2026-08-17
-- nodus-run-action v1.0.0 — GitHub Action (Masterplanner25/nodus-run-action@v1)
+**Other published artifacts — neither is on PyPI, so both are invisible to the sweep
+above.** They are tracked by `tools/consumers.json` and reported by
+`nodus_gate --consumers`; that manifest is the authority for what each has published,
+not this file, which had nodus-vscode a version behind for a whole cycle:
+
+- nodus-vscode — VS Code Marketplace (publisher `MasterplanInfiniteWeave`)
+- nodus-run-action — GitHub Action (`Masterplanner25/nodus-run-action@v1`)
 
 **PyPI token note:** Each package in a separate repo (nodus-mcp, nodus-extension,
 nodus-memory, nodus-native-memory-engine, nodus-mcp-server) needs its own project-specific PyPI token.
