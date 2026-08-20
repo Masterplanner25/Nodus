@@ -40,7 +40,26 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.0.4 repairs one thing 5.0.3 broke — constructing a
+**Recent:** 5.1.0 is the first minor since 5.0, and it gives the workflow DSL the
+vocabulary it was missing at a join. A step can carry a guard
+(`step ship after review when reached("approved")`), declare which dependency
+outcomes satisfy it (`with { on: ["failed"] }`), and a `state` cell can declare how
+concurrent writes merge and whether it is durable. Every task in a run now reports a
+status — `completed`, `failed`, `upstream_failed`, `cancelled`, `abandoned` — where
+before, anything that never got a turn was simply absent from the result. A failed
+step no longer tears the scheduler down: the run drains and then reports, so a
+timed-out step gets its `finally` blocks and siblings finish.
+
+**One behaviour change to know about, and it is worth a minute if you embed Nodus.**
+`run_source(source, filename=...)` used to run the *file* named by `filename`
+whenever one existed, discarding the `source` you passed and returning `ok=True`
+with the other program's output — so which program ran depended on the process CWD
+([#521](https://github.com/Masterplanner25/Nodus/issues/521), present since v0.4.0).
+`filename` is now purely a label, as the guide always said it was; a real path still
+resolves relative imports against its directory, and `run_file` is unchanged. If you
+were relying on the old behaviour to run a file, call `run_file`.
+
+5.0.4 repairs one thing 5.0.3 broke — constructing a
 `nodus_sdk.NodusSDKRuntime` raised, because 5.0.3 assigned a `memory_store`
 attribute that subclass already defines as a read-only property. **If you use
 `nodus-sdk`, skip 5.0.3.**
