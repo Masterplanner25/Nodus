@@ -1,8 +1,20 @@
 # Outcome ambiguity — design input, unfiled
 
 **Status: proposal, no issue yet.** Nothing here is implemented. §10 records what
-already exists in the tree and is verified against `main` at `f7ab7ff`; everything
-in §11 is proposed and everything in §12 is open.
+already exists in the nodus-lang tree, verified against `main` at `f7ab7ff`; §14 is the
+runtime side's reply, verified against `aindy-runtime` at `f06f5b3`. §11 is proposal and
+**not a work order** — the ordering is §14.9's. §12 is open **except its third bullet**,
+which §14.5 answers. **★ marks a cross-reference added after the passage it sits under
+was written** — follow it before acting on the text above it.
+
+**The first work item is not a browser.** §14.9's closing observation, promoted here because
+it changes what anyone would do first: the vocabulary gap this document is about is **already
+reachable from an ordinary outbound POST**. There is no honest `execution_guarantee` for a
+non-transactional action to declare, and no effect status to record an unobserved outcome in,
+and both are true of an HTTP call made today. A browser does not create the gap — it removes
+the option of ignoring it. So the first items in §14.9's ordering are runtime vocabulary work
+with no browser in them at all, and the browser framing below is motivational rather than
+necessary.
 
 **Provenance.** This started as a scoping question about a companion note —
 `OneDrive/Masterplan Infinite Weave Ecosystem/AI Tech And Development/Designs/NOTE_browser_automation_feasibility.md`,
@@ -102,6 +114,12 @@ reference to §4.1. Two derivations converging on the same declaration/enforceme
 split is evidence the domain statement is doing work rather than ratifying what
 already exists — which is the specific weakness §7 of that document admits about
 itself.
+
+> **★ Three derivations, not two — see §14.6.** The same shape was reached earlier again in
+> `aindy-runtime`, from Aider's Git discipline, and filed as `EFFECT-PRECONDITION-1`. Money,
+> distributed-systems theory and version control all converged on *plant an attributable trace
+> before you act* — and §14.6 records that a browser is the external mutable resource that
+> deferral was waiting on.
 
 ---
 
@@ -409,18 +427,41 @@ and adding `EXACTLY_ONCE` next to it would be the first thing that did.
 
 ## 11. Proposed shape
 
-Nothing below is implemented. Ordered by confidence, highest first.
+**This is not a work order.** The list is ordered by *confidence* — how sure this document is
+that each item is right — not by sequence, and nothing below is implemented. The sequence is
+§14.9's, and it puts three runtime-vocabulary gaps ahead of everything here. Items 1, 2 and 3
+are further qualified by §14; read the pointer under each before acting on it.
 
 1. **Do not declare `EXACTLY_ONCE` on a mutating browser action.** §4. The note's
    own §3 already says the achievable guarantee is at-most-once dispatch with
    recorded outcome; §6.1 should be corrected to match rather than the reverse.
+
+   > **★ §14.1: the remedy is not available.** There is no honest label to substitute.
+   > `register_syscall` validates against `{AT_LEAST_ONCE, EXACTLY_ONCE}` and `AT_MOST_ONCE`
+   > has no occurrence in code. The corrected instruction is **declare no guarantee until the
+   > vocabulary lands** — which is what the note has now been amended to, rather than to §3's
+   > wording.
 2. **Make a mutating action's return carry the dispatch phase**, not an outcome
    verdict. §5.3. The driver knows more than `ok | timeout` can express, and the
    distinction it knows is the one that decides whether a human is needed.
+
+   > **★ §14.2: the runtime is currently the counter-example, and that makes this cheaper
+   > than it reads.** `outbound_http.py:88-101` catches `httpx.HTTPError` — the base class —
+   > collapsing `ConnectError` (knowably not dispatched) and `ReadTimeout` (the true
+   > ambiguity) into one retry path. The library already preserves the distinction; the
+   > boundary discards it. The fix is **narrowing an existing catch**, not building a phase
+   > ladder.
 3. **Make the declared, non-omittable key the reconciliation — "how would I find
    out?" — not the guarantee.** §6. `none` is a legal and honest answer; omission
    is not. Enforced at `parser.py:1180`/`:1192` with the mechanism already used at
    `:740`.
+
+   > **★ §14.3: blocked, and blocked cheaply.** `unknown` has nowhere to be written —
+   > `EffectRecord.status` is `pending | success | failed`, and parking an ambiguity at
+   > `pending` would page an operator (`scheduler_service.py:565-577`). The column is
+   > `String(32)` with no CHECK, so a fourth value needs no migration; filed as
+   > `EFFECT-OUTCOME-UNKNOWN-1`. **The language cannot declare a reconciliation the runtime
+   > cannot record**, so this item is downstream of that one — the two ends of one wire.
 4. **If browser outcomes gain a tri-state, name the tuple once**, next to
    `TASK_STATUSES`, and drive a test off it. Three-of-four enumerations are this
    codebase's signature defect (#487, #518) and the fix that generalises is naming
@@ -460,6 +501,10 @@ Nothing below is implemented. Ordered by confidence, highest first.
   covers agent handlers only. A browser syscall is the second host-boundary surface
   with the same shape, and there is an argument for generalising the existing one
   before adding a consumer for it.
+  **★ §14.9 offers an ordering and does not settle this.** It puts three runtime-vocabulary
+  gaps first and the declaration fifth; #424's remaining half appears nowhere in it. Whether
+  generalising the existing abandonment mechanism belongs before or alongside those three is
+  still open.
 - **Nothing here has been tested against a real browser.** Every claim about
   Playwright's exception types in §5.3 is from documentation and recollection, not
   from a run. That is the first thing to verify if any of this proceeds, and per
