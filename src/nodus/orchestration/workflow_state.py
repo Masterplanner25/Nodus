@@ -52,7 +52,14 @@ class TrackedState(dict):
     worth having before the larger design lands rather than after.
     """
 
-    __slots__ = ("_writes", "_writer", "_steps", "_policies")
+    __slots__ = (
+        "_writes",
+        "_writer",
+        "_steps",
+        "_policies",
+        "_written_values",
+        "_reads_before_write",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -71,6 +78,13 @@ class TrackedState(dict):
         # because the fold happens at `end_step`, where the cell's policy is what
         # decides whether there is anything to fold.
         self._policies: dict = {}
+        # key -> {task_id: last value that task wrote}. Retained past the step so
+        # the conflict check can distinguish two branches that *disagreed* from
+        # two that happened to write the same thing.
+        self._written_values: dict[str, dict[str, object]] = {}
+        # key -> tasks that read it before writing it. A read-modify-write by two
+        # concurrent tasks is a lost update whatever the values turn out to be.
+        self._reads_before_write: dict[str, set] = {}
 
     def track_writes_with(self, writer) -> None:
         self._writer = writer
@@ -81,10 +95,41 @@ class TrackedState(dict):
             task_id = writer()
             if task_id is not None:
                 self._writes.setdefault(str(key), []).append(task_id)
+                # The last value each task wrote, kept past the step so the
+                # end-of-run conflict check can ask whether the concurrent
+                # writers actually *disagreed*. Bounded by keys x tasks.
+                self._written_values.setdefault(str(key), {})[task_id] = value
                 step = self._steps.get(task_id)
                 if step is not None and not step.closed:
                     step.record(key, value)
         super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        """Read a cell, noting when a task reads one it has not yet written.
+
+        That pairing -- read then write, same task, same cell -- is what a lost
+        update *is*, and it is the only sound signal for one. Comparing the
+        written values is not: two branches doing `counter = seen + 1i` from the
+        same base both write `1`, so the values agree precisely when an update
+        was lost. This method exists because that was tried first and the issue's
+        own reproduction falsified it.
+
+        Only reads that precede the task's own write count, so `x = 5i` followed
+        by reading `x` is not mistaken for a read-modify-write.
+        """
+        writer = self._writer
+        if writer is not None:
+            name = str(key)
+            task_id = writer()
+            if task_id is not None and task_id not in self._written_values.get(name, {}):
+                self._reads_before_write.setdefault(name, set()).add(task_id)
+        return super().__getitem__(key)
+
+    def written_values(self) -> dict[str, dict[str, object]]:
+        return {key: dict(by_task) for key, by_task in self._written_values.items()}
+
+    def reads_before_write(self) -> dict[str, set]:
+        return {key: set(tasks) for key, tasks in self._reads_before_write.items()}
 
     def begin_step(self, task_id: str) -> StepWrites:
         """Open a write record for a step that is about to run.
@@ -261,6 +306,8 @@ def concurrent_write_conflicts(state, ordered) -> list[dict]:
     if not isinstance(state, TrackedState):
         return []
 
+    values = state.written_values()
+    reads = state.reads_before_write()
     conflicts: list[dict] = []
     for key, task_ids in sorted(state.writers().items()):
         distinct = list(dict.fromkeys(task_ids))
@@ -275,8 +322,48 @@ def concurrent_write_conflicts(state, ordered) -> list[dict]:
             if pair:
                 break
         if pair:
-            conflicts.append({"key": key, "tasks": pair, "winner": task_ids[-1]})
+            read_modify_write = sorted(set(pair) & reads.get(key, set()))
+            conflicts.append(
+                {
+                    "key": key,
+                    "tasks": pair,
+                    "winner": task_ids[-1],
+                    "read_modify_write": read_modify_write,
+                    "lost_update": bool(read_modify_write)
+                    or not writers_agree(values.get(key, {}), pair),
+                }
+            )
     return conflicts
+
+
+def writers_agree(by_task: dict, tasks: list[str]) -> bool:
+    """Did the concurrent writers write the same value?
+
+    Only half the question, and the weaker half. Two branches setting a cell to
+    the same constant have lost nothing whichever won; two setting it to
+    different values have lost one.
+
+    But agreement does **not** mean nothing was lost. Two branches doing
+    `counter = seen + 1i` from the same base both write `1` -- the values agree
+    precisely *because* an update was lost. That is why the caller pairs this
+    with the read-before-write signal, which catches exactly that case.
+
+    Unknown is treated as disagreement: a value whose `==` raises, or a writer
+    with nothing recorded, must not be silently called agreement, because that is
+    the direction that hides a defect.
+    """
+    if len(tasks) < 2:
+        return True
+    if any(task not in by_task for task in tasks):
+        return False
+    first = by_task[tasks[0]]
+    for task in tasks[1:]:
+        try:
+            if not bool(first == by_task[task]):
+                return False
+        except Exception:
+            return False
+    return True
 
 
 # How concurrent writes to one cell combine.
