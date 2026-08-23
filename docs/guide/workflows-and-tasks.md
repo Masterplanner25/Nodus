@@ -189,6 +189,7 @@ write the same cell:
 | `"once"` | a second concurrent writer is an **error** |
 | `"sum"` | concurrent writes **add** |
 | `"append"` | concurrent writes **concatenate** |
+| `"union"` | concurrent writes concatenate, **dropping duplicates** |
 
 Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
 and silencing the warning by stating that is the point.
@@ -272,10 +273,50 @@ Two consequences worth knowing:
 - The contribution must match the policy: a number for `sum`, a list for
   `append`. Anything else fails the step with a message naming both.
 
-`union` is deliberately absent. It needs an element-equality story Nodus does not
-have — dedup over lists of maps has no defined key, and merging maps is not
-commutative when two branches set the same field. See
-[#485](https://github.com/Masterplanner25/Nodus/issues/485).
+#### `union` and what counts as the same element
+
+`union` is `append` minus elements already present:
+
+```nd-expect=output
+workflow scan {
+    state seen = [] with { merge: "union" }
+
+    step a { sleep(10i); seen += ["x", "y"]; return "a" }
+    step b { sleep(10i); seen += ["y", "z"]; return "b" }
+    step done after a, b { return "done" }
+}
+
+let r = run_workflow(scan)
+print(len(r["state"]["seen"]))
+```
+
+Output:
+
+```
+3
+```
+
+Sameness is ordinary Nodus `==`, which is **structural** for numbers, strings,
+booleans, `nil`, lists and maps, however deeply nested — so `{"id": 1i}`
+contributed twice deduplicates to one.
+
+**Records are refused in a union contribution.** Records compare by *identity*,
+not by value — `record {x: 1i} == record {x: 1i}` is `false` — so a list of them
+would deduplicate nothing and `union` would silently behave as `append`. Rather
+than accept a policy it cannot honour, the contribution fails and says so:
+
+```
+state 'seen' is declared merge: "union", but records compare by identity, not by
+value, so a list containing one can never be deduplicated (#545). Use a map
+instead of a record, or `merge: "append"` if duplicates are acceptable.
+```
+
+Use a map for the element, or `append` if duplicates are fine. The underlying
+record-equality question is
+[#545](https://github.com/Masterplanner25/Nodus/issues/545).
+
+Note that the *order* of a folded list depends on which branch finished first,
+for `append` and `union` alike. Membership is deterministic; position is not.
 
 **`durable: false`** keeps a cell out of the checkpoint. A cell holding a live
 handle — a connection, a channel — has no meaning after a resume, and every cell

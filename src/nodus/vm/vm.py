@@ -1761,9 +1761,9 @@ class VM:
         if problem is not None:
             self.runtime_error(
                 "type",
-                f"state '{key}' is declared merge: \"{merge}\", so a contribution "
-                f"must be {problem}; got {self._type_name(value)}. "
-                f"Under a fold policy `{key} += expr` contributes {FOLD_CONTRIBUTION_KINDS.get(merge, 'a value')}.",
+                f"state '{key}' is declared merge: \"{merge}\", but {problem}. "
+                f"Under a fold policy `{key} += expr` contributes "
+                f"{FOLD_CONTRIBUTION_KINDS.get(merge, 'a value')}.",
             )
         step = state.open_step(task_id)
         if step is None:

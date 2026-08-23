@@ -36,7 +36,7 @@
 
 ### Added
 
-- **#485: folded state cells — `merge: "sum"` and `merge: "append"`.** Two
+- **#485: folded state cells — `merge: "sum"`, `"append"` and `"union"`.** Two
   concurrent branches that read a cell, do something slow, and write it back
   silently lost one of the writes. Declaring a fold closes it:
 
@@ -66,11 +66,21 @@
   Folded cells no longer draw the concurrent-writer warning: two branches
   contributing is the feature, not the defect, since neither read the cell.
 
-  **`union` is deliberately absent**, though the issue names it. It needs an
-  element-equality story Nodus does not have — dedup over lists of maps has no
-  defined key, and merging maps is not commutative when two branches set the same
-  field. Shipping it with unclear semantics would be the shape the whole fold set
-  was withheld for in the first place.
+  **`union` also ships**, and its blocker turned out to be answerable from what
+  the language already does. Sameness is ordinary Nodus `==`, which is structural
+  for numbers, strings, booleans, `nil`, lists and maps at any depth. It is *not*
+  structural for records -- `Record.__eq__` is `self is other`, with `datetime`
+  and `duration` carved out -- so a list of records would deduplicate nothing and
+  `union` would silently behave as `append`. Record elements are therefore
+  **refused** in a union contribution, with a message naming the workaround and
+  the underlying question (#545, filed).
+
+  Deduplication keeps the first occurrence, which is what makes it
+  batching-invariant: `dedup(dedup(a) + b) == dedup(a + b)`. It borrows
+  `VM._nodus_eq` rather than Python `==` or a `set`, because Nodus equality
+  coerces int/float and refuses bool/int (`1 == 1.0` is true, `true == 1` is
+  false), and lists and maps are not hashable. Re-implementing those rules beside
+  the originals is the duplication that drifts.
 
   The fold set stays closed rather than taking a user function: `sum` and
   `append` are batching-invariant (`fold(fold(s, xs), ys) == fold(s, xs + ys)`),
