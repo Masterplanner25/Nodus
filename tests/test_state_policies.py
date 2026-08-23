@@ -174,19 +174,6 @@ fn main() {{ let r = run_workflow(w); print("ran") }}
         error = result.get("error") or {}
         return error.get("message", "") if isinstance(error, dict) else str(error)
 
-    def test_union_is_still_refused_and_says_why(self):
-        """`sum` and `append` shipped; `union` did not, and says so.
-
-        It needs an element-equality story Nodus does not have -- dedup over
-        lists of maps has no defined key, and merging maps is not commutative
-        when two branches set the same field. Shipping it with unclear semantics
-        would be the shape the whole fold set was withheld for.
-        """
-        message = self._message('merge: "union"')
-        self.assertIn("unknown policy", message)
-        self.assertIn("element-equality", message)
-        self.assertIn("#485", message)
-
     def test_an_unknown_policy_is_refused(self):
         self.assertIn("unknown policy", self._message('merge: "wibble"'))
 
@@ -199,9 +186,17 @@ fn main() {{ let r = run_workflow(w); print("ran") }}
 
     def test_the_vocabulary_is_only_what_the_runtime_honours(self):
         """A policy name ships only when the runtime does something with it --
-        the same bar `skipped` and `omitted` had to clear. `union` is named in
-        #485 and is not here, because its semantics are not settled."""
-        self.assertEqual({"any", "once", "sum", "append"}, set(STATE_MERGE_POLICIES))
+        the same bar `skipped` and `omitted` had to clear.
+
+        `union` was withheld until its element-equality question was answered
+        rather than shipped as a name that silently behaved as `append`; it is
+        here now because that question has an answer, and the case it *cannot*
+        honour (record elements) is refused rather than accepted. See
+        `tests/test_state_fold_policies.py`.
+        """
+        self.assertEqual(
+            {"any", "once", "sum", "append", "union"}, set(STATE_MERGE_POLICIES)
+        )
 
 
 if __name__ == "__main__":

@@ -387,40 +387,111 @@ def writers_agree(by_task: dict, tasks: list[str]) -> bool:
 # language guarantee it by construction.
 #   sum    concurrent writes add. Contributions are numbers.
 #   append concurrent writes concatenate. Contributions are lists.
+#   union  concurrent writes concatenate, dropping elements already present.
+#          Contributions are lists.
 #
-# Both fold with `+`, and the two names exist to say which -- `sum` on a list
-# would silently concatenate and `append` on a number would silently add, so the
-# name is what lets a wrong contribution be rejected instead of quietly doing
-# something.
+# `sum` and `append` fold with `+`, and the two names exist to say which -- `sum`
+# on a list would silently concatenate and `append` on a number would silently
+# add, so the name is what lets a wrong contribution be rejected instead of
+# quietly doing something.
 #
-# `union` is named in #485 and is deliberately absent. It needs an
-# element-equality story Nodus does not have: dedup over lists of maps has no
-# defined key, and merging maps is not commutative when two branches set the same
-# field. Shipping it with unclear semantics would be the same "declared but not
-# enforced" shape the fold set was withheld for in the first place.
-FOLD_STATE_MERGE_POLICIES = ("sum", "append")
+# `union` needed an element-equality story before it could ship, and the story
+# turned out to be one the language already tells: Nodus `==` is structural for
+# numbers, strings, bools, nil, lists and maps, however deeply nested. It is
+# *not* structural for records -- `Record.__eq__` is `self is other`
+# (`vm/types.py`), with `datetime` and `duration` carved out -- so a list of
+# records would dedup nothing and `union` would silently be `append`. Records are
+# therefore refused in a union contribution rather than accepted and ignored
+# (#545).
+#
+# Dedup keeps the first occurrence, which is what makes it batching-invariant:
+# `dedup(dedup(a) + b) == dedup(a + b)`.
+FOLD_STATE_MERGE_POLICIES = ("sum", "append", "union")
 STATE_MERGE_POLICIES = ("any", "once", *FOLD_STATE_MERGE_POLICIES)
 DEFAULT_STATE_MERGE = "any"
 
 #: What a contribution to each folded policy must be, for the error message.
-FOLD_CONTRIBUTION_KINDS = {"sum": "a number", "append": "a list"}
+FOLD_CONTRIBUTION_KINDS = {
+    "sum": "a number",
+    "append": "a list",
+    "union": "a list of comparable values",
+}
 
 
 def is_fold_policy(merge: object) -> bool:
     return merge in FOLD_STATE_MERGE_POLICIES
 
 
+def _holds_an_incomparable_record(value) -> bool:
+    """Is there a plain record anywhere in here?
+
+    Records compare by identity (`vm/types.py`), so one inside a union
+    contribution can never equal another and dedup silently does nothing. The
+    check recurses because the record can be nested -- `{"r": record {...}}`
+    compares false for the same reason the record does.
+
+    `datetime` and `duration` records are exempt: `Record.__eq__` compares those
+    two kinds by value, so they dedup correctly.
+    """
+    from nodus.vm.types import Record
+
+    if isinstance(value, Record):
+        return value.kind not in ("datetime", "duration")
+    if isinstance(value, list):
+        return any(_holds_an_incomparable_record(item) for item in value)
+    if isinstance(value, dict):
+        return any(_holds_an_incomparable_record(item) for item in value.values())
+    return False
+
+
 def check_contribution(merge: str, value) -> str | None:
-    """`None` if `value` is a valid contribution to `merge`, else why not."""
+    """`None` if `value` is a valid contribution to `merge`, else why not.
+
+    The returned text completes the sentence *"state 'x' is declared
+    merge: "union", but …"*, so it carries its own explanation rather than a
+    bare type name the caller has to frame.
+    """
     if merge == "sum":
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return "a number"
+            return f"a contribution must be a number; got {_kind_of(value)}"
         return None
     if merge == "append":
         if not isinstance(value, list):
-            return "a list"
+            return f"a contribution must be a list; got {_kind_of(value)}"
+        return None
+    if merge == "union":
+        if not isinstance(value, list):
+            return f"a contribution must be a list; got {_kind_of(value)}"
+        if any(_holds_an_incomparable_record(item) for item in value):
+            # Refused rather than accepted-and-not-deduped: `union` that silently
+            # behaves as `append` is the "declared but not enforced" shape this
+            # policy set exists to avoid.
+            return (
+                "records compare by identity, not by value, so a list containing "
+                "one can never be deduplicated (#545). Use a map instead of a "
+                'record, or `merge: "append"` if duplicates are acceptable'
+            )
         return None
     return None
+
+
+def _kind_of(value) -> str:
+    """A Nodus-facing type name for an error message."""
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, dict):
+        return "map"
+    if value is None:
+        return "nil"
+    return type(value).__name__.lower()
 
 
 def fold_contributions(merge: str, base, values: list):
@@ -433,6 +504,11 @@ def fold_contributions(merge: str, base, values: list):
     rather than a user-supplied function: the language guarantees the property by
     construction instead of making it the author's contract.
     """
+    if merge == "union":
+        combined = list(base) if isinstance(base, list) else []
+        for value in values:
+            combined.extend(value)
+        return _dedup(combined)
     result = base
     for value in values:
         if result is None:
@@ -440,3 +516,24 @@ def fold_contributions(merge: str, base, values: list):
             continue
         result = result + value
     return result
+
+
+def _dedup(items: list) -> list:
+    """Keep the first occurrence of each value, by Nodus equality.
+
+    Uses `VM._nodus_eq` rather than Python `==` or a set, and neither substitute
+    would be right: Nodus equality coerces int/float and refuses bool/int, so
+    `1 == 1.0` is true while `true == 1` is false, and a `set` would need hashing
+    that lists and maps do not have. Re-implementing those rules here is exactly
+    the duplication that drifts, so the one implementation is borrowed.
+
+    O(n^2). Union contributions are small, and being right about equality matters
+    more than being fast about it.
+    """
+    from nodus.vm.vm import VM
+
+    out: list = []
+    for item in items:
+        if not any(VM._nodus_eq(item, seen) for seen in out):
+            out.append(item)
+    return out
