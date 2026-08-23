@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
+from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.frontend.ast.ast_nodes import (
     builtin_call,
     ActionStmt,
@@ -55,6 +56,7 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowStep,
 )
 from nodus.orchestration.workflow_state import (
+    FOLD_STATE_MERGE_POLICIES,
     STATE_MERGE_POLICIES,
 )
 from nodus.orchestration.task_graph import (
@@ -157,16 +159,63 @@ def is_goal_pursuit_value(value) -> bool:
     return isinstance(value, dict) and value.get(GOAL_PURSUIT_MARKER) == "goal_pursuit"
 
 
+def _pos(node) -> tuple[int, int]:
+    """Line/col from a node's source token, for a lowering-time refusal.
+
+    Nodes carry position on `_tok`, not as `line`/`col` attributes, so reading
+    the latter silently yields 0:0 and the error points at the top of the file.
+    """
+    tok = getattr(node, "_tok", None)
+    if tok is None:
+        return 0, 0
+    return getattr(tok, "line", 0) or 0, getattr(tok, "col", 0) or 0
+
+
+def _fold_cells(flow) -> dict[str, str]:
+    """Cells declaring a fold policy, read out of the `with { ... }` literal.
+
+    Read statically because a fold changes what `=` and `+=` *mean* for that
+    cell, and the refusal of `=` is a compile-time error -- `nodus check` catches
+    the typo rather than the first concurrent run. That requires the policy to be
+    known before the program runs, so `merge:` must be a string literal.
+
+    A computed `merge:` is refused where it is written rather than silently
+    treated as no policy. Everything else in `with { ... }` stays an ordinary
+    expression: `durable:` does not change the meaning of any code, so it has no
+    reason to be pinned.
+    """
+    cells: dict[str, str] = {}
+    for state in flow.states:
+        options = getattr(state, "options", None)
+        if not isinstance(options, MapLit):
+            continue
+        for key_node, value_node in options.items:
+            if not (isinstance(key_node, Str) and key_node.v == "merge"):
+                continue
+            if not isinstance(value_node, Str):
+                raise LangSyntaxError(
+                    f"state '{state.name}' merge: must be a literal policy name. "
+                    "It decides at compile time whether a write to this cell is a "
+                    "contribution, so it cannot be computed.",
+                    line=_pos(state)[0],
+                    col=_pos(state)[1],
+                )
+            if value_node.v in FOLD_STATE_MERGE_POLICIES:
+                cells[state.name] = value_node.v
+    return cells
+
+
 def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     state_init = _lower_state_init(flow)
     state_names = [state.name for state in flow.states]
+    fold_cells = _fold_cells(flow)
     items: list[tuple[object, object]] = [
         (Str(marker), Str(execution_kind)),
         (Str("name"), Str(flow.name)),
         (Str("execution_kind"), Str(execution_kind)),
         (
             Str("steps"),
-            ListLit([_lower_step_ast(step, state_names) for step in flow.steps]),
+            ListLit([_lower_step_ast(step, state_names, fold_cells) for step in flow.steps]),
         ),
     ]
     if state_init is not None:
@@ -210,10 +259,19 @@ def _lower_state_init(flow: WorkflowDef | GoalDef) -> FnExpr | None:
     return FnExpr([], Block(stmts), return_type=None)
 
 
-def _lower_step_ast(step: WorkflowStep | GoalStep, state_names: list[str]) -> MapLit:
+def _lower_step_ast(
+    step: WorkflowStep | GoalStep,
+    state_names: list[str],
+    fold_cells: dict[str, str] | None = None,
+) -> MapLit:
     state_var = "__workflow_state"
     body = step.body
-    rewriter = _StateRewriter(set(state_names), state_var, initial_locals=set(step.deps) | ({state_var} if state_names else set()))
+    rewriter = _StateRewriter(
+        set(state_names),
+        state_var,
+        initial_locals=set(step.deps) | ({state_var} if state_names else set()),
+        fold_cells=fold_cells,
+    )
     rewritten_body = rewriter.rewrite_stmt(body)
     if state_names:
         prelude = Let(state_var, builtin_call("workflow_state", []))
@@ -480,8 +538,8 @@ def _state_policies(vm, workflow_value, flow_name: str) -> dict:
                     "type",
                     f"state '{cell}' merge: unknown policy {merge!r}. "
                     f"Valid policies are {', '.join(STATE_MERGE_POLICIES)}. "
-                    f"Folding (sum/append/union) needs the write-at-join model and "
-                    f"is not available yet -- see issue #485.",
+                    f"`union` is deliberately absent: it needs an element-equality "
+                    f"story Nodus does not have -- see issue #485.",
                 )
             entry["merge"] = merge
         if "durable" in options:
@@ -646,10 +704,24 @@ class _StateRewriter:
     the state map to access it, which is not currently supported).
     """
 
-    def __init__(self, state_names: set[str], state_var: str, initial_locals: set[str] | None = None):
+    def __init__(
+        self,
+        state_names: set[str],
+        state_var: str,
+        initial_locals: set[str] | None = None,
+        fold_cells: dict[str, str] | None = None,
+    ):
         self.state_names = set(state_names)
         self.state_var = state_var
         self.scopes: list[set[str]] = [set(initial_locals or set())]
+        # cell -> its fold policy, for cells declaring `merge: "sum"` / `"append"`.
+        # A fold changes what a write *means*, so `=` and `+=` lower differently
+        # for these and the difference is decided here, at compile time, rather
+        # than by a runtime branch inside the write.
+        self.fold_cells = dict(fold_cells or {})
+
+    def _is_fold(self, name: str) -> bool:
+        return name in self.fold_cells and not self._is_local(name)
 
     def _is_local(self, name: str) -> bool:
         return any(name in scope for scope in self.scopes)
@@ -750,11 +822,42 @@ class _StateRewriter:
         if isinstance(expr, Assign):
             value = self.rewrite_expr(expr.expr)
             if expr.name in self.state_names and not self._is_local(expr.name):
+                if self._is_fold(expr.name):
+                    # Refused at compile time, not reinterpreted. `=` names a
+                    # final value; a folded cell needs a contribution, and there
+                    # is no reading of `counter = seen + 1i` that means "add one"
+                    # -- folding final values double-counts (#485).
+                    raise LangSyntaxError(
+                        f"state '{expr.name}' is declared merge: "
+                        f"\"{self.fold_cells[expr.name]}\", so it is written with "
+                        f"'{expr.name} += ...' which contributes a value to be "
+                        f"folded at the join. A plain '{expr.name} = ...' sets a "
+                        f"final value, which cannot be combined with another "
+                        f"branch's.",
+                        line=_pos(expr)[0],
+                        col=_pos(expr)[1],
+                    )
                 return _mark_from(IndexAssign(Var(self.state_var), Str(expr.name), value), expr)
             return _mark_from(Assign(expr.name, value), expr)
         if isinstance(expr, CompoundAssign):
             value = self.rewrite_expr(expr.expr)
             if expr.name in self.state_names and not self._is_local(expr.name):
+                if self._is_fold(expr.name):
+                    if expr.op != "+":
+                        raise LangSyntaxError(
+                            f"state '{expr.name}' is declared merge: "
+                            f"\"{self.fold_cells[expr.name]}\", which folds with "
+                            f"'+'. '{expr.op}=' has no meaning as a contribution.",
+                            line=_pos(expr)[0],
+                            col=_pos(expr)[1],
+                        )
+                    # The contribution is the right-hand side alone. It never
+                    # reads the cell, which is what closes the read-modify-write
+                    # window two concurrent branches lose an update through.
+                    return _mark_from(
+                        builtin_call("state_contribute", [Str(expr.name), value]),
+                        expr,
+                    )
                 # `x += e` is `x = x + e` everywhere else in the language, so it
                 # lowers to the shape the `Assign` case above already produces.
                 # Without this it reached the compiler untouched, resolved as an

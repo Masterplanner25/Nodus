@@ -174,10 +174,17 @@ fn main() {{ let r = run_workflow(w); print("ran") }}
         error = result.get("error") or {}
         return error.get("message", "") if isinstance(error, dict) else str(error)
 
-    def test_fold_is_refused_and_says_why(self):
-        message = self._message('merge: "sum"')
+    def test_union_is_still_refused_and_says_why(self):
+        """`sum` and `append` shipped; `union` did not, and says so.
+
+        It needs an element-equality story Nodus does not have -- dedup over
+        lists of maps has no defined key, and merging maps is not commutative
+        when two branches set the same field. Shipping it with unclear semantics
+        would be the shape the whole fold set was withheld for.
+        """
+        message = self._message('merge: "union"')
         self.assertIn("unknown policy", message)
-        self.assertIn("write-at-join", message)
+        self.assertIn("element-equality", message)
         self.assertIn("#485", message)
 
     def test_an_unknown_policy_is_refused(self):
@@ -191,9 +198,10 @@ fn main() {{ let r = run_workflow(w); print("ran") }}
         self.assertIn("Unsupported workflow state option", message)
 
     def test_the_vocabulary_is_only_what_the_runtime_honours(self):
-        """Fold waits for the emission model rather than shipping as a name that
-        does nothing -- the same bar `skipped` and `omitted` had to clear."""
-        self.assertEqual({"any", "once"}, set(STATE_MERGE_POLICIES))
+        """A policy name ships only when the runtime does something with it --
+        the same bar `skipped` and `omitted` had to clear. `union` is named in
+        #485 and is not here, because its semantics are not settled."""
+        self.assertEqual({"any", "once", "sum", "append"}, set(STATE_MERGE_POLICIES))
 
 
 if __name__ == "__main__":

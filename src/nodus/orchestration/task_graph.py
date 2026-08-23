@@ -17,6 +17,7 @@ from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.coroutine import Coroutine
 from nodus.orchestration.workflow_state import (
     TrackedState,
+    is_fold_policy,
     checkpoints_public,
     clone_state,
     concurrent_write_conflicts,
@@ -718,6 +719,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         # this cannot stop that, but it can stop it being silent.
         if not isinstance(workflow_state, TrackedState):
             workflow_state = TrackedState(workflow_state)
+        # The fold happens at `end_step`, where the cell's policy is what decides
+        # whether there is anything to fold, so the state carries the policies.
+        if isinstance(graph.metadata, dict):
+            workflow_state.set_policies(graph.metadata.get("state_policies"))
         if checkpoints is None:
             checkpoints = []
         if engine_checkpoints is None:
@@ -1117,6 +1122,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 # so the warning would be noise -- silencing it by *stating intent*
                 # is the whole reason `any` is sayable.
                 continue
+            if is_fold_policy(merge):
+                # Two branches contributing to a folded cell is the feature, not
+                # the defect: neither read it, so neither lost the other's write.
+                continue
             message = (
                 f"warning: steps {' and '.join(names)} both wrote state "
                 f"'{conflict['key']}' while running concurrently; only "
@@ -1186,8 +1195,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "task_id": task.task_id,
             "timestamp": runtime_time_ms(),
         }
-        if isinstance(workflow_state, dict):
-            entry["state"] = clone_state(workflow_state)
+        # A checkpoint records what the step has done so far, folded contributions
+        # included: `counter += 1i; checkpoint "l"` must record the contributed
+        # value, or a resume from that label contributes again and the total is
+        # wrong. Merged into a copy -- other branches still must not see it before
+        # the join.
+        state_now = workflow_state
+        if isinstance(workflow_state, TrackedState):
+            pending = workflow_state.pending_fold(task.task_id)
+            if pending:
+                state_now = {**workflow_state, **pending}
+        if isinstance(state_now, dict):
+            entry["state"] = clone_state(state_now)
         if isinstance(checkpoints, list):
             checkpoints.append(
                 {

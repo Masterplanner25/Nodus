@@ -187,18 +187,73 @@ write the same cell:
 | *(undeclared)* | last write wins, and a **warning** names both steps |
 | `"any"` | last write wins, and the warning is silenced |
 | `"once"` | a second concurrent writer is an **error** |
+| `"sum"` | concurrent writes **add** |
+| `"append"` | concurrent writes **concatenate** |
 
 Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
 and silencing the warning by stating that is the point. An undeclared cell keeps
 warning, because that warning is the only thing between a lost update and
 silence.
 
-Folding (`sum`, `append`, `union`) is **not available**. A fold needs a branch to
-contribute a value the runtime applies at the join, rather than assigning into a
-shared slot — a change to what a state write is, tracked in
-[#485](https://github.com/Masterplanner25/Nodus/issues/485). Writing
-`merge: "sum"` is refused where you write it rather than quietly behaving as
-last-write-wins.
+#### Folding — `sum` and `append`
+
+Without a fold, two branches that read a cell, do something slow, and write it
+back lose one of the writes:
+
+```nd-no-run
+step a { let seen = counter; sleep(20i); counter = seen + 1i }
+step b { let seen = counter; sleep(20i); counter = seen + 1i }
+// counter is 1, not 2 — one increment is gone
+```
+
+Nothing atomic about the assignment can fix that: the read and the write are
+separated by arbitrary code, so the window is opened by the *step*, not by the
+statement. A fold closes it by changing what a write is.
+
+```nd-expect=output
+workflow tally {
+    state counter = 0i with { merge: "sum" }
+    state log = [] with { merge: "append" }
+
+    step a { sleep(10i); counter += 1i; log += ["a"]; return "a" }
+    step b { sleep(10i); counter += 1i; log += ["b"]; return "b" }
+    step done after a, b { return "done" }
+}
+
+let r = run_workflow(tally)
+print(r["state"]["counter"])
+print(len(r["state"]["log"]))
+```
+
+Output:
+
+```
+2
+2
+```
+
+**Under a fold policy, `+=` contributes and `=` is refused.**
+
+`counter += 1i` means *contribute one*, folded at the join. It never reads the
+cell, which is what removes the window. Both branches contribute, both land.
+
+`counter = 5i` is a **compile-time error** — `nodus check` catches it. A plain
+assignment names a *final value*, and two final values cannot be combined:
+folding them would double-count. There is no reading of `counter = seen + 1i`
+that means "add one", so the form is rejected rather than reinterpreted.
+
+Two consequences worth knowing:
+
+- A contribution is not visible to a plain read of the same cell inside the same
+  step — it lands at the join, not at the statement. Read the value you
+  contributed from your own local, not from the cell.
+- The contribution must match the policy: a number for `sum`, a list for
+  `append`. Anything else fails the step with a message naming both.
+
+`union` is deliberately absent. It needs an element-equality story Nodus does not
+have — dedup over lists of maps has no defined key, and merging maps is not
+commutative when two branches set the same field. See
+[#485](https://github.com/Masterplanner25/Nodus/issues/485).
 
 **`durable: false`** keeps a cell out of the checkpoint. A cell holding a live
 handle — a connection, a channel — has no meaning after a resume, and every cell

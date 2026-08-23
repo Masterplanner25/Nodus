@@ -52,7 +52,7 @@ class TrackedState(dict):
     worth having before the larger design lands rather than after.
     """
 
-    __slots__ = ("_writes", "_writer", "_steps")
+    __slots__ = ("_writes", "_writer", "_steps", "_policies")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,6 +67,10 @@ class TrackedState(dict):
         # *values* live here; `_writes` above only ever knew who wrote, which is
         # enough to warn and not enough to merge.
         self._steps: dict[str, StepWrites] = {}
+        # Per-cell `with { merge: ... }`, injected by the runner. Needed here
+        # because the fold happens at `end_step`, where the cell's policy is what
+        # decides whether there is anything to fold.
+        self._policies: dict = {}
 
     def track_writes_with(self, writer) -> None:
         self._writer = writer
@@ -92,11 +96,47 @@ class TrackedState(dict):
         self._steps[task_id] = step
         return step
 
+    def set_policies(self, policies: dict | None) -> None:
+        self._policies = policies if isinstance(policies, dict) else {}
+
+    def merge_policy(self, key) -> str:
+        entry = self._policies.get(str(key))
+        if isinstance(entry, dict):
+            merge = entry.get("merge")
+            if isinstance(merge, str):
+                return merge
+        return DEFAULT_STATE_MERGE
+
+    def pending_fold(self, task_id: str) -> dict:
+        """This step's folded cells as they would land right now.
+
+        A checkpoint has to see them: `counter += 1i; checkpoint "l"` must record
+        the contributed value, or a resume from that label re-contributes and the
+        total is wrong. The fold is computed into a copy -- other branches still
+        must not see it before the join.
+        """
+        step = self._steps.get(task_id)
+        if step is None or not step.has_contributions():
+            return {}
+        out = {}
+        for key, values in step.contributions().items():
+            out[key] = fold_contributions(self.merge_policy(key), self.get(key), values)
+        return out
+
     def end_step(self, task_id: str) -> list[str]:
-        """Close a step's write record and return the keys it wrote."""
+        """Close a step's record, folding its contributions into the cells.
+
+        This is the join for a folded cell. The contribution never read the cell,
+        so two concurrent branches each contributing `1` add to `2` however their
+        reads interleaved -- which is the lost update in #485, closed.
+        """
         step = self._steps.pop(task_id, None)
         if step is None:
             return []
+        for key, values in step.contributions().items():
+            folded = fold_contributions(self.merge_policy(key), self.get(key), values)
+            self._writes.setdefault(str(key), []).append(task_id)
+            dict.__setitem__(self, key, folded)
         return step.close()
 
     def open_step(self, task_id: str) -> StepWrites | None:
@@ -133,7 +173,7 @@ class StepWrites:
     smuggled in here; it is recorded on the issue as its own decision.
     """
 
-    __slots__ = ("task_id", "_order", "_values", "closed")
+    __slots__ = ("task_id", "_order", "_values", "_contributions", "closed")
 
     def __init__(self, task_id: str | None = None):
         self.task_id = task_id
@@ -141,6 +181,10 @@ class StepWrites:
         # contribution from it, and order is what decides `any`.
         self._order: list[str] = []
         self._values: dict[str, object] = {}
+        # key -> the values this step contributed to a folded cell, in order. A
+        # list rather than one value: a step may contribute more than once, and
+        # each contribution is real -- `counter += 1i` twice is +2.
+        self._contributions: dict[str, list] = {}
         self.closed = False
 
     def record(self, key, value) -> None:
@@ -148,6 +192,21 @@ class StepWrites:
         if name not in self._values:
             self._order.append(name)
         self._values[name] = value
+
+    def contribute(self, key, value) -> None:
+        """Record a contribution to a folded cell without touching it.
+
+        The write does *not* land here, which is the whole point: it is the
+        read-modify-write on the shared cell that loses updates, and a
+        contribution never reads the cell at all.
+        """
+        self._contributions.setdefault(str(key), []).append(value)
+
+    def contributions(self) -> dict[str, list]:
+        return {key: list(values) for key, values in self._contributions.items()}
+
+    def has_contributions(self) -> bool:
+        return bool(self._contributions)
 
     def keys_written(self) -> list[str]:
         return list(self._order)
@@ -239,5 +298,58 @@ def concurrent_write_conflicts(state, ordered) -> list[dict]:
 # -- or a resume that regroups writes produces a different total, silently.
 # LangGraph's DeltaChannel makes that the author's contract; a fixed set lets the
 # language guarantee it by construction.
-STATE_MERGE_POLICIES = ("any", "once")
+#   sum    concurrent writes add. Contributions are numbers.
+#   append concurrent writes concatenate. Contributions are lists.
+#
+# Both fold with `+`, and the two names exist to say which -- `sum` on a list
+# would silently concatenate and `append` on a number would silently add, so the
+# name is what lets a wrong contribution be rejected instead of quietly doing
+# something.
+#
+# `union` is named in #485 and is deliberately absent. It needs an
+# element-equality story Nodus does not have: dedup over lists of maps has no
+# defined key, and merging maps is not commutative when two branches set the same
+# field. Shipping it with unclear semantics would be the same "declared but not
+# enforced" shape the fold set was withheld for in the first place.
+FOLD_STATE_MERGE_POLICIES = ("sum", "append")
+STATE_MERGE_POLICIES = ("any", "once", *FOLD_STATE_MERGE_POLICIES)
 DEFAULT_STATE_MERGE = "any"
+
+#: What a contribution to each folded policy must be, for the error message.
+FOLD_CONTRIBUTION_KINDS = {"sum": "a number", "append": "a list"}
+
+
+def is_fold_policy(merge: object) -> bool:
+    return merge in FOLD_STATE_MERGE_POLICIES
+
+
+def check_contribution(merge: str, value) -> str | None:
+    """`None` if `value` is a valid contribution to `merge`, else why not."""
+    if merge == "sum":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "a number"
+        return None
+    if merge == "append":
+        if not isinstance(value, list):
+            return "a list"
+        return None
+    return None
+
+
+def fold_contributions(merge: str, base, values: list):
+    """Apply a step's contributions to the value already in the cell.
+
+    Both policies fold with `+`, applied in contribution order. That is
+    batching-invariant for numbers and for list concatenation --
+    `fold(fold(s, xs), ys) == fold(s, xs + ys)` -- which is what makes a resume
+    that regroups writes produce the same total. It is why the set is closed
+    rather than a user-supplied function: the language guarantees the property by
+    construction instead of making it the author's contract.
+    """
+    result = base
+    for value in values:
+        if result is None:
+            result = value
+            continue
+        result = result + value
+    return result

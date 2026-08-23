@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#485: folded state cells — `merge: "sum"` and `merge: "append"`.** Two
+  concurrent branches that read a cell, do something slow, and write it back
+  silently lost one of the writes. Declaring a fold closes it:
+
+  ```nd
+  state counter = 0i with { merge: "sum" }
+  state log = [] with { merge: "append" }
+  ```
+
+  **`+=` contributes; `=` is refused.** `counter += 1i` means *contribute one*,
+  folded at the join — it never reads the cell, which is what removes the
+  read-modify-write window. `counter = 5i` on a folded cell is a **compile-time
+  error** caught by `nodus check`: a plain assignment names a *final* value, and
+  two final values cannot be combined without double-counting. There is no
+  reading of `counter = seen + 1i` that means "add one", so the form is rejected
+  rather than reinterpreted. This is Option A from the issue, decided there.
+
+  The policy is read from the `with { ... }` literal at compile time, so
+  `merge:` must be a literal policy name — it decides what a write *means*, and
+  that cannot be computed. A wrong contribution (a list to `sum`, a number to
+  `append`) fails the step naming both.
+
+  Two behaviours worth knowing. A contribution is not visible to a plain read of
+  the same cell in the same step — it lands at the join, not at the statement. And
+  a `checkpoint` *does* see pending contributions, because a resume from that
+  label would otherwise contribute a second time.
+
+  Folded cells no longer draw the concurrent-writer warning: two branches
+  contributing is the feature, not the defect, since neither read the cell.
+
+  **`union` is deliberately absent**, though the issue names it. It needs an
+  element-equality story Nodus does not have — dedup over lists of maps has no
+  defined key, and merging maps is not commutative when two branches set the same
+  field. Shipping it with unclear semantics would be the shape the whole fold set
+  was withheld for in the first place.
+
+  The fold set stays closed rather than taking a user function: `sum` and
+  `append` are batching-invariant (`fold(fold(s, xs), ys) == fold(s, xs + ys)`),
+  so a resume that regroups writes produces the same total by construction rather
+  than by the author's contract. Pinned by test.
+
+  **Not everything on #485.** An undeclared cell still defaults to last-write-wins
+  with a warning; making `once` the default is step 4 and would break workflows
+  whose branches legitimately agree. The barrier policy is untouched.
+
 ### Changed
 
 - **Workflow state writes are recorded per step.** Key, value
