@@ -15,6 +15,15 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - `.tl` legacy extension (CLI emits warnings on use).
 - `tiny_vm_lang_functions.py` compatibility shim.
 - `language.py` / `language.bat` legacy launchers (CLI emits warnings on use).
+- **Undeclared workflow `state` written concurrently with a lost update**
+  (#485). Two steps the graph does not order both writing one cell, where either
+  read it before writing or they wrote different values, currently *warns* and
+  keeps last-write-wins. **Scheduled to become an error in 6.0.0.** The warning
+  names both fixes: declare `with { merge: "sum" }` / `"append"` to combine the
+  writes, or `with { merge: "any" }` to keep last-write-wins deliberately.
+
+  Concurrent writes that lose nothing — same value, neither branch reading first
+  — are silent and are not affected.
 
 ## Timeline
 
@@ -39,6 +48,16 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - **v4.1.1 (2026-08-05):** Patch release. A closure passed to a module function **inside a list, map, or record** was never wrapped in a `_ClosureProxy`, so it executed the caller's instruction address against the module's bytecode — `Stack underflow` under the CLI, a silent no-op under `NodusRuntime` (ASYNC-MOD-003, #339). This affected every `.nd` library taking callbacks in a container, not only the stdlib. `std:async.parallel` and `std:async.series` work as a result; `worker_pool` and `pipeline` remain broken and are documented as such (#339 stays open). CI now pins `ruff`, which was unpinned and began failing on untouched files when 0.16.1 changed its default rule selection. No bytecode break.
 - **v4.2.0 (2026-08-15):** Minor release. Correctness: `finally` runs when `catch` re-throws (#361); `std:async` worker pools actually run their workers (#339); `--help` no longer executes the command it documents (#353/#345); the embedded runtime applies a call-depth cap by default (#350). Adds an opcode-freeze gate phase (#366) and DAP locals (#106). **Breaking for stderr consumers:** every error now reports a resolved absolute path (#342). No bytecode break. *(Entry added retroactively during the 5.0.0 cut — the 4.2.0 release did not update this file.)*
 - **v5.0.0 (2026-08-17, current):** **Major release — breaking.** `NodusRuntime` denies `allow_subprocess`, `allow_network` and `allow_env` by default (#405); grant them explicitly. `nodus run` is unaffected. A Nodus program can no longer write into `.nodus/`. Adds a capability policy at both host chokepoints with per-call, argument-aware decisions, `capability_denied` events and an unbypassable floor (#405), and `goal … over …` — a goal that declares a stopping condition over a workflow (#409, Experimental). Fixes: step retries honoured on every entry point (#392); `goal`/`workflow` retry unified (#393); concurrent agent steps actually overlap (#398); cross-process resume works when the script reads the result (#399); derived VMs no longer shed the sandbox (#405); `nodus fmt` no longer writes files that stop parsing (#427). No bytecode break — BYTECODE_VERSION stays 4. Migration: `docs/migration/v5.0-deny-by-default.md`.
+
+- **Unreleased:** The concurrent-write warning became precise (#485). It now
+  fires only when an update was actually lost -- the writers disagreed, or one
+  read the cell before writing it -- and is silent when concurrent branches wrote
+  the same value without reading first. Not breaking: nothing that ran now fails,
+  and a class of false-positive warnings stopped. The warning announces that the
+  remaining case becomes an **error in 6.0.0**; see *Deprecated* above.
+
+  `merge: "sum"` and `merge: "append"` also ship, so there is now a way to say
+  "combine these" rather than only "I know they agree".
 
 ## Migration Path
 - Use `.nd` files for new code.

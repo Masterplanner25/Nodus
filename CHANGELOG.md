@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#485 step 4: the concurrent-write warning fires only when an update was
+  actually lost.** It used to warn whenever two unordered steps wrote one cell,
+  which included the case where both wrote the same constant and nothing was
+  lost. That noise is what teaches people to ignore the warning that matters.
+
+  It now warns when either:
+
+  - the writers **disagreed** — different values, one was overwritten; or
+  - a writer **read the cell before writing it** — a read-modify-write, which
+    loses an update whatever the values are.
+
+  **The second signal is the load-bearing one, and value comparison alone is
+  wrong without it.** Two branches doing `counter = seen + 1i` from the same base
+  both write `1`: the values agree *precisely because* an update was lost. That
+  is this issue's own reproduction, and it falsified the first implementation —
+  the read-before-write check exists because of it.
+
+  Not breaking: nothing that ran now fails, and a class of false positives
+  stopped. **The remaining warning becomes an error in 6.0.0**, which the message
+  says, along with both fixes — a fold to combine the writes, or `merge: "any"`
+  for deliberate last-write-wins. Recorded in
+  `docs/governance/COMPATIBILITY.md`.
+
+  **The default stays `any`, deliberately.** #485 proposed defaulting to `once`.
+  `workflow`/`step` are *Mostly Stable*, where "breakage is avoided but not
+  guaranteed" — turning working programs into errors is not the minor refinement
+  that tier permits, and it needs the major cycle plus the deprecation signal
+  this change starts. Making the warning precise first is also what makes the
+  error defensible later: it can now only fire on a genuine lost update.
+
 ### Added
 
 - **#485: folded state cells — `merge: "sum"` and `merge: "append"`.** Two

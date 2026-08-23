@@ -1126,11 +1126,28 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 # Two branches contributing to a folded cell is the feature, not
                 # the defect: neither read it, so neither lost the other's write.
                 continue
+            if not conflict.get("lost_update"):
+                # Both branches wrote the same constant and neither read the cell
+                # first, so nothing was lost whichever won. Warning here is the
+                # noise that teaches people to ignore the warning that matters --
+                # and it is the case that made `once` unusable as a default, since
+                # these workflows are correct as written.
+                continue
+            if conflict.get("read_modify_write"):
+                cause = (
+                    "each read it before writing, so one update was lost"
+                )
+            else:
+                cause = (
+                    "with different values, so one was lost"
+                )
             message = (
                 f"warning: steps {' and '.join(names)} both wrote state "
-                f"'{conflict['key']}' while running concurrently; only "
-                f"{winner}'s write survives. If they each read it first, one "
-                f"update was lost."
+                f"'{conflict['key']}' while running concurrently and {cause}; "
+                f"only {winner}'s write survives. Declare "
+                f"`with {{ merge: \"sum\" }}` (or \"append\") to combine them, "
+                f"or `merge: \"any\"` if you meant last-write-wins. "
+                f"This becomes an error in 6.0.0."
             )
             print(message, file=sys.stderr)
             vm.event_bus.emit_event(

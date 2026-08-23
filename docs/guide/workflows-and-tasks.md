@@ -184,16 +184,38 @@ write the same cell:
 
 | value | meaning |
 |---|---|
-| *(undeclared)* | last write wins, and a **warning** names both steps |
+| *(undeclared)* | last write wins; **warns if an update was lost** |
 | `"any"` | last write wins, and the warning is silenced |
 | `"once"` | a second concurrent writer is an **error** |
 | `"sum"` | concurrent writes **add** |
 | `"append"` | concurrent writes **concatenate** |
 
 Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
-and silencing the warning by stating that is the point. An undeclared cell keeps
-warning, because that warning is the only thing between a lost update and
-silence.
+and silencing the warning by stating that is the point.
+
+An undeclared cell warns only when something was actually lost, which is either:
+
+- the two branches wrote **different values** — one was overwritten; or
+- a branch **read the cell before writing it** — a read-modify-write, which loses
+  an update whatever the values are.
+
+Two branches writing the same constant, neither reading first, lose nothing and
+are silent.
+
+> The remaining warning **becomes an error in 6.0.0**. Declare a fold to combine
+> the writes, or `merge: "any"` if last-write-wins is what you meant.
+
+The read-before-write case is worth understanding, because it is the one that
+looks fine in testing:
+
+```nd-no-run
+step a { let seen = counter; sleep(20i); counter = seen + 1i }
+step b { let seen = counter; sleep(20i); counter = seen + 1i }
+```
+
+Both branches write `1`, so the *values* agree — and that is exactly when an
+update was lost. Comparing what was written cannot detect this; only noticing
+that each branch read the cell first can.
 
 #### Folding — `sum` and `append`
 
