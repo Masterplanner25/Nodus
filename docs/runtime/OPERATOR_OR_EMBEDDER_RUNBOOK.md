@@ -70,6 +70,18 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | `coroutine_timeout_ms` | `int \| None` | `None` | Per-coroutine deadline |
 | `event_sinks` | `list \| None` | `None` | Attach runtime event sinks for monitoring |
 
+> **Event retention is bounded, and VM bookkeeping is off unless observed.** The bus
+> keeps the most recent 50,000 events (`NODUS_EVENT_HISTORY` to change it, `0` to keep
+> none while still feeding sinks), and `vm_call` / `vm_return` / `vm_instruction_batch`
+> are emitted only when a sink is attached or `NODUS_TRACE_VM_EVENTS=1` is set.
+>
+> This matters for the long-lived-runtime pattern below: before #522 each run's VM held
+> its entire event history until collected — 74 MB per 3M instructions, about 23 bytes
+> per instruction executed — with no consumer on the default path. `function_calls`,
+> `returns` and `instructions_executed` are counters kept independently of the bus, so
+> `get_execution_stats()` is unaffected. See
+> [RUNTIME_EVENTS.md](RUNTIME_EVENTS.md#retention).
+
 > **The three `allow_*` capability switches default to permissive.** A runtime built as
 > `NodusRuntime(max_steps=..., timeout_ms=...)` can still start subprocesses, open network
 > connections, and read the process environment. Sandboxing filesystem access alone does
