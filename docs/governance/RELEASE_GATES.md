@@ -71,6 +71,9 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 - `--opcodes`: the VM dispatch table matches `BYTECODE_REFERENCE.md` §3, its appendix
   table, and the `FREEZE_PROPOSAL.md` stability tables exactly, and the opcode counts
   and `BYTECODE_VERSION` claimed in those docs match the live values
+- `--versions`: `version.py` and `pyproject.toml` agree, and every claim declared in
+  `tools/version_claims.json` still quotes the current value. **Re-run this after the
+  version bump** — see Gate 3d, because running it before the bump proves nothing
 
 **Exemptions:** New failing blocks must either be fixed before release OR added to
 `.nodusgate-allow` with a comment explaining why they are intentionally non-runnable.
@@ -104,6 +107,41 @@ this repository's CI — run it locally before a release that touched syntax.
 **That skip is the hole, and Gate 3c closes it.** `when` shipped in the step-guard
 work with the grammar unupdated, precisely because the only check that would have
 caught it cannot run where merges are gated.
+
+---
+
+## Gate 3d: Version claims still quote the current version
+
+**Standard (established after three consecutive releases shipped a stale one):**
+
+`src/nodus/support/version.py` and `pyproject.toml` are the authority. Every sentence
+that quotes them is a copy, and copies rot. CLAUDE.md's SemVer paragraph read 5.0.1
+through the whole of 5.0.2; `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four
+releases and was *still* wrong at the 5.1.0 cut. The response each time was a longer
+list of places to check by hand, and hand-checking is what failed.
+
+```powershell
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --versions
+```
+
+**Run it twice.** Once as part of `--all` at Gate 1, and again **after the version
+bump**. The first run compares prose against the version it already matches and passes
+by construction; only the second can tell you which sentences still quote the version
+you just left. This is the same trap as the `--closed-issues` re-run in Gate 5 — a
+phase that reports a pass because there was nothing left for it to check.
+
+Claims are declared in `tools/version_claims.json`, not grepped, because *"X is
+current"* goes stale and *"as of X"* does not, and no pattern over version tokens can
+tell them apart. A second, advisory sweep reports claim-shaped lines that are **not**
+registered, so a new one cannot hide — on its first run it found a fourth nodus-lang
+claim in `ECOSYSTEM_READINESS_ASSESSMENT.md` that CLAUDE.md's hand-maintained list of
+three had missed.
+
+**Failing behaviour:** a stale claim or an unlocatable pattern fails the gate. Unlike a
+stale consumer, which needs an external republish, the fix is one line in this repo.
+An unregistered line is advisory only.
 
 ---
 

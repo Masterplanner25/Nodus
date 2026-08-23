@@ -1,0 +1,148 @@
+{
+  "_comment": [
+    "Every place in this repo that asserts what the CURRENT version is.",
+    "",
+    "Version strings in prose have gone stale in three consecutive release cycles,",
+    "each time because the release PR bumped version.py and pyproject.toml and left",
+    "the sentences that quote them behind. CLAUDE.md predicted the failure in",
+    "writing -- 'No gate checks version strings' -- and it kept happening anyway.",
+    "Hand-checking a list has now failed often enough to stop being the plan.",
+    "",
+    "The distinction that matters, and the reason this is a manifest rather than a",
+    "grep: 'X is current' goes stale, 'as of X' does not. README.md's release-history",
+    "section names 5.0.4, 5.0.3, 5.0.1 and 5.0.0 and is correct as written forever.",
+    "Only a claim about the present belongs here. Each entry's `pattern` must be",
+    "anchored on the surrounding prose, not on the version token, so it matches the",
+    "claim and nothing else on the page.",
+    "",
+    "`expects` names what the captured value must equal:",
+    "  nodus_version       __version__ in src/nodus/support/version.py",
+    "  latest_eval_version the newest docs/evals/vX.Y.Z directory",
+    "",
+    "To add a claim: write the pattern, run `nodus_gate --versions`, and check it",
+    "reports the line you meant. A pattern that matches nothing is reported as a",
+    "failure, not silently skipped -- a claim site that moved is exactly the thing",
+    "this is for.",
+    "",
+    "`scan` drives the second half: a sweep for claim-shaped lines that are NOT",
+    "registered here, so a new one cannot hide. That half is advisory."
+  ],
+
+  "claims": [
+    {
+      "file": "README.md",
+      "pattern": "\\*\\*Recent:\\*\\*\\s+(\\d+\\.\\d+\\.\\d+)",
+      "expects": "nodus_version",
+      "why": "pyproject sets readme = \"README.md\", so this is the PyPI long description. Release immutability makes it permanent at tag time.",
+      "fix": "Update the **Recent:** paragraph in the release PR, before the tag."
+    },
+    {
+      "file": "llms.txt",
+      "pattern": "PyPI: `nodus-lang` \\(v(\\d+\\.\\d+\\.\\d+) [—-] current stable",
+      "expects": "nodus_version",
+      "why": "The canonical machine-readable map. A stale version here misdirects every AI reader.",
+      "fix": "Update the PyPI line in the release PR."
+    },
+    {
+      "file": "llms-full.txt",
+      "pattern": "\\*\\*Current version:\\*\\*\\s+v(\\d+\\.\\d+\\.\\d+)",
+      "expects": "nodus_version",
+      "why": "Same audience as llms.txt, with the richer summary.",
+      "fix": "Update the **Current version:** line in the release PR."
+    },
+    {
+      "file": "CLAUDE.md",
+      "pattern": "The current published version is \\*\\*v(\\d+\\.\\d+\\.\\d+)\\*\\*",
+      "expects": "nodus_version",
+      "why": "This paragraph read 5.0.1 through the whole of 5.0.2 and was the third stale version string in three releases.",
+      "fix": "Update the SemVer policy paragraph in the release PR, alongside the version bump."
+    },
+    {
+      "file": "CLAUDE.md",
+      "pattern": "- `src/nodus/support/version\\.py` — `__version__ = \"(\\d+\\.\\d+\\.\\d+)\"`",
+      "expects": "nodus_version",
+      "why": "Quotes the authority file's literal contents, so it is wrong the moment the authority moves.",
+      "fix": "Update the bullet under the SemVer policy paragraph."
+    },
+    {
+      "file": "CLAUDE.md",
+      "pattern": "- `pyproject\\.toml` — `version = \"(\\d+\\.\\d+\\.\\d+)\"`",
+      "expects": "nodus_version",
+      "why": "As above, for the other half of the version-sync pair.",
+      "fix": "Update the bullet under the SemVer policy paragraph."
+    },
+    {
+      "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+      "pattern": "nodus-lang is at \\*\\*v(\\d+\\.\\d+\\.\\d+)\\*\\*",
+      "expects": "nodus_version",
+      "why": "This document sat at v4.1.1 for four releases and was still wrong at the 5.1.0 cut.",
+      "fix": "Update the opening line in the release PR."
+    },
+    {
+      "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+      "pattern": "Publication status \\| \\*\\*Published\\*\\* [—-] v(\\d+\\.\\d+\\.\\d+) live on PyPI",
+      "expects": "nodus_version",
+      "why": "Second of the lines in this file that claim a current version.",
+      "fix": "Update the status table row in the release PR."
+    },
+    {
+      "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+      "after": "## Assessment: nodus-lang (core)",
+      "pattern": "\\*\\*Current version:\\*\\* (\\d+\\.\\d+\\.\\d+)",
+      "expects": "nodus_version",
+      "why": "A fourth nodus-lang currency claim in this file. CLAUDE.md's hand-maintained list says three, so it was already incomplete -- this one was found by the discovery sweep on its first run, which is the argument for having one. `after` scopes the pattern to the nodus-lang section, since every package below repeats the same sentence.",
+      "fix": "Update the **Current version:** line under '## Assessment: nodus-lang (core)'."
+    },
+    {
+      "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+      "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [—-] most recent",
+      "expects": "latest_eval_version",
+      "why": "Points a reader at the newest Gate 10 record. Nothing updates it when a release writes a new one, so it silently names an older cycle.",
+      "fix": "Point it at the newest docs/evals/vX.Y.Z/CREATOR_VALIDATION.md."
+    }
+  ],
+
+  "_ignore_comment": [
+    "Lines the sweep flags that are not nodus-lang currency claims. Each needs a",
+    "reason. Suppression is per-line (file + substring), never per-file, so a NEW",
+    "claim in one of these files is still reported -- which is the point, since the",
+    "sweep's first run found a claim CLAUDE.md's hand-maintained list had missed.",
+    "",
+    "Widening the marker list to silence these would have hidden that one too."
+  ],
+  "ignore": [
+    {
+      "file": "README.md",
+      "contains": "most recently advertising 4.2.0",
+      "why": "Describes a past failure -- the banner that advertised 4.2.0 through the 5.0.0 cycle. Historical, correct as written forever."
+    },
+    {
+      "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+      "contains": "**Current version:** 0.1.0",
+      "why": "Companion-package versions, not nodus-lang's. Drift for those is owned by tools/check_publish_drift.py, which resolves published metadata rather than reading prose. Duplicating it here would give two sources for one fact."
+    }
+  ],
+
+  "scan": {
+    "files": [
+      "README.md",
+      "CLAUDE.md",
+      "llms.txt",
+      "llms-full.txt",
+      "docs/governance/*.md",
+      "docs/runtime/*.md"
+    ],
+    "currency_markers": [
+      "current version",
+      "current stable",
+      "currently at",
+      "is at **v",
+      "most recent",
+      "latest release",
+      "latest version",
+      "live on pypi",
+      "now at v",
+      "the current published"
+    ]
+  }
+}

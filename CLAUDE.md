@@ -95,6 +95,10 @@ Release order — the whole sequence, not just the publish half:
 3. Move `[Unreleased]` in `CHANGELOG.md` to the new version section
 4. **Re-run the closed-issues gate as `--closed-issues --section X.Y.Z`.** After the
    cut it scans an empty `[Unreleased]` and reports a pass that checked nothing
+4b. **Re-run `nodus_gate --versions` after the bump.** Step 1 ran it against the *old*
+   version, when it passed by definition. It is only after step 2 that it can tell you
+   which sentences still quote the version you just left — which is the failure that hit
+   three releases running. It names each file, line, and the fix
 5. Commit, PR, CI, merge
 6. `git tag vX.Y.Z` → `git push origin vX.Y.Z`
 7. Build the wheel **from the tagged tree**
@@ -220,6 +224,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Release playbook | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Skills | `.claude/commands/` |
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
+| Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
 | Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
@@ -524,6 +529,16 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
   49 opcodes, with matching counts and `BYTECODE_VERSION`. **If you add an
   opcode, this fails until you document it** — that is the point (#366)
+- `--versions`: verifies that prose still agrees with the version files. Three
+  checks: `version.py` vs `pyproject.toml`; every claim declared in
+  `tools/version_claims.json` against what it must equal; and a **discovery
+  sweep** for claim-shaped lines nobody registered, so a new one cannot hide.
+  The first two fail the gate — a stale version string is wrong *now* and the fix
+  is one line, unlike a stale consumer that needs an external republish. The
+  sweep is advisory. It reads `version.py` as **text**, never importing `nodus`,
+  because an installed package shadowing the checkout would otherwise have the
+  gate compare docs against the wrong version, silently and in the direction
+  that hides a real mismatch
 
 The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the
@@ -1081,10 +1096,10 @@ of 5.0.2, and `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four release
 *still* stale at the 5.1.0 cut, reading v5.0.2 in one line and 4.1.1 in two others. No gate
 checks any of this.
 
-**The full set of places that claim a current version**, found by grep at the 5.1.0 cut and
-worth re-grepping rather than trusting: `src/nodus/support/version.py`, `pyproject.toml`,
-`README.md` (the "Recent:" paragraph), `llms.txt`, `llms-full.txt`, this paragraph, and
-`ECOSYSTEM_READINESS_ASSESSMENT.md` (three separate lines). The README *banner* deliberately
+**The set of places that claim a current version is now `tools/version_claims.json`, and
+`nodus_gate --versions` checks it.** Do not maintain a list here; the list that lived here
+was wrong. It said `ECOSYSTEM_READINESS_ASSESSMENT.md` had *three* such lines, and the
+gate's discovery sweep found a fourth on its first run. The README *banner* deliberately
 names no version -- that is why it is the one that has never gone stale, and it is the
 pattern the rest should follow where it can.
 
@@ -1112,10 +1127,16 @@ Checked 2026-08-17: it is the **only** doc making a stale *current-version* clai
 mentions in `RELEASE_GATES.md` and `real-world-integration.md` are historical and correct as
 written, and the `docs/evals/v4.2.0/` hits are that release's own records.
 
-**No gate checks version strings**, which is why `COMPATIBILITY.md` and `docs/release.md` sat at
-4.1.1 through an entire release before anyone noticed. Treat a version string in prose as
-unverified until you grep it — and distinguish *"X is current"* from *"as of X"* before
-rewriting either.
+**A gate checks version strings now** — `nodus_gate --versions`, in `--all`. This paragraph
+used to read *"No gate checks version strings"*, which is why `COMPATIBILITY.md` and
+`docs/release.md` sat at 4.1.1 through an entire release before anyone noticed, and it stayed
+true through three more cycles because the response each time was a longer list to check by
+hand.
+
+The distinction it encodes is still yours to make when you *write* prose: *"X is current"*
+goes stale, *"as of X"* does not. The gate cannot tell them apart either — that is precisely
+why the claims are declared in `tools/version_claims.json` rather than grepped. Register a new
+claim there, or word it so it never needs registering.
 
 ## Embedding API — known blockers and operational traps
 
