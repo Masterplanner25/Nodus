@@ -6,7 +6,6 @@ import http.client
 from importlib import metadata
 import json
 import os
-import re
 import sys
 import time
 from contextlib import contextmanager
@@ -52,6 +51,12 @@ from nodus.services.server import serve, snapshot_session, restore_snapshot, lis
 from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
+from nodus.cli.commands import (
+    KNOWN_COMMANDS,
+    command_help as _command_help,
+    flags_for,
+    render_help as _render_help,
+)
 from nodus_lang_workflow.runner import get_default_workflow_runner
 
 
@@ -201,498 +206,7 @@ def _parse_bool_flag(value: str, flag: str) -> bool:
     raise ValueError(f"Invalid boolean for {flag}: {value}")
 
 
-def _render_help() -> str:
-    return "\n".join([
-        "Usage: nodus <command> [options] [file]",
-        "",
-        "Execution:",
-        "  run [file]        Run a Nodus script or project",
-        "  check [file]      Validate syntax and imports without executing",
-        "  fmt <file>        Format a source file in-place",
-        "  test [path]       Run .nd test files (files matching *_test.nd or test_*.nd)",
-        "  repl              Start an interactive shell (REPL)",
-        "  status            Show the project and entry point for the current directory",
-        "",
-        "Project:",
-        "  init              Create a new nodus.toml project",
-        "  install           Install dependencies from nodus.toml",
-        "  update            Update dependencies to latest compatible versions",
-        "  add <pkg>         Add a dependency to the project",
-        "  remove <pkg>      Remove a dependency from the project",
-        "  deps              Show the dependency graph",
-        "  cache clear       Clear the bytecode cache",
-        "",
-        "Inspection:",
-        "  ast <file>        Print the abstract syntax tree",
-        "  dis <file>        Disassemble to bytecode listing",
-        "  debug <file>      Run under the interactive step debugger",
-        "  profile <file>    Profile script execution",
-        "",
-        "Orchestration:",
-        "  workflow <cmd>    Manage workflows (run, list, resume, cleanup)",
-        "  goal-run <file>   Run a goal",
-        "  graph run <file>  Execute a task graph",
-        "",
-        "Server:",
-        "  serve             Start the Nodus HTTP API server",
-        "  worker            Register a worker with a running server",
-        "  snapshot          Save a running session snapshot",
-        "  snapshots         List available session snapshots",
-        "  restore           Restore a session from a snapshot",
-        "",
-        "Tooling:",
-        "  lsp               Start the Language Server Protocol server",
-        "  dap               Start the Debug Adapter Protocol server",
-        "",
-        "Runtime API:",
-        "  tool-call         Invoke a registered tool",
-        "  agent-call        Invoke a registered agent",
-        "  memory-get        Read a value from the memory store",
-        "  memory-put        Write a value to the memory store",
-        "  memory-delete     Delete a value from the memory store",
-        "  memory-keys       List all memory store keys",
-        "",
-        "Registry:",
-        "  login             Save a registry authentication token",
-        "  logout            Remove a saved registry token",
-        "  publish           Publish a package to the registry",
-        "",
-        "Stability:",
-        "  stability         Show which language surfaces are stable vs experimental",
-        "",
-        "Global options:",
-        "  --version         Print the Nodus version and exit",
-        "  --help            Show this help message",
-        "",
-        "Stability tiers: Stable | Mostly Stable | Experimental",
-        "  Orchestration (workflow, goal, coroutine, channel) -- Experimental",
-        "  Core language, embedding API, stdlib I/O             -- Stable",
-        "  Run 'nodus stability' for the full surface index.",
-        "",
-        "Use 'nodus <command> --help' for options and examples.",
-    ])
-
-
-_COMMAND_HELP: dict[str, str] = {
-    "run": "\n".join([
-        "Usage: nodus run [<file|project-dir>] [options]",
-        "",
-        "Run a Nodus script file or project. Without a file argument, discovers and",
-        "runs the project in the current directory.",
-        "",
-        "Options:",
-        "  --trace                    Print each VM instruction to stderr as it executes (high-volume)",
-        "  --trace-no-loc             Omit line-number annotations from trace output",
-        "  --trace-limit N            Stop tracing after N instructions",
-        "  --trace-filter STR         Only show trace lines containing STR",
-        "  --trace-scheduler          Include scheduler events in trace output",
-        "  --trace-events             Include runtime event bus entries in trace output",
-        "  --dump-bytecode            Print compiled bytecode before executing",
-        "  --no-opt                   Disable the bytecode optimizer",
-        "  --project-root PATH        Override the project root directory",
-        "  --step-limit N             Abort after N VM instructions",
-        "  --time-limit SECS          Abort after SECS seconds of wall time",
-        "  --output-limit N           Truncate stdout after N characters",
-        "  --allow-paths PATHS        Restrict file I/O to colon-separated paths",
-        "  --strict                   Require an explicit file path; disable project auto-discovery",
-        "  --trace-imports            Print each resolved import path to stderr (marked when read from the bytecode cache)",
-        "  --trace-errors             Print Python exception details to stderr for stdlib errors (also: NODUS_TRACE_ERRORS=1)",
-        "",
-        "Examples:",
-        "  nodus run main.nd",
-        "  nodus run                  (runs project from current directory)",
-        "  nodus run src/",
-        "  nodus run main.nd --trace",
-    ]),
-    "repl": "\n".join([
-        "Usage: nodus repl",
-        "",
-        "Start an interactive Nodus REPL (read-eval-print loop).",
-        "Type expressions or statements at the prompt; results are printed automatically.",
-        "Built-in REPL commands: :help, :quit, :clear, :reset",
-        "",
-        "Examples:",
-        "  nodus repl",
-        "  nodus repl    # at the prompt: let x = 42; print(x * 2)",
-    ]),
-    "init": "\n".join([
-        "Usage: nodus init [--path PATH]",
-        "",
-        "Initialize a new Nodus project in the current directory (or the given path).",
-        "Creates a nodus.toml manifest and a src/main.nd entry file.",
-        "",
-        "Options:",
-        "  --path PATH    Directory to initialize (default: current directory)",
-        "",
-        "Examples:",
-        "  nodus init",
-        "  nodus init --path ./my-project",
-    ]),
-    "check": "\n".join([
-        "Usage: nodus check [<file|project-dir>] [options]",
-        "",
-        "Parse and validate a Nodus script or project without executing it.",
-        "Catches syntax errors and import resolution failures. Does not check",
-        "undefined variable/function references (those are caught at run time).",
-        "Exits 0 if no errors are found, 1 otherwise.",
-        "",
-        "Options:",
-        "  --project-root PATH    Override the project root directory",
-        "",
-        "Examples:",
-        "  nodus check main.nd",
-        "  nodus check            (checks project in current directory)",
-    ]),
-    "status": "\n".join([
-        "Usage: nodus status",
-        "",
-        "Show the project that would run if `nodus run` were called from the current directory.",
-        "Prints the project root, entry file, and current working directory.",
-        "Exits 0 whether or not a project is found.",
-        "",
-        "Examples:",
-        "  nodus status",
-        "  nodus status    # from a directory with no nodus.toml",
-    ]),
-    "fmt": "\n".join([
-        "Usage: nodus fmt <file> [options]",
-        "",
-        "Format a Nodus source file in-place according to the standard style.",
-        "",
-        "Options:",
-        "  --check           Check formatting without modifying the file (exits 1 if unformatted)",
-        "  --keep-trailing   Preserve trailing comments in their original positions",
-        "",
-        "Examples:",
-        "  nodus fmt main.nd",
-        "  nodus fmt main.nd --check",
-    ]),
-    "debug": "\n".join([
-        "Usage: nodus debug <script.nd> [--project-root PATH]",
-        "",
-        "Run a Nodus script under the interactive step debugger.",
-        "",
-        "Debugger commands (entered at the (nodus-dbg) prompt):",
-        "  step        Execute the next instruction and pause",
-        "  next        Execute the next statement (steps over calls)",
-        "  continue    Resume until the next breakpoint or end of program",
-        "  break <n>   Set a breakpoint at line n",
-        "  print <x>   Evaluate expression x and print the result",
-        "  locals      Show all local variables in the current frame",
-        "  stack       Show the current call stack",
-        "  quit        Exit the debugger",
-        "",
-        "Options:",
-        "  --project-root PATH   Override the project root directory",
-        "",
-        "Examples:",
-        "  nodus debug main.nd",
-    ]),
-    "serve": "\n".join([
-        "Usage: nodus serve [options]",
-        "",
-        "Start the Nodus HTTP server. Exposes a REST API for running scripts,",
-        "managing sessions, and coordinating workflow/graph execution.",
-        "",
-        "Options:",
-        "  --host HOST                      Bind address (default: 127.0.0.1)",
-        "  --port PORT                      Port to listen on (default: 7477)",
-        "  --auth-token TOKEN               Require this token on all requests (recommended for non-local hosts)",
-        "  --allow-paths PATHS              Colon-separated list of paths the runtime may access",
-        "  --allow-input                    Allow scripts to read from stdin",
-        "  --trace                          Log each VM instruction to stderr",
-        "  --worker-sweep-interval-ms N     How often to sweep for dead workers (default: 500)",
-        "  --workflow-store-backend BACKEND Workflow store backend: local or sqlite (default: local)",
-        "  --workflow-store-path PATH       Path for the workflow store",
-        "",
-        "Examples:",
-        "  nodus serve",
-        "  nodus serve --host 0.0.0.0 --port 8080 --auth-token mysecret",
-    ]),
-    "worker": "\n".join([
-        "Usage: nodus worker [options]",
-        "",
-        "Connect to a running Nodus server as a remote worker.",
-        "The worker registers with the server, polls for jobs, and executes them locally.",
-        "Requires a server started with `nodus serve`.",
-        "",
-        "Options:",
-        "  --host HOST        Server host to connect to (default: 127.0.0.1)",
-        "  --port PORT        Server port (default: 7477)",
-        "  --auth-token TOKEN Auth token to present to the server",
-        "",
-        "Examples:",
-        "  nodus worker",
-        "  nodus worker --host 10.0.0.1 --port 8080 --auth-token mysecret",
-    ]),
-    "ast": "\n".join([
-        "Usage: nodus ast <script.nd> [--compact]",
-        "",
-        "Print the abstract syntax tree for a source file.",
-        "",
-        "Options:",
-        "  --compact    Print without indentation",
-    ]),
-    "dis": "\n".join([
-        "Usage: nodus dis <script.nd> [--loc] [--project-root PATH]",
-        "",
-        "Disassemble a source file to a bytecode listing.",
-        "",
-        "Options:",
-        "  --loc                  Annotate each instruction with its source location",
-        "  --project-root PATH    Override the project root directory",
-    ]),
-    "test": "\n".join([
-        "Usage: nodus test [path] [options]",
-        "",
-        "Run .nd test files. Discovers files matching *_test.nd or test_*.nd under",
-        "the given path (default: ./tests).",
-        "",
-        "Options:",
-        "  --filter PATTERN           Only run tests whose name contains PATTERN",
-        "  --format FMT               Output format: pretty, plain, auto (default: auto)",
-        "  --bail                     Stop after the first failing test",
-        "  --verbose                  Show each test as it runs",
-        "  --quiet                    Show only the summary line",
-        "  --watch                    Re-run tests when files change",
-        "  --seed N                   Seed for test ordering",
-        "  --parallel N               Run tests across N workers",
-        "  --coverage                 Collect coverage while running",
-        "  --coverage-per-test        Attribute coverage per test",
-        "  --coverage-output PATH     Coverage output directory (default: ./coverage)",
-        "  --coverage-format FMTS     Comma-separated: json,html (default: json,html)",
-        "  --coverage-min PCT         Fail if total coverage is below PCT",
-        "  --coverage-include GLOB    Restrict coverage to matching files",
-        "  --coverage-exclude GLOB    Exclude matching files from coverage",
-        "",
-        "Examples:",
-        "  nodus test",
-        "  nodus test ./tests --bail --verbose",
-        "  nodus test --coverage --coverage-min 80",
-    ]),
-    "install": "\n".join([
-        "Usage: nodus install [options]",
-        "",
-        "Install the dependencies listed in nodus.toml.",
-        "",
-        "Options:",
-        "  --project-root PATH     Project directory (default: current directory)",
-        "  --path PATH             Alias for --project-root",
-        "  --registry URL          Registry to install from",
-        "  --registry-token TOKEN  Token for a private registry",
-        "",
-        "Examples:",
-        "  nodus install",
-        "  nodus install --project-root ./my-project",
-    ]),
-    "update": "\n".join([
-        "Usage: nodus update [options]",
-        "",
-        "Update dependencies to the latest versions allowed by nodus.toml.",
-        "",
-        "Options:",
-        "  --project-root PATH    Project directory (default: current directory)",
-        "  --path PATH            Alias for --project-root",
-        "",
-        "Examples:",
-        "  nodus update",
-    ]),
-    "add": "\n".join([
-        "Usage: nodus add <package> [options]",
-        "",
-        "Add a dependency to nodus.toml and install it.",
-        "",
-        "Options:",
-        "  --project-root PATH    Project directory (default: current directory)",
-        "  --path PATH            Alias for --project-root",
-        "",
-        "Examples:",
-        "  nodus add nodus-http",
-    ]),
-    "remove": "\n".join([
-        "Usage: nodus remove <package> [options]",
-        "",
-        "Remove a dependency from nodus.toml.",
-        "",
-        "Options:",
-        "  --project-root PATH    Project directory (default: current directory)",
-        "  --path PATH            Alias for --project-root",
-        "",
-        "Examples:",
-        "  nodus remove nodus-http",
-    ]),
-    "deps": "\n".join([
-        "Usage: nodus deps [options]",
-        "",
-        "Print the resolved dependency graph as JSON.",
-        "",
-        "Options:",
-        "  --project-root PATH    Project directory (default: current directory)",
-        "  --path PATH            Alias for --project-root",
-        "",
-        "Examples:",
-        "  nodus deps",
-    ]),
-    "cache": "\n".join([
-        "Usage: nodus cache clear [options]",
-        "",
-        "Clear the project's bytecode cache (.nodus/cache/).",
-        "",
-        "Options:",
-        "  --project-root PATH    Project directory (default: current directory)",
-        "  --path PATH            Alias for --project-root",
-        "",
-        "Examples:",
-        "  nodus cache clear",
-    ]),
-    "login": "\n".join([
-        "Usage: nodus login [--registry URL]",
-        "",
-        "Save a registry authentication token to ~/.nodus/config.toml.",
-        "Prompts for the token on stdin.",
-        "",
-        "Options:",
-        "  --registry URL    Registry the token belongs to",
-        "",
-        "Examples:",
-        "  nodus login",
-        "  nodus login --registry https://registry.example.com",
-    ]),
-    "logout": "\n".join([
-        "Usage: nodus logout [--registry URL]",
-        "",
-        "Remove the saved registry token from ~/.nodus/config.toml.",
-        "This deletes the stored credential; there is no confirmation prompt.",
-        "",
-        "Options:",
-        "  --registry URL    Registry whose token should be removed",
-        "",
-        "Examples:",
-        "  nodus logout",
-    ]),
-    "publish": "\n".join([
-        "Usage: nodus publish [options]",
-        "",
-        "Publish the current package to a registry. Reads nodus.toml from the project",
-        "root and uploads the built package.",
-        "",
-        "Options:",
-        "  --registry URL          Registry to publish to",
-        "  --registry-token TOKEN  Token to authenticate with (overrides the saved one)",
-        "  --project-root PATH     Project directory (default: current directory)",
-        "",
-        "Examples:",
-        "  nodus publish",
-        "  nodus publish --registry https://registry.example.com",
-    ]),
-}
-
-
-# Every subcommand `main()` dispatches on. Module-level so the --help guard
-# can be tested across the whole registry rather than one command at a time
-# (#353) — the per-command pattern is what let commands ship unguarded.
-KNOWN_COMMANDS = {
-    "run",
-    "check",
-    "fmt",
-    "ast",
-    "dis",
-    "debug",
-    "profile",
-    "test",
-    "test-examples",
-    "repl",
-    "graph",
-    "serve",
-    "lsp",
-    "dap",
-    "snapshot",
-    "snapshots",
-    "restore",
-    "worker",
-    "workflow-run",
-    "workflow-plan",
-    "workflow-resume",
-    "workflow-checkpoints",
-    "workflow",
-    "goal-run",
-    "goal-plan",
-    "goal-resume",
-    "tool-call",
-    "agent-call",
-    "memory-get",
-    "memory-put",
-    "memory-delete",
-    "memory-keys",
-    "package-init",
-    "package-install",
-    "package-update",
-    "package-list",
-    "cache",
-    "add",
-    "remove",
-    "init",
-    "install",
-    "update",
-    "deps",
-    "login",
-    "logout",
-    "publish",
-    "status",
-    "stability",
-}
-
-
 _HELP_FLAGS = ("--help", "-h")
-
-
-def _command_summary(command: str) -> tuple[str, str] | None:
-    """Pull ``(usage_args, description)`` for a command out of the global help.
-
-    Derived from ``_render_help()`` rather than duplicated, so the fallback help
-    cannot drift from the command list.  Returns ``None`` for commands the global
-    help does not list.
-    """
-    for line in _render_help().splitlines():
-        if not line.startswith("  ") or line.startswith("  --"):
-            continue
-        body = line.strip()
-        parts = re.split(r"\s{2,}", body, maxsplit=1)
-        if len(parts) != 2:
-            continue
-        signature = parts[0]
-        if signature == command or signature.startswith(command + " "):
-            return signature, parts[1]
-    return None
-
-
-def _command_help(command: str) -> str:
-    """Help text for a subcommand.
-
-    Commands with no hand-written entry still get usage and a pointer — the
-    point of handling ``--help`` centrally is that a command never *runs*
-    because nobody wrote its help yet (#353).
-    """
-    detailed = _COMMAND_HELP.get(command)
-    if detailed is not None:
-        return detailed
-    summary = _command_summary(command)
-    if summary is None:
-        return "\n".join([
-            f"Usage: nodus {command} [options]",
-            "",
-            "No detailed help has been written for this command.",
-            "Run 'nodus --help' for the full command list.",
-        ])
-    signature, description = summary
-    return "\n".join([
-        f"Usage: nodus {signature}",
-        "",
-        description + ".",
-        "",
-        "No detailed option help has been written for this command yet.",
-        "Run 'nodus --help' for the full command list.",
-    ])
 
 
 def _print_result_output(result: dict) -> None:
@@ -1261,6 +775,53 @@ def _plan_graph_file(path: str, *, project_root: str | None = None) -> int:
     return 0
 
 
+def _show_graph_file(
+    path: str,
+    *,
+    fmt: str = "mermaid",
+    output: str | None = None,
+    project_root: str | None = None,
+) -> int:
+    """Render a plan as Mermaid or DOT rather than printing it as JSON.
+
+    Same plan object `graph run` prints -- this only changes the projection.
+    """
+    from nodus.orchestration.graph_render import FORMATS, GraphRenderError, render
+
+    if fmt not in FORMATS:
+        _print_stderr(f"Unknown --format {fmt!r}. Expected one of: {', '.join(FORMATS)}")
+        return 1
+    if not os.path.isfile(path):
+        _print_stderr(f"File not found: {path}")
+        return 1
+    code = _read_file(path)
+    result, _vm = plan_graph_code(
+        VM([], {}, code_locs=[], source_path=None), code, filename=path, project_root=project_root
+    )
+    if not result.get("ok", False):
+        _print_error(result, path=path)
+        return 1
+    plan = result.get("result")
+    if not isinstance(plan, dict):
+        _print_stderr(f"Graph error at {path}: plan was not a graph object")
+        return 1
+    try:
+        rendered = render(plan, fmt)
+    except GraphRenderError as exc:
+        _print_stderr(f"Graph error at {path}: {exc}")
+        return 1
+    if output:
+        try:
+            _write_file(output, rendered + "\n")
+        except OSError as exc:
+            _print_stderr(f"Could not write {output}: {exc}")
+            return 1
+        print(f"Wrote {fmt} graph to {output}")
+    else:
+        print(rendered)
+    return 0
+
+
 def _run_server(
     *,
     host: str = SERVER_HOST,
@@ -1678,19 +1239,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if command == "run":
-        flags_with_values = {"--trace-limit", "--trace-filter", "--trace-file", "--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
-        flags_no_values = {
-            "--trace",
-            "--trace-no-loc",
-            "--trace-scheduler",
-            "--trace-events",
-            "--trace-json",
-            "--trace-errors",
-            "--no-opt",
-            "--dump-bytecode",
-            "--strict",
-            "--trace-imports",
-        }
+        flags_with_values, flags_no_values = flags_for("run")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         script = positional[0] if positional else None
         if "--strict" in flags:
@@ -1758,8 +1307,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "check":
-        flags_with_values = {"--project-root"}
-        flags_no_values = {"--trace", "--trace-no-loc", "--trace-scheduler", "--trace-events", "--trace-json", "--no-opt"}
+        flags_with_values, flags_no_values = flags_for("check")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if any(flag in flags for flag in flags_no_values):
             _print_stderr("Trace flags and --no-opt are not supported with `nodus check`.")
@@ -1781,8 +1329,8 @@ def main(argv: list[str] | None = None) -> int:
         return check_file(script, project_root=project_root)
 
     if command == "fmt":
-        flags_no_values = {"--check", "--keep-trailing"}
-        positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
+        flags_with_values, flags_no_values = flags_for("fmt")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus fmt <script.nd>")
             return 1
@@ -1794,8 +1342,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "ast":
-        flags_no_values = {"--compact"}
-        positional, flags = _parse_flags(cmd_args, set(), flags_no_values)
+        flags_with_values, flags_no_values = flags_for("ast")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus ast <script.nd>")
             return 1
@@ -1803,8 +1351,7 @@ def main(argv: list[str] | None = None) -> int:
         return ast_file(script, compact="--compact" in flags)
 
     if command == "dis":
-        flags_with_values = {"--project-root"}
-        flags_no_values = {"--loc"}
+        flags_with_values, flags_no_values = flags_for("dis")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus dis <script.nd>")
@@ -1817,8 +1364,8 @@ def main(argv: list[str] | None = None) -> int:
         return dis_file(script, include_locs="--loc" in flags, project_root=project_root)
 
     if command == "debug":
-        flags_with_values = {"--project-root"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("debug")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus debug <script.nd> [--project-root <path>]")
             return 1
@@ -1830,8 +1377,7 @@ def main(argv: list[str] | None = None) -> int:
         return debug_file(script, project_root=project_root)
 
     if command == "profile":
-        flags_with_values = {"--project-root", "--step-limit", "--time-limit", "--output-limit", "--allow-paths"}
-        flags_no_values = {"--json", "--no-opt"}
+        flags_with_values, flags_no_values = flags_for("profile")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus profile <script.nd> [--json] [--project-root <path>]")
@@ -1878,30 +1424,28 @@ def main(argv: list[str] | None = None) -> int:
         return _run_examples()
 
     if command == "graph":
-        if cmd_args and cmd_args[0] in ("--help", "-h"):
-            print("\n".join([
-                "Usage: nodus graph <subcommand | file> [options]",
-                "",
-                "Subcommands:",
-                "  run <file> [--project-root PATH]",
-                "             Analyze and plan the task graph defined in <file>.",
-                "             Equivalent to: nodus graph <file>",
-                "",
-                "Direct usage (backward-compatible):",
-                "  nodus graph <file> [--project-root PATH]",
-                "",
-                "Examples:",
-                "  nodus graph tasks.nd",
-                "  nodus graph run tasks.nd",
-                "  nodus graph run tasks.nd --project-root /my/project",
-            ]))
-            return 0
-        flags_with_values = {"--project-root"}
+        if cmd_args and cmd_args[0] == "show":
+            positional, flags = _parse_flags(cmd_args[1:], *flags_for("graph", "show"))
+            if not positional:
+                _print_stderr(
+                    "Usage: nodus graph show <script.nd> [--format mermaid|dot] [--output FILE]"
+                )
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _show_graph_file(
+                positional[0],
+                fmt=str(flags.get("--format") or "mermaid"),
+                output=flags.get("--output"),  # type: ignore[arg-type]
+                project_root=project_root,
+            )
         if cmd_args and cmd_args[0] == "run":
             if len(cmd_args) > 1 and cmd_args[1] in ("--help", "-h"):
                 print("Usage: nodus graph run <script.nd> [--project-root PATH]")
                 return 0
-            positional, flags = _parse_flags(cmd_args[1:], flags_with_values, set())
+            positional, flags = _parse_flags(cmd_args[1:], *flags_for("graph", "run"))
             if not positional:
                 _print_stderr("Usage: nodus graph run <script.nd> [--project-root PATH]")
                 return 1
@@ -1910,7 +1454,8 @@ def main(argv: list[str] | None = None) -> int:
                 _print_stderr(err)
                 return 1
             return _plan_graph_file(positional[0], project_root=project_root)
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        # Backward-compatible bare form: `nodus graph <file>` == `graph run <file>`.
+        positional, flags = _parse_flags(cmd_args, *flags_for("graph", "run"))
         if not positional:
             _print_stderr("Usage: nodus graph <script.nd>")
             return 1
@@ -1921,16 +1466,7 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_graph_file(positional[0], project_root=project_root)
 
     if command == "serve":
-        flags_with_values = {
-            "--host",
-            "--port",
-            "--worker-sweep-interval-ms",
-            "--allow-paths",
-            "--auth-token",
-            "--workflow-store-backend",
-            "--workflow-store-path",
-        }
-        flags_no_values = {"--trace", "--allow-input"}
+        flags_with_values, flags_no_values = flags_for("serve")
         _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
@@ -1978,8 +1514,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_dap_stdio_server()
 
     if command == "snapshot":
-        flags_with_values = {"--host", "--port", "--auth-token"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        positional, flags = _parse_flags(cmd_args, *flags_for("snapshot"))
         if not positional:
             _print_stderr("Usage: nodus snapshot <session>")
             return 1
@@ -1990,8 +1525,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_snapshot(positional[0], host=host, port=port, token=token)
 
     if command == "snapshots":
-        flags_with_values = {"--host", "--port", "--auth-token"}
-        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("snapshots"))
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
@@ -1999,8 +1533,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_snapshots(host=host, port=port, token=token)
 
     if command == "restore":
-        flags_with_values = {"--host", "--port", "--auth-token"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        positional, flags = _parse_flags(cmd_args, *flags_for("restore"))
         if not positional:
             _print_stderr("Usage: nodus restore <snapshot>")
             return 1
@@ -2011,8 +1544,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_restore(positional[0], host=host, port=port, token=token)
 
     if command == "worker":
-        flags_with_values = {"--host", "--port", "--auth-token"}
-        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("worker"))
         host, port = _resolve_server_host_port(flags)
         if host is None or port is None:
             return 1
@@ -2020,42 +1552,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_worker(host, port, token=token)
 
     if command == "workflow":
-        if not cmd_args or cmd_args[0] in ("--help", "-h"):
-            print("\n".join([
-                "Usage: nodus workflow <subcommand> [options]",
-                "",
-                "Subcommands:",
-                "  run <file> [--workflow NAME] [--project-root PATH]",
-                "             Run the workflow defined in <file>.",
-                "  list [--project-root PATH]",
-                "             List saved workflow graph snapshots.",
-                "  resume <graph_id> [--checkpoint LABEL] [--project-root PATH]",
-                "             Resume a previously saved workflow.",
-                "  dead-letters [--project-root PATH]",
-                "             List dead-lettered workflow runs.",
-                "  runs [--status STATUS] [--workflow NAME] [--execution-kind KIND] [--cursor CURSOR] [--project-root PATH]",
-                "             List workflow framework runs with optional filtering.",
-                "  inspect <graph_id> [--project-root PATH]",
-                "             Show a workflow framework run record.",
-                "  replay <graph_id> [--checkpoint LABEL] [--rearm-only] [--project-root PATH]",
-                "             Replay or rearm a dead-lettered workflow run.",
-                "  migrate-state [--graph-id ID] [--project-root PATH]",
-                "             Rewrite persisted workflow state into the normalized format.",
-                "  cleanup [--retention-seconds N] [--force] [--project-root PATH]",
-                "             Remove old workflow snapshots.",
-                "",
-                "Examples:",
-                "  nodus workflow run pipeline.nd",
-                "  nodus workflow run pipeline.nd --workflow publish",
-                "  nodus workflow list",
-                "  nodus workflow resume g_abc123 --checkpoint step2",
-                "  nodus workflow dead-letters",
-                "  nodus workflow runs --status waiting,retry_scheduled",
-                "  nodus workflow runs --workflow demo --limit 10",
-                "  nodus workflow runs --has-wait true --updated-after-ms 0 --cursor o:10",
-                "  nodus workflow replay g_abc123 --rearm-only",
-                "  nodus workflow migrate-state --graph-id g_abc123",
-            ]))
+        if not cmd_args:
+            print(_command_help("workflow"))
             return 0
         subcommand = cmd_args[0]
         sub_args = cmd_args[1:]
@@ -2063,8 +1561,7 @@ def main(argv: list[str] | None = None) -> int:
             if sub_args and sub_args[0] in ("--help", "-h"):
                 print("Usage: nodus workflow run <script.nd> [--workflow NAME] [--project-root PATH]")
                 return 0
-            flags_with_values = {"--workflow", "--project-root"}
-            positional, flags = _parse_flags(sub_args, flags_with_values, set())
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "run"))
             if not positional:
                 _print_stderr("Usage: nodus workflow run <script.nd> [--workflow <name>]")
                 return 1
@@ -2078,14 +1575,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             return _run_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root)
         if subcommand == "list":
-            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "list"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
                 _print_stderr(err)
                 return 1
             return _workflow_list(project_root)
         if subcommand == "resume":
-            positional, flags = _parse_flags(sub_args, {"--checkpoint", "--path", "--project-root"}, set())
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "resume"))
             if not positional:
                 _print_stderr("Usage: nodus workflow resume <graph_id> [--checkpoint <label>] [--project-root <path>]")
                 return 1
@@ -2095,32 +1592,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             return _workflow_resume_cli(positional[0], flags.get("--checkpoint"), project_root)
         if subcommand == "dead-letters":
-            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "dead-letters"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
                 _print_stderr(err)
                 return 1
             return _workflow_dead_letters(project_root)
         if subcommand == "runs":
-            positional, flags = _parse_flags(
-                sub_args,
-                {
-                    "--status",
-                    "--workflow",
-                    "--execution-kind",
-                    "--updated-after-ms",
-                    "--updated-before-ms",
-                    "--has-retry",
-                    "--has-wait",
-                    "--replay-count-min",
-                    "--limit",
-                    "--offset",
-                    "--cursor",
-                    "--path",
-                    "--project-root",
-                },
-                set(),
-            )
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "runs"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
                 _print_stderr(err)
@@ -2195,7 +1674,7 @@ def main(argv: list[str] | None = None) -> int:
                 cursor=cursor,
             )
         if subcommand == "inspect":
-            positional, flags = _parse_flags(sub_args, {"--path", "--project-root"}, set())
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "inspect"))
             if not positional:
                 _print_stderr("Usage: nodus workflow inspect <graph_id> [--project-root <path>]")
                 return 1
@@ -2205,11 +1684,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             return _workflow_inspect(positional[0], project_root)
         if subcommand == "replay":
-            positional, flags = _parse_flags(
-                sub_args,
-                {"--checkpoint", "--path", "--project-root"},
-                {"--rearm-only"},
-            )
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "replay"))
             if not positional:
                 _print_stderr("Usage: nodus workflow replay <graph_id> [--checkpoint <label>] [--rearm-only] [--project-root <path>]")
                 return 1
@@ -2224,11 +1699,7 @@ def main(argv: list[str] | None = None) -> int:
                 rearm_only="--rearm-only" in flags,
             )
         if subcommand == "migrate-state":
-            positional, flags = _parse_flags(
-                sub_args,
-                {"--graph-id", "--path", "--project-root"},
-                set(),
-            )
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "migrate-state"))
             if positional:
                 _print_stderr("Usage: nodus workflow migrate-state [--graph-id <id>] [--project-root <path>]")
                 return 1
@@ -2239,9 +1710,7 @@ def main(argv: list[str] | None = None) -> int:
             graph_id = str(flags["--graph-id"]) if "--graph-id" in flags else None
             return _workflow_migrate_state(project_root, graph_id)
         if subcommand == "cleanup":
-            flags_with_values = {"--retention-seconds", "--path", "--project-root"}
-            flags_no_values = {"--force"}
-            positional, flags = _parse_flags(sub_args, flags_with_values, flags_no_values)
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "cleanup"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
                 _print_stderr(err)
@@ -2259,8 +1728,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if command == "workflow-run":
-        flags_with_values = {"--workflow", "--project-root", "--time-limit"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("workflow-run")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus workflow-run <script.nd> [--workflow <name>] [--time-limit <ms>]")
             return 1
@@ -2290,8 +1759,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if command == "workflow-plan":
-        flags_with_values = {"--workflow", "--project-root"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("workflow-plan")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus workflow-plan <script.nd> [--workflow <name>]")
             return 1
@@ -2303,23 +1772,23 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root)
 
     if command == "workflow-resume":
-        flags_with_values = {"--checkpoint"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("workflow-resume")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus workflow-resume <graph_id> [--checkpoint <label>]")
             return 1
         return _run_resume_workflow(positional[0], flags.get("--checkpoint"))
 
     if command == "workflow-checkpoints":
-        positional, _flags = _parse_flags(cmd_args, set(), set())
+        positional, _flags = _parse_flags(cmd_args, *flags_for("workflow-checkpoints"))
         if not positional:
             _print_stderr("Usage: nodus workflow-checkpoints <graph_id>")
             return 1
         return _run_workflow_checkpoints(positional[0])
 
     if command == "goal-run":
-        flags_with_values = {"--goal", "--project-root"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("goal-run")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus goal-run <script.nd> [--goal <name>]")
             return 1
@@ -2331,8 +1800,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_goal(script, goal_name=flags.get("--goal"), project_root=project_root)
 
     if command == "goal-plan":
-        flags_with_values = {"--goal", "--project-root"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("goal-plan")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus goal-plan <script.nd> [--goal <name>]")
             return 1
@@ -2344,46 +1813,46 @@ def main(argv: list[str] | None = None) -> int:
         return _plan_goal(script, goal_name=flags.get("--goal"), project_root=project_root)
 
     if command == "goal-resume":
-        flags_with_values = {"--checkpoint"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("goal-resume")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
             _print_stderr("Usage: nodus goal-resume <graph_id> [--checkpoint <label>]")
             return 1
         return _run_resume_goal(positional[0], flags.get("--checkpoint"))
 
     if command == "tool-call":
-        flags_with_values = {"--json"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("tool-call")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional or "--json" not in flags:
             _print_stderr("Usage: nodus tool-call <tool> --json <payload>")
             return 1
         return _tool_call(positional[0], str(flags["--json"]))
 
     if command == "agent-call":
-        flags_with_values = {"--json"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("agent-call")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional or "--json" not in flags:
             _print_stderr("Usage: nodus agent-call <agent> --json <payload>")
             return 1
         return _agent_call(positional[0], str(flags["--json"]))
 
     if command == "memory-get":
-        positional, _flags = _parse_flags(cmd_args, set(), set())
+        positional, _flags = _parse_flags(cmd_args, *flags_for("memory-get"))
         if not positional:
             _print_stderr("Usage: nodus memory-get <key>")
             return 1
         return _memory_get(positional[0])
 
     if command == "memory-put":
-        flags_with_values = {"--json"}
-        positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("memory-put")
+        positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional or "--json" not in flags:
             _print_stderr("Usage: nodus memory-put <key> --json <value>")
             return 1
         return _memory_put(positional[0], str(flags["--json"]))
 
     if command == "memory-delete":
-        positional, _flags = _parse_flags(cmd_args, set(), set())
+        positional, _flags = _parse_flags(cmd_args, *flags_for("memory-delete"))
         if not positional:
             _print_stderr("Usage: nodus memory-delete <key>")
             return 1
@@ -2393,34 +1862,34 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_keys()
 
     if command in {"package-init", "init"}:
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("init"))
         path = flags.get("--project-root") or flags.get("--path")
         return _package_init(path)
 
     if command in {"package-install", "install"}:
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root", "--registry", "--registry-token"}, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("install"))
         path = flags.get("--project-root") or flags.get("--path")
         registry_url = flags.get("--registry") or None
         registry_token = flags.get("--registry-token") or None
         return _package_install(path, registry_url=registry_url, registry_token=registry_token)
 
     if command in {"package-update", "update"}:
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("update"))
         path = flags.get("--project-root") or flags.get("--path")
         return _package_update(path)
 
     if command == "package-list":
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("package-list"))
         path = flags.get("--project-root") or flags.get("--path")
         return _package_list(path)
 
     if command == "deps":
-        _positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        _positional, flags = _parse_flags(cmd_args, *flags_for("deps"))
         path = flags.get("--project-root") or flags.get("--path")
         return _print_dependency_graph(path)
 
     if command == "add":
-        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        positional, flags = _parse_flags(cmd_args, *flags_for("add"))
         if not positional:
             _print_stderr("Usage: nodus add <package>")
             return 1
@@ -2428,7 +1897,7 @@ def main(argv: list[str] | None = None) -> int:
         return _package_add(positional[0], path)
 
     if command == "remove":
-        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        positional, flags = _parse_flags(cmd_args, *flags_for("remove"))
         if not positional:
             _print_stderr("Usage: nodus remove <package>")
             return 1
@@ -2436,7 +1905,7 @@ def main(argv: list[str] | None = None) -> int:
         return _package_remove(positional[0], path)
 
     if command == "cache":
-        positional, flags = _parse_flags(cmd_args, {"--path", "--project-root"}, set())
+        positional, flags = _parse_flags(cmd_args, *flags_for("cache"))
         if not positional or positional[0] != "clear":
             _print_stderr("Usage: nodus cache clear [--path <path>]")
             return 1
@@ -2444,20 +1913,20 @@ def main(argv: list[str] | None = None) -> int:
         return _cache_clear(path)
 
     if command == "login":
-        flags_with_values = {"--registry"}
-        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("login")
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         registry_url = flags.get("--registry") or None
         return _run_login(registry_url=registry_url)
 
     if command == "logout":
-        flags_with_values = {"--registry"}
-        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("logout")
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         registry_url = flags.get("--registry") or None
         return _run_logout(registry_url=registry_url)
 
     if command == "publish":
-        flags_with_values = {"--registry", "--registry-token"}
-        _positional, flags = _parse_flags(cmd_args, flags_with_values, set())
+        flags_with_values, flags_no_values = flags_for("publish")
+        _positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         registry_url = flags.get("--registry") or None
         registry_token = flags.get("--registry-token") or None
         project_root = flags.get("--project-root") or os.getcwd()
@@ -2467,6 +1936,42 @@ def main(argv: list[str] | None = None) -> int:
             registry_url=registry_url,
             cli_token=registry_token,
         )
+
+    if command == "completion":
+        from nodus.cli.completion import SHELLS, CompletionError, generate
+
+        positional, _flags = _parse_flags(cmd_args, *flags_for("completion"))
+        if not positional:
+            _print_stderr(f"Usage: nodus completion <{'|'.join(SHELLS)}>")
+            return 1
+        try:
+            script = generate(positional[0])
+        except CompletionError as exc:
+            _print_stderr(f"Error: {exc}")
+            return 1
+        # Write bytes, not text. On Windows a text-mode stdout rewrites "\n"
+        # as "\r\n", and `nodus completion bash > nodus.bash` then produces a
+        # file bash rejects with `syntax error near unexpected token $'{\r'`.
+        # The shell scripts must keep LF endings on every platform.
+        buffer = getattr(sys.stdout, "buffer", None)
+        if buffer is not None:
+            buffer.write(script.encode("utf-8"))
+            buffer.flush()
+        else:  # a redirected/captured stdout with no byte layer
+            sys.stdout.write(script)
+        return 0
+
+    if command == "doctor":
+        from nodus.cli.doctor import format_report, run_checks, to_json
+
+        _positional, flags = _parse_flags(cmd_args, *flags_for("doctor"))
+        checks = run_checks()
+        report = to_json(checks)
+        if "--json" in flags:
+            _json_print(report)
+        else:
+            print(format_report(checks))
+        return 0 if report["ok"] else 1
 
     if command == "status":
         return _nodus_status()
