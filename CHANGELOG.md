@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Workflow state writes are recorded per step.** Key, value
+  and order, closed when the step ends — step 2 of the write-merge work in #485,
+  which this does **not** close. Nothing acts on the record yet — the
+  write still lands exactly when it always did — and step 3 turns it into a fold
+  at the join, under the emission model decided on the issue (`+=` contributes,
+  `=` is refused for a folded cell).
+
+  `TrackedState` already knew *who* wrote each key, which is enough to warn and
+  not enough to merge; it now also keeps *what* they wrote, for the duration of
+  the step, via `begin_step` / `end_step`. The close is called from all four
+  paths a task can stop running by — success on either execution path, failure,
+  and suspension at a `workflow_wait` — and each is covered separately, because a
+  record left open would make a step's writes invisible to the merge that will
+  read it: the same silent loss #485 is about, reintroduced by its own fix.
+
+  **This deviates from the plan on the issue, on evidence.** The scoping comment
+  proposed a per-task overlay that steps read *through* — a snapshot at step
+  start, applied at step end. Implemented, it turned a correct program into a
+  wrong one:
+
+  ```
+  step a { counter = counter + 1i }
+  step b { counter = counter + 1i }
+  ```
+
+  With no suspension the cooperative scheduler runs these one after the other, so
+  `b` reads what `a` wrote and the answer is 2. Snapshotting at step start makes
+  both read 0 and the answer 1 — introducing the very lost update the issue is
+  about, in the one case that did not have it. And the fold does not need it:
+  under `merge: "sum"`, `counter += 1i` contributes `1` from the expression, not
+  from reading the cell. Read isolation is a separable property with its own
+  cost and is left to its own decision rather than smuggled in here.
+
+  Same reason a checkpoint still sees the running step's own writes:
+  `x = x + 1i; checkpoint "l"` has always recorded the incremented value, and a
+  resume from that label must not run the increment twice.
+
+  **#485 is not fixed by this** and the tests say so — the lost update is still
+  lost and still warned. This is the machinery the fix needs.
+
 ### Performance
 
 - **#522: the VM no longer retains an event per function call and return.**

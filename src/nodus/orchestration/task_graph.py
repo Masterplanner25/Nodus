@@ -1233,6 +1233,28 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     if isinstance(workflow_state, TrackedState):
         workflow_state.track_writes_with(_current_writer_task_id)
 
+    def _begin_step_writes(task: TaskNode) -> None:
+        """Open the write record for a step that is about to run."""
+        if isinstance(workflow_state, TrackedState):
+            workflow_state.begin_step(task.task_id)
+
+    def _end_step_writes(task: TaskNode) -> None:
+        """Close a step's write record. Where a fold will be applied (#485).
+
+        Called from every path a task leaves `running` by: success on the
+        coroutine path, success on the worker path, `_fail_task`, and
+        `_pause_for_wait`. A cache hit needs none -- no step body ran, so no
+        record was opened.
+
+        Those four are the set to keep in step if a fifth exit path is added.
+        `tests/test_workflow_step_writes.py` covers each separately rather than
+        trusting one to stand for the others: a record left open would make the
+        step's writes invisible to the merge, which is the same failure mode
+        #485 is about, reintroduced by its own fix.
+        """
+        if isinstance(workflow_state, TrackedState):
+            workflow_state.end_step(task.task_id)
+
     def _workflow_context(task: TaskNode) -> dict | None:
         if workflow_name is None:
             return None
@@ -1254,10 +1276,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
         if execution_kind == "goal" and isinstance(goal_name, str):
             context["goal"] = goal_name
+        _begin_step_writes(task)
         return context
 
     def _pause_for_wait(task: TaskNode, wait_info: dict) -> bool:
         nonlocal waiting
+        # Writes made before the step suspended are real and must land; the step
+        # resumes later against a fresh view.
+        _end_step_writes(task)
         task.result = None
         task.status = "done"
         task.finished_at = runtime_time_ms()
@@ -1397,6 +1423,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                                 err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
                                 _fail_task(task, Exception(err_msg))
                                 return
+                            _end_step_writes(task)
                             task.result = result
                             task.status = "done"
                             task.finished_at = runtime_time_ms()
@@ -1467,6 +1494,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             err_fields = getattr(coroutine.last_result, "fields", {})
             err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
             return _fail_task(task, Exception(err_msg))
+        _end_step_writes(task)
         task.result = coroutine.last_result
         task.status = "done"
         task.finished_at = runtime_time_ms()
@@ -1513,6 +1541,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
 
     def _fail_task(task: TaskNode, err: Exception):
         nonlocal failed, retry_scheduled
+        # Before overlays a failing step's writes were already in shared state,
+        # because they went there as it made them. Applying keeps that true; see
+        # StateView.apply_to_base on why rolling back is a separate question.
+        _end_step_writes(task)
         task.last_error = str(err)
         worker_requirement = getattr(err, "worker_requirement", None)
         worker_timeout_ms = getattr(err, "worker_timeout_ms", None)
