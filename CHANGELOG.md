@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **`nodus_gate --versions` — prose that quotes the version files is now checked.**
+  A version string in prose has gone stale in three consecutive release cycles.
+  CLAUDE.md named the failure in writing — *"No gate checks version strings"* —
+  and it kept happening, because the response each time was a longer list of
+  places to check by hand.
+
+  Three checks. `version.py` vs `pyproject.toml`. Every claim declared in
+  `tools/version_claims.json` against what it must equal. And a **discovery
+  sweep** for claim-shaped lines nobody registered, so a new one cannot hide.
+  The first two fail the gate; the sweep is advisory.
+
+  Claims are declared rather than grepped because *"X is current"* goes stale and
+  *"as of X"* does not — README's release history names 5.0.4, 5.0.3, 5.0.1 and
+  5.0.0 and is correct forever — and no pattern over version tokens can tell the
+  two apart. The sweep exists so declaring them stays honest: on its first run it
+  found a **fourth** nodus-lang claim in `ECOSYSTEM_READINESS_ASSESSMENT.md`,
+  where CLAUDE.md's hand-maintained list said three.
+
+  It reads `version.py` as **text and never imports `nodus`**. Importing would
+  resolve through `sys.path`, so an installed `nodus-lang` shadowing the checkout
+  would have the gate compare docs against the wrong version — silently, and in
+  the direction that hides a real mismatch. Pinned by an AST-level test.
+
+  Included in `--all`. **Re-run it after the version bump**: at Gate 1 it compares
+  prose against the version it already matches and passes by construction, which
+  is the same shape as the `--closed-issues` trap already documented.
+
+- **First catch, fixed in the same PR.**
+  `ECOSYSTEM_READINESS_ASSESSMENT.md` pointed at `docs/evals/v4.0.2/CREATOR_VALIDATION.md`
+  as "most recent Gate 10 results" — six releases behind, with
+  `docs/evals/v5.1.0/` present. Nothing updated it when a release wrote a new
+  record. That claim type (`latest_eval_version`) is now checked against the
+  newest `docs/evals/vX.Y.Z` directory, ordered numerically so v5.1.0 sorts above
+  v5.0.10.
+
 ### Changed
 
 - **The CLI command surface is data.** `main()` declared each command's flags

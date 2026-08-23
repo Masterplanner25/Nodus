@@ -178,6 +178,88 @@ def format_consumers(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_versions(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """The sync pair, then each declared claim, then anything unregistered."""
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        return "\n".join(lines)
+
+    sync = result.sync
+    if sync.in_sync:
+        mark = _c("[ok]", _GREEN, use_color=use_color)
+        lines.append(f"  {mark} version files agree — {sync.version_py}")
+    else:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(f"  {mark} version files disagree")
+        lines.append(f"       src/nodus/support/version.py: {sync.version_py}")
+        lines.append(f"       pyproject.toml:               {sync.pyproject}")
+        lines.append("       Fix the mismatch before doing anything else.")
+    lines.append("")
+
+    for claim in result.claims:
+        if claim.ok:
+            if verbose:
+                mark = _c("[ok]", _GREEN, use_color=use_color)
+                lines.append(
+                    f"  {mark} {claim.file}:{claim.line} — claims {claim.claimed}"
+                )
+            continue
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        if not claim.found:
+            lines.append(f"  {mark} {claim.file} — claim pattern matched nothing")
+            lines.append(f"       {claim.text}")
+            lines.append(
+                "       The sentence moved or was reworded. Re-anchor the pattern in "
+                "tools/version_claims.json, or drop the entry if the claim is gone."
+            )
+        else:
+            lines.append(
+                f"  {mark} {claim.file}:{claim.line} — says {claim.claimed}, "
+                f"expected {claim.expected}"
+            )
+            lines.append(f"       {claim.text}")
+            if claim.why:
+                lines.append(f"       {claim.why}")
+            if claim.fix:
+                lines.append(f"       fix: {claim.fix}")
+        lines.append("")
+
+    if result.unregistered:
+        note = _c("[--]", _YELLOW, use_color=use_color)
+        lines.append(
+            f"  {note} {len(result.unregistered)} line(s) look like a currency claim "
+            "and are not registered:"
+        )
+        for item in result.unregistered:
+            lines.append(f"       {item.file}:{item.line}  ({item.marker})")
+            lines.append(f"         {item.text[:100]}")
+        lines.append(
+            "       Register each in tools/version_claims.json, or reword it as an "
+            "'as of' statement, which does not go stale."
+        )
+        lines.append("")
+
+    if not quiet:
+        n_fail = len(result.failures) + (0 if result.sync.in_sync else 1)
+        if n_fail == 0:
+            status = _c("PASS", _GREEN, use_color=use_color)
+            suffix = ""
+            if result.unregistered:
+                suffix = f", {len(result.unregistered)} unregistered (advisory)"
+            lines.append(
+                f"Versions: {status} — {result.passed}/{result.checks_run} claims "
+                f"agree with {result.sync.version_py}{suffix}"
+            )
+        else:
+            status = _c("FAIL", _RED, use_color=use_color)
+            lines.append(
+                f"Versions: {status} — {n_fail} of {result.checks_run} claim(s) stale "
+                f"or unlocatable"
+            )
+    return "\n".join(lines)
+
+
 def format_opcodes(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
     lines = []
     if not quiet:

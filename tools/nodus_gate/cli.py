@@ -23,6 +23,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--contracts": False,
         "--consumers": False,
         "--opcodes": False,
+        "--versions": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -131,18 +132,20 @@ def main(argv: list[str] | None = None) -> int:
     run_contracts = args["--contracts"] or args["--all"]
     run_opcodes = args["--opcodes"] or args["--all"]
     run_consumers = args["--consumers"] or args["--all"]
+    run_versions = args["--versions"] or args["--all"]
 
     if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
-            or run_consumers):
+            or run_consumers or run_versions):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
-              "[--opcodes] [--all]")
+              "[--opcodes] [--consumers] [--versions] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
         print("  --contracts      Verify HandlerContract infrastructure is wired correctly")
         print("  --opcodes        Verify the frozen opcode set matches its documented record")
         print("  --consumers      Report non-PyPI consumers a release has left behind")
-        print("  --all            Run all six phases")
+        print("  --versions       Verify prose still agrees with the version files")
+        print("  --all            Run all seven phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -170,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
-        format_opcodes, format_consumers, format_json_results,
+        format_opcodes, format_consumers, format_versions, format_json_results,
     )
 
     static_result = runtime_result = closed_result = contracts_result = None
@@ -236,6 +239,19 @@ def main(argv: list[str] | None = None) -> int:
         if consumers_result.error:
             any_failure = True
         elif consumers_result.stale and strict:
+            any_failure = True
+
+    if run_versions:
+        from tools.nodus_gate.versions_phase import run_versions_phase
+        versions_result = run_versions_phase(root)
+        if output_fmt != "json":
+            print(format_versions(versions_result, use_color=use_color,
+                                  verbose=verbose, quiet=quiet))
+        # A stale version string is wrong *now* and the fix is one line, unlike a
+        # stale consumer which needs an external republish. So this one fails by
+        # default -- hand-checking a list is exactly what failed three times.
+        # The unregistered-line sweep stays advisory: it suggests, it does not decide.
+        if versions_result.has_failure:
             any_failure = True
 
     if output_fmt == "json":
