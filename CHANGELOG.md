@@ -31,10 +31,12 @@
   read. DOT emits each parallel level as a `rank=same` group, so the steps the
   scheduler actually runs concurrently line up visually.
 
-  An edge means "B depends on A". A step's `on: [...]` dependency-outcome filter
-  is deliberately **not** drawn, because the plan does not record it and an
-  unconditional arrow for a conditional edge is a lie the diagram tells
-  convincingly.
+  **Known issue — #537.** An edge means "B depends on A". A step's `on: [...]`
+  dependency-outcome filter is deliberately **not** drawn, because the plan does
+  not record it and an unconditional arrow for a conditional edge is a lie the
+  diagram tells convincingly. A step that runs *only when its dependency failed*
+  therefore renders identically to one that runs on success. The fix is to carry
+  the condition in the plan, not to guess at it in the renderer.
 
 - **`nodus doctor`** — reports what the environment actually resolves to: the
   package path and version that `import nodus` loads, whether that is a checkout
@@ -49,6 +51,11 @@
   directory from a *submodule*, not `nodus.__file__` — the repo-root `nodus.py`
   shim occupies that name when the CWD is the checkout root.
 
+  **Known issue — #535.** It cannot diagnose that gap until it ships: against an
+  installed package the command does not exist, which is the environment the gap
+  appears in. `CLAUDE.md`'s existing `--version` re-check advice stays correct
+  until a release carries `doctor`.
+
   **Doctor never writes.** It does not create `.nodus/`, touch the cache, or
   migrate anything; a diagnostic that mutates what it diagnoses is worse than
   none, and this is the command reached for when an install is already broken.
@@ -61,10 +68,12 @@
   rewrites `\n` as `\r\n`, and bash rejects the result outright with
   `syntax error near unexpected token $'{\r'`.
 
-  Verification is uneven and worth stating: `bash` and `powershell` are
-  syntax-checked and functionally exercised; `zsh` and `fish` get structural and
-  quoting assertions only, because neither shell is installed on the development
-  or CI machines.
+  **Known issue — #536.** Verification is uneven: `bash` is syntax-checked and
+  functionally exercised in the suite; `powershell` was verified by hand and has
+  no test; `zsh` and `fish` get structural and quoting assertions only, because
+  neither shell is installed on the development or CI machines. Since the only
+  execution class is guarded on `bash`, a machine without it verifies nothing
+  executable.
 
 ### Fixes
 

@@ -2,6 +2,70 @@
 
 This document tracks known follow-ups and cleanup items that are not blocking current work.
 
+## CLI command-table follow-ups (2026-08-22, from #534)
+
+Three limits shipped knowingly with the command-table work. All three are stated at
+the site that has them — this section exists so they are findable without reading a
+merged PR description.
+
+### #535 — `nodus doctor` cannot yet diagnose the gap it exists for
+
+`doctor` reports which tree `import nodus` resolved to, which is the answer to the
+`.venv`-shadows-`src/` trap. It is not in any published release, so against an
+installed package it answers `Unknown command: doctor` — unavailable in exactly the
+environment where the problem appears.
+
+**Do not rewrite `CLAUDE.md` § "Running code during development" to lead with
+`nodus doctor` until it ships.** The current `.venv/Scripts/nodus.exe --version`
+advice is correct for every environment that exists today; replacing it now would
+hand a reader on a pinned-older build an unknown-command error instead of a
+diagnosis. `docs/guide/debugging.md` §9 already documents `doctor` as the first
+diagnostic step, which is right for the next release and premature today.
+
+Verification belongs in the next Stage 5 post-publish eval: run `nodus doctor` from
+the installed console script in a clean venv, and confirm `version sync` goes to
+FAIL when an older `nodus-lang` is deliberately installed alongside a newer checkout.
+
+### #536 — two of four completion shells are unverified beyond structure
+
+| Shell | Syntax | Behaviour |
+|---|:---:|:---:|
+| bash | ✅ in-suite | ✅ in-suite |
+| powershell | ✅ **by hand only** | ✅ **by hand only** |
+| zsh | ❌ | ❌ |
+| fish | ❌ | ❌ |
+
+`which zsh fish` returns nothing on the dev box or CI, so those two get structural
+and quoting assertions only — every command present, no hidden alias, one unescaped
+`:` per zsh `_describe` spec, every fish `-d` description quoted. That catches an
+unescaped separator in a summary containing `(`, `)` or `|`; it does not prove
+either script loads.
+
+The PowerShell check was interactive during #534 and is **not in the suite**, so on
+a machine without bash the completion tests verify nothing executable. A
+`TabExpansion2` test guarded by `shutil.which("pwsh")` is the cheapest fix and
+closes that hole on the Windows dev box.
+
+Keep the structural tests when execution tests land — they are what runs where no
+shell is installed.
+
+### #537 — the plan does not record `on: [...]`, so `graph show` cannot draw it
+
+`plan_graph()` returns `edges` as `[source, target]` pairs. A step's
+`with { on: [...] }` dependency-outcome filter is validated against `JOIN_ON_STATES`
+during lowering and then dropped, so a step that runs *only when its dependency
+failed* renders identically to one that runs on success.
+
+`graph_render` deliberately does not guess: an unconditional arrow for a
+conditional edge is a lie a diagram tells convincingly, and a persuasive wrong
+picture is worse than none. Carrying the filter on the edge — as a separate
+`edge_conditions` key rather than by changing `edges`' arity, which several
+consumers read — removes the reason for the caveat. Decide at the same time whether
+the implicit `completed` default is labelled; labelling only non-default edges makes
+the *absence* of a label meaningful, which has to be documented.
+
+Affects any consumer of `plan_workflow()` output, not just the renderer.
+
 ## Future Improvements
 
 - Add coroutine-aware profiler attribution (per-coroutine stacks and timing).

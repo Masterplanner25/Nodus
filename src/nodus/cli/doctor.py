@@ -7,6 +7,11 @@ the normal output says which tree ran.  `CLAUDE.md` spends three paragraphs on
 it and the release process already requires probes to print their resolved
 package path and version -- this is that rule as a command anyone can run.
 
+**It cannot diagnose that failure until it ships** (#535): against an installed
+package this command does not exist, which is the very environment the gap
+appears in.  Do not rewrite `CLAUDE.md`'s `--version` re-check advice to point
+here until a release carries it.
+
 **Doctor never writes.**  It does not create `.nodus/`, touch the bytecode
 cache, or migrate anything.  A diagnostic that mutates the thing it is
 diagnosing is worse than no diagnostic, and this is exactly the command someone
