@@ -329,6 +329,45 @@ For IDE integration via the Debug Adapter Protocol, use `nodus dap`. See
 
 ## 9. Common diagnostic patterns
 
+### The behaviour contradicts the code you are reading
+
+Before debugging anything else, check *which* Nodus is running. An installed
+`nodus-lang` in a virtualenv can shadow a newer working copy, and nothing in
+normal output says which tree was loaded — so a fix you just made appears to
+have no effect, or a bug you already fixed appears to come back.
+
+`nodus doctor` answers it directly:
+
+```
+$ nodus doctor
+[  ok  ] nodus package: 5.1.0 from source checkout at /path/to/src/nodus
+[  ok  ] version sync: installed nodus-lang==5.1.0 matches the imported module
+[  ok  ] interpreter: CPython 3.11.9 at /path/to/.venv/bin/python
+[  ok  ] optional extras: nodus-retry is installed (@retry uses the durable effect store)
+[  ok  ] project: no nodus.toml in /path/to/project (running in script mode)
+[  ok  ] workflow store: 41 recorded run(s) under /path/to/project/.nodus/workflow_framework/runs
+
+No problems found.
+```
+
+A mismatch is reported as a failure and the command exits 1:
+
+```
+[ FAIL ] version sync: imported module is 5.2.0 but installed nodus-lang is 5.1.0
+```
+
+Other checks worth knowing:
+
+- **optional extras** — `@retry` falls back to an in-memory effect store when
+  `nodus-lang[retry]` is absent, which is why a suite can pass locally and fail
+  on a clean machine.
+- **workflow store** — warns past ~500 accumulated runs, because listing them
+  scans every record. `nodus workflow cleanup` prunes.
+
+`nodus doctor --json` emits the same report for scripting. The command performs
+no writes: it will not create `.nodus/`, touch the bytecode cache, or migrate
+anything, so it is safe to run against an installation you suspect is broken.
+
 ### "Undefined variable" but the name looks right
 
 The most common cause is an import placed inside a function or block. Imports
@@ -423,6 +462,10 @@ TESTED COMMANDS (originally run against nodus-lang v2.1.1; reviewed for v3.0):
 12: nodus run import_trace.nd --trace-imports → "[import] Resolved ..." line
 13: nodus run err_fields.nd              → err.line=7, err.stack[0] shows at inner, err.stack[1] shows called from outer
 14: nodus run print_debug.nd             → per-item debug output with type annotations
+15: nodus doctor                         → six checks, "No problems found.", exit 0
+    (run 2026-08-22 against v5.1.0 dev source; paths in §9 are generalized from
+     the real output, which printed Windows paths under C:\dev\Coding Language)
+16: nodus doctor --json                  → {"ok": true, "checks": [...]}, exit 0
 
 BEHAVIORAL FINDINGS:
 F32: `nodus debug --help` outputs "File not found: --help" instead of help text.
