@@ -2443,29 +2443,40 @@ class VM:
             raise err
         if self.instructions_executed - self._last_batch_emit >= self._instruction_batch_size:
             count = self.instructions_executed - self._last_batch_emit
+            # Advanced whether or not the event is emitted: leaving it behind
+            # would make the threshold test above true on every subsequent
+            # instruction instead of every hundredth.
             self._last_batch_emit = self.instructions_executed
-            self.event_bus.emit_event(
-                "vm_instruction_batch",
-                data={"count": float(count), "total": float(self.instructions_executed)},
-            )
+            if self.event_bus.wants("vm_instruction_batch"):
+                self.event_bus.emit_event(
+                    "vm_instruction_batch",
+                    data={"count": float(count), "total": float(self.instructions_executed)},
+                )
+
+    # The three sites below ask `event_bus.wants(...)` rather than deciding for
+    # themselves (#522). The counters are maintained unconditionally, because
+    # `get_execution_stats()` reports them and they are what makes suppressing
+    # the per-event detail lossless in aggregate.
 
     def record_vm_call(self, name: str | None, call_type: str) -> None:
         self.function_calls += 1
         if self.profiler is not None and self.profiler.enabled:
             self.profiler.record_function_call(name)
-        self.event_bus.emit_event(
-            "vm_call",
-            name=name,
-            data={"call_type": call_type, "total": float(self.function_calls)},
-        )
+        if self.event_bus.wants("vm_call"):
+            self.event_bus.emit_event(
+                "vm_call",
+                name=name,
+                data={"call_type": call_type, "total": float(self.function_calls)},
+            )
 
     def record_vm_return(self, name: str | None) -> None:
         self.returns += 1
-        self.event_bus.emit_event(
-            "vm_return",
-            name=name,
-            data={"total": float(self.returns)},
-        )
+        if self.event_bus.wants("vm_return"):
+            self.event_bus.emit_event(
+                "vm_return",
+                name=name,
+                data={"total": float(self.returns)},
+            )
 
     def record_vm_exception(self, err: Exception) -> None:
         self.exceptions += 1

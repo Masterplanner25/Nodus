@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **#522: the VM no longer retains an event per function call and return.**
+  The event bus appended to an unbounded list whether or not anything would read
+  it, and the VM emits one event per call, per return, and per 100 instructions.
+  On a compiler workload (`examples/expr_compiler.nd`, 400 expressions, 1.96M
+  instructions) that was **206,382 retained objects for a run that printed one
+  line** — 58% of everything it allocated — with no consumer on the default path.
+
+  Measured on the same machine, before and after:
+
+  | | before | after |
+  |---|---:|---:|
+  | throughput | 227,401 instr/sec | **477,417 instr/sec** (2.10×) |
+  | events retained | 206,382 | **0** |
+  | live memory | 80.2 MB | **0.4 MB** |
+  | attributed to `runtime_events.py` | 46.4 MB (58%) | **0.0 MB** |
+
+  Two changes. Retention is a bounded `deque` — 50,000 by default,
+  `NODUS_EVENT_HISTORY` to change it, `0` to keep none while still feeding sinks.
+  And `vm_call` / `vm_return` / `vm_instruction_batch` are emitted only when
+  something can observe them: a sink is attached — which is what
+  `--trace-events`, `--trace-json`, `--trace-file` and the DAP debugger do — or a
+  host asks via `record_vm_events` / `NODUS_TRACE_VM_EVENTS=1`.
+
+  The speedup exceeds the 1.5× the issue predicted because the guard sits
+  *before* the `RuntimeEvent` is constructed. `emit_event` used to build the
+  object and its `data` dict and then decide whether to keep it, so a suppressed
+  event still cost an allocation. A test pins that it is never built.
+
+  **The aggregate is unaffected.** `function_calls`, `returns` and
+  `instructions_executed` are counters maintained independently of the bus and
+  are what `get_execution_stats()` reports; suppression changes what is kept,
+  never what happened. A test compares a default run against one recording
+  everything and asserts the counts are identical.
+
+  `RuntimeEventBus.wants(event_type)` is the single place the decision lives. The
+  VM had three emit sites each deciding for itself — the shape `CLAUDE.md` warns
+  about — and they consult it now rather than re-implementing it, pinned by a
+  source assertion because a behaviour-only test passes as long as one of the
+  three is right.
+
+  Note for anyone reading `runtime_events()` from a Nodus program or the HTTP
+  endpoint: the VM bookkeeping types are absent by default, and the window is
+  bounded. Neither was ever in the documented event contract —
+  `RUNTIME_EVENTS.md` does not list them among the types it describes.
+
 ### Tooling
 
 - **#528: the dependent-suite gate now says what to look at when it goes red.**
