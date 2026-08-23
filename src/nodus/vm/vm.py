@@ -325,6 +325,7 @@ class VM:
             "plan_goal": BuiltinInfo("plan_goal", 1, self.builtin_plan_goal),
             "resume_goal": BuiltinInfo("resume_goal", (1, 2), self.builtin_resume_goal),
             "workflow_state": BuiltinInfo("workflow_state", 0, self.builtin_workflow_state),
+            "state_contribute": BuiltinInfo("state_contribute", 2, self.builtin_state_contribute),
             "workflow_resume_payload": BuiltinInfo("workflow_resume_payload", 0, self.builtin_workflow_resume_payload),
             "workflow_wait": BuiltinInfo("workflow_wait", (1, 2, 3, 4), self.builtin_workflow_wait),
             "workflow_checkpoints": BuiltinInfo("workflow_checkpoints", 1, self.builtin_workflow_checkpoints),
@@ -1724,6 +1725,57 @@ class VM:
         if ctx is None:
             return None
         return ctx.get("state")
+
+    def builtin_state_contribute(self, key, value):
+        """Contribute to a folded workflow-state cell (#485).
+
+        Emitted by the workflow lowering for `cell += expr` where `cell` declares
+        `merge: "sum"` or `merge: "append"`. It records the contribution and does
+        **not** touch the cell: it is the read-modify-write on the shared cell
+        that loses updates, and a contribution never reads it.
+
+        Reached only through `builtin_call` (#411), so a program cannot bind the
+        name and intercept its own state writes.
+        """
+        from nodus.orchestration.workflow_state import (
+            FOLD_CONTRIBUTION_KINDS,
+            TrackedState,
+            check_contribution,
+        )
+
+        ctx = self.current_workflow_context()
+        if not isinstance(ctx, dict):
+            self.runtime_error(
+                "workflow_error",
+                "state contribution outside a workflow step",
+            )
+        state = ctx.get("state")
+        task_id = ctx.get("task_id")
+        if not isinstance(state, TrackedState) or not isinstance(task_id, str):
+            self.runtime_error(
+                "workflow_error",
+                f"state '{key}' cannot be contributed to outside a tracked workflow run",
+            )
+        merge = state.merge_policy(key)
+        problem = check_contribution(merge, value)
+        if problem is not None:
+            self.runtime_error(
+                "type",
+                f"state '{key}' is declared merge: \"{merge}\", so a contribution "
+                f"must be {problem}; got {self._type_name(value)}. "
+                f"Under a fold policy `{key} += expr` contributes {FOLD_CONTRIBUTION_KINDS.get(merge, 'a value')}.",
+            )
+        step = state.open_step(task_id)
+        if step is None:
+            # No open record: the step is not running under the graph runner that
+            # opens one. Falling back to a direct write would silently reintroduce
+            # the lost update this whole mechanism exists to remove.
+            self.runtime_error(
+                "workflow_error",
+                f"state '{key}' contribution has no open step record to land in",
+            )
+        step.contribute(key, value)
+        return None
 
     def builtin_workflow_resume_payload(self):
         ctx = self.current_workflow_context()
