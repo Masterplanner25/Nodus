@@ -314,9 +314,27 @@ Gate 4): that stage evaluates "does this work as a new user would expect?" This 
      -m tools.check_dependent_suites
    ```
 
-   Exit 0 means every companion still passes against this tree. Exit 1 lists the
-   ones that do not; exit 2 means a checkout was missing, which is not a pass — an
-   unrun suite covers nothing.
+   | exit | meaning |
+   |:---:|---|
+   | 0 | every companion still passes against this tree |
+   | 1 | at least one **new** failure — do not publish |
+   | 2 | a checkout was missing or a suite timed out — not a pass; an unrun suite covers nothing |
+   | 3 | every failure matched a recorded flake in `tools/dependent_flakes.json` |
+
+   **Exit 3 is not a pass.** Re-run those suites serially, with nothing else
+   running, and publish only if they go green. A recorded flake changes the advice,
+   never the verdict — letting one through the gate would rebuild "re-run until
+   green" one level up, which is the failure this whole process exists to prevent.
+
+   A red run names each failing node id, marks which match a recorded flake, and
+   writes full output including tracebacks to `.dependent-suites/<companion>.log`.
+   Before #528 it printed only a count, so the operator had to leave the tool and
+   re-run the companion by hand to learn anything — the manual step the gate was
+   written to replace, and a path that ends in re-running until green.
+
+   `--retry-failed` re-runs only the failed tests and reports both results. It is
+   opt-in rather than automatic, and cannot change the verdict: a test that passes
+   on retry is evidence, not an acquittal.
 
    > **This step exists because v5.0.3 shipped without it.** A change to
    > `NodusRuntime.__init__` assigned `self.memory_store`, and

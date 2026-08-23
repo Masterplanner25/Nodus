@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Dependent-suite failures we have already diagnosed as flaky rather than caused",
+    "by a nodus-lang change. `tools/check_dependent_suites.py` uses this only to",
+    "CLASSIFY a red result -- never to pass one.",
+    "",
+    "That distinction is the whole design. A known-flaky test failing is not evidence",
+    "the release is fine; it is evidence that this particular red needs a serial",
+    "re-run rather than a bisect. So the gate still exits non-zero (3 instead of 1)",
+    "and still says what to do. Letting a listed test pass the gate would rebuild",
+    "'re-run until green' one level up, which is the failure this whole process",
+    "exists to prevent.",
+    "",
+    "`match` is a substring of the pytest node id (`path::Class::test`), so naming a",
+    "file covers every test in it. Keep entries as narrow as the evidence supports.",
+    "",
+    "To add one: diagnose it first. `why` should say what was actually established,",
+    "not what was assumed -- an entry whose reason is 'seems flaky' is a way to lose",
+    "a real break."
+  ],
+
+  "known_flaky": {
+    "nodus-mcp": [
+      {
+        "match": "test_phase_m.py",
+        "why": "Two tests in this file bind ports and fail when another suite holds them. Documented in CLAUDE.md as a pre-existing race, not a code bug: they pass individually and in serial full-suite runs.",
+        "recorded": "2026-08-20, during the v5.1.0 Gate 10 run, where this fired while a clean-venv install and probe suite ran alongside it. Three serial re-runs were green."
+      }
+    ]
+  }
+}
