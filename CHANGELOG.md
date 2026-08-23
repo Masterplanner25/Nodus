@@ -4,6 +4,33 @@
 
 ### Tooling
 
+- **#528: the dependent-suite gate now says what to look at when it goes red.**
+  `tools/check_dependent_suites.py` is Gate 10 step 0 — the check between a build
+  and PyPI, added because 5.0.3 shipped a broken `nodus-sdk`. It printed a count
+  and "do not publish", and nothing else. That instruction could neither be acted
+  on nor dismissed without leaving the tool and re-running the companion by hand:
+  the manual step the gate was written to replace, and a path whose natural end is
+  re-running until green.
+
+  A red run now prints each failing pytest node id (`FAILED` and `ERROR` alike,
+  so a collection failure names the file that would not import), marks which of
+  them match a recorded flake in `tools/dependent_flakes.json`, and writes full
+  output *including tracebacks* to `.dependent-suites/<companion>.log`. Triage no
+  longer requires a re-run. The suites now run with `--tb=short -rfE` rather than
+  `--tb=no`; `-r` is passed explicitly because a companion's own pytest config
+  could otherwise decide whether the summary this parses exists at all.
+
+  **A recorded flake never turns a red run green.** It changes the exit code from
+  1 to 3 and changes the advice — *re-run these serially before deciding* — and
+  that is all. Exit 3 is not a pass. Letting a listed test through would rebuild
+  "re-run until green" one level up, which is the failure this process exists to
+  prevent, so the manifest is a triage aid and is documented as one. Every entry
+  requires a stated reason, checked by test.
+
+  New exit code **3**; 0, 1 and 2 keep their meanings. `--retry-failed` re-runs
+  only the failed tests and reports both results — opt-in rather than automatic,
+  and unable to change the verdict.
+
 - **`nodus_gate --versions` — prose that quotes the version files is now checked.**
   A version string in prose has gone stale in three consecutive release cycles.
   CLAUDE.md named the failure in writing — *"No gate checks version strings"* —

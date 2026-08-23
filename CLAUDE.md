@@ -109,7 +109,12 @@ Release order — the whole sequence, not just the publish half:
       PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
         "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_dependent_suites
       ```
-      Exit 2 means a checkout was missing — not a pass; an unrun suite covers nothing.
+      Exit codes: **0** all green · **1** a *new* failure, do not publish · **2** a
+      checkout was missing or a suite timed out — not a pass, an unrun suite covers
+      nothing · **3** every failure matched a recorded flake in
+      `tools/dependent_flakes.json`. **3 is not a pass either** — re-run those suites
+      serially before deciding. A recorded flake changes the advice, never the verdict;
+      letting one through would rebuild "re-run until green" one level up.
 
       **5.0.3 shipped without this and broke `nodus-sdk` at construction.** #185 assigned
       `self.memory_store` on `NodusRuntime`, and `NodusSDKRuntime` subclasses it with
@@ -120,9 +125,12 @@ Release order — the whole sequence, not just the publish half:
 
       **Run it with nothing else going.** At 5.1.0 it reported `nodus-mcp FAIL — 1
       failed` while a clean-venv install and probe suite ran alongside it; three serial
-      re-runs were green. It also does **not name the failing test** (#528), so a red
-      result cannot be triaged without re-running by hand — which makes running it
-      cleanly the first time worth more than it sounds.
+      re-runs were green. It used to stop there, so a red result could not be triaged
+      without re-running by hand — the manual step the gate replaced. As of #528 it
+      names each failing node id, marks the ones matching a recorded flake, and writes
+      full output with tracebacks to `.dependent-suites/<companion>.log`, so triage
+      needs no re-run. `--retry-failed` re-runs only the failed tests and reports both
+      results; it is opt-in, and cannot change the verdict.
 
    b. Adversarial validation against the wheel in a clean venv →
       write `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`
@@ -225,7 +233,8 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Skills | `.claude/commands/` |
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
-| Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload |
+| Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
 | Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |

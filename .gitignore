@@ -63,3 +63,8 @@ STRESS-TEST USER EVALUATION*
 notes.txt
 output.json
 tmp_demo/
+
+# Full pytest output from tools/check_dependent_suites.py, one file per companion.
+# Written so a red Gate 10 can be triaged without re-running the suite (#528);
+# machine-local by nature.
+.dependent-suites/
