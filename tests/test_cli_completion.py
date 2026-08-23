@@ -1,12 +1,19 @@
 """`nodus completion <shell>` -- scripts generated from the command table.
 
-Coverage note, stated plainly: `bash` and `powershell` are syntax-checked and
-functionally exercised on this platform (see `test_bash_script_is_valid_syntax`
-and the manual verification recorded in the PR).  `zsh` and `fish` are not
-installed on the development or CI machines, so they get structural assertions
-only -- every command present, quoting escaped, no unsubstituted placeholders.
-That is weaker, and saying so is better than implying four shells are equally
-verified.
+Coverage note, stated plainly (tracked in **#536**):
+
+    bash        syntax + behaviour, in this suite
+    powershell  syntax + behaviour, BY HAND ONLY -- not asserted here
+    zsh         structure and quoting only
+    fish        structure and quoting only
+
+`zsh` and `fish` are not installed on the development or CI machines. The
+structural assertions catch the failure that actually bites -- an unescaped
+separator in a summary containing `(`, `)` or `|` -- but nothing here proves
+either script loads. And because the only execution class is guarded on `bash`,
+a machine without it verifies nothing executable at all.
+
+Saying so is better than implying four equally verified shells.
 """
 
 from __future__ import annotations

@@ -15,7 +15,8 @@ dependency-outcome filter a step may declare.  An edge here means "compile
 depends on fetch", not "compile runs if fetch succeeded".  Drawing an
 unconditional arrow for a conditional edge would be a lie the diagram tells
 convincingly, so the edge stays unlabelled until the plan carries the
-condition.
+condition -- tracked in **#537**, which is about putting it in the plan rather
+than guessing at it here.
 """
 
 from __future__ import annotations
