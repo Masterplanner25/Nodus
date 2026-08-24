@@ -40,16 +40,30 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.1.0 is the first minor since 5.0, and it gives the workflow DSL the
-vocabulary it was missing at a join. A step can carry a guard
-(`step ship after review when reached("approved")`), declare which dependency
-outcomes satisfy it (`with { on: ["failed"] }`), and a `state` cell can declare how
-concurrent writes merge and whether it is durable. Every task in a run now reports a
-status — `completed`, `failed`, `upstream_failed`, `skipped`, `omitted`, `cancelled`
-or `abandoned` — where before, anything that never got a turn was simply absent from
-the result. A failed
-step no longer tears the scheduler down: the run drains and then reports, so a
-timed-out step gets its `finally` blocks and siblings finish.
+**Recent:** 5.2.0 closes the write-merge gap at a join. Two concurrent steps that
+read a `state` cell, do something slow, and write it back used to lose one of the
+writes silently. A cell can now declare how concurrent writes combine —
+`state total = 0i with { merge: "sum" }`, or `"append"` / `"union"` for lists — and
+under a fold `total += 1i` *contributes* a value applied at the join rather than
+assigning into a slot another branch is halfway through reading. A plain
+`total = ...` on a folded cell is a compile error, because a final value cannot be
+combined with another branch's. Where no policy is declared the runtime warns, and
+only when an update was genuinely lost.
+
+It also adds three commands — `nodus graph show` renders a planned workflow as
+Mermaid or DOT, `nodus doctor` reports which package and version your `nodus`
+actually resolves to, and `nodus completion` emits shell completions — and makes
+ordinary runs about twice as fast by no longer retaining a telemetry event for
+every function call and return.
+
+5.1.0 gave the workflow DSL the vocabulary it was missing at a join: a step can
+carry a guard (`step ship after review when reached("approved")`) and declare which
+dependency outcomes satisfy it (`with { on: ["failed"] }`). Every task in a run
+reports a status — `completed`, `failed`, `upstream_failed`, `skipped`, `omitted`,
+`cancelled` or `abandoned` — where before, anything that never got a turn was simply
+absent from the result. A failed step no longer tears the scheduler down: the run
+drains and then reports, so a timed-out step gets its `finally` blocks and siblings
+finish.
 
 **One behaviour change to know about, and it is worth a minute if you embed Nodus.**
 `run_source(source, filename=...)` used to run the *file* named by `filename`
