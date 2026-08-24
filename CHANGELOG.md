@@ -2,37 +2,25 @@
 
 ## [Unreleased]
 
-### Changed
+## [5.2.0] - 2026-08-23
 
-- **#485 step 4: the concurrent-write warning fires only when an update was
-  actually lost.** It used to warn whenever two unordered steps wrote one cell,
-  which included the case where both wrote the same constant and nothing was
-  lost. That noise is what teaches people to ignore the warning that matters.
+### Fixes
 
-  It now warns when either:
+- **#532: `nodus publish` silently ignored `--project-root` and published the
+  CWD.** The flag has always been documented in `publish --help`, but was absent
+  from the command's parse set, so `_parse_flags` swallowed both it and its value
+  as positionals and the branch fell back to `os.getcwd()`. No error, no warning
+  — the wrong directory went to the registry. Found while inventorying flags for
+  the command table, which is the fix that generalises: a test now cross-checks
+  every flag each command's help documents against the flags it actually parses.
 
-  - the writers **disagreed** — different values, one was overwritten; or
-  - a writer **read the cell before writing it** — a read-modify-write, which
-    loses an update whatever the values are.
-
-  **The second signal is the load-bearing one, and value comparison alone is
-  wrong without it.** Two branches doing `counter = seen + 1i` from the same base
-  both write `1`: the values agree *precisely because* an update was lost. That
-  is this issue's own reproduction, and it falsified the first implementation —
-  the read-before-write check exists because of it.
-
-  Not breaking: nothing that ran now fails, and a class of false positives
-  stopped. **The remaining warning becomes an error in 6.0.0**, which the message
-  says, along with both fixes — a fold to combine the writes, or `merge: "any"`
-  for deliberate last-write-wins. Recorded in
-  `docs/governance/COMPATIBILITY.md`.
-
-  **The default stays `any`, deliberately.** #485 proposed defaulting to `once`.
-  `workflow`/`step` are *Mostly Stable*, where "breakage is avoided but not
-  guaranteed" — turning working programs into errors is not the minor refinement
-  that tier permits, and it needs the major cycle plus the deprecation signal
-  this change starts. Making the warning precise first is also what makes the
-  error defensible later: it can now only fire on a genuine lost update.
+- **#533: `nodus graph --help` and `nodus workflow --help` printed the generic
+  stub.** Both commands carry a full hand-written help block — nine subcommands
+  and ten examples in `workflow`'s case — inside their dispatch branch, where the
+  central #353 `--help` guard made it unreachable. Same shape as the bug #353
+  fixed, one layer along: centralising the guard without moving what it shadowed.
+  Both blocks now live beside the command table, where the guard reads them, and
+  the dead branches are gone. Bare `nodus workflow` still prints its help.
 
 ### Added
 
@@ -91,7 +79,90 @@
   with a warning; making `once` the default is step 4 and would break workflows
   whose branches legitimately agree. The barrier policy is untouched.
 
+
+- **`nodus graph show <file> [--format mermaid|dot] [--output FILE]`.** Renders a
+  planned task graph as a diagram instead of JSON. The plan object was already
+  there — `plan_workflow` / `plan_graph` have always returned nodes, edges and
+  parallel levels — so this adds no information, only a projection other tools
+  read. DOT emits each parallel level as a `rank=same` group, so the steps the
+  scheduler actually runs concurrently line up visually.
+
+  **Known issue — #537.** An edge means "B depends on A". A step's `on: [...]`
+  dependency-outcome filter is deliberately **not** drawn, because the plan does
+  not record it and an unconditional arrow for a conditional edge is a lie the
+  diagram tells convincingly. A step that runs *only when its dependency failed*
+  therefore renders identically to one that runs on success. The fix is to carry
+  the condition in the plan, not to guess at it in the renderer.
+
+- **`nodus doctor`** — reports what the environment actually resolves to: the
+  package path and version that `import nodus` loads, whether that is a checkout
+  or an installed distribution, whether the two disagree, the interpreter,
+  optional extras that change runtime behaviour by their presence (`nodus-retry`),
+  the project manifest, and the accumulated workflow-store size (#380). `--json`
+  for scripting; exits 1 only on an error-level finding.
+
+  The version-gap check is the point: a `.venv` install shadowing a newer `src/`
+  checkout produces behaviour that contradicts the code you are reading, and
+  nothing in normal output says which tree ran. Note it derives the package
+  directory from a *submodule*, not `nodus.__file__` — the repo-root `nodus.py`
+  shim occupies that name when the CWD is the checkout root.
+
+  **Known issue — #535.** It cannot diagnose that gap until it ships: against an
+  installed package the command does not exist, which is the environment the gap
+  appears in. `CLAUDE.md`'s existing `--version` re-check advice stays correct
+  until a release carries `doctor`.
+
+  **Doctor never writes.** It does not create `.nodus/`, touch the cache, or
+  migrate anything; a diagnostic that mutates what it diagnoses is worse than
+  none, and this is the command reached for when an install is already broken.
+  Pinned by `test_doctor_does_not_write`.
+
+- **`nodus completion <bash|zsh|fish|powershell>`** — completion scripts
+  generated from the command table, so a command or flag added there is
+  completable without updating a second list. Hidden legacy aliases are not
+  offered. The script is written as **bytes**: a text-mode stdout on Windows
+  rewrites `\n` as `\r\n`, and bash rejects the result outright with
+  `syntax error near unexpected token $'{\r'`.
+
+  **Known issue — #536.** Verification is uneven: `bash` is syntax-checked and
+  functionally exercised in the suite; `powershell` was verified by hand and has
+  no test; `zsh` and `fish` get structural and quoting assertions only, because
+  neither shell is installed on the development or CI machines. Since the only
+  execution class is guarded on `bash`, a machine without it verifies nothing
+  executable.
+
 ### Changed
+
+- **#485 step 4: the concurrent-write warning fires only when an update was
+  actually lost.** It used to warn whenever two unordered steps wrote one cell,
+  which included the case where both wrote the same constant and nothing was
+  lost. That noise is what teaches people to ignore the warning that matters.
+
+  It now warns when either:
+
+  - the writers **disagreed** — different values, one was overwritten; or
+  - a writer **read the cell before writing it** — a read-modify-write, which
+    loses an update whatever the values are.
+
+  **The second signal is the load-bearing one, and value comparison alone is
+  wrong without it.** Two branches doing `counter = seen + 1i` from the same base
+  both write `1`: the values agree *precisely because* an update was lost. That
+  is this issue's own reproduction, and it falsified the first implementation —
+  the read-before-write check exists because of it.
+
+  Not breaking: nothing that ran now fails, and a class of false positives
+  stopped. **The remaining warning becomes an error in 6.0.0**, which the message
+  says, along with both fixes — a fold to combine the writes, or `merge: "any"`
+  for deliberate last-write-wins. Recorded in
+  `docs/governance/COMPATIBILITY.md`.
+
+  **The default stays `any`, deliberately.** #485 proposed defaulting to `once`.
+  `workflow`/`step` are *Mostly Stable*, where "breakage is avoided but not
+  guaranteed" — turning working programs into errors is not the minor refinement
+  that tier permits, and it needs the major cycle plus the deprecation signal
+  this change starts. Making the warning precise first is also what makes the
+  error defensible later: it can now only fire on a genuine lost update.
+
 
 - **Workflow state writes are recorded per step.** Key, value
   and order, closed when the step ends — step 2 of the write-merge work in #485,
@@ -132,6 +203,25 @@
 
   **#485 is not fixed by this** and the tests say so — the lost update is still
   lost and still warned. This is the machinery the fix needs.
+
+
+- **The CLI command surface is data.** `main()` declared each command's flags
+  inline in its own dispatch branch — 47 `_parse_flags(...)` call sites, ten of
+  them repeating `{"--path", "--project-root"}` as a bare literal at the call.
+  That is the recurring shape this codebase keeps hitting: a correct declaration
+  on one path, with siblings free to drift. It had already drifted (#532).
+
+  The set is named once now, in `src/nodus/cli/commands.py`, and the global help,
+  per-command help, flag parsing, the `--help` guard registry, and shell
+  completion are all projections of it. `cli.py` drops from 2,486 to 1,991
+  lines and no longer imports `re` — the old `_command_summary()` recovered each
+  command's usage by regex-scraping the rendered help text, which the table makes
+  unnecessary.
+
+  Byte-compared against the previous output: every pre-existing help row is
+  unchanged. `tests/test_cli_command_table.py` asserts on the **source** of
+  `cli.py` that no branch re-declares a flag literal, because a behaviour-only
+  test passes on whichever branch is already correct.
 
 ### Performance
 
@@ -243,97 +333,6 @@
   record. That claim type (`latest_eval_version`) is now checked against the
   newest `docs/evals/vX.Y.Z` directory, ordered numerically so v5.1.0 sorts above
   v5.0.10.
-
-### Changed
-
-- **The CLI command surface is data.** `main()` declared each command's flags
-  inline in its own dispatch branch — 47 `_parse_flags(...)` call sites, ten of
-  them repeating `{"--path", "--project-root"}` as a bare literal at the call.
-  That is the recurring shape this codebase keeps hitting: a correct declaration
-  on one path, with siblings free to drift. It had already drifted (#532).
-
-  The set is named once now, in `src/nodus/cli/commands.py`, and the global help,
-  per-command help, flag parsing, the `--help` guard registry, and shell
-  completion are all projections of it. `cli.py` drops from 2,486 to 1,991
-  lines and no longer imports `re` — the old `_command_summary()` recovered each
-  command's usage by regex-scraping the rendered help text, which the table makes
-  unnecessary.
-
-  Byte-compared against the previous output: every pre-existing help row is
-  unchanged. `tests/test_cli_command_table.py` asserts on the **source** of
-  `cli.py` that no branch re-declares a flag literal, because a behaviour-only
-  test passes on whichever branch is already correct.
-
-### Added
-
-- **`nodus graph show <file> [--format mermaid|dot] [--output FILE]`.** Renders a
-  planned task graph as a diagram instead of JSON. The plan object was already
-  there — `plan_workflow` / `plan_graph` have always returned nodes, edges and
-  parallel levels — so this adds no information, only a projection other tools
-  read. DOT emits each parallel level as a `rank=same` group, so the steps the
-  scheduler actually runs concurrently line up visually.
-
-  **Known issue — #537.** An edge means "B depends on A". A step's `on: [...]`
-  dependency-outcome filter is deliberately **not** drawn, because the plan does
-  not record it and an unconditional arrow for a conditional edge is a lie the
-  diagram tells convincingly. A step that runs *only when its dependency failed*
-  therefore renders identically to one that runs on success. The fix is to carry
-  the condition in the plan, not to guess at it in the renderer.
-
-- **`nodus doctor`** — reports what the environment actually resolves to: the
-  package path and version that `import nodus` loads, whether that is a checkout
-  or an installed distribution, whether the two disagree, the interpreter,
-  optional extras that change runtime behaviour by their presence (`nodus-retry`),
-  the project manifest, and the accumulated workflow-store size (#380). `--json`
-  for scripting; exits 1 only on an error-level finding.
-
-  The version-gap check is the point: a `.venv` install shadowing a newer `src/`
-  checkout produces behaviour that contradicts the code you are reading, and
-  nothing in normal output says which tree ran. Note it derives the package
-  directory from a *submodule*, not `nodus.__file__` — the repo-root `nodus.py`
-  shim occupies that name when the CWD is the checkout root.
-
-  **Known issue — #535.** It cannot diagnose that gap until it ships: against an
-  installed package the command does not exist, which is the environment the gap
-  appears in. `CLAUDE.md`'s existing `--version` re-check advice stays correct
-  until a release carries `doctor`.
-
-  **Doctor never writes.** It does not create `.nodus/`, touch the cache, or
-  migrate anything; a diagnostic that mutates what it diagnoses is worse than
-  none, and this is the command reached for when an install is already broken.
-  Pinned by `test_doctor_does_not_write`.
-
-- **`nodus completion <bash|zsh|fish|powershell>`** — completion scripts
-  generated from the command table, so a command or flag added there is
-  completable without updating a second list. Hidden legacy aliases are not
-  offered. The script is written as **bytes**: a text-mode stdout on Windows
-  rewrites `\n` as `\r\n`, and bash rejects the result outright with
-  `syntax error near unexpected token $'{\r'`.
-
-  **Known issue — #536.** Verification is uneven: `bash` is syntax-checked and
-  functionally exercised in the suite; `powershell` was verified by hand and has
-  no test; `zsh` and `fish` get structural and quoting assertions only, because
-  neither shell is installed on the development or CI machines. Since the only
-  execution class is guarded on `bash`, a machine without it verifies nothing
-  executable.
-
-### Fixes
-
-- **#532: `nodus publish` silently ignored `--project-root` and published the
-  CWD.** The flag has always been documented in `publish --help`, but was absent
-  from the command's parse set, so `_parse_flags` swallowed both it and its value
-  as positionals and the branch fell back to `os.getcwd()`. No error, no warning
-  — the wrong directory went to the registry. Found while inventorying flags for
-  the command table, which is the fix that generalises: a test now cross-checks
-  every flag each command's help documents against the flags it actually parses.
-
-- **#533: `nodus graph --help` and `nodus workflow --help` printed the generic
-  stub.** Both commands carry a full hand-written help block — nine subcommands
-  and ten examples in `workflow`'s case — inside their dispatch branch, where the
-  central #353 `--help` guard made it unreachable. Same shape as the bug #353
-  fixed, one layer along: centralising the guard without moving what it shadowed.
-  Both blocks now live beside the command table, where the guard reads them, and
-  the dead branches are gone. Bare `nodus workflow` still prints its help.
 
 ## [5.1.0] - 2026-08-20
 
