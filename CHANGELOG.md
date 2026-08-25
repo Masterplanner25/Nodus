@@ -19,6 +19,23 @@
 
 ### Fixes
 
+- **#486: resuming from a mid-step checkpoint no longer double-counts folded
+  state, and the re-entry rule is documented.** A resume re-enters the step
+  that recorded the checkpoint from the top — that is the decided semantics,
+  now stated loudly in the guide (effects before the checkpoint repeat; split
+  the step to skip completed work). What was wrong: the checkpoint snapshot
+  deliberately includes the step's pending fold contributions (5.2.0, so the
+  value is observable at the checkpoint), and that same snapshot was also the
+  rollback base — so a resume restored the contribution and then re-made it.
+  `counter += 1i; checkpoint "mid"` gave 1, 2, 3 across resumes, silently. The
+  engine checkpoint now records `resume_state` — the committed base without
+  the checkpointing step's pending fold — and rollback prefers it, so
+  re-entry re-derives the same total every time. Plain-cell semantics are
+  unchanged, and checkpoints persisted before this fix keep the old behaviour
+  rather than becoming unresumable. Positional resume (re-entering *at* the
+  checkpoint) remains undone by decision, not oversight — recorded on the
+  issue.
+
 - **#470: a resume refuses a run whose step structure has changed, instead of
   manufacturing a false diagnosis.** Nothing recorded what a run's graph looked
   like, so a rebuild whose shape had drifted — a pre-#469 run rebuilt from an

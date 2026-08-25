@@ -636,6 +636,12 @@ These burn time when forgotten:
 - **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
   `step a { checkpoint "mid"; return "done" }` — correct.
   `workflow w { checkpoint "mid"; step a { ... } }` — syntax error.
+  **And it is a re-entry label for its whole step, not a position marker** (#486):
+  a resume re-enters the step from the top, so effects before the checkpoint run
+  again on every resume. Split the step at the checkpoint to skip completed work.
+  State re-derives deterministically — including folded cells since the #486 fix
+  (`resume_state` on the engine checkpoint; before it, `merge: "sum"` counted
+  pre-checkpoint contributions once per resume).
 - **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
   Skipping either flush or the advance causes the test to pass vacuously.
 - **`spawn()` takes a coroutine value**, not a function literal. Use
