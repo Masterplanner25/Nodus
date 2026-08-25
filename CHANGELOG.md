@@ -26,12 +26,13 @@
   `ALL_CAPABILITIES` grows from five names to ten — it is closed, not fixed, so
   validate against the frozenset rather than a copy.
 
-- **#467 (in part): `FS_READ` was declared and attached to nothing.** It sat in
+- **`FS_READ` was declared and attached to nothing.** It sat in
   `ALL_CAPABILITIES` from 5.0.0 with no builtin carrying it, so reads were
   invisible to a policy for the same reason the surfaces above were.
   `read_file`, `list_dir`, `path_exists` and the `hash_*_file` family now carry
-  it. The rest of #467 — a declarative read-only/writable split for
-  `allowed_paths` — is unchanged and still open.
+  it. This is half of what issue #467 reports; the other half — a declarative
+  read-only/writable split for `allowed_paths` — is unchanged, and that issue
+  stays open for it.
 
 - **Every builtin is now classified.** `NO_AUTHORITY_BUILTINS` names the 227
   builtins that carry no authority, grouped by why, and a test requires
