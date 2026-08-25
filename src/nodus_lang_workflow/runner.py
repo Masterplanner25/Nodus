@@ -866,6 +866,57 @@ class WorkflowFrameworkRunner:
             state = load_graph_state(graph_id)
             if state is None:
                 return {"ok": False, "error": "Graph state not found"}
+            # #482: `resume_workflow(id, "checkpoint")` on a genuinely waiting run
+            # re-enters the waiting step, which hits its `workflow_wait` again --
+            # the run goes straight back to `waiting` and the result looks
+            # healthy, so a caller checking for an error sees success while
+            # nothing happened. With a payload it is worse: the rollback re-arms
+            # the wait and the payload is silently discarded (a wait is a
+            # sentinel the engine pauses on; nothing consults the pending payload
+            # when a re-run step re-arms it). The call that advances a waiting
+            # run delivers a payload *without* a checkpoint. Refuse both no-op
+            # combinations with the real reason, the way #399 and #425 replaced
+            # misleading answers on this same path.
+            #
+            # "Genuinely" is the persisted graph state agreeing the run is
+            # waiting. A record marked waiting administratively
+            # (`mark_waiting`) over a graph that ran past the wait -- a stale
+            # registration -- resumes fine and clears the mark, and must keep
+            # doing so.
+            if (
+                checkpoint is not None
+                and event_type is None
+                and record is not None
+                and record.status == RUN_STATUS_WAITING
+                and isinstance(state, dict)
+                and state.get("status") == "waiting"
+            ):
+                wait_event = record.wait.event_type if record.wait is not None else None
+                if resume_payload is None:
+                    detail = (
+                        f"pass a payload to satisfy it -- "
+                        f"resume_workflow(graph_id, {{...}}) -- and the run "
+                        f"will advance. Resuming from checkpoint "
+                        f"'{checkpoint}' alone re-enters the waiting step, "
+                        f"which waits again."
+                    )
+                else:
+                    detail = (
+                        f"drop the checkpoint argument -- "
+                        f"resume_workflow(graph_id, {{...}}) -- and the payload "
+                        f"will satisfy it. Rolling back to checkpoint "
+                        f"'{checkpoint}' re-enters the waiting step, which "
+                        f"re-arms the wait and discards the payload."
+                    )
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Workflow run '{graph_id}' is waiting on event "
+                        f"'{wait_event}'; {detail}"
+                    ),
+                    "graph_id": graph_id,
+                    "category": "waiting_run_checkpoint_resume",
+                }
             graph = get_registered_graph(graph_id)
             registered_vm = get_registered_vm(graph_id)
             if graph is None or (registered_vm is not None and registered_vm is not vm):

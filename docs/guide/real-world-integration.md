@@ -143,6 +143,15 @@ fourth argument.
 resume call. This is how the human's decision (approved/denied) crosses from
 the Python event router into the Nodus step body.
 
+> **A waiting run is advanced by a payload, not by a checkpoint.**
+> `resume_workflow(id, {payload})` satisfies the wait and the run moves on.
+> `resume_workflow(id, "checkpoint")` on a waiting run is **refused** with an
+> error naming the event the run is waiting on (#482) — a checkpoint rollback
+> re-enters the waiting step from the top, which re-arms the wait, so it could
+> only ever no-op (and with a payload alongside, discard it). Before the
+> refusal existed, that call returned a healthy-looking `"status": "waiting"`
+> result and silently did nothing.
+
 The `gate` step is a pure orchestration step — it does nothing except park the
 flow until the external signal arrives. The `execute` step reads the payload
 and decides whether to proceed. The design keeps the policy logic in the step
