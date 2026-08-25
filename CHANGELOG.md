@@ -19,6 +19,23 @@
 
 ### Fixes
 
+- **#401: static analysis enters workflow step bodies.** Two walkers skipped
+  them: the type analyzer bound a flow's name and returned, so `nodus check`
+  never type-checked a step body (a call to a typed function with the wrong
+  argument was caught in a function body and passed in a step, where
+  orchestration logic and generated code actually live); and the workspace
+  diagnostics engine (`nodus lsp`) had no case for flow declarations, so step
+  bodies got no undefined-variable, unused-variable or unreachable-code
+  diagnostics at all. Both walk them now — state cells resolve, and are never
+  reported unused (whether a cell is read is the runtime's business, not a
+  lint). Found on the way in and fixed with it: the diagnostics engine never
+  bound *any* block-scoped `let`, so every function local was a false
+  `Undefined variable` error in editor diagnostics. What `nodus check`
+  guarantees is now written down in `nodus check --help`, including the
+  deliberate half that stays open: a call to a name defined nowhere still
+  passes, because a host-registered function is indistinguishable from a typo
+  until a program can declare its host surface (#489).
+
 - **#416: a closure over a top-level loop body's variable gets a diagnosis
   instead of a lie.** Upvalue capture reads an enclosing *function* frame,
   and a block at module root — a top-level `while`/`for`/`if` body — has no

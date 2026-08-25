@@ -83,6 +83,24 @@ class Analyzer(NodeVisitor):
         flow_name = declared_flow_name(stmt)
         if flow_name is not None:
             self.bind(flow_name, RECORD)
+            # #401: step bodies are code, and this used to bind the flow's name
+            # and return -- so `nodus check`'s type analysis never entered a
+            # workflow. A call to a typed function with the wrong argument was
+            # caught in a function body and passed in a step body, where
+            # orchestration logic (and generated code) actually lives. State
+            # cells and step-local names resolve as ANY, matching how the
+            # analyzer treats any unannotated binding.
+            for state_decl in getattr(stmt, "states", None) or []:
+                self.infer_expr(state_decl.value)
+                self.bind(state_decl.name, ANY)
+            for step in getattr(stmt, "steps", None) or []:
+                if getattr(step, "when", None) is not None:
+                    self.infer_expr(step.when)
+                if getattr(step, "options", None) is not None:
+                    self.infer_expr(step.options)
+                self.push_scope()
+                self.analyze_stmt(step.body)
+                self.pop_scope()
             return
         if isinstance(stmt, WorkflowStateDecl):
             self.infer_expr(stmt.value)

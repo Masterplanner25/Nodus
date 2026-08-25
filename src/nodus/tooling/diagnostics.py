@@ -213,6 +213,15 @@ class _SemanticAnalyzer:
             return False
         if isinstance(stmt, Let):
             self._walk_expr(stmt.expr)
+            # #401: bind block-scoped `let`s. Top-level ones are predeclared
+            # (so forward references between top-level statements resolve);
+            # everything nested was never bound at all, so `fn f() { let y =
+            # 1i; return y }` reported "Undefined variable: y" -- a false
+            # error on every function local, and the reason step bodies could
+            # not simply be walked. Bound at the statement, not predeclared:
+            # inside a block, use-before-declaration is a real error.
+            if stmt.name not in self.scopes[-1]:
+                self._bind(stmt.name, kind="variable", tok=getattr(stmt, "_tok", None))
             return False
         if isinstance(stmt, FnDef):
             self._push_scope()
@@ -287,6 +296,34 @@ class _SemanticAnalyzer:
         if isinstance(stmt, Throw):
             self._walk_expr(stmt.expr)
             return True
+        if isinstance(stmt, (WorkflowDef, GoalDef)):
+            # #401: step bodies are code, and this walker had no case for flow
+            # declarations -- so a step body got no unused-variable,
+            # unreachable-code or undefined-variable diagnostics at all. State
+            # cells bind in a scope wrapping every step (steps read them bare)
+            # with a kind the unused check ignores: whether a cell is ever
+            # read is the runtime's business (#485), not a lint.
+            self._push_scope()
+            for state_decl in getattr(stmt, "states", None) or []:
+                self._walk_expr(state_decl.value)
+                self.scopes[-1][state_decl.name] = _Binding(
+                    name=state_decl.name,
+                    kind="state",
+                    line=getattr(getattr(state_decl, "_tok", None), "line", None),
+                    column=getattr(getattr(state_decl, "_tok", None), "col", None),
+                    source_file=self.module.path,
+                    used=True,
+                )
+            for step in getattr(stmt, "steps", None) or []:
+                if getattr(step, "when", None) is not None:
+                    self._walk_expr(step.when)
+                if getattr(step, "options", None) is not None:
+                    self._walk_expr(step.options)
+                self._push_scope()
+                self._walk_stmt(step.body)
+                self._pop_scope()
+            self._pop_scope()
+            return False
         return False
 
     def _walk_expr(self, expr) -> None:
