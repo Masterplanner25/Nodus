@@ -4,7 +4,9 @@ Until the flip, `Record.__eq__` still answers by identity, and the one
 observable divergence -- two distinct records that field-by-field comparison
 calls equal -- warns once per process. These tests pin the staging behaviour;
 the 6.0.0 flip PR rewrites them into tests of structural equality itself and
-keeps the `# closes: #545` marker on the rewritten tests.
+keeps the closes-marker for #545 on the rewritten tests. (The marker's literal
+spelling must not appear in this docstring: the gate's scanner takes the first
+occurrence in the file and would bind the issue to whatever `def` follows.)
 
 Decision record: docs/design/v6/00-record-equality.md.
 """
@@ -25,6 +27,7 @@ def _fresh_warn_state():
     vm_types._STRUCTURAL_EQ_CHANGE_WARNED = False
 
 
+# closes: #545
 class TestDivergenceWarning(unittest.TestCase):
     def setUp(self):
         _fresh_warn_state()
@@ -36,7 +39,6 @@ class TestDivergenceWarning(unittest.TestCase):
             result = a == b
         return result, err.getvalue()
 
-    # closes: #545
     def test_equal_fields_compare_false_and_warn_once(self):
         r1 = Record({"x": 1})
         r2 = Record({"x": 1})
