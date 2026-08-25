@@ -1084,10 +1084,22 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.2.0** (live on PyPI, published 2026-08-23). Both files
+The current published version is **v5.3.0** (live on PyPI, published 2026-08-25). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.2.0"`
-- `pyproject.toml` — `version = "5.2.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.3.0"`
+- `pyproject.toml` — `version = "5.3.0"`
+
+**5.3.0 has one input that used to load and now does not (#490).** A `nodus.toml`
+declaring a table or key Nodus does not read — `[project]`, `[runtime]`, a misspelled
+`verison` — was accepted and the unknown parts discarded. It is refused now, naming what it
+found and suggesting the close match. Strictly this makes previously-"working" input fail,
+so it is the one thing in 5.3.0 a reader should not assume is additive; it was shipped as a
+refusal rather than the warn-then-error staging used for `worker:` (#492) and concurrent
+writes (#547) because a manifest is configuration read once at load, not behaviour observed
+during a run, and a warning there is read by nobody. The fix is one word in most cases and
+the error says which word. `register_syscall` gained the same treatment for an unknown or
+missing `capability` (#478); nothing in or out of tree registers a custom syscall, so that
+half breaks nothing today.
 
 **A `run_source` behaviour change ships in 5.1.0 (#521).** `filename=` used to select the
 program: if a file of that name existed, the loader read it and discarded the `source`

@@ -40,7 +40,29 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.2.0 closes the write-merge gap at a join. Two concurrent steps that
+**Recent:** 5.3.0 is about declarations that bind. A run of surfaces accepted
+something that read as a decision and enforced none of it, and each is now either
+enforced or refused where it is written.
+
+A `CapabilityPolicy` that denied everything used to deny nothing outside the four
+sandbox flags: tool invocation, syscalls, agent dispatch and the whole memory
+store were invisible to it, and `DenyList("tool.invoke")` raised *unknown
+capability*. Five capability names close that, `SyscallSpec.capability` is
+enforced rather than merely published, and every builtin is now classified as
+carrying authority or explicitly not — so a new one fails the suite until someone
+decides which.
+
+`allowed_paths` gains a write dimension: `writable_paths=["/repo/src"]` inside
+`allowed_paths=["/repo"]` gives read-only context and an editable subtree, the
+split an agent editing a repository actually wants. `nodus.toml` refuses tables
+and keys it does not read instead of discarding them silently, and `entry` now
+selects what `nodus run` starts. A `step … with { worker: "sandboxed" }` that
+nothing can honour warns rather than running in-process and reporting success.
+And a conditional workflow edge finally says so in the plan and the diagram —
+`nodus graph show` labels an `on:` filter and dashes a `when` guard, where both
+were plain arrows before.
+
+5.2.0 closed the write-merge gap at a join. Two concurrent steps that
 read a `state` cell, do something slow, and write it back used to lose one of the
 writes silently. A cell can now declare how concurrent writes combine —
 `state total = 0i with { merge: "sum" }`, or `"append"` / `"union"` for lists — and
