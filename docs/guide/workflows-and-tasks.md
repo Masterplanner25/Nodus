@@ -783,6 +783,15 @@ $ nodus workflow resume <graph_id> --checkpoint after-phase1
 > committed base they originally landed on, so `counter += 1i` before a
 > checkpoint yields the same total on every resume rather than climbing. Put
 > effects after the checkpoint or in their own step; trust the state.
+>
+> **A nested run is inside the re-entry region too.** A `run_graph` or
+> `run_workflow` call in the step body runs again on every resume, re-doing
+> all of its work and creating a **new child run** each time (#501). The
+> child records where it came from (`parent_graph_id`, `parent_step` in its
+> metadata, shown by `nodus workflow list`), and `nodus workflow cleanup`
+> removes children with their parent — but the re-execution itself is the
+> step-re-entry rule above. A fan-out whose items do real work belongs after
+> the checkpoint, or in its own step.
 
 > **Keep module top level side-effect-free in a script you intend to resume.**
 > A resume in a *different process* has nothing in memory, so it rebuilds the

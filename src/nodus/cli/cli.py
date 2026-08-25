@@ -793,6 +793,29 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
                 if record is not None and (force or record.status in TERMINAL_RUN_STATUSES):
                     if store.delete_run(graph_id):
                         records_removed.append(graph_id)
+        # #501: children go with their parent. A nested run records
+        # `parent_graph_id`; a child whose parent was just removed is a record
+        # nothing can attribute any more, so it cascades (and its children in
+        # turn -- hence the fixpoint loop) regardless of its own age.
+        removed_set = set(removed)
+        progress = bool(removed_set)
+        while progress:
+            progress = False
+            for snapshot in snapshots:
+                graph_id = snapshot.get("graph_id")
+                parent_id = snapshot.get("parent_graph_id")
+                if not graph_id or graph_id in removed_set:
+                    continue
+                if isinstance(parent_id, str) and parent_id in removed_set:
+                    _task_graph.delete_graph_state(graph_id)
+                    _task_graph.delete_checkpoint(graph_id)
+                    removed.append(graph_id)
+                    removed_set.add(graph_id)
+                    record = store.get_run(graph_id)
+                    if record is not None and (force or record.status in TERMINAL_RUN_STATUSES):
+                        if store.delete_run(graph_id):
+                            records_removed.append(graph_id)
+                    progress = True
     _json_print(
         {
             "removed": removed,

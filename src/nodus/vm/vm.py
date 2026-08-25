@@ -1747,6 +1747,14 @@ class VM:
         step_to_task: dict[str, Any] | None = _stt_raw if isinstance(_stt_raw, dict) else None
         graph = workflow_to_graph(self, workflow, init_state=False, task_ids_by_step=step_to_task)
         graph.graph_id = graph_id
+        # #501: the child list is cumulative across resumes. The rebuilt graph's
+        # metadata is fresh, so without this each resume's persist would keep
+        # only the children that resume spawned, dropping earlier ones from the
+        # parent side of the link (the child -> parent half is durable either
+        # way).
+        _prior_children = metadata.get("child_graph_ids")
+        if isinstance(_prior_children, list) and _prior_children and isinstance(graph.metadata, dict):
+            graph.metadata["child_graph_ids"] = list(_prior_children)
         kind_word = "goal" if execution_kind == "goal" else "workflow"
         self._validate_rebuilt_topology(graph, metadata, flow_name, kind_word, graph_id)
         return graph

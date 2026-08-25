@@ -61,6 +61,15 @@ print(result)
 - `nodus graph show <script.nd> [--format mermaid|dot] [--output FILE]` (render the same
   plan as a diagram instead of JSON — see below)
 
+A run started *inside* a workflow step (`run_graph` / `run_workflow` in a step
+body) is a separate run with its own `graph_id`, linked to its origin (#501):
+the child's metadata carries `parent_graph_id` / `parent_step` /
+`parent_task_id`, the parent's metadata accumulates `child_graph_ids` at its
+next persist, `nodus workflow list` shows the parent link, and
+`nodus workflow cleanup` removes children with their parent. Note the resume
+interaction: re-entering the step re-runs the nested call and creates a new
+child per resume (see the workflows guide §8).
+
 Both plan **without executing the script** (#400): the plan is built from the
 file's `workflow`/`goal` declarations alone (the last one declared), so
 inspecting an untrusted file runs none of its code — a `plan_workflow(...)`

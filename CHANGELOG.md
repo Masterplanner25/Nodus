@@ -19,6 +19,19 @@
 
 ### Fixes
 
+- **#501: a nested run knows where it came from, and cleanup follows the
+  link.** A `run_graph`/`run_workflow` call inside a workflow step creates a
+  separate run whose record was an orphan: metadata `{}`, no reference in
+  either direction, and one more per resume (a resume re-enters the step, so
+  the nested call runs again — #486's rule, now documented for this case in
+  the guide's checkpoint section). The child's metadata now records
+  `parent_graph_id`/`parent_step`/`parent_task_id`/`parent_workflow` from its
+  first persist; the parent accumulates `child_graph_ids`, carried across
+  resume rebuilds so the list is cumulative; `workflow list` surfaces the
+  parent link; and `workflow cleanup` cascades — a child whose parent was
+  removed goes with it, and its children in turn. Making the nested run part
+  of the parent graph remains #480, a design question this does not answer.
+
 - **#476: the two halves of a run now share a lifecycle.** A durable run is
   split across `.nodus/graphs/` (graph state + checkpoint) and the workflow
   store (run record), and nothing kept them in step: `nodus workflow cleanup`

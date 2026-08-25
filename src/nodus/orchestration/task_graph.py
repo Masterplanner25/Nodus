@@ -494,6 +494,12 @@ def list_graph_snapshots_info() -> list[dict]:
             "checkpoint_label": checkpoint.get("label") if isinstance(checkpoint, dict) else None,
             "checkpoint_timestamp": checkpoint.get("timestamp") if isinstance(checkpoint, dict) else None,
         }
+        # #501: a nested run records where it came from; surface it so a listing
+        # can attribute the record and cleanup can cascade.
+        parent_graph_id = metadata.get("parent_graph_id")
+        if isinstance(parent_graph_id, str):
+            info["parent_graph_id"] = parent_graph_id
+            info["parent_step"] = metadata.get("parent_step")
         infos.append(info)
     return infos
 
@@ -599,11 +605,56 @@ def _retry_is_swept() -> bool:
     return retry_sweeper_active()
 
 
+def _link_nested_run(vm, graph: TaskGraph) -> None:
+    """Record the parent <-> child relationship for a run started inside a step.
+
+    A `run_graph` / `run_workflow` call in a step body creates a separate run
+    with its own graph_id and its own persisted state. Nothing recorded the
+    relationship (#501): the child's metadata was empty -- unattributable, no
+    way to tell which run produced it or what code it ran -- and the parent
+    never referenced it, so `workflow list` showed unexplained graphs and
+    cleanup could not reason about them. Both directions are written now:
+
+    - child metadata gains `parent_graph_id` / `parent_step` / `parent_task_id`
+      (and `parent_workflow` when the parent has a name) -- durable from the
+      child's first persist;
+    - the parent's metadata accumulates `child_graph_ids`, landing at its next
+      persist (a checkpoint, a wait, or the end of the run).
+
+    The re-entry consequence stands and is documented rather than fixed here:
+    a resume re-enters the step from the top (#486), so the nested call runs
+    again and produces a *new* child each resume. The link is what makes those
+    children attributable and cleanup able to cascade over them.
+    """
+    context_fn = getattr(vm, "current_workflow_context", None)
+    ctx = context_fn() if callable(context_fn) else None
+    if not isinstance(ctx, dict):
+        return
+    parent_id = ctx.get("graph_id")
+    if not isinstance(parent_id, str) or not parent_id or parent_id == graph.graph_id:
+        return
+    if not isinstance(graph.metadata, dict):
+        graph.metadata = {}
+    graph.metadata.setdefault("parent_graph_id", parent_id)
+    graph.metadata.setdefault("parent_step", ctx.get("step"))
+    graph.metadata.setdefault("parent_task_id", ctx.get("task_id"))
+    parent_workflow = ctx.get("workflow")
+    if isinstance(parent_workflow, str):
+        graph.metadata.setdefault("parent_workflow", parent_workflow)
+    parent_graph = ctx.get("graph")
+    parent_meta = getattr(parent_graph, "metadata", None)
+    if isinstance(parent_meta, dict):
+        children = parent_meta.setdefault("child_graph_ids", [])
+        if isinstance(children, list) and graph.graph_id not in children:
+            children.append(graph.graph_id)
+
+
 def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> dict:
     tasks = list(graph.tasks)
     graph = register_graph(graph)
     assert graph.graph_id is not None
     register_graph_vm(graph.graph_id, vm)
+    _link_nested_run(vm, graph)
     for idx, task in enumerate(tasks, 1):
         task.task_id = task.task_id or f"task_{idx}"
     by_id = {task.task_id: task for task in tasks}
