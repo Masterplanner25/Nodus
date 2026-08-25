@@ -19,6 +19,22 @@
 
 ### Fixes
 
+- **#482: a checkpoint resume of a genuinely waiting run is refused with the
+  real reason, instead of silently re-waiting.**
+  `resume_workflow(id, "checkpoint")` on a waiting run re-entered the waiting
+  step, which hit its `workflow_wait` again — the run went straight back to
+  `waiting` behind a healthy-looking result (`ok` not false, nothing in
+  `failed`, a duplicate checkpoint entry as the only trace). With a payload
+  alongside the checkpoint it was worse: the rollback re-armed the wait and
+  the payload was silently discarded. Both combinations now return
+  `{ok: false, category: "waiting_run_checkpoint_resume"}` naming the event
+  the run is waiting on and the call that advances it
+  (`resume_workflow(graph_id, {...})`), before any re-execution — the waiting
+  step's pre-wait effects no longer fire on the refused attempt. "Genuinely
+  waiting" means the persisted graph state agrees: a record marked waiting
+  administratively over a graph that ran past the wait (a stale registration)
+  still resumes and clears the mark.
+
 - **#486: resuming from a mid-step checkpoint no longer double-counts folded
   state, and the re-entry rule is documented.** A resume re-enters the step
   that recorded the checkpoint from the top — that is the decided semantics,
