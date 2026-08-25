@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from nodus.runtime.capability import ALL_CAPABILITIES
 from nodus_lang_schema.syscalls import SyscallSpec, parse_syscall_name, validate_input
 from nodus_lang_schema.validation import normalize_schema
 
@@ -26,6 +27,33 @@ _registry_built = False
 
 
 def register_syscall(spec: SyscallSpec, handler) -> None:
+    """Register a syscall, refusing a capability nothing can enforce (#478).
+
+    `SyscallSpec.capability` used to be inert: declared on every syscall,
+    published by `syscall_list()`, and read by nothing. A public field named
+    `capability` will be taken for an access-control decision, and a host reading
+    the registry to discover what it is dealing with was told there was a model
+    where there was none.
+
+    Now that `call_syscall` enforces it, the field has to be something the policy
+    layer can actually name -- so an unknown or missing capability is refused
+    here, at the point of declaration, rather than accepted and quietly skipped
+    at dispatch. That would be the same defect one layer along.
+    """
+    capability = (spec.capability or "").strip()
+    if not capability:
+        raise ValueError(
+            f"syscall {spec.full_name!r} declares no capability; every syscall "
+            f"reaches the runtime, so it must name the authority it needs. "
+            f"Known: {sorted(ALL_CAPABILITIES)}"
+        )
+    if capability not in ALL_CAPABILITIES:
+        raise ValueError(
+            f"syscall {spec.full_name!r} declares unknown capability "
+            f"{capability!r}; known: {sorted(ALL_CAPABILITIES)}. Capability "
+            f"names are a closed set so the whole authority surface stays "
+            f"reviewable; adding one means adding it to ALL_CAPABILITIES."
+        )
     SYSCALL_REGISTRY[spec.full_name] = {"spec": spec, "handler": handler}
 
 
@@ -115,6 +143,22 @@ def call_syscall(name: str, payload: dict, *, vm=None) -> dict:
 
     spec: SyscallSpec = entry["spec"]
     handler = entry["handler"]
+
+    # #478: the spec's declared capability, enforced. Before this, `capability`
+    # was serialized into `syscall_list()` and consulted nowhere, so a policy
+    # denying `memory.write` watched `sys.v1.memory.put` succeed.
+    #
+    # This is the second gate on the path, not a replacement for the first: the
+    # `syscall` builtin carries the `syscall` capability (#473), so a policy can
+    # refuse syscalls wholesale there, or allow them and refuse *this* one here.
+    # Both requests reach the policy, which is the point -- "no syscalls" and
+    # "no memory writes, however you spell them" are different intents.
+    #
+    # A refusal raises rather than returning an error envelope. `kind ==
+    # "sandbox"` is the pinned denial contract, and a capability refusal dressed
+    # as a handler failure would be classified as one downstream.
+    if vm is not None and hasattr(vm, "check_capability"):
+        vm.check_capability(spec.capability, name, "syscall", (payload,))
 
     if not isinstance(payload, dict):
         payload = {}

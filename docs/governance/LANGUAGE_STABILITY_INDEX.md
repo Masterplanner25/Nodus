@@ -78,7 +78,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `std:tool` | Experimental | Shipped in v4.0; MCP-compatible tool registry; dotted namespacing required |
 | `std:identity` | Experimental | Shipped in v4.0; trace_id, session_id propagation; CLI propagation fixed v4.0.3 |
 | `std:effects` | Experimental | Shipped in v4.0; EXACTLY_ONCE idempotency; `get_result()` added v4.0.3 |
-| `std:sys` | Experimental | Shipped in v4.0; versioned syscall dispatch |
+| `std:sys` | Experimental | Shipped in v4.0; versioned syscall dispatch. `SyscallSpec.capability` is **enforced** as of v5.3.0 (#478) — it was published by `syscall_list()` and read by nothing from v4.0 to v5.2.0. `register_syscall` now refuses a spec whose capability is missing or outside `ALL_CAPABILITIES` |
 | `std:memory` | Experimental | Shipped in v4.0; share/recall/forget across namespaces; `tag`/`forget` added v4.0.3 |
 | `std:retry` | Experimental | Shipped in v4.0; configurable retry policies |
 | `std:circuit_breaker` | Experimental | Shipped in v4.0; three-state breaker; map-form `create` added v4.0.3 |

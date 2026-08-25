@@ -4,6 +4,24 @@
 
 ### Fixes
 
+- **#478: `SyscallSpec.capability` is enforced.** Every syscall declared one,
+  `syscall_list()` published it to any host that asked, and `call_syscall` never
+  read the field — a policy denying `memory.write` watched
+  `sys.v1.memory.put` succeed while the registry advertised
+  `"capability": "memory.write"` on the way past.
+
+  A syscall now reaches the policy **twice**, and the two are different intents:
+  the `syscall` builtin carries the blanket `syscall` capability (#473), and the
+  spec's own field is consulted before dispatch. So "no syscalls at all" and "no
+  memory writes, whether spelled `memory_put` or `sys.v1.memory.put`" are both
+  expressible. A refusal raises with `kind == "sandbox"` rather than returning an
+  error envelope, which would make a capability refusal indistinguishable from a
+  handler that failed.
+
+  `register_syscall` also refuses a spec whose capability is missing or outside
+  `ALL_CAPABILITIES`. Accepting a name the policy layer cannot express, then
+  skipping it at dispatch, would be the same defect one layer along.
+
 - **#473: a `CapabilityPolicy` that denied everything denied nothing.** The
   policy was consulted only for the four sandbox capability groups. Every effect
   surface that was not filesystem/subprocess/network/env — `tool_call`,
