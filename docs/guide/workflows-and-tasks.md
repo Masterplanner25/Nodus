@@ -659,6 +659,15 @@ carries forward and successive passes differ — that is what stops the loop
 repeating itself. Run it with `nodus run --time-limit`, since several passes
 exceed the 200 ms default.
 
+**The unconditional `checkpoint "adjusted"` above is load-bearing, not
+decorative.** Because each pass resumes from the last checkpoint reached, the
+workflow must record a checkpoint on *every* pass — including passes where the
+goal's condition is not met. Checkpoint only on success and the goal halts
+after one pass with nothing to resume from (#500). The compiler refuses that
+shape: a `goal … over …` whose workflow has only conditional checkpoints is a
+compile error naming the fix — add a waypoint `checkpoint` at statement level
+in a step body, the way both examples in this section do.
+
 **`until` takes `reached("label")`**, composed with `&&`, `||`, `!` and
 parentheses. The label is a string literal, like `checkpoint`'s own.
 
