@@ -4,6 +4,18 @@
 
 ### Added
 
+- **#415: `try { } finally { }` needs no `catch`.** The grammar demanded a
+  catch, so the canonical cleanup-without-handling form — release the lock,
+  let the error propagate — had to be spelled `catch e { throw e }`, forcing
+  every cleanup site onto the catch-re-throws path (the exact path #361 had
+  to fix). The parser now accepts a catch-less try when `finally` is present,
+  and the compiler lowers it to the rethrowing form, so the VM's handler
+  machinery is untouched and the documented finally semantics apply
+  unchanged. The formatter renders the form as written; a bare `try` with
+  neither clause is refused (`try needs a 'catch', a 'finally', or both`).
+  Seven consumers read the catch fields; each is exercised by the regression
+  suite so the None-carrying node cannot break one silently.
+
 - **#475: `allow_failure` — a step the run tolerates failing.**
   `step flaky with { allow_failure: true } { … }` declares that this step
   failing (after its retries) is not the run's failure — the last

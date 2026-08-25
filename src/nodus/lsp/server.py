@@ -512,13 +512,14 @@ class _DocumentIndexer:
 
         if isinstance(stmt, TryCatch):
             self._walk_stmt(stmt.try_block)
-            self._push_scope()
-            tok = getattr(stmt, "_tok", None)
-            line = tok.line if tok is not None else 1
-            col = _identifier_column(self.lines, line, stmt.catch_var, tok.col if tok is not None else 1)
-            self._add_definition(stmt.catch_var, "variable", line, col, f"catch {stmt.catch_var}", type_text="string")
-            self._walk_stmt(stmt.catch_block)
-            self._pop_scope()
+            if stmt.catch_block is not None and stmt.catch_var is not None:
+                self._push_scope()
+                tok = getattr(stmt, "_tok", None)
+                line = tok.line if tok is not None else 1
+                col = _identifier_column(self.lines, line, stmt.catch_var, tok.col if tok is not None else 1)
+                self._add_definition(stmt.catch_var, "variable", line, col, f"catch {stmt.catch_var}", type_text="string")
+                self._walk_stmt(stmt.catch_block)
+                self._pop_scope()
             if stmt.finally_block is not None:
                 self._walk_stmt(stmt.finally_block)
             return

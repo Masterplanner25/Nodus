@@ -785,6 +785,26 @@ class Compiler:
             return
 
         if isinstance(stmt, TryCatch):
+            if stmt.catch_block is None:
+                # #415: `try { } finally { }` lowers to the rethrowing-catch
+                # form -- catch the error into a hidden name and throw it again
+                # -- so the VM's SETUP_TRY/FINALLY machinery is untouched and
+                # the semantics are exactly the boilerplate the grammar no
+                # longer demands. The hidden name is compiler-owned; a user
+                # variable of the same name would shadow harmlessly in the
+                # catch scope the block below enters.
+                rethrow_var = "__finally_rethrow"
+                rethrow = Throw(Var(rethrow_var))
+                rethrow._tok = stmt._tok
+                rethrow._module = stmt._module
+                rethrow.expr._tok = stmt._tok
+                rethrow.expr._module = stmt._module
+                synthetic = Block([rethrow])
+                synthetic._tok = stmt._tok
+                synthetic._module = stmt._module
+                stmt = TryCatch(stmt.try_block, rethrow_var, synthetic, stmt.finally_block)
+                stmt._tok = synthetic._tok
+                stmt._module = synthetic._module
             has_finally = stmt.finally_block is not None
             # Guard break/continue against jumping out across this boundary: an
             # unstructured JUMP would leave the VM handler_stack entry (and any

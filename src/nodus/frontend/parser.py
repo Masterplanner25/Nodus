@@ -353,19 +353,28 @@ class Parser:
             start = self.eat("TRY")
             try_block = self.block()
             self.skip_seps()
-            self.eat("CATCH")
-            if self.at("("):
-                self.eat("(")
-                catch_var = self.eat("ID").val
-                self.eat(")")
-            else:
-                catch_var = self.eat("ID").val
-            catch_block = self.block()
+            # #415: `catch` is optional when `finally` is present. The
+            # cleanup-without-handling form used to demand `catch e { throw e }`
+            # as boilerplate -- forcing every cleanup site onto the
+            # catch-re-throws path.
+            catch_var = None
+            catch_block = None
+            if self.at("CATCH"):
+                self.eat("CATCH")
+                if self.at("("):
+                    self.eat("(")
+                    catch_var = self.eat("ID").val
+                    self.eat(")")
+                else:
+                    catch_var = self.eat("ID").val
+                catch_block = self.block()
+                self.skip_seps()
             finally_block = None
-            self.skip_seps()
             if self.at("FINALLY"):
                 self.eat("FINALLY")
                 finally_block = self.block()
+            if catch_block is None and finally_block is None:
+                self.error("try needs a 'catch', a 'finally', or both", start)
             return self.mark(TryCatch(try_block, catch_var, catch_block, finally_block), start)
 
         if self.at("THROW"):

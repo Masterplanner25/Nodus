@@ -435,8 +435,13 @@ class ModuleAlias(Base):
 @dataclass
 class TryCatch(Base):
     try_block: Block
-    catch_var: str
-    catch_block: Block
+    # #415: `try { } finally { }` needs no catch. A catch-less node carries
+    # None in both fields and the compiler lowers it to a rethrowing catch, so
+    # the VM's handler machinery is untouched. Every consumer that reads
+    # catch_var/catch_block must guard for None -- seven sites at the time of
+    # writing, held together by tests/test_try_finally.py rather than by luck.
+    catch_var: str | None
+    catch_block: Block | None
     finally_block: Block | None = None
 
 

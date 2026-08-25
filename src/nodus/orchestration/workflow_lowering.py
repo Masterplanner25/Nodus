@@ -823,10 +823,12 @@ class _StateRewriter:
             return _mark_from(Return(expr), stmt)
         if isinstance(stmt, TryCatch):
             try_block = self.rewrite_stmt(stmt.try_block)
-            self._enter_scope()
-            self._define(stmt.catch_var)
-            catch_block = self.rewrite_stmt(stmt.catch_block)
-            self._exit_scope()
+            catch_block = None
+            if stmt.catch_block is not None:
+                self._enter_scope()
+                self._define(stmt.catch_var)
+                catch_block = self.rewrite_stmt(stmt.catch_block)
+                self._exit_scope()
             finally_block = self.rewrite_stmt(stmt.finally_block) if stmt.finally_block is not None else None
             return _mark_from(TryCatch(try_block, stmt.catch_var, catch_block, finally_block), stmt)
         if isinstance(stmt, Throw):
