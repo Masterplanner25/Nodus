@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-08-25
+
 ### Added
 
 - **#402: bounded channels exert backpressure — `send` on a full channel

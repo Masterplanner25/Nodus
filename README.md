@@ -40,7 +40,36 @@
 > [the migration note](docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.3.0 is about declarations that bind. A run of surfaces accepted
+**Recent:** 5.4.0 is about a resume that tells the truth, and an inspection that
+costs nothing.
+
+A resume used to answer questions it had not been asked. It replayed the source
+stored with the run — the right rule — but said nothing when the file had moved
+on since, while a run persisted before source recording rebuilt from disk
+instead: the opposite rule, equally silent. Both announce themselves now. A
+rebuilt graph whose *shape* has drifted is refused with the real reason, in place
+of a manufactured `Dependency cycle detected` in code that has no cycle. A resume
+from a mid-step checkpoint no longer double-counts a folded `state` cell's
+contributions, and a checkpoint resume of a run that is *waiting* — which could
+only ever re-wait — is refused instead of reporting success. What a run persists
+is also now written down: every run stores its whole program text as the rebuild
+handle, `nodus workflow cleanup` bounds that by default, and an embedder can
+decline it with `persist_workflow_source=False`.
+
+`nodus graph` and `nodus graph show` no longer execute the file they are asked to
+inspect. The plan is built from the workflow declarations alone, so pointing them
+at an untrusted or generated `.nd` file runs none of its code — `--execute`
+restores the old behaviour for graphs constructed at runtime. `nodus check` now
+enters workflow step bodies, which had been invisible to both the type checker
+and the editor diagnostics, and what it does and does not guarantee is stated in
+its `--help`.
+
+Three things that could not be said before, can be: `step … with { allow_failure:
+true }` for a step whose failure is not the run's failure, `try { } finally { }`
+without the `catch e { throw e }` boilerplate, and a bounded `channel(n)` that
+makes a fast producer *wait* for its consumer rather than raise.
+
+5.3.0 is about declarations that bind. A run of surfaces accepted
 something that read as a decision and enforced none of it, and each is now either
 enforced or refused where it is written.
 

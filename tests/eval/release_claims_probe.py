@@ -569,14 +569,325 @@ def probe_no_stale_capability_claim(repo: Path):
     ]:
         if not path.is_file():
             continue
-        parts = path.parts
-        if "evals" in parts or "design" in parts or path.name == "CHANGELOG.md":
-            continue  # records of what *was*; describing the old state is their job
+        if _is_a_record_of_what_was(path):
+            continue
         for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if stale.search(line):
                 hits.append(f"{path.relative_to(repo)}:{number}: {line.strip()[:90]}")
     assert not hits, "prose describes the pre-5.3.0 surface:\n       " + "\n       ".join(hits)
     return f"no artifact still describes the {len(ALL_CAPABILITIES) - 5}-name-smaller vocabulary"
+
+
+def _is_a_record_of_what_was(path: Path) -> bool:
+    """Is this artifact a pinned record rather than a live description?
+
+    Evals, design docs and the CHANGELOG describe what *was* -- that is their
+    job, so a stale-sounding sentence in them is correct. Two more belong in
+    that class and were found by this probe rather than reasoned about:
+
+    * `EXTERNAL_AUDIT_LEDGER.md` records what an outside audit claimed **at a
+      named commit** ("Audited at commit 3376702, v4.1.1"), with the issue
+      number beside it. The claim was true then and the issue says what
+      happened since.
+    * `Session Handoff Summary.md` is untracked working scratch, not a shipped
+      artifact -- it is not in git and never reaches a user.
+
+    Exemptions weaken the probe, so each one is named and argued rather than
+    globbed.
+    """
+    parts = path.parts
+    if "evals" in parts or "design" in parts:
+        return True
+    return path.name in {
+        "CHANGELOG.md",
+        "EXTERNAL_AUDIT_LEDGER.md",
+        "Session Handoff Summary.md",
+    }
+
+
+# ------------------------------------------------- 5.4.0: resume, inspect, say
+#
+# The release's three claims, probed as claims: a resume that tells the truth,
+# an inspection that costs nothing, and three things that could not be said.
+
+
+@probe("5.4.0: a tolerated failure completes the run and is reported separately")
+def probe_allow_failure():
+    result = run_nd(
+        "workflow w {\n"
+        '    step flaky with { allow_failure: true } { throw "boom" }\n'
+        "    step solid { return 1i }\n"
+        "}\n"
+        "fn main() { let r = run_workflow(w); print(\"R=\\(r)\") }"
+    )
+    assert result.get("ok"), result.get("error")
+    out = result["stdout"]
+    assert '"failed": []' in out, out[:200]
+    assert '"tolerated": ["flaky"]' in out, out[:200]
+    assert '"flaky": "failed"' in out, "the status stopped telling the truth"
+    return "run completes; status still `failed`; verdict says `tolerated`"
+
+
+@probe("5.4.0: try/finally needs no catch, and the error still propagates")
+def probe_try_finally():
+    ok = run_nd(
+        'fn main() { try { print("W") } finally { print("C") } }'
+    )
+    assert ok.get("ok"), ok.get("error")
+    assert "W" in ok["stdout"] and "C" in ok["stdout"], ok["stdout"]
+    raised = run_nd('fn main() { try { throw "boom" } finally { print("C") } }')
+    assert not raised.get("ok"), "the rethrow was swallowed"
+    assert "C" in raised["stdout"], "finally did not run on the throwing path"
+    bare = run_nd("fn main() { try { print(1i) } }")
+    assert not bare.get("ok"), "a try with neither clause was accepted"
+    return "cleanup form runs, rethrows, and a bare `try` is still refused"
+
+
+@probe("5.4.0: a bounded channel makes a fast producer wait")
+def probe_channel_backpressure():
+    result = run_nd(
+        "fn main() {\n"
+        "    let ch = channel(1i)\n"
+        '    let p = coroutine(fn() { send(ch, "a"); print("sent a"); '
+        'send(ch, "b"); print("sent b"); close(ch) })\n'
+        '    let c = coroutine(fn() { let x = recv(ch); print("got \\(x)"); '
+        'let y = recv(ch); print("got \\(y)") })\n'
+        "    spawn(p)\n    spawn(c)\n    run_loop()\n"
+        "}"
+    )
+    assert result.get("ok"), result.get("error")
+    out = result["stdout"]
+    assert out.index("got a") < out.index("sent b"), (
+        "the second send did not wait for a free slot:\n" + out
+    )
+    deadlocked = run_nd(
+        "fn main() {\n"
+        "    let ch = channel(1i)\n"
+        '    let p = coroutine(fn() { send(ch, "a"); send(ch, "b") })\n'
+        "    spawn(p)\n    run_loop()\n"
+        "}"
+    )
+    assert not deadlocked.get("ok"), "a parked sender with no receiver completed"
+    assert "blocked on send()" in str(deadlocked), str(deadlocked)[:200]
+    return "send blocks until recv frees a slot; a stuck sender is a named deadlock"
+
+
+@probe("5.4.0: `nodus graph` plans without executing the file")
+def probe_graph_does_not_execute(repo: Path):
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        script = Path(td) / "probe.nd"
+        probe_file = Path(td) / "executed.txt"
+        script.write_text(
+            'import "std:fs" as fs\n'
+            f'fs.write("{probe_file.as_posix()}", "ran")\n'
+            "workflow w { step a { return 1i } step b after a { return 2i } }\n"
+            "let r = run_workflow(w)\n",
+            encoding="utf-8",
+        )
+        code, out = cli(["nodus", "graph", str(script), "--allow-paths", td])
+        assert code == 0, f"static plan failed: {out[:200]}"
+        assert '"nodes": ["a", "b"]' in out, out[:200]
+        assert not probe_file.exists(), "inspecting the file executed it"
+        code, out = cli(["nodus", "graph", "show", str(script)])
+        assert code == 0 and "flowchart TD" in out, out[:200]
+        assert not probe_file.exists(), "graph show executed the file"
+    return "plan and diagram produced; the file's side effect never happened"
+
+
+@probe("5.4.0: a resume refuses a graph whose shape has drifted")
+def probe_topology_validation():
+    """Behaviour, not prose. An earlier cut of this probe asserted that
+    "Dependency cycle" did not appear in the validator's *source* -- and failed,
+    because the docstring explains the false diagnosis it exists to prevent.
+    A probe that flags correct prose gets switched off; assert on the raise."""
+    from nodus.orchestration.task_graph import TaskGraph, TaskNode, WorkflowRebuildError
+    from nodus.orchestration.workflow_lowering import graph_topology
+    from nodus.vm.vm import VM
+
+    a = TaskNode(task_id="task_1", function=None, step_name="a")
+    b = TaskNode(task_id="task_2", function=None, step_name="b", dependencies=[a])
+    topology = graph_topology([a, b])
+    assert topology == {"steps": ["a", "b"], "edges": [["a", "b"]]}, topology
+
+    graph = TaskGraph([a, b], metadata={})
+    vm = VM([], {}, code_locs=[])
+    drifted = {"workflow_topology": {"steps": ["a"], "edges": []}}
+    try:
+        vm._validate_rebuilt_topology(graph, drifted, "w", "workflow", "g_probe")
+    except WorkflowRebuildError as err:
+        message = str(err)
+        assert "planned against a different version" in message, message
+        assert "steps added: b" in message, message
+        assert "Dependency cycle" not in message, "the false diagnosis is back"
+    else:
+        raise AssertionError("a drifted topology was accepted")
+
+    vm._validate_rebuilt_topology(graph, {"workflow_topology": topology}, "w", "workflow", "g_probe")
+    return "matching shape passes; a drifted one names the real cause, not a cycle"
+
+
+@probe("5.4.0: a checkpoint resume of a waiting run is refused")
+def probe_waiting_resume_refused():
+    from nodus_lang_workflow import runner as runner_module
+
+    source = inspect_source(runner_module.WorkflowFrameworkRunner.resume_workflow)
+    assert "waiting_run_checkpoint_resume" in source, "the refusal is gone"
+    assert "discards the payload" in source, "the payload-eating case is unguarded"
+    assert 'state.get("status") == "waiting"' in source, (
+        "the refusal no longer consults the persisted state, so a stale "
+        "administrative wait would be refused"
+    )
+    return "refused on genuinely-waiting runs only, both argument shapes"
+
+
+@probe("5.4.0: a persist failure names the cell, and durable:false protects it")
+def probe_persist_naming():
+    named = run_nd(
+        "workflow nocp {\n"
+        "    state ch = 0i\n"
+        "    step a { ch = channel(); return 1i }\n"
+        "}\n"
+        "fn main() { let r = run_workflow(nocp) }"
+    )
+    assert not named.get("ok"), "a live handle persisted"
+    text = str(named)
+    assert "state cell 'ch'" in text, text[:300]
+    assert "durable: false" in text, "the error names no remedy"
+    live = run_nd(
+        "workflow live {\n"
+        "    state ch = 0i with { durable: false }\n"
+        '    step a { ch = channel(); checkpoint "cp"; return 1i }\n'
+        "}\n"
+        'fn main() { let r = run_workflow(live); let f = r["failed"]; print("F=\\(f)") }'
+    )
+    assert live.get("ok"), f"durable:false did not protect the value: {live.get('error')}"
+    assert "F=[]" in live["stdout"], live["stdout"]
+    return "the cell is named; `durable: false` survives a mid-step checkpoint"
+
+
+@probe("5.4.0: a goal whose every checkpoint is conditional is refused")
+def probe_goal_waypoint():
+    result = run_nd(
+        "workflow tune {\n"
+        "    state tries = 0\n"
+        "    step look { tries = tries + 1; let s = workflow_state(); "
+        'if (s["tries"] >= 3) { checkpoint "good_enough" } return s["tries"] }\n'
+        "}\n"
+        "goal reach over tune {\n"
+        '    until reached("good_enough")\n'
+        "    budget { max_iterations: 5, deadline_ms: 30000 }\n"
+        "}\n"
+        "fn main() { let r = run_goal(reach) }"
+    )
+    assert not result.get("ok"), "the non-iterating goal compiled"
+    text = str(result)
+    assert "cannot iterate" in text, text[:300]
+    assert "runs on every pass" in text, "the error names no fix"
+    return "refused at compile time, naming the waypoint remedy"
+
+
+@probe("5.4.0: `nodus check` enters workflow step bodies")
+def probe_check_enters_steps():
+    from nodus.tooling.runner import check_source
+
+    bad = check_source(
+        "fn greet(name: string, times: int) -> string { return name }\n"
+        'workflow w { step a { return greet(42i, "no") } }\n',
+        filename="<probe>",
+    )
+    assert not bad["ok"], "a typed violation inside a step still passes check"
+    assert "expected string but got int" in str(bad), str(bad)[:200]
+    host = check_source(
+        "workflow w { step a { return maybe_a_host_function(1i) } }\n",
+        filename="<probe>",
+    )
+    assert host["ok"], (
+        "unknown free names are now rejected -- that is #489's decision to make, "
+        "and taking it here breaks every embedded program"
+    )
+    return "step bodies type-checked; unknown host-shaped calls still permitted"
+
+
+@probe("5.4.0: prose does not still describe the pre-5.4.0 surface")
+def probe_no_stale_5_4_claims(repo: Path):
+    """The half that has caught something every cycle.
+
+    Each pattern is a sentence that was TRUE before this release and is false
+    now. Evals, design docs and the CHANGELOG are exempt: recording what was is
+    their job.
+    """
+    stale = re.compile(
+        r"`?finally`?[^.\n]{0,40}requires[^.\n]{0,20}`?catch`?"
+        r"|try/finally[^.\n]{0,40}(alone is a syntax error|is a syntax error)"
+        r"|(channels?|send)[^.\n]{0,60}(no backpressure|raises? instead of block)"
+        r"|`?waiting_senders`?[^.\n]{0,40}(dead code|never read)"
+        r"|`?nodus graph`?[^.\n]{0,50}(executes the file|runs the file)"
+        r"|(analyzer|check)[^.\n]{0,60}never enters[^.\n]{0,30}step bodies"
+        r"|`?STEP_OPTION_KEYS`?[^.\n]{0,40}(is seven|seven entries)"
+        r"|does not check[^.\n]{0,60}undefined variable",
+        re.IGNORECASE,
+    )
+    hits: list[str] = []
+    for path in sorted(repo.glob("docs/**/*.md")) + sorted(repo.glob("*.md")) + [
+        repo / "llms.txt", repo / "llms-full.txt"
+    ]:
+        if not path.is_file():
+            continue
+        if _is_a_record_of_what_was(path):
+            continue
+        for number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        ):
+            if stale.search(line):
+                hits.append(f"{path.relative_to(repo)}:{number}: {line.strip()[:90]}")
+    assert not hits, "prose describes the pre-5.4.0 surface:\n       " + "\n       ".join(hits)
+    return "no artifact still states a restriction this release removed"
+
+
+@probe("5.4.0: the stale-claim pattern still catches its own examples")
+def probe_5_4_pattern_selfcheck():
+    """A prose probe that cannot fail is worse than none (the lesson from the
+    vacuous boundary test at 5.3.0). Hold the pattern to both directions."""
+    must_catch = [
+        "`finally` requires `catch` — `try/catch/finally` is the only form",
+        "try/finally alone is a syntax error",
+        "Channels have no backpressure: send on a full channel raises",
+        "`waiting_senders` is dead code and never read",
+        "`nodus graph` executes the file it is asked to inspect",
+        "the analyzer never enters workflow step bodies at all",
+        "Does not check undefined variable/function references",
+    ]
+    must_ignore = [
+        "`try { } finally { }` works without a catch",
+        "a bounded channel blocks the sender until a slot frees",
+        "`nodus graph` plans without executing the file",
+        "`nodus check` now enters workflow step bodies",
+        "STEP_OPTION_KEYS gained an eighth entry, allow_failure",
+    ]
+    pattern = re.compile(
+        r"`?finally`?[^.\n]{0,40}requires[^.\n]{0,20}`?catch`?"
+        r"|try/finally[^.\n]{0,40}(alone is a syntax error|is a syntax error)"
+        r"|(channels?|send)[^.\n]{0,60}(no backpressure|raises? instead of block)"
+        r"|`?waiting_senders`?[^.\n]{0,40}(dead code|never read)"
+        r"|`?nodus graph`?[^.\n]{0,50}(executes the file|runs the file)"
+        r"|(analyzer|check)[^.\n]{0,60}never enters[^.\n]{0,30}step bodies"
+        r"|`?STEP_OPTION_KEYS`?[^.\n]{0,40}(is seven|seven entries)"
+        r"|does not check[^.\n]{0,60}undefined variable",
+        re.IGNORECASE,
+    )
+    missed = [s for s in must_catch if not pattern.search(s)]
+    assert not missed, f"pattern stopped catching: {missed}"
+    false_positives = [s for s in must_ignore if pattern.search(s)]
+    assert not false_positives, f"pattern cries wolf on: {false_positives}"
+    return f"{len(must_catch)} stale forms caught, {len(must_ignore)} true sentences ignored"
+
+
+def inspect_source(obj) -> str:
+    import inspect as _inspect
+
+    return _inspect.getsource(obj)
 
 
 def main() -> int:
@@ -639,6 +950,19 @@ def main() -> int:
     probe_conditional_edges(args.repo)
     probe_guard_error()
     probe_no_stale_capability_claim(args.repo)
+
+    # 5.4.0
+    probe_allow_failure()
+    probe_try_finally()
+    probe_channel_backpressure()
+    probe_graph_does_not_execute(args.repo)
+    probe_topology_validation()
+    probe_waiting_resume_refused()
+    probe_persist_naming()
+    probe_goal_waypoint()
+    probe_check_enters_steps()
+    probe_5_4_pattern_selfcheck()
+    probe_no_stale_5_4_claims(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

@@ -649,22 +649,28 @@ record in [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md); debt only here.
   `run_workflow`/`run_goal`/`print` and nothing else; five failed resumes produced
   five filesystem writes.
 
-- **#400 (MEDIUM) — `nodus graph` executes the file it is asked to inspect.**
-  Proved with an `fs.write` probe that fired while the command reported "No graph
-  plan produced". `ast`, `check` and `dis` do not execute; `graph` is the odd one
-  out, and it is the command you would reach for to inspect untrusted or generated
-  source before running it.
+- **#400 — RESOLVED in 5.4.0.** `nodus graph` and `graph show` plan from the
+  workflow/goal declarations alone; the file is not executed. `--execute`
+  restores the old behaviour for a graph constructed at run time, and a file
+  with no flow declaration is refused naming that flag rather than silently
+  executed. The audit's `fs.write` probe is now a regression test
+  (`tests/test_graph_static_plan.py`). Also closed #558 (a `plan_workflow`
+  call inside `main()` renders) as a consequence.
 
-- **#401 (MEDIUM) — the analyzer never enters workflow step bodies**, and
-  `nodus check` reports no undefined symbol in ordinary code either. Step bodies
-  get no unused-variable, unreachable-code, undefined-symbol or type diagnostics.
-  With #396 this raises the prior question: **what is `nodus check` contracted to
-  catch?** Currently unwritten.
+- **#401 — RESOLVED in 5.4.0.** Both walkers enter step bodies now: the type
+  analyzer (so `nodus check` type-checks them) and the workspace diagnostics
+  engine (so `nodus lsp` reports undefined/unused/unreachable inside steps).
+  Found and fixed with it: the diagnostics engine never bound *any*
+  block-scoped `let`, so every function local was a false `Undefined variable`.
+  The prior question — **what is `nodus check` contracted to catch?** — is
+  answered in `nodus check --help`, including the half that deliberately stays
+  open (an unknown free name may be a host function; that is #489).
 
-- **#402 (LOW) — channels have no backpressure.** `Channel.waiting_senders` is
-  declared and never read; `send` on a full channel raises rather than blocking.
-  Either implement blocking send using the deque that is already there, or drop it
-  and document the raise as the contract.
+- **#402 — RESOLVED in 5.4.0.** Blocking send implemented on the deque that was
+  already there: a `send` in a coroutine onto a full channel parks, and a `recv`
+  that frees a slot wakes it. The deadlock detector covers parked senders, and
+  `close()` flushes their values into the still-drainable queue. Outside a
+  schedulable context the raise remains, with wrap-in-`spawn` guidance.
 
 **Cross-audit result, and the reason to keep running these.** Two independent
 audits of the same commit disagreed twice, and **both disagreements marked a real
