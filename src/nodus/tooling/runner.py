@@ -207,6 +207,7 @@ def run_source(
     project_root: str | None = None,
     profiler=None,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
     input_fn=None,
     fs_root: str | None = None,
 ):
@@ -252,6 +253,7 @@ def run_source(
         event_bus=event_bus,
         profiler=profiler,
         allowed_paths=allowed_paths,
+        writable_paths=writable_paths,
         input_fn=input_fn,
         fs_root=fs_root,
     )

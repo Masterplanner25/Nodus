@@ -342,6 +342,7 @@ class RuntimeService:
         max_sessions: int = MAX_SESSIONS,
         worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
         allowed_paths: list[str] | None = None,
+        writable_paths: list[str] | None = None,
         allow_input: bool = False,
         auth_token: str | None = None,
         workflow_store_backend: str | None = None,
@@ -368,6 +369,7 @@ class RuntimeService:
             "rehydrated_runs": [],
         }
         self.allowed_paths = allowed_paths
+        self.writable_paths = writable_paths
         self.allow_input = allow_input
         self.auth_token = auth_token
         # #392/#393: this service drives `sweep()` on `self.workflow_runner`, so
@@ -394,7 +396,8 @@ class RuntimeService:
         `memory_store` and `agent_registry` (#185): the VM asks its own context
         instead of reaching for a process global.
         """
-        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths)
+        vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths,
+                writable_paths=self.writable_paths)
         vm.workflow_runner = self.workflow_runner
         return vm
 
@@ -487,6 +490,7 @@ class RuntimeService:
         if vm is None:
             return
         vm.allowed_paths = self.allowed_paths
+        vm.writable_paths = self.writable_paths
         if not self.allow_input:
             vm.input_fn = self._blocked_input
 
@@ -570,7 +574,8 @@ class RuntimeService:
             self.last_vm = vm
             return result
         input_fn = None if self.allow_input else self._blocked_input
-        result, vm = run_source(code, filename, trace=self.trace, allowed_paths=self.allowed_paths, input_fn=input_fn)
+        result, vm = run_source(code, filename, trace=self.trace, allowed_paths=self.allowed_paths,
+                                writable_paths=self.writable_paths, input_fn=input_fn)
         if vm is not None:
             vm.worker_dispatcher = self.workers
             self.last_vm = vm
@@ -1558,6 +1563,7 @@ def serve(
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
@@ -1576,6 +1582,7 @@ def serve(
         trace=trace,
         worker_sweep_interval_ms=worker_sweep_interval_ms,
         allowed_paths=allowed_paths,
+        writable_paths=writable_paths,
         allow_input=allow_input,
         auth_token=auth_token,
         workflow_store_backend=workflow_store_backend,
@@ -1598,6 +1605,7 @@ def run_in_thread(
     max_sessions: int = MAX_SESSIONS,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
@@ -1611,6 +1619,7 @@ def run_in_thread(
         max_sessions=max_sessions,
         worker_sweep_interval_ms=worker_sweep_interval_ms,
         allowed_paths=allowed_paths,
+        writable_paths=writable_paths,
         allow_input=allow_input,
         auth_token=auth_token,
         workflow_store_backend=workflow_store_backend,

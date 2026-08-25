@@ -214,6 +214,46 @@ no authority, grouped by why, and a test requires the two sets to cover
 which side it is on — the point being that "is this governed?" stops depending on
 whether anyone remembered.
 
+### 3.3.1a-2 Read-only context vs editable files
+
+`allowed_paths` bounds what the runtime may touch. `writable_paths` narrows the
+subset it may *write*:
+
+```python
+NodusRuntime(
+    allowed_paths=["/repo"],          # readable
+    writable_paths=["/repo/src"],     # subset that may be written
+)
+```
+
+```
+read  /repo/ctx/readme.txt   ok
+write /repo/src/out.txt      ok
+write /repo/ctx/out.txt      Blocked: path 'ctx/out.txt' is readable but not writable
+```
+
+CLI: `nodus run app.nd --allow-paths /repo --writable-paths /repo/src`.
+
+**Omitting it changes nothing** — `writable_paths=None` means "everything
+readable", which is every release through 5.2.0. `[]` is a statement, not an
+omission: it refuses every write while leaving reads alone. Both checks always
+run, so a writable path grants nothing that `allowed_paths` does not already
+allow; declaring one outside the read jail is refused at construction rather
+than silently ignored.
+
+**No environment variable, deliberately.** `NODUS_ALLOWED_PATHS` exists to widen
+a *default* jail when the caller passed nothing. There is nothing to widen here,
+so a variable could only narrow — and write confinement that moves with ambient
+state produces a program that works locally and is refused in production with no
+difference in the code.
+
+**What this does not cover: subprocess children.** The runtime path-checks a
+subprocess's `cwd` and its stdout/stderr redirect targets, so those obey both
+lists. It cannot constrain what the spawned program itself writes — that is the
+OS's business, not the VM's. If `allow_subprocess=True`, `writable_paths` is not
+a filesystem boundary; it scopes the *runtime's* writes only. Use OS-level
+confinement if you need the stronger claim.
+
 ### 3.3.1b Syscalls are gated twice
 
 A `syscall(...)` reaches the policy **twice**, and the two are different intents:

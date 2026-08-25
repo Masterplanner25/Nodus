@@ -371,6 +371,7 @@ def register(vm, registry) -> None:
                     code_locs=entry.get("_handler_code_locs"),
                     module_globals=entry.get("_handler_globals"),
                     allowed_paths=rvm.allowed_paths,
+                    writable_paths=getattr(rvm, "writable_paths", None),
                     fs_root=rvm.fs_root,
                     allow_subprocess=getattr(rvm, "allow_subprocess", True),
                     allow_network=getattr(rvm, "allow_network", True),

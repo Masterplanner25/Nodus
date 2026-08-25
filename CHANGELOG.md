@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#467: `writable_paths` — read-only context, editable files.** `allowed_paths`
+  was a single flat list: a path was reachable for everything or for nothing.
+  `_ensure_path_allowed(path, op_name)` took the operation's name and used it
+  **only to phrase the error message**, never to decide, so "this tree is
+  readable context, that subtree is editable" — the two-tier model every coding
+  agent wants — could not be expressed.
+
+  ```python
+  NodusRuntime(
+      allowed_paths=["/repo"],          # readable
+      writable_paths=["/repo/src"],     # subset that may be written
+  )
+  ```
+
+  CLI: `nodus run app.nd --allow-paths /repo --writable-paths /repo/src`.
+
+  **Additive.** `writable_paths=None` means "everything readable", which is every
+  release through 5.2.0, so a runtime that never asks for the split is unchanged.
+  `[]` is a statement rather than an omission: it refuses every write and leaves
+  reads alone. Both checks always run, so a writable path grants nothing
+  `allowed_paths` does not already allow — and declaring one outside the read
+  jail is refused at construction instead of silently ignored.
+
+  **No environment variable, deliberately.** `NODUS_ALLOWED_PATHS` widens a
+  *default* jail when the caller passed nothing; there is nothing to widen here,
+  so a variable could only narrow, and write confinement that moves with ambient
+  state produces a program that works locally and is refused in production with
+  no difference in the code.
+
+  **It does not cover subprocess children.** A subprocess's `cwd` and its
+  stdout/stderr redirect targets are path-checked and obey both lists, but what
+  the spawned program itself writes is the OS's business. With
+  `allow_subprocess=True`, `writable_paths` scopes the runtime's writes only.
+
 ### Fixes
 
 - **#478: `SyscallSpec.capability` is enforced.** Every syscall declared one,

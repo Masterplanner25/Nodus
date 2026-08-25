@@ -23,6 +23,22 @@ from nodus.vm.types import Record, Closure
 _SANDBOX_DEFAULT = object()  # sentinel: allowed_paths not explicitly set by caller
 
 
+def _path_within_any(path: str, roots: list[str]) -> bool:
+    """Is *path* inside any of *roots*? Used to reject an incoherent grant (#467)."""
+    try:
+        target = os.path.normcase(os.path.realpath(path))
+    except (OSError, ValueError):
+        return False
+    for root in roots:
+        try:
+            normalized_root = os.path.normcase(os.path.realpath(root))
+            if os.path.commonpath([target, normalized_root]) == normalized_root:
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 def _drain_spawned(vm: "VM | None", join_timeout_s: float = 0.5) -> None:
     """Kill and join any pump threads registered by subprocess_spawn on *vm*.
 
@@ -238,6 +254,7 @@ class NodusRuntime:
         max_stdout_chars: int | None = MAX_STDOUT_CHARS,
         project_root: str | None = None,
         allowed_paths: list[str] | None = _SANDBOX_DEFAULT,  # type: ignore[assignment]
+        writable_paths: list[str] | None = None,
         allow_input: bool = False,
         allow_subprocess: bool = False,
         allow_network: bool = False,
@@ -375,6 +392,28 @@ class NodusRuntime:
         self.max_stdout_chars = max_stdout_chars
         self.project_root = project_root
         self.allowed_paths = allowed_paths
+        # #467: the subset of `allowed_paths` a guest may write. None means
+        # "all of them", which is every release before 5.3.0 -- so this is
+        # additive and a runtime that never asks for the split is unchanged.
+        #
+        # Deliberately NOT read from the environment. `NODUS_ALLOWED_PATHS`
+        # exists to widen a default jail when the caller passed nothing;
+        # there is nothing here to widen, so an env var could only narrow --
+        # and write confinement that changes with ambient state is how you
+        # get a program that works locally and is refused in production with
+        # no difference in the code.
+        self.writable_paths = writable_paths
+        if writable_paths is not None and allowed_paths:
+            outside = [
+                path for path in writable_paths
+                if not _path_within_any(path, allowed_paths)
+            ]
+            if outside:
+                raise ValueError(
+                    f"writable_paths entries lie outside allowed_paths and would "
+                    f"grant nothing: {outside}. A path must be readable to be "
+                    f"writable; widen allowed_paths, or drop these."
+                )
         self.allow_input = allow_input
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
@@ -878,6 +917,7 @@ class NodusRuntime:
             # than assigned afterwards so it stays beside `source_path`.
             source_code=source,
             allowed_paths=self.allowed_paths,
+            writable_paths=self.writable_paths,
             allow_subprocess=self.allow_subprocess,
             allow_network=self.allow_network,
             allow_env=self.allow_env,

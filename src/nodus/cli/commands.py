@@ -120,6 +120,7 @@ COMMANDS: dict[str, Command] = {
                 "--time-limit",
                 "--output-limit",
                 "--allow-paths",
+                "--writable-paths",
             }
         ),
         no_values=_TRACE_NO_VALUE
@@ -265,7 +266,8 @@ COMMANDS: dict[str, Command] = {
         "Profile script execution",
         group="Inspection",
         with_values=_PROJECT
-        | frozenset({"--step-limit", "--time-limit", "--output-limit", "--allow-paths"}),
+        | frozenset({"--step-limit", "--time-limit", "--output-limit", "--allow-paths",
+                     "--writable-paths"}),
         no_values=frozenset({"--json", "--no-opt"}),
     ),
     # -- Orchestration -----------------------------------------------------
@@ -340,6 +342,7 @@ COMMANDS: dict[str, Command] = {
                 "--port",
                 "--worker-sweep-interval-ms",
                 "--allow-paths",
+                "--writable-paths",
                 "--auth-token",
                 "--workflow-store-backend",
                 "--workflow-store-path",
@@ -609,6 +612,7 @@ _DETAILED_HELP: dict[str, str] = {
         "  --time-limit SECS          Abort after SECS seconds of wall time",
         "  --output-limit N           Truncate stdout after N characters",
         "  --allow-paths PATHS        Restrict file I/O to colon-separated paths",
+        "  --writable-paths PATHS     Subset of those that may be written (default: all)",
         "  --strict                   Require an explicit file path; disable project auto-discovery",
         "  --trace-imports            Print each resolved import path to stderr (marked when read from the bytecode cache)",
         "  --trace-errors             Print Python exception details to stderr for stdlib errors (also: NODUS_TRACE_ERRORS=1)",
@@ -714,6 +718,7 @@ _DETAILED_HELP: dict[str, str] = {
         "  --port PORT                      Port to listen on (default: 7477)",
         "  --auth-token TOKEN               Require this token on all requests (recommended for non-local hosts)",
         "  --allow-paths PATHS              Colon-separated list of paths the runtime may access",
+        "  --writable-paths PATHS           Subset of those that may be written (default: all)",
         "  --allow-input                    Allow scripts to read from stdin",
         "  --trace                          Log each VM instruction to stderr",
         "  --worker-sweep-interval-ms N     How often to sweep for dead workers (default: 500)",
