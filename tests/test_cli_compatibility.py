@@ -24,6 +24,8 @@ class CliCompatibilityTests(unittest.TestCase):
             self.assertIn("hello", buf.getvalue())
 
     def test_cli_graph_command_outputs_plan(self):
+        # A runtime-constructed graph: `nodus graph` no longer executes its
+        # target by default (#400), so planning this shape needs --execute.
         code = """
 let A = task(fn() { return 1 }, nil)
 let plan = plan_graph([A])
@@ -34,7 +36,7 @@ let plan = plan_graph([A])
                 f.write(code)
             buf = io.StringIO()
             with redirect_stdout(buf):
-                exit_code = lang.main(["nodus", "graph", script])
+                exit_code = lang.main(["nodus", "graph", script, "--execute"])
             self.assertEqual(exit_code, 0)
             payload = json.loads(buf.getvalue().strip())
             self.assertIn("graph_id", payload)

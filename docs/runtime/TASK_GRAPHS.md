@@ -60,6 +60,13 @@ print(result)
   is the equivalent explicit form)
 - `nodus graph show <script.nd> [--format mermaid|dot] [--output FILE]` (render the same
   plan as a diagram instead of JSON — see below)
+
+Both plan **without executing the script** (#400): the plan is built from the
+file's `workflow`/`goal` declarations alone (the last one declared), so
+inspecting an untrusted file runs none of its code — a `plan_workflow(...)`
+call is not required and may live inside `main()` (#558). A graph constructed
+at runtime (`task()` / `run_graph`, or a dynamically chosen flow) needs
+`--execute`, which restores the old run-the-file behaviour.
 - `nodus run <script.nd>` (execute a script; workflows/goals may create graphs)
 - `nodus workflow resume <graph_id>` (resume a persisted graph). There is no top-level
   `nodus resume` command — because bare `nodus <file>` is accepted for backward

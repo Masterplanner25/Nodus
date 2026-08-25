@@ -105,6 +105,7 @@ class ModuleLoader:
         vm: VM | None = None,
         debugger=None,
         import_trace_fn=None,
+        statement_filter=None,
     ) -> None:
         self.project_root = project_root
         self.host_globals = host_globals or {}
@@ -130,6 +131,15 @@ class ModuleLoader:
         self._vm = vm
         self._debugger = debugger
         self._import_trace_fn = import_trace_fn
+        # #400: a predicate over top-level statements, applied at parse time.
+        # `nodus graph` plans by loading only the flow declarations, so the
+        # module's other top-level statements -- imports included -- never
+        # compile or run. Statement-level, not expression-level: what survives
+        # the filter executes normally. Loaders with a filter never touch the
+        # on-disk bytecode cache (guarded in `_source_is_the_file`), because the
+        # filtered compile is not the file's program and would poison the entry
+        # (#521's cache-write half).
+        self._statement_filter = statement_filter
 
     def resolve_import(self, import_path: str, base_dir: str, tok: Tok | None, module_id: str) -> str:
         if "project_root" not in self._import_state:
@@ -280,6 +290,12 @@ class ModuleLoader:
         would be silent, and would silently run the wrong program.
         """
         if source_path is None:
+            return False
+        if self._statement_filter is not None:
+            # A filtered parse compiles a subset of the file's program. Neither
+            # direction of the cache may participate: a warm entry is not what
+            # this loader would compile, and this loader's compile must not be
+            # stored as the file's (#400, the #521 cache shape).
             return False
         if source is None:
             # Loaded from the path -- the file *is* the source by construction.
@@ -697,6 +713,8 @@ class ModuleLoader:
             if getattr(err, "path", None) is None:
                 err.path = module_id
             raise
+        if self._statement_filter is not None:
+            ast = [stmt for stmt in ast if self._statement_filter(stmt)]
         set_module_on_tree(ast, module_id)
         module_info = collect_module_info(ast, module_id, "")
         imports = [stmt for stmt in ast if isinstance(stmt, Import)]
