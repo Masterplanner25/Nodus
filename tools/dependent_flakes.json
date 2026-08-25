@@ -23,8 +23,8 @@
     "nodus-mcp": [
       {
         "match": "test_phase_m.py",
-        "why": "Two tests in this file bind ports and fail when another suite holds them. Documented in CLAUDE.md as a pre-existing race, not a code bug: they pass individually and in serial full-suite runs.",
-        "recorded": "2026-08-20, during the v5.1.0 Gate 10 run, where this fired while a clean-venv install and probe suite ran alongside it. Three serial re-runs were green."
+        "why": "Two tests in this file bind ports and fail when another suite holds them. Documented in CLAUDE.md as a pre-existing race, not a code bug. What is established: a serial full-suite run is green (2/2 at v5.4.0, 363 tests each). What is NOT established is that they pass individually -- running the file alone failed 1 in 7 at v5.4.0. So the check that discriminates a flake from a regression here is a serial FULL-SUITE re-run; a green single-file run is weaker evidence than it looks, and a red one is not yet a finding.",
+        "recorded": "2026-08-20, during the v5.1.0 Gate 10 run, where this fired while a clean-venv install and probe suite ran alongside it. Three serial re-runs were green. Re-examined 2026-08-25 at v5.4.0 Gate 10a, twelve runs: 2/2 full serial suites green, the file alone 6/7, the single test 3/3, and 3/3 green against the installed 5.0.0 -- which is why the 'pass individually' half of the original reason was withdrawn above."
       }
     ]
   }

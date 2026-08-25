@@ -14,11 +14,13 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and widening: `.venv` is at 5.0.0, `src/` is at 5.1.0** (re-checked
-2026-08-19 with `.venv/Scripts/nodus.exe --version`, at the 5.1.0 cut). Forgetting the prefix
-gets you five-releases-old behaviour — no `@exactly_once` forgery fix, no call-depth cap,
-doubled `main()` on cached runs, and `run_source` still running the file its `filename`
-happens to name (#521). The symptom is behaviour that contradicts the code you are reading.
+**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.4.0** (re-checked
+2026-08-25 with `.venv/Scripts/nodus.exe --version`, after the 5.4.0 cut). Forgetting the
+prefix gets you a runtime **eight releases** behind — no `@exactly_once` forgery fix, no
+call-depth cap, doubled `main()` on cached runs, `run_source` still running the file its
+`filename` happens to name (#521), `nodus graph` still executing the file it inspects
+(#400), and none of the resume-durability cluster. The symptom is behaviour that
+contradicts the code you are reading.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -281,9 +283,9 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,336 tests collected** (2026-08-20, at the 5.1.0 cut). Coverage baseline: **76.82%** overall (20,184 stmts) —
-that figure was measured 2026-08-07 at 1,878 tests and has **not** been re-measured since the
-v5.0.0 work, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
+**2,725 tests collected** (`--collect-only`, 2026-08-25, after the 5.4.0 cut). Coverage
+baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
+tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
 
 **Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
@@ -304,7 +306,7 @@ on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing eac
 This bit twice in one session, and both times the first reading was "the #376 race class is back."
 It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
 your own change, check whether anything else is running: `TaskStop` the background job, then
-re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 239 blocks and writes to
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 245 blocks and writes to
 the store) — do not run it alongside the suite.
 
 **How much of the "flaky machine" is actually this is not established**, and concurrency does
@@ -517,9 +519,9 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 ```
 
 - `--static`: verifies documented symbols exist in the codebase (**135 symbols**
-  as of 2026-08-17)
+  across 38 documents, as of 2026-08-25)
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (**239 blocks**); expects 0 failures with the `.nodusgate-allow`
+  in docs (**245 blocks**); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
@@ -704,7 +706,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **fourteen** times across the v5.0.0–5.1.0
+of several paths goes through**. It has now surfaced **nineteen** times across the v5.0.0–5.4.0
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -726,11 +728,24 @@ Instances, all confirmed by reading the code rather than inferred:
 | #487 | which node declares a name | four sites enumerated declaration forms; three had never heard of `goal … over …` |
 | #518 | workflow-state rewriting | `_StateRewriter` knew `=`, `x[i] =`, `x.f =` — and not `+=`, so it read `nil` |
 | #521 | which program `run_source` runs | the `isfile` branch **and** the path+mtime bytecode cache, read **and** write |
+| #473 | the capability policy | consulted for the **four sandbox groups only**; `tool_call`, `syscall`, `agent_call` and the whole memory store were invisible to it |
+| #457 | module-memo identity | **three** memo-consult sites (`_build_metadata`, `_parse_module`, `_load_module`), each deciding for itself |
+| #476 | a run's lifecycle | a run is **two stores** (`.nodus/graphs/` + the workflow store) and each was cleaned without the other — in **both** directions |
+| #400 | does inspection execute | `nodus graph` **and** `graph show`, plus the bytecode cache underneath — the #521 shape again |
+| #401 | does static analysis enter a step body | **two** walkers skipped it: the type analyzer and the LSP diagnostics engine |
 
-The last three all landed in 5.1.0, and two of them are *three of four* — an enumeration of
-node types with one member missing. The fix that generalises is not "add the case": it is to
-**name the set once** (`FLOW_DECLARATIONS`, `ASSIGNMENT_FORMS`, `TASK_STATUSES`) and make a
-test drive off the tuple, so a fifth form fails the suite until somebody handles it.
+**The tail of this table is not "more of the same" — read what each one adds.** #518/#521 are
+*three of four*: an enumeration of node types with one member missing. #457 and #401 are the
+plainest form — N sites asking one question, N answers. #476 is the one to study if you think
+you have found the shape and fixed it: the asymmetry ran in **both** directions, so fixing
+"cleanup leaves records" left "the record cap leaves state" untouched and still a bug.
+
+The fix that generalises is not "add the case": it is to **name the set once**
+(`FLOW_DECLARATIONS`, `ASSIGNMENT_FORMS`, `TASK_STATUSES`) and make a test drive off the tuple,
+so a fifth form fails the suite until somebody handles it. #415 shows the same instinct applied
+*before* a defect exists: adding a catch-less `try` made `catch` fields nullable, and rather
+than trust that, the fix enumerated the **seven** consumers reading those fields and put each
+under a regression test — the shape prevented rather than discovered.
 
 **#521 is worth studying as the fullest example.** Three paths shared one question, and each
 had to be found separately: the explicit branch, the cache *read*, and the cache *write* —
@@ -922,12 +937,27 @@ Measure if you need one. The bound itself is still open in #380.
 
 The default store root is **CWD-relative**, so anything running a workflow from
 the repo root writes there. As of #380 the suite and the doc gate clean up after
-themselves (`tests/conftest.py`, `tools/nodus_gate/runtime_phase.py`), so this
-should stay near zero — check it before blaming a flake on timing:
+themselves (`tests/conftest.py`, `tools/nodus_gate/runtime_phase.py`) — check this
+before blaming a flake on timing:
 
 ```powershell
 ls .nodus/workflow_framework/runs | Measure-Object -Line
+ls .nodus/graphs | Measure-Object -Line
 ```
+
+**Both cleanups cover the run records only. Nothing cleans `.nodus/graphs/`** —
+`conftest.py` deletes run files the session added, and the gate redirects
+`NODUS_WORKFLOW_STORE_ROOT`, which does not relocate the graph root. Measured
+2026-08-25: one `nodus_gate --runtime` run added **0** run records and **67**
+graph-state files, against an accumulated 162 records and 4,557 graphs. So do not
+read "near zero" into either number, and expect the graphs half to grow every run.
+This is the #476 shape — a run is two stores — recurring in the *infrastructure*
+after the product half was fixed, and the root cause is **#585**: `_GRAPH_ROOT` is a
+hardcoded module constant, so `NODUS_WORKFLOW_STORE_ROOT` relocates one half of a run
+and nothing relocates the other. Clearing what has accumulated is
+`nodus workflow cleanup --force` (the 30-day default retention will not touch anything
+from this week). Do not "fix" the accumulation by adding a second cleanup to
+`conftest.py` — that rebuilds the two-halves-maintained-separately shape one level up.
 
 `rm -rf .nodus/workflow_framework/runs` is safe **in this repo's root** (test
 artifacts only) — but it is not a general cleanup: a run is split across that
@@ -1169,11 +1199,13 @@ not imply recompilation.
 No behaviour change, no new syntax. Upgrading from 5.0.0 requires nothing. It exists because five
 companions capped `nodus-lang<5.0.0` and made 5.0.0 unadoptable; see the ecosystem section.
 
-**`README.md` still advertises 4.2.0 as the stable version** (its banner and its "Recent:"
-paragraph) — left through the 5.0.0 cut deliberately, and the first task of the next cycle.
-Checked 2026-08-17: it is the **only** doc making a stale *current-version* claim; the 4.2.0
-mentions in `RELEASE_GATES.md` and `real-world-integration.md` are historical and correct as
-written, and the `docs/evals/v4.2.0/` hits are that release's own records.
+**`README.md` is current, and the fix it got is the pattern to copy.** It advertised 4.2.0
+through the whole 5.0.0 cycle; the repair was not "remember to update it" but to make the
+banner name **no version at all** and to register the "Recent:" paragraph as a claim in
+`tools/version_claims.json`, so `nodus_gate --versions` now fails on it rather than a reader
+noticing. Re-checked 2026-08-25: 11/11 registered claims agree with 5.4.0. The 4.2.0 mentions
+in `RELEASE_GATES.md` and `real-world-integration.md` are historical and correct as written,
+and the `docs/evals/v4.2.0/` hits are that release's own records.
 
 **A gate checks version strings now** — `nodus_gate --versions`, in `--all`. This paragraph
 used to read *"No gate checks version strings"*, which is why `COMPATIBILITY.md` and
