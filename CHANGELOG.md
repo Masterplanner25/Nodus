@@ -176,6 +176,20 @@
   `workflow_rebuild_unpinned` event. With #469's pinning, this closes #497: one
   rule for every new run, and both surviving paths announce themselves.
 
+### Tooling
+
+- **#562: the closed-issues gate binds a marker only when it is a comment.**
+  The scanner matched `# closes: #N`-shaped text anywhere in a file and took
+  the first occurrence, so a docstring *mentioning* the marker convention
+  bound the issue to whatever `def` followed the docstring — `-k` then
+  selected nothing and a passing regression suite reported as failed (the
+  second false verdict from whole-file matching; the first was the `setUp`
+  binding). The scan is tokenizer-backed now: only COMMENT tokens carry
+  markers, prose and string literals are inert, and a file that does not
+  tokenize falls back to the old behaviour rather than silently finding no
+  test. The gate's own suite gains the docstring-trap case this shipped
+  with.
+
 ## [5.3.0] - 2026-08-25
 
 
