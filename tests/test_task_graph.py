@@ -51,14 +51,35 @@ class TaskGraphTests(unittest.TestCase):
         whenever the garbage collector emitted a ResourceWarning for objects
         an *earlier* test leaked — same commit green one CI run, red the next.
         Interpreter warning chatter is filtered; anything else still fails.
+
+        A warning is a **block**, not a line, which #452's first filter missed.
+        `warnings` prints the header, then the offending *source line* indented,
+        then the tracemalloc hint:
+
+            /path/asyncio/locks.py:23: ResourceWarning: unclosed event loop
+              self._waiters = _deque()
+            ResourceWarning: Enable tracemalloc to get the object allocation traceback
+
+        Only the first and third contain "Warning", so the middle line survived
+        a line-wise filter and failed this test on CI with
+        `['  self._waiters = _deque()'] != []` — a docs-only commit, red on one
+        runner and green on the identical job beside it. Filtering by line was
+        the wrong unit; an indented continuation goes with the header above it.
         """
-        own = [
-            line
-            for line in err.strip().splitlines()
-            if line.strip()
-            and "Warning" not in line
-            and "Enable tracemalloc" not in line
-        ]
+        own: list[str] = []
+        in_warning = False
+        for line in err.strip().splitlines():
+            if not line.strip():
+                continue
+            is_header = "Warning" in line or "Enable tracemalloc" in line
+            if is_header:
+                in_warning = True
+                continue
+            # An indented line directly under a warning is its source echo.
+            if in_warning and line[:1].isspace():
+                continue
+            in_warning = False
+            own.append(line)
         self.assertEqual(own, [])
 
     def test_dependency_ordering(self):

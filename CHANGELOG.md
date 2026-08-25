@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#452 follow-up: `test_task_yield`'s stderr filter reads warning *blocks*, not
+  lines.** The #452 fix dropped stderr lines containing `Warning`, which is two of
+  the three lines `warnings` prints — the header and the tracemalloc hint. The
+  middle one is the offending *source line*, indented and containing no such word,
+  so it survived and failed the test with
+  `['  self._waiters = _deque()'] != []`. Caught on a docs-only commit, red on one
+  CI job and green on the identical one beside it. An indented continuation now
+  goes with the header above it; unindented stderr still fails the assertion,
+  including immediately after a warning block.
+
 ### Fixes
 
 - **#394: a workflow step body runs only when the graph runner starts it.**

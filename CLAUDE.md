@@ -727,7 +727,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **nineteen** times across the v5.0.0–5.4.0
+of several paths goes through**. It has now surfaced **twenty** times across the v5.0.0–5.4.0
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -754,6 +754,21 @@ Instances, all confirmed by reading the code rather than inferred:
 | #476 | a run's lifecycle | a run is **two stores** (`.nodus/graphs/` + the workflow store) and each was cleaned without the other — in **both** directions |
 | #400 | does inspection execute | `nodus graph` **and** `graph show`, plus the bytecode cache underneath — the #521 shape again |
 | #401 | does static analysis enter a step body | **two** walkers skipped it: the type analyzer and the LSP diagnostics engine |
+| #394 | may this closure be entered | **four** doors, one of them outside `vm.py` — and then the bytecode cache, which dropped the mark and reopened it on run 2 |
+
+**#394 is the fullest worked example — read it before the older ones.** Three things it
+teaches that the rest only hint at. **Count the doors before designing**: the issue implied
+one, and an AST sweep for every `Frame(` built over a caller-supplied closure found four —
+including the coroutine's first resume, which lives in `builtins/coroutine.py`, is invisible
+to a `grep` of `vm.py`, and is the door *the runner itself* uses. **Never gate on which path
+called**: "refuse `call_closure`, allow `run_closure`" mistakes the door for the authority,
+since `run_closure` has two dozen callers a guest can reach — `std:retry`, `std:test`, tool
+handlers, the iterator protocol. The fix is a positive capability the owner grants for one
+entry. And **the bytecode cache is always one of the paths**: the mark survived compilation
+but not serialization, so the bypass returned on the *second* run of any script — refused
+cold, allowed warm. That was found by running the repro twice, not by reading it, which is
+now the third time the cache has been a sibling path (#521, #400, #394). **Run the repro a
+second time, always.**
 
 **The tail of this table is not "more of the same" — read what each one adds.** #518/#521 are
 *three of four*: an enumeration of node types with one member missing. #457 and #401 are the
