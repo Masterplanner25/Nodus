@@ -214,6 +214,32 @@ no authority, grouped by why, and a test requires the two sets to cover
 which side it is on — the point being that "is this governed?" stops depending on
 whether anyone remembered.
 
+### 3.3.1b Syscalls are gated twice
+
+A `syscall(...)` reaches the policy **twice**, and the two are different intents:
+
+| | Capability | Refuses |
+|---|---|---|
+| the `syscall` builtin | `syscall` | every syscall, whatever it is |
+| the spec's own field | `SyscallSpec.capability` — e.g. `memory.write` | that authority, however it is spelled |
+
+```
+deny memory.write  -> saw ['syscall', 'memory.write']   Blocked
+deny syscall       -> saw ['syscall']                   Blocked (never reaches the spec gate)
+deny nothing       -> saw ['syscall', 'memory.write', 'syscall', 'memory.read']
+```
+
+So "no syscalls at all" and "no memory writes, whether through `memory_put` or
+`sys.v1.memory.put`" are both expressible. A refusal at either gate raises with
+`kind == "sandbox"`; it is **not** returned as a `{"status": "error"}` envelope,
+which would make a capability refusal indistinguishable from a handler that
+failed.
+
+`SyscallSpec.capability` was published by `syscall_list()` and read by nothing
+from v4.0 through v5.2.0 (#478). `register_syscall` now refuses a spec whose
+capability is missing or outside `ALL_CAPABILITIES`, so what the registry
+advertises is always something a policy can act on.
+
 ### 3.3.2 Reaching the live VM
 
 `runtime.active_vm()` returns the VM from the most recent run, or `None` before
