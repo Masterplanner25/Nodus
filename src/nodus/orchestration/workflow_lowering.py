@@ -507,13 +507,19 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             dep_nodes.append(dep_task)
         resolved[step_name].dependencies = dep_nodes
 
+    # #499: the stored source is the cross-process rebuild handle -- and a
+    # verbatim copy of the whole module, persisted under `.nodus/graphs/`. An
+    # embedder running code it did not author can opt out
+    # (`NodusRuntime(persist_workflow_source=False)`); the marker below keeps
+    # the rebuild's explanation accurate when it later reads from disk.
+    _persist_source = getattr(vm, "persist_workflow_source", True)
     metadata = {
         "workflow_name": name,
         "execution_kind": kind,
         "step_to_task": step_to_task,
         "task_to_step": {task_id: step for step, task_id in step_to_task.items()},
         "workflow_source_path": getattr(vm, "source_path", None),
-        "workflow_source_code": getattr(vm, "source_code", None),
+        "workflow_source_code": getattr(vm, "source_code", None) if _persist_source else None,
         # #470: the shape the run was planned against, as data. A resume rebuilds
         # the graph by re-executing source; if the rebuilt shape differs, applying
         # the persisted per-task state manufactures false diagnoses (a "dependency
@@ -522,6 +528,8 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         "workflow_topology": graph_topology(tasks),
         "state_policies": _state_policies(vm, workflow_value, name),
     }
+    if not _persist_source:
+        metadata["workflow_source_persisted"] = False
     if kind == "goal":
         metadata["goal_name"] = name
     if init_state:

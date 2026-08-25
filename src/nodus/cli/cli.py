@@ -651,16 +651,28 @@ def _run_resume_goal(graph_id: str, checkpoint: str | None) -> int:
     return 0
 
 
-def _default_retention_seconds() -> int | None:
+# #499: `nodus workflow cleanup` with no retention configured used to remove
+# nothing at all -- unset meant *forever*, so the store (which persists every
+# run's whole program source) grew without bound unless an operator both knew
+# about the env var and set it. A finite default makes the explicit cleanup
+# command meaningful out of the box; nothing prunes automatically -- cleanup
+# still only runs when invoked. 30 days, matching the store's
+# `terminal_max_age_days`. `NODUS_WORKFLOW_RETENTION_SECONDS=0` disables
+# retention-based removal (only `--force` removes then); an invalid or
+# negative value falls back to the default rather than silently disabling.
+DEFAULT_WORKFLOW_RETENTION_SECONDS = 30 * 24 * 60 * 60
+
+
+def _default_retention_seconds() -> int:
     raw = os.environ.get("NODUS_WORKFLOW_RETENTION_SECONDS")
     if raw is None:
-        return None
+        return DEFAULT_WORKFLOW_RETENTION_SECONDS
     try:
         value = int(raw)
     except ValueError:
-        return None
+        return DEFAULT_WORKFLOW_RETENTION_SECONDS
     if value < 0:
-        return None
+        return DEFAULT_WORKFLOW_RETENTION_SECONDS
     return value
 
 
@@ -771,12 +783,18 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
             if force:
                 should_remove = True
             elif threshold and snapshot.get("status") in ("completed", "failed", "dead_lettered"):
-                updated = snapshot.get("updated_at") or 0
+                # #499: age comes from the state file's mtime, not the stored
+                # `updated_at` -- that field is `runtime_time_ms()`, monotonic
+                # milliseconds since *process start*, so comparing it against
+                # wall-clock `now_ms` made every terminal run look ancient and
+                # any configured retention removed everything regardless of
+                # age. Latent while retention was opt-in-and-unset; load-bearing
+                # now that there is a default.
                 try:
-                    updated_ms = int(updated)
-                except (TypeError, ValueError):
-                    updated_ms = 0
-                if updated_ms and now_ms - updated_ms >= threshold * 1000:
+                    mtime_ms = os.path.getmtime(_task_graph._graph_state_path(graph_id)) * 1000.0
+                except OSError:
+                    mtime_ms = 0.0
+                if mtime_ms and now_ms - mtime_ms >= threshold * 1000:
                     should_remove = True
             if should_remove:
                 _task_graph.delete_graph_state(graph_id)

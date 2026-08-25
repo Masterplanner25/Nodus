@@ -815,6 +815,18 @@ $ nodus workflow resume <graph_id> --checkpoint after-phase1
 > (`Could not rebuild run '<id>': …`). Before #399 every rebuild failure was
 > reported as `Unknown graph`, including for runs that plainly existed.
 
+> **A workflow run persists your whole program, verbatim.** The rebuild handle
+> that makes cross-process resume work is the module source itself, stored in
+> plaintext in `.nodus/graphs/<graph_id>.json` — everything in the file,
+> including string literals, comments, and functions unrelated to the workflow
+> (#499). The directory follows the working directory, and its contents are
+> kept until `nodus workflow cleanup` removes them (terminal runs older than
+> 30 days by default; `NODUS_WORKFLOW_RETENTION_SECONDS` overrides, `=0`
+> disables). An embedder running code it did not author can opt out with
+> `NodusRuntime(persist_workflow_source=False)` — a `run_file` run then
+> resumes from the file as it is on disk, and a `run_source` run cannot be
+> resumed in another process.
+
 > **A resume replays the source stored with the run — not the file on disk.**
 > Edits made between the run and the resume are not in the resume. When the
 > file has changed, the resume says so: a warning on stderr, a

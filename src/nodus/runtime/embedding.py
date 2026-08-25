@@ -273,6 +273,7 @@ class NodusRuntime:
         on_error: Callable | None = None,
         coroutine_timeout_ms: int | None = None,
         event_sinks: list | None = None,
+        persist_workflow_source: bool = True,
     ) -> None:
         """Create a new embedded Nodus runtime.
 
@@ -422,6 +423,14 @@ class NodusRuntime:
         # which is the pre-existing behaviour. A step's `timeout_ms` still wins
         # when tighter; this covers agent_call() made outside any step.
         self.agent_timeout_ms = agent_timeout_ms
+        # #499: whether a workflow run persists the guest's whole program source
+        # into `.nodus/graphs/` (the cross-process rebuild handle, #469). That
+        # copy can carry anything the source carries -- tokens in string
+        # literals, customer data in fixtures -- so an embedder running code it
+        # did not author can turn it off. The cost is stated where it lands: a
+        # `run_file` run then resumes from the file *as it is on disk*, and a
+        # `run_source` run cannot be resumed in another process at all.
+        self.persist_workflow_source = persist_workflow_source
         # Per-runtime memory and agent state (#185).
         #
         # Both used to be process-global, so two runtimes in one process shared
@@ -933,6 +942,7 @@ class NodusRuntime:
         # #424: the default agent deadline rides on the VM for the same reason —
         # `call_agent` is handed the VM and nothing else.
         vm.agent_timeout_ms = self.agent_timeout_ms
+        vm.persist_workflow_source = self.persist_workflow_source
         vm.memory_store = self._memory_store
         vm.agent_registry = self.agent_registry
         vm.workflow_runner = self.workflow_runner

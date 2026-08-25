@@ -19,6 +19,25 @@
 
 ### Fixes
 
+- **#499: source persistence is disclosed, bounded, and controllable.** Every
+  workflow run persists the whole module source, verbatim, into
+  `.nodus/graphs/` — it is the cross-process rebuild handle, so it cannot be
+  removed, but it was undocumented, unpruned by default, and mandatory. Now:
+  the workflow guide and `SECURITY_POSTURE.md` §6b say it happens (including
+  the deliberate asymmetry with the Floor's no-guest-writes rule);
+  `nodus workflow cleanup` has a finite default retention — terminal runs
+  older than 30 days (`NODUS_WORKFLOW_RETENTION_SECONDS` overrides, `=0`
+  disables; nothing prunes automatically, cleanup still only runs when
+  invoked); and an embedder running code it did not author can opt out with
+  `NodusRuntime(persist_workflow_source=False)` — a `run_file` run then
+  resumes from the file as it is on disk (the unpinned-rebuild warning names
+  the opt-out rather than claiming the run "predates source recording"), and
+  a `run_source` run is not resumable across processes. Found while staging
+  the default: cleanup's age test compared wall-clock now against the
+  process-monotonic `updated_at`, so any configured retention removed every
+  terminal run regardless of age — latent while retention was opt-in and
+  unset; age now comes from the state file's mtime.
+
 - **#501: a nested run knows where it came from, and cleanup follows the
   link.** A `run_graph`/`run_workflow` call inside a workflow step creates a
   separate run whose record was an orphan: metadata `{}`, no reference in

@@ -188,6 +188,36 @@ The cache checksum protects against accidental corruption, not against a privile
 
 ---
 
+## 6b. Workflow store source persistence (#499)
+
+Every workflow run persists **the whole program source, verbatim**, into
+`.nodus/graphs/<graph_id>.json` — it is the rebuild handle that makes
+cross-process resume work (`_rebuild_workflow_graph` recompiles it). The copy
+is plaintext, lands in the CWD-relative `.nodus/` tree, and carries everything
+the module carries: string literals (including any hardcoded secret), comments,
+unrelated functions.
+
+Controls:
+
+- `nodus workflow cleanup` removes terminal runs older than 30 days by default
+  (`NODUS_WORKFLOW_RETENTION_SECONDS` overrides; `=0` disables retention-based
+  removal). Nothing prunes automatically — cleanup runs when invoked.
+- An embedder running code it did not author can opt out per runtime:
+  `NodusRuntime(persist_workflow_source=False)`. Resume then degrades as
+  documented: a `run_file` run rebuilds from the file as it is on disk, and a
+  `run_source` run is not resumable across processes.
+
+**Asymmetry with the Floor, stated deliberately:** `DEFAULT_FLOOR` makes it
+unbypassable that a Nodus *program* cannot write into `.nodus/` — while the
+*runtime* writes that program's own source there on its behalf. The Floor's
+rule protects the store's integrity from the guest; the persistence above is
+the host-side runtime writing its own bookkeeping. They are different actors,
+which is why this is not a contradiction — but a host that considers guest
+source sensitive should treat the workflow store with the same care as the
+source itself, or opt out.
+
+---
+
 ## 7. HTTP server mode security
 
 Server mode (`nodus-lang[server]`, using FastAPI/Uvicorn) enforces bearer-token
