@@ -113,6 +113,12 @@ class TaskNode:
     retry_classification: str | None = None
     cache: bool = False
     cache_key: str | None = None
+    # #475: `with { allow_failure: true }` -- this step failing (after its
+    # retries) does not fail the run. Its status stays `failed` (the truth),
+    # dependents are poisoned exactly as before unless they opted in via
+    # `on: ["failed"]`; only the run's verdict and the `failed` list change,
+    # with the step reported under `tolerated` instead.
+    allow_failure: bool = False
 
 
 @dataclass
@@ -1144,8 +1150,30 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         snapshot, and `failed` named only the first casualty.
         """
         payload["steps"] = step_results()
-        payload["failed"] = [failed_id(task) for task in tasks if task.status == "failed"]
+        payload["failed"] = [
+            failed_id(task)
+            for task in tasks
+            if task.status == "failed" and not task.allow_failure
+        ]
+        _add_tolerated(payload)
         return payload
+
+    def _add_tolerated(payload: dict) -> None:
+        """List tolerated failures under their own key (#475).
+
+        Not in `failed` -- a caller checking `failed == []` asked "did the run
+        fail", and a tolerated failure is precisely the one that must not
+        answer yes. Present only when non-empty, so result maps are unchanged
+        for workflows that never declare `allow_failure`. The step's *status*
+        still says `failed`; this key is the verdict, not the history.
+        """
+        tolerated = [
+            failed_id(task)
+            for task in tasks
+            if task.status == "failed" and task.allow_failure
+        ]
+        if tolerated:
+            payload["tolerated"] = tolerated
 
     def report_write_conflicts() -> None:
         """Say so when two concurrent steps wrote the same state key.
@@ -1765,6 +1793,34 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task.finished_at = runtime_time_ms()
         task.error = str(err)
         task.retry_classification = "exhausted" if task.max_retries > 0 else "non_retryable"
+        if task.allow_failure:
+            # #475: the step declared its failure tolerable. The status above
+            # stays `failed` -- what happened is not rewritten -- and dependents
+            # are poisoned or satisfied exactly as for any failure; what does
+            # NOT happen is the run's verdict: no failure payload, no
+            # workflow_fail event, and scheduling keeps going (spawn_task holds
+            # new work back only while `failed` is set).
+            vm.event_bus.emit_event(
+                "task_failure_tolerated",
+                name=task.task_id,
+                data={"message": str(err), "step": task.step_name},
+            )
+            _persist_graph_state(
+                graph,
+                tasks,
+                attempts,
+                results,
+                "running",
+                pending_queue,
+                task_values,
+                workflow_state,
+                checkpoints,
+                engine_checkpoints,
+                vm,
+            )
+            vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
+            schedule_ready()
+            return False
         if failed is not None:
             # A second failure while the run drains. The first one stays
             # authoritative for `error` and `retry`; the full set of failed steps
@@ -1853,6 +1909,12 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 _remove_task_from_pending(task.task_id)
             elif saved.get("state") in {"failed"}:
                 task.status = "failed"
+                if task.allow_failure:
+                    # #475: a tolerated failure is settled, not a run verdict.
+                    # Rebuilding the failure payload here would turn a resume of
+                    # a run that completed *despite* this step into a failed run.
+                    _remove_task_from_pending(task.task_id)
+                    continue
                 failed = {
                     "tasks": task_values,
                     "steps": step_results(),
@@ -1961,6 +2023,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         "cache_hits": cache_hits,
         "graph_id": graph.graph_id,
     }
+    _add_tolerated(payload)
     payload.update(workflow_result_payload())
     return with_statuses(payload)
 

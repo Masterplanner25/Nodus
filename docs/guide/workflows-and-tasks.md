@@ -429,7 +429,24 @@ nothing to stderr — measured, both streams, 2026-08-16.
 **Step options** (`with { ... }`): `retries` (max retry count), `retry_delay_ms`
 (ms between retries), `timeout_ms` (per-step timeout), `cache` (skip on re-run
 if result is cached), `cache_key` (override the cache key), `on` (which
-dependency outcomes satisfy this step's join — see below).
+dependency outcomes satisfy this step's join — see below), `allow_failure`
+(this step failing, after its retries, does not fail the run — see §4.2).
+
+### 4.2 `allow_failure` — a step the run tolerates failing
+
+`with { allow_failure: true }` declares that this step's failure (after its
+retries are exhausted) is not the run's failure (#475). The semantics keep
+history and verdict separate:
+
+- the step's **status** still says `failed` — what happened is not rewritten;
+- **dependents are unaffected by the tolerance**: a default join becomes
+  `upstream_failed`, and `on: ["failed"]` fires, exactly as for any failure —
+  tolerance is the run's verdict, not downstream readiness;
+- the **run completes**, `r["failed"]` stays `[]`, and the step is listed under
+  `r["tolerated"]` instead (a key present only when something was tolerated).
+
+Use it for side-quests — a notification, a best-effort cache warm, an optional
+enrichment — not for steps whose value a dependent needs.
 
 ### 4.1 `on` — running a step when something failed
 
