@@ -39,6 +39,12 @@ class ModuleBytecode:
                     ],
                     "display_name": fn.display_name,
                     "local_slots": dict(fn.local_slots) if fn.local_slots else {},
+                    # #394: the step mark must survive the cache. Guarding only
+                    # the compilation path left the bypass reachable on the
+                    # *second* run of any script -- the same sibling-path shape
+                    # as #521 and #400, where the bytecode cache was a third
+                    # route to a question two other places already answered.
+                    "step_owner": fn.step_owner,
                 }
                 for name, fn in self.functions.items()
             },
@@ -85,6 +91,8 @@ class ModuleBytecode:
                     upvalues=upvalues,
                     display_name=str(raw.get("display_name", key)),
                     local_slots=local_slots,
+                    step_owner=(raw["step_owner"]
+                                if isinstance(raw.get("step_owner"), str) else None),
                 )
 
         raw_code_locs = payload.get("code_locs", [])

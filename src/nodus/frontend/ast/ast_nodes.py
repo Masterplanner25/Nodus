@@ -389,6 +389,7 @@ class FnDef(Base):
     return_type: str | None = None
     exported: bool = False
     annotations: list = field(default_factory=list)  # list[Annotation]
+    step_owner: str | None = None  # #394, see FnExpr
 
 
 @dataclass
@@ -396,6 +397,9 @@ class FnExpr(Base):
     params: list[Param]
     body: Block
     return_type: str | None = None
+    # #394: propagated to FunctionInfo.step_owner. Set only by the workflow/goal
+    # lowering -- no surface syntax produces it.
+    step_owner: str | None = None
 
 
 @dataclass

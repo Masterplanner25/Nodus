@@ -43,7 +43,7 @@ changes that conclusion.
 |---|---|---|
 | 06 | No model anywhere in the core | grep for openai/anthropic/llm/inference across `src/nodus/`: **0 hits** |
 | 15 | No cancellation | grep `cancel` across `src/nodus/`: **1 hit**, `print("Login cancelled.")` → **#395** |
-| 18 | Step ordering is bypassable | Executed: `build["steps"][1]["fn"](nil)` ran `test` with `lint` never having run → **#394** |
+| 18 | Step ordering is bypassable | Executed: `build["steps"][1]["fn"](nil)` ran `test` with `lint` never having run → **#394**. **Correct when made; fixed since** — a step body is now enterable only by the graph runner, at all four sites that can enter a closure |
 | 04 | No orchestration opcodes | See below — verified from emitted bytecode, not from the dispatch table |
 | 04 | `workflow`/`goal` lower to a plain map before compilation | `workflow_lowering.py:78`; confirmed by printing `keys(build)` from guest code |
 | 13 | A goal's completion is structural, never semantic | Confirmed — nothing evaluates an objective |
@@ -175,7 +175,7 @@ execution"* — agrees with Audit 01's on the substance.
 | F | Claim | Reality |
 |---|---|---|
 | **F3** | *"`goal` is `workflow` with a different marker string… same execution path"* | The same error Audit 01 made at §13. `task_graph.py:1101` branches on `execution_kind` for retry: workflow **1 attempt**, goal **3**. See #393. **Wrong when made; true since the #393 fix on 2026-08-16** — the verdict stands as a record of what held at commit `3376702`, and the finding is why the branch was found and removed |
-| **F9** | *"Dependency ordering… none is bypassable from Nodus code. This is the project's strongest and most defensible claim."* | Ordering **is** bypassable — `build["steps"][1]["fn"](nil)` runs a step whose dependency never ran (#394). Audit 01 got this right at §18 |
+| **F9** | *"Dependency ordering… none is bypassable from Nodus code. This is the project's strongest and most defensible claim."* | Ordering **was** bypassable — `build["steps"][1]["fn"](nil)` ran a step whose dependency never ran (#394). Audit 01 got this right at §18. **Wrong when made; true since the #394 fix** — the claim the audit asserted without checking is now the one the runtime makes, enforced at every closure-entry site and pinned by `tests/test_step_entry_guard.py`. Worth keeping as a record that a *correct-sounding* claim was, at the time, unverified |
 | **F2** | *"The full 39-opcode set"* | **49.** Audit 01 said 43. Two auditors, same commit, two different undercounts |
 
 ### Beyond F8 — what chasing it found

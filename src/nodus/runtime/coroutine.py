@@ -51,6 +51,12 @@ class Coroutine:
     # is resumed once more to unwind before the error is delivered.
     cancelling: object = None
     workflow_context: dict | None = None
+    # #394: set by the graph runner on the coroutine it creates for a step, and
+    # by nothing else. A guest's own `coroutine(step_fn)` carries False, so the
+    # coroutine door into a step body is closed while the runner's stays open.
+    # It rides on the coroutine for the same reason `workflow_context` does --
+    # the runner creates it here and the scheduler enters the closure later.
+    step_authorized: bool = False
     # ASYNC-MOD-001 (#105): the module execution context (code/functions/globals/
     # ...) this coroutine should run in. Captured at spawn and on every suspend,
     # restored on resume — so a coroutine suspended inside a cross-module call

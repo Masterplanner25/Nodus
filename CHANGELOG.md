@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#394: a workflow step body runs only when the graph runner starts it.**
+  `step B after A` was the strongest ordering claim the runtime made and it held
+  only for execution routed through `run_workflow`/`run_goal`: a lowered flow is
+  an ordinary map, its `steps` an ordinary list, and each step's `fn` an ordinary
+  callable, so `build["steps"][1]["fn"](nil)` ran `test` with `lint` never having
+  run. `I-WFLOW-04` described `ready_tasks()` while the document's preamble
+  defines an invariant as a guarantee made *to scripts* — so ordering was a very
+  good default wearing the word "invariant". A step's compiled `FunctionInfo` now
+  carries `step_owner`, set by the lowering and reachable from no surface syntax;
+  the runner grants authorization for one specific entry, once `ready_tasks()` has
+  already cleared the step; and the four sites that can enter a caller-supplied
+  closure all consult one guard. Calling a step any other way raises
+  `Workflow step 'flow.step' cannot be called directly`. The flow value's shape is
+  unchanged — `keys(build)` and `build["steps"]` still read — so nothing breaks
+  but the bypass. Authorization is deliberately a capability the runner grants
+  rather than a property of the calling path: gating on "is a workflow context
+  active" would admit a step calling a *sibling's* `fn`, and gating on
+  `run_closure` vs `call_closure` would admit anything a guest can hand a closure
+  to, `run_closure` having two dozen callers. `tests/test_step_entry_guard.py`
+  asserts on the source as well as the behaviour, enumerating every frame built
+  over a caller-supplied closure so a fifth door fails the suite.
+
+  The mark also had to survive the **bytecode cache**, and did not at first:
+  `FunctionInfo` is serialized into the cached module, `step_owner` was not among
+  the fields written, and so the bypass came back on the *second* run of any
+  script — refused cold, allowed warm. Found by running it twice rather than by
+  reading it, the same way #521's cache write was. `step_owner` is now carried
+  across all three `FunctionInfo` rebuilds outside the compiler (the cache
+  round-trip and the optimizer's two address remappers), each pinned by a test.
+
 ## [5.4.0] - 2026-08-25
 
 ### Added

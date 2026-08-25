@@ -33,6 +33,21 @@ def register(vm, registry) -> None:
             vm.runtime_error("runtime", "Cannot resume finished coroutine")
         if coroutine.state == "running":
             vm.runtime_error("runtime", "Cannot resume running coroutine")
+        # #394: door 4 of 4, and the one the graph runner actually uses -- a step
+        # runs in its own coroutine (I-WFLOW-03), so the runner's
+        # `Coroutine(task.function)` carries authorization and a guest's
+        # `coroutine(step_fn)` does not.
+        #
+        # Placed before *any* state is touched, deliberately. Raising after
+        # `state = "running"` and `load_coroutine_context` left the coroutine
+        # half-started and the caller's module context unrestored: the scheduler
+        # kept re-queueing it and `run_loop()` spun until the execution deadline,
+        # so the refusal surfaced as "Execution timed out" instead of the message
+        # below. A guard that corrupts what it refuses is worse than no guard.
+        vm.guard_step_entry(
+            coroutine.closure,
+            authorized=getattr(coroutine, "step_authorized", False),
+        )
 
         caller_context = vm.save_execution_context()
         # ASYNC-MOD-001: resuming a coroutine restores ITS module context via

@@ -1658,7 +1658,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if dispatcher is not None:
             worker_mode = True
             def _execute():
-                return vm.run_closure(task.function, args, workflow_context=context)
+                # #394: the runner is the only caller that grants this.
+                return vm.run_closure(task.function, args, workflow_context=context,
+                                      step_authorized=True)
             with worker_lock:
                 active_workers += 1
 
@@ -1734,6 +1736,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             threading.Thread(target=_run_worker, daemon=True).start()
             return
         coroutine = Coroutine(task.function)
+        # #394: authorization for exactly this step's body, granted here and
+        # nowhere else. `ready_tasks()` has already established that every
+        # declared dependency completed, so the grant *is* the ordering
+        # guarantee rather than a restatement of it.
+        coroutine.step_authorized = True
         coroutine.workflow_context = context
         coroutine.initial_args = args
         coroutine.name = task.task_id
