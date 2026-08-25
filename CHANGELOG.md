@@ -178,6 +178,15 @@
 
 ### Tooling
 
+- **#452: `test_task_yield` no longer fails on other tests' garbage.** Two
+  tests in `test_task_graph.py` asserted `err.strip() == ""` — but stderr is
+  process-wide, so a `ResourceWarning` emitted by the collector for file
+  objects an *earlier* test leaked failed them at random (same commit green
+  one CI run, red the next). They now assert on their own stderr with
+  interpreter warning chatter filtered; anything else still fails. The
+  issue's second half — the genuinely unclosed handles the warnings point at
+  — is not hunted here and is recorded on the issue.
+
 - **#562: the closed-issues gate binds a marker only when it is a comment.**
   The scanner matched `# closes: #N`-shaped text anywhere in a file and took
   the first occurrence, so a docstring *mentioning* the marker convention
