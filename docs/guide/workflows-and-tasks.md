@@ -346,8 +346,8 @@ workflow with_failure {
 }
 
 let r = run_workflow(with_failure)
-print(r["error"])   // "Division by zero"
-print(r["failed"])  // ["task_2"]
+print(r["error"])   // "Float division by zero"
+print(r["failed"])  // ["will_fail"] -- step names, not task ids
 ```
 
 **Catching expected failures** — `try/catch` inside a step body prevents
@@ -987,7 +987,7 @@ TESTED SCRIPTS (originally run against nodus-lang v2.1.1; reviewed for v3.0 —
 07: wf06_cycle.nd           → exit 0, no stderr, r["error"]="Dependency cycle or missing tasks"
 08: wf07_missing_dep.nd     → Syntax error at compile time: Unknown workflow dependency
 09: wf08_diamond.nd         → A→B, A→C, B+C→D; correct order
-10: wf09_step_failure.nd    → stderr runtime error; downstream skipped; r["failed"]=["task_2"]; exit 0
+10: wf09_step_failure.nd    → stderr runtime error; downstream skipped; r["failed"]=["will_fail"]; exit 0
 11: wf10_try_catch_step.nd  → try/catch inside step; downstream continues
 12: wf11_goal.nd            → goal DSL identical to workflow; run_goal() works
 13: wf12_cli_workflow_run   → nodus workflow-run: step stdout then JSON result
