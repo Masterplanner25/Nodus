@@ -4,9 +4,10 @@ Until the flip, `Record.__eq__` still answers by identity, and the one
 observable divergence -- two distinct records that field-by-field comparison
 calls equal -- warns once per process. These tests pin the staging behaviour;
 the 6.0.0 flip PR rewrites them into tests of structural equality itself and
-keeps the closes-marker for #545 on the rewritten tests. (The marker's literal
-spelling must not appear in this docstring: the gate's scanner takes the first
-occurrence in the file and would bind the issue to whatever `def` follows.)
+keeps the closes-marker for #545 on the rewritten tests. (This docstring once
+had to avoid the marker's literal spelling — the gate's scanner matched it
+anywhere in the file and bound the issue to whatever `def` followed. #562
+made the scan comment-only, so prose is safe now.)
 
 Decision record: docs/design/v6/00-record-equality.md.
 """

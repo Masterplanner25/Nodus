@@ -187,6 +187,40 @@ class FindTestTests(unittest.TestCase):
         self.assertIsNone(path)
         self.assertIsNone(fn)
 
+    # closes: #562
+    def test_marker_shaped_text_in_a_docstring_does_not_bind(self):
+        # The scanner took the first marker-shaped occurrence in the file, so a
+        # docstring *mentioning* the marker convention won — and the issue was
+        # bound to whatever `def` followed the docstring, here a helper `-k`
+        # selects nothing by. Markers are comments; only COMMENT tokens count.
+        test_file = os.path.join(self.tests_root, "test_docstring_trap.py")
+        with open(test_file, "w") as f:
+            f.write(
+                '"""A rewrite keeps the `# closes: #79` marker on the tests."""\n'
+                "def _helper():\n    pass\n"
+                "# closes: #79\n"
+                "class TrapTests(unittest.TestCase):\n"
+                "    def test_the_fix(self):\n        pass\n"
+            )
+
+        path, fn = find_test_for_issue(79, self.tests_root)
+        self.assertEqual(path, test_file)
+        self.assertIsNone(
+            fn, "the docstring mention bound the issue to the helper"
+        )
+
+    def test_marker_only_in_prose_finds_nothing(self):
+        test_file = os.path.join(self.tests_root, "test_prose_only.py")
+        with open(test_file, "w") as f:
+            f.write(
+                '"""Discusses the `# closes: #80` convention, tests nothing."""\n'
+                "def test_unrelated():\n    pass\n"
+            )
+
+        path, fn = find_test_for_issue(80, self.tests_root)
+        self.assertIsNone(path)
+        self.assertIsNone(fn)
+
 
 class ClosedIssuesPhaseTests(unittest.TestCase):
 

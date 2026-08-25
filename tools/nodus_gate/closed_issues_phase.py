@@ -99,7 +99,7 @@ def find_test_for_issue(issue_number: int, tests_root: str) -> tuple[str | None,
                     content = f.read()
             except OSError:
                 continue
-            for m in _CLOSES_MARKER_RE.finditer(content):
+            for m in _marker_matches(content):
                 if int(m.group(1)) == issue_number:
                     # What the marker is attached to: a test function, or a class
                     # tagging a whole group of them.
@@ -117,6 +117,45 @@ def find_test_for_issue(issue_number: int, tests_root: str) -> tuple[str | None,
                     return fpath, def_m.group(2)
 
     return None, None
+
+
+def _marker_matches(content: str):
+    """Yield `_CLOSES_MARKER_RE` matches that are actual comments (#562).
+
+    A marker is a comment, and matching it anywhere in the file bound issues
+    to prose: a docstring *mentioning* the marker convention matched first,
+    and the issue was then bound to whatever `def` happened to follow the
+    docstring — `-k _fresh_warn_state` selected nothing and a passing suite
+    reported as failed. Second false verdict from whole-file matching (the
+    first was the `setUp` binding, fixed above), so the scan is now
+    tokenizer-backed: only text inside COMMENT tokens can carry a marker. On
+    a file that does not tokenize, fall back to whole-file matching — a
+    wrong-ish answer beats silently finding no test for the issue.
+    """
+    import io
+    import tokenize as _tokenize
+
+    try:
+        comment_spans = []
+        for tok in _tokenize.generate_tokens(io.StringIO(content).readline):
+            if tok.type == _tokenize.COMMENT:
+                start = _line_col_to_offset(content, tok.start)
+                comment_spans.append((start, start + len(tok.string)))
+    except (SyntaxError, _tokenize.TokenError, ValueError):
+        yield from _CLOSES_MARKER_RE.finditer(content)
+        return
+
+    for m in _CLOSES_MARKER_RE.finditer(content):
+        if any(start <= m.start() < end for start, end in comment_spans):
+            yield m
+
+
+def _line_col_to_offset(content: str, position: tuple[int, int]) -> int:
+    line, col = position
+    offset = 0
+    for _ in range(line - 1):
+        offset = content.index("\n", offset) + 1
+    return offset + col
 
 
 def run_test(
