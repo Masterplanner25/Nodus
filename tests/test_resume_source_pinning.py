@@ -143,5 +143,46 @@ class ResumeReplaysThePinnedSourceTests(unittest.TestCase):
         self.assertNotIn("replaying the source stored", stderr)
 
 
+# closes: #497
+class DriftReachesTheResultMapTests(unittest.TestCase):
+    """Drift is warned on stderr and emitted as an event, but a program reacting
+    to it needs it where the answer lands: `source_drift: true` on the resume
+    result. Present only when true, so existing result consumers see no new key
+    on a clean resume."""
+
+    def _resume_result_stdout(self, edit: bool) -> str:
+        with tempfile.TemporaryDirectory() as td:
+            cwd = os.getcwd()
+            os.chdir(td)
+            try:
+                path = os.path.join(td, "wf.nd")
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(WORKFLOW.format(marker="ORIGINAL"))
+
+                started = NodusRuntime(timeout_ms=None).run_file(path)
+                gid = _gid(started.get("stdout"))
+
+                if edit:
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write(WORKFLOW.format(marker="EDITED"))
+
+                resumed = NodusRuntime(timeout_ms=None).run_source(
+                    'fn main() {{ let r = resume_workflow("{}", "cp"); '
+                    'print("RESULT=\\(r)") }}'.format(gid)
+                )
+                return resumed.get("stdout") or ""
+            finally:
+                os.chdir(cwd)
+
+    def test_drift_sets_source_drift_on_the_result(self):
+        stdout = self._resume_result_stdout(edit=True)
+        self.assertIn('"source_drift": true', stdout)
+
+    def test_clean_resume_has_no_source_drift_key(self):
+        stdout = self._resume_result_stdout(edit=False)
+        self.assertIn("RESULT=", stdout)
+        self.assertNotIn("source_drift", stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

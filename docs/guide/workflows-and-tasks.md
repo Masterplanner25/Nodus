@@ -782,6 +782,22 @@ $ nodus workflow resume <graph_id> --checkpoint after-phase1
 > (`Could not rebuild run '<id>': …`). Before #399 every rebuild failure was
 > reported as `Unknown graph`, including for runs that plainly existed.
 
+> **A resume replays the source stored with the run — not the file on disk.**
+> Edits made between the run and the resume are not in the resume. When the
+> file has changed, the resume says so: a warning on stderr, a
+> `workflow_source_drift` event, and `source_drift: true` on the result map
+> (#497). To run the edited workflow, start a new run.
+>
+> **A resume also refuses a run whose step structure no longer matches what it
+> was planned for.** Every run records its topology — step names and `after`
+> edges — and the rebuild compares (#470). A mismatch (possible for runs
+> persisted before source recording, for hand-edited state files, or across a
+> lowering change) fails with
+> `planned against a different version of workflow '<name>'` naming what moved,
+> instead of a manufactured diagnosis like `Dependency cycle detected` in
+> source that has no cycle. Step **bodies** and `when` guards are deliberately
+> not compared — editing them does not refuse a resume.
+
 ---
 
 ## 9. Common patterns

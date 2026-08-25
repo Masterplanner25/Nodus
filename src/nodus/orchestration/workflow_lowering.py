@@ -403,6 +403,28 @@ def goal_name_candidates(globals_dict: dict[str, object]) -> list[str]:
     return _flow_name_candidates(globals_dict, kind="goal")
 
 
+def graph_topology(tasks) -> dict:
+    """A graph's shape as comparable data: step names and dependency edges.
+
+    Deliberately structure only -- no bodies, no `when` guards, no `on:` filters,
+    no options. A body or guard edit is recoverable on resume and usually
+    intentional; a renamed, added, removed or re-wired step is not, because the
+    persisted per-task state is keyed to the planned shape. Sorted so the same
+    graph always serialises to the same value regardless of declaration order,
+    matching the byte-stable discipline `_persist_graph_state` already uses.
+    """
+    steps = sorted(
+        task.step_name for task in tasks if isinstance(task.step_name, str)
+    )
+    edges = sorted(
+        [dep.step_name, task.step_name]
+        for task in tasks
+        for dep in task.dependencies
+        if isinstance(task.step_name, str) and isinstance(dep.step_name, str)
+    )
+    return {"steps": steps, "edges": edges}
+
+
 def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_by_step: dict[str, str] | None = None) -> TaskGraph:
     kind = runtime_flow_kind(workflow_value)
     if kind not in {"workflow", "goal"}:
@@ -492,6 +514,12 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         "task_to_step": {task_id: step for step, task_id in step_to_task.items()},
         "workflow_source_path": getattr(vm, "source_path", None),
         "workflow_source_code": getattr(vm, "source_code", None),
+        # #470: the shape the run was planned against, as data. A resume rebuilds
+        # the graph by re-executing source; if the rebuilt shape differs, applying
+        # the persisted per-task state manufactures false diagnoses (a "dependency
+        # cycle" in acyclic source). Recording the topology lets the rebuild refuse
+        # with the real cause instead.
+        "workflow_topology": graph_topology(tasks),
         "state_policies": _state_policies(vm, workflow_value, name),
     }
     if kind == "goal":

@@ -59,7 +59,7 @@ from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_
 from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
-from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, is_goal_pursuit_value, is_goal_value, is_workflow_value, workflow_to_graph
+from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, graph_topology, is_goal_pursuit_value, is_goal_value, is_workflow_value, workflow_to_graph
 from nodus.orchestration.workflow_state import checkpoints_public
 
 _DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pending
@@ -1644,6 +1644,7 @@ class VM:
             )
         source_code = metadata.get("workflow_source_code")
         source_path = metadata.get("workflow_source_path")
+        self._last_resume_source_drift = False
         if not isinstance(source_code, str):
             # Runs persisted before every entry point recorded its source (#469).
             # Re-reading the file means the rebuild uses whatever is on disk now,
@@ -1657,8 +1658,27 @@ class VM:
                 )
             with open(source_path, "r", encoding="utf-8") as f:
                 source_code = f.read()
+            # #497: this branch used to be the silent half of the fork -- an
+            # unpinned rebuild picked up edits with no signal at all, while the
+            # pinned branch warned. Say which rule is in effect.
+            print(
+                f"resume: run '{graph_id}' predates source recording, so "
+                f"'{flow_name}' is rebuilt from {source_path} as it is now; edits "
+                f"made since the run started are in this resume.",
+                file=sys.stderr,
+            )
+            self.event_bus.emit_event(
+                "workflow_rebuild_unpinned",
+                data={
+                    "workflow": flow_name,
+                    "graph_id": graph_id,
+                    "source_path": source_path,
+                },
+            )
         else:
-            self._warn_on_source_drift(flow_name, source_path, source_code, graph_id)
+            self._last_resume_source_drift = self._warn_on_source_drift(
+                flow_name, source_path, source_code, graph_id
+            )
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
         worker_dispatcher = getattr(self, "worker_dispatcher", None)
         event_bus = self.event_bus
@@ -1727,7 +1747,55 @@ class VM:
         step_to_task: dict[str, Any] | None = _stt_raw if isinstance(_stt_raw, dict) else None
         graph = workflow_to_graph(self, workflow, init_state=False, task_ids_by_step=step_to_task)
         graph.graph_id = graph_id
+        kind_word = "goal" if execution_kind == "goal" else "workflow"
+        self._validate_rebuilt_topology(graph, metadata, flow_name, kind_word, graph_id)
         return graph
+
+    def _validate_rebuilt_topology(
+        self, graph: TaskGraph, metadata: dict, flow_name: str, kind_word: str, graph_id: str
+    ) -> None:
+        """Refuse a rebuild whose shape is not the shape the run was planned for.
+
+        The persisted state is per-task bookkeeping keyed to the planned graph;
+        applying it to a different graph manufactures false diagnoses -- a step
+        inserted between two others collides with a stored task id and surfaces
+        as `Dependency cycle detected: z -> z` in source with no cycle (#470).
+        Name the real cause instead, before any of that machinery runs.
+
+        Structure only, deliberately: a body or `when` edit does not refuse (see
+        `graph_topology`). Runs that predate the stored topology are checked on
+        step names alone, from `step_to_task` -- edges were not recorded, so an
+        edge-only rewire on such a run is still undetectable.
+        """
+        rebuilt = graph_topology(graph.tasks)
+        stored = metadata.get("workflow_topology")
+        if not isinstance(stored, dict):
+            stt = metadata.get("step_to_task")
+            if not isinstance(stt, dict) or not stt:
+                return
+            stored = {"steps": sorted(str(key) for key in stt)}
+        stored_steps = stored.get("steps")
+        problems: list[str] = []
+        if isinstance(stored_steps, list):
+            added = sorted(set(rebuilt["steps"]) - set(stored_steps))
+            removed = sorted(set(stored_steps) - set(rebuilt["steps"]))
+            if added:
+                problems.append(f"steps added: {', '.join(added)}")
+            if removed:
+                problems.append(f"steps removed: {', '.join(removed)}")
+        stored_edges = stored.get("edges")
+        if not problems and isinstance(stored_edges, list):
+            stored_pairs = {tuple(edge) for edge in stored_edges if isinstance(edge, list)}
+            rebuilt_pairs = {tuple(edge) for edge in rebuilt["edges"]}
+            if stored_pairs != rebuilt_pairs:
+                problems.append("dependencies re-wired")
+        if problems:
+            raise WorkflowRebuildError(
+                f"run '{graph_id}' was planned against a different version of "
+                f"{kind_word} '{flow_name}': its step structure has changed since "
+                f"the run started ({'; '.join(problems)}). A resume replays the "
+                f"planned structure; start a new run to use the edited {kind_word}."
+            )
 
     def _rollback_to_checkpoint(self, graph: TaskGraph, state: dict, entry: dict) -> None:
         if graph is None or not isinstance(state, dict) or not isinstance(entry, dict):
