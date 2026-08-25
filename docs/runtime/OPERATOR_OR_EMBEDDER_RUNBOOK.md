@@ -82,10 +82,17 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 > `get_execution_stats()` is unaffected. See
 > [RUNTIME_EVENTS.md](RUNTIME_EVENTS.md#retention).
 
-> **The three `allow_*` capability switches default to permissive.** A runtime built as
-> `NodusRuntime(max_steps=..., timeout_ms=...)` can still start subprocesses, open network
-> connections, and read the process environment. Sandboxing filesystem access alone does
-> not sandbox the runtime.
+> **The three `allow_*` capability switches deny by default** as of v5.0.0 (#405).
+> A bare `NodusRuntime()` cannot start subprocesses, open network connections, or read
+> the process environment; grant explicitly with
+> `NodusRuntime(allow_subprocess=True, allow_network=True)`. `allowed_paths` is
+> unchanged — it already defaulted to a CWD jail.
+>
+> This paragraph said the opposite ("default to permissive") from v5.0.0 until v5.3.0.
+> That was true through v4.2.0. **Advice written against the old default is backwards**,
+> including "a bare runtime can shell out", which several documents relied on. The CLI is
+> deliberately unaffected: it builds a `VM` directly and never constructs a
+> `NodusRuntime`, because what deny-by-default protects is work you did not fully author.
 
 > **`max_frames=None` means `MAX_STACK_DEPTH` (10,000)**, the same cap the CLI applies,
 > so runaway recursion raises `Call stack overflow` even with `max_steps=None` and
@@ -163,9 +170,49 @@ helper and reporting them as leaked builtins.
 
 Note that `GATED_BUILTINS` is a *different* list from `BUILTIN_CAPABILITIES`:
 the former is what is never registered when a flag is `False`, the latter is what
-consults the capability policy at call time. They overlap by design and differ by
-one entry (`subprocess_shell_quote`, which is string manipulation and runs
-nothing).
+consults the capability policy at call time. They overlap by design; every
+registration-gated builtin also consults the policy except `subprocess_shell_quote`
+(string manipulation, runs nothing), and `BUILTIN_CAPABILITIES` is the larger of
+the two, because five capabilities have no registration flag at all.
+
+### 3.3.1a What a policy can see
+
+Ten capabilities, of which only three have an `allow_*` switch:
+
+| Capability | Flag | Reaches |
+|---|---|---|
+| `subprocess` | `allow_subprocess` | `subprocess_run`, `subprocess_shell`, … |
+| `network` | `allow_network` | `http_get`, `http_post`, `http_stream`, … |
+| `env` | `allow_env` | `env_get`, `env_set`, … |
+| `fs.write` | — (path jail) | `write_file`, `append_file`, `mkdir`, `fs_delete` |
+| `fs.read` | — (path jail) | `read_file`, `list_dir`, `path_exists`, `hash_*_file` |
+| `tool.invoke` | — | `tool_call`, `tool_invoke`, `__action_tool` |
+| `syscall` | — | `syscall` |
+| `agent.call` | — | `agent_call`, `__action_agent` |
+| `memory.read` | — | `memory_get`, `memory_has`, `memory_keys`, `memory_recall_*` |
+| `memory.write` | — | `memory_put`, `memory_delete`, `memory_share` |
+
+The bottom six are **policy-only**: there is no registration flag, so a policy is
+the only way to refuse them. Through v5.2.0 the last five did not exist, and a
+`CapabilityPolicy` that denied everything denied none of those surfaces (#473).
+`FS_READ` was declared from v5.0.0 and attached to nothing until v5.3.0 (#467).
+
+The `__action_*` entries are the lowerings of the `action` DSL forms.
+`action tool "x"` reaches `__action_tool` without passing through `tool_call`,
+and a host can shadow neither, so both spellings are governed.
+
+**`ALL_CAPABILITIES` is closed but not fixed** — it went from five names to ten in
+v5.3.0. Validate against the frozenset, never against a copy of it.
+
+**Cost.** A governed builtin builds a `CapabilityRequest` and consults the floor
+even with no policy installed: ~0.8 µs per call, against ~25 µs for a builtin call
+on CPython. Ungoverned builtins pay nothing — the dict lookup already happened.
+
+**Every builtin is classified.** `NO_AUTHORITY_BUILTINS` names the 227 that carry
+no authority, grouped by why, and a test requires the two sets to cover
+`BUILTIN_NAMES` exactly. A new builtin fails the suite until somebody decides
+which side it is on — the point being that "is this governed?" stops depending on
+whether anyone remembered.
 
 ### 3.3.2 Reaching the live VM
 
