@@ -106,7 +106,12 @@ class TestGatedBuiltinData(unittest.TestCase):
         """
         for name, capability in BUILTIN_CAPABILITIES.items():
             if capability not in (SUBPROCESS, NETWORK, ENV):
-                continue  # fs.read / fs.write are path-jailed, not flag-gated
+                # Only three capabilities have a registration-time flag. fs.read
+                # and fs.write are path-jailed; tool.invoke, syscall, agent.call
+                # and the memory pair (#473) are policy-only — there is no
+                # `allow_tools=` switch, and adding one is not implied by making
+                # them visible to a policy.
+                continue
             self.assertIn(
                 name,
                 GATED_BUILTIN_NAMES,

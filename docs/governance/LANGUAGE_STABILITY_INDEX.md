@@ -125,8 +125,10 @@ our source for want of it.
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| `SUBPROCESS`, `NETWORK`, `ENV`, `FS_READ`, `FS_WRITE` | Stable | Capability labels; closed set |
-| `ALL_CAPABILITIES` | Stable | The closed set, as a frozenset |
+| `SUBPROCESS`, `NETWORK`, `ENV`, `FS_READ`, `FS_WRITE` | Stable | Capability labels |
+| `TOOL_INVOKE`, `SYSCALL`, `AGENT_CALL`, `MEMORY_READ`, `MEMORY_WRITE` | Stable | Added v5.3.0 (#473). Authority that is not a sandbox flag. Before these, a policy that denied everything could not see tool invocation, syscalls, agent dispatch or the memory store at all |
+| `ALL_CAPABILITIES` | Stable | The closed set, as a frozenset. **Closed, not fixed** — it grew from 5 to 10 in v5.3.0. Membership changing is the list changing, not the contract; validate against it rather than against a copy |
+| `NO_AUTHORITY_BUILTINS`, `NO_AUTHORITY_BUILTIN_NAMES` | Mostly Stable | Added v5.3.0. Every builtin that carries no authority, grouped by why. Exists so the classification is *total*: `BUILTIN_CAPABILITIES | NO_AUTHORITY_BUILTIN_NAMES == BUILTIN_NAMES` is pinned by test, so a new builtin cannot ship unclassified |
 | `GATED_BUILTINS` | Mostly Stable | Added v5.0.1. Flag → `GatedBuiltinGroup(flag, capability, description, arity, names)`. The registry builds its refusing stubs from this, so the published list and the enforced gate cannot disagree. **Membership may change** as builtins are added — that is the list changing, not the contract |
 | `GATED_BUILTIN_NAMES` | Mostly Stable | Added v5.0.1. All gated builtins, flattened |
 | `BUILTIN_CAPABILITIES` | Mostly Stable | Which builtins consult the policy at call time. Distinct from `GATED_BUILTINS`; see the runbook §3.3.1 |

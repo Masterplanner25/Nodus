@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#473: a `CapabilityPolicy` that denied everything denied nothing.** The
+  policy was consulted only for the four sandbox capability groups. Every effect
+  surface that was not filesystem/subprocess/network/env — `tool_call`,
+  `syscall`, `agent_call`, and the whole memory store — was invisible to it, and
+  the vocabulary was closed, so there was no name to add them under:
+  `DenyList("tool.invoke")` raised `unknown capability`.
+
+  The chokepoint was never the problem. `VM.call_builtin` consulted
+  `BUILTIN_CAPABILITIES` faithfully; the map never grew past the flags. Five
+  capabilities are added — `tool.invoke`, `syscall`, `agent.call`, `memory.read`,
+  `memory.write` — and the builtins behind them now reach the policy, with their
+  arguments, so a policy can decide on *which* tool rather than merely whether.
+
+  `action tool "x"` and `action agent "a"` are governed too. They lower to
+  `__action_tool` / `__action_agent` without passing through `tool_call`, and a
+  host can shadow neither, so gating one spelling would have left the DSL form
+  uninterposable.
+
+  **Additive**: a runtime with no policy behaves exactly as before.
+  `ALL_CAPABILITIES` grows from five names to ten — it is closed, not fixed, so
+  validate against the frozenset rather than a copy.
+
+- **`FS_READ` was declared and attached to nothing.** It sat in
+  `ALL_CAPABILITIES` from 5.0.0 with no builtin carrying it, so reads were
+  invisible to a policy for the same reason the surfaces above were.
+  `read_file`, `list_dir`, `path_exists` and the `hash_*_file` family now carry
+  it. This is half of what issue #467 reports; the other half — a declarative
+  read-only/writable split for `allowed_paths` — is unchanged, and that issue
+  stays open for it.
+
+- **Every builtin is now classified.** `NO_AUTHORITY_BUILTINS` names the 227
+  builtins that carry no authority, grouped by why, and a test requires
+  `BUILTIN_CAPABILITIES | NO_AUTHORITY_BUILTIN_NAMES == BUILTIN_NAMES`. A new
+  builtin fails the suite until somebody decides which side it is on, so "is
+  this governed?" stops depending on whether anyone remembered.
+
+### Docs
+
+- **The embedder runbook said the `allow_*` switches "default to permissive".**
+  They have denied by default since 5.0.0. The paragraph was backwards for three
+  releases in the document an embedder reads to configure confinement.
+
 ### Changed
 
 - **#492: an unhonoured `worker:` declaration warns instead of running

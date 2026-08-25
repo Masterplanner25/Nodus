@@ -54,7 +54,25 @@ ENV = "env"
 FS_READ = "fs.read"
 FS_WRITE = "fs.write"
 
-ALL_CAPABILITIES = frozenset({SUBPROCESS, NETWORK, ENV, FS_READ, FS_WRITE})
+# #473: authority that is not a sandbox flag. The vocabulary stopped at the four
+# `NodusRuntime` confinement switches, so a policy could not see -- and therefore
+# could not refuse -- tool invocation, syscalls, agent dispatch or the memory
+# store. A `CapabilityPolicy` that denied everything denied none of them, and
+# `DenyList("tool.invoke")` raised `unknown capability`.
+#
+# `memory.read` / `memory.write` are spelled to match what `SyscallSpec` has
+# always declared for the memory syscalls (#478), so the two surfaces name the
+# same authority rather than two spellings of it.
+TOOL_INVOKE = "tool.invoke"
+SYSCALL = "syscall"
+AGENT_CALL = "agent.call"
+MEMORY_READ = "memory.read"
+MEMORY_WRITE = "memory.write"
+
+ALL_CAPABILITIES = frozenset({
+    SUBPROCESS, NETWORK, ENV, FS_READ, FS_WRITE,
+    TOOL_INVOKE, SYSCALL, AGENT_CALL, MEMORY_READ, MEMORY_WRITE,
+})
 
 
 # Which builtins require which capability.
@@ -91,9 +109,182 @@ BUILTIN_CAPABILITIES.update({
     name: FS_WRITE
     for name in ("write_file", "append_file", "mkdir", "fs_mkdir", "fs_delete")
 })
+# #467: FS_READ was declared and attached to nothing, so reads were invisible to
+# a policy for the same reason writes were visible -- the map, not the
+# chokepoint. These are exactly the builtins that reach `_ensure_path_allowed`
+# without writing; `path_join` and its neighbours are string manipulation and
+# touch no filesystem.
+BUILTIN_CAPABILITIES.update({
+    name: FS_READ
+    for name in (
+        "read_file", "list_dir", "path_exists", "exists",
+        "hash_md5_file", "hash_sha1_file", "hash_sha256_file",
+        "hash_sha512_file", "hash_blake2b_file",
+    )
+})
+BUILTIN_CAPABILITIES.update({
+    name: TOOL_INVOKE
+    for name in ("tool_call", "tool_invoke", "__action_tool")
+})
+BUILTIN_CAPABILITIES.update({
+    name: SYSCALL
+    for name in ("syscall",)
+})
+BUILTIN_CAPABILITIES.update({
+    name: AGENT_CALL
+    for name in ("agent_call", "__action_agent")
+})
+BUILTIN_CAPABILITIES.update({
+    name: MEMORY_READ
+    for name in (
+        "memory_get", "memory_has", "memory_keys",
+        "memory_recall_all", "memory_recall_from", "__action_memory_get",
+    )
+})
+BUILTIN_CAPABILITIES.update({
+    name: MEMORY_WRITE
+    for name in (
+        "memory_put", "memory_delete", "memory_share", "__action_memory_put",
+    )
+})
 
 # `subprocess_shell_quote` is deliberately absent: it is string manipulation and
 # runs nothing. Gating it would train readers that the list is approximate.
+#
+# The `__action_*` names are the lowerings of the `action` DSL forms. They are
+# listed explicitly because `action tool "x"` reaches `__action_tool` without
+# passing through `tool_call`, and a host cannot shadow either -- a builtin
+# cannot be overridden, deliberately (#441-#444). Gating one spelling and not
+# the other is the sibling-path shape, so both are named.
+
+
+# Every builtin that carries no authority, and why.
+#
+# This exists so the classification is *total*. Without it, "is this builtin
+# governed?" is answered by whether someone remembered to add it, which is how
+# `tool_call`, `syscall`, `agent_call` and the whole memory surface stayed
+# ungoverned from 5.0.0 through 5.2.0 while the chokepoint that would have
+# caught them worked perfectly.
+#
+# `tests/test_capability_coverage.py` requires
+# `BUILTIN_CAPABILITIES | NO_AUTHORITY_BUILTINS == BUILTIN_NAMES`, so a **new**
+# builtin fails the suite until somebody decides which side it is on. That is
+# the same shape as `TASK_STATUSES` and `FLOW_DECLARATIONS`: name the set once,
+# and let a test drive off it.
+NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
+    "pure computation": (
+        "bool_equal", "collection_len", "count", "has_key", "index_of",
+        "json_parse", "json_parse_int", "json_stringify", "keys",
+        "last_index_of", "len", "list_pop", "list_push", "map_has_key", "push",
+        "range", "str", "str_contains", "str_endswith", "str_lower",
+        "str_replace", "str_split", "str_startswith", "str_trim", "str_upper",
+        "values", "type", "type_eq",
+        "math_abs", "math_bit_and", "math_bit_lshift", "math_bit_not",
+        "math_bit_or", "math_bit_rshift", "math_bit_xor", "math_ceil",
+        "math_floor", "math_idiv", "math_infinity", "math_is_finite",
+        "math_is_float", "math_is_inf", "math_is_int", "math_is_nan",
+        "math_is_numeric", "math_log", "math_max", "math_min", "math_nan",
+        "math_neg_infinity", "math_parse_int", "math_pow", "math_round",
+        "math_sqrt", "math_to_float", "math_to_int",
+        "encoding_base64_decode", "encoding_base64_encode",
+        "encoding_base64_url_decode", "encoding_base64_url_encode",
+        "encoding_hex_decode", "encoding_hex_encode",
+        "encoding_hex_encode_upper", "encoding_url_decode",
+        "encoding_url_decode_form", "encoding_url_encode",
+        "encoding_url_encode_form",
+        "subprocess_shell_quote",
+    ),
+    "hashing of values already in hand": (
+        "hash_blake2b", "hash_blake2b_builder", "hash_hmac_blake2b",
+        "hash_hmac_md5", "hash_hmac_sha1", "hash_hmac_sha256",
+        "hash_hmac_sha512", "hash_md5", "hash_md5_builder", "hash_sha1",
+        "hash_sha1_builder", "hash_sha256", "hash_sha256_builder",
+        "hash_sha512", "hash_sha512_builder", "hash_compare",
+    ),
+    "path strings, touching no filesystem": (
+        "path_absolute", "path_basename", "path_dirname", "path_ext",
+        "path_join", "path_relative", "path_stem",
+    ),
+    "process-local clock and randomness": (
+        "clock", "math_random",
+        "secrets_random_bytes", "secrets_random_int",
+        "secrets_token_alphanumeric", "secrets_token_base64",
+        "secrets_token_hex", "secrets_token_urlsafe", "secrets_uuid_v4",
+        "secrets_uuid_v7",
+        "time_add", "time_add_days", "time_add_months", "time_add_years",
+        "time_at", "time_days", "time_duration_between", "time_end_of_day",
+        "time_format", "time_from_epoch_ms", "time_from_http_date",
+        "time_from_iso8601", "time_hours", "time_minutes", "time_ms",
+        "time_now", "time_now_in", "time_parse", "time_seconds",
+        "time_start_of_day", "time_start_of_month", "time_start_of_week",
+        "time_start_of_year", "time_subtract", "time_to_epoch_ms",
+        "time_to_http_date", "time_to_iso8601", "time_to_utc", "time_to_zone",
+        "time_weeks",
+    ),
+    "in-process concurrency": (
+        "__sleep", "channel", "close", "coroutine", "coroutine_status",
+        "recv", "resume", "run_loop", "send", "sleep", "spawn",
+    ),
+    "introspection of the running program": (
+        "runtime_clear_events", "runtime_event_count", "runtime_events",
+        "runtime_execution_unit_id", "runtime_fields", "runtime_fn_arity",
+        "runtime_fn_module", "runtime_fn_name", "runtime_has",
+        "runtime_module_fields", "runtime_scheduler_stats",
+        "runtime_session_id", "runtime_stack_depth", "runtime_stack_frame",
+        "runtime_task", "runtime_tasks", "runtime_time", "runtime_trace_id",
+        "runtime_typeof",
+    ),
+    # Running a workflow grants nothing a direct call would not: every builtin
+    # the steps reach passes this same chokepoint. Gating the orchestrator as
+    # well would refuse the *shape* of a program rather than its authority.
+    "orchestration of work that is itself governed": (
+        "__action_emit", "current_workflow_id", "emit", "graph", "plan_goal",
+        "plan_graph", "plan_workflow", "resume_goal", "resume_graph",
+        "resume_workflow", "run_goal", "run_graph", "run_workflow", "task",
+        "workflow_checkpoints", "workflow_resume_payload", "workflow_state",
+        "workflow_wait",
+        "cb_call", "retry_call",
+        "effect_action_id", "effect_complete", "effect_pending",
+        "effect_resolve", "effect_store_size",
+    ),
+    # Naming what exists is not reaching it. A denied `tool_call` is still
+    # denied after `tool_list` names the tool, and hiding the catalogue while
+    # leaving the call ungoverned would be the wrong half.
+    "discovery, not invocation": (
+        "agent_available", "agent_describe", "cb_available", "cb_create",
+        "cb_reset", "cb_state", "retry_available", "syscall_list",
+        "tool_available", "tool_describe", "tool_has", "tool_list",
+        "tool_lookup",
+    ),
+    # A guest-registered tool runs guest code, so registering one confers no
+    # authority the guest did not already have. Note these mutate the *VM*
+    # registry; tools a host registers through `NodusRuntime.tools` live in a
+    # separate Python-side registry that `tool_unregister` cannot reach.
+    "guest-scoped registry mutation": (
+        "tool_register", "tool_unregister",
+    ),
+    # `print` writes to the host's captured stdout. `input` reads stdin and is
+    # gated at registration by `allow_input`, which defaults to False -- a
+    # separate mechanism that predates the policy layer.
+    "host-mediated console i/o": (
+        "print", "input",
+    ),
+    "test harness, host-invoked": (
+        "test_advance_clock", "test_after_all", "test_after_each",
+        "test_assert", "test_assert_close", "test_assert_contains",
+        "test_assert_eq", "test_assert_err", "test_assert_has_key",
+        "test_assert_in_range", "test_assert_kind", "test_assert_neq",
+        "test_assert_ok", "test_assert_throws", "test_before_all",
+        "test_before_each", "test_case", "test_case_async", "test_cleanup",
+        "test_fixture", "test_flush_async", "test_parameterize", "test_skip",
+        "test_suite",
+    ),
+}
+
+#: Flattened view of :data:`NO_AUTHORITY_BUILTINS`.
+NO_AUTHORITY_BUILTIN_NAMES = frozenset(
+    name for names in NO_AUTHORITY_BUILTINS.values() for name in names
+)
 
 
 @dataclass(frozen=True)
