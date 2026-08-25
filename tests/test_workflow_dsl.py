@@ -454,6 +454,7 @@ workflow demo {
                 )
         self.assertEqual(resumed["steps"]["finish"], "alice")
 
+    # closes: #334
     def test_workflow_resume_api_accepts_payload_and_event_metadata(self):
         code = """
 workflow demo {
