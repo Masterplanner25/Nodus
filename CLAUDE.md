@@ -929,7 +929,12 @@ should stay near zero — check it before blaming a flake on timing:
 ls .nodus/workflow_framework/runs | Measure-Object -Line
 ```
 
-`rm -rf .nodus/workflow_framework/runs` is safe (test artifacts only).
+`rm -rf .nodus/workflow_framework/runs` is safe **in this repo's root** (test
+artifacts only) — but it is not a general cleanup: a run is split across that
+directory and `.nodus/graphs/`, and deleting only the records makes any live
+waiting run unresumable while its state survives (#476; the resume now says so
+instead of "not found"). Use `nodus workflow cleanup`, which removes both
+halves.
 `NODUS_WORKFLOW_STORE_ROOT` relocates the default store for a process. Bounding
 the store's cost — pruning by count, or an index instead of a full rescan —
 is still open in #380.

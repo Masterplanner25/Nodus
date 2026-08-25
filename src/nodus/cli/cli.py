@@ -59,6 +59,7 @@ from nodus.cli.commands import (
     render_help as _render_help,
 )
 from nodus_lang_workflow.runner import get_default_workflow_runner
+from nodus_lang_workflow.store import TERMINAL_RUN_STATUSES
 
 
 def _read_file(path: str) -> str:
@@ -758,7 +759,9 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
     now_ms = int(time.time() * 1000)
     threshold = retention_seconds if retention_seconds is not None else _default_retention_seconds()
     removed: list[str] = []
+    records_removed: list[str] = []
     with _project_root_context(project_root):
+        store = get_default_workflow_runner().store
         snapshots = _task_graph.list_graph_snapshots_info()
         for snapshot in snapshots:
             graph_id = snapshot.get("graph_id")
@@ -779,7 +782,25 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
                 _task_graph.delete_graph_state(graph_id)
                 _task_graph.delete_checkpoint(graph_id)
                 removed.append(graph_id)
-    _json_print({"removed": removed, "retention_seconds": threshold, "force": force})
+                # #476: a run is one thing split across two stores; removing the
+                # graph state while its run record survives leaves the store's
+                # directory growing forever and `workflow runs` listing ghosts.
+                # The record goes too -- unless it says the run is still live
+                # (a waiting record over a completed snapshot is the
+                # administrative `mark_waiting` shape, and live state is not
+                # cleanup's to delete without --force).
+                record = store.get_run(graph_id)
+                if record is not None and (force or record.status in TERMINAL_RUN_STATUSES):
+                    if store.delete_run(graph_id):
+                        records_removed.append(graph_id)
+    _json_print(
+        {
+            "removed": removed,
+            "run_records_removed": records_removed,
+            "retention_seconds": threshold,
+            "force": force,
+        }
+    )
     return 0
 
 

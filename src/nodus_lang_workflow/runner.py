@@ -825,6 +825,26 @@ class WorkflowFrameworkRunner:
             # is nothing to claim". Reporting the first for the second sent readers
             # looking for a concurrent run that was never there — and a typo'd id
             # is far likelier than a claim conflict.
+            #
+            # #476: and when the run's *graph state* is sitting right there,
+            # "not found" is the same class of misleading answer. A run is split
+            # across two stores; if the record was removed while the state
+            # survived (rm -rf on the store's runs directory, an asymmetric
+            # cleanup), name that instead of sending the reader to check the id.
+            if load_graph_state(graph_id) is not None:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Workflow run '{graph_id}' has graph state under "
+                        f".nodus/graphs but no run record in the workflow "
+                        f"store — the two halves of the run were cleaned "
+                        f"independently, and the state alone cannot be "
+                        f"resumed. Remove the orphaned state with "
+                        f"`nodus workflow cleanup --force`."
+                    ),
+                    "graph_id": graph_id,
+                    "category": "run_record_missing",
+                }
             return {"ok": False, "error": f"Workflow run '{graph_id}' not found"}
         if record is not None and record.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": record.last_error or f"Workflow run '{graph_id}' is dead-lettered"}
