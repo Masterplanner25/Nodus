@@ -88,6 +88,7 @@ STEP_OPTION_KEYS = {
     "worker",
     "worker_timeout_ms",
     "on",
+    "allow_failure",
 }
 
 
@@ -488,6 +489,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             on_states=_on_option(vm, options, step_name),
             when=step.get("when"),
             step_name=step_name,
+            allow_failure=bool(options.get("allow_failure", False)),
         )
         tasks.append(task)
         resolved[step_name] = task

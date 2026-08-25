@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#475: `allow_failure` — a step the run tolerates failing.**
+  `step flaky with { allow_failure: true } { … }` declares that this step
+  failing (after its retries) is not the run's failure — the last
+  inexpressible piece of #475's failure semantics, after 5.1.0 made failure
+  poison descendants rather than the graph and 5.2.0 gave joins
+  `upstream_failed` plus `on: [...]`. History and verdict stay separate: the
+  step's status still says `failed`, dependents are poisoned or satisfied
+  exactly as for any failure, and only the run's verdict changes — it
+  completes, `failed` stays `[]`, and the step is listed under a new
+  `tolerated` result key (present only when non-empty). Retries run first;
+  tolerance applies to the exhausted step. A resume of a run whose failure
+  was tolerated stays completed rather than resurrecting as failed. Guide
+  §4.2 documents it; the naming follows GitLab CI's `allow_failure` /
+  Argo's `continueOn`.
+
 ### Changed
 
 - **#545: record equality is decided — structural at 6.0.0 — and a comparison
