@@ -44,6 +44,23 @@ class TaskGraphTests(unittest.TestCase):
     def _poll_job(self, worker_manager, worker_id: str, timeout: float = 10.0):
         return worker_manager.wait_for_job(worker_id, timeout=timeout)
 
+    def assert_no_own_stderr(self, err: str) -> None:
+        """Assert this test produced no stderr of its own (#452).
+
+        stderr is process-wide, and `assertEqual(err.strip(), "")` failed
+        whenever the garbage collector emitted a ResourceWarning for objects
+        an *earlier* test leaked — same commit green one CI run, red the next.
+        Interpreter warning chatter is filtered; anything else still fails.
+        """
+        own = [
+            line
+            for line in err.strip().splitlines()
+            if line.strip()
+            and "Warning" not in line
+            and "Enable tracemalloc" not in line
+        ]
+        self.assertEqual(own, [])
+
     def test_dependency_ordering(self):
         src = """
 let A = task(fn() { return 2 }, nil)
@@ -57,7 +74,7 @@ print(result["tasks"]["task_3"])
 """
         _vm, out, err = run_program(src, source_path="main.nd")
         self.assertEqual(out, ["2.0", "6.0", "7.0"])
-        self.assertEqual(err.strip(), "")
+        self.assert_no_own_stderr(err)
 
     def test_parallel_execution(self):
         src = """
@@ -84,6 +101,7 @@ print(result["failed"])
         _vm, out, _err = run_program(src, source_path="main.nd")
         self.assertEqual(out, ["[\"task_2\"]"])
 
+    # closes: #452
     def test_task_yield(self):
         src = """
 let A = task(fn() {
@@ -96,7 +114,7 @@ print(result["tasks"]["task_2"])
 """
         _vm, out, err = run_program(src, source_path="main.nd")
         self.assertEqual(out, ["3.0"])
-        self.assertEqual(err.strip(), "")
+        self.assert_no_own_stderr(err)
 
     def test_task_timeout(self):
         src = """
