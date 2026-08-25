@@ -559,6 +559,27 @@ Supported step options:
 - `worker`
 - `worker_timeout_ms`
 
+### `worker` requires a dispatcher
+
+`worker` names *where* a step runs. It is honoured by a **worker dispatcher** —
+registered by `nodus serve`, or passed to an embedded runtime as
+`NodusRuntime(worker_dispatcher=…)`. With one registered, a name no worker
+advertises fails the step: `No workers registered with capability: gpu`.
+
+With **no** dispatcher registered, there is nowhere to send the step. It runs in
+the calling process, with no isolation, and warns:
+
+```
+warning: step declares worker 'hardened-sandbox', but no worker dispatcher is
+registered, so it runs in this process with no isolation. Run under `nodus serve`
+with a registered worker, or pass `worker_dispatcher=` to NodusRuntime. This
+becomes an error in 6.0.0.
+```
+
+Through 5.2.0 that case was silent, so a step declaring an isolation intent got
+none and said nothing (#492). Treat `worker` as a requirement that must be
+satisfied, not a hint.
+
 ## Goal DSL
 
 `goal` has two forms.

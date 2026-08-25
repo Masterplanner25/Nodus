@@ -247,6 +247,7 @@ class NodusRuntime:
         agent_registry: dict | None = None,
         share_process_state: bool = False,
         workflow_runner=None,
+        worker_dispatcher=None,
         capability_policy: "CapabilityPolicy | None" = None,
         approval_channel: "ApprovalChannel | None" = None,
         allowed_commands: list[str] | None = None,
@@ -438,6 +439,12 @@ class NodusRuntime:
         # can give each its own so their stores, graph registries and sweepers do
         # not overlap.
         self.workflow_runner = workflow_runner
+        # #492: what honours `step ... with { worker: "name" }`. Only
+        # `services/server.py` ever set this, so an embedder could not satisfy a
+        # worker declaration at all -- and a declaration nothing can satisfy ran
+        # in-process and reported success. Anything with a compatible `.submit`
+        # works; `WorkerPool` is the one in the tree.
+        self.worker_dispatcher = worker_dispatcher
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
@@ -889,6 +896,8 @@ class NodusRuntime:
         vm.memory_store = self._memory_store
         vm.agent_registry = self.agent_registry
         vm.workflow_runner = self.workflow_runner
+        if self.worker_dispatcher is not None:
+            vm.worker_dispatcher = self.worker_dispatcher
         if not self.allow_input:
             vm.input_fn = self._blocked_input
         if debugger is not None:
