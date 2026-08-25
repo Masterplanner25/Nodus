@@ -760,6 +760,30 @@ $ nodus workflow resume <graph_id>
 $ nodus workflow resume <graph_id> --checkpoint after-phase1
 ```
 
+> **A checkpoint is a re-entry label for its whole step, not a position
+> marker.** Resuming from it re-enters the step that recorded it **from the
+> top** — every statement before the `checkpoint`, side effects included, runs
+> again on every resume (#486). An `http.post`, `subprocess.run` or payment
+> placed before a mid-step checkpoint fires once per resume. Completed sibling
+> steps are *not* re-run; the re-execution unit is exactly the step containing
+> the checkpoint (plus everything downstream of it).
+>
+> If you mean *"come back here and skip the setup"*, split the step at the
+> checkpoint — that is the supported spelling, because a completed step is not
+> re-entered:
+>
+> ```nd-no-run
+> step setup   { do_expensive_setup(); return 1i }
+> step risky after setup { checkpoint "ready"; do_the_risky_part(); return 2i }
+> ```
+>
+> State, by contrast, re-derives deterministically on re-entry: plain
+> assignments re-apply onto the restored base, and a folded cell's
+> contributions (`merge: "sum"` / `"append"` / `"union"`) are re-made onto the
+> committed base they originally landed on, so `counter += 1i` before a
+> checkpoint yields the same total on every resume rather than climbing. Put
+> effects after the checkpoint or in their own step; trust the state.
+
 > **Keep module top level side-effect-free in a script you intend to resume.**
 > A resume in a *different process* has nothing in memory, so it rebuilds the
 > graph by **re-executing your module** to re-bind the workflow and function

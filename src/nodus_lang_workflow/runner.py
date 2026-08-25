@@ -913,7 +913,16 @@ class WorkflowFrameworkRunner:
                             break
                 if entry is None:
                     return {"ok": False, "error": f"Checkpoint not found: {checkpoint}"}
-                if "state" in entry:
+                # #486: prefer the rollback base over the observation snapshot.
+                # `state` includes the checkpointing step's pending fold
+                # contributions; re-entering that step from the top re-derives
+                # them, so restoring `state` would count each one twice.
+                # `resume_state` is the committed base without them. Older
+                # persisted checkpoints have only `state`, and keep the old
+                # behaviour.
+                if "resume_state" in entry:
+                    state["workflow_state"] = entry.get("resume_state")
+                elif "state" in entry:
                     state["workflow_state"] = entry.get("state")
                 vm._rollback_to_checkpoint(graph, state, entry)
                 vm.event_bus.emit_event("graph_resume", data={"graph_id": graph_id, "checkpoint": checkpoint})

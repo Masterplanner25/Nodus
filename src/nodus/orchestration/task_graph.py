@@ -1254,14 +1254,23 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
         # A checkpoint records what the step has done so far, folded contributions
         # included: `counter += 1i; checkpoint "l"` must record the contributed
-        # value, or a resume from that label contributes again and the total is
-        # wrong. Merged into a copy -- other branches still must not see it before
+        # value. Merged into a copy -- other branches still must not see it before
         # the join.
+        #
+        # #486: `state` alone was also the *rollback base*, and that doubled every
+        # contribution: a resume re-enters this step from the top, so restoring a
+        # base that already contains its pending fold and then re-running the
+        # `+=` counted it twice -- 1, 2, 3 across resumes, silently. A
+        # contribution never reads the cell, so deterministic re-entry must
+        # re-derive it from the *committed* base instead. `resume_state` is that
+        # base -- the cells without this step's pending fold -- and is what a
+        # resume restores; recorded only when the two differ.
         state_now = workflow_state
         if isinstance(workflow_state, TrackedState):
             pending = workflow_state.pending_fold(task.task_id)
             if pending:
                 state_now = {**workflow_state, **pending}
+                entry["resume_state"] = clone_state(dict(workflow_state))
         if isinstance(state_now, dict):
             entry["state"] = clone_state(state_now)
         if isinstance(checkpoints, list):
