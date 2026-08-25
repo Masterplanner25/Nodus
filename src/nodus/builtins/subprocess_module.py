@@ -162,7 +162,7 @@ def _do_run(argv_or_cmd, opts, vm, is_shell=False):
     }
     if cwd:
         if isinstance(cwd, str):
-            vm._ensure_path_allowed(cwd, "subprocess cwd")
+            vm._ensure_path_allowed(cwd, "subprocess cwd", write=False)
         popen_kw["cwd"] = cwd
     if is_shell and opts.get("shell_exe"):
         popen_kw["executable"] = opts["shell_exe"]
@@ -176,7 +176,7 @@ def _do_run(argv_or_cmd, opts, vm, is_shell=False):
     stderr_file = None
     if _is_file_redirect(stdout_mode):
         redirect_path = stdout_mode[2:] if stdout_mode.startswith(">>") else stdout_mode
-        vm._ensure_path_allowed(redirect_path, "subprocess stdout redirect")
+        vm._ensure_path_allowed(redirect_path, "subprocess stdout redirect", write=True)
         stdout_file = _open_redirect(stdout_mode)
         popen_kw["stdout"] = stdout_file
     else:
@@ -184,7 +184,7 @@ def _do_run(argv_or_cmd, opts, vm, is_shell=False):
 
     if _is_file_redirect(stderr_mode):
         redirect_path = stderr_mode[2:] if stderr_mode.startswith(">>") else stderr_mode
-        vm._ensure_path_allowed(redirect_path, "subprocess stderr redirect")
+        vm._ensure_path_allowed(redirect_path, "subprocess stderr redirect", write=True)
         stderr_file = _open_redirect(stderr_mode)
         popen_kw["stderr"] = stderr_file
     else:
@@ -341,7 +341,7 @@ def _do_spawn(argv_or_cmd, opts, vm, is_shell=False):
     }
     if cwd:
         if isinstance(cwd, str):
-            vm._ensure_path_allowed(cwd, "subprocess cwd")
+            vm._ensure_path_allowed(cwd, "subprocess cwd", write=False)
         popen_kw["cwd"] = cwd
     if is_shell and opts.get("shell_exe"):
         popen_kw["executable"] = opts["shell_exe"]

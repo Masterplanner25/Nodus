@@ -48,7 +48,7 @@ def register(vm, registry) -> None:
                            payload={"category": "state_error", "input": None, "algorithm": None})
 
     def _ensure_allowed(path, op):
-        vm._ensure_path_allowed(path, op)
+        vm._ensure_path_allowed(path, op, write=False)
 
     # ── One-shot hash functions ──────────────────────────────────────
     def _one_shot(alg_name, hashlib_name):

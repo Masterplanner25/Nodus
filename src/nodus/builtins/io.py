@@ -41,7 +41,7 @@ def register(vm, registry) -> None:
     def builtin_read_file(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "read_file(path) expects a string path")
-        vm._ensure_path_allowed(path, "read_file(path)")
+        vm._ensure_path_allowed(path, "read_file(path)", write=False)
         _emit_cap("fs_read", path)
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
@@ -70,7 +70,7 @@ def register(vm, registry) -> None:
     def builtin_write_file(path, content):
         if not isinstance(path, str):
             vm.runtime_error("type", "write_file(path, content) expects string path")
-        vm._ensure_path_allowed(path, "write_file(path, content)")
+        vm._ensure_path_allowed(path, "write_file(path, content)", write=True)
         _emit_cap("fs_write", path)
         text = vm.value_to_string(content, quote_strings=False)
         try:
@@ -96,7 +96,7 @@ def register(vm, registry) -> None:
     def builtin_exists(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "exists(path) expects a string path")
-        vm._ensure_path_allowed(path, "exists(path)")
+        vm._ensure_path_allowed(path, "exists(path)", write=False)
         _emit_cap("fs_exists", path)
         try:
             return os.path.exists(path)
@@ -110,7 +110,7 @@ def register(vm, registry) -> None:
     def builtin_append_file(path, content):
         if not isinstance(path, str):
             vm.runtime_error("type", "append_file(path, content) expects string path")
-        vm._ensure_path_allowed(path, "append_file(path, content)")
+        vm._ensure_path_allowed(path, "append_file(path, content)", write=True)
         _emit_cap("fs_append", path)
         text = vm.value_to_string(content, quote_strings=False)
         try:
@@ -136,7 +136,7 @@ def register(vm, registry) -> None:
     def builtin_mkdir(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "mkdir(path) expects a string path")
-        vm._ensure_path_allowed(path, "mkdir(path)")
+        vm._ensure_path_allowed(path, "mkdir(path)", write=True)
         try:
             os.makedirs(path, exist_ok=True)
         except FileExistsError as exc:
@@ -159,7 +159,7 @@ def register(vm, registry) -> None:
     def builtin_fs_mkdir(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "fs.mkdir(path) expects a string path")
-        vm._ensure_path_allowed(path, "fs.mkdir(path)")
+        vm._ensure_path_allowed(path, "fs.mkdir(path)", write=True)
         try:
             os.makedirs(path, exist_ok=False)
         except FileExistsError as exc:
@@ -182,7 +182,7 @@ def register(vm, registry) -> None:
     def builtin_fs_delete(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "fs.delete(path) expects a string path")
-        vm._ensure_path_allowed(path, "fs.delete(path)")
+        vm._ensure_path_allowed(path, "fs.delete(path)", write=True)
         try:
             os.remove(path)
         except FileNotFoundError as exc:
@@ -205,7 +205,7 @@ def register(vm, registry) -> None:
     def builtin_list_dir(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "list_dir(path) expects a string path")
-        vm._ensure_path_allowed(path, "list_dir(path)")
+        vm._ensure_path_allowed(path, "list_dir(path)", write=False)
         _emit_cap("fs_list", path)
         try:
             return sorted(os.listdir(path))

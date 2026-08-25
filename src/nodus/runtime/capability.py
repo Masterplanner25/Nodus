@@ -560,6 +560,7 @@ DEFAULT_FLOOR = NodusStateFloor()
 # about it fails the suite rather than opening a hole.
 AUTHORITY_ATTRIBUTES: tuple[str, ...] = (
     "allowed_paths",
+    "writable_paths",
     "fs_root",
     "allow_subprocess",
     "allow_network",

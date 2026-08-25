@@ -172,6 +172,7 @@ class VM:
         event_bus: RuntimeEventBus | None = None,
         profiler: Profiler | None = None,
         allowed_paths: list[str] | None = None,
+        writable_paths: list[str] | None = None,
         fs_root: str | None = None,
         allow_subprocess: bool = True,
         allow_network: bool = True,
@@ -223,6 +224,9 @@ class VM:
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
         self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
+        # #467: the writable subset. None means "whatever is readable",
+        # which is every prior release's behaviour and keeps this additive.
+        self.writable_paths = self._normalize_allowed_paths(writable_paths)
         self.fs_root = os.path.normcase(os.path.realpath(fs_root)) if fs_root else None
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
@@ -584,8 +588,24 @@ class VM:
         except ValueError:
             return False
 
-    def _ensure_path_allowed(self, path: str, op_name: str) -> None:
+    def _ensure_path_allowed(self, path: str, op_name: str, *, write: bool) -> None:
+        """The one filesystem decision point. `write` is required, deliberately.
+
+        `op_name` used to be the only thing distinguishing a read from a write
+        here, and it was used solely to phrase the error message -- so the jail
+        could not express "this tree is readable context, that subtree is
+        editable", which is the two-tier model every coding agent wants (#467).
+
+        The keyword has **no default**. A default would mean a new filesystem
+        builtin that forgot to say gets one of the two classifications by
+        accident, silently, which is the shape this codebase keeps hitting. With
+        no default it is a TypeError at the call site, and
+        `tests/test_path_scope.py` additionally asserts on the source that every
+        caller passes an explicit literal.
+        """
         normalized = os.path.normcase(os.path.realpath(path))
+        if write:
+            self._ensure_path_writable(normalized, path, op_name)
         if self.allowed_paths is None:
             if self.fs_root is not None and not self._path_within_root(normalized, self.fs_root):
                 self.runtime_error(
@@ -599,6 +619,26 @@ class VM:
             if self._path_within_root(normalized, root):
                 return
         self.runtime_error("sandbox", f"{op_name} blocked for path: {path!r}")
+
+    def _ensure_path_writable(self, normalized: str, path: str, op_name: str) -> None:
+        """Check the write half, if a writable subset was declared.
+
+        `writable_paths is None` means "whatever is readable" -- every release
+        before 5.3.0, and what a runtime that never asks for the split still
+        gets. The read check still runs afterwards either way, so a writable path
+        outside `allowed_paths` grants nothing on its own.
+        """
+        if self.writable_paths is None:
+            return
+        if not self.writable_paths:
+            self.runtime_error("sandbox", f"{op_name} blocked: no path is writable")
+        for root in self.writable_paths:
+            if self._path_within_root(normalized, root):
+                return
+        self.runtime_error(
+            "sandbox",
+            f"{op_name} blocked: path {path!r} is readable but not writable",
+        )
 
     def load_name(self, name: str):
         """Resolve a variable name to its runtime value.

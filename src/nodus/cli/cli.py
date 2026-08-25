@@ -90,6 +90,23 @@ def _allowed_paths_from_env() -> list[str] | None:
     return paths
 
 
+def _resolve_writable_paths(value: object | None) -> list[str] | None:
+    """`--writable-paths`, with no environment fallback.
+
+    `NODUS_ALLOWED_PATHS` exists to widen a default jail when the caller passed
+    nothing. There is nothing to widen here -- unset means "everything readable"
+    -- so an env var could only narrow, and write confinement that moves with
+    ambient state is how a program works locally and is refused in production
+    with no difference in the code (#467).
+    """
+    if value is None or not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(os.pathsep) if part.strip()]
+
+
 def _resolve_allowed_paths(value: object | None) -> list[str] | None:
     if value is None:
         return _allowed_paths_from_env()
@@ -266,6 +283,7 @@ def run_file(
     timeout_ms: int | None = None,
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
 ) -> int:
     is_project_run = path is None or (path is not None and os.path.isdir(str(path)))
     resolved_path, project_root, err = _resolve_run_target(path, project_root)
@@ -307,6 +325,7 @@ def run_file(
         timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else timeout_ms,
         max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
         allowed_paths=allowed_paths,
+        writable_paths=writable_paths,
     )
     if dump_bytecode and result.get("disassembly"):
         print(result["disassembly"])
@@ -369,6 +388,7 @@ def profile_file(
     timeout_ms: int | None = None,
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
 ) -> int:
     resolved_path, project_root, err = _resolve_run_target(path, project_root)
     if err:
@@ -392,6 +412,7 @@ def profile_file(
             max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
             profiler=profiler,
             allowed_paths=allowed_paths,
+            writable_paths=writable_paths,
         )
     finally:
         profiler.stop()
@@ -837,6 +858,7 @@ def _run_server(
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
     allowed_paths: list[str] | None = None,
+    writable_paths: list[str] | None = None,
     allow_input: bool = False,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
@@ -849,6 +871,7 @@ def _run_server(
             trace=trace,
             worker_sweep_interval_ms=worker_sweep_interval_ms,
             allowed_paths=allowed_paths,
+            writable_paths=writable_paths,
             allow_input=allow_input,
             auth_token=auth_token,
             workflow_store_backend=workflow_store_backend,
@@ -1292,6 +1315,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_stderr(err)
             return 1
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        writable_paths = _resolve_writable_paths(flags.get("--writable-paths"))
         trace_errors_env = str(os.environ.get("NODUS_TRACE_ERRORS", "")).strip().lower() in {"1", "true", "yes", "on"}
         return run_file(
             script,
@@ -1312,6 +1336,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout_ms=None if time_limit is None else time_limit * 1000,
             max_stdout_chars=output_limit,
             allowed_paths=allowed_paths,
+            writable_paths=writable_paths,
         )
 
     if command == "check":
@@ -1417,6 +1442,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_stderr(err)
             return 1
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        writable_paths = _resolve_writable_paths(flags.get("--writable-paths"))
         return profile_file(
             script,
             json_output="--json" in flags,
@@ -1426,6 +1452,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout_ms=None if time_limit is None else time_limit * 1000,
             max_stdout_chars=output_limit,
             allowed_paths=allowed_paths,
+            writable_paths=writable_paths,
         )
 
     if command == "test-examples":
@@ -1487,6 +1514,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_stderr(str(_e))
                 return 1
         allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        writable_paths = _resolve_writable_paths(flags.get("--writable-paths"))
         auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
         allow_input = "--allow-input" in flags or _server_allow_input_from_env()
         workflow_store_backend = (
@@ -1505,6 +1533,7 @@ def main(argv: list[str] | None = None) -> int:
             trace="--trace" in flags,
             worker_sweep_interval_ms=sweep_ms,
             allowed_paths=allowed_paths,
+            writable_paths=writable_paths,
             allow_input=allow_input,
             auth_token=auth_token,
             workflow_store_backend=workflow_store_backend,
