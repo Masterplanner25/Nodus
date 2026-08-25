@@ -114,11 +114,28 @@ digraph "build" {
 `--output FILE` writes to a file rather than stdout.
 
 **What an edge means.** An edge is a *dependency*: `n0 --> n1` reads "compile
-depends on fetch". It is **not** a statement about whether `compile` will run.
-A step may narrow which dependency outcomes it accepts with `with { on: [...] }`,
-and that filter is deliberately not drawn, because the plan object does not
-record it. Drawing an unconditional arrow for a conditional edge would make the
-diagram claim more than the data supports.
+depends on fetch". Whether `compile` will actually run is shown too, when the
+plan knows — two different things make an edge conditional, and they render
+differently:
+
+| Written | Plan key | Mermaid | DOT |
+|---|---|---|---|
+| `with { on: ["failed"] }` | `edge_conditions` | `n0 -->\|failed\| n1` | `n0 -> n1 [label="failed"]` |
+| `when reached("x")` | `conditional_edges` | `n0 -.-> n1` | `n0 -> n1 [style=dashed]` |
+| neither | — | `n0 --> n1` | `n0 -> n1` |
+
+**A plain solid arrow means the default**, `on: ["completed"]`. Labelling every
+edge `completed` would be noise, so absence carries meaning here — which is
+worth knowing before reading a diagram as "unconditional".
+
+Both were drawn as plain arrows through v5.2.0, because the plan object recorded
+neither (#471, #537). The renderer never guessed: an unconditional arrow for a
+conditional edge is a lie a diagram tells convincingly, so it stayed silent until
+the plan carried the answer.
+
+**`levels` is a superset once guards are involved.** It is the topological
+partition, not a prediction: a `when`-guarded step appears in it whether or not
+its guard will hold. Read `conditional_edges` alongside it.
 
 Node identifiers in the output (`n0`, `n1`, …) are generated. Step names appear
 only inside quoted labels, so a name containing quotes or brackets cannot alter

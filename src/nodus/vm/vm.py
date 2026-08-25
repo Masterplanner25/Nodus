@@ -1571,6 +1571,15 @@ class VM:
             "graph_id": plan.get("graph_id"),
             "nodes": [step_labels.get(node, node) for node in plan.get("nodes", [])],
             "edges": [[step_labels.get(edge[0], edge[0]), step_labels.get(edge[1], edge[1])] for edge in plan.get("edges", [])],
+            "conditional_edges": [
+                [step_labels.get(edge[0], edge[0]), step_labels.get(edge[1], edge[1])]
+                for edge in plan.get("conditional_edges", [])
+            ],
+            "edge_conditions": {
+                f"{step_labels.get(key.split('->')[0], key.split('->')[0])}"
+                f"->{step_labels.get(key.split('->')[1], key.split('->')[1])}": value
+                for key, value in plan.get("edge_conditions", {}).items()
+            },
             "levels": [[step_labels.get(node, node) for node in level] for level in plan.get("levels", [])],
             "parallel_groups": [[step_labels.get(node, node) for node in level] for level in plan.get("parallel_groups", [])],
             "tasks": plan,

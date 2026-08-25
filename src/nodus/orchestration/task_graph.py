@@ -1948,7 +1948,31 @@ def plan_graph(tasks: list[TaskNode], graph: TaskGraph | None = None) -> dict:
                             indegree[nxt] = 0
 
     parallel_groups = [list(level) for level in levels]
-    result = {"nodes": nodes, "edges": edges, "levels": levels, "parallel_groups": parallel_groups, "graph_id": graph.graph_id}
+    # #471: which of those edges lead into a guarded step. `when` makes an edge
+    # conditional, so `levels` is a *superset* of what will run -- it was exact
+    # before guards existed and has quietly not been since. Reported as its own
+    # list rather than by reshaping `edges`, so nothing reading the plan breaks
+    # and a reader who does not care about guards sees no change.
+    conditional_edges = [
+        [dep.task_id, task.task_id]
+        for task in tasks
+        if getattr(task, "when", None) is not None
+        for dep in task.dependencies
+    ]
+    # #537: the other way an edge is conditional. `with { on: [...] }` says which
+    # dependency outcomes let this step run; the default is `completed` alone.
+    #
+    # Only NON-default sets are recorded. Labelling every edge "completed" would
+    # be noise, so the absence of an entry carries meaning -- which is a thing to
+    # say out loud in the docs rather than leave for a reader to infer.
+    edge_conditions: dict[str, list[str]] = {}
+    for task in tasks:
+        states = getattr(task, "on_states", DEFAULT_JOIN_ON)
+        if states == DEFAULT_JOIN_ON:
+            continue
+        for dep in task.dependencies:
+            edge_conditions[f"{dep.task_id}->{task.task_id}"] = sorted(states)
+    result = {"nodes": nodes, "edges": edges, "levels": levels, "parallel_groups": parallel_groups, "conditional_edges": conditional_edges, "edge_conditions": edge_conditions, "graph_id": graph.graph_id}
     if isinstance(graph.metadata, dict):
         result["metadata"] = graph.metadata
     return result

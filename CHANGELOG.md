@@ -2,7 +2,29 @@
 
 ## [Unreleased]
 
+
 ### Added
+
+- **#471 / #537: a conditional edge now says so, in the plan and the diagram.**
+  Two different things make a workflow edge conditional, and the plan object
+  recorded neither — so `plan_workflow` rendered a guarded edge identically to an
+  unguarded one, and `nodus graph show` drew both as plain arrows.
+
+  ```
+  edges:             [["build", "notify"], ["build", "verify"], ["build", "done"]]
+  conditional_edges: [["build", "verify"]]          # step ... when reached("flaky")
+  edge_conditions:   {"build->notify": ["failed"]}  # with { on: ["failed"] }
+  ```
+
+  Both are **additional keys**; `edges` and `levels` are untouched, so anything
+  reading a plan keeps working. `nodus graph show` labels a filtered edge
+  (`build -->|failed| notify`) and dashes a guarded one (`build -.-> verify`).
+  A plain solid arrow means the default, `on: ["completed"]` — labelling every
+  edge `completed` would be noise, so absence carries meaning, which
+  `TASK_GRAPHS.md` now states rather than leaving to inference.
+
+  `levels` is documented as a **superset** once guards exist: it is the
+  topological partition, not a prediction of what will run.
 
 - **#467: `writable_paths` — read-only context, editable files.** `allowed_paths`
   was a single flat list: a path was reachable for everything or for nothing.
@@ -38,7 +60,62 @@
   the spawned program itself writes is the OS's business. With
   `allow_subprocess=True`, `writable_paths` scopes the runtime's writes only.
 
+### Changed
+
+- **#492: an unhonoured `worker:` declaration warns instead of running
+  silently.** `step … with { worker: "hardened-sandbox" }` names *where* a step
+  runs. With a dispatcher registered, an unsatisfiable name already failed —
+  `WorkerPool.submit` waits for a worker advertising the capability and raises
+  `No workers registered with capability: X`. Without one, the step fell through
+  to in-process execution and reported success, so `worker: "gpu"` and
+  `worker: "hardened-sandbox"` behaved exactly like no declaration at all.
+
+  The check existed; only one of the two paths reached it. Since the thing being
+  declared is an isolation intent, running it silently in-process is the worst
+  available answer. It now warns, names both remedies, and announces the flag
+  day: **this becomes an error in 6.0.0**, staged the way the concurrent-write
+  conflict was in 5.2.0.
+
+- **#492: `NodusRuntime(worker_dispatcher=…)`.** `vm.worker_dispatcher` was set
+  only by `services/server.py`, so an embedded runtime could not honour a worker
+  declaration at all — the declaration had no reachable meaning outside a
+  server. Any object with a compatible `.submit` works.
+
+- **#490: `nodus.toml` refuses what it does not read, and `entry` is real.** The
+  manifest loader accepted any table and any key, read four of them, and threw
+  the rest away without a word. Two of the three real `nodus.toml` files on
+  record were, in consequence, entirely fictional — declaring `[project]`,
+  `[runtime]`, `[workflows]` and an `entry`, none of which Nodus had ever read.
+
+  A manifest is the worst place for a declaration to be accepted-and-ignored,
+  because unlike a bad flag it produces no error and unlike bad code it produces
+  no wrong answer. It just looks like configuration that worked. Loading one now
+  fails with the unknown tables and keys named, plus a suggestion when one is
+  close: `[project]` is told about `[package]`.
+
+  The other half is what those manifests were reaching for. `entry` in
+  `[package]` now selects the file `nodus run` starts from, relative to the
+  project root; omitting it keeps the `src/main.nd` convention. It must resolve
+  inside the project root — a manifest is data, and an `entry` pointing out of
+  its own tree is refused at both the API and the CLI.
+
+  Also fixed in passing: `nodus add` and `nodus remove` rewrite the manifest from
+  parsed values, and did not carry `registry_url` across — so adding a dependency
+  silently deleted a project's registry URL. Both keys now survive the rewrite.
+
 ### Fixes
+
+- **#471: a step guard error blamed goal `until`.** `step b after a when (a < 5i)`
+  was refused with ``goal `until` supports reached("label")…`` — naming a
+  construct that appears nowhere in the program. Both clauses share a grammar and
+  a parser, and the error named the parser's original caller. Each clause now
+  names itself, and the step case points at the idiom that does work: record a
+  checkpoint conditionally in the upstream step and guard on it.
+
+  The guard grammar is **unchanged**. `reached()` takes a string literal so the
+  complete set of checkpoints is known at parse time, which is what lets
+  `nodus check` reject a typo'd label instead of leaving a step that silently
+  never runs.
 
 - **#478: `SyscallSpec.capability` is enforced.** Every syscall declared one,
   `syscall_list()` published it to any host that asked, and `call_syscall` never
@@ -99,49 +176,6 @@
 - **The embedder runbook said the `allow_*` switches "default to permissive".**
   They have denied by default since 5.0.0. The paragraph was backwards for three
   releases in the document an embedder reads to configure confinement.
-
-### Changed
-
-- **#492: an unhonoured `worker:` declaration warns instead of running
-  silently.** `step … with { worker: "hardened-sandbox" }` names *where* a step
-  runs. With a dispatcher registered, an unsatisfiable name already failed —
-  `WorkerPool.submit` waits for a worker advertising the capability and raises
-  `No workers registered with capability: X`. Without one, the step fell through
-  to in-process execution and reported success, so `worker: "gpu"` and
-  `worker: "hardened-sandbox"` behaved exactly like no declaration at all.
-
-  The check existed; only one of the two paths reached it. Since the thing being
-  declared is an isolation intent, running it silently in-process is the worst
-  available answer. It now warns, names both remedies, and announces the flag
-  day: **this becomes an error in 6.0.0**, staged the way the concurrent-write
-  conflict was in 5.2.0.
-
-- **#492: `NodusRuntime(worker_dispatcher=…)`.** `vm.worker_dispatcher` was set
-  only by `services/server.py`, so an embedded runtime could not honour a worker
-  declaration at all — the declaration had no reachable meaning outside a
-  server. Any object with a compatible `.submit` works.
-
-- **#490: `nodus.toml` refuses what it does not read, and `entry` is real.** The
-  manifest loader accepted any table and any key, read four of them, and threw
-  the rest away without a word. Two of the three real `nodus.toml` files on
-  record were, in consequence, entirely fictional — declaring `[project]`,
-  `[runtime]`, `[workflows]` and an `entry`, none of which Nodus had ever read.
-
-  A manifest is the worst place for a declaration to be accepted-and-ignored,
-  because unlike a bad flag it produces no error and unlike bad code it produces
-  no wrong answer. It just looks like configuration that worked. Loading one now
-  fails with the unknown tables and keys named, plus a suggestion when one is
-  close: `[project]` is told about `[package]`.
-
-  The other half is what those manifests were reaching for. `entry` in
-  `[package]` now selects the file `nodus run` starts from, relative to the
-  project root; omitting it keeps the `src/main.nd` convention. It must resolve
-  inside the project root — a manifest is data, and an `entry` pointing out of
-  its own tree is refused at both the API and the CLI.
-
-  Also fixed in passing: `nodus add` and `nodus remove` rewrite the manifest from
-  parsed values, and did not carry `registry_url` across — so adding a dependency
-  silently deleted a project's registry URL. Both keys now survive the rewrite.
 
 ## [5.2.0] - 2026-08-23
 
