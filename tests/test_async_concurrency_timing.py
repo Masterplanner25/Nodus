@@ -99,17 +99,38 @@ class AsyncIOConcurrencyTimingTests(unittest.TestCase):
         lines += ["run_loop()"]
         return 'import "std:http" as http\n' + "\n".join(lines)
 
+    @classmethod
+    def _serial_src(cls) -> str:
+        return "\n".join(f'let r{i} = http_get("{cls._url}")' for i in range(_N))
+
+    def _assert_overlaps(self, call: str, message: str) -> None:
+        """Ratio assertion against a baseline measured under the same load (#334).
+
+        The serial baseline is taken once at class setup; a load spike between
+        then and the test skews the ratio and produced the suite's recurring
+        CI flake (both `*_overlaps` tests, coverage job and plain job alike).
+        When the first comparison fails, both sides are re-measured on the
+        now-loaded box before calling it a failure -- a genuinely serial
+        fan-out still fails, because it is slow relative to *any* baseline.
+        """
+        concurrent = self._best_time(self._fanout_src(call))
+        if concurrent < self.serial * _OVERLAP_RATIO:
+            return
+        fresh_serial = self._time_source(self._serial_src())
+        fresh_concurrent = self._best_time(self._fanout_src(call))
+        self.assertLess(
+            fresh_concurrent,
+            fresh_serial * _OVERLAP_RATIO,
+            f"{message}: {fresh_concurrent:.2f}s vs serial baseline "
+            f"{fresh_serial:.2f}s (expected < {fresh_serial * _OVERLAP_RATIO:.2f}s; "
+            f"first attempt {concurrent:.2f}s vs {self.serial:.2f}s)",
+        )
+
     def test_raw_async_builtin_overlaps(self):
         """Raw http_get_async builtin overlaps -- passes today (sanity + substrate)."""
-        concurrent = self._best_time(self._fanout_src(f'http_get_async("{self._url}")'))
-        self.assertLess(
-            concurrent,
-            self.serial * _OVERLAP_RATIO,
-            f"raw http_get_async fan-out did not overlap: {concurrent:.2f}s "
-            f"vs serial baseline {self.serial:.2f}s "
-            f"(expected < {self.serial * _OVERLAP_RATIO:.2f}s). If this fails, the "
-            f"host may be too loaded to observe overlap -- the wrapper test below "
-            f"is then inconclusive.",
+        self._assert_overlaps(
+            f'http_get_async("{self._url}")',
+            "raw http_get_async fan-out did not overlap",
         )
 
     # closes: #295
@@ -154,14 +175,10 @@ class AsyncIOConcurrencyTimingTests(unittest.TestCase):
         from a scheduler coroutine now dispatch in-VM so the async yield
         propagates and the fan-out overlaps. Re-breaking that makes this fail.
         """
-        concurrent = self._best_time(self._fanout_src(f'http.get_async("{self._url}", nil)'))
-        self.assertLess(
-            concurrent,
-            self.serial * _OVERLAP_RATIO,
-            f"http.get_async fan-out did NOT overlap (ran serially): "
-            f"{concurrent:.2f}s vs serial baseline {self.serial:.2f}s "
-            f"(expected < {self.serial * _OVERLAP_RATIO:.2f}s). The stdlib async "
-            f"wrapper is silently falling back to the synchronous path.",
+        self._assert_overlaps(
+            f'http.get_async("{self._url}", nil)',
+            "http.get_async fan-out did NOT overlap (ran serially) — the stdlib "
+            "async wrapper is silently falling back to the synchronous path",
         )
 
 

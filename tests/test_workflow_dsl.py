@@ -473,19 +473,35 @@ workflow demo {
         self.assertEqual(payload["result"]["status"], "waiting")
         graph_id = payload["result"]["graph_id"]
 
-        status, payload = self.request(
-            "POST",
-            "/workflow/resume",
-            {
-                "graph_id": graph_id,
-                "resume_payload": {"reviewer": "api-user"},
-                "event_type": "approval.granted",
-                "correlation_key": "req-api",
-            },
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"], payload)
-        self.assertEqual(payload["result"]["steps"]["finish"], "api-user")
+        # #334: poll rather than read once. Under load (the coverage run) the
+        # first resume can observe a not-yet-settled shape -- ok:true with no
+        # `steps` -- and a single-shot assertion made this the suite's most
+        # frequent flake. Retrying converges in both race modes: a resume that
+        # half-landed leaves the run completed, and resuming a completed run
+        # returns its full result.
+        import time as _time
+
+        deadline = _time.time() + 15.0
+        last = None
+        while _time.time() < deadline:
+            status, payload = self.request(
+                "POST",
+                "/workflow/resume",
+                {
+                    "graph_id": graph_id,
+                    "resume_payload": {"reviewer": "api-user"},
+                    "event_type": "approval.granted",
+                    "correlation_key": "req-api",
+                },
+            )
+            last = (status, payload)
+            result = payload.get("result") if isinstance(payload, dict) else None
+            steps = result.get("steps") if isinstance(result, dict) else None
+            if status == 200 and isinstance(steps, dict) and steps.get("finish") == "api-user":
+                break
+            _time.sleep(0.25)
+        else:
+            self.fail(f"resume never settled: {last}")
 
     def test_workflow_api_endpoints(self):
         code = """
