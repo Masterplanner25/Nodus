@@ -19,6 +19,20 @@
 
 ### Fixes
 
+- **#416: a closure over a top-level loop body's variable gets a diagnosis
+  instead of a lie.** Upvalue capture reads an enclosing *function* frame,
+  and a block at module root — a top-level `while`/`for`/`if` body — has no
+  frame, so a closure written there has nothing to capture from. The compile
+  error was `Undefined variable: snap` with `snap` declared on the line
+  above — accurate about resolution, actively misleading about the fix. It
+  now says: `Cannot capture 'snap': it is declared inside a top-level loop
+  or block body, which a closure cannot capture from. Move the loop into a
+  function, or declare 'snap' at module top level.` A genuine typo still
+  reports `Undefined variable`. Making top-level blocks actually capturable
+  (the issue's deeper option) is a compiler/VM design change recorded on the
+  issue, not taken here; the working shape's per-iteration binding semantics
+  are pinned by test either way.
+
 - **#457: a reused `ModuleLoader` refuses different source under one module
   name, instead of silently returning the first snippet's bytecode.** The
   loader memoises by module id, and `"<memory>"` is the default — so a REPL,
