@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#545: record equality is decided — structural at 6.0.0 — and a comparison
+  the flip will change now warns.** `record {x: 1i} == record {x: 1i}` is
+  `false` today: records compare by identity, unlike every other value. At
+  6.0.0, record `==` compares `kind` and `fields` recursively with the same
+  equality lists and maps already use; `datetime` keeps comparing by instant
+  (zone ignored) and `duration` by length, function-valued fields compare by
+  identity, and the `merge: "union"` refusal of record elements is lifted.
+  Until then, two distinct records that field-by-field comparison calls equal
+  print a one-time warning naming the change — joining #547 and #492 in the
+  6.0.0 staging cohort. The 6.0.0 semantics ship now as
+  `nodus.vm.types.structural_eq`, consulted only to detect the divergence.
+  Decision record: `docs/design/v6/00-record-equality.md`.
+
 ## [5.3.0] - 2026-08-25
 
 
