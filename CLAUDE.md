@@ -480,6 +480,27 @@ Workflow:
 
 Never attempt `git push origin main` directly — it will be rejected.
 
+**A commit body that mentions an issue can close it, and negation does not save you.**
+GitHub's linked-issue parser matches a keyword (`close`/`fix`/`resolve`, any tense),
+an optional colon, whitespace — **including newlines** — and then `#N`. It does no
+grammar. So a housekeeping commit whose body reads
+
+```
+Filed, not fixed:
+
+  #584  latest_graph_state() returns an arbitrary graph
+```
+
+closes #584 on merge. That happened, 2026-08-25, in the commit that filed it. The word
+`not` is invisible to the parser; all it sees is `fixed:` … `#584`.
+
+This bites *this* repo specifically, because our commit messages list issue numbers as a
+matter of course and the phrasings that precede them — "not fixed", "to fix", "fixes
+pending" — are exactly the trap. Write **`Filed (open):`**, **`Reported:`**, or put the
+number on its own line well away from any such verb. After merging a PR that names issue
+numbers it does not resolve, **check their state** — reopening is cheap, but a silently
+closed issue is one nobody looks at again.
+
 ## CHANGELOG — update it in the same PR as the change
 
 **Every user-visible change gets a `CHANGELOG.md` `[Unreleased]` entry in the PR that
