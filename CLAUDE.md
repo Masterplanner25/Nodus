@@ -1095,10 +1095,26 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.3.0** (live on PyPI, published 2026-08-25). Both files
+The current published version is **v5.4.0** (live on PyPI, published 2026-08-25). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.3.0"`
-- `pyproject.toml` — `version = "5.3.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.4.0"`
+- `pyproject.toml` — `version = "5.4.0"`
+
+**5.4.0 is additive except in one place a reader should know about: `nodus graph`
+no longer runs the file (#400).** Both `nodus graph <file>` and `nodus graph show`
+built their plan by executing the target, side effects included; they now plan from
+the workflow/goal declarations alone. A file whose graph is constructed at runtime
+(`task()` / `run_graph`, or a dynamically chosen flow) is **refused** with a message
+naming `--execute`, which restores the old behaviour — so a script relying on the
+executing path needs that flag. Nothing else in 5.4.0 removes a behaviour: the other
+changes either add a way to say something (`allow_failure`, `try`/`finally` without
+`catch`, blocking send on a bounded `channel(n)`), refuse a combination that could
+only ever no-op (a checkpoint resume of a *waiting* run, a goal whose every
+checkpoint is conditional, a reused `ModuleLoader` handed different source under one
+module name), or make an existing failure legible. **`nodus workflow cleanup` gained
+a 30-day default retention** where unset previously meant *forever* — the command
+still only runs when invoked, but it now removes something when it does
+(`NODUS_WORKFLOW_RETENTION_SECONDS=0` restores the old no-op).
 
 **5.3.0 has one input that used to load and now does not (#490).** A `nodus.toml`
 declaring a table or key Nodus does not read — `[project]`, `[runtime]`, a misspelled
