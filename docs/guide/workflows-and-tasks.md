@@ -325,6 +325,14 @@ the first checkpoint. A non-durable cell is **absent** from restored state rathe
 than restored as `nil`, so a resumed step re-derives it instead of reading a
 value that looks set.
 
+> **Durable state and step returns must be serialisable** (#498). Every run
+> persists its state cells and step return values to the workflow store, so a
+> closure, a channel, or a record in either aborts the run at persist time —
+> after the step's effects have happened. The error names the workflow, the
+> cell or step, and the fix: build live values inside the step (or declare the
+> cell `durable: false`), and use a map where you reached for a record. Return
+> plain data — numbers, strings, lists, maps — from steps.
+
 ---
 
 ## 5. Failure and recovery

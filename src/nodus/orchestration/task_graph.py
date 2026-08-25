@@ -172,12 +172,98 @@ def _fsync_directory(path: str) -> None:
 def _atomic_write_json(path: str, data: dict) -> None:
     tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
     dirpath = os.path.dirname(path) or "."
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, sort_keys=True, separators=(",", ":"))
-        handle.flush()
-        os.fsync(handle.fileno())
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+            handle.flush()
+            os.fsync(handle.fileno())
+    except TypeError as err:
+        # #498: the raw failure was json's own -- "Object of type Closure is
+        # not JSON serializable", blamed on the run_workflow call site, naming
+        # neither the cell nor the step. Walk the snapshot for the culprit and
+        # say what it is, where it is, and what to do. This is the seam: the
+        # place that knows which value failed is the place every later answer
+        # (assignment-time rejection, a wider format) attaches to.
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise _unserializable_persist_error(data, err) from err
     os.replace(tmp_path, path)
     _fsync_directory(dirpath)
+
+
+def _find_unserializable(value, segments: tuple = ()):  # -> tuple[tuple, str] | None
+    """Path segments and type name of the first value `json` cannot encode."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return None
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, (str, int, float, bool)) and key is not None:
+                return (segments + (repr(key),), type(key).__name__)
+            found = _find_unserializable(item, segments + (str(key),))
+            if found is not None:
+                return found
+        return None
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            found = _find_unserializable(item, segments + (str(index),))
+            if found is not None:
+                return found
+        return None
+    return (segments, type(value).__name__)
+
+
+def _unserializable_persist_error(data: dict, err: TypeError) -> Exception:
+    """A persist failure that names the workflow, the place, and the remedy."""
+    from nodus.runtime.errors import LangRuntimeError
+
+    _meta_raw = data.get("metadata")
+    metadata: dict = _meta_raw if isinstance(_meta_raw, dict) else {}
+    workflow = (
+        data.get("workflow_name")
+        or metadata.get("goal_name")
+        or metadata.get("workflow_name")
+        or "<graph>"
+    )
+    found = _find_unserializable(data)
+    if found is None:
+        return LangRuntimeError(
+            "workflow",
+            f"workflow '{workflow}' could not be persisted: {err}",
+        )
+    segments, type_name = found
+    where = "value at " + ".".join(segments)
+    _stt_raw = metadata.get("task_to_step")
+    task_to_step: dict = _stt_raw if isinstance(_stt_raw, dict) else {}
+    head = segments[0] if segments else ""
+    if head in {"workflow_state"} and len(segments) >= 2:
+        where = f"state cell '{segments[1]}'"
+    elif head == "metadata" and len(segments) >= 3 and segments[1] == "workflow_state":
+        where = f"state cell '{segments[2]}'"
+    elif head == "engine_checkpoints" and "state" in segments:
+        cell = segments[segments.index("state") + 1] if segments.index("state") + 1 < len(segments) else "?"
+        where = f"state cell '{cell}' (in a checkpoint snapshot)"
+    elif head in {"results", "task_outputs"} and len(segments) >= 2:
+        step = task_to_step.get(segments[1], segments[1])
+        where = f"step '{step}''s return value"
+    elif head == "tasks" and len(segments) >= 2:
+        step = task_to_step.get(segments[1], segments[1])
+        where = f"step '{step}''s recorded result"
+    if type_name == "Record":
+        remedy = "Use a map instead of a record (see #545 for record equality plans)"
+    else:
+        remedy = (
+            "Live values (closures, channels, connections) belong inside a "
+            "step; a state cell holding one can declare "
+            "`with { durable: false }` to stay out of persistence"
+        )
+    return LangRuntimeError(
+        "workflow",
+        f"workflow '{workflow}' could not be persisted: {where} holds a "
+        f"{type_name}, which the workflow store cannot serialize. {remedy} "
+        f"(#498).",
+    )
 
 
 def _scheduler_queue_snapshot(vm) -> list[str]:
@@ -263,6 +349,13 @@ def _persist_graph_state(
     metadata = graph.metadata
     if isinstance(metadata, dict):
         metadata = copy.deepcopy(metadata)
+        # #498, sibling path: `durable: false` filtered the top-level
+        # `workflow_state` and nothing else -- but the metadata carries its own
+        # copy of the state, so a non-durable cell holding a live value still
+        # reached json through it and aborted the persist the declaration was
+        # meant to prevent. Same rule, every copy.
+        if isinstance(metadata.get("workflow_state"), dict):
+            metadata["workflow_state"] = _durable_state(metadata["workflow_state"], graph)
     state: dict[str, Any] = {
         "graph_id": graph.graph_id,
         "status": status,
@@ -1349,9 +1442,15 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             pending = workflow_state.pending_fold(task.task_id)
             if pending:
                 state_now = {**workflow_state, **pending}
-                entry["resume_state"] = clone_state(dict(workflow_state))
+                # #498 sibling path: checkpoint snapshots carry state too, so a
+                # non-durable cell must stay out of them the same way it stays
+                # out of the persisted `workflow_state` -- a resumed step
+                # re-derives it.
+                entry["resume_state"] = clone_state(
+                    _durable_state(dict(workflow_state), graph)
+                )
         if isinstance(state_now, dict):
-            entry["state"] = clone_state(state_now)
+            entry["state"] = clone_state(_durable_state(state_now, graph))
         if isinstance(checkpoints, list):
             checkpoints.append(
                 {
