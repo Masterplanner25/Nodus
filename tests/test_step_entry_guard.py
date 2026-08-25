@@ -32,12 +32,15 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, "C:/dev/Coding Language/src")
+# Derived, not hardcoded: this file *reads* source out of the tree, so a literal
+# "C:/dev/Coding Language" passes locally and fails on the Linux CI runner --
+# which is exactly what it did. Other tests here hardcode it harmlessly because
+# they only feed `sys.path`, where a non-existent entry is ignored.
+REPO = pathlib.Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(REPO / "src"))
 
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
-
-
-REPO = pathlib.Path("C:/dev/Coding Language")
 
 
 FLOW = """
