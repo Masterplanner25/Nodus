@@ -45,6 +45,10 @@ class Scheduler:
         self.task_ages: dict[int, int] = {}
         self._io_channels: list = []
         self._recv_channels: set = set()
+        # #402: channels with senders parked on a full queue, mirroring
+        # `_recv_channels`. Keeps the loop alive while a blocked send could
+        # still be woken, and feeds the deadlock diagnosis when it cannot.
+        self._send_channels: set = set()
         self._run_loop_called: bool = False
         self._spawned_without_loop: int = 0
         self._coroutine_errors: list = []
@@ -193,11 +197,11 @@ class Scheduler:
         # Note: _spawned_without_loop is also reset at the end of this method.
         # Coroutines spawned *during* run_loop (e.g. by task callbacks) go into
         # ready_queue and are drained by the loop below, so they are not unrun.
-        while self.ready_queue or self.timers or self._io_channels or self._recv_channels:
+        while self.ready_queue or self.timers or self._io_channels or self._recv_channels or self._send_channels:
             self._drain_timers()
             self._drain_io_channels()
             if not self.ready_queue:
-                if not self.timers and not self._io_channels and not self._recv_channels:
+                if not self.timers and not self._io_channels and not self._recv_channels and not self._send_channels:
                     break
                 if self.timers:
                     wake_time = self.timers[0][0]
@@ -213,24 +217,35 @@ class Scheduler:
                     time.sleep(0.001)
                     if self.vm.deadline is not None:
                         self.vm.deadline += time.monotonic() - _t0
-                elif self._recv_channels:
+                elif self._recv_channels or self._send_channels:
                     # No runnable coroutines, no timers, no system channels — only blocked
-                    # recv() calls remain. Nothing can ever wake them: deadlock.
-                    blocked = [
-                        c for c in self.tasks.values()
-                        if getattr(c, "state", None) == "suspended"
-                        and getattr(c, "blocked_reason", None) == "channel_recv"
-                    ]
-                    names = [
-                        getattr(c, "name", None) or f"<coroutine #{getattr(c, 'id', '?')}>"
-                        for c in blocked
-                    ]
-                    detail = f": {', '.join(names)}" if names else ""
-                    raise LangRuntimeError(
-                        "deadlock",
-                        f"Deadlock: {len(blocked)} coroutine(s) blocked on recv() with no "
-                        f"possible sender{detail}",
-                    )
+                    # channel operations remain. Nothing can ever wake them: deadlock.
+                    # Senders too, since #402 — a send parked on a full channel with no
+                    # receiver left is the mirror image of the recv case.
+                    def _blocked(reason: str) -> list[str]:
+                        return [
+                            getattr(c, "name", None) or f"<coroutine #{getattr(c, 'id', '?')}>"
+                            for c in self.tasks.values()
+                            if getattr(c, "state", None) == "suspended"
+                            and getattr(c, "blocked_reason", None) == reason
+                        ]
+
+                    recv_names = _blocked("channel_recv")
+                    send_names = _blocked("channel_send")
+                    parts = []
+                    if recv_names or not send_names:
+                        detail = f": {', '.join(recv_names)}" if recv_names else ""
+                        parts.append(
+                            f"{len(recv_names)} coroutine(s) blocked on recv() with no "
+                            f"possible sender{detail}"
+                        )
+                    if send_names:
+                        detail = f": {', '.join(send_names)}" if send_names else ""
+                        parts.append(
+                            f"{len(send_names)} coroutine(s) blocked on send() with no "
+                            f"possible receiver{detail}"
+                        )
+                    raise LangRuntimeError("deadlock", "Deadlock: " + "; ".join(parts))
                 self._drain_timers()
                 self._drain_io_channels()
                 if not self.ready_queue:

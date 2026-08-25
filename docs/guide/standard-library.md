@@ -872,6 +872,15 @@ Coroutine and concurrency primitives.
 | `pipeline(stages)` | Chain `stages` through channels, each stage a function of one argument. Returns a record `{input, output}`. |
 | `graph_run(tasks)` | Undocumented; delegates to `run_graph(graph(tasks))`. |
 
+**Bounded channels exert backpressure** (#402). `channel(n)` caps the queue at
+`n`; a `send` in a coroutine onto a full channel **blocks** until a `recv`
+frees a slot, so a producer cannot outrun its consumer unboundedly. A blocked
+sender with no possible receiver is reported as a deadlock, like the recv
+mirror image. `close()` flushes any blocked senders' values into the queue
+(still drainable by `recv` after close) and wakes them. Outside a coroutine
+there is nothing to suspend, so a full-channel `send` at top level raises,
+with guidance to wrap in `spawn(...)` + `run_loop()`.
+
 `tasks` may hold either zero-argument functions or pre-built coroutines — both
 forms work, and a task that calls `async.sleep()` suspends rather than blocking,
 so the others keep running:
