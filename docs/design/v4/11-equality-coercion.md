@@ -349,6 +349,20 @@ Phase 3B test cases:
    also use the narrowed equality — i.e., `[0] == [false]` is `false` in
    v4.0. The narrowing must propagate into recursive equality checks.
 
+   **Resolved for lists and maps; records are the exception, and this heading
+   never said so.** Lists and maps compare structurally with the narrowing
+   propagating recursively, as described. Records compare by **identity** —
+   `Record.__eq__` in `vm/types.py` ends `return self is other`, with `datetime`
+   and `duration` carved out to compare by value. So this item's title names
+   record equality and its body specifies only lists, and the record rule has
+   lived solely in a `__eq__` body since v4.0.
+
+   Recorded here because it was found the hard way: `merge: "union"` (5.2.0)
+   needs to know when two contributed elements are the same, and a list of
+   records deduplicates nothing. Whether records *should* be structural is
+   [#545](https://github.com/Masterplanner25/Nodus/issues/545); `==` is Stable,
+   so any change is a major-version one.
+
 5. **Truthiness unchanged.** Confirm that narrowing `==` does not affect
    the `if` condition evaluation path. `if 0 { ... }` behavior is governed
    by truthiness rules, not the `==` opcode. These are separate code paths;
