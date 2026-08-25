@@ -15,6 +15,28 @@ SOURCE_DIRNAME = "src"
 ENTRYPOINT_NAME = "main.nd"
 CACHE_DIRNAME = "cache"
 
+#: Every table `nodus.toml` may contain. A manifest that declares anything else
+#: is refused rather than partly read: "accepted and ignored" is the defect class
+#: this repo keeps hitting, and a manifest is where it is least visible -- it
+#: looks plausible, so nobody re-reads it (#490).
+MANIFEST_SECTIONS = ("package", "dependencies")
+
+#: Keys `[package]` may contain.
+PACKAGE_KEYS = ("name", "version", "registry_url", "entry")
+
+#: Top-level keys tolerated for the pre-`[package]` manifest form.
+LEGACY_TOP_LEVEL_KEYS = ("name", "version")
+
+#: Mistakes worth naming rather than just rejecting. `[project]` is one
+#: character from `[package]` and reads as obviously correct, which is exactly
+#: why it went unnoticed in a first-party project for months.
+SECTION_HINTS = {
+    "project": "did you mean [package]?",
+    "workflows": "Nodus has no [workflows] table; point `entry` at a file instead",
+    "runtime": "Nodus has no [runtime] table",
+    "tool": "did you mean [package]?",
+}
+
 
 @dataclass(frozen=True)
 class DependencySpec:
@@ -43,6 +65,11 @@ class ProjectConfig:
     version: str
     dependencies: dict[str, DependencySpec]
     registry_url: str | None = None
+    #: `entry = "..."` from the manifest, relative to the project root. `None`
+    #: falls back to the `src/main.nd` convention. Two of the three real
+    #: manifests on record declared this key before it existed, and it was
+    #: silently ignored along with everything else (#490).
+    entry: str | None = None
 
 
 def find_project_root(start_dir: str) -> str | None:
@@ -61,7 +88,69 @@ def load_manifest(path: str) -> dict:
         return tomllib.load(handle)
 
 
-def parse_package(data: dict, *, root: str) -> tuple[str, str, str | None]:
+class ManifestError(ValueError):
+    """A manifest declares something Nodus does not read."""
+
+
+def _did_you_mean(name: str, known) -> str:
+    """A hint only when one is actually close, rather than always guessing."""
+    import difflib
+
+    close = difflib.get_close_matches(name, list(known), n=1, cutoff=0.7)
+    return f"did you mean {close[0]!r}?" if close else ""
+
+
+def validate_manifest(data: dict, *, path: str = MANIFEST_NAME) -> None:
+    """Refuse a manifest that declares anything Nodus will not read.
+
+    The rule this implements is recorded in `CORPUS_SYNTHESIS.md` §6: a
+    declaration the runtime accepts must bind, or be refused at the point of
+    declaration. "Accepted and ignored" is not a permitted third state.
+
+    A manifest is the worst place for that third state, because it *looks* like
+    it worked. A first-party project declared `[project]`, `entry`, `[runtime]`
+    and
+    `[workflows]` -- none of them read -- and nothing said so for months (#490).
+    """
+    problems: list[str] = []
+
+    for key in data:
+        name = str(key)
+        if name in MANIFEST_SECTIONS:
+            continue
+        if not isinstance(data[key], dict) and name in LEGACY_TOP_LEVEL_KEYS:
+            continue
+        hint = SECTION_HINTS.get(name) or _did_you_mean(name, MANIFEST_SECTIONS)
+        is_table = isinstance(data[key], dict)
+        kind = "table" if is_table else "key"
+        label = f"[{name}]" if is_table else repr(name)
+        problems.append(
+            f"  unknown {kind} {label}" + (f" -- {hint}" if hint else "")
+        )
+
+    package = data.get("package")
+    if isinstance(package, dict):
+        for key in package:
+            name = str(key)
+            if name in PACKAGE_KEYS:
+                continue
+            hint = _did_you_mean(name, PACKAGE_KEYS)
+            problems.append(
+                f"  unknown key {name!r} in [package]" + (f" -- {hint}" if hint else "")
+            )
+
+    if problems:
+        supported = ", ".join(f"[{section}]" for section in MANIFEST_SECTIONS)
+        raise ManifestError(
+            f"{path} declares things Nodus does not read:\n"
+            + "\n".join(problems)
+            + f"\n\nnodus.toml supports {supported}, and [package] keys: "
+            + ", ".join(PACKAGE_KEYS)
+            + "."
+        )
+
+
+def parse_package(data: dict, *, root: str) -> tuple[str, str, str | None, str | None]:
     raw_package = data.get("package")
     if raw_package is not None:
         if not isinstance(raw_package, dict):
@@ -69,10 +158,12 @@ def parse_package(data: dict, *, root: str) -> tuple[str, str, str | None]:
         name = str(raw_package.get("name", os.path.basename(root)))
         version = str(raw_package.get("version", "0.1.0"))
         registry_url = str(raw_package.get("registry_url", "") or "") or None
-        return name, version, registry_url
+        entry = str(raw_package.get("entry", "") or "") or None
+        return name, version, registry_url, entry
     return (
         str(data.get("name", os.path.basename(root))),
         str(data.get("version", "0.1.0")),
+        None,
         None,
     )
 
@@ -100,6 +191,7 @@ def write_project_manifest(
     version: str,
     dependencies: dict[str, DependencySpec],
     registry_url: str | None = None,
+    entry: str | None = None,
 ) -> None:
     lines = [
         "[package]",
@@ -108,6 +200,8 @@ def write_project_manifest(
     ]
     if registry_url:
         lines.append(f'registry_url = "{_escape(registry_url)}"')
+    if entry:
+        lines.append(f'entry = "{_escape(entry)}"')
     lines += [
         "",
         "[dependencies]",
@@ -130,7 +224,8 @@ def load_project(root: str) -> ProjectConfig:
     root = os.path.abspath(root)
     manifest_path = os.path.join(root, MANIFEST_NAME)
     data = load_manifest(manifest_path)
-    name, version, registry_url = parse_package(data, root=root)
+    validate_manifest(data, path=manifest_path)
+    name, version, registry_url, entry = parse_package(data, root=root)
     dependencies = parse_dependencies(data.get("dependencies", {}))
     nodus_dir = os.path.join(root, NODUS_DIRNAME)
     return ProjectConfig(
@@ -143,6 +238,7 @@ def load_project(root: str) -> ProjectConfig:
         version=version,
         dependencies=dependencies,
         registry_url=registry_url,
+        entry=entry,
     )
 
 
@@ -176,7 +272,22 @@ def create_project(root: str, name: str | None = None, version: str = "0.1.0") -
 
 
 def project_entry_path(project: ProjectConfig) -> str:
-    return os.path.join(project.root, SOURCE_DIRNAME, ENTRYPOINT_NAME)
+    """Where `nodus run` starts, honouring a declared `entry`.
+
+    `entry` resolves relative to the project root and must stay inside it. A
+    manifest is data, not code -- an `entry = "../../elsewhere.nd"` that ran
+    would let a checked-out project reach outside its own tree.
+    """
+    if project.entry is None:
+        return os.path.join(project.root, SOURCE_DIRNAME, ENTRYPOINT_NAME)
+    root = os.path.abspath(project.root)
+    resolved = os.path.abspath(os.path.join(root, project.entry))
+    if os.path.commonpath([root, resolved]) != root:
+        raise ManifestError(
+            f"{MANIFEST_NAME} entry {project.entry!r} resolves outside the "
+            f"project root ({root}); entry must name a file inside the project"
+        )
+    return resolved
 
 
 def read_lockfile(path: str) -> dict[str, LockedPackage]:

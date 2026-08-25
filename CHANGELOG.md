@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#490: `nodus.toml` refuses what it does not read, and `entry` is real.** The
+  manifest loader accepted any table and any key, read four of them, and threw
+  the rest away without a word. Two of the three real `nodus.toml` files on
+  record were, in consequence, entirely fictional — declaring `[project]`,
+  `[runtime]`, `[workflows]` and an `entry`, none of which Nodus had ever read.
+
+  A manifest is the worst place for a declaration to be accepted-and-ignored,
+  because unlike a bad flag it produces no error and unlike bad code it produces
+  no wrong answer. It just looks like configuration that worked. Loading one now
+  fails with the unknown tables and keys named, plus a suggestion when one is
+  close: `[project]` is told about `[package]`.
+
+  The other half is what those manifests were reaching for. `entry` in
+  `[package]` now selects the file `nodus run` starts from, relative to the
+  project root; omitting it keeps the `src/main.nd` convention. It must resolve
+  inside the project root — a manifest is data, and an `entry` pointing out of
+  its own tree is refused at both the API and the CLI.
+
+  Also fixed in passing: `nodus add` and `nodus remove` rewrite the manifest from
+  parsed values, and did not carry `registry_url` across — so adding a dependency
+  silently deleted a project's registry URL. Both keys now survive the rewrite.
+
 ## [5.2.0] - 2026-08-23
 
 ### Fixes
