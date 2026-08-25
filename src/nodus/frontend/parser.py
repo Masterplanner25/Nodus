@@ -122,6 +122,34 @@ def _tok_desc(kind: str, val: str) -> str:
 
 _MAX_PARSE_DEPTH = 50
 
+# The two clauses that take a predicate. They share a grammar and a parser, so
+# the error naming the grammar has to be told which one the author wrote --
+# `step … when (x < 5)` used to be refused with a sentence about goal `until`,
+# a clause that appears nowhere in the program being compiled (#471).
+GOAL_UNTIL_CLAUSE = "goal `until`"
+STEP_WHEN_CLAUSE = "step guard `when`"
+
+_PREDICATE_GRAMMAR = 'reached("label"), &&, ||, ! and parentheses'
+
+#: Where to go when someone reaches for a value here. The restriction is
+#: deliberate: `reached()` takes a string literal so the complete set of
+#: checkpoints is known at parse time and can be checked against the flow, which
+#: is what turns a typo'd label into a compile error rather than a step that
+#: silently never runs. Branching on data is done by recording the checkpoint
+#: conditionally -- so the hint has to say that, or the refusal reads as a gap.
+_PREDICATE_HINT = (
+    "To branch on a value, record a checkpoint conditionally in the upstream "
+    'step and guard on it: `if (score < 80i) { checkpoint "needs_review" }`, '
+    'then `when reached("needs_review")`.'
+)
+
+
+def _predicate_help(clause: str) -> str:
+    message = f"{clause} supports {_PREDICATE_GRAMMAR}"
+    if clause == STEP_WHEN_CLAUSE:
+        return f"{message}. {_PREDICATE_HINT}"
+    return message
+
 
 class Parser:
     def __init__(self, toks: list[Tok]):
@@ -602,36 +630,36 @@ class Parser:
                 self.error(f"goal budget must set `{required}`", start)
         return self.mark(GoalBudget(found["max_iterations"], found["deadline_ms"]), start)
 
-    # --- the `until` predicate -------------------------------------------
+    # --- the `until` / `when` predicate ------------------------------------
     # A restricted grammar rather than a general expression. `reached("L")` takes
     # a string literal only, so the complete set of checkpoints a goal depends on
     # is known at parse time and can be checked against the workflow it pursues
     # (#409). A general expression would make that check best-effort.
 
-    def goal_predicate(self):
-        node = self.goal_predicate_and()
+    def goal_predicate(self, clause: str = GOAL_UNTIL_CLAUSE):
+        node = self.goal_predicate_and(clause)
         while self.at("||"):
             tok = self.eat("||")
-            node = self.mark(PredicateOr(node, self.goal_predicate_and()), tok)
+            node = self.mark(PredicateOr(node, self.goal_predicate_and(clause)), tok)
         return node
 
-    def goal_predicate_and(self):
-        node = self.goal_predicate_unary()
+    def goal_predicate_and(self, clause: str):
+        node = self.goal_predicate_unary(clause)
         while self.at("&&"):
             tok = self.eat("&&")
-            node = self.mark(PredicateAnd(node, self.goal_predicate_unary()), tok)
+            node = self.mark(PredicateAnd(node, self.goal_predicate_unary(clause)), tok)
         return node
 
-    def goal_predicate_unary(self):
+    def goal_predicate_unary(self, clause: str):
         if self.at("!"):
             tok = self.eat("!")
-            return self.mark(PredicateNot(self.goal_predicate_unary()), tok)
-        return self.goal_predicate_primary()
+            return self.mark(PredicateNot(self.goal_predicate_unary(clause)), tok)
+        return self.goal_predicate_primary(clause)
 
-    def goal_predicate_primary(self):
+    def goal_predicate_primary(self, clause: str):
         if self.at("("):
             self.eat("(")
-            node = self.goal_predicate()
+            node = self.goal_predicate(clause)
             self.eat(")")
             return node
         tok = self.peek()
@@ -643,10 +671,7 @@ class Parser:
             label_tok = self.eat("STR")
             self.eat(")")
             return self.mark(Reached(self.mark(Str(label_tok.val), label_tok)), tok)
-        self.error(
-            "goal `until` supports reached(\"label\"), &&, ||, ! and parentheses",
-            tok,
-        )
+        self.error(_predicate_help(clause), tok)
 
     def flow_def(self, start: Tok, def_type, step_type, label: str):
         name = self.eat("ID").val
@@ -727,7 +752,7 @@ class Parser:
         when = None
         if self.at("ID") and self.peek().val == "when":
             self.eat("ID")
-            when = self.goal_predicate()
+            when = self.goal_predicate(STEP_WHEN_CLAUSE)
         if self.at("WITH"):
             self.eat("WITH")
             options = self.parse_workflow_options()

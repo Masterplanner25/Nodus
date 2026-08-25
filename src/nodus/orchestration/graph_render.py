@@ -10,13 +10,21 @@ This module is the projection.  It adds no new information -- everything here
 comes out of the plan dict `plan_graph()` already builds -- it just writes it
 in two formats other tools understand.
 
-Deliberately not rendered, because the plan does not carry it: the `on: [...]`
-dependency-outcome filter a step may declare.  An edge here means "compile
-depends on fetch", not "compile runs if fetch succeeded".  Drawing an
-unconditional arrow for a conditional edge would be a lie the diagram tells
-convincingly, so the edge stays unlabelled until the plan carries the
-condition -- tracked in **#537**, which is about putting it in the plan rather
-than guessing at it here.
+An edge is drawn conditional when the plan says it is, and never guessed at.
+Two different things make one conditional:
+
+* **`with { on: [...] }`** -- which dependency outcomes let the step run.  The
+  plan reports non-default sets in `edge_conditions`, and the edge carries them
+  as a label (`build -->|failed| notify`).  The default, `completed` alone, is
+  deliberately *not* labelled: writing "completed" on every arrow would be
+  noise, so an unlabelled arrow means the default (#537).
+* **`when <predicate>`** -- a guard on the step itself.  The plan reports these
+  in `conditional_edges`, and the edge is drawn dashed, because the step may not
+  run at all (#471).
+
+Both were previously plain arrows.  An unconditional arrow for a conditional
+edge is a lie a diagram tells convincingly, which is worse than no diagram, so
+this module refused to guess until the plan carried the answer.  It does now.
 """
 
 from __future__ import annotations
@@ -97,6 +105,34 @@ def _dot_label(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _edge_styling(
+    plan: Mapping[str, Any],
+) -> tuple[set[tuple[str, str]], dict[tuple[str, str], str]]:
+    """What makes each edge conditional, read from the plan and never inferred.
+
+    Returns the `when`-guarded edges and the non-default `on:` labels. A plan
+    from before these keys existed yields neither, so an older stored plan still
+    renders -- as plain arrows, which is exactly what it knows.
+    """
+    guarded: set[tuple[str, str]] = set()
+    raw_guarded = plan.get("conditional_edges")
+    if isinstance(raw_guarded, list):
+        for edge in raw_guarded:
+            if isinstance(edge, (list, tuple)) and len(edge) == 2:
+                guarded.add((str(edge[0]), str(edge[1])))
+
+    labels: dict[tuple[str, str], str] = {}
+    raw_conditions = plan.get("edge_conditions")
+    if isinstance(raw_conditions, Mapping):
+        for key, value in raw_conditions.items():
+            source, separator, target = str(key).partition("->")
+            if not separator:
+                continue
+            if isinstance(value, (list, tuple)) and value:
+                labels[(source, target)] = ", ".join(str(item) for item in value)
+    return guarded, labels
+
+
 def to_mermaid(plan: Mapping[str, Any]) -> str:
     """A `flowchart TD` block, renderable by anything that speaks Mermaid."""
     nodes, edges = _nodes_and_edges(plan)
@@ -106,10 +142,14 @@ def to_mermaid(plan: Mapping[str, Any]) -> str:
     lines.append(f"    %% {title}")
     for name in nodes:
         lines.append(f'    {ids[name]}["{_mermaid_label(name)}"]')
+    guarded, labels = _edge_styling(plan)
     for source, target in edges:
         if source not in ids or target not in ids:
             raise GraphRenderError(f"edge references unknown node: {source!r} -> {target!r}")
-        lines.append(f"    {ids[source]} --> {ids[target]}")
+        arrow = "-.->" if (source, target) in guarded else "-->"
+        label = labels.get((source, target))
+        middle = f"|{_mermaid_label(label)}|" if label else ""
+        lines.append(f"    {ids[source]} {arrow}{middle} {ids[target]}")
     return "\n".join(lines)
 
 
@@ -131,10 +171,18 @@ def to_dot(plan: Mapping[str, Any]) -> str:
     ]
     for name in nodes:
         lines.append(f'    {ids[name]} [label="{_dot_label(name)}"];')
+    guarded, labels = _edge_styling(plan)
     for source, target in edges:
         if source not in ids or target not in ids:
             raise GraphRenderError(f"edge references unknown node: {source!r} -> {target!r}")
-        lines.append(f"    {ids[source]} -> {ids[target]};")
+        attributes = []
+        label = labels.get((source, target))
+        if label:
+            attributes.append(f'label="{_dot_label(label)}"')
+        if (source, target) in guarded:
+            attributes.append("style=dashed")
+        suffix = f" [{', '.join(attributes)}]" if attributes else ""
+        lines.append(f"    {ids[source]} -> {ids[target]}{suffix};")
     for group in _levels(plan, nodes):
         members = [ids[name] for name in group if name in ids]
         if len(members) > 1:
