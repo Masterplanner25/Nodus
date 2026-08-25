@@ -19,6 +19,19 @@
 
 ### Fixes
 
+- **#457: a reused `ModuleLoader` refuses different source under one module
+  name, instead of silently returning the first snippet's bytecode.** The
+  loader memoises by module id, and `"<memory>"` is the default — so a REPL,
+  notebook kernel, or test helper compiling several snippets through one
+  loader got the first one back for all of them, and the symptom surfaced
+  somewhere else entirely. Same name + different source now raises
+  (`… was already compiled from different source by this loader … Use a fresh
+  ModuleLoader per snippet, or give each snippet its own module_name`); same
+  name + same source still returns the memo, and load-from-path is exempt
+  (the file is the source by construction). All three memo-consult sites —
+  `_build_metadata`, `_parse_module`, `_load_module` — route through one
+  guard, per the sibling-path rule.
+
 - **#500: a goal whose workflow only checkpoints on success is refused at
   compile time, with the remedy.** A `goal … over …` iterates by resuming
   from the last checkpoint its workflow reached *this pass* — so the natural

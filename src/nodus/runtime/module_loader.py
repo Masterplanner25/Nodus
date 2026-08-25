@@ -218,6 +218,7 @@ class ModuleLoader:
         auto_run_main: bool = False,
     ) -> NodusModule:
         if module_id in self._modules:
+            self._refuse_source_mismatch(module_id, source)
             return self._modules[module_id]
         if module_id in self._loading:
             raise self._circular_import_error(module_id, self._loading_stack)
@@ -590,6 +591,7 @@ class ModuleLoader:
         source_path: str | None = None,
     ) -> ModuleMetadata:
         if module_id in self._metadata:
+            self._refuse_source_mismatch(module_id, source)
             if self._import_trace_fn is not None:
                 self._import_trace_fn(f'[import] Cache hit "{module_id}"')
             return self._metadata[module_id]
@@ -687,6 +689,30 @@ class ModuleLoader:
                 self._metadata_stack.remove(module_id)
             self._metadata_loading.discard(module_id)
 
+    def _refuse_source_mismatch(self, module_id: str, source: str | None) -> None:
+        """Refuse to hand back a memoised module for *different* source (#457).
+
+        The loader memoises by module id, and `"<memory>"` is the default id —
+        so a loader reused for several snippets returned the first one's
+        bytecode for all of them, silently, and the symptom surfaced somewhere
+        else entirely. Three sites consult these memos (`_build_metadata`,
+        `_parse_module`, `_load_module`); each calls this rather than deciding
+        alone, per the sibling-path rule. `source=None` (load-from-path) is
+        exempt: the file is the source by construction.
+        """
+        if source is None:
+            return
+        cached = self._parsed.get(module_id)
+        if cached is not None and cached.source != source:
+            raise LangRuntimeError(
+                "compile",
+                f"module '{module_id}' was already compiled from different "
+                f"source by this loader; a loader memoises by module name. "
+                f"Use a fresh ModuleLoader per snippet, or give each snippet "
+                f"its own module_name.",
+                path=module_id,
+            )
+
     def _parse_module(
         self,
         module_id: str,
@@ -696,6 +722,7 @@ class ModuleLoader:
         source_path: str | None = None,
     ) -> ParsedModule:
         if module_id in self._parsed:
+            self._refuse_source_mismatch(module_id, source)
             return self._parsed[module_id]
         if source is None:
             with open(module_id, "r", encoding="utf-8-sig") as handle:
