@@ -285,7 +285,25 @@ task in pending AND all(dep.task_id in results for dep in task.dependencies)
 No partial satisfaction is accepted. If a dependency fails, the dependent step is never
 spawned and the workflow returns a failure result immediately.
 
-**Code:** `orchestration/task_graph.py::ready_tasks`, `orchestration/task_graph.py::spawn_task`.
+**And a step body cannot be entered any other way (#394).** This half was missing for as
+long as the workflow DSL existed, and without it the invariant above described only the
+routed path. A lowered flow
+is an ordinary map, its `steps` an ordinary list, and each step's `fn` an ordinary
+callable — so `build["steps"][1]["fn"](nil)` ran `test` with `lint` never having run, and
+ordering was a very good *default* rather than a guarantee made to scripts, which is what
+this document's preamble means by an invariant.
+
+A step's compiled `FunctionInfo` now carries `step_owner`, set by the lowering and by
+nothing a program can reach; the graph runner grants authorization for one specific entry
+when `ready_tasks()` has already cleared it; and every site that enters a caller-supplied
+closure consults `VM.guard_step_entry`. Authorization is a positive capability rather than
+a property of the calling path, deliberately: gating on "is a workflow context active"
+would admit a step body calling a *sibling's* `fn`, and gating on `run_closure` vs
+`call_closure` would admit anything a guest can hand a closure to — `std:retry`,
+`std:test`, tool handlers, the iterator protocol.
+
+**Code:** `orchestration/task_graph.py::ready_tasks`, `orchestration/task_graph.py::spawn_task`,
+`vm/vm.py::guard_step_entry`.
 
 ### I-WFLOW-05: A checkpoint snapshot captures the full workflow state at the moment of the `checkpoint` call
 
@@ -352,7 +370,12 @@ Most of these invariants have direct test coverage. Known test gaps:
   TECH_DEBT.md §Security boundary test rule.
 - I-WFLOW-01 (atomic writes): not unit-tested; relies on filesystem semantics.
 - I-WFLOW-03 (step isolation): covered by task graph tests.
-- I-WFLOW-04 (dependency ordering): covered by task graph integration tests.
+- I-WFLOW-04 (dependency ordering): covered by task graph integration tests for the
+  routed path, and by `tests/test_step_entry_guard.py` for the unroutable one — which
+  asserts on the *source*, enumerating every site that builds a frame over a
+  caller-supplied closure, so a fifth entry point fails the suite instead of silently
+  reopening #394. Each of its assertions was checked against a deliberately broken tree
+  and observed to go red.
 - I-WFLOW-05 (checkpoint snapshot): partially covered; state-copy depth not explicitly asserted.
 - I-WFLOW-06 (resume skips completed): covered by workflow resume tests; see also #110.
 

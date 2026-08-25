@@ -566,12 +566,24 @@ here.
   different event names. Giving it a stopping condition is what would make it
   mean "an objective" rather than "a pipeline".
 
-- **#394 (MEDIUM) — step ordering is a default, not an invariant.** A lowered
-  workflow is a reachable map; `build["steps"][1]["fn"](nil)` runs a step whose
-  dependency never ran. Verified by execution. Matters specifically in the
-  model-generated-code case the sandbox exists for. `EXECUTION_INVARIANTS.md`
-  should not group ordering with the resource/capability bounds, which *are*
-  unbypassable.
+- **#394 — RESOLVED.** Step ordering is an invariant now, not a default. A
+  step's compiled `FunctionInfo` carries `step_owner`, set by the lowering and
+  unreachable from a program; the graph runner grants authorization for one
+  entry once `ready_tasks()` has cleared it; and every site that builds a frame
+  over a caller-supplied closure consults `VM.guard_step_entry`. There were
+  **four** such sites, not the one the report implies —
+  `call_closure`, `run_closure`, `_try_enter_foreign_closure`, and the
+  coroutine's first resume in `builtins/coroutine.py`, which is the door the
+  runner itself uses (I-WFLOW-03) and the one a `grep` confined to `vm.py`
+  misses. `tests/test_step_entry_guard.py` enumerates them and fails on a fifth.
+
+  Two shapes were rejected on the way, both instances of the recurring bug shape:
+  gating on "is a workflow context active" would admit a step body calling a
+  *sibling's* `fn`, and gating on `run_closure` vs `call_closure` mistakes the
+  door for the authority — `run_closure` has two dozen callers, including
+  `std:retry`, `std:test`, tool handlers and the iterator protocol, and a guest
+  can hand a step closure to any of them. `EXECUTION_INVARIANTS.md` I-WFLOW-04
+  now states the guarantee and what enforces it.
 
 - **#395 (MEDIUM, design) — no cancellation anywhere.** One `cancel` hit in
   `src/nodus/`, a CLI print. No parent/child links, no scoped cleanup, no error

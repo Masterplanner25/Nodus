@@ -111,6 +111,13 @@ class FunctionInfo:
     upvalues: list[Upvalue]
     display_name: str
     local_slots: dict[str, int] = field(default_factory=dict)  # name → slot index
+    # #394: set to "<flow>.<step>" for a workflow/goal step body, by the lowering
+    # and nowhere else. There is no surface syntax that reaches this field, so a
+    # guest program cannot mark a function -- nor, more importantly, unmark one:
+    # `MAKE_CLOSURE` is compiler-emitted and no reflection builtin mutates a
+    # FunctionInfo. `VM.guard_step_entry` refuses to enter a marked closure that
+    # the graph runner did not authorize.
+    step_owner: str | None = None
 
 
 class Compiler:
@@ -547,7 +554,8 @@ class Compiler:
 
         fn_addr = len(self.code)
         param_names = self.param_names(stmt.params)
-        fn_info = FunctionInfo(fn_name, param_names, fn_addr, upvalues=[], display_name=stmt.name)
+        fn_info = FunctionInfo(fn_name, param_names, fn_addr, upvalues=[], display_name=stmt.name,
+                               step_owner=getattr(stmt, "step_owner", None))
         self.functions[fn_name] = fn_info
 
         if self.symbols is None:
@@ -1142,7 +1150,11 @@ class Compiler:
             jump_over = self.emit("JUMP", None)
             self.fn_counter += 1
             anon_name = f"__anon_{self.fn_counter}"
-            internal_name = self.compile_fn_def(FnDef(anon_name, expr.params, expr.body, return_type=expr.return_type), is_nested=True)
+            internal_name = self.compile_fn_def(
+                FnDef(anon_name, expr.params, expr.body, return_type=expr.return_type,
+                      step_owner=expr.step_owner),
+                is_nested=True,
+            )
             self.patch(jump_over, "JUMP", len(self.code))
             self.emit("MAKE_CLOSURE", internal_name)
             return

@@ -216,7 +216,10 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
         (Str("execution_kind"), Str(execution_kind)),
         (
             Str("steps"),
-            ListLit([_lower_step_ast(step, state_names, fold_cells) for step in flow.steps]),
+            ListLit([
+                _lower_step_ast(step, state_names, fold_cells, flow_name=flow.name)
+                for step in flow.steps
+            ]),
         ),
     ]
     if state_init is not None:
@@ -264,6 +267,8 @@ def _lower_step_ast(
     step: WorkflowStep | GoalStep,
     state_names: list[str],
     fold_cells: dict[str, str] | None = None,
+    *,
+    flow_name: str = "",
 ) -> MapLit:
     state_var = "__workflow_state"
     body = step.body
@@ -282,7 +287,21 @@ def _lower_step_ast(
     items: list[tuple[object, object]] = [
         (Str("name"), Str(step.name)),
         (Str("deps"), ListLit([Str(dep) for dep in step.deps])),
-        (Str("fn"), FnExpr([Param(dep) for dep in step.deps], body, return_type=None)),
+        # #394: the closure is marked with the step it belongs to, and the mark
+        # rides on the compiled FunctionInfo rather than on this map -- because
+        # the map is guest-reachable and the FunctionInfo is not. Ordering was a
+        # default rather than an invariant precisely because this value is an
+        # ordinary map whose "fn" slot is an ordinary callable; the mark is what
+        # lets `VM.guard_step_entry` tell a runner-driven entry from a guest one.
+        (
+            Str("fn"),
+            FnExpr(
+                [Param(dep) for dep in step.deps],
+                body,
+                return_type=None,
+                step_owner=f"{flow_name}.{step.name}" if flow_name else step.name,
+            ),
+        ),
         (Str("options"), step.options if step.options is not None else MapLit([])),
     ]
     when = getattr(step, "when", None)

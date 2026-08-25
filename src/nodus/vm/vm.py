@@ -872,6 +872,39 @@ class VM:
             self.runtime_error("type", f"{name} expects a function")
         return value
 
+    def guard_step_entry(self, closure, *, authorized: bool = False) -> None:
+        """Refuse to enter a workflow/goal step body the graph runner did not start (#394).
+
+        A lowered flow is an ordinary map, its `steps` an ordinary list, and each
+        step's `fn` an ordinary callable — so `build["steps"][1]["fn"](nil)` ran a
+        step whose dependency never ran. Ordering was a very good *default*, not
+        the invariant `I-WFLOW-04` claimed.
+
+        The decision lives here and only here. It is deliberately **not** "is a
+        workflow context active": a step body calling a sibling's `fn` would pass
+        that test, and gating on `run_closure` vs `call_closure` would have been
+        worse still — `run_closure` has two dozen callers (`std:retry`, `std:test`,
+        tool handlers, the iterator protocol), any of which a guest can hand a step
+        closure to. Authorization is therefore a positive capability the runner
+        grants for one specific entry, not a property of the calling path.
+
+        Four sites can enter a caller-supplied closure and each calls this:
+        `call_closure`, `run_closure`, `_call_foreign_closure` and the coroutine's
+        first resume in `builtins/coroutine.py`. `tests/test_step_entry_guard.py`
+        drives off that tuple, so a fifth door fails the suite rather than
+        silently reopening this.
+        """
+        fn = getattr(closure, "function", None)
+        owner = getattr(fn, "step_owner", None)
+        if owner is None or authorized:
+            return
+        self.runtime_error(
+            "runtime",
+            f"Workflow step '{owner}' cannot be called directly — a step body runs "
+            f"only as part of its workflow, in dependency order. Use run_workflow() "
+            f"(or run_goal()) to execute the flow.",
+        )
+
     def ensure_coroutine(self, value, name: str) -> Coroutine:
         if not isinstance(value, Coroutine):
             self.runtime_error("type", f"{name} expects a coroutine")
@@ -2554,6 +2587,7 @@ class VM:
         fn = callee.function
         if arg_count != len(fn.params):
             self.runtime_error("call", f"{self.display_name(fn.name)} expected {len(fn.params)} args, got {arg_count}")
+        self.guard_step_entry(callee)  # #394: door 1 of 4, never authorized
         call_path, call_line, call_col = self.current_loc()
         frame = Frame(
             return_ip=self.ip + 1,
@@ -2573,9 +2607,14 @@ class VM:
             self.profiler.enter_function(self.display_name(fn.name))
         self.ip = fn.addr
 
-    def run_closure(self, closure, args: list, workflow_context: dict | None = None):
+    def run_closure(self, closure, args: list, workflow_context: dict | None = None,
+                    step_authorized: bool = False):
         if not isinstance(closure, Closure):
             self.runtime_error("call", "Task expects a function")
+        # #394: door 2 of 4. `step_authorized` is passed only by the graph
+        # runner's worker path; every other caller of this method -- std:retry,
+        # std:test, tool handlers, the iterator protocol -- leaves it False.
+        self.guard_step_entry(closure, authorized=step_authorized)
         ctx = self.save_execution_context()
         try:
             self.stack = []
@@ -3337,6 +3376,7 @@ class VM:
         fn_info = getattr(closure, "function", None)
         if fn_info is None or len(args) != len(fn_info.params):
             return False
+        self.guard_step_entry(closure)  # #394: door 3 of 4, never authorized
 
         saved = self._capture_module_ctx()
         self._restore_module_ctx(origin_ctx)

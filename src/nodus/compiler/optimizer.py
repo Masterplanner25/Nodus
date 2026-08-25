@@ -250,7 +250,15 @@ def remove_unreachable(
 
     remapped_code = [remap_instruction(instr, mapping) for instr in new_code]
     remapped_functions = {
-        name: FunctionInfo(info.name, list(info.params), mapping[info.addr], list(info.upvalues), info.display_name)
+        # #394: `step_owner` must be carried across every FunctionInfo rebuild,
+        # or the mark is lost and the guard has nothing to check.
+        # NOTE: `local_slots` is *not* carried here, and was not before this
+        # change either -- these two rebuilds have always let it default to {}.
+        # That is a separate question and is deliberately not answered here;
+        # preserving it would change frame setup on a path #394 has no business
+        # touching.
+        name: FunctionInfo(info.name, list(info.params), mapping[info.addr], list(info.upvalues),
+                           info.display_name, step_owner=info.step_owner)
         for name, info in functions.items()
         if info.addr in mapping
     }
@@ -325,7 +333,15 @@ def remap_compacted(
 ) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]]]:
     remapped_code = [remap_instruction(instr, mapping) for instr in code]
     remapped_functions = {
-        name: FunctionInfo(info.name, list(info.params), mapping[info.addr], list(info.upvalues), info.display_name)
+        # #394: `step_owner` must be carried across every FunctionInfo rebuild,
+        # or the mark is lost and the guard has nothing to check.
+        # NOTE: `local_slots` is *not* carried here, and was not before this
+        # change either -- these two rebuilds have always let it default to {}.
+        # That is a separate question and is deliberately not answered here;
+        # preserving it would change frame setup on a path #394 has no business
+        # touching.
+        name: FunctionInfo(info.name, list(info.params), mapping[info.addr], list(info.upvalues),
+                           info.display_name, step_owner=info.step_owner)
         for name, info in functions.items()
         if info.addr in mapping
     }
