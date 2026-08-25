@@ -19,6 +19,22 @@
   §4.2 documents it; the naming follows GitLab CI's `allow_failure` /
   Argo's `continueOn`.
 
+- **#498: a persist failure names the workflow, the cell or step, and the
+  remedy — and `durable: false` now actually protects a live value.** The
+  serializability requirement on workflow state and step returns surfaced as
+  json's own error (`Object of type Closure is not JSON serializable`),
+  attributed to the `run_workflow` call site, naming neither the cell nor
+  the step. The persist path now walks the snapshot for the culprit:
+  `workflow 'nocp' could not be persisted: state cell 'ch' holds a Channel …
+  declare with { durable: false } …`, with step returns named by step and
+  records pointed at maps. Found by this change's own control test: 5.2.0's
+  `durable: false` filtered only the top-level `workflow_state` — the
+  metadata's copy of the state and the checkpoint snapshots still carried
+  the non-durable cell, so the declaration did not actually keep a live
+  value out of the persist. Every copy applies the same rule now.
+  Assignment-time rejection and a wider persist format remain explicitly
+  deferred, recorded on the issue with the seam they would attach to.
+
 ### Changed
 
 - **#545: record equality is decided — structural at 6.0.0 — and a comparison
