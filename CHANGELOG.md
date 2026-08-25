@@ -17,6 +17,32 @@
   `nodus.vm.types.structural_eq`, consulted only to detect the divergence.
   Decision record: `docs/design/v6/00-record-equality.md`.
 
+### Fixes
+
+- **#470: a resume refuses a run whose step structure has changed, instead of
+  manufacturing a false diagnosis.** Nothing recorded what a run's graph looked
+  like, so a rebuild whose shape had drifted — a pre-#469 run rebuilt from an
+  edited file, a hand-edited state file, a lowering change across versions —
+  applied the persisted per-task state to the wrong shape and failed with
+  `Dependency cycle detected: z -> z` in source that has no cycle. Every run now
+  records `workflow_topology` (step names + `after` edges) in its metadata, and
+  `_rebuild_workflow_graph` compares on rebuild, refusing a mismatch with the
+  real cause: `planned against a different version of workflow 'w': its step
+  structure has changed since the run started (steps added: z)`. Structure only,
+  deliberately — a body or `when` edit does not refuse. Legacy runs without the
+  recorded topology are checked on step names alone (from `step_to_task`); an
+  edge-only rewire on such a run remains undetectable, a stated limit.
+
+- **#497: both halves of the resume-source fork now say which rule is in
+  effect.** The pinned half (all runs since #469) already warned on drift; the
+  warning now also lands where a program can react to it — `source_drift: true`
+  on the resume result map, present only when the file has changed. The legacy
+  half — a pre-#469 run rebuilt from the file *as it is now* — was completely
+  silent about being the opposite rule; it now warns on stderr
+  (`resume: run '<id>' predates source recording …`) and emits a
+  `workflow_rebuild_unpinned` event. With #469's pinning, this closes #497: one
+  rule for every new run, and both surviving paths announce themselves.
+
 ## [5.3.0] - 2026-08-25
 
 

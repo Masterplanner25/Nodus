@@ -859,6 +859,10 @@ class WorkflowFrameworkRunner:
         if claim is None:
             return {"ok": False, "error": f"Workflow run '{graph_id}' is already claimed"}
         try:
+            # A same-process resume can skip the rebuild entirely (registry hit),
+            # so clear the drift flag here or a previous resume's answer leaks
+            # into this result.
+            vm._last_resume_source_drift = False
             state = load_graph_state(graph_id)
             if state is None:
                 return {"ok": False, "error": "Graph state not found"}
@@ -927,6 +931,12 @@ class WorkflowFrameworkRunner:
                     record.current_checkpoint = checkpoint
                 self.store.save_run(record)
             result = run_task_graph(vm, graph, resume_state=state)
+            # #497: drift is warned on stderr and emitted as an event, but a
+            # program reacting to it needs it where the answer lands. Present
+            # only when true -- an absent key means the pinned source still
+            # matches the file (or there was no rebuild to compare).
+            if isinstance(result, dict) and getattr(vm, "_last_resume_source_drift", False):
+                result["source_drift"] = True
             status, last_error = _result_status(result)
             record = self.store.get_run(graph_id)
             if record is not None:
