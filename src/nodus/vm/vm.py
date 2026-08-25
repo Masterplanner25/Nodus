@@ -235,6 +235,11 @@ class VM:
         # A step's `timeout_ms` still wins when tighter; this covers agent_call()
         # made outside any step, where there is no step budget to inherit.
         self.agent_timeout_ms: float | None = None
+        # #499: whether a workflow run persists the module source into
+        # `.nodus/graphs/` as its rebuild handle. On by default everywhere;
+        # `NodusRuntime(persist_workflow_source=False)` turns it off for a
+        # runtime running code its host did not author.
+        self.persist_workflow_source: bool = True
         # #405. `None` means no policy — the default, and a single attribute test
         # on the dispatch path rather than a call into an allow-everything object.
         self.capability_policy: "CapabilityPolicy | None" = None
@@ -1660,9 +1665,15 @@ class VM:
                 source_code = f.read()
             # #497: this branch used to be the silent half of the fork -- an
             # unpinned rebuild picked up edits with no signal at all, while the
-            # pinned branch warned. Say which rule is in effect.
+            # pinned branch warned. Say which rule is in effect -- and why the
+            # source is missing: a run that opted out of persisting it (#499)
+            # did not "predate" anything.
+            if metadata.get("workflow_source_persisted") is False:
+                reason = "opted out of source persistence (persist_workflow_source=False)"
+            else:
+                reason = "predates source recording"
             print(
-                f"resume: run '{graph_id}' predates source recording, so "
+                f"resume: run '{graph_id}' {reason}, so "
                 f"'{flow_name}' is rebuilt from {source_path} as it is now; edits "
                 f"made since the run started are in this resume.",
                 file=sys.stderr,
