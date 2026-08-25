@@ -19,6 +19,23 @@
 
 ### Fixes
 
+- **#476: the two halves of a run now share a lifecycle.** A durable run is
+  split across `.nodus/graphs/` (graph state + checkpoint) and the workflow
+  store (run record), and nothing kept them in step: `nodus workflow cleanup`
+  removed graph state and left records accumulating forever; the store's
+  opt-in `max_terminal_runs` cap deleted records and left graph state
+  orphaned; and a resume whose record was gone — while the state sat on disk —
+  reported `not found`. Now cleanup removes the run record with the graph
+  state (unless the record says the run is still live and `--force` was not
+  given), reporting them as `run_records_removed`; the record cap prunes the
+  graph state and checkpoint with the record; stores gained `delete_run`
+  (concrete no-op default on the `WorkflowStore` ABC, so host store
+  implementations keep working); and a missing-record resume says the real
+  thing — the two halves were cleaned independently — with
+  `category: "run_record_missing"`, the same honesty shape as #399 and #425
+  on this path. CLAUDE.md's "`rm -rf .nodus/workflow_framework/runs` is safe"
+  note is corrected: it makes any live waiting run unresumable.
+
 - **#400: `nodus graph` no longer executes the file it is asked to inspect.**
   An inspection command ran its target: `nodus graph <file>` executed the whole
   module — side effects included — to obtain the plan, and `nodus graph show`

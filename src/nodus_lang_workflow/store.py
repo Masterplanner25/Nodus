@@ -60,6 +60,17 @@ class WorkflowStore(ABC):
     ) -> WorkflowRunRecord:
         raise NotImplementedError
 
+    def delete_run(self, run_id: str) -> bool:
+        """Remove a run record. Returns whether one was removed.
+
+        Concrete with a no-op default rather than abstract (#476): a store is a
+        host-implementable surface, and adding an abstract method would break
+        every existing implementation to gain a capability only cleanup uses.
+        A store that does not override this reports `False` and cleanup leaves
+        its records alone.
+        """
+        return False
+
     @abstractmethod
     def claim_run(
         self,
@@ -460,6 +471,14 @@ class LocalWorkflowStore(WorkflowStore):
         with self._lock:
             return self._load_run_unlocked(run_id)
 
+    def delete_run(self, run_id: str) -> bool:
+        with self._lock:
+            try:
+                os.remove(self._run_path(run_id))
+                return True
+            except OSError:
+                return False
+
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         record.updated_at = runtime_time_ms()
         with self._lock:
@@ -495,7 +514,19 @@ class LocalWorkflowStore(WorkflowStore):
                 try:
                     os.remove(self._run_path(stale.run_id))
                 except OSError:
-                    pass
+                    continue
+                # #476: the record's other half. A run is split across this
+                # store and `.nodus/graphs/`; a host that opts into a record
+                # cap wants the run gone, not half of it, so the graph snapshot
+                # and checkpoint go with the record. The graph root is
+                # CWD-relative while this store's root was made absolute at
+                # construction, so the pair lines up when both were created
+                # from the same working directory -- which is every in-process
+                # path that writes both.
+                from nodus.orchestration.task_graph import delete_checkpoint, delete_graph_state
+
+                delete_graph_state(stale.run_id)
+                delete_checkpoint(stale.run_id)
 
     def create_run(
         self,
@@ -769,6 +800,10 @@ def _fetchall(conn: sqlite3.Connection, sql: str, params=()) -> list:
     return _run(conn, sql, params, "all") or []
 
 
+def _exec_rowcount(conn: sqlite3.Connection, sql: str, params=()) -> int:
+    return _run(conn, sql, params, "rowcount") or 0
+
+
 def _run(conn: sqlite3.Connection, sql: str, params, fetch):
     """Own the cursor from creation so it closes even when the statement fails.
 
@@ -785,6 +820,8 @@ def _run(conn: sqlite3.Connection, sql: str, params, fetch):
             return cur.fetchone()
         if fetch == "all":
             return cur.fetchall()
+        if fetch == "rowcount":
+            return cur.rowcount
         return None
     finally:
         cur.close()
@@ -864,6 +901,12 @@ class SQLiteWorkflowStore(WorkflowStore):
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
         with self._managed_conn() as conn:
             return self._get_run_with_conn(conn, run_id)
+
+    def delete_run(self, run_id: str) -> bool:
+        with self._managed_conn() as conn:
+            return bool(
+                _exec_rowcount(conn, "DELETE FROM workflow_runs WHERE run_id = ?", (run_id,))
+            )
 
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         record.updated_at = runtime_time_ms()
