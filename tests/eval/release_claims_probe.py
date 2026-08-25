@@ -363,6 +363,222 @@ def probe_new_commands_listed():
     return "doctor, completion, graph listed"
 
 
+# -------------------------------------------------------- 5.3.0: declarations
+# Every surface below accepted something that read as a decision and enforced
+# none of it. Each probe exercises the claim the release makes about one.
+
+
+@probe("5.3.0: a deny-everything policy reaches tool/syscall/agent/memory")
+def probe_policy_sees_authority():
+    from nodus.runtime.capability import (
+        AGENT_CALL, ALL_CAPABILITIES, MEMORY_READ, MEMORY_WRITE, SYSCALL,
+        TOOL_INVOKE, CapabilityDecision, CapabilityPolicy, DenyList,
+    )
+    from nodus.runtime.embedding import NodusRuntime
+
+    for name in (TOOL_INVOKE, SYSCALL, AGENT_CALL, MEMORY_READ, MEMORY_WRITE):
+        assert name in ALL_CAPABILITIES, f"{name} missing from ALL_CAPABILITIES"
+        DenyList(name)  # raised `unknown capability` through 5.2.0
+
+    seen: list[str] = []
+
+    class DenyAll(CapabilityPolicy):
+        def check(self, request):
+            seen.append(request.capability)
+            return CapabilityDecision.deny("probe")
+
+    result = NodusRuntime(timeout_ms=None, capability_policy=DenyAll()).run_source(
+        'fn main() { memory_put("k", "leaked") print("REACHED") }'
+    )
+    assert "REACHED" not in (result.get("stdout") or ""), "the write was not stopped"
+    assert result["error"]["kind"] == "sandbox", result["error"]
+    assert MEMORY_WRITE in seen, f"policy saw {seen}"
+    return f"{len(ALL_CAPABILITIES)} capabilities; memory_put denied as {MEMORY_WRITE}"
+
+
+@probe("5.3.0: every builtin is classified as bearing authority or not")
+def probe_classification_total():
+    from nodus.builtins.nodus_builtins import BUILTIN_NAMES
+    from nodus.runtime.capability import BUILTIN_CAPABILITIES, NO_AUTHORITY_BUILTIN_NAMES
+
+    unclassified = set(BUILTIN_NAMES) - set(BUILTIN_CAPABILITIES) - set(NO_AUTHORITY_BUILTIN_NAMES)
+    assert not unclassified, f"unclassified: {sorted(unclassified)}"
+    overlap = set(BUILTIN_CAPABILITIES) & set(NO_AUTHORITY_BUILTIN_NAMES)
+    assert not overlap, f"classified both ways: {sorted(overlap)}"
+    return f"{len(BUILTIN_NAMES)} builtins = {len(BUILTIN_CAPABILITIES)} governed + {len(NO_AUTHORITY_BUILTIN_NAMES)} not"
+
+
+@probe("5.3.0: a syscall's declared capability is enforced")
+def probe_syscall_capability():
+    from nodus.runtime.capability import MEMORY_WRITE, CapabilityDecision, CapabilityPolicy
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.services.syscall_runtime import list_syscalls
+
+    class DenyWrites(CapabilityPolicy):
+        def check(self, request):
+            if request.capability == MEMORY_WRITE:
+                return CapabilityDecision.deny("probe")
+            return None
+
+    result = NodusRuntime(timeout_ms=None, capability_policy=DenyWrites()).run_source(
+        'fn main() { let w = syscall("sys.v1.memory.put", {"key": "k", "value": "v"})'
+        ' print("REACHED") }'
+    )
+    assert "REACHED" not in (result.get("stdout") or ""), "the syscall ran anyway"
+    assert result["error"]["kind"] == "sandbox", result["error"]
+    published = {spec["full_name"]: spec["capability"] for spec in list_syscalls()}
+    assert published["sys.v1.memory.put"] == MEMORY_WRITE, published
+    return "sys.v1.memory.put refused by a policy denying memory.write"
+
+
+@probe("5.3.0: writable_paths splits read-only context from editable files")
+def probe_writable_paths():
+    import os
+    import tempfile
+
+    from nodus.runtime.embedding import NodusRuntime
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = os.path.realpath(raw)
+        os.makedirs(os.path.join(root, "ctx"))
+        os.makedirs(os.path.join(root, "src"))
+        with open(os.path.join(root, "ctx", "readme.txt"), "w") as handle:
+            handle.write("hi")
+        cwd = os.getcwd()
+        os.chdir(root)
+        try:
+            result = NodusRuntime(
+                timeout_ms=None,
+                allowed_paths=[root],
+                writable_paths=[os.path.join(root, "src")],
+            ).run_source(
+                'fn main() {\n'
+                '    print("read=\\(len(read_file("ctx/readme.txt")))")\n'
+                '    write_file("src/out.txt", "ok")\n'
+                '    print("wrote-src")\n'
+                '    write_file("ctx/out.txt", "no")\n'
+                '    print("WROTE-CTX")\n'
+                '}'
+            )
+        finally:
+            os.chdir(cwd)
+    out = result.get("stdout") or ""
+    assert "read=2" in out, out
+    assert "wrote-src" in out, out
+    assert "WROTE-CTX" not in out, "wrote into read-only context"
+    assert "readable but not writable" in result["error"]["message"], result["error"]
+    return "readable context, editable subtree, refusal names the reason"
+
+
+@probe("5.3.0: nodus.toml refuses what it does not read, and entry binds")
+def probe_manifest():
+    import os
+    import tempfile
+
+    from nodus.tooling.project import ManifestError, load_project, project_entry_path
+
+    with tempfile.TemporaryDirectory() as root:
+        manifest = os.path.join(root, "nodus.toml")
+        with open(manifest, "w", newline="\n") as handle:
+            handle.write('[project]\nname = "x"\nentry = "workflows/boot.nd"\n')
+        try:
+            load_project(root)
+            raise AssertionError("[project] was accepted")
+        except ManifestError as exc:
+            assert "did you mean [package]?" in str(exc), str(exc)
+
+        with open(manifest, "w", newline="\n") as handle:
+            handle.write('[package]\nname = "x"\nentry = "workflows/boot.nd"\n')
+        entry = project_entry_path(load_project(root))
+        assert entry.endswith(os.path.join("workflows", "boot.nd")), entry
+    return "[project] refused with the fix named; entry selects the file"
+
+
+@probe("5.3.0: an unhonoured worker: declaration warns")
+def probe_worker_warns():
+    result = run_nd(
+        'workflow w { step s with { worker: "hardened-sandbox" } { return 1i } }\n'
+        "fn main() { let r = run_workflow(w) }"
+    )
+    stderr = result.get("stderr") or ""
+    assert "no worker dispatcher is registered" in stderr, repr(stderr)
+    assert "6.0.0" in stderr, "the flag day is not announced"
+    assert "worker_dispatcher=" in stderr, "the embedded remedy is not named"
+    return "warns, names both remedies, announces the flag day"
+
+
+@probe("5.3.0: a conditional edge is marked in the plan and drawn")
+def probe_conditional_edges(repo: Path):
+    from nodus.orchestration.graph_render import to_dot, to_mermaid
+    from nodus.runtime.embedding import NodusRuntime
+
+    runtime = NodusRuntime(timeout_ms=None)
+    result = runtime.run_source(
+        'workflow d {\n'
+        '    step build { checkpoint "flaky" return "ok" }\n'
+        '    step notify after build with { on: ["failed"] } { return "a" }\n'
+        '    step verify after build when reached("flaky") { return "c" }\n'
+        '    step done after build { return "f" }\n'
+        '}\n'
+        "let p = plan_workflow(d)\n"
+    )
+    assert result.get("ok"), result.get("errors")
+    plan = runtime.active_vm().last_graph_plan
+    assert plan["conditional_edges"] == [["build", "verify"]], plan["conditional_edges"]
+    assert plan["edge_conditions"] == {"build->notify": ["failed"]}, plan["edge_conditions"]
+    mermaid, dot = to_mermaid(plan), to_dot(plan)
+    assert "|failed|" in mermaid and "-.->" in mermaid, mermaid
+    assert '[label="failed"]' in dot and "[style=dashed]" in dot, dot
+    return "on: labels the edge, when dashes it, in both formats"
+
+
+@probe("5.3.0: a step guard error names `when`, not goal `until`")
+def probe_guard_error():
+    result = run_nd(
+        "workflow w { step a { return 1i } "
+        "step b after a when (a < 5i) { return 2i } }\nfn main() { }"
+    )
+    assert not result.get("ok"), "the data predicate parsed"
+    message = result["errors"][0]["message"]
+    assert "step guard `when`" in message, message
+    assert "goal `until`" not in message, message
+    assert "checkpoint" in message, "the error names no way forward"
+    return "names its own clause and points at the idiom that works"
+
+
+@probe("5.3.0: prose does not still describe the pre-5.3.0 capability surface")
+def probe_no_stale_capability_claim(repo: Path):
+    """The half that has caught things: artifacts describing the old vocabulary.
+
+    Two claims went stale this cycle -- that the capability set is five names,
+    and that the embedder runbook's `allow_*` switches "default to permissive"
+    (backwards since 5.0.0, and fixed in this release).
+    """
+    from nodus.runtime.capability import ALL_CAPABILITIES
+
+    stale = re.compile(
+        r"allow_\*[^.\n]{0,60}default to permissive"
+        r"|`?allowed_paths`?[^.\n]{0,40}(single flat list|no read-vs-write)"
+        r"|FS_READ[^.\n]{0,50}(never used|attached to nothing|declared and never)"
+        r"|`?SyscallSpec\.capability`?[^.\n]{0,60}(enforced nowhere|never enforced)",
+        re.IGNORECASE,
+    )
+    hits: list[str] = []
+    for path in sorted(repo.glob("docs/**/*.md")) + sorted(repo.glob("*.md")) + [
+        repo / "llms.txt", repo / "llms-full.txt"
+    ]:
+        if not path.is_file():
+            continue
+        parts = path.parts
+        if "evals" in parts or "design" in parts or path.name == "CHANGELOG.md":
+            continue  # records of what *was*; describing the old state is their job
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if stale.search(line):
+                hits.append(f"{path.relative_to(repo)}:{number}: {line.strip()[:90]}")
+    assert not hits, "prose describes the pre-5.3.0 surface:\n       " + "\n       ".join(hits)
+    return f"no artifact still describes the {len(ALL_CAPABILITIES) - 5}-name-smaller vocabulary"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -372,6 +588,15 @@ def main() -> int:
         help="repo root for the prose probes (default: this checkout)",
     )
     args = parser.parse_args()
+
+    # A probe that dies while *reporting* a failure is worse than no probe: it
+    # turns a real finding into a traceback. Windows consoles default to cp1252,
+    # and the artifacts this reads contain emoji.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
     # Resolved path and version first, always. Validating the wrong tree is the
     # failure mode this header exists to make visible (5.0.3 shipped past 32
@@ -403,6 +628,17 @@ def main() -> int:
     probe_no_stale_fold_claim(args.repo)
     probe_policy_vocabulary(args.repo)
     probe_new_commands_listed()
+
+    # 5.3.0
+    probe_policy_sees_authority()
+    probe_classification_total()
+    probe_syscall_capability()
+    probe_writable_paths()
+    probe_manifest()
+    probe_worker_warns()
+    probe_conditional_edges(args.repo)
+    probe_guard_error()
+    probe_no_stale_capability_claim(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
