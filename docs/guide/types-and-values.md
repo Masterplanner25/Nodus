@@ -475,6 +475,68 @@ Bob
 false
 ```
 
+### Equality: records compare by identity, maps by value
+
+This is the one difference between records and maps that is not about access
+syntax, and it surprises people:
+
+```nd-expect=output
+let a = record { x: 1i }
+let b = record { x: 1i }
+print(a == b)          // two records with identical fields
+print(a == a)          // the same record
+
+let m1 = { "x": 1i }
+let m2 = { "x": 1i }
+print(m1 == m2)        // two maps with identical entries
+
+print([1i, 2i] == [1i, 2i])
+```
+
+Output:
+
+```
+false
+true
+true
+true
+```
+
+**`==` on a record asks "is this the same record", not "do these hold the same
+data".** Maps, lists, numbers, strings and booleans all compare structurally, at
+any depth — records do not.
+
+It propagates outward. A map holding a record compares `false` for the same
+reason the record does:
+
+```nd-no-run
+let m1 = { "r": record { x: 1i } }
+let m2 = { "r": record { x: 1i } }
+print(m1 == m2)        // false — the nested records are different records
+```
+
+Two record kinds the runtime creates for you are exceptions and *do* compare by
+value: `datetime` and `duration` from `std:time`. So `time.from_epoch_ms(5.0) ==
+time.from_epoch_ms(5.0)` is `true` while a record you wrote with the same fields
+is not.
+
+**What to do instead.** If you need value comparison, use a map, or compare the
+fields you care about:
+
+```nd-no-run
+if (a.x == b.x && a.name == b.name) { ... }
+```
+
+This also means a record cannot be deduplicated — which is why
+`state seen = [] with { merge: "union" }` refuses a list of records rather than
+silently keeping duplicates (see
+[workflows-and-tasks.md §4.0](workflows-and-tasks.md)).
+
+> Whether this should change is
+> [#545](https://github.com/Masterplanner25/Nodus/issues/545). `==` is a
+> **Stable** surface, so making records structural is a breaking change and
+> would land at a major version, not before.
+
 ### json.parse always returns a map
 
 ```nd
