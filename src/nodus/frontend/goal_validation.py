@@ -57,6 +57,37 @@ def checkpoint_labels(flow_def) -> set[str]:
     return labels
 
 
+def has_unconditional_checkpoint(flow_def) -> bool:
+    """Does any step record a checkpoint on every pass it runs?
+
+    A `goal ... over ...` iterates by resuming from the last checkpoint its
+    workflow reached *this pass* (#500) -- so a workflow whose every
+    checkpoint is conditional records nothing on a pass that does not satisfy
+    the goal, and the pursuit halts after one iteration with its budget
+    untouched.
+
+    "Unconditional" is deliberately conservative: a `CheckpointStmt` that is a
+    direct statement of an unguarded step's body. One nested in an `if`, a
+    loop, or a `match` arm may not run; a step with a `when` guard may not run
+    at all. The check refuses only the shape that provably cannot iterate
+    unless satisfied on the first pass -- it does not promise that an accepted
+    workflow's waypoint step is actually scheduled (an `on:` filter or an
+    upstream failure can still skip it; the runtime error remains the
+    backstop for that).
+    """
+    for step in getattr(flow_def, "steps", []) or []:
+        if getattr(step, "when", None) is not None:
+            continue
+        body = getattr(step, "body", None)
+        stmts = getattr(body, "stmts", None)
+        if stmts is None and isinstance(body, list):
+            stmts = body
+        for stmt in stmts or []:
+            if type(stmt).__name__ == "CheckpointStmt":
+                return True
+    return False
+
+
 def reached_labels(node) -> list[tuple[str, object]]:
     """Every `reached("...")` label in *node*, paired with its AST node."""
     found: list[tuple[str, object]] = []
@@ -158,5 +189,20 @@ def validate_goal_pursuits(stmts) -> None:
             _fail(
                 f"goal '{pursuit.name}' has an `until` that never reads a "
                 f"checkpoint, so nothing it observes can ever change.",
+                pursuit,
+            )
+
+        # #500: iteration is resume-from-last-checkpoint, so a pass must record
+        # one. The natural formulation -- checkpoint only when the condition is
+        # met -- records nothing on every other pass and halts the goal after
+        # one iteration, budget untouched. Refuse it with the remedy, the same
+        # way a missing waypoint label is refused above.
+        if not has_unconditional_checkpoint(target):
+            _fail(
+                f"goal '{pursuit.name}' cannot iterate: every checkpoint in "
+                f"'{pursuit.workflow_name}' is conditional, so a pass that does "
+                f"not satisfy the goal records nothing to resume the next pass "
+                f"from. Add a `checkpoint` at statement level in a step body -- "
+                f"a waypoint that runs on every pass.",
                 pursuit,
             )

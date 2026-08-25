@@ -1513,7 +1513,9 @@ class VM:
                 return self.make_err(
                     "goal_error",
                     f"goal '{goal_name}' cannot advance: '{flow_name}' recorded no "
-                    f"checkpoint to resume from",
+                    f"checkpoint on this pass, so there is no point to resume the "
+                    f"next pass from. Add a `checkpoint` that runs on every pass "
+                    f"(#500).",
                     payload={"category": "no_checkpoint_reached", "goal": goal_name,
                              "workflow": flow_name, "graph_id": graph_id},
                 )

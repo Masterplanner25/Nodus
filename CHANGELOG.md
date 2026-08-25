@@ -19,6 +19,23 @@
 
 ### Fixes
 
+- **#500: a goal whose workflow only checkpoints on success is refused at
+  compile time, with the remedy.** A `goal … over …` iterates by resuming
+  from the last checkpoint its workflow reached *this pass* — so the natural
+  formulation, checkpoint only when the condition is met, recorded nothing on
+  every other pass and halted the goal after one iteration with its budget
+  untouched, while `nodus check` passed it. The compiler now refuses a
+  pursuit whose workflow has only conditional checkpoints (nested in `if`/
+  loops, or in a `when`-guarded step):
+  `goal 'reach' cannot iterate: every checkpoint in 'tune' is conditional …
+  Add a checkpoint at statement level in a step body -- a waypoint that runs
+  on every pass.` The check is conservative — it refuses only the shape that
+  provably cannot iterate unless satisfied on the first pass; the runtime
+  error remains the backstop and now names the remedy too. The guide's §7.1
+  marks the waypoint in its examples as load-bearing rather than decorative.
+  Option (4) from the issue — re-running from the start when no checkpoint
+  was reached — is a semantics change and was not taken.
+
 - **#499: source persistence is disclosed, bounded, and controllable.** Every
   workflow run persists the whole module source, verbatim, into
   `.nodus/graphs/` — it is the cross-process rebuild handle, so it cannot be
