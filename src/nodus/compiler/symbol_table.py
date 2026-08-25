@@ -243,3 +243,35 @@ class SymbolTable:
                 return scope
             scope = scope.parent
         return None
+
+    def is_uncapturable_top_level_local(self, name: str) -> bool:
+        """Is *name* a local in a top-level block no closure can capture (#416)?
+
+        Upvalue capture reads an enclosing *function* frame
+        (``capture_local(enclosing_frame, name)``), and a block scope at module
+        root -- a top-level ``while``/``for``/``if`` body -- has no frame. So a
+        closure written there can see the name in scope and still have nothing
+        to capture from. Resolution then fails, and without this question the
+        error is "Undefined variable: snap" with ``snap`` declared on the line
+        above -- accurate about resolution, actively misleading about the fix.
+
+        True only when the current position is inside a function whose chain
+        never reaches another function (the closure is at module level), and
+        the name is a block-scoped local somewhere between the outermost
+        function scope and module root.
+        """
+        func_scope = self._current_function_scope()
+        if func_scope is None:
+            return False
+        outermost = func_scope
+        while True:
+            enclosing = self._enclosing_function_scope(outermost)
+            if enclosing is None:
+                break
+            outermost = enclosing
+        scope = outermost.parent
+        while scope is not None:
+            if name in scope.symbols and scope.symbols[name].scope == "local":
+                return True
+            scope = scope.parent
+        return False

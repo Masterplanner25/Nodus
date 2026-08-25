@@ -339,6 +339,19 @@ class Compiler:
                 )
 
         if self.symbols is not None and self.symbols.is_defined_anywhere(name):
+            # #416: a closure in a *top-level* loop or block body cannot capture
+            # that body's locals -- capture reads an enclosing function frame,
+            # and module-level blocks have none. "Undefined variable" for a name
+            # declared on the line above is accurate about resolution and
+            # misleading about the fix, so name the actual constraint.
+            if self.symbols.is_uncapturable_top_level_local(name):
+                self.raise_syntax(
+                    f"Cannot capture '{name}': it is declared inside a "
+                    f"top-level loop or block body, which a closure cannot "
+                    f"capture from. Move the loop into a function, or declare "
+                    f"'{name}' at module top level.",
+                    node=node,
+                )
             self.raise_syntax(f"Undefined variable: {name}", node=node)
 
     def resolve_name(self, name: str) -> str:
