@@ -4,6 +4,25 @@
 
 ### Changed
 
+- **#492: an unhonoured `worker:` declaration warns instead of running
+  silently.** `step … with { worker: "hardened-sandbox" }` names *where* a step
+  runs. With a dispatcher registered, an unsatisfiable name already failed —
+  `WorkerPool.submit` waits for a worker advertising the capability and raises
+  `No workers registered with capability: X`. Without one, the step fell through
+  to in-process execution and reported success, so `worker: "gpu"` and
+  `worker: "hardened-sandbox"` behaved exactly like no declaration at all.
+
+  The check existed; only one of the two paths reached it. Since the thing being
+  declared is an isolation intent, running it silently in-process is the worst
+  available answer. It now warns, names both remedies, and announces the flag
+  day: **this becomes an error in 6.0.0**, staged the way the concurrent-write
+  conflict was in 5.2.0.
+
+- **#492: `NodusRuntime(worker_dispatcher=…)`.** `vm.worker_dispatcher` was set
+  only by `services/server.py`, so an embedded runtime could not honour a worker
+  declaration at all — the declaration had no reachable meaning outside a
+  server. Any object with a compatible `.submit` works.
+
 - **#490: `nodus.toml` refuses what it does not read, and `entry` is real.** The
   manifest loader accepted any table and any key, read four of them, and threw
   the rest away without a word. Two of the three real `nodus.toml` files on

@@ -27,6 +27,20 @@ def run_program(src: str, source_path: str | None = None):
 
 
 class TaskGraphTests(unittest.TestCase):
+    def setUp(self):
+        """`set_default_dispatcher` writes a module global, so it leaks.
+
+        Six tests here installed a WorkerManager and none put it back, leaving
+        every later test in the process running with a dispatcher registered.
+        That is invisible until something asserts on the no-dispatcher path --
+        which #492 now does, and which failed in the full suite while passing
+        alone, the signature of leaked state rather than a real defect.
+        """
+        import nodus.orchestration.task_graph as task_graph
+
+        previous = task_graph._DEFAULT_DISPATCHER
+        self.addCleanup(set_default_dispatcher, previous)
+
     def _poll_job(self, worker_manager, worker_id: str, timeout: float = 10.0):
         return worker_manager.wait_for_job(worker_id, timeout=timeout)
 

@@ -645,6 +645,46 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     if dispatcher is not None and getattr(dispatcher, "event_bus", None) is None:
         dispatcher.event_bus = vm.event_bus
 
+    # #492: `worker:` names where a step runs. With a dispatcher, an unsatisfiable
+    # name already fails -- `WorkerPool.submit` waits for a worker advertising the
+    # capability and raises "No workers registered with capability: X". Without
+    # one, the step fell through to in-process execution and reported success, so
+    # `worker: "hardened-sandbox"` and `worker: "gpu"` behaved exactly like no
+    # declaration at all.
+    #
+    # That is the sibling-path shape: the check exists, and only one of the two
+    # paths reaches it. The declaration is an isolation intent, so silently
+    # running here is the worst available answer.
+    #
+    # Warned rather than refused for 5.x because running in-process is what every
+    # prior release did and a CLI author may be relying on it; 6.0.0 makes it an
+    # error, matching how the concurrent-write conflict was staged (#547).
+    if dispatcher is None:
+        _unhonoured = sorted({t.worker for t in tasks if t.worker is not None})
+        if _unhonoured:
+            _names = ", ".join(f"'{w}'" for w in _unhonoured)
+            print(
+                f"warning: {'step declares' if len(_unhonoured) == 1 else 'steps declare'} "
+                f"worker {_names}, but no worker dispatcher is registered, so "
+                f"{'it runs' if len(_unhonoured) == 1 else 'they run'} in this "
+                f"process with no isolation. Run under `nodus serve` with a "
+                f"registered worker, or pass `worker_dispatcher=` to "
+                f"NodusRuntime. This becomes an error in 6.0.0.",
+                file=sys.stderr,
+            )
+            vm.event_bus.emit_event(
+                "workflow_worker_unhonoured",
+                data={
+                    "workflow": (
+                        graph.metadata.get("workflow_name")
+                        if isinstance(graph.metadata, dict)
+                        else None
+                    ),
+                    "graph_id": graph.graph_id,
+                    "workers": _unhonoured,
+                },
+            )
+
     vm.event_bus.emit_event("task_graph_start", data={"tasks": float(len(tasks))})
     workflow_name = graph.metadata.get("workflow_name") if isinstance(graph.metadata, dict) else None
     execution_kind = graph.metadata.get("execution_kind") if isinstance(graph.metadata, dict) else None
