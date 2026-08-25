@@ -36,6 +36,7 @@ from nodus.tooling.runner import (
     memory_keys_result,
     memory_put_result,
     plan_graph_code,
+    plan_graph_static,
     plan_goal_code,
     plan_workflow_code,
     replay_workflow,
@@ -791,12 +792,16 @@ def _run_workflow_checkpoints(graph_id: str) -> int:
     return 0
 
 
-def _plan_graph_file(path: str, *, project_root: str | None = None) -> int:
+def _plan_graph_file(path: str, *, project_root: str | None = None, execute: bool = False) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = plan_graph_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, project_root=project_root)
+    # #400: an inspection command must not run its target. The plan comes from
+    # the flow declarations alone unless --execute opts into the old behaviour
+    # (needed only for graphs constructed at runtime).
+    planner = plan_graph_code if execute else plan_graph_static
+    result, _vm = planner(VM([], {}, code_locs=[], source_path=None), code, filename=path, project_root=project_root)
     if not result.get("ok", False):
         _print_error(result, path=path)
         return 1
@@ -810,6 +815,7 @@ def _show_graph_file(
     fmt: str = "mermaid",
     output: str | None = None,
     project_root: str | None = None,
+    execute: bool = False,
 ) -> int:
     """Render a plan as Mermaid or DOT rather than printing it as JSON.
 
@@ -824,7 +830,8 @@ def _show_graph_file(
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = plan_graph_code(
+    planner = plan_graph_code if execute else plan_graph_static
+    result, _vm = planner(
         VM([], {}, code_locs=[], source_path=None), code, filename=path, project_root=project_root
     )
     if not result.get("ok", False):
@@ -1475,6 +1482,7 @@ def main(argv: list[str] | None = None) -> int:
                 fmt=str(flags.get("--format") or "mermaid"),
                 output=flags.get("--output"),  # type: ignore[arg-type]
                 project_root=project_root,
+                execute="--execute" in flags,
             )
         if cmd_args and cmd_args[0] == "run":
             if len(cmd_args) > 1 and cmd_args[1] in ("--help", "-h"):
@@ -1488,7 +1496,7 @@ def main(argv: list[str] | None = None) -> int:
             if err:
                 _print_stderr(err)
                 return 1
-            return _plan_graph_file(positional[0], project_root=project_root)
+            return _plan_graph_file(positional[0], project_root=project_root, execute="--execute" in flags)
         # Backward-compatible bare form: `nodus graph <file>` == `graph run <file>`.
         positional, flags = _parse_flags(cmd_args, *flags_for("graph", "run"))
         if not positional:
@@ -1498,7 +1506,7 @@ def main(argv: list[str] | None = None) -> int:
         if err:
             _print_stderr(err)
             return 1
-        return _plan_graph_file(positional[0], project_root=project_root)
+        return _plan_graph_file(positional[0], project_root=project_root, execute="--execute" in flags)
 
     if command == "serve":
         flags_with_values, flags_no_values = flags_for("serve")

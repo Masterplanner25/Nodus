@@ -73,6 +73,8 @@ class GraphRunSubcommandTests(unittest.TestCase):
         return path
 
     def _graph_script(self) -> str:
+        # A runtime-constructed graph: `nodus graph` no longer executes its
+        # target by default (#400), so planning this shape needs --execute.
         return self._script("let t = task(fn() { return 1 }, [])\nplan_graph(graph([t]))\n")
 
     def test_graph_run_subcommand_accepted(self):
@@ -80,7 +82,7 @@ class GraphRunSubcommandTests(unittest.TestCase):
         out = io.StringIO()
         err = io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            exit_code = main(["nodus", "graph", "run", script])
+            exit_code = main(["nodus", "graph", "run", script, "--execute"])
         self.assertEqual(exit_code, 0, err.getvalue())
 
     def test_graph_run_missing_file_errors(self):
@@ -107,7 +109,7 @@ class GraphRunSubcommandTests(unittest.TestCase):
         script = self._graph_script()
         out = io.StringIO()
         with redirect_stdout(out):
-            exit_code = main(["nodus", "graph", script])
+            exit_code = main(["nodus", "graph", script, "--execute"])
         self.assertEqual(exit_code, 0)
 
     def test_global_help_shows_graph_run(self):

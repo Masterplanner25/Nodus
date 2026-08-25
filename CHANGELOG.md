@@ -19,6 +19,27 @@
 
 ### Fixes
 
+- **#400: `nodus graph` no longer executes the file it is asked to inspect.**
+  An inspection command ran its target: `nodus graph <file>` executed the whole
+  module — side effects included — to obtain the plan, and `nodus graph show`
+  (5.2.0) inherited the path while exiting 0, so the execution was invisible
+  behind a successful diagram. Both now plan by loading **only the flow
+  declarations**: the module is parsed in full (a syntax error anywhere still
+  fails), then every other top-level statement — imports included — is dropped
+  before compilation, and the plan is produced by the same
+  `plan_workflow`/`plan_goal` machinery the executing path uses, so the two
+  projections cannot disagree about what the graph is. A filtered load never
+  touches the bytecode cache (the #521 shape, guarded at the shared
+  `_source_is_the_file` question). The old behaviour is `--execute`, needed
+  only for graphs constructed at runtime (`task()`/`run_graph`, or a
+  dynamically chosen flow) — a file with no flow declaration is refused with
+  a message naming the flag rather than silently executed.
+
+- **#558: `nodus graph show` plans a workflow whose `plan_workflow` call lives
+  inside `main()`.** Fixed by the #400 change: the declaration alone is enough,
+  so where (or whether) the file calls `plan_workflow` no longer matters to
+  inspection.
+
 - **#482: a checkpoint resume of a genuinely waiting run is refused with the
   real reason, instead of silently re-waiting.**
   `resume_workflow(id, "checkpoint")` on a waiting run re-entered the waiting

@@ -730,6 +730,139 @@ def plan_graph_code(
     )
 
 
+def plan_graph_static(
+    vm: VM,
+    code: str,
+    filename: str | None = None,
+    *,
+    max_stdout_chars: int = MAX_STDOUT_CHARS,
+    project_root: str | None = None,
+):
+    """Plan a file's workflow without running the file (#400).
+
+    `nodus graph` is an inspection command, and inspection is exactly when the
+    file must not run -- reviewing a script from an untrusted source, or one an
+    LLM just generated, to see its shape *before* deciding to execute it. The
+    executing path ran the whole module to obtain `vm.last_graph_plan`, side
+    effects included.
+
+    This path loads **only the flow declarations**: the module is parsed in
+    full (a syntax error anywhere still fails), then every top-level statement
+    that is not a `workflow` / `goal` declaration -- imports included -- is
+    dropped before compilation via the loader's `statement_filter`. Declaring a
+    flow constructs a value and runs no step bodies, so the observable
+    execution surface is reduced to expressions inside the declarations
+    themselves (a step's `with { ... }` options). The plan is then produced by
+    the same `plan_workflow` / `plan_goal` machinery the executing path uses,
+    so the two cannot disagree about what the graph is -- one plan source, with
+    the execution removed.
+
+    The **last** declared flow is planned, mirroring the executing path's
+    `last_graph_plan`. A file with no flow declaration (a graph constructed at
+    runtime via `task()` / `run_graph`) needs the executing path -- the CLI
+    exposes it as `--execute`.
+    """
+    from nodus.frontend.ast.ast_nodes import FLOW_DECLARATIONS, GoalDef, GoalPursuit
+
+    try:
+        flows = [
+            stmt
+            for stmt in Parser(tokenize(code)).parse()
+            if isinstance(stmt, FLOW_DECLARATIONS)
+        ]
+    except LangSyntaxError as err:
+        if getattr(err, "path", None) is None:
+            err.path = filename
+        return (
+            _error_result(stage="parse", filename=filename, stdout="", stderr="", err=err),
+            vm,
+        )
+    if not flows:
+        message = (
+            "No workflow or goal declaration found. `nodus graph` plans from "
+            "declarations without running the file; a graph constructed at "
+            "runtime (task() / run_graph, or a dynamically chosen flow) needs "
+            "--execute."
+        )
+        no_flow_err = NodusRuntimeError(message, filename=normalize_filename(filename))
+        legacy = {"type": "graph", "message": message, "path": filename}
+        return (
+            Result.failure(
+                stage="plan_graph",
+                filename=normalize_filename(filename),
+                stdout="",
+                stderr="",
+                errors=[no_flow_err.to_dict()],
+                error=legacy,
+            ).to_dict(),
+            vm,
+        )
+
+    target = flows[-1]
+    vm.last_graph_plan = None
+    configure_vm_limits(vm, max_steps=MAX_STEPS, timeout_ms=EXECUTION_TIMEOUT_MS)
+    loader = ModuleLoader(
+        project_root=project_root,
+        vm=vm,
+        statement_filter=lambda stmt: isinstance(stmt, FLOW_DECLARATIONS),
+    )
+    with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
+        try:
+            module_name = os.path.abspath(filename) if filename is not None else "<memory>"
+            base_dir = os.path.dirname(module_name) if filename is not None else os.getcwd()
+            loader.load_module_from_source(code, module_name=module_name, base_dir=base_dir)
+            if isinstance(target, GoalPursuit):
+                value = find_workflow_value(vm.globals, target.workflow_name)
+                if value is None:
+                    raise NodusRuntimeError(
+                        f"goal '{target.name}' is declared over workflow "
+                        f"'{target.workflow_name}', which this file does not declare",
+                        filename=normalize_filename(filename),
+                    )
+                plan = vm.builtin_plan_workflow(value)
+            elif isinstance(target, GoalDef):
+                value = find_goal_value(vm.globals, target.name)
+                if value is None:
+                    raise NodusRuntimeError(
+                        f"goal '{target.name}' was declared but did not produce a goal value",
+                        filename=normalize_filename(filename),
+                    )
+                plan = vm.builtin_plan_goal(value)
+            else:
+                value = find_workflow_value(vm.globals, target.name)
+                if value is None:
+                    raise NodusRuntimeError(
+                        f"workflow '{target.name}' was declared but did not produce a workflow value",
+                        filename=normalize_filename(filename),
+                    )
+                plan = vm.builtin_plan_workflow(value)
+        except Exception as err:
+            stage = _compile_stage(err)
+            if stage not in {"parse", "compile"}:
+                stage = "plan_graph"
+            return (
+                _error_result(
+                    stage=stage,
+                    filename=filename,
+                    stdout=stdout.getvalue(),
+                    stderr=stderr.getvalue(),
+                    err=err,
+                ),
+                vm,
+            )
+    return (
+        Result.success(
+            stage="plan_graph",
+            filename=normalize_filename(filename),
+            stdout=stdout.getvalue(),
+            stderr=stderr.getvalue(),
+            result=plan,
+            extras={"plan": plan},
+        ).to_dict(),
+        vm,
+    )
+
+
 def resume_graph_in_vm(
     vm: VM,
     graph_id: str,
