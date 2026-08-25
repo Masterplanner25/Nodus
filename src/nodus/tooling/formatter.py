@@ -346,14 +346,16 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
     if isinstance(stmt, TryCatch):
         try_header = f"{prefix}try {{"
         try_lines = format_block(stmt.try_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        catch_header = f"{prefix}}} catch {stmt.catch_var} {{"
-        catch_lines = format_block(stmt.catch_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
+        # #415: a catch-less try/finally renders exactly as written -- the
+        # rethrowing catch is a compiler lowering, not source.
+        middle: list[str] = []
+        if stmt.catch_block is not None:
+            middle.append(f"{prefix}}} catch {stmt.catch_var} {{")
+            middle.extend(format_block(stmt.catch_block, indent + 1, keep_trailing_comments=keep_trailing_comments))
         if stmt.finally_block is not None:
-            finally_header = f"{prefix}}} finally {{"
-            finally_lines = format_block(stmt.finally_block, indent + 1, keep_trailing_comments=keep_trailing_comments)
-            out = [try_header] + try_lines + [catch_header] + catch_lines + [finally_header] + finally_lines + [f"{prefix}}}"]
-        else:
-            out = [try_header] + try_lines + [catch_header] + catch_lines + [f"{prefix}}}"]
+            middle.append(f"{prefix}}} finally {{")
+            middle.extend(format_block(stmt.finally_block, indent + 1, keep_trailing_comments=keep_trailing_comments))
+        out = [try_header] + try_lines + middle + [f"{prefix}}}"]
         return lines + out + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, DestructureLet):

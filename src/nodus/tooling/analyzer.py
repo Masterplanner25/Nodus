@@ -165,10 +165,11 @@ class Analyzer(NodeVisitor):
             return
         if isinstance(stmt, TryCatch):
             self.analyze_stmt(stmt.try_block)
-            self.push_scope()
-            self.bind(stmt.catch_var, STRING)
-            self.analyze_stmt(stmt.catch_block)
-            self.pop_scope()
+            if stmt.catch_block is not None and stmt.catch_var is not None:
+                self.push_scope()
+                self.bind(stmt.catch_var, STRING)
+                self.analyze_stmt(stmt.catch_block)
+                self.pop_scope()
             if stmt.finally_block is not None:
                 self.analyze_stmt(stmt.finally_block)
             return

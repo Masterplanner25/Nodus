@@ -37,8 +37,20 @@ try {
 }
 ```
 
-`finally` requires `catch` — `try/catch/finally` is the only form; `try/finally`
-alone is a syntax error.
+`try/finally` without a `catch` works too (#415) — the canonical
+cleanup-without-handling form: release the resource, let the error propagate.
+
+```nd-no-run
+try {
+    risky()
+} finally {
+    cleanup()      // runs whether risky() succeeded or threw; the error propagates
+}
+```
+
+It behaves exactly like `catch e { throw e }` plus the `finally` (that is its
+compilation), so the finally-semantics table below applies unchanged. A bare
+`try { }` with neither `catch` nor `finally` is a syntax error.
 
 ### What err contains
 
