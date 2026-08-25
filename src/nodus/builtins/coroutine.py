@@ -1,7 +1,7 @@
 """Coroutine, channel, and scheduler builtin functions for the Nodus VM."""
 
 from nodus.runtime.coroutine import Coroutine
-from nodus.runtime.channel import Channel, ChannelRecvRequest
+from nodus.runtime.channel import Channel, ChannelRecvRequest, ChannelSendRequest
 from nodus.runtime.scheduler import SleepRequest
 
 
@@ -178,7 +178,45 @@ def register(vm, registry) -> None:
             vm.event_bus.emit_event("channel_wake", coroutine_id=receiver.id, name=receiver.name)
             return None
         if ch.maxsize > 0 and len(ch.queue) >= ch.maxsize:
-            vm.runtime_error("runtime", f"send: channel is full (maxsize={ch.maxsize})")
+            # #402: a bounded channel is a backpressure mechanism, not an
+            # assertion about queue depth. A producer outrunning its consumer
+            # blocks here until a recv frees a slot -- mirroring the blocking
+            # receive path, and finally using the `waiting_senders` deque that
+            # was declared for exactly this and never wired up. Outside a
+            # coroutine there is nothing to suspend, so the raise remains,
+            # with the same guidance recv gives.
+            sched_now = getattr(vm, "scheduler", None)
+            if (
+                vm.current_coroutine is None
+                or sched_now is None
+                or vm.current_coroutine is not getattr(sched_now, "current_task", None)
+            ):
+                # Not a schedulable context (top level, or a nested execute
+                # loop that cannot suspend) -- same ownership test the async
+                # subprocess wait uses.
+                vm.runtime_error(
+                    "runtime",
+                    f"send: channel is full (maxsize={ch.maxsize}) and a "
+                    f"blocking send needs a coroutine — wrap your code in "
+                    f"spawn(coroutine(fn() {{ ... }})) and call run_loop()",
+                )
+            coroutine = vm.current_coroutine
+            coroutine.state = "suspended"
+            coroutine.blocked_on = ch
+            coroutine.blocked_reason = "channel_send"
+            vm.stack.append(None)  # send's return value once the slot frees
+            vm.save_current_coroutine_state(vm.ip + 1)
+            ch.waiting_senders.append((coroutine, value))
+            sched = getattr(vm, "scheduler", None)
+            if sched is not None and hasattr(sched, "_send_channels"):
+                sched._send_channels.add(ch)
+            vm.event_bus.emit_event(
+                "channel_block",
+                coroutine_id=coroutine.id,
+                name=coroutine.name,
+                data={"operation": "send"},
+            )
+            return ChannelSendRequest(ch)
         ch.queue.append(value)
         vm.event_bus.emit_event(
             "channel_send",
@@ -188,10 +226,34 @@ def register(vm, registry) -> None:
         )
         return None
 
+    def _wake_one_sender(ch):
+        """A recv freed a slot: move one parked sender's value in, wake it (#402)."""
+        while ch.waiting_senders:
+            sender, pending = ch.waiting_senders.popleft()
+            if getattr(sender, "state", None) != "suspended":
+                continue
+            ch.queue.append(pending)
+            sender.blocked_on = None
+            sender.blocked_reason = None
+            vm.scheduler.schedule(sender)
+            vm.event_bus.emit_event("channel_wake", coroutine_id=sender.id, name=sender.name)
+            vm.event_bus.emit_event(
+                "channel_send",
+                coroutine_id=sender.id,
+                name=sender.name,
+                data={"queue_size": float(len(ch.queue)), "from_wait": True},
+            )
+            break
+        if not ch.waiting_senders:
+            sched = getattr(vm, "scheduler", None)
+            if sched is not None and hasattr(sched, "_send_channels"):
+                sched._send_channels.discard(ch)
+
     def builtin_recv(channel):
         ch = vm.ensure_channel(channel, "recv(channel)")
         if ch.queue:
             value = ch.queue.popleft()
+            _wake_one_sender(ch)
             vm.event_bus.emit_event(
                 "channel_recv",
                 coroutine_id=vm.current_coroutine.id if vm.current_coroutine is not None else None,
@@ -236,6 +298,23 @@ def register(vm, registry) -> None:
         if ch.closed:
             return None
         ch.closed = True
+        # #402: senders parked on a full channel sent *before* the close, so
+        # their values are flushed into the queue (a closed channel's queue is
+        # still drainable by recv) and the senders wake normally. Note the
+        # invariant: senders wait only when the queue is full, so waiting
+        # receivers (queue empty) and waiting senders cannot coexist.
+        while ch.waiting_senders:
+            sender, pending = ch.waiting_senders.popleft()
+            ch.queue.append(pending)
+            if getattr(sender, "state", None) != "suspended":
+                continue
+            sender.blocked_on = None
+            sender.blocked_reason = None
+            vm.scheduler.schedule(sender)
+            vm.event_bus.emit_event("channel_wake", coroutine_id=sender.id, name=sender.name)
+        sched = getattr(vm, "scheduler", None)
+        if sched is not None and hasattr(sched, "_send_channels"):
+            sched._send_channels.discard(ch)
         vm.event_bus.emit_event(
             "channel_close",
             coroutine_id=vm.current_coroutine.id if vm.current_coroutine is not None else None,

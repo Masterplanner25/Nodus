@@ -4,6 +4,18 @@
 
 ### Added
 
+- **#402: bounded channels exert backpressure — `send` on a full channel
+  blocks instead of raising.** `waiting_senders` was declared and never
+  wired, so a bounded channel was an assertion about queue depth rather than
+  a flow-control primitive. A send in a coroutine now parks on the channel
+  and a `recv` that frees a slot wakes it, mirroring the blocking-receive
+  path; the deadlock detector accounts for parked senders (`… blocked on
+  send() with no possible receiver`), with the recv wording unchanged;
+  `close()` flushes parked senders' values into the still-drainable queue
+  and wakes them. Outside a coroutine there is nothing to suspend, so a
+  full-channel `send` at top level still raises — now with the same
+  wrap-in-`spawn` guidance `recv` gives. Unbounded channels are unchanged.
+
 - **#415: `try { } finally { }` needs no `catch`.** The grammar demanded a
   catch, so the canonical cleanup-without-handling form — release the lock,
   let the error propagate — had to be spelled `catch e { throw e }`, forcing
@@ -253,6 +265,20 @@
   rule for every new run, and both surviving paths announce themselves.
 
 ### Tooling
+
+- **#334: the three recurring timing flakes are hardened against load.** The
+  resume-API test (`KeyError: 'steps'`, the suite's most frequent flake —
+  ~50% of coverage jobs across consecutive docs-only PRs) now polls for a
+  settled result instead of reading once; retrying converges in both race
+  modes, since resuming a completed run returns its full result. The
+  `*_overlaps` ratio tests re-measure their serial baseline **under the same
+  load** when the first comparison fails — the baseline was taken once at
+  class setup, and a load spike between then and the test skewed the ratio
+  (a genuinely serial fan-out still fails against any baseline). The
+  ieee754 subprocess tests get 60s timeouts — 10s was 5× headroom against an
+  idle box, not the instrumented, loaded one, which is what the headroom
+  rule means. Fittingly, the overlap flake fired one last time on the #415
+  PR's coverage job while this fix sat in the working tree.
 
 - **#452: `test_task_yield` no longer fails on other tests' garbage.** Two
   tests in `test_task_graph.py` asserted `err.strip() == ""` — but stderr is

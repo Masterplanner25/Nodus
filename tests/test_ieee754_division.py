@@ -17,7 +17,11 @@ def run_nodus(script_content):
     try:
         result = subprocess.run(
             [sys.executable, _NODUS_PY, "run", script_path],
-            capture_output=True, text=True, timeout=10,
+            # #334: 10s was ~5x headroom on an idle box and not enough under
+            # the coverage run, where interpreter startup is instrumented and
+            # the whole suite loads the machine. The rule is 5-10x headroom
+            # against the *loaded* case, not the idle one.
+            capture_output=True, text=True, timeout=60,
         )
         return result.stdout, result.stderr, result.returncode
     finally:

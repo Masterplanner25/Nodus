@@ -17,3 +17,13 @@ class Channel:
 class ChannelRecvRequest:
     def __init__(self, channel: Channel):
         self.channel = channel
+
+
+class ChannelSendRequest(ChannelRecvRequest):
+    """A send suspended on a full channel (#402).
+
+    A subclass so the VM's suspend handling (`isinstance(result,
+    ChannelRecvRequest)`) covers both directions without a second branch --
+    the request means the same thing either way: this coroutine is parked on
+    a channel and the scheduler owns it now.
+    """
