@@ -532,10 +532,16 @@ This also means a record cannot be deduplicated — which is why
 silently keeping duplicates (see
 [workflows-and-tasks.md §4.0](workflows-and-tasks.md)).
 
-> Whether this should change is
-> [#545](https://github.com/Masterplanner25/Nodus/issues/545). `==` is a
-> **Stable** surface, so making records structural is a breaking change and
-> would land at a major version, not before.
+> **This changes in 6.0.0**
+> ([#545](https://github.com/Masterplanner25/Nodus/issues/545)): record `==`
+> becomes structural — field by field, the way maps and lists already
+> compare — and the `union` refusal above is lifted with it. `datetime` keeps
+> comparing by instant and `duration` by length; a function-valued field
+> compares by identity, like functions everywhere else. Until the flip, a
+> comparison whose answer will change (two distinct records with equal
+> fields) prints a one-time warning. `==` is a **Stable** surface, which is
+> why this waits for a major version. Decision record:
+> `docs/design/v6/00-record-equality.md`.
 
 ### json.parse always returns a map
 

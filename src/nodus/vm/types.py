@@ -7,6 +7,7 @@ Closure.  vm.py re-exports all names for backward compatibility.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -75,7 +76,22 @@ class Record:
             return self.fields["epoch_ms"] == other.fields["epoch_ms"]
         if self.kind == "duration" and other.kind == "duration":
             return self.fields["total_ms"] == other.fields["total_ms"]
-        return self is other
+        if self is other:
+            return True
+        # #545 staging: identity today, structural in 6.0.0. The one observable
+        # divergence -- two distinct records that field-by-field comparison
+        # calls equal -- warns once per process, so a program relying on `==`
+        # telling equal-valued records apart gets a release cycle of notice.
+        # The check must never change the program's outcome, so a structure too
+        # deep to inspect is treated as not divergent rather than raised.
+        if not _STRUCTURAL_EQ_CHANGE_WARNED:
+            try:
+                divergent = structural_eq(self, other)
+            except RecursionError:
+                divergent = False
+            if divergent:
+                _warn_structural_eq_change()
+        return False
 
     def __hash__(self):
         return id(self)
@@ -102,6 +118,71 @@ class Record:
     def __ge__(self, other):
         a, b = self._cmp_key(other)
         return a >= b
+
+
+_STRUCTURAL_EQ_CHANGE_WARNED = False
+
+
+def structural_eq(a, b, _seen: set | None = None) -> bool:
+    """What `a == b` returns in 6.0.0 (#545): records compare by `kind` and
+    `fields`, recursing with the same equality lists and maps already use.
+
+    Two semantic carve-outs survive the flip, because they are meanings and
+    not implementation conveniences: `datetime` compares by instant
+    (`epoch_ms` only -- the zone is presentation), and `duration` by length
+    (`total_ms` only -- the other fields are derived). Function-valued fields
+    compare the way functions compare everywhere else: by identity, so a
+    record whose methods are built per-instance is equal only to itself.
+
+    `_seen` tracks container pairs already on the comparison path, so a cyclic
+    structure (`r.self = r`) terminates instead of recursing forever -- a pair
+    met again is taken as equal, the standard coinductive reading.
+
+    `docs/design/v6/00-record-equality.md` records the decision; until the
+    flip, `Record.__eq__` uses this only to detect a comparison whose answer
+    is about to change.
+    """
+    if a is b:
+        return True
+    a_container = isinstance(a, (Record, list, dict))
+    b_container = isinstance(b, (Record, list, dict))
+    if a_container and b_container:
+        pair = (id(a), id(b))
+        if _seen is None:
+            _seen = set()
+        elif pair in _seen:
+            return True
+        _seen.add(pair)
+    if isinstance(a, Record) and isinstance(b, Record):
+        if a.kind == "datetime" and b.kind == "datetime":
+            return a.fields["epoch_ms"] == b.fields["epoch_ms"]
+        if a.kind == "duration" and b.kind == "duration":
+            return a.fields["total_ms"] == b.fields["total_ms"]
+        if a.kind != b.kind or a.fields.keys() != b.fields.keys():
+            return False
+        return all(structural_eq(a.fields[k], b.fields[k], _seen) for k in a.fields)
+    if isinstance(a, Record) or isinstance(b, Record):
+        return False
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(structural_eq(x, y, _seen) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(structural_eq(a[k], b[k], _seen) for k in a)
+    return a == b
+
+
+def _warn_structural_eq_change() -> None:
+    global _STRUCTURAL_EQ_CHANGE_WARNED
+    if _STRUCTURAL_EQ_CHANGE_WARNED:
+        return
+    _STRUCTURAL_EQ_CHANGE_WARNED = True
+    print(
+        "warning: two distinct records with equal fields compared as not "
+        "equal. Record `==` is identity comparison today; in 6.0.0 it becomes "
+        "structural (field by field, like maps and lists) and this comparison "
+        "returns true. If you rely on `==` telling equal-valued records "
+        "apart, compare a unique field instead. See #545.",
+        file=sys.stderr,
+    )
 
 
 class BuiltinMethod:
