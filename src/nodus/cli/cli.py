@@ -149,16 +149,24 @@ def _project_root_context(path: str | None):
 
 def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str | None, str | None, str | None]:
     if path is None:
-        project = load_project_from(os.getcwd())
+        try:
+            project = load_project_from(os.getcwd())
+        except Exception as _e:
+            return None, project_root, str(_e)
         if project is None:
             return None, project_root, "Usage: nodus run <script.nd | project-dir>"
-        return project_entry_path(project), project_root or project.root, None
+        try:
+            entry = project_entry_path(project)
+        except Exception as _e:
+            return None, project_root, str(_e)
+        return entry, project_root or project.root, None
     if os.path.isdir(path):
         try:
             project = load_project(path)
+            entry = project_entry_path(project)
         except Exception as _e:
             return None, project_root, str(_e)
-        return project_entry_path(project), project_root or project.root, None
+        return entry, project_root or project.root, None
     return path, project_root, None
 
 

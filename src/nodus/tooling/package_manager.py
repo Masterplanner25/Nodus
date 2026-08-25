@@ -114,6 +114,8 @@ def add_dependency(root: str, package_name: str) -> ProjectConfig:
         name=project.name,
         version=project.version,
         dependencies=dependencies,
+        registry_url=project.registry_url,
+        entry=project.entry,
     )
     install_dependencies_for_project(project.root, update=True)
     return load_project(project.root)
@@ -130,6 +132,8 @@ def remove_dependency(root: str, package_name: str) -> ProjectConfig:
         name=project.name,
         version=project.version,
         dependencies=dependencies,
+        registry_url=project.registry_url,
+        entry=project.entry,
     )
     install_dependencies_for_project(project.root, update=True)
     return load_project(project.root)

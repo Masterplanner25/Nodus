@@ -15,9 +15,41 @@ version = "0.1.0"
 json = "1.0.0"
 ```
 
-The `[package]` table defines project metadata.
+The `[package]` table defines project metadata. Its keys are `name`, `version`,
+`registry_url`, and `entry`.
 
 The `[dependencies]` table defines local path or version-based dependencies.
+
+Those two tables are the whole manifest. **Anything else is refused, not
+ignored** — a `[project]` table, or a misspelled `verison`, fails the load with a
+message naming what it found and what was expected:
+
+```
+nodus.toml declares things Nodus does not read:
+  unknown table [project] -- did you mean [package]?
+  unknown table [runtime] -- Nodus has no [runtime] table
+
+nodus.toml supports [package], [dependencies], and [package] keys: name,
+version, registry_url, entry.
+```
+
+A manifest is the worst place to accept a declaration silently, because it looks
+like it worked. Before 5.3.0 every unknown table was read and discarded (#490).
+
+### `entry`
+
+`entry` names the file `nodus run` starts from, relative to the project root:
+
+```toml
+[package]
+name = "example"
+version = "0.1.0"
+entry = "workflows/bootstrap.nd"
+```
+
+Omit it and the `src/main.nd` convention applies. It must resolve inside the
+project root — a manifest is data, and an `entry` pointing outside its own tree
+is refused.
 
 ## Project Layout
 
@@ -34,7 +66,8 @@ my-project/
     modules/
 ```
 
-`src/main.nd` is the default project entrypoint.
+`src/main.nd` is the default project entrypoint, used when `[package]` declares
+no `entry`.
 
 ## Commands
 
