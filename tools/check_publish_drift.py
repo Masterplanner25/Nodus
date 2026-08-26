@@ -51,6 +51,10 @@ COMPANIONS: dict[str, tuple[str, str]] = {
     "nodus-memory": (r"C:\dev\nodus-memory", "nodus_memory"),
     "nodus-a2a": (r"C:\dev\nodus-a2a", "nodus_a2a"),
     "nodus-store-sql": (r"C:\dev\nodus-store-sql", "src/nodus_store_sql"),
+    # #483: published as `nodus-workflow` until 0.2.0 and never tracked here under
+    # either name, so a published first-party package sat outside the drift sweep.
+    # The local directory keeps its old name; only the distribution was renamed.
+    "nodus-flow": (r"C:\dev\nodus-workflow", "nodus_flow"),
 }
 
 PYPI = "https://pypi.org/pypi/{name}/json"

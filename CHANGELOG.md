@@ -4,6 +4,34 @@
 
 ### Ecosystem
 
+- **The package picture is re-verified against the live index, and four claims were
+  wrong.** Prompted by a simple question — are we sure what our packages actually
+  are? Every first-party name was probed against PyPI rather than read out of a doc.
+
+  - **`CLAUDE.md` named the wrong directory for the A2A wire adapter.** It called
+    `C:\codev
+odus-a2a-wire` "the local worktree" of the wire repo. That directory's
+    remote is `nodus-a2a` and its HEAD is **detached**; the worktree that actually
+    corresponds to `github.com/Masterplanner25/nodus-a2a-wire` is
+    `C:\codev2a-wire-pub`. Following the old text would push wire-adapter commits at
+    the coordinator repo. Both are CrewAI-showcase artifacts, which nothing recorded.
+  - **The wire adapter is 188 tests, not the 180 claimed.**
+  - **The companion count was stale by two** — "32 live on PyPI (33 counting
+    nodus-lang)" against a verified **34 + nodus-lang = 35**, and it was already wrong
+    before `nodus-flow` was published. Replaced with a dated figure and the method to
+    re-derive it, since a hand-maintained count is the same failure mode as the version
+    strings the section below already refuses to carry.
+  - **`docs/ecosystem/README.md` hardcoded two consumer versions** that
+    `tools/consumers.json` is supposed to own, and had `nodus-mcp-server` a patch
+    behind. The consumer rows now point at the manifest; the one stale version is
+    corrected. The other seven hardcoded versions in that table were checked and are
+    accurate.
+
+- **`nodus-flow` is now tracked by `tools/check_publish_drift.py`.** It never was under
+  either name, so a published first-party package sat outside the sweep that asks
+  whether a companion has drifted from what it published. 10/10 match.
+
+
 - **#483: the standalone `nodus-workflow` package is renamed `nodus-flow`.** It
   was never the engine behind the `workflow` keyword — that ships inside
   `nodus-lang` as `nodus_lang_workflow` and is not separately installable — but

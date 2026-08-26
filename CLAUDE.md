@@ -649,17 +649,38 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
 
 ⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-a2a` is the Tier 2 AgentCoordinator (23 tests, no nodus-lang dep).
 
-The original A2A **wire-protocol** adapter (180 tests, nodus-lang dep) now lives in its
-own repo: **`github.com/Masterplanner25/nodus-a2a-wire`** (local worktree at
-`C:\codev\nodus-a2a-wire`). Earlier wording here said it was "preserved at
-`github.com/Masterplanner25/nodus-a2a`" — that was true only of the *history*: its
-commit `10746ce` is an ancestor of that repo's `main`, but the current tree there is the
-coordinator, so cloning gives you the wrong thing. Use `nodus-a2a-wire`.
-
 **Current local `C:\dev\nodus-a2a` (AgentCoordinator layer, 23 tests):**
 - `AgentRegistry`, `AgentCoordinator` (local/delegate mode), `DelegationRequest`
 - `DeadLetterService`, `StuckRunWatchdog`
 - No nodus-lang dependency; standalone coordination primitives
+- This is the one on PyPI, and the only one `check_publish_drift` tracks.
+
+### The wire adapter, and the two `C:\codev` directories — corrected 2026-08-26
+
+The original A2A **wire-protocol** adapter (`A2AHttpServer`, transport layer,
+nodus-lang dep) is **188 tests**, not the 180 an earlier revision of this section
+claimed. It is **not on PyPI**, and it is a **CrewAI-showcase spin-off**, not a
+maintained companion — `C:\codev\nodus-showcase-crewai` is what needed it.
+
+**There are two `C:\codev` directories and they are not interchangeable.** An
+earlier revision named only the first and called it "the local worktree" of the wire
+repo. It is not:
+
+| Directory | Remote | Branch | What it actually is |
+|---|---|---|---|
+| `C:\codev\nodus-a2a-wire` | **`nodus-a2a`** | **detached at `10746ce`** | a worktree of the *coordinator* repo's old history — pulls and pushes go to the wrong project |
+| `C:\codev\a2a-wire-pub` | **`nodus-a2a-wire`** | `main` (tracked `origin/wire-adapter`, gone) | the one that actually corresponds to `github.com/Masterplanner25/nodus-a2a-wire` |
+
+So the directory named `nodus-a2a-wire` is the one that is *not* the wire repo. Use
+**`a2a-wire-pub`** for anything touching that GitHub repo.
+
+**It cannot be published as-is, and that is why it is not on PyPI** — its
+`pyproject.toml`, in the GitHub repo as well as both worktrees, still declares
+`name = "nodus-a2a"`, which is taken by the coordinator. It also pins
+`nodus-lang>=4.0.0,<5.0.0`, which violates the no-caps policy and would exclude
+every 5.x release. Both are #477, which is a **decision that was never finished**,
+not a defect harming anyone today: nothing depends on the wire package and no
+install path advertises it.
 
 ## Nodus language quirks (relevant when writing test .nd code)
 
@@ -1514,8 +1535,20 @@ first-party dependency turns every major into a two-repo release train with cons
 between. The companion's own suite is the check that catches a real break; a cap earns its place
 once a break is known, not before.
 
-**Standalone companion packages — 32 live on PyPI** (33 projects counting nodus-lang).
-Names and tiers: `docs/ecosystem/PACKAGE_QUICK_REF.md`.
+**Standalone companion packages — 34 as of 2026-08-26**, plus `nodus-lang`, so **35
+PyPI projects** in total. Names and tiers: `docs/ecosystem/PACKAGE_QUICK_REF.md`.
+
+That count was **32/33** for several cycles and was wrong before `nodus-flow` was
+published — a hand-maintained number nothing checks, exactly like the version strings
+below. **Do not adjust it by arithmetic; re-derive it.** Every first-party name is
+listed in `docs/ecosystem/README.md`; probe each against
+`https://pypi.org/pypi/<name>/json` and count what resolves. Three first-party names
+deliberately do **not**: `nodus-vscode` (Marketplace), `nodus-run-action` (GitHub
+Action) and `nodus-a2a-wire` (git only, see the nodus-a2a section).
+
+Send `Cache-Control: no-cache` when you do. PyPI's JSON API served a stale `info.version`
+immediately after the `nodus-flow` publish — it reported the previous release as latest
+when the new one had landed, which reads exactly like a failed upload.
 
 **Version numbers are deliberately not listed here any more.** They were, and they went
 stale every cycle. Two scripts read them live and neither can be transcribed wrong:
@@ -1546,8 +1579,10 @@ Earlier wording here said they were "published from the GitHub repos, which hold
 nodus-lang adapter versions — do not publish from the local checkouts." That was backwards
 on both counts: the adapters are **not on PyPI at all**, and the local checkouts are
 exactly what is published. `pip install nodus-a2a` does not give you `A2AHttpServer`;
-the wire adapter is at `nodus-a2a-wire` (git only). The nodus-memory adapter exists only
-in history — `git show f02ab1e:src/nodus_memory/nodus_bindings.py`.
+the wire adapter is at `nodus-a2a-wire` (git only, and **worktree
+`C:\codev\a2a-wire-pub` — not the confusingly-named `C:\codev\nodus-a2a-wire`**; see
+the nodus-a2a section). The nodus-memory adapter exists only in history —
+`git show f02ab1e:src/nodus_memory/nodus_bindings.py`.
 
 **Other published artifacts — neither is on PyPI, so both are invisible to the sweep
 above.** They are tracked by `tools/consumers.json` and reported by
