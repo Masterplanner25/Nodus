@@ -132,7 +132,12 @@ BUILTIN_CAPABILITIES.update({
 })
 BUILTIN_CAPABILITIES.update({
     name: AGENT_CALL
-    for name in ("agent_call", "__action_agent")
+    # #616: `agent_call_async` was in the VM dispatch table but not in
+    # BUILTIN_NAMES, so it fell outside this classification entirely. A
+    # DenyList("agent.call") refused `agent_call` and permitted
+    # `agent_call_async` against the same agent -- the async form of a
+    # governed builtin escaping the policy that governs it.
+    for name in ("agent_call", "agent_call_async", "__action_agent")
 })
 BUILTIN_CAPABILITIES.update({
     name: MEMORY_READ
@@ -173,6 +178,10 @@ BUILTIN_CAPABILITIES.update({
 # and let a test drive off it.
 NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
     "pure computation": (
+        # #616: unclassified rather than deliberately unauthorised -- they
+        # were absent from BUILTIN_NAMES, which is the set this totality is
+        # measured against. They compute and touch nothing.
+        "chr", "ord", "collection_validate_reduce_fn",
         "bool_equal", "collection_len", "count", "has_key", "index_of",
         "json_parse", "json_parse_int", "json_stringify", "keys",
         "last_index_of", "len", "list_pop", "list_push", "map_has_key", "push",
@@ -246,6 +255,10 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "cb_call", "retry_call",
         "effect_action_id", "effect_complete", "effect_pending",
         "effect_resolve", "effect_store_size",
+        # #616: the same family, and unclassified for the same reason — they
+        # were absent from BUILTIN_NAMES, which is the set this totality is
+        # measured against, so "total" was true of the wrong set.
+        "effect_get_result", "state_contribute", "__workflow_checkpoint",
     ),
     # Naming what exists is not reaching it. A denied `tool_call` is still
     # denied after `tool_list` names the tool, and hiding the catalogue while

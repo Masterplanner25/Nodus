@@ -437,16 +437,44 @@ class ContributionReachesTheBuiltinTests(unittest.TestCase):
         bound to that name, or a guest can intercept its own state writes."""
         self.assertIn('builtin_call("state_contribute"', self.LOWERING_SOURCE)
 
-    def test_state_contribute_is_not_a_public_builtin(self):
-        """It is a lowering artifact; a program calling it directly would be
-        contributing to a cell the runtime has no policy for."""
+    def test_state_contribute_is_governed_and_cannot_be_shadowed(self):
+        """It is a lowering artifact, and #616 changed how that is enforced.
+
+        This test used to assert `state_contribute` was absent from
+        `BUILTIN_NAMES`, on the reading that absence made it non-public. It did
+        not. The name resolved from a guest program the whole time — the VM
+        dispatches from its own table, and `BUILTIN_NAMES` is not consulted for
+        resolution. What absence *did* do was leave the name outside
+        `register_function`'s override guard and outside the capability
+        classification, which is #616.
+
+        What actually keeps a program from contributing to a cell the runtime
+        has no policy for is the runtime guard below, not this set.
+        """
         from nodus.builtins.nodus_builtins import BUILTIN_NAMES
+        from nodus.runtime.capability import (
+            BUILTIN_CAPABILITIES,
+            NO_AUTHORITY_BUILTIN_NAMES,
+        )
 
-        self.assertNotIn("state_contribute", BUILTIN_NAMES)
+        self.assertIn("state_contribute", BUILTIN_NAMES)
+        self.assertIn(
+            "state_contribute",
+            set(BUILTIN_CAPABILITIES) | set(NO_AUTHORITY_BUILTIN_NAMES),
+            "every dispatched builtin must carry a capability decision (#616)",
+        )
 
-    def test_calling_it_by_name_does_not_resolve(self):
+    def test_calling_it_outside_a_step_is_refused_by_the_runtime(self):
+        """The guard that actually holds, asserted on its message.
+
+        Previously this asserted only that *some* message came back, under the
+        name `test_calling_it_by_name_does_not_resolve`. The name did resolve;
+        the message was `state contribution outside a workflow step`, so the
+        test passed for an unrelated reason and would have kept passing if
+        resolution had broken. Assert the specific refusal.
+        """
         message = _error("fn main() { state_contribute(\"x\", 1i) }")
-        self.assertTrue(message, "expected the name not to resolve")
+        self.assertIn("outside a workflow step", message)
 
 
 if __name__ == "__main__":
