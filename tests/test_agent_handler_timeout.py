@@ -144,3 +144,6 @@ class AgentTimeoutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# CI control probe: does test_agent_handler_timeout fail on main under the
+# Linux coverage job? Delete this branch either way.
