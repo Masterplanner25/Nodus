@@ -184,7 +184,11 @@ def _invoke_handler_bounded(handler, payload, timeout_ms: float | None, *, name:
     return True, box.get("value"), False
 
 
-def call_agent(name, payload, *, vm=None) -> dict:
+_DEADLINE_UNSET = object()
+"""Distinguishes "no deadline was captured" from a captured `None` (unbounded)."""
+
+
+def call_agent(name, payload, *, vm=None, timeout_ms=_DEADLINE_UNSET) -> dict:
     filename = normalize_filename(getattr(vm, "source_path", None))
     if not isinstance(name, str) or not name:
         return _agent_error("Agent name must be a non-empty string", filename, name=name)
@@ -198,7 +202,23 @@ def call_agent(name, payload, *, vm=None) -> dict:
         _emit(vm, "agent_call_fail", name=name, payload=payload, ok=False, error=_error_message(result))
         return result
 
-    timeout_ms = _effective_timeout_ms(vm)
+    # #596: the deadline is captured by the caller when it can be, and only
+    # computed here when it cannot.
+    #
+    # `_effective_timeout_ms` reads the step budget from
+    # `vm.scheduler.current_task`, which the scheduler sets immediately before a
+    # coroutine resume and clears in the matching `finally` — so it is only
+    # readable *on the scheduler thread, inside that resume*. #398 then made
+    # `action agent` dispatch its handler off that thread so independent steps
+    # overlap, and by the time the worker got here the coroutine had suspended:
+    # no `current_task`, no candidate, `None` returned, call unbounded. The two
+    # landed in the same cycle and nothing connected them.
+    #
+    # So the budget is now read where it is knowable and passed in. The decision
+    # itself still lives in exactly one function; only the moment it is evaluated
+    # moved.
+    if timeout_ms is _DEADLINE_UNSET:
+        timeout_ms = _effective_timeout_ms(vm)
     try:
         ok, handler_result, timed_out = _invoke_handler_bounded(
             entry["handler"], clone_json_value(payload), timeout_ms, name=name
