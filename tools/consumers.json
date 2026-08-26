@@ -30,9 +30,9 @@
       "name": "nodus-run-action",
       "repo": "Masterplanner25/nodus-run-action",
       "kind": "GitHub Action (not packaged)",
-      "published": "v1.0.5",
+      "published": "v1.0.6",
       "tracks": "nodus_version",
-      "fingerprint": "5.4.0",
+      "fingerprint": "5.5.0",
       "why": "Its README documents a pinned `version:` for reproducible CI. The pin is the version new users copy, so it going stale hands them an old runtime.",
       "republish": "Update the pinned `version:` in README.md examples, then tag the action."
     }
