@@ -572,6 +572,64 @@ class NodusRuntime:
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
         self._host_capabilities[name] = requires
 
+    def register_agent(
+        self,
+        name: str,
+        handler,
+        *,
+        description: str | None = None,
+        payload_schema: dict | None = None,
+    ) -> None:
+        """Register a handler this runtime's scripts can reach via ``agent_call``.
+
+        The agent boundary is where a Nodus program hands a *semantic* decision to
+        the host — the thing the runtime deliberately cannot decide for itself.
+        ``handler`` takes the payload as a dict and returns any JSON-safe value;
+        it reaches the script under the envelope's ``result`` key.
+
+        **This registers into whichever registry this runtime uses**, which is the
+        reason it exists rather than only the module-level
+        ``nodus.services.agent_runtime.register_agent`` (#491). That function
+        defaults to the *process-global* registry, so an embedder who scoped a
+        runtime with ``agent_registry={...}`` and registered the obvious way got a
+        handler the runtime could neither see nor call — ``agent_available()``
+        returned ``[]`` and ``agent_call`` reported *"No handler registered"*,
+        while the handler was registered, elsewhere. Registration and scoping have
+        to agree, and only the runtime knows its own scope.
+
+        Example::
+
+            runtime.register_agent("git_strategist", pick_rebase_or_merge,
+                                   description="rebase vs merge")
+
+        The module-level function is unchanged and still correct for a host that
+        wants the process-global registry deliberately.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("Agent name must be a non-empty string")
+        if not callable(handler):
+            raise ValueError(f"Agent handler for {name!r} must be callable")
+        from nodus.services.agent_runtime import register_agent as _register
+
+        _register(
+            name,
+            handler,
+            description=description,
+            payload_schema=payload_schema,
+            registry=self.agent_registry,
+        )
+
+    def unregister_agent(self, name: str) -> None:
+        """Remove an agent from this runtime's registry. See `register_agent`.
+
+        Scoped the same way, and for the same reason: the module-level
+        `unregister_agent` would pop from the process-global registry regardless
+        of what this runtime is using.
+        """
+        from nodus.services.agent_runtime import unregister_agent as _unregister
+
+        _unregister(name, registry=self.agent_registry)
+
     @property
     def tool_registry(self) -> ToolRegistry:
         """The tool registry for this runtime.

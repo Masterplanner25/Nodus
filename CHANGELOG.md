@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#491: `NodusRuntime.register_agent` / `unregister_agent`.** The agent registry
+  was reachable only through `nodus.services.agent_runtime.register_agent`, which
+  defaults to the **process-global** registry — so an embedder who scoped a
+  runtime with `agent_registry={}` and registered the obvious way got a handler
+  that runtime could neither see nor call:
+
+  ```
+  scoped runtime sees : []
+  calling it          : false | [{"type": "AgentError", "message": "No handler
+                                  registered for agent 'picker'", ...}]
+  ```
+
+  Registered, and invisible. The methods route to whichever registry *that*
+  runtime uses, so registration and scoping cannot disagree. This is a
+  correctness fix, not only the ergonomic one the issue asked for — an embedder
+  reaching for `register_agent` beside `register_function` got an
+  `AttributeError`, but an embedder who found the module-level function got
+  something worse.
+
+### Docs
+
+- **#491: `docs/guide/agent-host-boundary.md` — the host boundary was
+  undocumented.** `agent_call` is the point where a program hands a *semantic*
+  decision to the host, and it appeared **zero** times in `docs/guide/`,
+  `llms.txt` and `llms-full.txt`. Every hit in `docs/` was in an eval record or a
+  governance document — writing *about* the project, not *for* a user.
+
+  The new guide covers all five surfaces (`agent_call`, `agent_call_async`,
+  `agent_available`, `agent_describe`, `action agent … with { … }`), registering
+  a handler, agents vs tools, the workflow shape, and handler bounding. Two
+  things it documents that the shape actively invites getting wrong:
+
+  - **The nine-key envelope.** `agent_call` does not return the handler's value;
+    it is under `result`. Four of the other keys (`filename`, `stdout`,
+    `stderr`, `diagnostics`) describe the *calling script*, not the agent.
+  - **Failure is soft.** An unregistered agent or a raising handler yields
+    `ok: false` and the run *continues*, so an unchecked call looks like it
+    worked. Inside a step, the unchecked read then fails the step — which
+    presents as a step missing from `steps` while the run's `error` stays `nil`.
+
+  `llms.txt` and `llms-full.txt` both carry it now; the latter gets the envelope
+  and the soft-failure rule inline, since an agent reading it and concluding
+  Nodus had no agent boundary was reading it correctly.
+
+- **The guide index gained an entry.** `getting-started.md`'s "AI-native and
+  agentic patterns" section had exactly one file in it.
+
+
 ### Changed
 
 - **#609: an unrecognised type name is reported instead of silently meaning

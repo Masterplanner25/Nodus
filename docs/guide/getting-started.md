@@ -420,6 +420,9 @@ Start with the foundation guides, then pick the topic you need:
 
 **AI-native and agentic patterns**
 
+- **[agent-host-boundary.md](agent-host-boundary.md)** — `agent_call` and the
+  point where a program hands a semantic decision to the host: registering a
+  handler, the result envelope, soft failure, and the workflow shape.
 - **[ai-primitives.md](ai-primitives.md)** — std:tool (MCP-compatible tool
   registry), std:identity (trace IDs), std:effects (EXACTLY_ONCE
   idempotency), std:memory, std:retry, std:circuit_breaker.
