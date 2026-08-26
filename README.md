@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Masterplanner25/Nodus/actions/workflows/ci.yml/badge.svg)](https://github.com/Masterplanner25/Nodus/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Masterplanner25/Nodus/blob/main/LICENSE)
 
 > **Stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 >
@@ -37,7 +37,7 @@
 > Why: all three external architecture audits found the same thing — the
 > capability chokepoint was built and unused, with *"the door propped open by
 > registering subprocess and http by default."* See
-> [the migration note](docs/migration/v5.0-deny-by-default.md) and
+> [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
 **Recent:** 5.4.0 is about a resume that tells the truth, and an inspection that
@@ -160,7 +160,7 @@ does not imply recompilation. Alongside it: `goal … over …` gives a goal a r
 stopping condition, so it is a workflow *plus a predicate and a budget* rather
 than a workflow with different event names; `retries: N` now means the same thing
 for goals and workflows; and `nodus fmt` refuses to write a file it cannot fully
-represent instead of corrupting it. See the [changelog](CHANGELOG.md).
+represent instead of corrupting it. See the [changelog](https://github.com/Masterplanner25/Nodus/blob/main/CHANGELOG.md).
 
 ```bash
 pip install nodus-lang
@@ -169,7 +169,7 @@ nodus run
 nodus repl
 ```
 
-Nodus is an **orchestration DSL and embedded runtime** for *hosting* agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar.
+Nodus is an **orchestration DSL and embedded runtime** for *hosting* agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar.
 
 **There is no model in the core, and that is the design.** Nodus contains no LLM client, no agent loop and no tool-selection logic; `action agent "name" with {...}` hands a JSON-safe payload to a handler your host registers, and takes a result back. Because the runtime cannot perform inference, every semantic decision *must* cross that boundary — so deterministic structure never guesses, and the model never controls sequencing.
 
@@ -177,13 +177,13 @@ What the language contributes: `workflow`, `goal`, `step` and `after` are real k
 
 If you're building multi-step AI agents, embedding a scripting layer in a Python application, or wiring together tools via MCP or A2A (through the `nodus-mcp` and `nodus-a2a` companion packages — the core language ships neither protocol), Nodus is the execution layer.
 
-For a machine-readable project index see [llms.txt](llms.txt).
+For a machine-readable project index see [llms.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms.txt).
 
 Beyond the core language, the Nodus ecosystem spans **32 standalone companion packages**
 published on PyPI (33 projects counting `nodus-lang` itself), all with source at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
 story: `pip install nodus-sdk[agent,sql,fastapi]`. See the
-[ecosystem guide](docs/guide/ecosystem.md) for the package-by-package breakdown.
+[ecosystem guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/ecosystem.md) for the package-by-package breakdown.
 
 Editor and CI integrations ship separately: the
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=MasterplanInfiniteWeave.nodus-lang)
@@ -279,7 +279,7 @@ print(r.body)
 
 The standard library ships with Nodus — no extra installs for core modules (`std:http` is
 the one exception; it needs the `[http]` extra above). Full reference:
-[Standard Library guide](docs/guide/standard-library.md).
+[Standard Library guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/standard-library.md).
 
 **Networking, processes, and the filesystem**
 
@@ -349,7 +349,7 @@ direction, and it constrains design now: a feature that would make bootstrapping
 impossible, or need a separate "systems" subset to work around, is treated as
 evidence the abstraction level is wrong.
 
-The proof-of-concept exists — [`examples/expr_compiler.nd`](examples/expr_compiler.nd)
+The proof-of-concept exists — [`examples/expr_compiler.nd`](https://github.com/Masterplanner25/Nodus/blob/main/examples/expr_compiler.nd)
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
 semantics are there and the 49-opcode instruction set has been frozen since v1.0.
 Runtime throughput is the honest blocker: roughly **400K instructions/sec** on
@@ -359,26 +359,26 @@ compiler workload** — a JIT is at its best on a tight loop, so the larger numb
 an upper bound rather than a promise. A further **1.5× is available with no new
 runtime at all**: the VM retains an event per function call and return, unbounded
 and unread ([#522](https://github.com/Masterplanner25/Nodus/issues/522)). See
-[Language Vision §Bootstrapping](docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
+[Language Vision §Bootstrapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
 
 ## Documentation
 
-- [User Guide](docs/guide/getting-started.md) — task-oriented walkthroughs; index in §7
-- [Language Specification](docs/language/LANGUAGE_SPEC.md) — full syntax, types, control flow, imports, coroutines
-- [Embedding Nodus](docs/guide/embedding-nodus.md) — `NodusRuntime` from Python, sandboxing, limits
-- [Ecosystem Specs](docs/ecosystem/README.md) - implementation specs for proposed Nodus libraries and frameworks
-- [Architecture](docs/runtime/ARCHITECTURE.md) — runtime pipeline and module system
-- [Changelog](CHANGELOG.md) — version history
-- [Contributing](CONTRIBUTING.md) — development setup, code style, and contribution process
-- [llms.txt](llms.txt) — machine-readable project index for AI tools
-- [llms-full.txt](llms-full.txt) — full content summaries for AI indexers
+- [User Guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/getting-started.md) — task-oriented walkthroughs; index in §7
+- [Language Specification](https://github.com/Masterplanner25/Nodus/blob/main/docs/language/LANGUAGE_SPEC.md) — full syntax, types, control flow, imports, coroutines
+- [Embedding Nodus](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/embedding-nodus.md) — `NodusRuntime` from Python, sandboxing, limits
+- [Ecosystem Specs](https://github.com/Masterplanner25/Nodus/blob/main/docs/ecosystem/README.md) - implementation specs for proposed Nodus libraries and frameworks
+- [Architecture](https://github.com/Masterplanner25/Nodus/blob/main/docs/runtime/ARCHITECTURE.md) — runtime pipeline and module system
+- [Changelog](https://github.com/Masterplanner25/Nodus/blob/main/CHANGELOG.md) — version history
+- [Contributing](https://github.com/Masterplanner25/Nodus/blob/main/CONTRIBUTING.md) — development setup, code style, and contribution process
+- [llms.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms.txt) — machine-readable project index for AI tools
+- [llms-full.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms-full.txt) — full content summaries for AI indexers
 
 ## Using with Claude Code
 
 If you write Nodus with [Claude Code](https://claude.ai/code), a language skill is available
 that teaches Claude the idioms, gotchas, and workflow patterns specific to Nodus v4:
 
-1. Download [`skills/nodus.skill`](skills/nodus.skill) and [`skills/project-CLAUDE.md`](skills/project-CLAUDE.md) from this repo.
+1. Download [`skills/nodus.skill`](https://github.com/Masterplanner25/Nodus/blob/main/skills/nodus.skill) and [`skills/project-CLAUDE.md`](https://github.com/Masterplanner25/Nodus/blob/main/skills/project-CLAUDE.md) from this repo.
 2. Copy `project-CLAUDE.md` to your project root as `CLAUDE.md` (fill in your project name).
 3. Drop `nodus.skill` in your project's `.claude/commands/` folder.
 4. Claude will apply Nodus-specific rules automatically in every session.
@@ -392,8 +392,8 @@ programs.
 
 If you write Nodus with Codex, a Codex-native skill and project template are available:
 
-1. Copy [`skills/project-AGENTS.md`](skills/project-AGENTS.md) to your project root as `AGENTS.md` and fill in your project name if needed.
-2. Copy the [`skills/nodus/`](skills/nodus/) folder to `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
+1. Copy [`skills/project-AGENTS.md`](https://github.com/Masterplanner25/Nodus/blob/main/skills/project-AGENTS.md) to your project root as `AGENTS.md` and fill in your project name if needed.
+2. Copy the [`skills/nodus/`](https://github.com/Masterplanner25/Nodus/tree/main/skills/nodus/) folder to `$CODEX_HOME/skills/nodus` or `~/.codex/skills/nodus`.
 3. Start a Codex session in your Nodus project. Codex can auto-trigger the skill, or you can invoke `$nodus` explicitly.
 
 The Codex skill covers the same core language hazards: record vs map distinction, closure outer-`let`
@@ -409,7 +409,7 @@ Nodus is created and maintained by **Shawn Knight** as part of the
 [Masterplan Infinite Weave](https://www.the-master-plan.com/) — an AI-native execution
 framework built on the Infinity Algorithm. Nodus is the runtime layer whose execution
 model embodies the Infinity Algorithm's orchestration structure (see
-[Infinity Pattern Mapping](docs/architecture/INFINITY_PATTERN_MAPPING.md)).
+[Infinity Pattern Mapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/architecture/INFINITY_PATTERN_MAPPING.md)).
 
 **From the creator's writing:**
 - [Why I'm Building A.I.N.D.Y. (Or Any Tool, Really)](https://medium.com/masterplan-infinite-weave/2025-chatgpt-ai-the-duality-of-progress-why-im-building-a-i-n-d-y-or-any-tool-really-a138f7860fba) — the strategic context behind Nodus

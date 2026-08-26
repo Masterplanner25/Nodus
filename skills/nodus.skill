@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "4.1.1"
+version: "5.4.0"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -12,7 +12,7 @@ description: >
   workflows have non-obvious idioms that differ from Python.
 ---
 
-# Nodus v4 Skill
+# Nodus Skill
 
 ## Identity — read this first
 
@@ -26,7 +26,84 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Bytecode version is 4. Package version is 4.1.1.** Installed via `pip install nodus-lang`.
+**Package version is 5.4.0. Bytecode version is 4** — unchanged since v1.0, so a major
+bump does not imply recompilation. Installed via `pip install nodus-lang`.
+
+Run `nodus docs` for the guide, the machine-readable index and this skill's source,
+pinned to the version you actually have.
+
+---
+
+## What is new since v4 — read this before writing embedding code
+
+The syntax in this file is unchanged and still correct; 5.x added surface rather
+than breaking it. But one **behaviour** changed, and several things are now
+sayable that used to need a workaround.
+
+### The one breaking change: embedded runtimes deny by default (v5.0.0)
+
+`NodusRuntime()` has `allow_subprocess=False`, `allow_network=False`,
+`allow_env=False`. Grant explicitly. See the embedding section below — advice
+written against the old permissive default is **backwards**, not merely dated.
+
+### A goal is now a workflow plus a stopping condition (v5.0.0)
+
+`goal NAME { step … }` still works. The form that makes a goal mean something
+distinct is:
+
+```nodus
+goal reach_quality over tune {
+    until reached("good_enough")
+    budget { max_iterations: 5i, deadline_ms: 30000i }
+}
+```
+
+`reached("label")` refers to a `checkpoint "label"` inside a step body, and a
+label no step emits is a **compile error**, not a silent never-satisfied loop.
+The result map gains `goal_satisfied` and `iterations`.
+
+### Failure has a vocabulary at a join (v5.1.0, v5.2.0, v5.4.0)
+
+- A failed step poisons its descendants, which report `upstream_failed`.
+- `step j after a, b with { on: ["completed", "failed"] }` — run the join anyway.
+  `on:` accepts only `completed`, `failed`, `skipped`: the three a dependency can
+  reach *while the run is going*. The other four statuses are end-of-run
+  conclusions and are refused at declaration.
+- `step flaky with { allow_failure: true }` — this step failing is not the run's
+  failure. Its status still says `failed` and dependents are still poisoned; only
+  the run's verdict changes.
+
+### Two steps can write one cell (v5.2.0)
+
+```nodus
+workflow w {
+    state total = 0i with { merge: "sum" }   // also "append", "union", "once"
+    step a { total += 1i return 1i }
+    step b { total += 2i return 2i }
+    step j after a, b { return total }
+}
+let r = run_workflow(w)
+print("total=\(r["state"]["total"])")       // total=3
+```
+
+A folded cell is written with `+=`, which **contributes** a value. A plain
+`total = …` sets a final value and cannot be combined with another branch's, so
+the compiler refuses it and says exactly that. No type annotation on `state`:
+`state x: int = …` is a syntax error, the `: type` slot is unused.
+
+### Smaller things that change what you write
+
+- `try { } finally { }` needs no `catch` (v5.4.0). The old
+  `catch e { throw e }` workaround is no longer necessary.
+- `channel(n)` exerts **backpressure**: a `send` on a full bounded channel inside
+  a coroutine blocks rather than raising (v5.4.0). At top level there is nothing
+  to suspend, so it still raises — wrap in `spawn`.
+- `nodus graph` no longer executes the file it inspects (v5.4.0). A graph built
+  at run time (`task()` / `run_graph`) needs `--execute`.
+- `run_source(source, filename=…)` runs `source`. Before v5.1.0, if a file of
+  that name existed the loader read *the file* and discarded your argument. Use
+  `run_file` to run a file.
+- `nodus.toml` refuses keys it does not read (v5.3.0), naming the close match.
 
 ---
 
@@ -205,9 +282,9 @@ contributor to Nodus's knowledge base.
 
 # Reference: Syntax
 
-# Nodus v4 Syntax Reference
+# Nodus Syntax Reference
 
-All examples in this file are verified against nodus-lang 4.1.1.
+All examples in this file are verified against nodus-lang 5.4.0.
 
 ---
 
@@ -1104,7 +1181,7 @@ state at a named point. They only make sense inside step execution.
 
 # Nodus v4 Modules and Imports Reference
 
-All examples verified against nodus-lang 4.1.1.
+All examples verified against nodus-lang 5.4.0.
 
 ---
 
@@ -1315,7 +1392,7 @@ nodus run --trace-imports script.nd
 
 # Nodus v4 Error Guide
 
-Error text → what it means → fix class. All errors verified against nodus-lang 4.1.1.
+Error text → what it means → fix class. All errors verified against nodus-lang 5.4.0.
 
 Fix classes are named consistently so they can be referenced across sessions.
 
@@ -1506,15 +1583,32 @@ step x {
 
 ## Python embedding issues
 
-### `NodusRuntime()` with no arguments — scripts time out after 200ms
+### `NodusRuntime()` cannot shell out, open sockets, or read the environment
 **Context:** Embedding Nodus in a server, long-running agent, or workflow host.
-**Meaning:** Default is `timeout_ms=200` (same as CLI). Any cooperative sleep
-or long workflow will hit this.
-**Fix class:** DISABLE-TIMEOUT — always pass `timeout_ms=None, max_steps=None`
-for server or long-running embedded use:
+**Meaning:** Since **v5.0.0** the embedded runtime **denies by default** —
+`allow_subprocess`, `allow_network` and `allow_env` are all `False`. A guest
+script calling `subprocess.run` or `http.get` gets a sandbox refusal naming the
+flag that would grant it. This is the one breaking change in the 5.x line, and it
+is deliberate: the domain it protects is work you did not fully author.
+**Fix class:** GRANT-EXPLICITLY — decide what the guest may do, and say so:
 ```python
-rt = NodusRuntime(timeout_ms=None, max_steps=None)
+rt = NodusRuntime(allow_subprocess=True, allow_network=True)
 ```
+`allowed_paths` is unchanged and still defaults to a CWD jail.
+
+**`nodus run` and the rest of the CLI are deliberately NOT affected** — the CLI
+builds a `VM` directly and never constructs a `NodusRuntime`. A developer running
+a script they just wrote is not the case deny-by-default exists for. Do not
+"fix" that inconsistency; a test pins both halves.
+
+### `NodusRuntime()` and the 200 ms deadline — **no longer true**
+**Context:** Advice written against v4 says the default is `timeout_ms=200` and
+that you must always pass `timeout_ms=None`.
+**Meaning:** It defaults to `None`. There is no wall-clock deadline on a bare
+runtime, and cooperative sleep never consumed the budget anyway.
+**Fix class:** none needed — passing `timeout_ms=None` is redundant, not wrong.
+Only the **call-depth cap** defaults on (`MAX_STACK_DEPTH`, 10,000); `max_steps`
+stays unbounded because a step budget is host policy.
 
 ### `run_source()` returns `{"ok": False, "error": ...}` with no exception
 **Context:** A script that raises a Nodus error.
@@ -1532,7 +1626,7 @@ if not result["ok"]:
 
 # Nodus v4 Verified Examples
 
-All examples are complete, runnable programs verified against nodus-lang 4.1.1.
+All examples are complete, runnable programs verified against nodus-lang 5.4.0.
 Each carries a one-line statement of what it demonstrates.
 
 **Key pattern note:** List literals cannot span multiple lines. Use `list_push()` to

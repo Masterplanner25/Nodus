@@ -2068,6 +2068,17 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(script)
         return 0
 
+    if command == "docs":
+        from nodus.cli.docs import format_report as format_docs, report as docs_report
+
+        _positional, flags = _parse_flags(cmd_args, *flags_for("docs"))
+        data = docs_report()
+        if "--json" in flags:
+            _json_print(data)
+        else:
+            print(format_docs(data))
+        return 0
+
     if command == "doctor":
         from nodus.cli.doctor import format_report, run_checks, to_json
 

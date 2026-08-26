@@ -27,7 +27,6 @@
     "`scan` drives the second half: a sweep for claim-shaped lines that are NOT",
     "registered here, so a new one cannot hide. That half is advisory."
   ],
-
   "claims": [
     {
       "file": "README.md",
@@ -38,7 +37,7 @@
     },
     {
       "file": "llms.txt",
-      "pattern": "PyPI: `nodus-lang` \\(v(\\d+\\.\\d+\\.\\d+) [—-] current stable",
+      "pattern": "PyPI: `nodus-lang` \\(v(\\d+\\.\\d+\\.\\d+) [\u2014-] current stable",
       "expects": "nodus_version",
       "why": "The canonical machine-readable map. A stale version here misdirects every AI reader.",
       "fix": "Update the PyPI line in the release PR."
@@ -59,14 +58,14 @@
     },
     {
       "file": "CLAUDE.md",
-      "pattern": "- `src/nodus/support/version\\.py` — `__version__ = \"(\\d+\\.\\d+\\.\\d+)\"`",
+      "pattern": "- `src/nodus/support/version\\.py` \u2014 `__version__ = \"(\\d+\\.\\d+\\.\\d+)\"`",
       "expects": "nodus_version",
       "why": "Quotes the authority file's literal contents, so it is wrong the moment the authority moves.",
       "fix": "Update the bullet under the SemVer policy paragraph."
     },
     {
       "file": "CLAUDE.md",
-      "pattern": "- `pyproject\\.toml` — `version = \"(\\d+\\.\\d+\\.\\d+)\"`",
+      "pattern": "- `pyproject\\.toml` \u2014 `version = \"(\\d+\\.\\d+\\.\\d+)\"`",
       "expects": "nodus_version",
       "why": "As above, for the other half of the version-sync pair.",
       "fix": "Update the bullet under the SemVer policy paragraph."
@@ -80,7 +79,7 @@
     },
     {
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
-      "pattern": "Publication status \\| \\*\\*Published\\*\\* [—-] v(\\d+\\.\\d+\\.\\d+) live on PyPI",
+      "pattern": "Publication status \\| \\*\\*Published\\*\\* [\u2014-] v(\\d+\\.\\d+\\.\\d+) live on PyPI",
       "expects": "nodus_version",
       "why": "Second of the lines in this file that claim a current version.",
       "fix": "Update the status table row in the release PR."
@@ -95,13 +94,40 @@
     },
     {
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
-      "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [—-] most recent",
+      "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [\u2014-] most recent",
       "expects": "latest_eval_version",
       "why": "Points a reader at the newest Gate 10 record. Nothing updates it when a release writes a new one, so it silently names an older cycle.",
       "fix": "Point it at the newest docs/evals/vX.Y.Z/CREATOR_VALIDATION.md."
+    },
+    {
+      "file": "skills/nodus.skill",
+      "pattern": "^version:\\s+\"(\\d+\\.\\d+\\.\\d+)\"",
+      "expects": "nodus_version",
+      "why": "The skill an agent installs. It sat at 4.1.1 for nine releases while teaching that NodusRuntime defaults to timeout_ms=200 (removed in #97) and saying nothing about deny-by-default (#405) -- so its guidance on the capability model was backwards, not merely dated (#605).",
+      "fix": "Refresh skills/nodus.skill and bump its `version:` in the release PR."
+    },
+    {
+      "file": "skills/nodus.skill",
+      "pattern": "\\*\\*Package version is (\\d+\\.\\d+\\.\\d+)\\.",
+      "expects": "nodus_version",
+      "why": "The skill states the installed version in its Identity section; an agent reads it as fact.",
+      "fix": "Update the Identity paragraph alongside the frontmatter `version:`."
+    },
+    {
+      "file": "skills/project-CLAUDE.md",
+      "pattern": "`nodus-lang (\\d+\\.\\d+\\.\\d+)`",
+      "expects": "nodus_version",
+      "why": "A template a user copies into their own project as the standing instruction file. It said 4.1.1 for nine releases (#605); a stale one here propagates into every project that adopts it.",
+      "fix": "Update the Language section in the release PR, alongside skills/nodus.skill."
+    },
+    {
+      "file": "skills/project-AGENTS.md",
+      "pattern": "`nodus-lang (\\d+\\.\\d+\\.\\d+)`",
+      "expects": "nodus_version",
+      "why": "A template a user copies into their own project as the standing instruction file. It said 4.1.1 for nine releases (#605); a stale one here propagates into every project that adopts it.",
+      "fix": "Update the Language section in the release PR, alongside skills/nodus.skill."
     }
   ],
-
   "_ignore_comment": [
     "Lines the sweep flags that are not nodus-lang currency claims. Each needs a",
     "reason. Suppression is per-line (file + substring), never per-file, so a NEW",
@@ -122,7 +148,6 @@
       "why": "Companion-package versions, not nodus-lang's. Drift for those is owned by tools/check_publish_drift.py, which resolves published metadata rather than reading prose. Duplicating it here would give two sources for one fact."
     }
   ],
-
   "scan": {
     "files": [
       "README.md",
