@@ -8,6 +8,7 @@ from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.frontend.ast.ast_nodes import (
     builtin_call,
+    pattern_names,
     ActionStmt,
     Assign,
     Attr,
@@ -35,7 +36,6 @@ from nodus.frontend.ast.ast_nodes import (
     InterpolationPart,
     Let,
     ListLit,
-    ListPattern,
     MapLit,
     Int,
     Nil,
@@ -43,14 +43,12 @@ from nodus.frontend.ast.ast_nodes import (
     Param,
     Print,
     RecordLiteral,
-    RecordPattern,
     Return,
     Str,
     Throw,
     TryCatch,
     Unary,
     Var,
-    VarPattern,
     While,
     WorkflowDef,
     WorkflowStep,
@@ -678,19 +676,6 @@ def _mark_from(node, original):
     return node
 
 
-def _collect_pattern_names(pattern) -> list[str]:
-    names: list[str] = []
-    if isinstance(pattern, VarPattern):
-        names.append(pattern.name)
-    elif isinstance(pattern, ListPattern):
-        for item in pattern.elements:
-            names.extend(_collect_pattern_names(item))
-    elif isinstance(pattern, RecordPattern):
-        for _key, value in pattern.fields:
-            names.extend(_collect_pattern_names(value))
-    return names
-
-
 def _lower_action_expr(expr: ActionStmt):
     target = Str(expr.target) if expr.target is not None else Nil()
     if expr.kind == "tool":
@@ -810,7 +795,7 @@ class _StateRewriter:
         if isinstance(stmt, DestructureLet):
             expr = self.rewrite_expr(stmt.expr)
             out = DestructureLet(stmt.pattern, expr)
-            for name in _collect_pattern_names(stmt.pattern):
+            for name in pattern_names(stmt.pattern):
                 self._define(name)
             return _mark_from(out, stmt)
         if isinstance(stmt, Print):

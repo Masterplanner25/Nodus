@@ -35,24 +35,22 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     MapLit,
     Int,
-    ListPattern,
     Nil,
     Num,
     Param,
     Print,
     RecordLiteral,
-    RecordPattern,
     Return,
     Str,
     Throw,
     TryCatch,
     Unary,
     Var,
-    VarPattern,
     While,
     WorkflowDef,
     WorkflowStateDecl,
     Yield,
+    pattern_names,
 )
 from nodus.frontend.lexer import KEYWORDS, Tok, tokenize
 
@@ -69,23 +67,6 @@ COMPLETION_KIND_VARIABLE = 6
 COMPLETION_KIND_MODULE = 9
 COMPLETION_KIND_KEYWORD = 14
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
-
-def _pattern_names(pattern) -> list[str]:
-    """Every name a destructuring pattern binds (#597).
-
-    Mirrors `Compiler.collect_pattern_names`. Recursive because patterns nest:
-    `let [a, {x: b}] = …` binds both.
-    """
-    names: list[str] = []
-    if isinstance(pattern, VarPattern):
-        names.append(pattern.name)
-    elif isinstance(pattern, ListPattern):
-        for item in pattern.elements:
-            names.extend(_pattern_names(item))
-    elif isinstance(pattern, RecordPattern):
-        for _key, value in pattern.fields:
-            names.extend(_pattern_names(value))
-    return names
 
 
 
@@ -481,7 +462,7 @@ class _DocumentIndexer:
             self._walk_expr(stmt.expr)
             tok = getattr(stmt, "_tok", None)
             line = tok.line if tok is not None else 1
-            for name in _pattern_names(stmt.pattern):
+            for name in pattern_names(stmt.pattern):
                 col = _identifier_column(
                     self.lines, line, name, tok.col if tok is not None else 1
                 )

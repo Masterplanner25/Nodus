@@ -535,3 +535,31 @@ def declared_flow_name(stmt) -> str | None:
 # per member, so a fifth form fails the suite until somebody has decided what it
 # means for state.
 ASSIGNMENT_FORMS = (Assign, CompoundAssign, IndexAssign, FieldAssign)
+
+
+def pattern_names(pattern) -> list[str]:
+    """Every name a destructuring pattern binds.
+
+    One implementation, because there were four (#602). The compiler had
+    `Compiler.collect_pattern_names`, the workflow lowering had
+    `_collect_pattern_names`, `lsp/server.py` grew `_pattern_names` in #597, and
+    `tooling/diagnostics.py` was about to grow a fourth — for the very bug that
+    file's missing case caused, which would have been the recurring shape
+    answering itself.
+
+    Worth noting how three copies survived: `nodus_gate --shapes` keys species A
+    on name *and* signature, so `collect_pattern_names` and
+    `_collect_pattern_names` never collided. A renamed copy is invisible to it.
+
+    Recursive because patterns nest: `let [a, {x: b}] = …` binds both.
+    """
+    names: list[str] = []
+    if isinstance(pattern, VarPattern):
+        names.append(pattern.name)
+    elif isinstance(pattern, ListPattern):
+        for item in pattern.elements:
+            names.extend(pattern_names(item))
+    elif isinstance(pattern, RecordPattern):
+        for _key, value in pattern.fields:
+            names.extend(pattern_names(value))
+    return names

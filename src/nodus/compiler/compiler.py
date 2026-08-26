@@ -8,6 +8,7 @@ from nodus.frontend.ast.ast_nodes import (
     Annotation,
     Assign,
     builtin_call,
+    pattern_names,
     CompoundAssign,
     Attr,
     Bin,
@@ -1162,16 +1163,8 @@ class Compiler:
         raise TypeError(f"Unknown expr node: {expr!r}")
 
     def collect_pattern_names(self, pattern) -> list[str]:
-        names: list[str] = []
-        if isinstance(pattern, VarPattern):
-            names.append(pattern.name)
-        elif isinstance(pattern, ListPattern):
-            for item in pattern.elements:
-                names.extend(self.collect_pattern_names(item))
-        elif isinstance(pattern, RecordPattern):
-            for _key, value in pattern.fields:
-                names.extend(self.collect_pattern_names(value))
-        return names
+        """Delegates: one implementation lives in `ast_nodes` (#602)."""
+        return pattern_names(pattern)
 
     def destructure_from_name(self, pattern, temp_name: str) -> None:
         temp_symbol = self.resolve_symbol(temp_name) if self.symbols is not None else None
