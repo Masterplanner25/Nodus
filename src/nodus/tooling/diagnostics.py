@@ -15,18 +15,25 @@ from nodus.frontend.ast.ast_nodes import (
     Block,
     Call,
     Comment,
+    CompoundAssign,
     ExprStmt,
     FnDef,
+    FieldAssign,
     FnExpr,
     For,
     ForEach,
+    ActionStmt,
+    DestructureLet,
     GoalDef,
+    GoalPursuit,
     If,
     Import,
     Index,
+    InterpolatedString,
     IndexAssign,
     Let,
     MapLit,
+    Match,
     ModuleInfo,
     Nil,
     Print,
@@ -41,6 +48,7 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowDef,
     WorkflowStateDecl,
     Yield,
+    pattern_names,
 )
 from nodus.frontend.lexer import Tok, tokenize
 from nodus.frontend.parser import Parser
@@ -223,6 +231,32 @@ class _SemanticAnalyzer:
             if stmt.name not in self.scopes[-1]:
                 self._bind(stmt.name, kind="variable", tok=getattr(stmt, "_tok", None))
             return False
+        if isinstance(stmt, DestructureLet):
+            # #602: this bound nothing, so `let [a, b] = …` followed by `print(a)`
+            # reported "Undefined variable: a" — a FALSE ERROR on correct code,
+            # on every line that reads a destructured name.
+            #
+            # That is #401's own failure mode recurring for a different binding
+            # form: that issue fixed "the diagnostics engine never bound *any*
+            # block-scoped `let`, so every function local was a false Undefined
+            # variable". Same engine, same symptom, a form nobody re-checked.
+            #
+            # A false positive is worse than a missing warning: it teaches people
+            # to ignore the panel, after which the true ones are worth nothing.
+            self._walk_expr(stmt.expr)
+            for name in pattern_names(stmt.pattern):
+                if name not in self.scopes[-1]:
+                    self._bind(name, kind="variable", tok=getattr(stmt, "_tok", None))
+            return False
+        if isinstance(stmt, GoalPursuit):
+            # #602: `goal X over Y { … }` declares X, and nothing bound it, so a
+            # later reference to the pursuit read as undefined.
+            self._bind(stmt.name, kind="variable", tok=getattr(stmt, "_tok", None))
+            budget = getattr(stmt, "budget", None)
+            if budget is not None:
+                for field in ("max_iterations", "deadline_ms"):
+                    self._walk_expr(getattr(budget, field, None))
+            return False
         if isinstance(stmt, FnDef):
             self._push_scope()
             for param in stmt.params:
@@ -330,6 +364,15 @@ class _SemanticAnalyzer:
     def _walk_expr(self, expr) -> None:
         if expr is None or isinstance(expr, (Str, Nil)):
             return
+        if isinstance(expr, ActionStmt):
+            # #602: `action agent "a.b" with { to: target }` is the commonest
+            # thing in a step body and its payload is ordinary code, so a typo
+            # there went unreported. It belongs here, not in `_walk_stmt`:
+            # `action …` parses as an expression wrapped in `ExprStmt`, so a
+            # statement case for it is dead code — which the first attempt at
+            # the same fix in `lsp/server.py` (#597) was.
+            self._walk_expr(expr.payload)
+            return
         if isinstance(expr, Var):
             binding = self._resolve(expr.name)
             if binding is not None:
@@ -345,6 +388,41 @@ class _SemanticAnalyzer:
             else:
                 self._mark_used(expr.name)
             self._walk_expr(expr.expr)
+            return
+        if isinstance(expr, CompoundAssign):
+            # #602: `x += undefined_name` reported nothing, and `x` was not marked
+            # used either. Mirrors the `Assign` case above; the only difference is
+            # that a compound assignment also *reads* its target, so an undefined
+            # target is an error on both counts.
+            if self._resolve(expr.name) is None and expr.name not in self.builtin_names:
+                self._diag(f"Undefined variable: {expr.name}", severity=ERROR_SEVERITY,
+                           tok=getattr(expr, "_tok", None))
+            else:
+                self._mark_used(expr.name)
+            self._walk_expr(expr.expr)
+            return
+        if isinstance(expr, FieldAssign):
+            # #602: `r.f = undefined_name` reported nothing on either side.
+            self._walk_expr(expr.obj)
+            self._walk_expr(expr.value)
+            return
+        if isinstance(expr, InterpolatedString):
+            # #602: `print("v=\\(typo)")` reported nothing — probably the most
+            # common place a name appears in Nodus, and it was unchecked.
+            for part in expr.parts:
+                inner = getattr(part, "expression", None)
+                if inner is not None:
+                    self._walk_expr(inner)
+            return
+        if isinstance(expr, Match):
+            # #602: neither the scrutinee nor the arm bodies were walked. Arm
+            # *patterns* are compared by value (`compile_match` emits `EQ`), so
+            # they are expressions to resolve, not bindings to introduce.
+            self._walk_expr(expr.scrutinee)
+            for arm in expr.arms:
+                if getattr(arm, "pattern", None) is not None:
+                    self._walk_expr(arm.pattern)
+                self._walk_expr(getattr(arm, "body", None))
             return
         if isinstance(expr, Unary):
             self._walk_expr(expr.expr)

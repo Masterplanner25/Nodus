@@ -64,6 +64,37 @@
 
 ### Fixes
 
+- **#602: editor diagnostics stop reporting correct code as an error, and start
+  reporting six kinds of typo they were accepting.** `_SemanticAnalyzer` had no
+  case for `DestructureLet`, so `let [alpha, beta] = …` followed by
+  `print(alpha)` reported **`Undefined variable: alpha`** — a false error on
+  every line reading a destructured name. That is #401's own failure mode
+  recurring for a different binding form: that issue fixed "the diagnostics
+  engine never bound *any* block-scoped `let`, so every function local was a
+  false Undefined variable". Same engine, same symptom, a form nobody
+  re-checked. A false positive is worse than a missing warning, because it
+  teaches people to ignore the panel and the true ones then cost nothing to
+  ignore too.
+
+  The completeness check added alongside turned three missing cases into seven.
+  `ActionStmt`, `GoalPursuit`, `CompoundAssign`, `FieldAssign`,
+  `InterpolatedString` and `Match` were all unwalked, so a typo in any of them
+  was silently accepted — including `print("v=\(typo)")`, probably the most
+  common place a name appears in a Nodus program.
+
+  Every new case is paired with a negative control, since a walker that reports
+  everything is as useless as one that reports nothing.
+
+- **Pattern-name collection is one implementation instead of four.** The
+  compiler had `Compiler.collect_pattern_names`, the workflow lowering had
+  `_collect_pattern_names`, `lsp/server.py` grew `_pattern_names` in #597, and
+  the analyzer above needed the same thing — which would have made a fifth copy,
+  for the very bug a missing case caused. It now lives in `ast_nodes` as
+  `pattern_names` and everything delegates. Worth noting why three survived:
+  `nodus_gate --shapes` keys its duplicate detection on name *and* signature, so
+  `collect_pattern_names` and `_collect_pattern_names` never collided. A renamed
+  copy is invisible to it.
+
 - **#598: the editor and the runtime resolve an import the same way.**
   `resolve_import_path` existed twice — 159 lines in `runtime/module_loader.py`
   and 55 in `tooling/loader.py`, 38% similar — and `nodus lsp` and
