@@ -516,9 +516,38 @@ supplies durable, inspectable, capability-jailed orchestration and a clean
 handoff to externally-supplied semantic actors; the model loop belongs to the
 host.
 
-Touches README, `llms.txt`, `llms-full.txt`, PyPI description, wiki. **Not yet
-decided** — deferred until more of the audit series is in, since positioning
-should answer all of them at once rather than one.
+**DECIDED 2026-08-26 (#474). The clause is "for building agentic hosts".**
+
+Full line: *"An orchestration DSL and embedded runtime for building agentic
+hosts."* Applied to `pyproject.toml` (the PyPI summary), `llms.txt`,
+`llms-full.txt` and `README.md`.
+
+The deferral condition was met — the series converged rather than producing new
+positioning objections — and the decision rests on the separation the evidence
+review drew: *a substrate should own orchestration, durability, isolation,
+idempotency and scheduling* is the claim six corpora support and none
+contradicts, and it is a claim about **hosts**. The model loop belongs to the
+host, and the absence of a model in the core is what makes that boundary
+unblurrable.
+
+**Two things found while applying it, both worth more than the wording.**
+
+A partial sweep had already run: `pyproject.toml`, `llms.txt` and `README.md`
+said *"hosting agentic systems"* while **`llms-full.txt` still said "building
+agentic systems"**. One file out of four, and it is the file that was not
+scanned by `nodus_gate` until 2026-08-26 (#483). A positioning claim that is
+spread across four files and checked in none of them will drift again, so
+`tests/closed_issues/issue_474.py` now pins the four together.
+
+And **"32-package companion ecosystem" was wrong in seven places** — the live
+count is 35. Same class as the version strings this project already refuses to
+carry in prose: a hand-maintained number nothing checks.
+
+**Still open, and out of scope here: the wiki.** It contains no positioning
+clause, so it needed nothing for this decision — but `Home.md` and `Roadmap.md`
+both still name a release from the v4 line as the stable one, four minors and a
+major behind what ships, and repeat the 32-package count. That is a wiki-wide version sweep, not
+a wording change, and a partial update would be worse than none.
 
 ### D2 — `goal` after unification — proposed as #409
 

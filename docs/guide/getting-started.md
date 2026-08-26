@@ -446,7 +446,7 @@ Start with the foundation guides, then pick the topic you need:
 
 **Ecosystem and packages**
 
-- **[ecosystem.md](ecosystem.md)** - the 32 companion packages, what each
+- **[ecosystem.md](ecosystem.md)** - the 35 companion packages, what each
   does, install tiers, and the nodus-sdk unified entry point.
 - **[library-entry-points.md](library-entry-points.md)** - how third-party
   Nodus libraries expose `.nd` files via the `nodus.nd` entry-point group.
