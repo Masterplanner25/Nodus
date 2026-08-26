@@ -137,6 +137,76 @@ def format_contracts(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_shapes(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """New shapes loudly; known ones only when asked.
+
+    The baseline is large by design, so reprinting all of it every run would
+    train the reader to skip the section — which is how this phase would quietly
+    stop working. A clean run says one line.
+    """
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        return "\n".join(lines)
+
+    if not quiet:
+        lines.append(f"Scanned {result.scanned} module(s) for the recurring bug shape")
+        lines.append("")
+
+    for finding in result.new:
+        mark = _c("[NEW]", _YELLOW, use_color=use_color)
+        lines.append(f"  {mark} {finding.species}: {finding.summary}")
+        for detail in finding.detail:
+            lines.append(f"        {detail}")
+        lines.append("        Decide: one question answered twice, or two questions "
+                     "sharing a name?")
+        lines.append(f"        Then record it: {finding.key}")
+        lines.append("")
+
+    if verbose:
+        for finding in result.known:
+            colour = _GREEN if finding.verdict == "intentional" else _YELLOW
+            mark = _c("[ok]" if finding.verdict == "intentional" else "[--]",
+                      colour, use_color=use_color)
+            lines.append(f"  {mark} {finding.species}: {finding.summary}")
+            if finding.why:
+                lines.append(f"        {finding.why}")
+        if result.known:
+            lines.append("")
+
+    for finding in result.grown:
+        mark = _c("[NEW]", _YELLOW, use_color=use_color)
+        lines.append(f"  {mark} {finding.species}: {finding.summary} — was "
+                     f"{finding.recorded_sites}, now {finding.sites}")
+        for detail in finding.detail:
+            lines.append(f"        {detail}")
+        lines.append("        A duplication already recorded has gained another copy. "
+                     "Bump `sites` only after")
+        lines.append(f"        deciding the new one is acceptable: {finding.key}")
+        lines.append("")
+
+    for key in result.stale_entries:
+        mark = _c("[--]", _YELLOW, use_color=use_color)
+        lines.append(f"  {mark} manifest entry matches nothing now: {key}")
+        lines.append("        The debt was paid or the code moved — delete the entry "
+                     "so it stops claiming something untrue.")
+        lines.append("")
+
+    if not quiet:
+        tracked = [f for f in result.known if f.verdict == "tracked"]
+        n_new = len(result.new) + len(result.grown)
+        if n_new == 0 and not result.stale_entries:
+            status = _c("PASS", _GREEN, use_color=use_color)
+            lines.append(f"Shapes: {status} — {len(result.findings)} known "
+                         f"({len(tracked)} tracked as debt), 0 new")
+        else:
+            status = _c("NEW", _YELLOW, use_color=use_color)
+            lines.append(f"Shapes: {status} — {n_new} unrecorded, "
+                         f"{len(result.findings)} known ({len(tracked)} tracked as debt) "
+                         f"(advisory; --strict to fail)")
+    return "\n".join(lines)
+
+
 def format_consumers(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
     """A tick per consumer, and what to do about the ones that do not have one."""
     lines = []

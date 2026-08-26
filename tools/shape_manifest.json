@@ -1,0 +1,224 @@
+{
+  "_comment": [
+    "Baseline for `nodus_gate --shapes`, which hunts the recurring bug shape:",
+    "a correct check that only one of several paths goes through.",
+    "",
+    "Everything the scan currently finds is listed here. That IS the design. The",
+    "value of this phase is not the list below -- it is that the NEXT duplicated",
+    "question shows up as NEW against a recorded baseline, instead of surfacing as",
+    "issue #23 of the series two releases later.",
+    "",
+    "Two verdicts, and the difference matters:",
+    "",
+    "  intentional -- the sites do not answer the same question, or they implement",
+    "                 a real protocol. Say WHY. This verdict silences the finding",
+    "                 forever, so it is the one to be stingy with.",
+    "  tracked     -- a genuine duplicated decision that has not been paid off.",
+    "                 Name the issue if there is one, or say what would settle it.",
+    "",
+    "`why` should record what was actually established, not what was assumed --",
+    "the same rule `tools/dependent_flakes.json` carries, and for the same reason:",
+    "an entry reading 'looks fine' is how a real one gets lost.",
+    "",
+    "An entry that stops matching is reported as stale, so paying a debt down",
+    "prompts you to delete its line rather than leaving a lie behind.",
+    "",
+    "`sites` on a species-A entry records how many implementations existed when the entry was written. A THIRD copy of an already-listed function matches the same key and would otherwise be silent -- found by probing the detector with a deliberate duplicate and watching it report 0 new. Growth is reported; bump the number only when you have decided the new copy is acceptable."
+  ],
+  "entries": {
+    "A:register(vm,registry)": {
+      "verdict": "intentional",
+      "why": "The builtin-module registration protocol: 18 modules each register their own builtins into the VM's table. Eighteen implementations of one interface, not eighteen answers to one question. Verified by reading the call site in BuiltinRegistry.register_all.",
+      "sites": 18
+    },
+    "A:handle_message(message)": {
+      "verdict": "intentional",
+      "why": "DAP and LSP. Two wire protocols with different message sets that happen to share a transport; 7% textually similar. The shared *transport* is a separate entry (_read_message) and is not intentional.",
+      "sites": 2
+    },
+    "A:_read_message(stream)": {
+      "verdict": "tracked",
+      "why": "BYTE-IDENTICAL in dap/server.py:22 and lsp/server.py:124 -- JSON-RPC header framing, copied. Harmless today because framing is frozen by both specs, but the copy is real: a fix to one (a malformed Content-Length, say) reaches only one server.",
+      "sites": 2
+    },
+    "A:resolve_import_path(import_path,base_dir,import_state,tok,module_id)": {
+      "verdict": "tracked",
+      "why": "#598. 159 lines in runtime/module_loader.py vs 55 in tooling/loader.py, 38% similar, and the short one has no entry-point lookup -- so a pip-installed companion import resolves at runtime and reads as 'Import not found' in the editor. Demonstrated, not inferred.",
+      "sites": 2
+    },
+    "A:resolve_with_extensions(base_path,import_path,tok,module_id)": {
+      "verdict": "tracked",
+      "why": "#598. Byte-identical copy in module_loader.py and tooling/loader.py. Nothing about it differs by purpose; it is a fork nobody reconciled.",
+      "sites": 2
+    },
+    "A:try_resolve_with_extensions(base_path)": {
+      "verdict": "tracked",
+      "why": "#598. Byte-identical copy, same pair as above.",
+      "sites": 2
+    },
+    "A:ensure_project_root(import_state,base_dir,source_path)": {
+      "verdict": "tracked",
+      "why": "#598's pair again -- module_loader.py:844 and tooling/loader.py:545. Same question (where is the project root for this import) answered in the two modules that already disagree about import resolution.",
+      "sites": 2
+    },
+    "A:_walk_stmt(stmt)": {
+      "verdict": "tracked",
+      "why": "#597. lsp/server.py's indexer and tooling/diagnostics.py both walk statements; the LSP one has no WorkflowDef/GoalDef case, so hover and go-to-definition are blind in step bodies. #401 fixed the diagnostics walker and left this one.",
+      "sites": 2
+    },
+    "A:_walk_expr(expr)": {
+      "verdict": "tracked",
+      "why": "#597. Same pair; node-type coverage already differs (lsp lacks Nil/Str, diagnostics lacks ListLit).",
+      "sites": 2
+    },
+    "A:_predeclare(stmts)": {
+      "verdict": "tracked",
+      "why": "#597's pair, third member -- lsp/server.py:382 and tooling/diagnostics.py:177. Not separately verified for drift; listed because the pair it belongs to has produced two issues.",
+      "sites": 2
+    },
+    "A:lookup(name)": {
+      "verdict": "tracked",
+      "why": "Three symbol lookups: lsp/server.py, runtime/embedding.py, tooling/analyzer.py. The lsp/analyzer pair is the one that produced #401 and #597, so a third copy of 'what does this name resolve to' is worth paying attention to. Not yet compared in detail.",
+      "sites": 3
+    },
+    "A:_to_host_value(value)": {
+      "verdict": "tracked",
+      "why": "Value marshalling, builtins/tool_module.py:127 vs runtime/embedding.py:1118, only 6% textually similar under the same name and signature. Two answers to 'how does a Nodus value cross the host boundary' is exactly the shape; whether they actually disagree is unverified.",
+      "sites": 2
+    },
+    "A:_to_runtime_value(value)": {
+      "verdict": "tracked",
+      "why": "The other direction of the same boundary, same two modules, also 6% similar. See above.",
+      "sites": 2
+    },
+    "A:_hash_tree(path)": {
+      "verdict": "tracked",
+      "why": "tooling/installer.py:44 vs tooling/registry_client.py:264, 95% similar -- a near-copy that has already drifted 5%. Content hashing used for integrity is a poor place for two nearly-identical answers; the 5% has not been characterised.",
+      "sites": 2
+    },
+    "A:display_name(name)": {
+      "verdict": "tracked",
+      "why": "compiler/compiler.py:1224 vs vm/vm.py:2346, 56% similar. Both render a function name for an error message, so compile-time and run-time errors can name the same function differently. Not verified to differ in practice.",
+      "sites": 2
+    },
+    "A:format_loc(loc)": {
+      "verdict": "tracked",
+      "why": "compiler/compiler.py:1234 vs vm/vm.py:375, 62% similar. Same concern as display_name: one question (how is a source location written) answered on both sides of the compile/run boundary.",
+      "sites": 2
+    },
+    "A:_pause(vm,frame,reason)": {
+      "verdict": "tracked",
+      "why": "dap/server.py:113 (17 stmts) vs runtime/debugger.py:225 (45 stmts). The debugger and its DAP adapter both decide what pausing means; the size gap suggests the adapter knows less.",
+      "sites": 2
+    },
+    "A:_json_get(host,port,path,token)": {
+      "verdict": "tracked",
+      "why": "cli/cli.py:546 vs services/server.py:1055. An HTTP client helper duplicated between the CLI and the server's own test/probe path.",
+      "sites": 2
+    },
+    "A:_json_post(host,port,path,payload,token)": {
+      "verdict": "tracked",
+      "why": "The sibling of _json_get, same two modules.",
+      "sites": 2
+    },
+    "A:_parse_flags(args,flags_with_values,flags_no_values)": {
+      "verdict": "tracked",
+      "why": "cli/cli.py:192 vs testing/cli.py:196. Two flag parsers with the same signature; the test CLI accepting a flag form the real CLI rejects (or vice versa) would be invisible.",
+      "sites": 2
+    },
+    "A:cleanup()": {
+      "verdict": "intentional",
+      "why": "runtime/sessions.py:75 and runtime/snapshots.py:91 -- unrelated resources with a conventional method name and no arguments. Same name, different subjects; nothing shared to keep in step.",
+      "sites": 2
+    },
+    "A:resume_graph(payload)": {
+      "verdict": "tracked",
+      "why": "services/api.py:73 vs services/server.py:608, 11% similar. This is the file pair that produced #584 (two _graph_metadata copies that had drifted); a second duplicated entry point across the same two service layers is worth watching.",
+      "sites": 2
+    },
+    "B:src/nodus/runtime/capability.py|src/nodus/runtime/capability.py|missing=subprocess_shell_quote": {
+      "verdict": "intentional",
+      "why": "GATED_BUILTINS vs BUILTIN_CAPABILITIES. They differ by exactly this one entry by design -- subprocess_shell_quote is string manipulation that runs nothing -- and tests/test_downstream_contracts.py pins the relationship. Documented in CLAUDE.md. This is the entry that proves the detector finds real pairs."
+    },
+    "B:src/nodus/lsp/server.py|src/nodus/tooling/formatter.py|missing=&&,||": {
+      "verdict": "intentional",
+      "why": "False positive: the formatter's bin_prec assigns operator precedence and gives && and || their own tiers, so they are absent from its comparison-operator set. Different question from the LSP's type inference, which asks which operators yield BOOL."
+    },
+    "B:src/nodus/tooling/analyzer.py|src/nodus/tooling/formatter.py|missing=&&,||": {
+      "verdict": "intentional",
+      "why": "Same false positive as above, analyzer side."
+    },
+    "B:src/nodus/lsp/server.py|src/nodus/tooling/semver.py|missing=!=,&&,||": {
+      "verdict": "intentional",
+      "why": "False positive: semver.py enumerates version-range comparators, not language operators."
+    },
+    "B:src/nodus/tooling/analyzer.py|src/nodus/tooling/semver.py|missing=!=,&&,||": {
+      "verdict": "intentional",
+      "why": "False positive: semver.py enumerates version-range comparators for dependency specifiers, which is not the language's operator set. The analyzer's list asks which operators yield BOOL. Two vocabularies that overlap because both contain comparison symbols."
+    },
+    "B:src/nodus/tooling/formatter.py|src/nodus/tooling/semver.py|missing=!=": {
+      "verdict": "intentional",
+      "why": "False positive, same reason: version-range comparators against the formatter's precedence tiers. Nothing keeps them in step and nothing should."
+    },
+    "B:src/nodus/compiler/optimizer.py|src/nodus/compiler/optimizer.py|missing=JUMP": {
+      "verdict": "tracked",
+      "why": "Two opcode sets within the optimizer where one omits JUMP. Not triaged: it may be a deliberate distinction between unconditional and conditional branches, or the #518 shape. Reading remove_unreachable and its neighbours would settle it."
+    },
+    "D:src/nodus/orchestration/task_graph.py::_GRAPH_REGISTRY": {
+      "verdict": "tracked",
+      "why": "Process-global graph registry. #585 gave a run's two STORES a shared relocatable root, but the in-memory registry has no per-runtime knob at all: a host can inject memory_store= and workflow_runner= and still shares this. Same family as #185/#390."
+    },
+    "D:src/nodus/orchestration/task_graph.py::_GRAPH_VMS": {
+      "verdict": "tracked",
+      "why": "graph_id -> VM, process-global, and resume resolves through it. Same gap as _GRAPH_REGISTRY; #584 showed graph ids are more discoverable than assumed."
+    },
+    "D:src/nodus/orchestration/task_graph.py::_DEFAULT_DISPATCHER": {
+      "verdict": "tracked",
+      "why": "#596's leading suspect. A dispatcher set here sends steps down the worker path, where _effective_timeout_ms finds no scheduler.current_task and an agent handler runs unbounded. tests/test_task_graph.py already carries a comment saying this global leaks."
+    },
+    "D:src/nodus/services/tool_runtime.py::TOOL_REGISTRY": {
+      "verdict": "intentional",
+      "why": "Host-provided built-in tools (nodus_execute, nodus_check, nodus_ast, nodus_dis), populated once by _ensure_registry. Guest tool.register() writes vm.tool_registry, which is already per-VM -- checked, because a guest-writable process-global here would be #185 exactly."
+    },
+    "D:src/nodus/services/syscall_runtime.py::SYSCALL_REGISTRY": {
+      "verdict": "intentional",
+      "why": "Host-registered syscalls, built once. Nothing in or out of tree registers a custom syscall (CLAUDE.md), so there is no second participant to leak between today."
+    },
+    "D:src/nodus/services/syscall_runtime.py::_registry_built": {
+      "verdict": "intentional",
+      "why": "The one-shot build flag for SYSCALL_REGISTRY above."
+    },
+    "D:src/nodus/services/agent_runtime.py::ABANDONED_AGENT_CALLS": {
+      "verdict": "intentional",
+      "why": "Process-wide telemetry for #424's abandoned handlers, published deliberately as abandoned_agent_calls() / abandoned_agent_call_count() and reset by reset_abandoned_agent_calls(). Host-facing, not guest-writable."
+    },
+    "D:src/nodus/services/agent_runtime.py::_ABANDONED_TOTAL": {
+      "verdict": "intentional",
+      "why": "The counter behind the same published surface."
+    },
+    "D:src/nodus/vm/types.py::_STRUCTURAL_EQ_CHANGE_WARNED": {
+      "verdict": "intentional",
+      "why": "A warn-once flag for the #545 record-equality staging. Process-wide is the point: the warning should fire once per process, not once per runtime."
+    },
+    "D:src/nodus/builtins/subprocess_module.py::_UNIX_SIGNALS": {
+      "verdict": "intentional",
+      "why": "A signal-name lookup table populated at import and read thereafter. Flagged because it is built with .update(); it is a constant in everything but syntax."
+    },
+    "D:src/nodus_lang_workflow/runner.py::_DEFAULT_RUNNER": {
+      "verdict": "intentional",
+      "why": "The default workflow runner, deliberately shared and keyed by working directory, with reset_default_workflow_runner() to clear it and NodusRuntime(workflow_runner=...) as the per-tenant escape. Documented in CLAUDE.md."
+    },
+    "D:src/nodus_lang_workflow/runner.py::_DEFAULT_RUNNER_ROOT": {
+      "verdict": "intentional",
+      "why": "The cwd key that decides when the runner above is rebuilt."
+    },
+    "D:src/nodus_lang_workflow/runner.py::_DEFAULT_SWEEP_THREAD": {
+      "verdict": "intentional",
+      "why": "The auto-sweep daemon bound to the default runner. Shared with it by construction; #591 added the teardown that stops it."
+    },
+    "D:src/nodus_lang_workflow/runner.py::_DEFAULT_SWEEP_STOP": {
+      "verdict": "intentional",
+      "why": "The threading.Event that stops the auto-sweep daemon above. Shared with the runner and the thread by construction; there is nothing per-tenant about a stop signal for a process-wide thread."
+    }
+  }
+}
