@@ -26,7 +26,7 @@ from nodus.tooling.runner import (
     run_source,
     tool_call_result,
 )
-from nodus.orchestration.task_graph import latest_graph_state, load_graph_state
+from nodus.services.graph_metadata import graph_metadata
 
 
 class ExecutionState:
@@ -34,18 +34,9 @@ class ExecutionState:
         self.last_vm = None
 
     def _graph_metadata(self, vm, graph_id: str | None = None) -> dict:
-        resolved_id = graph_id
-        if resolved_id is None and vm is not None and getattr(vm, "last_graph_plan", None):
-            resolved_id = vm.last_graph_plan.get("graph_id")
-
-        if resolved_id is None:
-            resolved_id, state = latest_graph_state()
-        else:
-            state = load_graph_state(resolved_id)
-
-        tasks = state.get("tasks", {}) if state else {}
-        status = state.get("status") if state else None
-        return {"graph_id": resolved_id, "tasks": tasks, "graph_status": status}
+        # #584: one implementation, in `services/graph_metadata.py`. This and the
+        # copy in `services/server.py` answered the same question differently.
+        return graph_metadata(vm, graph_id)
 
     def execute(self, payload: dict) -> dict:
         code = payload.get("code", "")

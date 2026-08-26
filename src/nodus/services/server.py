@@ -44,7 +44,7 @@ from nodus.tooling.runner import (
 from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import NodusRuntimeError
 from nodus.runtime.diagnostics import LangRuntimeError
-from nodus.orchestration.task_graph import load_graph_state, latest_graph_state
+from nodus.services.graph_metadata import graph_metadata
 from nodus.runtime.sessions import SessionManager
 from nodus.runtime.snapshots import SnapshotManager
 from nodus.vm.vm import VM
@@ -470,21 +470,8 @@ class RuntimeService:
         ).to_dict()
 
     def _graph_metadata(self, vm, graph_id: str | None = None) -> dict:
-        resolved_id = graph_id
-        if resolved_id is None and vm is not None and getattr(vm, "last_graph_plan", None):
-            resolved_id = vm.last_graph_plan.get("graph_id")
-        if resolved_id is None and vm is not None:
-            for event in reversed(vm.event_bus.events()):
-                if event.type in {"graph_persist", "graph_resume"} and event.data and "graph_id" in event.data:
-                    resolved_id = event.data["graph_id"]
-                    break
-        if resolved_id is None:
-            resolved_id, state = latest_graph_state()
-        else:
-            state = load_graph_state(resolved_id)
-        tasks = state.get("tasks", {}) if state else {}
-        status = state.get("status") if state else None
-        return {"graph_id": resolved_id, "tasks": tasks, "graph_status": status}
+        # #584: one implementation, in `services/graph_metadata.py`.
+        return graph_metadata(vm, graph_id)
 
     def _apply_runtime_policies(self, vm: VM | None) -> None:
         if vm is None:

@@ -545,19 +545,6 @@ def migrate_all_graph_snapshots() -> list[dict]:
     return [migrate_graph_snapshot(graph_id) for graph_id in list_graph_ids()]
 
 
-def latest_graph_state() -> tuple[str | None, dict | None]:
-    root = _ensure_graph_root()
-    if not os.path.isdir(root):
-        return None, None
-    candidates = [name for name in os.listdir(root) if name.endswith(".json") and not name.endswith(".checkpoint.json")]
-    if not candidates:
-        return None, None
-    candidates.sort()
-    latest = candidates[-1]
-    graph_id = latest.rsplit(".", 1)[0]
-    return graph_id, _load_graph_state(graph_id)
-
-
 def list_graph_ids() -> list[str]:
     root = _ensure_graph_root()
     if not os.path.isdir(root):
