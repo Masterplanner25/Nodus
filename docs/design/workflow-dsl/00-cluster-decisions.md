@@ -115,10 +115,18 @@ The interesting collapse is in group B, and it is D6.
 
 ---
 
-## D1 — Prerequisite: make the type vocabulary sound (#609)
+## D1 — Prerequisite: make the type vocabulary sound (#609) — **SHIPPED**
 
 **Decision: an unrecognised type name becomes an error. `map` is added.
 `record` is either made spellable or removed from the table.**
+
+**Built 2026-08-26.** Warning in `nodus check` and inline in the editor;
+error at 6.0.0. `map` and `nil` added, `record` made spellable — both are
+keywords and never reached the lookup. `map` and `record` are mutually
+assignable, because the analyzer infers `record` for both literal forms.
+Validation lives in `parser.parse_type_name`, and both consumers read its
+list rather than each deciding; `tests/closed_issues/issue_609.py` asserts
+they agree. **D2's step half, D3 and D4's typed parameters are unblocked.**
 
 Staged the way #545 and #547 are staged: a one-time warning in the next 5.x
 release, an error at 6.0.0. It is breaking — code that checks clean today would

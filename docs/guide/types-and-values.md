@@ -11,12 +11,14 @@ If you haven't installed Nodus yet, start with
 
 ## 1. Why Types Matter in Nodus
 
-Nodus has no static type checker. Type errors surface at runtime, not at
-compile time. `nodus check` only validates syntax. This means you can write
-code that looks correct and only discover a type mismatch when execution
-reaches that line. Knowing which type you're working with — and what
-operations it supports — is the single most effective way to avoid runtime
-surprises.
+**Values are dynamically typed, and that is where most type errors surface** —
+at runtime, when execution reaches the line. Knowing which type you are working
+with, and what operations it supports, is the single most effective way to avoid
+runtime surprises, and most of this page is about that.
+
+But `nodus check` is **not** syntax-only, and an earlier version of this page
+said it was. **Where you write annotations, it checks them** (§9.1). Annotations
+are optional and static-only: they do not change what runs.
 
 ---
 
@@ -749,11 +751,89 @@ Output:
 key not present
 ```
 
-`nodus check` does not catch type errors — it only validates syntax. Type
-safety in Nodus is enforced entirely at runtime.
-
 For patterns around catching and recovering from type errors, see
 [error-handling.md](error-handling.md).
+
+---
+
+## 9.1 Type annotations and what `nodus check` does catch
+
+Parameters, return types and `let` bindings take an optional annotation, and
+**`nodus check` validates them** — both inside the function body and at every
+call site.
+
+```nd
+fn greet(name: string, times: int) -> string {
+    return name
+}
+
+fn main() {
+    print(greet(42i, "not-an-int"))
+}
+```
+
+```
+$ nodus check greet.nd
+Type error at greet.nd:6:17: expected string but got int
+```
+
+Annotations are **static-only**. They do not change what runs, they are not
+enforced at runtime, and they are optional — an unannotated parameter is `any`
+and is not checked:
+
+```nd
+fn greet(name) {
+    return name
+}
+
+fn main() {
+    print(greet(42i))
+}
+```
+
+```
+$ nodus check unannotated.nd
+unannotated.nd: OK
+```
+
+### The type names
+
+| Name | Matches |
+|---|---|
+| `any` | anything; the default when no annotation is given |
+| `int` | integers (`42i`) |
+| `float` | floats (`42.0`) — an `int` is accepted where a `float` is expected |
+| `string` | strings |
+| `bool` | `true` / `false` |
+| `list` | lists |
+| `map` | maps |
+| `record` | records |
+| `function` | functions |
+| `nil` | `nil` |
+
+**`map` and `record` are interchangeable to the checker today.** It infers
+`record` for both map and record literals, so it cannot tell them apart; write
+whichever you mean and the annotation still documents intent. The runtime
+distinction between them is real and is §6 of this page.
+
+### An unknown type name is a warning, and becomes an error in 6.0.0
+
+A name that is not in the table above is **ignored**, which means nothing on
+that annotation is checked. That used to happen in silence — one transposed
+letter disabled checking on a parameter and nothing said so (#609). It is
+reported now:
+
+```
+$ nodus check typo.nd
+typo.nd:2:12: warning: Unknown type name 'strng' — did you mean 'string'? It is
+currently ignored, so nothing on this annotation is checked; in 6.0.0 it becomes
+an error. Known types: any, bool, float, function, int, list, map, nil, record,
+string.
+typo.nd: OK (1 warning(s))
+```
+
+The check still passes — the exit code does not change until 6.0.0 — and your
+editor shows the same warning inline.
 
 ---
 

@@ -574,11 +574,27 @@ class WorkspaceDiagnosticEngine:
         module_cache[normalized] = module
         try:
             tokens = tokenize(text)
-            ast = Parser(tokens).parse()
+            # #609: keep the parser, for the same reason `check_source` does --
+            # it is the only place that sees an annotation's name *and* its
+            # token. Both consumers read the one list rather than each deciding
+            # for itself what a type name is, which is the failure #401 and #597
+            # were: two walkers, two answers.
+            parser = Parser(tokens)
+            ast = parser.parse()
             set_module_on_tree(ast, normalized)
             module_info = collect_module_info(ast, normalized, "")
             module.ast = ast
             module.module_info = module_info
+            for unknown in parser.unknown_type_names:
+                diagnostics_by_file.setdefault(normalized, []).append(
+                    RuntimeDiagnostic(
+                        message=unknown.message(),
+                        severity=WARNING_SEVERITY,
+                        file=normalized,
+                        line=unknown.line,
+                        column=unknown.col,
+                    )
+                )
         except Exception as err:
             diagnostics_by_file.setdefault(normalized, []).append(
                 diagnostic_from_error(coerce_error(err, stage="compile", filename=normalized), file=normalized)

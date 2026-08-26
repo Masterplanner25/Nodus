@@ -477,7 +477,11 @@ def check_source(
     project_root_val = import_state.get("project_root") if import_state else None
     try:
         tokens = tokenize(code)
-        ast = Parser(tokens).parse()
+        # #609: keep the parser. It is the one place that sees an annotation's
+        # name *and* its token, so it is where unknown type names are recorded;
+        # discarding it here is what left `nodus check` unable to report them.
+        parser = Parser(tokens)
+        ast = parser.parse()
         module_id = os.path.abspath(filename) if filename else "<memory>"
         set_module_on_tree(ast, module_id)
         analyze_program(ast)
@@ -506,7 +510,14 @@ def check_source(
                 stage="check", filename=filename, stdout="", stderr="",
                 err=cycle_err, code=code,
             )
-        return _success_result(stage="check", filename=filename, stdout="", stderr="")
+        result = _success_result(stage="check", filename=filename, stdout="", stderr="")
+        # Warnings, not failures, until 6.0.0 (#609). `ok` stays True so a
+        # project that checks clean today keeps its exit code.
+        result["warnings"] = [
+            {"message": u.message(), "line": u.line, "column": u.col}
+            for u in parser.unknown_type_names
+        ]
+        return result
     except Exception as err:
         stage = _compile_stage(err)
         return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)

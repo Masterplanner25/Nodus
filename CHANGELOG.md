@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#609: an unrecognised type name is reported instead of silently meaning
+  `any`.** `fn b(name: strng)` used to check clean — one transposed letter
+  disabled checking on that parameter permanently, with no diagnostic at any
+  altitude. It is a **warning** now, in `nodus check` and inline in the editor,
+  and becomes an **error at 6.0.0** alongside #545 and #547. The exit code does
+  not change until then.
+
+  ```
+  $ nodus check typo.nd
+  typo.nd:2:12: warning: Unknown type name 'strng' — did you mean 'string'? ...
+  typo.nd: OK (1 warning(s))
+  ```
+
+  Two consequences of the same hole are fixed with it. **`map` is now a type
+  name**: it was absent while looking nameable, so `fn g(y: map) -> map` checked
+  clean and meant `any` — and `map` is what `run_workflow`, `plan_workflow` and
+  most step bodies return. **`record` and `nil` are now spellable**: both are
+  keywords, so they never reached the lookup, and `record` sat in the table as an
+  entry no program could use. `map` and `record` are interchangeable to the
+  checker, because the analyzer infers `record` for both literal forms and a
+  checker that told them apart would reject correct code.
+
+  The validation lives in `parser.parse_type_name` — the one place that sees an
+  annotation's name *and* its token — and `nodus check` and the editor
+  diagnostics both read the list it produces rather than each deciding what a
+  type name is. That is deliberate: those two walkers are the pair that drifted
+  in #401 and #597, and `tests/closed_issues/issue_609.py` asserts they agree
+  rather than checking each alone.
+
+### Docs
+
+- **`docs/guide/types-and-values.md` said `nodus check` was syntax-only. It is
+  not.** The page asserted twice — in §1 and §9 — that *"`nodus check` does not
+  catch type errors — it only validates syntax"*, while `nodus check` has been
+  reporting `Type error at f.nd:6:17: expected string but got int` for annotated
+  code at both the definition and the call site. New **§9.1** documents what is
+  actually checked, the full list of type names, that annotations are
+  static-only and optional, and the unknown-name warning. Every example run and
+  pasted verbatim.
+
+
 ### Ecosystem
 
 - **#477: the A2A wire adapter is published as `nodus-a2a-wire` 0.1.0.** It had been
