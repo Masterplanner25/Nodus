@@ -181,19 +181,23 @@ Channels are FIFO. `recv()` blocks the calling coroutine until data is available
 ```nodus
 workflow process_order {
     state status = "pending"
-    step validate after [] {
+    step validate {
         status = "validated"
         checkpoint "post-validate"
         return status
     }
     step fulfill after validate {
+        // `validate` is bound to that step's return value
         status = "fulfilled"
-        return status
+        return "\(validate) -> \(status)"
     }
 }
 let result = run_workflow(process_order)
 ```
 Workflows lower to task graphs. No workflow-specific VM opcodes.
+`after` is both ordering and data flow: inside a step body, each name declared
+with `after` is bound to that step's return value, and a step that did not
+declare the dependency cannot read it. A skipped dependency binds `nil`.
 Resume: `resume_workflow(graph_id, checkpoint_label)`.
 
 ### Goal DSL [Experimental]

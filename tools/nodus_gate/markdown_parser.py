@@ -169,6 +169,10 @@ def collect_doc_files(
         "docs/policy/*.md",
         "docs/runtime/*.md",
         "llms.txt",
+        # llms-full.txt was omitted while llms.txt was listed, so the file 5.5.0
+        # ships inside the wheel for agents to read was the one nothing checked.
+        # Its workflow example had not parsed since it was written (`after []`).
+        "llms-full.txt",
         "README.md",
     ]
     if include_design:

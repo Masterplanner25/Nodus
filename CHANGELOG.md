@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **`llms-full.txt`'s workflow example had never parsed.** `step validate after []`
+  is `Expected identifier, got '['`. It went unnoticed because the doc gate's file
+  list included `llms.txt` and not `llms-full.txt` — so the file 5.5.0 shipped
+  inside the wheel for agents to read was the one nothing checked. Fixed, and
+  `llms-full.txt` is now scanned by `nodus_gate --static`/`--runtime`; its other
+  three blocks were already clean.
+
+### Tooling
+
+- **`nodus_gate` scans `llms-full.txt`.** One list decides which documents are
+  checked; it had two AI-discoverability files in it and covered one.
+
+### Docs
+
+- **An `after` edge carries the dependency's value, and the guide never said so.**
+  Inside a step body each name declared with `after` is bound to that step's
+  return value, and a step that did not declare the dependency cannot read it —
+  correct scoping, working since the DSL shipped, documented nowhere in
+  `docs/guide/`, `llms.txt` or `llms-full.txt`. A reader concludes they must route
+  all data through `state`. New §3.1 in `docs/guide/workflows-and-tasks.md`, with
+  the skipped-dependency case: a `skipped` producer binds `nil`, indistinguishable
+  from a step that returned `nil`, and only `r["statuses"]` tells them apart.
+
+- **`docs/design/workflow-dsl/00-cluster-decisions.md`** — decisions for the eight
+  open workflow-DSL design questions (#468, #472, #479, #480, #481, #488, #577,
+  #578), taken together because three of them stop being independent when read
+  side by side. Records one prerequisite defect found while verifying them: an
+  unrecognised type name silently means `any`.
+
 ## [5.5.0] - 2026-08-26
 
 ### Added

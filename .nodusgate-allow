@@ -65,6 +65,14 @@ blockhash:docs/runtime/WORKFLOWS.md:b9b0eb0ede24
 # FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent
 
+# llms-full.txt — `import "std:module" as alias` is the placeholder spelling of the
+# import form, not a module name.
+symbol:std:module
+
+# llms-full.txt — names the singular deliberately, to say it fails: "Note the
+# plural: `import "std:string"` fails." Reading it as a claim inverts the sentence.
+symbol:std:string
+
 # README.md — http example shows field access on result; 'body' field varies by sandbox config
 blockhash:README.md:287d267d54e0
 
