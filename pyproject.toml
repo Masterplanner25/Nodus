@@ -71,7 +71,11 @@ retry = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-nodus = ["stdlib/*.nd", "stdlib/*.tl"]
+# #605: `llms.txt` ships so `nodus docs` can hand an agent the index from
+# inside a venv. It is copied to `src/nodus/llms.txt` by
+# `tools/sync_llms_txt.py`, which the suite checks stays in step with the
+# repo-root original.
+nodus = ["stdlib/*.nd", "stdlib/*.tl", "llms.txt"]
 
 [tool.ruff]
 exclude = ["Tempnodus-smoke-210"]

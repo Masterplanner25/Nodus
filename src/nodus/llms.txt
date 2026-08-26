@@ -1,0 +1,124 @@
+# Nodus
+
+> An orchestration DSL and embedded runtime for hosting agentic systems.
+> Created by Shawn Knight — [Masterplan Infinite Weave](https://www.the-master-plan.com/)
+
+Nodus is the execution layer of the Masterplan Infinite Weave ecosystem — a bytecode-compiled
+language whose runtime provides durable, inspectable, capability-jailed task orchestration (embedded runtimes deny subprocess, network and env by default),
+with a clean handoff boundary to model-driven decisions your host supplies. `workflow`, `goal`,
+`step` and `after` are language constructs; task graphs are a runtime library the compiler
+feeds. There is no model in the core. It embeds in Python via `NodusRuntime` and
+ships a 32-package companion ecosystem for AI agent infrastructure.
+
+## Install
+
+```
+pip install nodus-lang
+```
+
+## Core Documentation
+
+- [README.md](README.md): Getting started, install, quick start, stdlib overview, ecosystem
+- [docs/language/LANGUAGE_SPEC.md](docs/language/LANGUAGE_SPEC.md): Full language spec — syntax, types, control flow, coroutines, stdlib, stability labels
+- [docs/runtime/ARCHITECTURE.md](docs/runtime/ARCHITECTURE.md): Runtime architecture, execution pipeline, builtin registry
+- [docs/runtime/EXECUTION_INVARIANTS.md](docs/runtime/EXECUTION_INVARIANTS.md): Documented runtime invariants (VM, scheduler, module, sandbox, coroutine)
+- [docs/governance/LANGUAGE_STABILITY_INDEX.md](docs/governance/LANGUAGE_STABILITY_INDEX.md): Per-surface stability tiers (Stable / Mostly Stable / Experimental)
+- [docs/governance/COMPANION_LIBRARY_CONTRACT.md](docs/governance/COMPANION_LIBRARY_CONTRACT.md): APIs a companion library may depend on; compatibility promises
+- [docs/onboarding/NODUS.md](docs/onboarding/NODUS.md): Project identity, capabilities, ecosystem, embedding API overview
+- [CHANGELOG.md](CHANGELOG.md): Version history
+- [llms-full.txt](llms-full.txt): Full content summaries for AI indexers
+
+## User Guide
+
+- [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
+- [docs/guide/ai-primitives.md](docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
+- [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 32 companion packages — roles, install tiers, nodus-sdk unified entry point
+- [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
+- [docs/guide/library-entry-points.md](docs/guide/library-entry-points.md): How to publish a Nodus companion library via nodus.nd entry-point
+- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers, strings, lists, maps, records, nil, functions as values
+- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, err record shape
+- [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
+- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete stdlib function reference
+- [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+- [docs/guide/real-world-integration.md](docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
+- [examples/webhook_bridge/](examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
+- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
+
+## AI Assistant Assets
+
+- [skills/nodus.skill](skills/nodus.skill): Claude Code skill for Nodus v4 with language rules, error patterns, stdlib guidance, and verified examples
+- [skills/project-CLAUDE.md](skills/project-CLAUDE.md): Project-root `CLAUDE.md` template for Nodus projects
+- [skills/nodus/SKILL.md](skills/nodus/SKILL.md): Codex skill entrypoint for Nodus v4
+- [skills/project-AGENTS.md](skills/project-AGENTS.md): Project-root `AGENTS.md` template for Codex sessions
+
+## Runtime Reference
+
+- [docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md](docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md): Failure categories and degradation behavior
+- [docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md](docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md): Production runbook for embedders
+- [docs/architecture/INFINITY_PATTERN_MAPPING.md](docs/architecture/INFINITY_PATTERN_MAPPING.md): How Nodus implements the Infinity Algorithm execution model
+
+## Governance
+
+- [docs/governance/SECURITY_POSTURE.md](docs/governance/SECURITY_POSTURE.md): Security boundaries, enforcement paths, transport-specific trust model
+- [docs/governance/RELEASE_GATES.md](docs/governance/RELEASE_GATES.md): Release gate checklist (10 gates including pre-publish creator validation)
+- [docs/governance/ISSUE_RESPONSE_POLICY.md](docs/governance/ISSUE_RESPONSE_POLICY.md): Bug response timelines and commitments
+- [docs/governance/TECH_DEBT.md](docs/governance/TECH_DEBT.md): Open known issues with fix directions and skills
+
+## Migration
+
+- [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes v3.x → v4.0
+- [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes v2.x → v3.0
+
+## Wiki
+
+- [Nodus Wiki](https://github.com/Masterplanner25/Nodus/wiki) — complete language reference wiki (24 pages covering syntax, stdlib, workflows, embedding, roadmap, changelog)
+  - [Getting Started](https://github.com/Masterplanner25/Nodus/wiki/Getting-Started)
+  - [Language Overview](https://github.com/Masterplanner25/Nodus/wiki/Language-Overview)
+  - [Syntax Reference](https://github.com/Masterplanner25/Nodus/wiki/Syntax-Reference)
+  - [Standard Library](https://github.com/Masterplanner25/Nodus/wiki/Standard-Library)
+  - [Embedding API](https://github.com/Masterplanner25/Nodus/wiki/Embedding-API)
+  - [Workflows and Task Graphs](https://github.com/Masterplanner25/Nodus/wiki/Workflows-and-Task-Graphs)
+  - [Type System](https://github.com/Masterplanner25/Nodus/wiki/Type-System)
+  - [Error Handling](https://github.com/Masterplanner25/Nodus/wiki/Error-Handling)
+
+## Ecosystem
+
+Nodus is the core runtime of the Masterplan Infinite Weave ecosystem.
+
+- [Masterplan Infinite Weave](https://www.the-master-plan.com/) — the broader ecosystem
+- [github.com/Masterplanner25](https://github.com/Masterplanner25) — all 32 companion packages
+- [nodus-mcp](https://github.com/Masterplanner25/nodus-mcp) — MCP protocol client + server
+- [nodus-extension](https://github.com/Masterplanner25/nodus-extension) — plugin framework
+- [nodus-sdk](https://github.com/Masterplanner25/nodus-sdk) — unified install: `pip install nodus-sdk`
+
+## Creator
+
+Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave.
+
+- Web: [the-master-plan.com](https://www.the-master-plan.com/)
+- GitHub: [Masterplanner25](https://github.com/Masterplanner25)
+- Medium: [Masterplan Infinite Weave](https://medium.com/masterplan-infinite-weave)
+
+## Key Concepts
+
+- **Nodus** — orchestration DSL and embedded runtime. File extension: `.nd`.
+- **Masterplan Infinite Weave** — the AI-native ecosystem Nodus is the execution layer of.
+- **Infinity Algorithm** — the I→T→C→R→O→Feedback execution model Nodus implements as a first-class language construct through workflows, goals, and task graphs.
+- **NodusRuntime** — Python embedding API: `from nodus import NodusRuntime`
+- **Task graph** — persistent, resumable directed execution graph used by workflow/goal DSLs.
+- **std:tool** — MCP-compatible tool registry. Names must be dotted (`"myapp.tool_name"`).
+- **int vs float** — `42i` is int; `42` is float. `type(42i)` = "int", `type(42)` = "float".
+- **String interpolation** — `"\(expr)"` embeds an expression in a string literal.
+- **Stability tiers** — Stable (frozen), Mostly Stable (refinements OK), Experimental (may change). Run `nodus stability` to see the full surface index.
+- **AI-native primitives** — std:identity (trace IDs), std:effects (EXACTLY_ONCE), std:sys (versioned dispatch), std:memory (share/recall), std:retry, std:circuit_breaker.
+- **Coroutines** — cooperative, spawned with `spawn(coroutine(fn))`, scheduled with `run_loop()`. [Experimental]
+- **Channels** — typed message passing via `channel()`, `send()`, `recv()`, `close()`. [Experimental]
+- **Companion Library Contract** — companion libraries may only depend on APIs listed in `docs/governance/COMPANION_LIBRARY_CONTRACT.md`.
+- **Bootstrapping** — Nodus will compile itself in itself; a decided long-term direction, not a maybe. It constrains design now: a feature needing a separate "systems" subset signals the abstraction level is wrong. `examples/expr_compiler.nd` is a lexer/parser/evaluator already written in Nodus. Blocker is runtime throughput, not semantics: ~400K instr/sec on CPython for a hot arithmetic loop, ~320K on a compiler workload. PyPy runs Nodus unmodified and is worth ~23x on the loop but only ~4-5x on the compiler workload -- a JIT's best case is not a promise. A further 1.5x needs no new runtime: the VM retains an event per call/return, unbounded and unread (#522). See `docs/language/LANGUAGE_VISION.md`.
+
+## Package
+
+- PyPI: `nodus-lang` (v5.4.0 — current stable, published 2026-08-25)
+- Install: `pip install nodus-lang`
+- Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+- Requires Python >= 3.10

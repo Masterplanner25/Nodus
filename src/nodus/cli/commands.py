@@ -391,6 +391,13 @@ COMMANDS: dict[str, Command] = {
         "Start the Debug Adapter Protocol server",
         group="Tooling",
     ),
+    "docs": _c(
+        "docs",
+        "docs [--json]",
+        "Where the guide, the machine-readable index and the agent skills live",
+        group="Tooling",
+        no_values=frozenset({"--json"}),
+    ),
     "doctor": _c(
         "doctor",
         "doctor",

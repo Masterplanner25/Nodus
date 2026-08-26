@@ -2,9 +2,18 @@
 
 ## Language
 
-This project uses **Nodus v4** (`nodus-lang 4.1.1`).
+This project uses **Nodus** (`nodus-lang 5.4.0`).
 
 Install: `pip install nodus-lang`
+
+Run `nodus docs` for the guide, the machine-readable index and the language
+skill, pinned to the version actually installed.
+
+**Embedding defaults changed in 5.0.0.** `NodusRuntime()` denies subprocess,
+network and env access unless granted (`allow_subprocess=True`, …). Any advice
+written against the older permissive default is backwards. `timeout_ms` defaults
+to `None` — the old 200 ms trap is gone, so passing `timeout_ms=None` is
+redundant rather than required.
 
 ## Running scripts
 

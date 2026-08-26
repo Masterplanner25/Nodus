@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#605: `nodus docs` — where the guide, the index and the agent skills live.**
+  Nothing in an installed `nodus-lang` led anywhere: the wheel shipped Python and
+  `stdlib/*.nd` only, no CLI command mentioned the documentation, and PyPI
+  **strips the README's relative links entirely** — fetched the live page and
+  `llms.txt`, `nodus.skill` and `project-CLAUDE.md` rendered as plain text with
+  no href. An agent inside a venv had no next step, which is exactly how this was
+  reported. `llms.txt` now ships as package data, and `nodus docs` (`--json` for
+  a machine) prints it plus the guide, embedding page and skills. The URLs are
+  pinned to the **running version**, not `main`: an agent on 5.2.0 reading main's
+  guide is how the shipped skill came to teach a default removed two releases
+  earlier.
+
+### Fixes
+
+- **#605: the shipped Claude/Codex skill described v4.1.1, and part of it was
+  wrong.** `skills/nodus.skill` declared `version: "4.1.1"` through nine
+  releases. It taught that `NodusRuntime()` defaults to `timeout_ms=200` and that
+  you must always pass `timeout_ms=None` — measured, it is `None`; that trap was
+  removed in #97, so the skill prescribed a workaround for a fixed bug. And it
+  said **nothing** about `allow_subprocess`/`allow_network`/`allow_env`, which
+  are `False` since v5.0.0, so an agent following it wrote embedding code that
+  silently could not shell out and got no explanation. CLAUDE.md names that risk
+  exactly: *advice written against the old default is backwards.*
+
+  The v4 body is unchanged and still correct — 5.x added surface rather than
+  breaking syntax — so this refreshes the version metadata, replaces the
+  embedding section, and adds a "what is new since v4" section covering
+  deny-by-default, `goal … over …`, join `on:`/`upstream_failed`,
+  `allow_failure`, folded state cells, catch-less `try`/`finally`, channel
+  backpressure, `nodus graph` no longer executing, and the `run_source` filename
+  change. Every code sample in it was **run**; the folded-state one was wrong
+  twice before it was right (`state x: int` does not parse, and a folded cell is
+  written with `+=`, not `=`).
+
+  `skills/project-CLAUDE.md` and `skills/project-AGENTS.md` said "Nodus v4
+  (`nodus-lang 4.1.1`)" too — a template users copy into their own projects as a
+  standing instruction file, so a stale one propagates.
+
+  All four version claims are now registered in `tools/version_claims.json`, so
+  `nodus_gate --versions` fails on them rather than a reader noticing nine
+  releases later.
+
+- **#605: every link in `README.md` is absolute.** All 23 were relative, and PyPI
+  reaches more installers than GitHub does. `readme = "README.md"` plus release
+  immutability makes a relative link permanent for that version.
+
+
 ### Tooling
 
 - **`nodus_gate --shapes`: the recurring bug shape, reported the day it is
