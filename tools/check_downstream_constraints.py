@@ -42,7 +42,7 @@ from packaging.version import Version
 # Companions that declare a `nodus-lang` dependency, published to PyPI.
 #
 # Packages with no nodus-lang dependency (nodus-a2a, nodus-memory,
-# nodus-store-sql, nodus-workflow) cannot be blocked by a range and are omitted.
+# nodus-store-sql, nodus-flow) cannot be blocked by a range and are omitted.
 # nodus-vscode and nodus-run-action are not on PyPI at all — the VSIX is manual
 # and the action pins a version in YAML — so they stay hand-checked at Gate 3b.
 COMPANIONS = [

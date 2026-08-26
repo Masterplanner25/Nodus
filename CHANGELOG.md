@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Ecosystem
+
+- **#483: the standalone `nodus-workflow` package is renamed `nodus-flow`.** It
+  was never the engine behind the `workflow` keyword — that ships inside
+  `nodus-lang` as `nodus_lang_workflow` and is not separately installable — but
+  the name read as though it were, and that misreading is on the record: Audit 03
+  F1 attributed the standalone package's architecture to the language core,
+  concluded the project had *"forked its own thesis"*, and made resolving it its
+  top recommendation. It stood in `EXTERNAL_AUDIT_LEDGER.md` as a confirmed
+  finding for months.
+
+  Nothing in `nodus-lang` changes; this is a reference update plus a policy.
+  `COMPANION_LIBRARY_CONTRACT.md` **§8b** now states the rule that prevents the
+  third instance: a first-party distribution may not take the name of a language
+  construct it does not implement. The old PyPI name is kept as a deprecation
+  alias so `import nodus_workflow` keeps working, and so nobody else takes it.
+
+  Two corrections landed with it. The ledger and #483 both attributed the phrase
+  *"…for Nodus AI systems"* to the package's published **summary**; it is not
+  there — it is in the README, which is the long description. That distinction is
+  the argument for renaming rather than rewording, since the metadata a reader
+  would have to open was never what misled anyone. And the `nodus-name-col-consolidation`
+  skill planned to publish the in-tree engine *as* `nodus-workflow`, which §8b now
+  forbids; it is marked superseded.
+
 ### Fixes
 
 - **`llms-full.txt`'s workflow example had never parsed.** `step validate after []`
