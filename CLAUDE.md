@@ -236,6 +236,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
 | Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
@@ -561,6 +562,31 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
   49 opcodes, with matching counts and `BYTECODE_VERSION`. **If you add an
   opcode, this fails until you document it** — that is the point (#366)
+- `--shapes`: reports **new instances of the recurring bug shape** — the section
+  below is the reason this phase exists. It scans `src/` for the three species
+  that leave a syntactic trace: one question implemented under the same name and
+  signature in two modules (**A**), one vocabulary enumerated twice with a member
+  missing (**B**), and module-scope state every participant in a process shares
+  (**D**). Species C (the cache as a sibling path) and E (the bound on the wrong
+  substrate) are not detectable and are not attempted.
+
+  `tools/shape_manifest.json` records **every shape currently in the tree** — 43
+  of them — each with `intentional` (these are not one question) or `tracked` (a
+  real debt, with its issue). That baseline is the design: the value is not the
+  list, it is that the *next* duplicated question shows up as **NEW** the day it
+  lands. It also records `sites` per species-A entry, because the key is
+  name+signature and a *third* copy of an already-listed function would otherwise
+  be silent — a hole found by probing the detector, not by reading it.
+
+  **Advisory**: it prints and exits 0; `--strict` fails on a new shape, a grown
+  one, or a manifest entry matching nothing. A manifest that cannot be read is
+  always a failure — the check may not pass by being unable to run.
+
+  Two of its findings became #597 and #598 within an hour of the first run, and
+  it independently re-found the `GATED_BUILTINS`/`BUILTIN_CAPABILITIES` pair that
+  is already known-intentional and pinned by test — which is how the detector
+  earned trust.
+
 - `--versions`: verifies that prose still agrees with the version files. Three
   checks: `version.py` vs `pyproject.toml`; every claim declared in
   `tools/version_claims.json` against what it must equal; and a **discovery
@@ -801,6 +827,8 @@ inspection. And the decision belongs where it can be *computed*, not declared: a
 call site would have been wrong, because the CLI legitimately passes a file's own text and
 must keep its cache. The question is not "did the caller supply source" but "is it the same
 source".
+
+**There is a gate for this now — `nodus_gate --shapes`.** It will not find the shape for you in the sense of telling you what is broken; it finds *places where one question is answered in more than one voice*, which is where every instance above came from. Its first run produced #597 and #598. `tools/shape_manifest.json` holds the 43 it already knows about, so what it reports is the ones that are new. When you add a second implementation of anything, expect to justify it there.
 
 **The fix is always the same: move the decision to one place, then assert on the source.** A
 behaviour-only test passes on whichever path is already correct. Working examples to copy:

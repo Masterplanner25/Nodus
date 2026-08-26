@@ -22,6 +22,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--closed-issues": False,
         "--contracts": False,
         "--consumers": False,
+        "--shapes": False,
         "--opcodes": False,
         "--versions": False,
         "--all": False,
@@ -132,12 +133,13 @@ def main(argv: list[str] | None = None) -> int:
     run_contracts = args["--contracts"] or args["--all"]
     run_opcodes = args["--opcodes"] or args["--all"]
     run_consumers = args["--consumers"] or args["--all"]
+    run_shapes = args["--shapes"] or args["--all"]
     run_versions = args["--versions"] or args["--all"]
 
     if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
-            or run_consumers or run_versions):
+            or run_consumers or run_versions or run_shapes):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
-              "[--opcodes] [--consumers] [--versions] [--all]")
+              "[--opcodes] [--consumers] [--versions] [--shapes] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
@@ -145,7 +147,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  --opcodes        Verify the frozen opcode set matches its documented record")
         print("  --consumers      Report non-PyPI consumers a release has left behind")
         print("  --versions       Verify prose still agrees with the version files")
-        print("  --all            Run all seven phases")
+        print("  --shapes         Report new instances of the recurring bug shape")
+        print("  --all            Run all eight phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -173,7 +176,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
-        format_opcodes, format_consumers, format_versions, format_json_results,
+        format_opcodes, format_consumers, format_versions, format_shapes,
+        format_json_results,
     )
 
     static_result = runtime_result = closed_result = contracts_result = None
@@ -239,6 +243,22 @@ def main(argv: list[str] | None = None) -> int:
         if consumers_result.error:
             any_failure = True
         elif consumers_result.stale and strict:
+            any_failure = True
+
+    if run_shapes:
+        from tools.nodus_gate.shapes_phase import run_shapes_phase
+        shapes_result = run_shapes_phase(root)
+        if output_fmt != "json":
+            print(format_shapes(shapes_result, use_color=use_color,
+                                verbose=verbose, quiet=quiet))
+        # Advisory, for the same reason as --consumers: a duplicated question is
+        # design debt, not a broken tree, and blocking an unrelated merge on one
+        # is how a phase gets switched off. A manifest that cannot be read IS a
+        # failure -- the check may not pass by being unable to run.
+        if shapes_result.error:
+            any_failure = True
+        elif (shapes_result.new or shapes_result.grown
+              or shapes_result.stale_entries) and strict:
             any_failure = True
 
     if run_versions:

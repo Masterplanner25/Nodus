@@ -4,6 +4,38 @@
 
 ### Tooling
 
+- **`nodus_gate --shapes`: the recurring bug shape, reported the day it is
+  introduced.** This codebase's most common defect is a correct check that only
+  one of several paths goes through — twenty-one instances across v5.0.0–5.4.0,
+  every one found by a human asking "what else has this shape?" *after* a bug
+  report. The new phase asks first. It scans `src/` for the three species that
+  leave a syntactic trace: one question implemented under the same name and
+  signature in two modules, one vocabulary enumerated twice with a member
+  missing, and module-scope state every participant in a process shares. The two
+  species that do not — a cache acting as a sibling path, and a bound placed on
+  the wrong substrate — are named in the phase docstring so their absence is
+  deliberate rather than an oversight.
+
+  `tools/shape_manifest.json` records all 43 shapes currently in the tree, each
+  as `intentional` (with why they are not one question) or `tracked` (with the
+  issue). The baseline is the point: what gets reported is what is **new**. It
+  also records how many implementations each duplicated function had, because the
+  key is name+signature and a *third* copy would otherwise match the existing
+  entry silently — a hole found by probing the detector with a deliberate
+  duplicate and watching it report nothing.
+
+  Advisory, like `--consumers`: it prints and exits 0, and `--strict` fails. A
+  manifest that cannot be read is always a failure, since a check must not pass
+  by being unable to run.
+
+  The first run produced **#597** (the LSP indexer never enters step bodies, so
+  hover and go-to-definition are blind there — #401 fixed two walkers of three)
+  and **#598** (two import resolvers, and the editor's has no entry-point lookup,
+  so importing a pip-installed companion is a false "Import not found" in the
+  editor while it runs fine). It also re-found the
+  `GATED_BUILTINS`/`BUILTIN_CAPABILITIES` pair, which is known-intentional and
+  already pinned by test — the check that the detector finds real pairs.
+
 - **#591: the HTTP server tests stop every thread they start before removing the
   directory those threads write into.** Four teardowns ended with
   `thread.join(timeout=1.0)` whose result was discarded, and each is followed by
