@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-08-26
+
 ### Added
 
 - **#605: `nodus docs` — where the guide, the index and the agent skills live.**
@@ -51,67 +53,7 @@
   immutability makes a relative link permanent for that version.
 
 
-### Tooling
 
-- **`nodus_gate --shapes`: the recurring bug shape, reported the day it is
-  introduced.** This codebase's most common defect is a correct check that only
-  one of several paths goes through — twenty-one instances across v5.0.0–5.4.0,
-  every one found by a human asking "what else has this shape?" *after* a bug
-  report. The new phase asks first. It scans `src/` for the three species that
-  leave a syntactic trace: one question implemented under the same name and
-  signature in two modules, one vocabulary enumerated twice with a member
-  missing, and module-scope state every participant in a process shares. The two
-  species that do not — a cache acting as a sibling path, and a bound placed on
-  the wrong substrate — are named in the phase docstring so their absence is
-  deliberate rather than an oversight.
-
-  `tools/shape_manifest.json` records all 43 shapes currently in the tree, each
-  as `intentional` (with why they are not one question) or `tracked` (with the
-  issue). The baseline is the point: what gets reported is what is **new**. It
-  also records how many implementations each duplicated function had, because the
-  key is name+signature and a *third* copy would otherwise match the existing
-  entry silently — a hole found by probing the detector with a deliberate
-  duplicate and watching it report nothing.
-
-  Advisory, like `--consumers`: it prints and exits 0, and `--strict` fails. A
-  manifest that cannot be read is always a failure, since a check must not pass
-  by being unable to run.
-
-  The first run produced **#597** (the LSP indexer never enters step bodies, so
-  hover and go-to-definition are blind there — #401 fixed two walkers of three)
-  and **#598** (two import resolvers, and the editor's has no entry-point lookup,
-  so importing a pip-installed companion is a false "Import not found" in the
-  editor while it runs fine). It also re-found the
-  `GATED_BUILTINS`/`BUILTIN_CAPABILITIES` pair, which is known-intentional and
-  already pinned by test — the check that the detector finds real pairs.
-
-- **#591: the HTTP server tests stop every thread they start before removing the
-  directory those threads write into.** Four teardowns ended with
-  `thread.join(timeout=1.0)` whose result was discarded, and each is followed by
-  a `TemporaryDirectory` removal holding the SQLite store — so on CI, a docs-only
-  commit produced `sqlite3.OperationalError: no such table: workflow_runs` and
-  `OSError: [Errno 39] Directory not empty`, with the identical parallel job
-  green. **The join was not the culprit**, which the issue got wrong: measured,
-  the server thread is reliably dead after `shutdown()` (which already blocks
-  until `serve_forever` returns), while `nodus-workflow-sweep` — the default
-  runner's auto-sweep daemon, started by any workflow run and bound to the
-  working directory — was still running. That is the thread the cleanup raced.
-  Teardown now calls `reset_default_workflow_runner()`, and also fails plainly if
-  a server thread outlives its join rather than letting it become an `OSError` in
-  whichever test the GC reaches next. `ignore_cleanup_errors=True` is removed from
-  the one class that had it, since the threads it was hiding now stop.
-
-- **#452 follow-up: `test_task_yield`'s stderr filter reads warning *blocks*, not
-  lines.** The #452 fix dropped stderr lines containing `Warning`, which is two of
-  the three lines `warnings` prints — the header and the tracemalloc hint. The
-  middle one is the offending *source line*, indented and containing no such word,
-  so it survived and failed the test with
-  `['  self._waiters = _deque()'] != []`. Caught on a docs-only commit, red on one
-  CI job and green on the identical one beside it. An indented continuation now
-  goes with the header above it; unindented stderr still fails the assertion,
-  including immediately after a warning block.
-
-### Fixes
 
 - **#602: editor diagnostics stop reporting correct code as an error, and start
   reporting six kinds of typo they were accepting.** `_SemanticAnalyzer` had no
@@ -310,6 +252,66 @@
   reading it, the same way #521's cache write was. `step_owner` is now carried
   across all three `FunctionInfo` rebuilds outside the compiler (the cache
   round-trip and the optimizer's two address remappers), each pinned by a test.
+
+### Tooling
+
+- **`nodus_gate --shapes`: the recurring bug shape, reported the day it is
+  introduced.** This codebase's most common defect is a correct check that only
+  one of several paths goes through — twenty-one instances across v5.0.0–5.4.0,
+  every one found by a human asking "what else has this shape?" *after* a bug
+  report. The new phase asks first. It scans `src/` for the three species that
+  leave a syntactic trace: one question implemented under the same name and
+  signature in two modules, one vocabulary enumerated twice with a member
+  missing, and module-scope state every participant in a process shares. The two
+  species that do not — a cache acting as a sibling path, and a bound placed on
+  the wrong substrate — are named in the phase docstring so their absence is
+  deliberate rather than an oversight.
+
+  `tools/shape_manifest.json` records all 43 shapes currently in the tree, each
+  as `intentional` (with why they are not one question) or `tracked` (with the
+  issue). The baseline is the point: what gets reported is what is **new**. It
+  also records how many implementations each duplicated function had, because the
+  key is name+signature and a *third* copy would otherwise match the existing
+  entry silently — a hole found by probing the detector with a deliberate
+  duplicate and watching it report nothing.
+
+  Advisory, like `--consumers`: it prints and exits 0, and `--strict` fails. A
+  manifest that cannot be read is always a failure, since a check must not pass
+  by being unable to run.
+
+  The first run produced **#597** (the LSP indexer never enters step bodies, so
+  hover and go-to-definition are blind there — #401 fixed two walkers of three)
+  and **#598** (two import resolvers, and the editor's has no entry-point lookup,
+  so importing a pip-installed companion is a false "Import not found" in the
+  editor while it runs fine). It also re-found the
+  `GATED_BUILTINS`/`BUILTIN_CAPABILITIES` pair, which is known-intentional and
+  already pinned by test — the check that the detector finds real pairs.
+
+- **#591: the HTTP server tests stop every thread they start before removing the
+  directory those threads write into.** Four teardowns ended with
+  `thread.join(timeout=1.0)` whose result was discarded, and each is followed by
+  a `TemporaryDirectory` removal holding the SQLite store — so on CI, a docs-only
+  commit produced `sqlite3.OperationalError: no such table: workflow_runs` and
+  `OSError: [Errno 39] Directory not empty`, with the identical parallel job
+  green. **The join was not the culprit**, which the issue got wrong: measured,
+  the server thread is reliably dead after `shutdown()` (which already blocks
+  until `serve_forever` returns), while `nodus-workflow-sweep` — the default
+  runner's auto-sweep daemon, started by any workflow run and bound to the
+  working directory — was still running. That is the thread the cleanup raced.
+  Teardown now calls `reset_default_workflow_runner()`, and also fails plainly if
+  a server thread outlives its join rather than letting it become an `OSError` in
+  whichever test the GC reaches next. `ignore_cleanup_errors=True` is removed from
+  the one class that had it, since the threads it was hiding now stop.
+
+- **#452 follow-up: `test_task_yield`'s stderr filter reads warning *blocks*, not
+  lines.** The #452 fix dropped stderr lines containing `Warning`, which is two of
+  the three lines `warnings` prints — the header and the tracemalloc hint. The
+  middle one is the offending *source line*, indented and containing no such word,
+  so it survived and failed the test with
+  `['  self._waiters = _deque()'] != []`. Caught on a docs-only commit, red on one
+  CI job and green on the identical one beside it. An indented continuation now
+  goes with the header above it; unindented stderr still fails the assertion,
+  including immediately after a warning block.
 
 ## [5.4.0] - 2026-08-25
 
