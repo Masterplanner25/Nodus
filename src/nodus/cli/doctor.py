@@ -29,6 +29,7 @@ from importlib import metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
+from nodus.runtime.state_paths import workflow_store_root
 
 DIST_NAME = "nodus-lang"
 
@@ -211,12 +212,22 @@ def _store(cwd: Path) -> Check:
     accumulated count is a real performance signal (#380) -- and this is the
     only place a user would ever see it.
     """
-    runs_dir = cwd / ".nodus" / "workflow_framework" / "runs"
+    # #585: honour a relocated store without ignoring the directory we were asked
+    # to inspect. `workflow_store_root()` is absolute only when an override is set;
+    # otherwise it is CWD-relative and must be resolved against *this* cwd, not the
+    # process's. Resolving it against the process CWD made `_store` report the
+    # repo's own store for every directory, which its tests caught.
+    root = Path(workflow_store_root())
+    if not root.is_absolute():
+        root = cwd / root
+    runs_dir = root / "runs"
     if not runs_dir.is_dir():
         return Check(
             "workflow store",
             OK,
-            f"no store under {cwd / '.nodus'} (nothing has run here yet)",
+            # #585: name the root actually in use -- `cwd / '.nodus'` was a lie
+            # as soon as NODUS_RUN_STATE_ROOT pointed somewhere else.
+            f"no store under {runs_dir.parent} (nothing has run here yet)",
             data={"runs": 0},
         )
     try:

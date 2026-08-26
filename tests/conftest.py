@@ -13,11 +13,24 @@ for path in (ROOT, SRC):
         sys.path.insert(0, path_str)
 
 
-_REPO_RUNS = ROOT / ".nodus" / "workflow_framework" / "runs"
+# #585: a run is two directories, and this fixture used to know about one.
+# Redirecting the store for the session is not an option here -- several tests
+# chdir into a project directory and assert the default runner wrote under *that*
+# root, which is the documented behaviour (26 failures when it was tried). So the
+# suite still cleans up after itself; it just does it for both halves now, off one
+# list, rather than growing a second hand-maintained sweep.
+_REPO_STATE_DIRS = (
+    ROOT / ".nodus" / "workflow_framework" / "runs",
+    ROOT / ".nodus" / "graphs",
+)
 
 
-def _run_files() -> set[str]:
-    return {p.name for p in _REPO_RUNS.iterdir()} if _REPO_RUNS.is_dir() else set()
+def _state_files() -> set[tuple[str, str]]:
+    present: set[tuple[str, str]] = set()
+    for directory in _REPO_STATE_DIRS:
+        if directory.is_dir():
+            present.update((str(directory), entry.name) for entry in directory.iterdir())
+    return present
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -41,13 +54,14 @@ def _leave_no_workflow_runs_behind():
     Files present before the session are left alone; this removes what the
     session added, nothing else.
     """
-    before = _run_files()
+    before = _state_files()
     yield
-    if not _REPO_RUNS.is_dir():
-        return
-    for path in _REPO_RUNS.iterdir():
-        if path.name not in before:
-            try:
-                path.unlink()
-            except OSError:
-                pass
+    for directory in _REPO_STATE_DIRS:
+        if not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if (str(directory), path.name) not in before:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass

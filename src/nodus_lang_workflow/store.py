@@ -12,6 +12,7 @@ import uuid
 from contextlib import contextmanager
 
 from nodus.runtime.runtime_stats import runtime_time_ms
+from nodus.runtime.state_paths import workflow_sqlite_path, workflow_store_root
 
 from .models import (
     RUN_STATUS_COMPLETED,
@@ -387,7 +388,7 @@ class LocalWorkflowStore(WorkflowStore):
         terminal_max_age_days: float = 30.0,
         max_terminal_runs: int | None = None,
     ) -> None:
-        resolved = root or os.path.join(".nodus", "workflow_framework")
+        resolved = root or workflow_store_root()  # #585
         self.root = os.path.abspath(resolved)
         self.claim_ttl_ms = claim_ttl_ms
         self.terminal_max_age_days = terminal_max_age_days
@@ -831,7 +832,7 @@ class SQLiteWorkflowStore(WorkflowStore):
     """SQLite-backed workflow store for cross-process coordination."""
 
     def __init__(self, path: str | None = None, *, claim_ttl_ms: float = 30_000.0) -> None:
-        resolved = path or os.path.join(".nodus", "workflow_framework.sqlite3")
+        resolved = path or workflow_sqlite_path()  # #585
         self.path = os.path.abspath(resolved)
         self.claim_ttl_ms = claim_ttl_ms
         self._lock = threading.Lock()

@@ -46,8 +46,19 @@ author* — does not describe a developer running a script they just wrote, and 
 two are separate code paths: `nodus run` never constructs a `NodusRuntime`.
 
 The one control that applies in **both** modes is the capability floor: a Nodus
-program cannot write into `.nodus/`, because a guest that can write there can
-forge workflow run records.
+program cannot write into the runtime's own state, because a guest that can write
+there can forge workflow run records.
+
+**That protection follows relocated state as of #585, and did not before.** The
+floor answered "is this the runtime's state?" by matching a literal `.nodus` path
+segment, so the supported way to move the store —
+`NODUS_WORKFLOW_STORE_ROOT`, and now `NODUS_RUN_STATE_ROOT` — also moved it out of
+the floor's reach. Demonstrated rather than reasoned about: with that variable set,
+a guest's `fs.write("../relocated/pwned.txt", "x")` landed in the live run store
+while the identical write to the default location was denied. The floor now also
+asks whether the path is inside a root the runtime is *currently* using
+(`nodus/runtime/state_paths.py`), so **a new state directory that does not go
+through that module is unprotected**.
 
 **What CLI mode does protect against:**
 - Relative import path traversal (cannot escape the project root)
@@ -100,7 +111,7 @@ The security controls available are:
 | Env | `allow_env` | **`False`** | Denied unless granted. Pass `True` to enable `env_*` (read/write/delete of `os.environ`) |
 | Per-call policy | `capability_policy` | `None` | Decides per call and can read the call's arguments — finer than the all-or-nothing flags above |
 | Approval channel | `approval_channel` | `None` | Answers an `ask` decision. **With no channel, `ask` is `deny`** |
-| Runtime-state floor | — | always on | Guest writes into `.nodus/` are refused; no policy can override it |
+| Runtime-state floor | — | always on | Guest writes into the runtime's state — `.nodus/`, **and wherever `NODUS_RUN_STATE_ROOT` points** (#585) — are refused; no policy can override it |
 | Call stack cap | `max_frames` | `None` → `MAX_STACK_DEPTH` (10,000) | Deep recursion raises `Call stack overflow`; tighten to 200–1000 for untrusted code |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
 | Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |
