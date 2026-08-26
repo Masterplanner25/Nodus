@@ -64,6 +64,32 @@
 
 ### Fixes
 
+- **#597: the editor sees inside a step body.** `_DocumentIndexer` builds the
+  definitions, references and scopes behind hover, go-to-definition and
+  completions, and it had no case for `WorkflowDef` or `GoalDef` — so everything
+  inside a step was invisible to it, in exactly the place orchestration logic and
+  generated code live. The flow's *name* was indexed, which is why this read as
+  "the editor half-works" rather than as an outage. #401 found two walkers
+  skipping step bodies and fixed both; this was the third, in the same file as
+  one of them, and it survived four more releases.
+
+  Three further gaps in the same walker, found by the completeness test below
+  rather than by reading it: `let [a, b] = …` bound **nothing**, so destructured
+  names had no hover or go-to-definition anywhere; `action agent … with { … }` —
+  the commonest statement in a step body — resolved no names in its payload; and
+  `goal X over Y` never recorded the name it declares. Walking step bodies
+  without the action case would have indexed the `let`s and skipped the actions,
+  which every behaviour test would still have passed.
+
+  The durable half is `tests/test_lsp_step_bodies.py`, which drives off the AST
+  node list the way `tests/test_formatter_completeness.py` does for the
+  formatter: every node is either handled or named in an exemption list with a
+  reason, so a new statement node fails a test that names it instead of being
+  discovered by a user whose editor goes quiet. It checks **both** walkers,
+  because `action …` parses as an expression wrapped in `ExprStmt` — a
+  `_walk_stmt` case for it is dead code, which is what the first version of this
+  fix added.
+
 - **#596: a step's `timeout_ms` bounds an `action agent` handler, which it did
   not.** #398 made `action agent` dispatch its handler off the scheduler thread
   so independent steps overlap. #424 then bounded agent handlers by reading the
