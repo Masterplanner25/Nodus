@@ -4,6 +4,31 @@
 
 ### Ecosystem
 
+- **#477: the A2A wire adapter is published as `nodus-a2a-wire` 0.1.0.** It had been
+  complete since 2026-05-29 and unpublishable, because it declared the distribution
+  name `nodus-a2a` — taken by the coordinator. Nothing in `nodus-lang` changes.
+
+  **Renaming the distribution was not enough, and that is the part the issue did not
+  have.** The published `nodus-a2a` coordinator ships a Python module *also* called
+  `nodus_a2a`, so both distributions wrote one directory into site-packages.
+  Measured before the fix: installing the wire adapter on top of the coordinator
+  left `AgentCoordinator`, `AgentRegistry` and `DeadLetterService` **gone**, with
+  pip reporting success both times. The module is `nodus_a2a_wire` now and the two
+  coexist. This is NAME-COL-001 again — the distribution name is what a user types,
+  the module name is what Python resolves, and fixing one does not fix the other.
+
+  **`nodus-lang` was in its `dependencies` and never imported**, which is a larger
+  correction than the `<5.0.0` cap the issue names. `grep -rnE
+  "^\s*(from|import)\s+nodus" src/` is empty; the one import in its tests sits in
+  a `try/except ImportError` that skips. Per the dependency-audit rule that is not
+  a dependency — a host constructs `A2AHttpServer` and wires it to their own
+  `NodusRuntime.tool_registry`. It is a `dev` extra now, uncapped. The suite is
+  188/188 against nodus-lang 5.5.0, so the cap protected nothing.
+
+- **`nodus-a2a-wire` is tracked by `tools/check_publish_drift.py`**, which now covers
+  11 companions, all matching what they published.
+
+
 - **The package picture is re-verified against the live index, and four claims were
   wrong.** Prompted by a simple question — are we sure what our packages actually
   are? Every first-party name was probed against PyPI rather than read out of a doc.

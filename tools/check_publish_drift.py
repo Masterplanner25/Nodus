@@ -54,6 +54,10 @@ COMPANIONS: dict[str, tuple[str, str]] = {
     # #483: published as `nodus-workflow` until 0.2.0 and never tracked here under
     # either name, so a published first-party package sat outside the drift sweep.
     # The local directory keeps its old name; only the distribution was renamed.
+    # #477: published 2026-08-26. Module is `nodus_a2a_wire`, deliberately NOT
+    # `nodus_a2a` — the coordinator above ships that one, and both distributions
+    # writing it clobbered each other.
+    "nodus-a2a-wire": (r"C:\codev\a2a-wire-pub", "src/nodus_a2a_wire"),
     "nodus-flow": (r"C:\dev\nodus-workflow", "nodus_flow"),
 }
 
