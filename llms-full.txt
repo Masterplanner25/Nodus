@@ -177,6 +177,34 @@ run_loop()
 Channels are FIFO. `recv()` blocks the calling coroutine until data is available.
 `close(ch)` marks the channel closed; `recv()` on a closed empty channel returns nil.
 
+### Agent host boundary
+
+The point where a program hands a semantic decision to the host. Five surfaces,
+all builtins -- no import:
+
+```nodus
+// agent_call(name, payload)          -- blocks, returns an envelope
+// agent_call_async(name, payload)    -- the coroutine form
+// agent_available()                  -- list of registered names
+// agent_describe(name)               -- that agent's spec, or nil
+// action agent "name" with { k: v }  -- statement form, inside a workflow step only
+```
+
+`agent_call` returns a **nine-key envelope**, not the handler's value: the value
+is under `result`. The other keys are `ok`, `errors`, `stage`, and four
+(`filename`, `stdout`, `stderr`, `diagnostics`, `error`) that describe the
+*calling script* rather than the agent.
+
+**Failure is soft.** An unregistered agent or a raising handler yields
+`{ok: false, errors: [{type, message, agent}]}` and the run continues, so an
+unchecked call looks like it worked. Branch on `ok`, then read `result`.
+
+Agents are host-registered only -- a guest cannot register one -- which is why
+they are not isolated per runtime by default. `NodusRuntime(agent_registry={})`
+scopes them for a multi-tenant host.
+
+Full detail: docs/guide/agent-host-boundary.md
+
 ### Workflow DSL [Experimental]
 ```nodus
 workflow process_order {
@@ -230,6 +258,15 @@ rt = NodusRuntime(
 # Register Python function callable from Nodus scripts; `requires` declares the
 # capability the host function needs, checked against `capability_policy`.
 rt.register_function("fetch", my_fetch_fn, arity=1, requires="network")
+
+# Register an AGENT: the point where a Nodus program hands a *semantic* decision
+# to the host. Nodus has no model in it, so anything needing judgement is
+# delegated across this boundary. Use the runtime method, not the module-level
+# `nodus.services.agent_runtime.register_agent` -- that one registers into the
+# process-global registry, so a runtime scoped with `agent_registry={}` would
+# neither see nor call the handler.
+rt.register_agent("git_strategist", pick_rebase_or_merge,
+                  description="rebase vs merge")
 
 # Register MCP-style tool
 rt.tool_registry.register({

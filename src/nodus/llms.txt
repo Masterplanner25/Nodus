@@ -31,6 +31,7 @@ pip install nodus-lang
 ## User Guide
 
 - [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
+- [docs/guide/agent-host-boundary.md](docs/guide/agent-host-boundary.md): agent_call / agent_call_async / agent_available / agent_describe / `action agent`, registering a handler with NodusRuntime.register_agent, the nine-key result envelope, and why an agent failure is soft
 - [docs/guide/ai-primitives.md](docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
 - [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 32 companion packages — roles, install tiers, nodus-sdk unified entry point
 - [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
