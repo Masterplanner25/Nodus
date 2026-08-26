@@ -64,6 +64,29 @@
 
 ### Fixes
 
+- **#598: the editor and the runtime resolve an import the same way.**
+  `resolve_import_path` existed twice — 159 lines in `runtime/module_loader.py`
+  and 55 in `tooling/loader.py`, 38% similar — and `nodus lsp` and
+  `tooling/diagnostics.py` import from the second. The short copy had **no
+  entry-point lookup**, which is how a pip-installed companion ships its `.nd`
+  files, so `import "nodus-mcp"` resolved when run and read as `Import not found`
+  in the editor. A false error on correct code is worse than a missing one: it
+  teaches people to ignore the panel, after which the true errors are worth
+  nothing either.
+
+  Four functions around it — `import_error`, `ensure_project_root`,
+  `resolve_with_extensions`, `try_resolve_with_extensions` — were **byte-identical**
+  copies, so this was never a difference of purpose. Nor was there a structural
+  reason for it: `tooling/loader.py` already imported `ModuleLoader` from the
+  module it was forking. All five are gone; the two the editor needs are
+  re-exported and declared in `__all__`, the rest removed outright.
+
+  `tests/test_import_resolution_is_shared.py` keeps it gone two ways — by
+  identity, and by behaviour over a corpus of import forms, because "they are the
+  same object" stops being true the moment someone adds a wrapper. The
+  entry-point case skips rather than passing when no companion is installed, since
+  "not found on both sides" would agree while proving nothing.
+
 - **#597: the editor sees inside a step body.** `_DocumentIndexer` builds the
   definitions, references and scopes behind hover, go-to-definition and
   completions, and it had no case for `WorkflowDef` or `GoalDef` — so everything
