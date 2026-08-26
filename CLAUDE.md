@@ -1234,7 +1234,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
 - **Published on PyPI** (version: `check_publish_drift`).
-  99 tests. Unified platform SDK auto-wiring the 32-package companion ecosystem.
+  99 tests. Unified platform SDK auto-wiring the 35-package companion ecosystem.
   Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
   suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
   recorded it as a known-stale test rather than fixing it. Fixed in 0.1.2.

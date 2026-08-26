@@ -1,6 +1,6 @@
 # Nodus
 
-> An orchestration DSL and embedded runtime for hosting agentic systems.
+> An orchestration DSL and embedded runtime for building agentic hosts.
 > Created by Shawn Knight — [Masterplan Infinite Weave](https://www.the-master-plan.com/)
 
 Nodus is the execution layer of the Masterplan Infinite Weave ecosystem — a bytecode-compiled
@@ -8,7 +8,7 @@ language whose runtime provides durable, inspectable, capability-jailed task orc
 with a clean handoff boundary to model-driven decisions your host supplies. `workflow`, `goal`,
 `step` and `after` are language constructs; task graphs are a runtime library the compiler
 feeds. There is no model in the core. It embeds in Python via `NodusRuntime` and
-ships a 32-package companion ecosystem for AI agent infrastructure.
+ships a 35-package companion ecosystem for AI agent infrastructure.
 
 ## Install
 
@@ -33,7 +33,7 @@ pip install nodus-lang
 - [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
 - [docs/guide/agent-host-boundary.md](docs/guide/agent-host-boundary.md): agent_call / agent_call_async / agent_available / agent_describe / `action agent`, registering a handler with NodusRuntime.register_agent, the nine-key result envelope, and why an agent failure is soft
 - [docs/guide/ai-primitives.md](docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
-- [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 32 companion packages — roles, install tiers, nodus-sdk unified entry point
+- [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 35 companion packages — roles, install tiers, nodus-sdk unified entry point
 - [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
 - [docs/guide/library-entry-points.md](docs/guide/library-entry-points.md): How to publish a Nodus companion library via nodus.nd entry-point
 - [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers, strings, lists, maps, records, nil, functions as values
@@ -87,7 +87,7 @@ pip install nodus-lang
 Nodus is the core runtime of the Masterplan Infinite Weave ecosystem.
 
 - [Masterplan Infinite Weave](https://www.the-master-plan.com/) — the broader ecosystem
-- [github.com/Masterplanner25](https://github.com/Masterplanner25) — all 32 companion packages
+- [github.com/Masterplanner25](https://github.com/Masterplanner25) — all 35 companion packages
 - [nodus-mcp](https://github.com/Masterplanner25/nodus-mcp) — MCP protocol client + server
 - [nodus-extension](https://github.com/Masterplanner25/nodus-extension) — plugin framework
 - [nodus-sdk](https://github.com/Masterplanner25/nodus-sdk) — unified install: `pip install nodus-sdk`
@@ -121,5 +121,5 @@ Shawn Knight — creator of Nodus and architect of the Masterplan Infinite Weave
 
 - PyPI: `nodus-lang` (v5.5.0 — current stable, published 2026-08-25)
 - Install: `pip install nodus-lang`
-- Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+- Full 35-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 - Requires Python >= 3.10

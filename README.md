@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Masterplanner25/Nodus/blob/main/LICENSE)
 
-> **Stable on PyPI** — `pip install nodus-lang` · Full 32-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **Stable on PyPI** — `pip install nodus-lang` · Full 35-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 >
 > <sub>The badge above carries the current version. This line deliberately does not: it named a
 > stale release through three consecutive cycles, most recently advertising 4.2.0 for the whole
@@ -200,7 +200,7 @@ nodus run
 nodus repl
 ```
 
-Nodus is an **orchestration DSL and embedded runtime** for *hosting* agentic systems, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar.
+Nodus is an **orchestration DSL and embedded runtime** for building agentic hosts, created by **Shawn Knight** as part of the **Masterplan Infinite Weave** ecosystem. Its execution model embodies the **Infinity Algorithm**'s feedback-loop structure at the runtime layer — a structural correspondence documented in [Infinity Pattern Mapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/architecture/INFINITY_PATTERN_MAPPING.md), not a named construct in the grammar.
 
 **There is no model in the core, and that is the design.** Nodus contains no LLM client, no agent loop and no tool-selection logic; `action agent "name" with {...}` hands a JSON-safe payload to a handler your host registers, and takes a result back. Because the runtime cannot perform inference, every semantic decision *must* cross that boundary — so deterministic structure never guesses, and the model never controls sequencing.
 

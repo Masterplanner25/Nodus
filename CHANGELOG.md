@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#474: the positioning clause is "for building agentic hosts".** Ledger
+  decision **D1**, open since Audit 01, is decided and applied:
+
+  > An orchestration DSL and embedded runtime for **building agentic hosts**.
+
+  It replaces *"for hosting agentic systems"* in `pyproject.toml` — which is the
+  **PyPI summary** and so is permanent at each tag — and in `llms.txt`,
+  `llms-full.txt` and `README.md`. The claim it makes is the one the audit series
+  converged on and six corpora support: the model loop belongs to the host, and
+  the absence of a model in the core is what makes that boundary unblurrable.
+  Nodus is what you build the host out of.
+
+  **A partial sweep had already run, and that is the part worth recording.**
+  Three of the four files said *"hosting agentic systems"*; `llms-full.txt` still
+  said *"building agentic systems"* — the one file `nodus_gate` did not scan
+  until #483. `tests/closed_issues/issue_474.py` now pins all four (plus the
+  packaged `src/nodus/llms.txt`) to one string, and was confirmed red against the
+  exact state the repo was found in.
+
+- **The companion-package count was wrong in seven places.** *"32-package
+  companion ecosystem"* against a verified live count of **35** — in `README.md`,
+  `llms.txt` (×4), `llms-full.txt`, `getting-started.md` and `CLAUDE.md`. Same
+  class as the version strings this project already refuses to carry in prose: a
+  hand-maintained number nothing checked. The test now at least requires the
+  prose to agree with itself.
+
+- **`llms-full.txt` dated v5.5.0 to 2026-08-25.** It published on the 26th.
+
+### Known
+
+- **The wiki still names a v4-line release as its stable one** — four minors and
+  a major behind what ships — and repeats the 32-package count, in `Home.md` and
+  `Roadmap.md`. It carries no positioning clause, so it needed nothing for D1.
+  Left for a wiki-wide version sweep: a partial update there would be worse than
+  none.
+
+
 ### Added
 
 - **#491: `NodusRuntime.register_agent` / `unregister_agent`.** The agent registry
