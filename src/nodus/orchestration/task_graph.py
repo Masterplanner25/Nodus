@@ -14,6 +14,7 @@ import threading
 import uuid
 
 from nodus.runtime.runtime_stats import runtime_time_ms
+from nodus.runtime.state_paths import graph_root
 from nodus.runtime.coroutine import Coroutine
 from nodus.orchestration.workflow_state import (
     TrackedState,
@@ -131,7 +132,8 @@ class TaskGraph:
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
 _GRAPH_VMS: dict[str, object] = {}
 _DEFAULT_DISPATCHER = None
-_GRAPH_ROOT = os.path.join(".nodus", "graphs")
+# #585: was a hardcoded constant, so the graph half of a run could not be
+# relocated while the record half could. See `nodus/runtime/state_paths.py`.
 _STATE_LOCK = threading.Lock()
 
 
@@ -151,8 +153,9 @@ def _checkpoint_path(graph_id: str) -> str:
 
 
 def _ensure_graph_root() -> str:
-    os.makedirs(_GRAPH_ROOT, exist_ok=True)
-    return _GRAPH_ROOT
+    root = graph_root()
+    os.makedirs(root, exist_ok=True)
+    return root
 
 
 def _fsync_directory(path: str) -> None:

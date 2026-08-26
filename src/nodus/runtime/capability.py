@@ -521,25 +521,36 @@ class NodusStateFloor(Floor):
         if request.capability != FS_WRITE:
             return None
         for arg in request.args:
-            if isinstance(arg, str) and _is_inside_nodus_state(arg):
+            if not isinstance(arg, str):
+                continue
+            inside, root = _is_inside_nodus_state(arg)
+            if inside:
+                where = "" if root == ".nodus" else f" at {root!r}"
                 return CapabilityDecision.deny(
-                    f"writing to the runtime's own state directory is never permitted "
-                    f"({arg!r})"
+                    f"writing to the runtime's own state directory{where} is never "
+                    f"permitted ({arg!r})"
                 )
         return None
 
 
-def _is_inside_nodus_state(path: str) -> bool:
-    """True when *path* points inside a `.nodus/` directory.
+def _is_inside_nodus_state(path: str) -> "tuple[bool, str | None]":
+    """True when *path* points inside runtime-owned state.
 
-    Compares normalised path segments rather than substrings, so a file
-    innocently named `my.nodus-notes.txt` is not caught and
-    `../.nodus/x` is.
+    Two rules, and #585 is why the second exists. Matching a literal `.nodus`
+    path segment protected the *default* location only: relocating the store with
+    `NODUS_WORKFLOW_STORE_ROOT` moved it somewhere with no such segment, and the
+    Floor stopped covering it. Demonstrated rather than reasoned about — with
+    that variable set, a guest calling `fs.write("../relocated/pwned.txt", ...)`
+    wrote into the live run store, while the identical write to the default
+    location was denied. So the check now also asks whether the path is inside a
+    root the runtime is *currently* using.
+
+    Segment comparison, not substring: a file innocently named
+    `my.nodus-notes.txt` is not caught, and `../.nodus/x` is.
     """
-    import os
+    from nodus.runtime.state_paths import is_inside_run_state
 
-    normalised = os.path.normpath(path).replace("\\", "/")
-    return any(segment == ".nodus" for segment in normalised.split("/"))
+    return is_inside_run_state(path)
 
 
 DEFAULT_FLOOR = NodusStateFloor()

@@ -17,6 +17,7 @@ from nodus.orchestration.task_graph import (
     run_task_graph,
 )
 from nodus.runtime.runtime_stats import runtime_time_ms
+from nodus.runtime.state_paths import workflow_store_root
 
 from .models import (
     RUN_STATUS_COMPLETED,
@@ -1090,10 +1091,9 @@ def default_store_root() -> str:
     own later runs (#380). Also useful when the working directory is read-only or
     ephemeral and run state needs to outlive it.
     """
-    override = os.environ.get("NODUS_WORKFLOW_STORE_ROOT", "").strip()
-    if override:
-        return override
-    return os.path.join(".nodus", "workflow_framework")
+    # #585: both halves of a run move together under `NODUS_RUN_STATE_ROOT`;
+    # `NODUS_WORKFLOW_STORE_ROOT` still wins here, and still moves only this half.
+    return workflow_store_root()
 
 
 def get_default_workflow_runner() -> WorkflowFrameworkRunner:

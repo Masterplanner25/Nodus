@@ -992,19 +992,40 @@ ls .nodus/workflow_framework/runs | Measure-Object -Line
 ls .nodus/graphs | Measure-Object -Line
 ```
 
-**Both cleanups cover the run records only. Nothing cleans `.nodus/graphs/`** —
-`conftest.py` deletes run files the session added, and the gate redirects
-`NODUS_WORKFLOW_STORE_ROOT`, which does not relocate the graph root. Measured
-2026-08-25: one `nodus_gate --runtime` run added **0** run records and **67**
-graph-state files, against an accumulated 162 records and 4,557 graphs. So do not
-read "near zero" into either number, and expect the graphs half to grow every run.
-This is the #476 shape — a run is two stores — recurring in the *infrastructure*
-after the product half was fixed, and the root cause is **#585**: `_GRAPH_ROOT` is a
-hardcoded module constant, so `NODUS_WORKFLOW_STORE_ROOT` relocates one half of a run
-and nothing relocates the other. Clearing what has accumulated is
-`nodus workflow cleanup --force` (the 30-day default retention will not touch anything
-from this week). Do not "fix" the accumulation by adding a second cleanup to
-`conftest.py` — that rebuilds the two-halves-maintained-separately shape one level up.
+**Both halves are covered as of #585.** They were not: the gate redirected
+`NODUS_WORKFLOW_STORE_ROOT`, which moved the run records only, so one
+`nodus_gate --runtime` run added **0** run records and **67** graph-state files, every
+time. `_GRAPH_ROOT` was a hardcoded module constant and had no override at all.
+
+`NODUS_RUN_STATE_ROOT` now relocates **both halves together**. The gate does **not**
+set it yet, so a `--runtime` run still leaves ~67 graph-state files here: pointing it at
+the new variable works locally (measured: 5,799 graphs before and after a full runtime
+phase) and reproducibly turns
+`test_agent_handler_timeout.py::test_a_step_timeout_bounds_a_blocking_handler` red on CI
+— 6/6 with the change, 0/9 without, across five bisect branches. **#596** carries the
+evidence; do not re-apply that two-line change without reading it.
+`NODUS_WORKFLOW_STORE_ROOT` still works and still moves the records only; that is the
+half-relocated state #585 is about, so prefer the former. There is deliberately **no**
+graphs-only variable: a second knob would re-enable exactly what this fixed.
+
+`conftest.py` still cleans up rather than redirecting, because several tests chdir into
+a project directory and assert the default runner wrote under *that* root (26 failures
+when redirection was tried) — but it now sweeps both halves off one list rather than
+growing a second hand-maintained sweep.
+
+Two things not moved by that variable, on purpose. `.nodus/{cache,modules,deps.json}`
+are **project**-scoped, resolved against `find_project_root()`, and have nothing to do
+with which run wrote them. And historic accumulation is not cleared by the fix —
+`nodus workflow cleanup --force` does that (the 30-day default retention will not touch
+anything from this week).
+
+**The Floor follows the roots now, and did not before.** `DEFAULT_FLOOR` forbids a
+program writing into the runtime's own state by matching a literal `.nodus` path
+segment — so the *supported* way to relocate the store also moved it outside the
+Floor's reach. Demonstrated, not inferred: with `NODUS_WORKFLOW_STORE_ROOT` set, a
+guest's `fs.write("../relocated/pwned.txt", "x")` landed in the live run store while
+the identical write to the default location was denied. Any new state directory must go
+through `nodus/runtime/state_paths.py`, or it is unprotected.
 
 `rm -rf .nodus/workflow_framework/runs` is safe **in this repo's root** (test
 artifacts only) — but it is not a general cleanup: a run is split across that
@@ -1012,7 +1033,8 @@ directory and `.nodus/graphs/`, and deleting only the records makes any live
 waiting run unresumable while its state survives (#476; the resume now says so
 instead of "not found"). Use `nodus workflow cleanup`, which removes both
 halves.
-`NODUS_WORKFLOW_STORE_ROOT` relocates the default store for a process. Bounding
+`NODUS_RUN_STATE_ROOT` relocates both halves of a run's state for a process
+(`NODUS_WORKFLOW_STORE_ROOT` moves the records alone). Bounding
 the store's cost — pruning by count, or an index instead of a full rescan —
 is still open in #380.
 

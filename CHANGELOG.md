@@ -32,6 +32,43 @@
 
 ### Fixes
 
+- **#585: both halves of a run's state relocate together, and the capability floor
+  follows them.** A durable run is one thing split across `.nodus/graphs/` (graph
+  state and checkpoint) and `.nodus/workflow_framework/` (the run record). #476
+  gave the two halves a shared *lifecycle*; their *location* stayed asymmetric —
+  `NODUS_WORKFLOW_STORE_ROOT` moved the records and the graph root was a hardcoded
+  module constant with no override at all. So "give this process its own store"
+  was not expressible, and every tenant in a process shared one CWD-relative graph
+  directory. `NODUS_RUN_STATE_ROOT` now moves both. There is deliberately **no**
+  graphs-only variable: a second knob would re-enable the half-relocated state
+  this fixes. `NODUS_WORKFLOW_STORE_ROOT` keeps working and keeps moving the
+  records alone.
+
+  **The security half.** `DEFAULT_FLOOR` forbids a Nodus program from writing into
+  the runtime's own state, and decided that by matching a literal `.nodus` path
+  segment — so the *supported* way to relocate the store also moved it outside the
+  floor. Demonstrated rather than inferred: with `NODUS_WORKFLOW_STORE_ROOT` set,
+  a guest's `fs.write("../relocated/pwned.txt", "x")` landed in the live run store
+  while the identical write to the default location was denied. The floor now also
+  asks whether a path is inside a root the runtime is *currently* using, so
+  relocated state is covered — and a new state directory that does not go through
+  `nodus/runtime/state_paths.py` is not. This hole predates the issue and applied
+  to the existing variable, so it is fixed here rather than filed.
+
+  **The doc gate is deliberately not switched over yet.** It redirects the run
+  records only, so a `--runtime` run still leaves ~67 graph-state files in the
+  working tree. Pointing it at the new variable is a two-line change that works,
+  and it reproducibly turns
+  `test_agent_handler_timeout.py::test_a_step_timeout_bounds_a_blocking_handler`
+  red on CI — 6/6 with it, 0/9 without across five bisect branches. That test is
+  #11 of ~2766, so nothing after it can be the cause, and the failure is binary
+  rather than marginal: the run takes the handler's full 3 s instead of the
+  step's 300 ms, meaning the bound does not fire at all. Deferred with its
+  evidence rather than merged with a known trigger; filed as #596.
+
+  `.nodus/{cache,modules,deps.json}` are project-scoped, resolved against
+  `find_project_root()`, and deliberately not moved by this variable.
+
 - **#584: a graph response names the graph *this request* produced, or none.**
   `_graph_metadata` fell back to `latest_graph_state()` when it could not resolve
   a graph id, and that helper read the process-global `.nodus/graphs/`, sorted the
