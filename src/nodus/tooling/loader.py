@@ -16,7 +16,6 @@
 
 import os
 import warnings
-from typing import NoReturn
 
 from nodus.frontend.visitor import NodeVisitor
 from nodus.frontend.ast.ast_nodes import (
@@ -30,9 +29,26 @@ from nodus.frontend.ast.ast_nodes import (
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError
 from nodus.frontend.lexer import Tok, tokenize
 from nodus.frontend.parser import Parser
-from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
 from nodus.vm.vm import VM
-from nodus.runtime.module_loader import ModuleLoader
+# #598: import resolution is the runtime's, not a copy of it.
+#
+# This module used to carry its own `resolve_import_path` (55 lines against the
+# runtime's 159, 38% similar) plus byte-identical copies of `import_error`,
+# `ensure_project_root`, `resolve_with_extensions` and
+# `try_resolve_with_extensions`. `nodus lsp` and `tooling/diagnostics.py` import
+# from here, so the editor answered "which file does this import mean"
+# differently from the runtime -- and the short copy had no entry-point lookup at
+# all, so `import "nodus-mcp"` resolved when run and read as "Import not found"
+# in the editor.
+#
+# There was never a structural reason for the fork: this module already imported
+# ModuleLoader from the same place.
+from nodus.runtime.module_loader import (
+    ModuleLoader,
+    ensure_project_root,
+    import_error,
+    resolve_import_path,
+)
 
 
 class ModuleStamper(NodeVisitor):
@@ -73,6 +89,20 @@ class ModuleStamper(NodeVisitor):
                 self.visit(value)
 
 
+__all__ = [
+    # Re-exported so the editor resolves imports exactly as the runtime does
+    # (#598). `nodus lsp` and `tooling/diagnostics.py` import these from here;
+    # they are this module's surface, not unused imports.
+    "ensure_project_root",
+    "resolve_import_path",
+    # This module's own.
+    "collect_module_info",
+    "resolve_imports",
+    "run_source",
+    "set_module_on_tree",
+]
+
+
 def set_module_on_tree(node, module_id: str):
     """Recursively stamp every AST node in *node* with *module_id*.
 
@@ -91,111 +121,12 @@ def get_module_prefix(import_state: dict, module_id: str) -> str:
     return module_ids[module_id]
 
 
-def import_error(message: str, tok: Tok | None, module_id: str) -> NoReturn:
-    line = tok.line if tok is not None else None
-    col = tok.col if tok is not None else None
-    raise LangRuntimeError("import", message, line=line, col=col, path=module_id)
 
 
-def try_resolve_with_extensions(base_path: str) -> str | None:
-    if base_path.endswith(".nd") or base_path.endswith(".tl"):
-        full = os.path.abspath(base_path)
-        if os.path.exists(full):
-            return full
-        return None
-
-    candidates = [
-        os.path.abspath(base_path + ".nd"),
-        os.path.abspath(base_path + ".tl"),
-        os.path.abspath(os.path.join(base_path, "index.nd")),
-        os.path.abspath(os.path.join(base_path, "index.tl")),
-    ]
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-    return None
 
 
-def resolve_with_extensions(base_path: str, import_path: str, tok: Tok | None, module_id: str) -> str:
-    if base_path.endswith(".nd") or base_path.endswith(".tl"):
-        full = os.path.abspath(base_path)
-        if os.path.exists(full):
-            return full
-        import_error(f"Import not found: {import_path} (tried {full})", tok, module_id)
-
-    candidates = [
-        os.path.abspath(base_path + ".nd"),
-        os.path.abspath(base_path + ".tl"),
-        os.path.abspath(os.path.join(base_path, "index.nd")),
-        os.path.abspath(os.path.join(base_path, "index.tl")),
-    ]
-
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-
-    import_error(
-        f"Import not found: {import_path} (tried {', '.join(candidates)})",
-        tok,
-        module_id,
-    )
 
 
-def resolve_import_path(import_path: str, base_dir: str, import_state: dict, tok: Tok | None, module_id: str) -> str:
-    project_root = os.path.abspath(import_state.get("project_root") or base_dir)
-    modules_dir = os.path.join(project_root, NODUS_DIRNAME, MODULES_DIRNAME)
-
-    if ":" in import_path and not import_path.startswith("std:"):
-        package_name, package_path = import_path.split(":", 1)
-        if not package_name or not package_path:
-            import_error("Invalid package import: use package:module", tok, module_id)
-        if package_name.startswith(".") or package_name.startswith(("/", "\\")):
-            import_error("Invalid package import: package name is invalid", tok, module_id)
-        package_base = os.path.normpath(os.path.join(modules_dir, package_name, package_path.replace("/", os.sep).replace("\\", os.sep)))
-        package_root = os.path.normpath(os.path.join(modules_dir, package_name))
-        if not package_base.startswith(package_root):
-            import_error("Invalid package import: path escapes dependency directory", tok, module_id)
-        return resolve_with_extensions(package_base, import_path, tok, module_id)
-
-    if import_path.startswith("std:"):
-        name = import_path[4:]
-        if not name:
-            import_error("Invalid std import: missing module name (use std:strings)", tok, module_id)
-        if name.startswith(("/", "\\")):
-            import_error("Invalid std import: std modules cannot start with '/'", tok, module_id)
-        std_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "stdlib"))
-        name = name.replace("/", os.sep).replace("\\", os.sep)
-        base = os.path.normpath(os.path.join(std_dir, name))
-        std_dir_norm = os.path.normpath(std_dir)
-        if not base.startswith(std_dir_norm):
-            import_error("Invalid std import: path escapes std directory", tok, module_id)
-        return resolve_with_extensions(base, import_path, tok, module_id)
-
-    if os.path.isabs(import_path):
-        base = import_path
-    elif import_path.startswith("."):
-        base = os.path.join(base_dir, import_path)
-        base_norm = os.path.normcase(os.path.normpath(base))
-        root_norm = os.path.normcase(os.path.normpath(project_root))
-        try:
-            if os.path.commonpath([base_norm, root_norm]) != root_norm:
-                import_error("Invalid import: path escapes project root", tok, module_id)
-        except ValueError:
-            import_error("Invalid import: path escapes project root", tok, module_id)
-    else:
-        base = os.path.join(project_root, import_path)
-
-    base = os.path.normpath(base)
-    resolved = try_resolve_with_extensions(base)
-    if resolved is not None:
-        return resolved
-
-    modules_base = os.path.normpath(os.path.join(modules_dir, import_path))
-    resolved = try_resolve_with_extensions(modules_base)
-    if resolved is not None:
-        return resolved
-
-    return resolve_with_extensions(base, import_path, tok, module_id)
 
 
 class InfoCollector(NodeVisitor):
@@ -542,28 +473,6 @@ def resolve_imports(
     return out
 
 
-def ensure_project_root(import_state: dict, base_dir: str, source_path: str | None):
-    if "project_root" not in import_state:
-        import_state["project_root"] = None
-    if import_state["project_root"] is None:
-        env_root = os.environ.get("NODUS_PROJECT_ROOT")
-        if env_root:
-            import_state["project_root"] = env_root
-
-    project_root = import_state.get("project_root")
-    if project_root is None:
-        discovered_root = find_project_root(base_dir)
-        import_state["project_root"] = discovered_root or base_dir
-        return
-
-    project_root = os.path.abspath(project_root)
-    if not os.path.isdir(project_root):
-        raise LangRuntimeError(
-            "import",
-            f"Invalid project root: {project_root}",
-            path=source_path,
-        )
-    import_state["project_root"] = project_root
 
 
 def apply_reexport_to_module(

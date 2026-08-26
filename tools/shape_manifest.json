@@ -41,26 +41,6 @@
       "why": "BYTE-IDENTICAL in dap/server.py:22 and lsp/server.py:124 -- JSON-RPC header framing, copied. Harmless today because framing is frozen by both specs, but the copy is real: a fix to one (a malformed Content-Length, say) reaches only one server.",
       "sites": 2
     },
-    "A:resolve_import_path(import_path,base_dir,import_state,tok,module_id)": {
-      "verdict": "tracked",
-      "why": "#598. 159 lines in runtime/module_loader.py vs 55 in tooling/loader.py, 38% similar, and the short one has no entry-point lookup -- so a pip-installed companion import resolves at runtime and reads as 'Import not found' in the editor. Demonstrated, not inferred.",
-      "sites": 2
-    },
-    "A:resolve_with_extensions(base_path,import_path,tok,module_id)": {
-      "verdict": "tracked",
-      "why": "#598. Byte-identical copy in module_loader.py and tooling/loader.py. Nothing about it differs by purpose; it is a fork nobody reconciled.",
-      "sites": 2
-    },
-    "A:try_resolve_with_extensions(base_path)": {
-      "verdict": "tracked",
-      "why": "#598. Byte-identical copy, same pair as above.",
-      "sites": 2
-    },
-    "A:ensure_project_root(import_state,base_dir,source_path)": {
-      "verdict": "tracked",
-      "why": "#598's pair again -- module_loader.py:844 and tooling/loader.py:545. Same question (where is the project root for this import) answered in the two modules that already disagree about import resolution.",
-      "sites": 2
-    },
     "A:_walk_stmt(stmt)": {
       "verdict": "tracked",
       "why": "#597. lsp/server.py's indexer and tooling/diagnostics.py both walk statements; the LSP one has no WorkflowDef/GoalDef case, so hover and go-to-definition are blind in step bodies. #401 fixed the diagnostics walker and left this one.",
