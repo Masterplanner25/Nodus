@@ -12,11 +12,13 @@ from typing import Any, BinaryIO
 from urllib.parse import unquote, urlparse
 
 from nodus.frontend.ast.ast_nodes import (
+    ActionStmt,
     Assign,
     Attr,
     Bin,
     Block,
     Call,
+    DestructureLet,
     ExportFrom,
     ExprStmt,
     FnDef,
@@ -24,6 +26,7 @@ from nodus.frontend.ast.ast_nodes import (
     For,
     ForEach,
     GoalDef,
+    GoalPursuit,
     If,
     Import,
     Index,
@@ -32,23 +35,27 @@ from nodus.frontend.ast.ast_nodes import (
     ListLit,
     MapLit,
     Int,
+    ListPattern,
     Nil,
     Num,
     Param,
     Print,
     RecordLiteral,
+    RecordPattern,
     Return,
     Str,
     Throw,
     TryCatch,
     Unary,
     Var,
+    VarPattern,
     While,
     WorkflowDef,
     WorkflowStateDecl,
     Yield,
 )
 from nodus.frontend.lexer import KEYWORDS, Tok, tokenize
+
 from nodus.frontend.parser import Parser
 from nodus.frontend.type_system import ANY, BOOL, FLOAT, FUNCTION, INT, LIST, NIL, RECORD, STRING, FunctionType, combine_types
 from nodus.runtime.dependency_graph import DependencyGraph
@@ -62,6 +69,24 @@ COMPLETION_KIND_VARIABLE = 6
 COMPLETION_KIND_MODULE = 9
 COMPLETION_KIND_KEYWORD = 14
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+def _pattern_names(pattern) -> list[str]:
+    """Every name a destructuring pattern binds (#597).
+
+    Mirrors `Compiler.collect_pattern_names`. Recursive because patterns nest:
+    `let [a, {x: b}] = …` binds both.
+    """
+    names: list[str] = []
+    if isinstance(pattern, VarPattern):
+        names.append(pattern.name)
+    elif isinstance(pattern, ListPattern):
+        for item in pattern.elements:
+            names.extend(_pattern_names(item))
+    elif isinstance(pattern, RecordPattern):
+        for _key, value in pattern.fields:
+            names.extend(_pattern_names(value))
+    return names
+
 
 
 @dataclass
@@ -448,6 +473,81 @@ class _DocumentIndexer:
             self._pop_scope()
             return
 
+        if isinstance(stmt, DestructureLet):
+            # #597: `let [a, b] = …` bound nothing here, so destructured names had
+            # no hover, no go-to-definition and no completion — anywhere, not only
+            # in a step body. Found by the completeness test below rather than by
+            # anyone reading this function.
+            self._walk_expr(stmt.expr)
+            tok = getattr(stmt, "_tok", None)
+            line = tok.line if tok is not None else 1
+            for name in _pattern_names(stmt.pattern):
+                col = _identifier_column(
+                    self.lines, line, name, tok.col if tok is not None else 1
+                )
+                self._add_definition(name, "variable", line, col, f"let {name}")
+            return
+
+        if isinstance(stmt, GoalPursuit):
+            # #597: `goal reach over tune { … }` declared a name the indexer never
+            # recorded, so go-to-definition on a pursuit went nowhere. The budget
+            # holds ordinary expressions; the `until` predicate is data (#409) and
+            # its `reached("label")` labels are checked at compile time, so there
+            # is nothing here to resolve in it.
+            tok = getattr(stmt, "_tok", None)
+            line = tok.line if tok is not None else 1
+            col = _identifier_column(
+                self.lines, line, stmt.name, tok.col if tok is not None else 1
+            )
+            self._add_definition(stmt.name, "variable", line, col, f"goal {stmt.name}")
+            budget = getattr(stmt, "budget", None)
+            if budget is not None:
+                for field in ("max_iterations", "deadline_ms"):
+                    value = getattr(budget, field, None)
+                    if value is not None:
+                        self._walk_expr(value)
+            return
+
+        if isinstance(stmt, (WorkflowDef, GoalDef)):
+            # #597: this indexer had no case for flow declarations, so everything
+            # inside a step body was invisible to it — no hover, no
+            # go-to-definition, no completions, in exactly the place orchestration
+            # logic and generated code live. The workflow's *name* was indexed by
+            # `_predeclare`, which is why the gap read as "the editor half-works".
+            #
+            # #401 fixed this for the sibling walker in `tooling/diagnostics.py`
+            # (undefined/unused/unreachable) and left this one. The two walk the
+            # same tree to answer different questions;
+            # `tests/test_lsp_step_bodies.py` now asserts they know the same node
+            # types, so the next divergence fails a test rather than shipping.
+            #
+            # State cells bind in a scope wrapping every step, because steps read
+            # them bare. They are ordinary definitions here: unlike the
+            # diagnostics walker there is no unused-variable check to exempt them
+            # from, and hovering a cell should work.
+            self._push_scope()
+            for state_decl in getattr(stmt, "states", None) or []:
+                self._walk_expr(state_decl.value)
+                tok = getattr(state_decl, "_tok", None)
+                line = tok.line if tok is not None else 1
+                col = _identifier_column(
+                    self.lines, line, state_decl.name, tok.col if tok is not None else 1
+                )
+                self._add_definition(
+                    state_decl.name, "variable", line, col,
+                    f"state {state_decl.name}",
+                )
+            for step in getattr(stmt, "steps", None) or []:
+                if getattr(step, "when", None) is not None:
+                    self._walk_expr(step.when)
+                if getattr(step, "options", None) is not None:
+                    self._walk_expr(step.options)
+                self._push_scope()
+                self._walk_stmt(step.body)
+                self._pop_scope()
+            self._pop_scope()
+            return
+
         if isinstance(stmt, Block):
             self._push_scope()
             for inner in stmt.stmts:
@@ -534,6 +634,17 @@ class _DocumentIndexer:
         self._add_definition(param.name, "variable", line, col, f"param {param.name}", type_text=param.type_hint or "any")
 
     def _walk_expr(self, expr) -> None:
+        if isinstance(expr, ActionStmt):
+            # #597: `action agent "a.b" with { to: target }` is the commonest
+            # thing in a step body, and the payload is ordinary code. It lives
+            # here, not in `_walk_stmt`: `action …` parses as an expression
+            # wrapped in `ExprStmt`, so a statement case for it never runs --
+            # which is exactly what the first version of this fix did, and the
+            # behaviour test caught.
+            if expr.payload is not None:
+                self._walk_expr(expr.payload)
+            return
+
         if isinstance(expr, Var):
             tok = getattr(expr, "_tok", None)
             if tok is not None:
