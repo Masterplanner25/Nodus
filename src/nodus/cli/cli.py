@@ -455,7 +455,16 @@ def check_file(path: str, *, project_root: str | None = None) -> int:
     if not result.get("ok", False):
         _print_error(result, path=os.path.abspath(path))
         return 1
-    print(f"{path}: OK")
+    # #609: warnings do not fail the check. An unknown type name is silently
+    # ignored today and becomes an error at 6.0.0, so reporting it now is what
+    # gives a project a release to fix it in.
+    warnings = result.get("warnings") or []
+    for warning in warnings:
+        _print_stderr(
+            f"{os.path.abspath(path)}:{warning['line']}:{warning['column']}: "
+            f"warning: {warning['message']}"
+        )
+    print(f"{path}: OK" + (f" ({len(warnings)} warning(s))" if warnings else ""))
     return 0
 
 

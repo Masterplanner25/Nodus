@@ -1,9 +1,11 @@
 """Parser for Nodus syntax."""
 
+from dataclasses import dataclass
 from typing import NoReturn
 
 from nodus.runtime.diagnostics import LangSyntaxError
 from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, Tok
+from nodus.frontend.type_system import TYPE_NAMES, is_known_type_name, suggest_type_name
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
     Assign,
@@ -151,6 +153,29 @@ def _predicate_help(clause: str) -> str:
     return message
 
 
+@dataclass(frozen=True)
+class UnknownTypeName:
+    """An annotation naming a type the checker has never heard of (#609).
+
+    Carries the token position, because the AST keeps only the string: a
+    consumer reporting from the node alone could say *which function* but not
+    *which annotation*.
+    """
+
+    name: str
+    suggestion: str | None
+    line: int
+    col: int
+
+    def message(self) -> str:
+        hint = f" — did you mean '{self.suggestion}'?" if self.suggestion else "."
+        return (
+            f"Unknown type name '{self.name}'{hint} It is currently ignored, so "
+            f"nothing on this annotation is checked; in 6.0.0 it becomes an "
+            f"error. Known types: {', '.join(sorted(TYPE_NAMES))}."
+        )
+
+
 class Parser:
     def __init__(self, toks: list[Tok]):
         self.toks = toks
@@ -164,6 +189,10 @@ class Parser:
         self.workflow_step_depth = 0
         self.goal_depth = 0
         self._parse_depth = 0
+        # #609. Every consumer builds its own Parser (`check_source`, the
+        # diagnostics walker, the LSP), so collecting here is what makes them
+        # agree without each re-deriving the answer.
+        self.unknown_type_names: list[UnknownTypeName] = []
 
     def error(self, message: str, tok: Tok | None = None) -> NoReturn:
         # Annotated NoReturn so type checking understands that every `self.error()`
@@ -1279,8 +1308,32 @@ class Parser:
         self.eat("}")
         return self.mark(MapLit(items), tok)
 
+    # Type names that are also keywords, so they never arrive as an `ID`. Both
+    # name real Nodus types; without this, `-> record` was a syntax error and
+    # `record` sat in `TYPE_NAMES` as a dead entry nobody could reach (#609).
+    _KEYWORD_TYPE_NAMES = ("RECORD", "NIL")
+
     def parse_type_name(self) -> str:
-        return self.eat("ID").val
+        tok = self.peek()
+        if tok.kind in self._KEYWORD_TYPE_NAMES:
+            self.i += 1
+            self.last_token = tok
+        else:
+            tok = self.eat("ID")
+        name = tok.val
+        if not is_known_type_name(name):
+            # #609: an unrecognised name used to become `any` in silence, so one
+            # transposed letter disabled checking on that parameter forever. It
+            # is recorded here — the only place that sees both the name and the
+            # token — and reported by whoever asks. Warning in 5.x, error at
+            # 6.0.0 alongside #545/#547.
+            self.unknown_type_names.append(UnknownTypeName(
+                name=name,
+                suggestion=suggest_type_name(name),
+                line=tok.line,
+                col=tok.col,
+            ))
+        return name
 
     def parse_param(self) -> Param:
         tok = self.eat("ID")

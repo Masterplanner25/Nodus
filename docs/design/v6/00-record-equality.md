@@ -1,7 +1,11 @@
 # Record equality becomes structural (#545)
 
 **Status: decided 2026-08-25. Staged: warning in the next 5.x release, flip at
-6.0.0 alongside #547 (concurrent state writes) and #492 (`worker:`).**
+6.0.0 alongside #547 (concurrent state writes) and #609 (unknown type names).**
+
+*(Corrected 2026-08-26: this line also named #492 (`worker:`), which closed
+during the 5.4.0 cycle and is not part of the cohort. #609 warns as of 5.6.0 and
+flips with the rest.)*
 
 ## The problem
 
