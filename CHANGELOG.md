@@ -4,6 +4,22 @@
 
 ### Tooling
 
+- **#591: the HTTP server tests stop every thread they start before removing the
+  directory those threads write into.** Four teardowns ended with
+  `thread.join(timeout=1.0)` whose result was discarded, and each is followed by
+  a `TemporaryDirectory` removal holding the SQLite store — so on CI, a docs-only
+  commit produced `sqlite3.OperationalError: no such table: workflow_runs` and
+  `OSError: [Errno 39] Directory not empty`, with the identical parallel job
+  green. **The join was not the culprit**, which the issue got wrong: measured,
+  the server thread is reliably dead after `shutdown()` (which already blocks
+  until `serve_forever` returns), while `nodus-workflow-sweep` — the default
+  runner's auto-sweep daemon, started by any workflow run and bound to the
+  working directory — was still running. That is the thread the cleanup raced.
+  Teardown now calls `reset_default_workflow_runner()`, and also fails plainly if
+  a server thread outlives its join rather than letting it become an `OSError` in
+  whichever test the GC reaches next. `ignore_cleanup_errors=True` is removed from
+  the one class that had it, since the threads it was hiding now stop.
+
 - **#452 follow-up: `test_task_yield`'s stderr filter reads warning *blocks*, not
   lines.** The #452 fix dropped stderr lines containing `Warning`, which is two of
   the three lines `warnings` prints — the header and the tracemalloc hint. The

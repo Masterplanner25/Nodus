@@ -2,17 +2,59 @@ import http.client
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 
 from nodus.services.server import run_in_thread
+from nodus_lang_workflow.runner import reset_default_workflow_runner
 from nodus_lang_workflow.store import SQLiteWorkflowStore
+
+
+def stop_server(server, thread, *, timeout: float = 10.0) -> None:
+    """Stop a test server and everything it started, before its directory goes (#591).
+
+    Every teardown here removes a `TemporaryDirectory` holding the SQLite store,
+    and every one of them used to end with `thread.join(timeout=1.0)` whose
+    result was discarded. When the join did not succeed, teardown carried on and
+    deleted the directory under a live thread. On CI that surfaced as
+    `sqlite3.OperationalError: no such table: workflow_runs` followed by
+    `OSError: [Errno 39] Directory not empty` — on a docs-only commit, with the
+    identical parallel job green.
+
+    **The join was not the culprit, and #591 said it was.** Measured: after the
+    old teardown's `shutdown()` / `server_close()` / `join(timeout=1.0)`, the
+    server thread is reliably dead — `shutdown()` already blocks until
+    `serve_forever` returns — while `nodus-workflow-sweep` is still running. A
+    workflow run starts the default runner's auto-sweep daemon, it is bound to
+    the working directory, it keeps touching the store, and nothing stopped it.
+    That is the thread that was alive when the `TemporaryDirectory` went away.
+    `reset_default_workflow_runner()` is the supported way to stop it.
+
+    The unchecked join is still worth closing, as the latent half: it costs
+    nothing when the server is healthy and it turns a hung `serve_forever` into a
+    plain sentence instead of an `OSError` in whichever test the GC reaches next.
+    `tests/test_task_graph.py` has asserted `is_alive()` after every join all
+    along; this file did not. But raising the timeout alone would have fixed
+    nothing — a mutation that drops it to zero still passes.
+    """
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=timeout)
+    reset_default_workflow_runner()
+    if thread.is_alive():
+        raise AssertionError(
+            f"server thread still running {timeout}s after shutdown(); refusing to "
+            f"remove its working directory underneath it (#591)"
+        )
 
 
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        # #591: no `ignore_cleanup_errors` -- `stop_server` stops the threads that
+        # were making cleanup fail, so a failure here is now information.
+        cls._tmpdir = tempfile.TemporaryDirectory()
         cls._original_cwd = os.getcwd()
         os.chdir(cls._tmpdir.name)
         cls.server, cls.thread = run_in_thread("127.0.0.1", 0, allowed_paths=[cls._tmpdir.name])
@@ -21,9 +63,7 @@ class ServerTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
-        cls.thread.join(timeout=1.0)
+        stop_server(cls.server, cls.thread)
         os.chdir(cls._original_cwd)
         cls._tmpdir.cleanup()
 
@@ -228,9 +268,7 @@ class ServerAuthTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
-        cls.thread.join(timeout=1.0)
+        stop_server(cls.server, cls.thread)
         os.chdir(cls._original_cwd)
         cls._tmpdir.cleanup()
 
@@ -318,9 +356,7 @@ workflow demo {
                     self.assertIsNotNone(record)
                     self.assertEqual(record.workflow_name, "demo")
                 finally:
-                    server.shutdown()
-                    server.server_close()
-                    thread.join(timeout=1.0)
+                    stop_server(server, thread)
             finally:
                 os.chdir(original)
 
@@ -401,12 +437,94 @@ workflow demo {
                     self.assertTrue(replayed["ok"])
                     self.assertEqual(replayed["result"]["steps"]["finish"], True)
                 finally:
-                    server.shutdown()
-                    server.server_close()
-                    thread.join(timeout=1.0)
+                    stop_server(server, thread)
             finally:
                 os.chdir(original)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# closes: #591
+class TeardownStopsEveryThreadTests(unittest.TestCase):
+    """The teardown contract, asserted rather than assumed.
+
+    Four joins in this file were bounded at 1 s and their result discarded, and
+    every one of them is followed by removing a `TemporaryDirectory` holding the
+    SQLite store. A join that did not succeed therefore deleted a directory under
+    a live thread, surfacing as `no such table: workflow_runs` and
+    `OSError: Directory not empty` in whichever test came next.
+    """
+
+    SWEEP_NAME = "nodus-workflow-sweep"
+
+    def _live_sweep_threads(self):
+        return [t for t in threading.enumerate()
+                if t.name == self.SWEEP_NAME and t.is_alive()]
+
+    def test_stop_server_leaves_no_server_thread(self):
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as td:
+            os.chdir(td)
+            try:
+                server, thread = run_in_thread("127.0.0.1", 0, allowed_paths=[td])
+                self.assertTrue(thread.is_alive(), "the control never started")
+                stop_server(server, thread)
+                self.assertFalse(thread.is_alive())
+            finally:
+                os.chdir(original)
+
+    def test_stop_server_leaves_no_sweep_thread(self):
+        """The second thread, and the reason joining the server is not enough.
+
+        A workflow run starts the default runner's auto-sweep daemon, bound to
+        the working directory and still touching the store after the request
+        that caused it has finished.
+        """
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as td:
+            os.chdir(td)
+            try:
+                server, thread = run_in_thread("127.0.0.1", 0, allowed_paths=[td])
+                try:
+                    port = server.server_address[1]
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                    source = (
+                        "workflow w { step a { return 1i } }\n"
+                        "let r = run_workflow(w)\n"
+                    )
+                    conn.request(
+                        "POST", "/graph/run",
+                        body=json.dumps({"code": source}),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    conn.getresponse().read()
+                    conn.close()
+                    self.assertTrue(self._live_sweep_threads(),
+                                    "no sweep thread started, so this proves nothing")
+                finally:
+                    stop_server(server, thread)
+                self.assertEqual([], self._live_sweep_threads())
+            finally:
+                os.chdir(original)
+
+    def test_a_thread_that_will_not_stop_is_reported_plainly(self):
+        """Not as an OSError three tests later."""
+        class _Stubborn:
+            name = "pretend-server"
+
+            def is_alive(self):
+                return True
+
+            def join(self, timeout=None):
+                return None
+
+        class _NoopServer:
+            def shutdown(self): pass
+            def server_close(self): pass
+
+        with self.assertRaises(AssertionError) as caught:
+            stop_server(_NoopServer(), _Stubborn(), timeout=0.01)
+        self.assertIn("still running", str(caught.exception))
+        self.assertIn("#591", str(caught.exception))
