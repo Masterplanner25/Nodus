@@ -727,7 +727,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **twenty** times across the v5.0.0–5.4.0
+of several paths goes through**. It has now surfaced **twenty-one** times across the v5.0.0–5.4.0
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -755,6 +755,17 @@ Instances, all confirmed by reading the code rather than inferred:
 | #400 | does inspection execute | `nodus graph` **and** `graph show`, plus the bytecode cache underneath — the #521 shape again |
 | #401 | does static analysis enter a step body | **two** walkers skipped it: the type analyzer and the LSP diagnostics engine |
 | #394 | may this closure be entered | **four** doors, one of them outside `vm.py` — and then the bytecode cache, which dropped the mark and reopened it on run 2 |
+| #584 | which graph is this request's | two copies of `_graph_metadata`; the one that had **not** learned to read the VM's own events leaned on a process-global fallback instead |
+
+**#584 adds the variant worth naming separately: the missing case gets papered over
+rather than left broken.** Two copies of one question drifted — `server.py` learned to
+resolve a graph from the VM's own events, `api.py` never did — and the copy that could not
+answer correctly did not fail. It reached into the process-global `.nodus/graphs/` and
+returned *something*, which was right whenever the directory held exactly one graph and a
+cross-request data leak otherwise. So the drift was invisible for as long as the
+substitute looked plausible, and removing the substitute broke a feature nobody knew it
+was providing. When you find two implementations of one question, the one that looks
+*simpler* may be the one silently standing in for the case it never handled.
 
 **#394 is the fullest worked example — read it before the older ones.** Three things it
 teaches that the rest only hint at. **Count the doors before designing**: the issue implied
