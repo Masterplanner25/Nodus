@@ -88,6 +88,71 @@ The plan is exact for a workflow with no guards. Once any step carries a
 `when` (§4.2) the levels become a **superset** — every step that *could* run,
 not every step that will.
 
+### 3.1 An `after` edge carries the dependency's value
+
+`after` is not only ordering. **Inside a step's body, each name it declared with
+`after` is bound to that step's return value** — so data flows along the declared
+edges and does not have to be routed through `state`.
+
+```nd
+workflow report {
+    step fetch { return {"rows": 42i} }
+
+    step summarize after fetch {
+        return "rows: \(fetch["rows"])"
+    }
+}
+
+fn main() {
+    let r = run_workflow(report)
+    print(r["steps"]["summarize"])
+}
+```
+
+```
+$ nodus run report.nd
+rows: 42
+```
+
+The binding is scoped to the edge: a step that did **not** declare the
+dependency cannot read it, even though the step ran.
+
+```
+Name error at report.nd:3:38: Undefined variable: fetch
+```
+
+That is the same rule `plan_workflow` shows — reading a value you did not declare
+a dependency on would be reading it at an unordered moment.
+
+**A skipped dependency binds `nil`.** If a dependency is `skipped` (its `when`
+guard did not hold) and the dependent opted in with `on: ["completed", "skipped"]`,
+the name is bound to `nil` — indistinguishable from a step that returned `nil`.
+Use `r["statuses"]` to tell them apart; `r["steps"]` omits skipped steps entirely.
+
+```nd
+workflow report {
+    step gate { if (false) { checkpoint "fresh" } return 1i }
+    step fetch after gate when reached("fresh") { return {"rows": 42i} }
+    step summarize after fetch with { on: ["completed", "skipped"] } {
+        print("fetch -> \(fetch)")
+        return 0i
+    }
+}
+
+fn main() {
+    let r = run_workflow(report)
+    print(r["statuses"])
+    print(r["steps"])
+}
+```
+
+```
+$ nodus run skipped.nd
+fetch -> nil
+{"gate": "completed", "fetch": "skipped", "summarize": "completed"}
+{"gate": 1, "summarize": 0}
+```
+
 **Unknown dependency name** — caught at compile time:
 
 ```
