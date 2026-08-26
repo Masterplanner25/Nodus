@@ -284,10 +284,26 @@ not collide.
 **The conclusion survives its own evidence.** *"A language whose flagship
 abstraction has a competing implementation in its own ecosystem cannot be explained
 to users"* still holds — the competitor is a PyPI listing rather than a fork in the
-tree. `pip install nodus-workflow` returns a package whose published summary is
-*"Declarative DAG workflows with WAIT/RESUME… for Nodus AI systems"* and which
-cannot run a `.nd` workflow, has no `nodus-lang` dependency, and shares no code with
-the engine. Filed as **#483**.
+tree. `pip install nodus-workflow` returned a package that cannot run a `.nd`
+workflow, has no `nodus-lang` dependency, and shares no code with the engine.
+Filed as **#483**.
+
+**Corrected 2026-08-26, and the correction matters to the fix.** An earlier
+revision of this paragraph — and #483 itself — attributed the phrase *"…for Nodus
+AI systems"* to the package's published **summary**. It is not there. The
+summary is *"Declarative DAG workflows with WAIT/RESUME, priority scheduling, and
+distributed rehydration"*, full stop; the *"for Nodus AI systems"* clause is in
+the **README**, which is the PyPI long description. Verified against the live
+index. The distinction is the whole argument for renaming rather than rewording:
+the metadata a reader would have to open was never what misled anyone.
+
+**Resolved 2026-08-26.** The package is **`nodus-flow`** as of 0.2.0. The old
+name is kept as a deprecation alias that depends on it, warns once on import, and
+whose project page's first line says it is not the engine behind the `workflow`
+keyword. The general rule is now `COMPANION_LIBRARY_CONTRACT.md` §8b: a
+first-party distribution may not take the name of a language construct it does
+not implement. **F1's recommendation is therefore satisfied** — by the rename,
+not by the misattribution it argued from.
 
 This is a fourth instance of the pattern this ledger already records — *claims about
 what the code **is**, read directly, held every time; claims about what it **does**,

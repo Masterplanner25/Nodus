@@ -268,7 +268,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | nodus-jupyter repo | `C:\dev\nodus-jupyter` / github.com/Masterplanner25/nodus-jupyter |
 | nodus-vscode repo | `C:\dev\nodus-vscode` / github.com/Masterplanner25/nodus-vscode |
 | nodus-run-action repo | `C:\dev\nodus-run-action` / github.com/Masterplanner25/nodus-run-action |
-| nodus-workflow repo | `C:\dev\nodus-workflow` / github.com/Masterplanner25/nodus-workflow |
+| nodus-flow repo | `C:\dev\nodus-workflow` (dir not yet renamed) / github.com/Masterplanner25/nodus-flow. **Was `nodus-workflow` until 0.2.0** — renamed because the name read as the engine behind the `workflow` keyword, which it is not (#483). The old PyPI name is a deprecation alias |
 | nodus-sdk repo | `C:\dev\nodus-sdk` / github.com/Masterplanner25/nodus-sdk |
 | nodus-store-sql repo | `C:\dev\nodus-store-sql` / github.com/Masterplanner25/nodus-store-sql |
 | Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
@@ -945,7 +945,7 @@ install-order collision is now resolved.
 | In-tree module | Python import | Standalone package | Python import |
 |----------------|---------------|--------------------|---------------|
 | `src/nodus_lang_schema/` | `nodus_lang_schema` | `C:\dev\nodus-schema` | `nodus_schema` |
-| `src/nodus_lang_workflow/` | `nodus_lang_workflow` | `C:\dev\nodus-workflow` | `nodus_workflow` |
+| `src/nodus_lang_workflow/` | `nodus_lang_workflow` | `C:\dev\nodus-workflow` | `nodus_flow` (PyPI `nodus-flow`) |
 
 **In-tree vs standalone — different scope, different content:**
 - `nodus_lang_schema` = runtime ABI contracts for syscalls and extension surfaces (used by nodus-lang internally)

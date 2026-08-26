@@ -7,6 +7,20 @@ from `nodus_schema` / `nodus_workflow` to avoid install-order collisions before
 the v4.0.0 launch (NAME-COL-001 Option A, completed 2026-05-31). This skill
 implements the full Option C consolidation as a post-launch migration.
 
+**SUPERSEDED IN PART, 2026-08-26 — read before following any step below.** This
+skill's plan is to publish the in-tree `src/nodus_lang_workflow/` **as
+`nodus-workflow` on PyPI**. That is now wrong. Per #483 and
+`docs/governance/COMPANION_LIBRARY_CONTRACT.md` §8b, a first-party distribution
+may not take the name of a language construct it does not implement — and the
+standalone package that held the name has been renamed to **`nodus-flow`** (0.2.0)
+for exactly that reason. `nodus-workflow` is now a deprecation alias pointing at
+it and is not available to be reused.
+
+The in-tree engine also is not independently useful: `nodus_lang_workflow/runner.py`
+delegates to `orchestration/task_graph.run_task_graph`, so publishing it separately
+would ship a durability layer with no engine. #104 is closed as completed and there
+is no open work item; treat the steps below as historical.
+
 GitHub: #104 (NAME-COL-001)
 
 Arguments: $ARGUMENTS

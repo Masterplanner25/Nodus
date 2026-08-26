@@ -22,7 +22,8 @@ Arguments: $ARGUMENTS
    If open, complete Phase C first.
 
 2. Confirm NAME-COL-001 (#104) has a decision:
-   - Option A: rename standalone PyPI packages (`nodus-schema-sdk`, `nodus-workflow-sdk`)
+   - Option A: rename standalone PyPI packages. **Done for workflow, 2026-08-26:**
+     the standalone package is `nodus-flow` (#483), not `nodus-workflow-sdk`.
    - Option B: move in-tree modules under `nodus.nodus_schema` / `nodus.nodus_workflow`
    - Option C: consolidate (standalone replaces in-tree at publish time)
    This is a design decision — stop and ask the user if it has not been made.
@@ -78,9 +79,11 @@ runner = WorkflowFrameworkRunner(store)
 Implement whichever option was decided in pre-flight:
 
 **Option A — rename standalone packages:**
-Update `pyproject.toml` in `C:\dev\nodus-schema` and `C:\dev\nodus-workflow` to
-use new names. Update all references in CLAUDE.md, CHANGELOG.md, pyproject.toml
-`dependencies` lists.
+Update `pyproject.toml` in `C:\dev\nodus-schema` to use a new name. **The workflow
+half is already done** — `C:\dev\nodus-workflow` publishes as `nodus-flow` since
+0.2.0 (#483); see `COMPANION_LIBRARY_CONTRACT.md` §8b for the rule and the
+migration shape to copy. Update all references in CLAUDE.md, CHANGELOG.md,
+pyproject.toml `dependencies` lists.
 
 **Option B — move in-tree modules under `nodus.*`:**
 Rename `src/nodus_schema` → `src/nodus/nodus_schema` and

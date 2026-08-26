@@ -188,6 +188,61 @@ will work on any nodus-lang version ≥ the version where the feature it uses be
 
 ---
 
+## 8b. Naming rule — reserved construct names
+
+**A first-party distribution named `nodus-<X>`, where `<X>` is a Nodus keyword or
+core construct, must be the implementation of `<X>` or must not use the name.**
+
+The reserved set is the language's own vocabulary — `workflow`, `goal`, `step`,
+`task`, `state`, `checkpoint`, `agent`, `tool`, `channel`, `coroutine` — plus
+anything `nodus <cmd>` names. A package that merely *works with* `<X>`, or
+implements the same idea for a different host, needs a different word.
+
+**Why this is a rule and not a preference.** A package name in this ecosystem is
+read as *"the Nodus X"*. That reading caused a documented failure, recorded in
+`EXTERNAL_AUDIT_LEDGER.md` as Audit 03 F1: an architecture audit of Nodus
+attributed the standalone `nodus-workflow` package's design to the language core,
+concluded the project had *"forked its own thesis"*, and made resolving it its top
+recommendation of five. It entered the ledger as a **confirmed** finding and stood
+for months.
+
+Three things that failure teaches, and each rules out a cheaper fix:
+
+- **Metadata does not reach the reader who matters.** The auditor never opened the
+  PyPI page. They read directory names and file contents. A corrected `summary`
+  field would have changed nothing.
+- **Renaming the import does not either.** `nodus_workflow` → `nodus_lang_workflow`
+  shipped on 2026-05-31 (NAME-COL-001) *specifically* to disambiguate these two.
+  The audit was written two and a half months later and was still misled.
+- **The reader is often an agent.** This project ships `llms.txt`,
+  `llms-full.txt` and an `AUDIT_INDEX.md` of prompts for source-analysing agents;
+  they are a deliberately courted audience. A collision that survives an
+  import-level rename and still misleads one is aimed squarely at that audience,
+  and it repeats — the next agent meets the same two names with nothing new to
+  tell them apart.
+
+**Resolved instance.** `nodus-workflow` → **`nodus-flow`** (0.2.0, 2026-08-26).
+The old name is retained as a deprecation alias that depends on `nodus-flow`,
+warns once on import, and whose project page's first line says it is not the
+engine behind the `workflow` keyword. Holding the name also stops a third party
+taking it — which is the second reason not to simply delete a misnamed project.
+
+**When renaming under this rule:**
+
+1. Publish under the new name.
+2. Keep the old distribution as an alias that depends on the new one and ships a
+   re-export module, so `import` keeps working and not only `pip install`. Verify
+   both the top-level and the `from <old>.<sub> import ...` spellings against the
+   built wheel — the latter needs the submodules registered in `sys.modules`, not
+   merely bound as attributes.
+3. Say on the old project page what the reader who guessed that name actually
+   wants.
+
+**Open instance:** #477 — `nodus-a2a-wire` declares the taken name `nodus-a2a`,
+so the A2A wire protocol is uninstallable. Same policy question, not yet decided.
+
+---
+
 ## 9. Minimum viable companion library structure
 
 ```

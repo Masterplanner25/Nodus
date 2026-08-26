@@ -464,7 +464,7 @@ The Masterplan Infinite Weave ecosystem around Nodus spans 29 standalone package
 - nodus-memory — MemoryNode, InMemoryStore, semantic scoring, recall
 - nodus-native-memory-engine — PyO3/Maturin Rust extension, 9 operations, Python fallback
 - nodus-a2a — AgentCoordinator (local/delegate), DeadLetterService
-- nodus-agent, nodus-workflow, nodus-state, nodus-session (agent infrastructure)
+- nodus-agent, nodus-flow, nodus-state, nodus-session (agent infrastructure)
 - nodus-retry, nodus-circuit-breaker (reliability)
 - nodus-observability, nodus-observability-framework (telemetry)
 - nodus-http, nodus-channels, nodus-delivery, nodus-gateway (networking)

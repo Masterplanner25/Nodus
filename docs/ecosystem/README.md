@@ -62,7 +62,7 @@ All packages are published on PyPI. Organized by build tier.
 | Package | Tests | PyPI status |
 |---------|-------|-------------|
 | [`nodus-memory`](https://github.com/Masterplanner25/nodus-memory) | 28 | **published** ✅ |
-| [`nodus-workflow`](https://github.com/Masterplanner25/nodus-workflow) | 17 | **published** ✅ |
+| [`nodus-flow`](https://github.com/Masterplanner25/nodus-flow) | 17 | **published** ✅ (was `nodus-workflow` — #483) |
 | [`nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a) | 23 | **published** ✅ |
 | [`nodus-adapter-base`](https://github.com/Masterplanner25/nodus-adapters) (PyPI: `nodus-adapter-base`, repo: `nodus-adapters/base/`) | 11 | **published** ✅ |
 
