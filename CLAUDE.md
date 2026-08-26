@@ -14,9 +14,9 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.4.0** (re-checked
-2026-08-25 with `.venv/Scripts/nodus.exe --version`, after the 5.4.0 cut). Forgetting the
-prefix gets you a runtime **eight releases** behind — no `@exactly_once` forgery fix, no
+**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.5.0** (re-checked
+2026-08-26 with `.venv/Scripts/nodus.exe --version`, at the 5.5.0 cut). Forgetting the
+prefix gets you a runtime **nine releases** behind — no `@exactly_once` forgery fix, no
 call-depth cap, doubled `main()` on cached runs, `run_source` still running the file its
 `filename` happens to name (#521), `nodus graph` still executing the file it inspects
 (#400), and none of the resume-durability cluster. The symptom is behaviour that
@@ -1222,10 +1222,28 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.4.0** (live on PyPI, published 2026-08-25). Both files
+The current published version is **v5.5.0** (live on PyPI, published 2026-08-26). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.4.0"`
-- `pyproject.toml` — `version = "5.4.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.5.0"`
+- `pyproject.toml` — `version = "5.5.0"`
+
+**5.5.0 has one behaviour a reader should know about, and it is a tightening: a workflow
+step body can no longer be called directly (#394).** `build["steps"][1]["fn"](nil)` used to
+run that step with its dependencies unmet; it now raises. The flow value's shape is
+unchanged — `keys(build)` and `build["steps"]` still read — so nothing breaks but the
+bypass, and the bypass was never a supported way to run a step. Two smaller tightenings in
+the same spirit: editor diagnostics now report typos inside string interpolations, compound
+assignments, field assignments, `match` scrutinees and `action` payloads, so a project that
+was "clean" may show new warnings on code that was always wrong; and `nodus check` resolves
+imports exactly as the runtime does, which means a pip-installed companion import stops
+reading as `Import not found`. Everything else is additive: `nodus docs`,
+`NODUS_RUN_STATE_ROOT`, `nodus_gate --shapes`, and `llms.txt` shipping inside the wheel.
+
+**One internal removal.** `nodus.tooling.loader` no longer defines `resolve_import_path`,
+`ensure_project_root`, `import_error`, `resolve_with_extensions` or
+`try_resolve_with_extensions` — the first three are re-exported from
+`nodus.runtime.module_loader` and still import from the old path; the last two are gone,
+since nothing outside the runtime consumed them (#598).
 
 **5.4.0 is additive except in one place a reader should know about: `nodus graph`
 no longer runs the file (#400).** Both `nodus graph <file>` and `nodus graph show`

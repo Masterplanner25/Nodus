@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import contextlib
 import re
 import sys
@@ -890,6 +891,279 @@ def inspect_source(obj) -> str:
     return _inspect.getsource(obj)
 
 
+# ---------------------------------------------------------------------------
+# 5.5.0
+# ---------------------------------------------------------------------------
+
+
+@probe("5.5.0: a step body cannot be called directly")
+def probe_step_entry_guard():
+    result = run_nd(
+        "workflow build {\n"
+        '    step lint { return "linted" }\n'
+        '    step test after lint { return "tested" }\n'
+        "}\n"
+        'fn main() { print(build["steps"][1]["fn"](nil)) }'
+    )
+    assert not result.get("ok"), "a step body was still callable out of order"
+    message = str(result.get("error", {}).get("message", ""))
+    assert "build.test" in message, message
+    assert "cannot be called directly" in message, message
+    routed = run_nd(
+        "workflow build {\n"
+        '    step lint { return "linted" }\n'
+        '    step test after lint { return "tested" }\n'
+        "}\n"
+        'fn main() { let r = run_workflow(build); print("R=\\(r["steps"])") }'
+    )
+    assert routed.get("ok"), "the routed path broke: " + str(routed.get("error"))
+    assert "linted" in routed["stdout"] and "tested" in routed["stdout"], routed["stdout"]
+    return "direct call refused by name; the routed run still executes both steps"
+
+
+@probe("5.5.0: the flow value's shape is unchanged")
+def probe_flow_shape_intact():
+    """The fix must break the bypass and nothing else -- `keys(build)` still reads."""
+    result = run_nd(
+        "workflow build { step a { return 1i } }\n"
+        'fn main() { print("K=\\(keys(build))"); print("N=\\(len(build["steps"]))") }'
+    )
+    assert result.get("ok"), result.get("error")
+    assert "__workflow__" in result["stdout"], result["stdout"]
+    assert "N=1" in result["stdout"], result["stdout"]
+    return "keys() and steps[] still read; only entry is refused"
+
+
+@probe("5.5.0: NODUS_RUN_STATE_ROOT moves both halves of a run")
+def probe_run_state_root():
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "work"
+        work.mkdir()
+        state = Path(tmp) / "state"
+        (work / "wf.nd").write_text(
+            "workflow demo { step a { return 1i } }\n"
+            "let r = run_workflow(demo)\n"
+            'print("ok=\\(r["failed"])")\n',
+            encoding="utf-8",
+        )
+        env = {**os.environ, "NODUS_RUN_STATE_ROOT": str(state)}
+        proc = subprocess.run(
+            [sys.executable, "-m", "nodus", "run", "wf.nd"],
+            cwd=str(work), capture_output=True, text=True, env=env, timeout=120,
+        )
+        assert proc.returncode == 0, proc.stderr[-400:]
+        graphs = list((state / "graphs").glob("*.json")) if (state / "graphs").is_dir() else []
+        runs_dir = state / "workflow_framework" / "runs"
+        records = list(runs_dir.glob("*.json")) if runs_dir.is_dir() else []
+        assert graphs, "the graph half did not follow the root"
+        assert records, "the record half did not follow the root"
+        assert not (work / ".nodus" / "graphs").exists(), "graphs stayed in the CWD"
+    return "graph state and run record both land under the one variable"
+
+
+@probe("5.5.0: the capability floor follows relocated state")
+def probe_floor_follows_state():
+    import tempfile
+
+    from nodus.runtime.state_paths import RUN_STATE_ROOT_ENV, is_inside_run_state
+
+    saved = os.environ.get(RUN_STATE_ROOT_ENV)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ[RUN_STATE_ROOT_ENV] = tmp
+            inside, _root = is_inside_run_state(os.path.join(tmp, "graphs", "g.json"))
+            assert inside, "a guest could write into relocated run state"
+            outside, _ = is_inside_run_state(os.path.join(tmp, "..", "ordinary.txt"))
+            assert not outside, "the floor is denying ordinary writes"
+    finally:
+        if saved is None:
+            os.environ.pop(RUN_STATE_ROOT_ENV, None)
+        else:
+            os.environ[RUN_STATE_ROOT_ENV] = saved
+    return "relocated state is covered; an ordinary path is not"
+
+
+@probe("5.5.0: nodus docs points at this version, from the install")
+def probe_nodus_docs():
+    from nodus.cli.docs import bundled_llms_txt, report
+    from nodus.support.version import __version__
+
+    bundled = bundled_llms_txt()
+    assert bundled is not None, "llms.txt is not bundled, so an install has no index"
+    assert Path(bundled).is_file(), bundled
+    data = report()
+    assert data["version"] == __version__, data["version"]
+    web = [e for e in data["entries"] if not e["local"]]
+    assert web, "every entry claims to be local, which cannot be right"
+    for entry in web:
+        assert f"/blob/v{__version__}/" in entry["where"], entry["where"]
+        assert "/blob/main/" not in entry["where"], (
+            "a docs link points at main; an agent on an older release would read "
+            "the wrong guide, which is how the shipped skill went stale"
+        )
+    return f"{len(data['entries'])} entries, links pinned to v{__version__}"
+
+
+@probe("5.5.0: the editor and the runtime resolve an import identically")
+def probe_one_resolver():
+    import tempfile
+
+    from nodus.runtime import module_loader as runtime_loader
+    from nodus.tooling import loader as tooling_loader
+
+    assert tooling_loader.resolve_import_path is runtime_loader.resolve_import_path, (
+        "the import resolvers are two objects again"
+    )
+    with tempfile.TemporaryDirectory() as base:
+        try:
+            tooling_loader.resolve_import_path(
+                "std:channel", base, {"project_root": base}, None, "t.nd"
+            )
+        except AssertionError:
+            raise
+        except Exception as exc:
+            assert "built-in" in str(exc), (
+                "the editor lost the specific built-ins-are-not-a-module message: "
+                + str(exc)[:120]
+            )
+        else:
+            raise AssertionError("std:channel resolved as a module")
+    return "same object, and the specific std:channel message survives"
+
+
+@probe("5.5.0: the LSP indexes step bodies")
+def probe_lsp_indexes_steps():
+    from nodus.frontend.lexer import tokenize
+    from nodus.frontend.parser import Parser
+    from nodus.lsp import server as lsp
+
+    source = (
+        "workflow build {\n"
+        "    step lint { let inside_step = 42i return inside_step }\n"
+        "}\n"
+    )
+    tokens = tokenize(source)
+    parsed = Parser(tokens).parse()
+    stmts = parsed if isinstance(parsed, list) else getattr(parsed, "stmts", parsed)
+    indexer = lsp._DocumentIndexer(server=None, path="d.nd", uri="file:///d.nd",
+                                   text=source, tokens=tokens, ast=stmts)
+    indexer.build()
+    names = {d.name for d in indexer.definitions}
+    assert "inside_step" in names, sorted(names)
+    return "a step-body local is indexed, so hover and go-to-definition work there"
+
+
+@probe("5.5.0: diagnostics do not flag a destructured name as undefined")
+def probe_no_false_undefined():
+    import tempfile
+
+    from nodus.tooling.diagnostics import WorkspaceDiagnosticEngine
+
+    def undefined(src):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "t.nd")
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write(src)
+            result = WorkspaceDiagnosticEngine(project_root=tmp).analyze(path, source=src)
+            return [d.message for ds in (result.diagnostics_by_file or {}).values()
+                    for d in ds if d.message.startswith("Undefined")]
+
+    control = undefined("let a = undefined_name\nprint(a)\n")
+    assert control, "the analyzer reports nothing at all, so the silence below is vacuous"
+    assert [] == undefined("let [alpha, beta] = [1i, 2i]\nprint(alpha)\nprint(beta)\n"), (
+        "a correctly destructured name is still reported as undefined"
+    )
+    assert undefined('print("v=\\(undefined_name)")\n'), (
+        "a typo in a string interpolation is still accepted in silence"
+    )
+    return "no false positive on destructuring; interpolation typos now caught"
+
+
+@probe("5.5.0: no artifact still describes 5.4.0 as current")
+def probe_no_stale_5_4_current(repo: Path):
+    """The half that has caught something every cycle it has run."""
+    from nodus.support.version import __version__
+
+    offenders = []
+    for rel in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                "skills/nodus.skill", "skills/project-CLAUDE.md",
+                "skills/project-AGENTS.md",
+                "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md"):
+        path = repo / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if "5.4.0" not in line:
+                continue
+            lowered = line.lower()
+            if any(marker in lowered for marker in
+                   ("current", "is at", "live on pypi", "package version is",
+                    'version: "', "nodus-lang 5.4.0")):
+                offenders.append(f"{rel}:{lineno}: {line.strip()[:90]}")
+    assert not offenders, (
+        f"artifact(s) still call 5.4.0 current while shipping {__version__}:\n  "
+        + "\n  ".join(offenders)
+    )
+    return "8 artifacts checked; none calls 5.4.0 current"
+
+
+@probe("5.5.0: the shipped skill no longer teaches the removed timeout trap")
+def probe_skill_is_current(repo: Path):
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.support.version import __version__
+
+    skill = (repo / "skills" / "nodus.skill").read_text(encoding="utf-8", errors="replace")
+    assert 'version: "%s"' % __version__ in skill, "the skill's frontmatter version is stale"
+
+    # The claim the skill used to make, checked against the runtime rather than
+    # against memory.
+    assert NodusRuntime().timeout_ms is None, (
+        "NodusRuntime has a default deadline again; the skill's advice needs revisiting"
+    )
+    assert "Default is `timeout_ms=200`" not in skill, (
+        "the skill still teaches a 200ms default that does not exist"
+    )
+    for flag in ("allow_subprocess", "allow_network", "allow_env"):
+        assert flag in skill, (
+            "the skill says nothing about %s, the breaking change of the 5.x line" % flag
+        )
+    return "version matches, the removed trap is gone, deny-by-default is covered"
+
+
+@probe("5.5.0: README has no relative links")
+def probe_readme_absolute(repo: Path):
+    """PyPI strips them, and the long description is immutable per release."""
+    import re
+
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    targets = re.findall(r"\]\(([^)]+)\)", text)
+    relative = [t for t in targets
+                if not t.startswith(("http://", "https://", "#", "mailto:"))]
+    assert not relative, "relative link(s) PyPI will drop: %s" % relative[:5]
+    for needle in ("llms.txt", "nodus.skill"):
+        assert needle in text, "the README no longer mentions %s" % needle
+    return "%d links, all absolute" % len(targets)
+
+
+@probe("5.5.0: TECH_DEBT does not list this release's fixes as open debt")
+def probe_debt_register_current(repo: Path):
+    """The 5.4.0 cycle shipped with #400/#401/#402 still listed as open."""
+    text = (repo / "docs" / "governance" / "TECH_DEBT.md").read_text(
+        encoding="utf-8", errors="replace")
+    fixed = ("#394", "#584", "#585", "#596", "#597", "#598", "#602", "#605")
+    stale = []
+    for issue in fixed:
+        for line in text.splitlines():
+            if line.strip().startswith("- **%s " % issue) and "RESOLVED" not in line:
+                stale.append(line.strip()[:90])
+    assert not stale, "TECH_DEBT still calls these open:\n  " + "\n  ".join(stale)
+    return "%d fixed issues, none still listed as open debt" % len(fixed)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -962,6 +1236,20 @@ def main() -> int:
     probe_goal_waypoint()
     probe_check_enters_steps()
     probe_5_4_pattern_selfcheck()
+
+    # --- 5.5.0 ---
+    probe_step_entry_guard()
+    probe_flow_shape_intact()
+    probe_run_state_root()
+    probe_floor_follows_state()
+    probe_nodus_docs()
+    probe_one_resolver()
+    probe_lsp_indexes_steps()
+    probe_no_false_undefined()
+    probe_no_stale_5_4_current(args.repo)
+    probe_skill_is_current(args.repo)
+    probe_readme_absolute(args.repo)
+    probe_debt_register_current(args.repo)
     probe_no_stale_5_4_claims(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]

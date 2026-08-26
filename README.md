@@ -40,7 +40,38 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.4.0 is about a resume that tells the truth, and an inspection that
+**Recent:** 5.5.0 is about the language telling the truth to the tools that read it.
+
+An installed Nodus could not tell you where its own documentation was. The wheel
+shipped code and the stdlib; the guide, the machine-readable index and the agent
+skills were repo-only, no command mentioned them, and PyPI silently drops the
+relative links a README uses — so an agent working inside a virtualenv had no
+next step at all. `nodus docs` answers that from the install itself, `llms.txt`
+now ships in the package, and every link here is absolute. The skill that ships
+for Claude Code and Codex had described 4.1.1 for nine releases: it taught a
+200 ms embedding deadline that no longer exists and said nothing about the
+capability defaults that inverted in 5.0.0, which made its advice backwards
+rather than merely old.
+
+The editor got the same treatment. Hover, go-to-definition and completions were
+blind inside a workflow step body; a destructured `let [a, b]` was reported as
+an *undefined variable* on correct code; and a typo inside a string
+interpolation, a compound assignment or an `action` payload was accepted in
+silence. The editor and the runtime also disagreed about what an import meant —
+two resolvers, and the one the editor used could not see a pip-installed
+companion, so `import "nodus-mcp"` ran fine and read as "Import not found" on
+screen.
+
+Underneath, three guarantees stopped being conditional. A workflow step body can
+no longer be called out of order — `step B after A` is enforced at every door
+into a step, not just the routed one. A step's `timeout_ms` now bounds an
+`action agent` handler, which it had never done: the budget was read from
+scheduler state the handler's own thread had already left behind, so whether the
+bound applied was a race. And both halves of a run's state relocate together
+under `NODUS_RUN_STATE_ROOT`, with the capability floor following them — the
+supported way to move the store had been moving it out of the floor's reach.
+
+5.4.0 is about a resume that tells the truth, and an inspection that
 costs nothing.
 
 A resume used to answer questions it had not been asked. It replayed the source

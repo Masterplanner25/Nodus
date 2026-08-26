@@ -10,7 +10,7 @@
 ## Summary
 
 The Nodus ecosystem is **published, real, and awaiting real-world validation.**
-nodus-lang is at **v5.4.0** (current stable on PyPI). The ecosystem spans **32 standalone
+nodus-lang is at **v5.5.0** (current stable on PyPI). The ecosystem spans **32 standalone
 companion packages** — 33 PyPI projects counting nodus-lang itself — all published under
 Masterplanner25. The coordinated launch is
 complete. No package has yet seen significant real-world traffic; that is the honest
@@ -29,7 +29,7 @@ findings in any eval cycle.
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 5.4.0 (published to PyPI 2026-08-25)
+**Current version:** 5.5.0 (published to PyPI 2026-08-26)
 **Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
@@ -38,7 +38,7 @@ findings in any eval cycle.
 | Implementation completeness | **Complete for v4.0 scope** — core language, VM, embedding API, coroutine scheduler, goals/workflows DSL, AI-native stdlib, full security sandbox all shipped |
 | Operational readiness | **Published and gate-validated** — CLI, embedding API, 1,798 tests (76% coverage), lint gate, doc-vs-code gate, Gate 10 creator validation all pass. Not yet proven under real production traffic. |
 | Stability commitment | **Beta classifier (PyPI)** — stable surfaces documented in LANGUAGE_STABILITY_INDEX.md; classifier upgrade to Production/Stable deferred until two consecutive minor releases with clean evals |
-| Publication status | **Published** — v5.4.0 live on PyPI |
+| Publication status | **Published** — v5.5.0 live on PyPI |
 
 **Composite label:** Published / Stable baseline
 
