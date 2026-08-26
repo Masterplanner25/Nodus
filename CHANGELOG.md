@@ -16,6 +16,30 @@
 
 ### Fixes
 
+- **#584: a graph response names the graph *this request* produced, or none.**
+  `_graph_metadata` fell back to `latest_graph_state()` when it could not resolve
+  a graph id, and that helper read the process-global `.nodus/graphs/`, sorted the
+  filenames, and returned the last — but a graph id is `uuid4().hex[:8]`, so
+  sorting them lexicographically orders them by nothing. A request that declared
+  **no graph at all** was therefore answered with another request's graph id,
+  status and full task map, step return values included; on a server handling more
+  than one caller that is a cross-request leak, not a wrong label. Resolution now
+  reads only state belonging to the request — the id supplied, the plan this VM
+  built, the events this VM emitted — and reports `graph_id: null` with an empty
+  task map when there is none. Sorting that directory by time would **not** have
+  fixed it: it picks a different stranger, and the regression test rejects that
+  version too.
+
+  Two things this turned up. `latest_graph_state()` was also the only thing
+  resolving a `run_workflow`'s graph in `services/api.py` — `last_graph_plan` is
+  set by `plan_workflow`, not `run_workflow` — so it had been standing in for
+  request-scoped resolution, correct only while the directory held exactly one
+  graph; removing it alone closed the leak by breaking the feature. And the two
+  copies of `_graph_metadata` in `services/api.py` and `services/server.py` had
+  drifted, the server scanning the VM's own graph events and the api not, which is
+  why only one of them needed a global fallback. There is one implementation now,
+  in `services/graph_metadata.py`, and `latest_graph_state()` is gone.
+
 - **#394: a workflow step body runs only when the graph runner starts it.**
   `step B after A` was the strongest ordering claim the runtime made and it held
   only for execution routed through `run_workflow`/`run_goal`: a lowered flow is
