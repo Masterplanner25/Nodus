@@ -96,10 +96,10 @@ per row.
 
 | Artifact | Version | Distribution |
 |----------|---------|--------------|
-| [`nodus-mcp-server`](https://github.com/Masterplanner25/nodus-mcp-server) | v0.1.11 | PyPI — standalone MCP tool server (6 tools, stdio + HTTP/SSE transports) |
+| [`nodus-mcp-server`](https://github.com/Masterplanner25/nodus-mcp-server) | v0.1.12 | PyPI — standalone MCP tool server (6 tools, stdio + HTTP/SSE transports) |
 | [`nodus-jupyter`](https://github.com/Masterplanner25/nodus-jupyter) | v0.1.0 | PyPI — Jupyter kernel for `.nd` files (32 unit tests) |
-| [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | v0.1.0 | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
-| [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | v1.0.0 | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
+| [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | see `tools/consumers.json` | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
+| [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | see `tools/consumers.json` | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
 
 ### Naming note: `nodus-extension` vs `nodus-extensions`
 
