@@ -32,6 +32,33 @@
 
 ### Fixes
 
+- **#596: a step's `timeout_ms` bounds an `action agent` handler, which it did
+  not.** #398 made `action agent` dispatch its handler off the scheduler thread
+  so independent steps overlap. #424 then bounded agent handlers by reading the
+  step budget from `vm.scheduler.current_task` — which the scheduler sets
+  immediately before a coroutine resume and clears in the matching `finally`, so
+  it is readable only *on that thread, inside that resume*. The worker runs after
+  the coroutine suspends, so it read `None`, added no candidate, and the call ran
+  unbounded. The two landed in the same cycle and nothing connected them.
+
+  It looked like it worked because of a race: the worker thread often called
+  `_effective_timeout_ms` before the scheduler cleared `current_task`. On a
+  developer machine the worker usually won; on CI under coverage it did not, and
+  the run took the handler's full block every time — which is how this was found,
+  by instrumenting a failing CI run rather than by reading the code.
+
+  The budget is now read where it is knowable — on the scheduler thread, past the
+  guard that guarantees the coroutine is current — and passed to the worker.
+  `_effective_timeout_ms` is still the only place that decides; only the moment it
+  is evaluated moved. `call_agent` gained an explicit `timeout_ms`, with a
+  sentinel so a captured `None` still means unbounded rather than "not supplied".
+
+  So `I-424` now holds for `action agent`, not only for a synchronous
+  `agent_call`. The regression tests assert on **thread identity** rather than
+  elapsed time, deliberately: which thread reads the budget is deterministic,
+  whether it wins the race is not, and a timing assertion would pass on one
+  machine while the bound stayed broken on another.
+
 - **#585: both halves of a run's state relocate together, and the capability floor
   follows them.** A durable run is one thing split across `.nodus/graphs/` (graph
   state and checkpoint) and `.nodus/workflow_framework/` (the run record). #476

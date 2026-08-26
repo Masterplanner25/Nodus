@@ -49,7 +49,12 @@ from nodus.support.config import MAX_STACK_DEPTH
 from nodus.builtins import BuiltinRegistry
 from nodus.compiler.compiler import FunctionInfo, normalize_bytecode
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, HostFunctionError
-from nodus.services.agent_runtime import available_agents, call_agent, describe_agent
+from nodus.services.agent_runtime import (
+    available_agents,
+    call_agent,
+    describe_agent,
+    _effective_timeout_ms,  # #596: read the step budget before suspending
+)
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
@@ -2185,10 +2190,19 @@ class VM:
                 on_complete(result)
             return result
 
+        # #596: capture the step's deadline HERE, on the scheduler thread, while
+        # `scheduler.current_task` is still this coroutine. The worker below runs
+        # after the coroutine suspends, and `_effective_timeout_ms` reads exactly
+        # the state that suspension clears — so computing it there returned None
+        # and #424's bound silently did not apply to `action agent` at all. The
+        # guard above is what makes this the right place: past it, the budget is
+        # readable by construction.
+        deadline_ms = _effective_timeout_ms(self)
+
         result_ch = Channel()
 
         def _worker() -> None:
-            result = call_agent(name, payload, vm=self)
+            result = call_agent(name, payload, vm=self, timeout_ms=deadline_ms)
             if on_complete is not None:
                 # Before publishing to the channel, so the completion event cannot
                 # be observed after the value it describes has been consumed.
