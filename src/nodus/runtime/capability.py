@@ -251,6 +251,9 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "plan_graph", "plan_workflow", "resume_goal", "resume_graph",
         "resume_workflow", "run_goal", "run_graph", "run_workflow", "task",
         "workflow_checkpoints", "workflow_resume_payload", "workflow_state",
+        # #481: reads an argument the *caller* bound at run_workflow. It
+        # reaches nothing the step could not already reach.
+        "workflow_arg",
         "workflow_wait",
         "cb_call", "retry_call",
         "effect_action_id", "effect_complete", "effect_pending",

@@ -165,6 +165,68 @@ record with `kind = "workflow_error"`. Check with `type(r) == "error"`.
 
 ---
 
+## 3.2 Parameters — one workflow, several variants
+
+A workflow can declare parameters, bound when you run it:
+
+```nd
+workflow build(mode) {
+    step compile { return "compiling in \(mode)" }
+    step test after compile { return "\(compile), then testing" }
+}
+
+fn main() {
+    print(run_workflow(build, {mode: "lite"})["steps"]["test"])
+    print(run_workflow(build, {mode: "full"})["steps"]["test"])
+}
+```
+
+```
+$ nodus run build.nd
+compiling in lite, then testing
+compiling in full, then testing
+```
+
+Each parameter is in scope in every step body. Both `{mode: "lite"}` (a record)
+and `{"mode": "lite"}` (a map) bind.
+
+### Why not a module-level `let`
+
+Reading a module-level variable from inside a step works, and was the only way
+to do this before. It has three problems, and the third is the one that bites:
+
+1. **One value per module, per process.** Two runs with different settings
+   cannot coexist — they read the same variable.
+2. **It is not part of the run.** `nodus workflow inspect` cannot tell you what
+   a run was run *with*.
+3. **The spelling silently decided whether it survived a resume.** `state x = mode`
+   was captured into the run and restored; a bare `mode` read inside a step was
+   re-derived when the module was rebuilt. Nothing marked which was which.
+
+A declared parameter is durable by construction: on a resume it is read back
+from the run record, not re-derived, so nothing the second execution does can
+change it.
+
+### Refused where it is written
+
+An argument that does not match the declaration is an error at the call, not a
+step quietly receiving `nil`:
+
+```
+workflow 'build' declares parameter(s) 'mode' but none were given. Pass them as a map: run_workflow(build, {mode: ...})
+workflow 'build' has no parameter(s) 'node'. It declares: 'mode'
+workflow 'build' declares no parameters, so it takes no arguments. Declare them: `workflow build(name) { ... }`
+```
+
+A parameter may not share a name with a step or a state cell in the same
+workflow, and `plan_workflow` needs no arguments — it reports shape, not values.
+
+**A `goal … over …` cannot bind them.** That form names the workflow it pursues
+and has no slot for arguments, so pursuing a parameterised workflow is refused,
+naming both.
+
+---
+
 ## 4. State and data flow
 
 Steps share a mutable state map declared at the workflow level.

@@ -200,6 +200,11 @@ class WorkflowDef(Base):
     name: str
     states: list[WorkflowStateDecl]
     steps: list[WorkflowStep]
+    # `workflow build(mode) { ... }` (#481). Bound at the call --
+    # `run_workflow(build, {mode: "lite"})` -- not by calling the flow value,
+    # which is an ordinary map. Reuses `Param` so the `type_hint` slot is
+    # already there for when annotations reach this surface (#479 D2).
+    params: list[Param] = field(default_factory=list)
 
 
 @dataclass
@@ -223,6 +228,11 @@ class GoalDef(Base):
     name: str
     states: list[WorkflowStateDecl]
     steps: list[GoalStep]
+    # `workflow build(mode) { ... }` (#481). Bound at the call --
+    # `run_workflow(build, {mode: "lite"})` -- not by calling the flow value,
+    # which is an ordinary map. Reuses `Param` so the `type_hint` slot is
+    # already there for when annotations reach this surface (#479 D2).
+    params: list[Param] = field(default_factory=list)
 
 
 # --- goal-as-stopping-condition (#409 Part A) -------------------------------

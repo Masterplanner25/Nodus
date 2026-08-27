@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#481: workflows and goals take parameters.**
+
+  ```nd
+  workflow build(mode) {
+      step compile { return "compiling in \(mode)" }
+  }
+
+  run_workflow(build, {mode: "lite"})
+  ```
+
+  Each parameter is in scope in every step body. Both `{mode: "x"}` (a record)
+  and `{"mode": "x"}` (a map) bind; a record is normalised before it reaches run
+  metadata, since a `Record` is not JSON serializable.
+
+  **Bound at the call, not by calling the flow value.** The issue sketches
+  `run_workflow(build("lite"))`; the flow value is an ordinary map whose shape
+  #394 has just finished pinning, so that would be new syntax on it. D4 in
+  `docs/design/workflow-dsl/00-cluster-decisions.md` has the reasoning.
+
+  **The argument is part of the run, which is the point.** It is persisted into
+  run metadata beside `workflow_topology`, and a resume reads it back rather than
+  re-binding it. The module-global workaround this replaces had three problems,
+  and the third is why the feature exists: `state x = mode` was captured and
+  restored while a bare `mode` read inside a step was re-derived on rebuild — so
+  the *spelling* silently decided whether the value survived a resume, and
+  nothing in the language marked which was which.
+
+  Refused where it is written rather than left to a step reading `nil`: a missing
+  argument, an unknown one, arguments to a flow that declares none, a parameter
+  colliding with a step or state-cell name, a duplicate parameter, and an empty
+  `()`. `plan_workflow` needs no arguments — it reports shape, not values.
+
+  **A `goal … over …` cannot bind them** and says so, naming both the goal and
+  the workflow. That form has no slot for arguments; left to the binder it
+  reported "pass them to `run_workflow(tune, {…})`", naming a call the author did
+  not write.
+
+  New builtin `workflow_arg`, emitted by the lowering as a prelude `let` per
+  declared parameter. Reached only through `builtin_call` (#411), so binding the
+  name in guest code cannot intercept a step's own parameter reads.
 ### Tooling
 
 - **#612: two store tests patched the process-global `os.replace`, so a

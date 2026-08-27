@@ -332,13 +332,14 @@ class VM:
             "run_graph": BuiltinInfo("run_graph", 1, self.builtin_run_graph),
             "plan_graph": BuiltinInfo("plan_graph", 1, self.builtin_plan_graph),
             "resume_graph": BuiltinInfo("resume_graph", 1, self.builtin_resume_graph),
-            "run_workflow": BuiltinInfo("run_workflow", 1, self.builtin_run_workflow),
+            "run_workflow": BuiltinInfo("run_workflow", (1, 2), self.builtin_run_workflow),
             "plan_workflow": BuiltinInfo("plan_workflow", 1, self.builtin_plan_workflow),
             "resume_workflow": BuiltinInfo("resume_workflow", (1, 2, 3), self.builtin_resume_workflow),
-            "run_goal": BuiltinInfo("run_goal", 1, self.builtin_run_goal),
+            "run_goal": BuiltinInfo("run_goal", (1, 2), self.builtin_run_goal),
             "plan_goal": BuiltinInfo("plan_goal", 1, self.builtin_plan_goal),
             "resume_goal": BuiltinInfo("resume_goal", (1, 2), self.builtin_resume_goal),
             "workflow_state": BuiltinInfo("workflow_state", 0, self.builtin_workflow_state),
+            "workflow_arg": BuiltinInfo("workflow_arg", 1, self.builtin_workflow_arg),
             "state_contribute": BuiltinInfo("state_contribute", 2, self.builtin_state_contribute),
             "workflow_resume_payload": BuiltinInfo("workflow_resume_payload", 0, self.builtin_workflow_resume_payload),
             "workflow_wait": BuiltinInfo("workflow_wait", (1, 2, 3, 4), self.builtin_workflow_wait),
@@ -1334,7 +1335,7 @@ class VM:
 
         return get_default_workflow_runner()
 
-    def builtin_run_workflow(self, workflow):
+    def builtin_run_workflow(self, workflow, args=None):
         if not is_workflow_value(workflow):
             self.runtime_error("type", "run_workflow(workflow) expects a workflow")
         if getattr(self, "_suppress_flow_execution", False):
@@ -1343,13 +1344,13 @@ class VM:
             # would spawn a spurious fresh graph and re-run steps (duplicating side
             # effects), which is the bug this guard fixes. Skip it.
             return self._suppressed_flow_result()
-        graph = workflow_to_graph(self, workflow, init_state=True)
+        graph = workflow_to_graph(self, workflow, init_state=True, args=args)
         return self.resolve_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_workflow(self, workflow):
         if not is_workflow_value(workflow):
             self.runtime_error("type", "plan_workflow(workflow) expects a workflow")
-        graph = workflow_to_graph(self, workflow, init_state=False)
+        graph = workflow_to_graph(self, workflow, init_state=False, require_args=False)
         step_plan = self._step_plan_from_graph(graph, label="workflow")
         self.last_graph_plan = step_plan
         self.event_bus.emit_event(
@@ -1483,6 +1484,20 @@ class VM:
         history: list[str] = []
         iterations = 0
 
+        # #481: `goal … over …` names the workflow it pursues; there is no slot
+        # in that form to bind arguments, and `run_goal(pursuit)` takes none.
+        # Refused here, where the situation can be described accurately — left to
+        # the binder it reported "pass them to run_workflow(tune, {…})", which
+        # names a call the author did not write and cannot reach from here.
+        _declared = workflow.get("params") if isinstance(workflow, dict) else None
+        if isinstance(_declared, list) and _declared:
+            self.runtime_error(
+                "call",
+                f"goal '{goal_name}' pursues workflow '{flow_name}', which declares "
+                f"parameter(s) {', '.join(repr(n) for n in _declared)}. A goal has no "
+                f"way to bind them. Either drop the parameters, or run the workflow "
+                f"directly with run_workflow('{flow_name}', {{…}}).",
+            )
         self.event_bus.emit_event(
             "goal_start",
             data={"goal": goal_name, "workflow": flow_name,
@@ -1572,20 +1587,28 @@ class VM:
                              "iterations": float(iterations)},
                 )
 
-    def builtin_run_goal(self, goal):
+    def builtin_run_goal(self, goal, args=None):
         if is_goal_pursuit_value(goal):
+            if args is not None:
+                # `goal … over …` names the workflow it pursues; parameters
+                # belong to that workflow, not to the pursuit (#481).
+                self.runtime_error(
+                    "call",
+                    "run_goal(pursuit) takes no arguments — declare parameters on "
+                    "the workflow the goal pursues and bind them there",
+                )
             return self.builtin_run_goal_pursuit(goal)
         if not is_goal_value(goal):
             self.runtime_error("type", "run_goal(goal) expects a goal")
         if getattr(self, "_suppress_flow_execution", False):
             return self._suppressed_flow_result()   # resume-rebuild — see run_workflow (#322)
-        graph = workflow_to_graph(self, goal, init_state=True)
+        graph = workflow_to_graph(self, goal, init_state=True, args=args)
         return self.resolve_workflow_runner().start_graph(self, graph)
 
     def builtin_plan_goal(self, goal):
         if not is_goal_value(goal):
             self.runtime_error("type", "plan_goal(goal) expects a goal")
-        graph = workflow_to_graph(self, goal, init_state=False)
+        graph = workflow_to_graph(self, goal, init_state=False, require_args=False)
         step_plan = self._step_plan_from_graph(graph, label="goal")
         self.last_graph_plan = step_plan
         self.event_bus.emit_event(
@@ -1796,7 +1819,11 @@ class VM:
             )
         _stt_raw = metadata.get("step_to_task")
         step_to_task: dict[str, Any] | None = _stt_raw if isinstance(_stt_raw, dict) else None
-        graph = workflow_to_graph(self, workflow, init_state=False, task_ids_by_step=step_to_task)
+        _stored_args = metadata.get("workflow_args")
+        graph = workflow_to_graph(
+            self, workflow, init_state=False, task_ids_by_step=step_to_task,
+            prebound_args=_stored_args if isinstance(_stored_args, dict) else {},
+        )
         graph.graph_id = graph_id
         # #501: the child list is cumulative across resumes. The rebuilt graph's
         # metadata is fresh, so without this each resume's persist would keep
@@ -1901,6 +1928,29 @@ class VM:
         if ctx is None:
             return None
         return ctx.get("state")
+
+    def builtin_workflow_arg(self, name):
+        """Read a bound workflow parameter (#481).
+
+        Emitted by the workflow lowering as the prelude of every step body, one
+        `let` per declared parameter. A program does not write this call; the
+        argument arrives from the run, which is what makes a parameter durable
+        by construction — on a resume it is read back from the run record
+        rather than re-derived, so it cannot quietly become a different value
+        the way a module-level `let` read inside a step could.
+
+        Reached only through `builtin_call` (#411), so binding the name in guest
+        code cannot intercept a step's own parameter reads.
+        """
+        if not isinstance(name, str):
+            self.runtime_error("type", "workflow_arg(name) expects name as string")
+        ctx = self.current_workflow_context()
+        if not isinstance(ctx, dict):
+            return None
+        args = ctx.get("args")
+        if not isinstance(args, dict):
+            return None
+        return args.get(name)
 
     def builtin_state_contribute(self, key, value):
         """Contribute to a folded workflow-state cell (#485).
