@@ -8,14 +8,33 @@ from nodus.vm.types import Closure, Record
 _TOOL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]*$')
 _TOOL_NAME_MAX_LEN = 200
 
+# Every Nodus type name, and the JSON Schema type it becomes.
+#
+# #479: this used to be a private list of seven, which made it a *third*
+# enumeration of the language's type vocabulary alongside `TYPE_NAMES` and the
+# parser -- and it had already drifted: `record` and `function` were missing, so
+# neither could be named in a tool schema. `tests/closed_issues/issue_479.py`
+# pins it against `TYPE_NAMES` so a tenth type cannot be added in one place and
+# missed here.
+#
+# `record` maps to `object` like `map`, because JSON Schema has no finer notion
+# and the checker does not tell them apart either (see `is_assignable`).
+# `function` has no JSON Schema type at all -- a callable does not cross a
+# process boundary -- so it is named and refused rather than silently absent.
 _NODUS_TO_JSON_TYPE = {
     "string": "string",
     "int": "integer",
     "float": "number",
     "bool": "boolean",
     "map": "object",
+    "record": "object",
     "list": "array",
     "nil": "null",
+}
+
+#: Type names that are real but cannot appear in a schema, and why.
+_UNSCHEMABLE_TYPES = {
+    "function": "a function value does not cross a tool boundary",
 }
 
 _VALID_EFFECTS = frozenset({
@@ -68,13 +87,57 @@ def _normalize_schema(schema):
         else:
             json_type = _NODUS_TO_JSON_TYPE.get(type_name)
             if json_type is None:
+                reason = _UNSCHEMABLE_TYPES.get(type_name)
+                if reason:
+                    return None, (
+                        f"type '{type_name}' cannot appear in a tool schema for "
+                        f"parameter '{param_name}': {reason}"
+                    )
+                allowed = ", ".join(sorted(_NODUS_TO_JSON_TYPE) + ["any"])
                 return None, (
                     f"unknown type '{type_name}' for parameter '{param_name}' "
-                    f"(allowed: string, int, float, bool, map, list, nil, any)"
+                    f"(allowed: {allowed})"
                 )
             properties[param_name] = {"type": json_type}
         required.append(param_name)
     return {"type": "object", "properties": properties, "required": required}, None
+
+
+def _handler_arity_error(handler, tool_name: str) -> str | None:
+    """Refuse a handler the registry could never invoke (#479).
+
+    **A tool handler takes exactly one parameter: the args record.**
+    `tool_invoke` calls `run_closure(handler, [args])` -- one argument, always --
+    so a handler declaring two or more can never run. Registration accepted them
+    anyway, and the failure surfaced at *call* time as a bare `Stack underflow`
+    naming the handler, with nothing to connect it to the registration.
+
+    This is what "check the declaration against the handler" means on this
+    surface. #479 asks for the schema to be *derived* from the handler's
+    parameters, but that describes a shape this registry does not have: the
+    schema names the keys of the single args record, and a signature cannot
+    carry those. The one thing the signature genuinely says -- how many
+    arguments the handler accepts -- is the thing that was going unchecked.
+    """
+    closure = getattr(handler, "closure", handler)
+    function = getattr(closure, "function", None)
+    if function is None:
+        return None
+    params = list(getattr(function, "params", []) or [])
+    if len(params) == 1:
+        return None
+    if not params:
+        return (
+            f"tool '{tool_name}' handler takes no parameters, but a handler is "
+            f"always called with one argument: the args record. Declare it, e.g. "
+            f"`fn handler(args) {{ ... }}`."
+        )
+    return (
+        f"tool '{tool_name}' handler declares {len(params)} parameters "
+        f"({', '.join(repr(n) for n in params)}), but a handler is called with "
+        f"exactly one argument: the args record. Take one parameter and read the "
+        f"fields from it, e.g. `fn handler(args) {{ ... args.{params[0]} ... }}`."
+    )
 
 
 def _validate_args(args, schema: dict):
@@ -263,6 +326,21 @@ def register(vm, registry) -> None:
             return rvm.make_err("tool_error", f"tool.register: invalid returns_schema: {returns_err}", payload={
                 "category": "invalid_metadata", "name": name, "details": returns_err,
             })
+
+        # #479: refuse a handler this registry could never invoke. See
+        # `_handler_arity_error` for why arity -- not a derived schema -- is the
+        # thing the signature can actually check here.
+        arity_err = _handler_arity_error(handler, name)
+        if arity_err:
+            return rvm.make_err(
+                "tool_error",
+                f"tool.register: {arity_err}",
+                payload={
+                    "category": "invalid_handler", "name": name,
+                    "details": arity_err,
+                },
+            )
+
         effects_raw = d.get("effects")
         if isinstance(effects_raw, list):
             effects_raw = [e for e in effects_raw]

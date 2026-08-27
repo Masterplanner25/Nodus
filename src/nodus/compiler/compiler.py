@@ -119,6 +119,20 @@ class FunctionInfo:
     # FunctionInfo. `VM.guard_step_entry` refuses to enter a marked closure that
     # the graph runner did not authorize.
     step_owner: str | None = None
+    # #479: the declared signature, carried rather than discarded.
+    #
+    # `params` above is names only, so nothing downstream could see what a
+    # function *declared*. `tool.register` needs exactly that to derive a schema
+    # from its handler, and it cannot get it from the frontend: `tool.register`
+    # is an ordinary stdlib call (`stdlib/tool.nd` -> `tool_register`), not a
+    # compiler lowering, so no frontend pass knows a registration is happening.
+    # The issue's suggested "derive in the frontend, it is lowered from source
+    # anyway" route does not exist.
+    #
+    # Static-only, exactly as before: nothing here is enforced at run time. It is
+    # the *source* the derived schema is built from, and `None` means unannotated.
+    param_types: list[str | None] = field(default_factory=list)
+    return_type: str | None = None
 
 
 class Compiler:
@@ -556,7 +570,9 @@ class Compiler:
         fn_addr = len(self.code)
         param_names = self.param_names(stmt.params)
         fn_info = FunctionInfo(fn_name, param_names, fn_addr, upvalues=[], display_name=stmt.name,
-                               step_owner=getattr(stmt, "step_owner", None))
+                               step_owner=getattr(stmt, "step_owner", None),
+                               param_types=[getattr(p, "type_hint", None) for p in stmt.params],
+                               return_type=getattr(stmt, "return_type", None))
         self.functions[fn_name] = fn_info
 
         if self.symbols is None:
