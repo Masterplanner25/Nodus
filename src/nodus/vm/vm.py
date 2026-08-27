@@ -132,6 +132,14 @@ def _is_stdlib_path(path: str | None) -> bool:
     return "/stdlib/" in normalized and normalized.endswith(".nd")
 
 
+#: Hard cap on a goal loop that declares no iteration or deadline bound (#488).
+#: `limits` alone is a legitimate budget, but it is only a bound while the host's
+#: meter actually moves; a stuck counter would otherwise loop forever, which is
+#: precisely what `budget` exists to prevent. Deliberately large enough that no
+#: real spend-bounded goal reaches it, and reported distinctly when it fires.
+IMPLICIT_GOAL_ITERATION_CAP = 10_000
+
+
 class VM:
     """The Nodus bytecode virtual machine.
 
@@ -261,6 +269,10 @@ class VM:
         # one, which is what the CLI and a bare VM want. `NodusRuntime` installs
         # its own so two runtimes in a process cannot see each other's agents.
         self.agent_registry: dict | None = None
+        # #488: accountants for `goal … budget { limits: { … } }`, set by the
+        # embedding runtime. A bare VM has none, and a goal declaring a limit on
+        # one is refused rather than left unbounded.
+        self.budget_meters: dict | None = None
         # The workflow runner this VM belongs to (#390). None = fall back to the
         # process-global one, which is what the CLI and a bare VM want.
         self.workflow_runner = None
@@ -1452,6 +1464,30 @@ class VM:
             return []
         return [e["label"] for e in entries if isinstance(e, dict) and isinstance(e.get("label"), str)]
 
+    def _breached_budget_meter(self, declared_limits: dict):
+        """First meter at or over its declared limit, or (None, None, None).
+
+        A reader that raises is treated as a breach rather than ignored: a host
+        whose accountant is broken has lost the ability to bound the loop, and
+        continuing would be the silently-unbounded run this feature exists to
+        prevent.
+        """
+        if not declared_limits:
+            return None, None, None
+        meters = getattr(self, "budget_meters", None) or {}
+        for name, limit in declared_limits.items():
+            reader = meters.get(name)
+            if reader is None:
+                continue
+            try:
+                value = reader()
+            except Exception:
+                return name, None, limit
+            if isinstance(value, (int, float)) and isinstance(limit, (int, float)):
+                if value >= limit:
+                    return name, value, limit
+        return None, None, None
+
     def builtin_run_goal_pursuit(self, pursuit):
         """Run a workflow repeatedly until the goal's predicate holds or its budget runs out.
 
@@ -1475,6 +1511,37 @@ class VM:
         budget = pursuit.get("budget") if isinstance(pursuit.get("budget"), dict) else {}
         max_iterations = int(budget.get("max_iterations") or 0)
         deadline_ms = float(budget.get("deadline_ms") or 0)
+        # #488: host-registered meters. Checked once here, before the first
+        # iteration, so a goal declaring a bound nobody can measure fails fast
+        # rather than after the spend it was meant to cap.
+        declared_limits = budget.get("limits") if isinstance(budget.get("limits"), dict) else {}
+        # #488: `max_iterations` and `deadline_ms` are optional now, so a goal can
+        # be bounded by meters alone. That reintroduces the hang this construct
+        # exists to prevent -- a meter that never moves (a stuck host counter, a
+        # miscounted unit) is an unbounded loop, and before #488 the mandatory
+        # iteration cap was what made that impossible. The implicit cap restores
+        # the guarantee without forcing a spend-bounded goal to invent a number.
+        # Found by mutation testing: removing the meter check hung the suite.
+        implicit_cap = 0
+        if max_iterations <= 0 and deadline_ms <= 0:
+            implicit_cap = IMPLICIT_GOAL_ITERATION_CAP
+        meters = getattr(self, "budget_meters", None) or {}
+        unregistered = sorted(name for name in declared_limits if name not in meters)
+        if unregistered:
+            return self.make_err(
+                "goal_error",
+                f"goal '{goal_name}' declares budget limit(s) "
+                f"{', '.join(repr(n) for n in unregistered)} but no accountant is "
+                f"registered for them. Register one on the runtime "
+                f"(`runtime.register_meter(name, reader)`) or drop the limit. A "
+                f"declared bound nobody can measure is not a bound.",
+                payload={
+                    "category": "unregistered_meter",
+                    "goal": goal_name,
+                    "workflow": flow_name,
+                    "meters": unregistered,
+                },
+            )
         until = pursuit.get("until")
         retry_from = pursuit.get("retry_from")
 
@@ -1531,7 +1598,18 @@ class VM:
                 return payload
 
             elapsed = runtime_time_ms() - started_at
-            over_budget = iterations >= max_iterations or (deadline_ms > 0 and elapsed >= deadline_ms)
+            # #488: the loop-altitude bound. A single iteration can make many
+            # host calls, so a runaway *pass* is still unbounded -- that is the
+            # host's to cap, at the altitude that owns the meter. Nodus bounds
+            # the loop, which is the thing it can see.
+            breached_meter, breached_value, breached_limit = self._breached_budget_meter(declared_limits)
+            hit_implicit_cap = implicit_cap > 0 and iterations >= implicit_cap
+            over_budget = (
+                (max_iterations > 0 and iterations >= max_iterations)
+                or (deadline_ms > 0 and elapsed >= deadline_ms)
+                or breached_meter is not None
+                or hit_implicit_cap
+            )
             if over_budget:
                 # A goal that ran out of budget has NOT met its objective, and must
                 # never return a success-shaped result — that is the defect class
@@ -1541,12 +1619,32 @@ class VM:
                     data={"goal": goal_name, "workflow": flow_name, "graph_id": graph_id,
                           "iterations": float(iterations), "reason": "budget_exhausted"},
                 )
+                if breached_meter is not None:
+                    _why = (
+                        f"meter '{breached_meter}' reached {breached_value} of "
+                        f"{breached_limit}"
+                    )
+                elif hit_implicit_cap:
+                    # Named as the safety net it is, so an author does not read
+                    # it as their own bound and go looking for the wrong thing.
+                    _why = (
+                        f"no declared bound was reached in "
+                        f"{IMPLICIT_GOAL_ITERATION_CAP} iterations, so the "
+                        f"implicit cap stopped it -- check that the declared "
+                        f"meter(s) are actually moving"
+                    )
+                else:
+                    _why = f"after {iterations} iteration(s)"
                 return self.make_err(
                     "goal_error",
-                    f"goal '{goal_name}' exhausted its budget after {iterations} "
-                    f"iteration(s) without satisfying its condition",
+                    f"goal '{goal_name}' exhausted its budget ({_why}) "
+                    f"without satisfying its condition",
                     payload={
                         "category": "budget_exhausted",
+                        "implicit_cap": hit_implicit_cap,
+                        "meter": breached_meter,
+                        "meter_value": breached_value,
+                        "meter_limit": breached_limit,
                         "goal": goal_name,
                         "workflow": flow_name,
                         "graph_id": graph_id,

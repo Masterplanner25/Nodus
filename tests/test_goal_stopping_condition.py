@@ -140,15 +140,56 @@ class StaticCheckIsTotalTests(unittest.TestCase):
             _parse(stripped)
         self.assertIn("has no `budget`", str(ctx.exception))
 
-    def test_both_budget_bounds_are_mandatory(self):
-        for partial in ("budget { max_iterations: 3 }", "budget { deadline_ms: 100 }"):
+    def test_one_budget_bound_is_enough(self):
+        """#488 relaxed this: both bounds were mandatory, now at least one is.
+
+        Requiring all of them would force a goal bounded by *spend* to invent an
+        iteration cap it does not want. `budget` itself is still mandatory --
+        `test_budget_is_mandatory` above -- because an unbounded goal is a hang.
+        """
+        for partial in (
+            "budget { max_iterations: 3 }",
+            "budget { deadline_ms: 100 }",
+            "budget { limits: { tokens: 100 } }",
+        ):
             with self.subTest(budget=partial):
                 source = _goal(2).replace(
                     "budget { max_iterations: 6, deadline_ms: 30000 }", partial
                 )
-                with self.assertRaises(LangSyntaxError) as ctx:
-                    _parse(source)
-                self.assertIn("budget must set", str(ctx.exception))
+                _parse(source)  # must not raise
+
+    def test_a_budget_with_no_bound_at_all_is_refused(self):
+        """The rule that survived: something must bound the loop."""
+        source = _goal(2).replace(
+            "budget { max_iterations: 6, deadline_ms: 30000 }", "budget { }"
+        )
+        with self.assertRaises(LangSyntaxError) as ctx:
+            _parse(source)
+        self.assertIn("at least one", str(ctx.exception))
+
+    def test_an_empty_limits_map_is_refused(self):
+        """`limits: { }` declares an intent to bound and then names nothing."""
+        source = _goal(2).replace(
+            "budget { max_iterations: 6, deadline_ms: 30000 }", "budget { limits: { } }"
+        )
+        with self.assertRaises(LangSyntaxError) as ctx:
+            _parse(source)
+        self.assertIn("limits` is empty", str(ctx.exception))
+
+    def test_the_outer_budget_vocabulary_is_still_closed(self):
+        """#488 opened only the *contents* of `limits`, not the key set.
+
+        That is the property this surface already had and the issue explicitly
+        praises: an unknown key is refused at parse time with an accurate
+        message, rather than silently ignored.
+        """
+        source = _goal(2).replace(
+            "budget { max_iterations: 6, deadline_ms: 30000 }",
+            "budget { max_cost_usd: 5.0 }",
+        )
+        with self.assertRaises(LangSyntaxError) as ctx:
+            _parse(source)
+        self.assertIn("Unsupported budget option: max_cost_usd", str(ctx.exception))
 
     def test_until_is_mandatory(self):
         source = "\n".join(

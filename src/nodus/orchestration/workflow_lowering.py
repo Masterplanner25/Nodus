@@ -116,8 +116,14 @@ def lower_goal_pursuit_ast(pursuit) -> MapLit:
             Str("budget"),
             MapLit(
                 [
-                    (Str("max_iterations"), pursuit.budget.max_iterations),
-                    (Str("deadline_ms"), pursuit.budget.deadline_ms),
+                    (Str("max_iterations"), pursuit.budget.max_iterations
+                     if pursuit.budget.max_iterations is not None else Nil()),
+                    (Str("deadline_ms"), pursuit.budget.deadline_ms
+                     if pursuit.budget.deadline_ms is not None else Nil()),
+                    # #488: host-registered meters. Data, like the rest of the
+                    # budget, so the bound is inspectable before the goal runs.
+                    (Str("limits"), pursuit.budget.limits
+                     if pursuit.budget.limits is not None else MapLit([])),
                 ]
             ),
         ),
