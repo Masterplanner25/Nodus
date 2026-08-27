@@ -227,6 +227,49 @@ naming both.
 
 ---
 
+### 3.3 `returns:` — declaring a step's output type
+
+A step can declare what it returns, and `nodus check` verifies it:
+
+```nd
+workflow report {
+    step fetch with { returns: "map" } { return {"rows": 42i} }
+    step count after fetch with { returns: "int" } { return len(keys(fetch)) }
+}
+
+fn main() { print(run_workflow(report)["steps"]["count"]) }
+```
+
+```
+$ nodus run report.nd
+1
+```
+
+A mismatch is a check-time error, the same one a function's return type gives:
+
+```
+Type error at report.nd:3:41: expected int but got string
+```
+
+`returns:` is **optional and static-only** — it does not change what runs, and a
+step without it is checked exactly as before. The type name must be quoted and
+must be a real one; unlike a function annotation, a misspelling here is an
+**error** rather than a warning, because the option is new and nothing can be
+relying on it being ignored:
+
+```
+step `returns:` names unknown type 'itn' -- did you mean 'int'?
+```
+
+**It describes the step, not the edge.** A step that declares `returns: "int"`
+and is then *skipped* still binds `nil` in its dependent — that is the edge's
+behaviour (§3.1), and `on: ["skipped"]` is how a dependent opts into it.
+`returns:` says what the step produces **when it completes**; whether it ran is
+what `r["statuses"]` is for. So it does not imply nullable, and declaring it on
+a step that may be skipped is not an error.
+
+---
+
 ## 4. State and data flow
 
 Steps share a mutable state map declared at the workflow level.

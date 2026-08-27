@@ -144,7 +144,24 @@ this one is the load-bearing prerequisite for D2, D3 and D4's typed halves.
 shapes). It stays flat. Everything below works at the flat altitude, and anything
 finer is a separate and much larger decision — #479's own comment says so.
 
-## D2 — #479: split. Schema-from-signature ships first; `returns:` waits for D1
+## D2 — #479: split. Schema-from-signature ships first; `returns:` waits for D1 — **BOTH RESOLVED**
+
+**Built 2026-08-26, and the split was right for a reason neither half predicted.**
+
+`returns:` shipped as decided: checked by setting the analyzer's `current_return`
+for the step body walk, unknown type names refused outright (an error, not #609's
+warning, since the option is new). The sub-decision below is answered — **it
+describes the step, not the edge**: a skipped producer still binds `nil`, because
+that is the edge's behaviour and `on: ["skipped"]` is how a dependent opts into
+it. `returns:` does not imply nullable.
+
+**The schema half is not implementable as specified**, and building it is what
+showed why. A tool handler takes exactly one argument — the args record — so the
+`schema` names *that record's keys*, which a signature cannot carry. #479's own
+example registered fine and died on invoke; that is #624. What the signature
+genuinely says is **arity**, and that was the field going unchecked, so
+`tool.register` refuses a handler it could never invoke. The issue's premise held
+exactly; the field was different.
 
 **Decision: `tool.register` derives its `schema`/`returns_schema` from the
 handler's signature when none is given, and reports a mismatch when one is. A

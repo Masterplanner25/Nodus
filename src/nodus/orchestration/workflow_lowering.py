@@ -78,6 +78,12 @@ STATE_OPTION_KEYS = {
 
 
 STEP_OPTION_KEYS = {
+    # #479: the step's declared output type. Static-only, like every other
+    # annotation -- `nodus check` verifies it and the VM stays dynamically typed.
+    # In a workflow whose whole point is that steps are separable units run out
+    # of order and across processes, this is the boundary most worth typing, and
+    # it was the one carrying no contract at all.
+    "returns",
     "timeout_ms",
     "retries",
     "retry_delay_ms",

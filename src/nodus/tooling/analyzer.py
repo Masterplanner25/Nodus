@@ -51,6 +51,26 @@ class TypeAnalysisError(TypeError):
         self.path = path
 
 
+def _step_return_type(step) -> NodusType | None:
+    """The step's declared `returns:` type, or None if it declares none (#479).
+
+    Read off the raw options map rather than a lowered form, because the analyzer
+    runs on the parsed AST. The parser has already refused an unknown name, so
+    anything here is real — no silent degrade to `any`, which is what made
+    `returns:` worth having.
+    """
+    options = getattr(step, "options", None)
+    items = getattr(options, "items", None)
+    if not items:
+        return None
+    for key_node, value_node in items:
+        if getattr(key_node, "v", None) == "returns":
+            declared = getattr(value_node, "v", None)
+            if isinstance(declared, str):
+                return parse_type_name(declared)
+    return None
+
+
 class Analyzer(NodeVisitor):
     def __init__(self):
         self.scopes: list[dict[str, object]] = [{}]
@@ -98,9 +118,20 @@ class Analyzer(NodeVisitor):
                     self.infer_expr(step.when)
                 if getattr(step, "options", None) is not None:
                     self.infer_expr(step.options)
+                # #479: a step's `returns:` is its declared output, and it is
+                # checked exactly the way a function's return type is -- by
+                # setting `current_return` for the walk of its body, so every
+                # `return` inside it goes through the same comparison. The step
+                # body was already walked (#401); it just had nothing to check
+                # its own returns against.
+                declared_return = _step_return_type(step)
+                previous_return = self.current_return
+                if declared_return is not None:
+                    self.current_return = declared_return
                 self.push_scope()
                 self.analyze_stmt(step.body)
                 self.pop_scope()
+                self.current_return = previous_return
             return
         if isinstance(stmt, WorkflowStateDecl):
             self.infer_expr(stmt.value)

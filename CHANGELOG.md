@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#479: a workflow step can declare its output type.**
+
+  ```nd
+  step fetch with { returns: "map" } { return {"rows": 42i} }
+  ```
+
+  Checked by `nodus check` the way a function's return type is — by setting the
+  analyzer's `current_return` for the walk of the step body, so every `return`
+  inside it goes through the same comparison. The body was already walked (#401);
+  it simply had nothing to check its own returns against.
+
+  Optional and static-only: a step without it is checked exactly as before, and
+  nothing is enforced at run time. **An unknown type name is an error here, not a
+  warning** — unlike a function annotation (#609 warns until 6.0.0), the option is
+  new, so nothing can be relying on a misspelling being ignored, and a `returns:`
+  that silently meant "any type at all" would be the declared-but-inert field this
+  issue is about.
+
+  **It describes the step, not the edge** — the sub-decision D2 deferred, settled
+  by running it. A step declaring `returns: "int"` that is then *skipped* still
+  binds `nil` in its dependent; that is the edge's behaviour and `on: ["skipped"]`
+  is how a dependent opts into it. So `returns:` does not imply nullable, and
+  declaring it on a step that may be skipped is not an error.
+
+  This half needed #609: a bare type name that silently meant `any` when
+  misspelled would have made the whole field inert.
+
+
 ### Docs
 
 - **#624: the `std:tool` guide taught the wrong handler shape.** Its registration
