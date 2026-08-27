@@ -765,6 +765,7 @@ CLI commands mirror the keyword: `nodus workflow run` / `nodus workflow plan` /
 a JSON result payload. Using `nodus run` with `run_workflow()` in the script
 gives you control over what to print.
 
+
 ### 7.1 `goal … over …` — a stopping condition (Experimental)
 
 A workflow finishes when **every step has run**. A goal finishes when **its
@@ -890,6 +891,54 @@ order; and there is no cost bound. See
 [`docs/design/v5/01-goal-stopping-condition.md`](../design/v5/01-goal-stopping-condition.md).
 
 ---
+
+### Bounding a goal by what it spends
+
+`budget` takes three kinds of bound, and **at least one** is required:
+
+| | |
+|---|---|
+| `max_iterations: N` | how many passes |
+| `deadline_ms: M` | wall-clock |
+| `limits: { meter: N }` | **host-registered meters** |
+
+```
+goal reach over tune {
+    until reached("good_enough")
+    budget { max_iterations: 5, limits: { tokens: 100000 } }
+}
+```
+
+Nodus does not know what a token is, and deliberately never will — there is no
+model invocation anywhere in the core, and that absence is what forces every
+semantic decision across a typed boundary to your handler. So the **host counts**
+and the goal declares a ceiling:
+
+```python
+runtime.register_meter("tokens", lambda: session.total_tokens)
+```
+
+The reader takes no arguments and returns a number. The runtime compares it to
+the declared limit before each pass and stops the loop when it is reached; the
+breach names the meter:
+
+```
+goal 'reach' exhausted its budget (meter 'tokens' reached 300 of 300) without satisfying its condition
+```
+
+**A limit with no registered meter is an error, not an unbounded run** — refused
+before the first iteration, so nothing is spent:
+
+```
+goal 'reach' declares budget limit(s) 'tokens' but no accountant is registered for them.
+```
+
+Two things worth knowing. A meter is only a bound while it **moves** — if none of
+your declared bounds is reached within an implicit cap of 10,000 iterations, the
+goal stops anyway and says so, which usually means a counter is stuck. And the
+bound is per-*iteration*: a single pass making many host calls is yours to cap,
+at the altitude that owns the meter.
+
 
 ## 8. Checkpoints
 

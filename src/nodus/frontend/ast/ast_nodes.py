@@ -275,10 +275,18 @@ class PredicateOr(Base):
 
 @dataclass
 class GoalBudget(Base):
-    """Bounds on the pursuit. Mandatory — an unbounded goal is a hang."""
+    """Bounds on the pursuit. At least one — an unbounded goal is a hang.
 
-    max_iterations: object
-    deadline_ms: object
+    `max_iterations` and `deadline_ms` were both mandatory until #488. They are
+    optional now, individually, because a third kind of bound exists: `limits`
+    is a map of **host-registered meters** (`limits: { tokens: 100000 }`).
+    Requiring all of them would force a goal bounded by spend to invent an
+    iteration cap it does not want.
+    """
+
+    max_iterations: object = None
+    deadline_ms: object = None
+    limits: object = None
 
 
 @dataclass

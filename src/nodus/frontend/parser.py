@@ -654,19 +654,64 @@ class Parser:
         )
 
     def goal_budget(self, start: Tok):
+        # #488: the outer vocabulary stays **closed and parse-checkable**, which
+        # is the property this surface already had and is worth keeping — an
+        # unknown key is refused here with an accurate message rather than
+        # silently ignored. `limits` is the single key whose *contents* are open,
+        # and they are resolved against the host at run time because only the
+        # host knows what it is counting. A flat open vocabulary would have had
+        # to move the unknown-key check to run time to know that.
         options = self.parse_named_map_literal(
-            error_keys={"max_iterations", "deadline_ms"},
-            error_template="Unsupported budget option: {key}",
+            error_keys={"max_iterations", "deadline_ms", "limits"},
+            error_template=(
+                "Unsupported budget option: {key}. `budget` takes "
+                "max_iterations, deadline_ms and limits (a map of "
+                "host-registered meters)."
+            ),
         )
         found: dict[str, object] = {}
         for key_node, value_node in options.items:
             key = getattr(key_node, "v", None)
             if isinstance(key, str):
                 found[key] = value_node
-        for required in ("max_iterations", "deadline_ms"):
-            if required not in found:
-                self.error(f"goal budget must set `{required}`", start)
-        return self.mark(GoalBudget(found["max_iterations"], found["deadline_ms"]), start)
+        limits = found.get("limits")
+        if limits is not None:
+            # `{ tokens: 100000 }` parses as a *record* literal (unquoted keys)
+            # and `{ "tokens": 100000 }` as a map. Both read naturally here, and
+            # the rest of the budget is already unquoted, so accept either and
+            # normalise to a map — the lowering emits data, and a Record is not
+            # JSON serializable.
+            if isinstance(limits, RecordLiteral):
+                limits = self.mark(
+                    MapLit([(Str(key), value) for key, value in limits.fields]),
+                    start,
+                )
+            if not isinstance(limits, MapLit):
+                self.error(
+                    "goal budget `limits` must be a map of meter names to "
+                    "numbers, e.g. `limits: { tokens: 100000 }`",
+                    start,
+                )
+            if not limits.items:
+                self.error(
+                    "goal budget `limits` is empty. Name at least one meter, or "
+                    "omit the key.",
+                    start,
+                )
+        if not any(k in found for k in ("max_iterations", "deadline_ms", "limits")):
+            self.error(
+                "goal budget must set at least one of `max_iterations`, "
+                "`deadline_ms` or `limits`. An unbounded goal is a hang.",
+                start,
+            )
+        return self.mark(
+            GoalBudget(
+                found.get("max_iterations"),
+                found.get("deadline_ms"),
+                limits,
+            ),
+            start,
+        )
 
     # --- the `until` / `when` predicate ------------------------------------
     # A restricted grammar rather than a general expression. `reached("L")` takes

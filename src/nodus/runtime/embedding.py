@@ -501,6 +501,10 @@ class NodusRuntime:
         self._event_sinks: list = list(event_sinks) if event_sinks else []
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._host_capabilities: dict[str, str | None] = {}
+        # #488: accountants for `goal … budget { limits: { … } }`. Per-runtime,
+        # not process-global — a meter reads *this* host's counter, and two
+        # tenants in one process do not share one.
+        self._budget_meters: dict[str, object] = {}
         self.capability_policy: CapabilityPolicy | None = capability_policy
         self.approval_channel: ApprovalChannel | None = approval_channel
         self._python_registered_tools: dict[str, dict] = {}
@@ -571,6 +575,38 @@ class NodusRuntime:
         resolved_arity = self._resolve_arity(fn, arity)
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
         self._host_capabilities[name] = requires
+
+    def register_meter(self, name: str, reader) -> None:
+        """Register an accountant for a `goal … budget { limits: { … } }` meter.
+
+        `reader` takes no arguments and returns the meter's current total as a
+        number. Nodus compares it against the declared limit and stops the goal
+        loop when it is reached; it never interprets the unit.
+
+        That ignorance is deliberate and is the whole design of #488. There is no
+        model invocation anywhere in the core, and that absence is what forces
+        every semantic decision across a typed boundary to a host handler — so a
+        `max_cost_usd` that Nodus enforced by counting tokens is not available to
+        it, and a *named* cost dimension would bake in a unit it cannot define.
+        The host counts; the goal declares a ceiling.
+
+        Example::
+
+            runtime.register_meter("tokens", lambda: session.total_tokens)
+
+        A meter a goal declares but nobody registered is an **error**, not a
+        silently unbounded run — the rule `CapabilityDecision` already applies to
+        `ask` with no approval channel.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError("Meter name must be a non-empty string")
+        if not callable(reader):
+            raise ValueError(f"Meter reader for {name!r} must be callable")
+        self._budget_meters[name] = reader
+
+    def unregister_meter(self, name: str) -> None:
+        """Remove a meter. See `register_meter`."""
+        self._budget_meters.pop(name, None)
 
     def register_agent(
         self,
@@ -1003,6 +1039,7 @@ class NodusRuntime:
         vm.persist_workflow_source = self.persist_workflow_source
         vm.memory_store = self._memory_store
         vm.agent_registry = self.agent_registry
+        vm.budget_meters = self._budget_meters
         vm.workflow_runner = self.workflow_runner
         if self.worker_dispatcher is not None:
             vm.worker_dispatcher = self.worker_dispatcher

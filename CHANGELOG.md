@@ -4,6 +4,47 @@
 
 ### Added
 
+- **#488: a goal can be bounded by what it spends.** `budget` gains `limits`, a
+  map of **host-registered meters**, and `max_iterations`/`deadline_ms` become
+  optional — at least one bound is still required.
+
+  ```nd
+  goal reach over tune {
+      until reached("good_enough")
+      budget { max_iterations: 5, limits: { tokens: 100000 } }
+  }
+  ```
+
+  ```python
+  runtime.register_meter("tokens", lambda: session.total_tokens)
+  ```
+
+  **Nodus does not know what a token is and deliberately never will.** There is
+  no model invocation anywhere in the core, and that absence is load-bearing — it
+  is what forces every semantic decision across a typed boundary to a host
+  handler. So a `max_cost_usd` that Nodus enforced by counting tokens was never
+  available, and a *named* cost dimension would bake in a unit it cannot define.
+  The host counts; the goal declares a ceiling; the runtime compares two numbers.
+
+  **The outer vocabulary stays closed and parse-checkable**, which is the property
+  this surface already had and the issue explicitly praises — an unknown budget
+  key is still refused at parse time with an accurate message. Only the
+  *contents* of `limits` are open, and they are resolved against the host.
+
+  **A declared meter with no accountant is an error**, refused before the first
+  iteration so nothing is spent — the rule `CapabilityDecision` already applies
+  to `ask` with no approval channel. A reader that raises counts as a breach: a
+  host whose accountant is broken has lost the ability to bound the loop.
+
+  Also new: an **implicit cap of 10,000 iterations** when no iteration or
+  deadline bound is declared. Making both optional meant `limits` could be the
+  only bound, and a meter is only a bound while it *moves* — a stuck counter
+  would loop forever, which is exactly what `budget` exists to prevent. Found by
+  mutation testing, which hung. It is reported distinctly, naming what to check.
+
+
+### Added
+
 - **#481: workflows and goals take parameters.**
 
   ```nd
