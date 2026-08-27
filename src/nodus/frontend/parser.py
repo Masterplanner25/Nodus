@@ -866,6 +866,31 @@ class Parser:
         name = self.eat("ID").val
         deps = []
         options = None
+        # `each VAR in DEP` -- a mapped node (#480). Written before `after`,
+        # because `in DEP` *is* a dependency: the step cannot be expanded until
+        # the producer has run, and requiring the author to also write
+        # `after DEP` would let the two disagree.
+        each_var = None
+        each_source = None
+        if self.at("ID") and self.peek().val == "each":
+            each_tok = self.peek()
+            self.eat("ID")
+            each_var = self.eat("ID").val
+            if not (self.at("IN")):
+                self.error(
+                    "step `each` needs a source: `each item in producer { ... }`",
+                    each_tok,
+                )
+            self.eat("IN")
+            each_source = self.eat("ID").val
+            deps.append(each_source)
+            if each_var == each_source:
+                self.error(
+                    f"step '{name}' binds `each {each_var} in {each_source}` -- the "
+                    f"item and the producer cannot share a name, or the body "
+                    f"cannot say which it means",
+                    each_tok,
+                )
         if self.at("AFTER"):
             self.eat("AFTER")
             deps.append(self.eat("ID").val)
@@ -885,7 +910,11 @@ class Parser:
         self.workflow_step_depth += 1
         body = self.block()
         self.workflow_step_depth -= 1
-        return self.mark(step_type(name, deps, body, options=options, when=when), start)
+        return self.mark(
+            step_type(name, deps, body, options=options, when=when,
+                      each_var=each_var, each_source=each_source),
+            start,
+        )
 
     def parse_workflow_options(self):
         options = self.parse_named_map_literal(

@@ -269,7 +269,7 @@ spelling silently decides whether the parameter survives a resume. A declared
 parameter is durable by construction, which removes the choice rather than
 documenting it.
 
-## D5 — #480: adopt the mapped-node model. The graph does not grow
+## D5 — #480: adopt the mapped-node model. The graph does not grow — **SHIPPED**
 
 **Decision: a fan-out is a node declared in the source whose *cardinality* is
 discovered at run time. The running graph never acquires undeclared nodes.**
@@ -304,12 +304,32 @@ nearest analogue returns `{"tasks": {}, ..., "failed": []}` — defensible for a
 `run_graph`, wrong for a declared fan-out.
 
 **Sub-decision: re-expansion to a different cardinality is refused, not
-reconciled.** Airflow needs a `REMOVED` state because it keeps instances as durable
-rows; Nodus re-executes on resume (#486) and re-derives the list. A resume whose
-producer yields a different length is topology drift, and #470 already refuses
-topology drift with a message naming the real cause. Reusing that costs nothing
-and avoids an eighth task status — which matters, because the vocabulary is named
-once in `TASK_STATUSES` and pinned by `tests/test_status_vocabulary.py`.
+reconciled.** ~~Airflow needs a `REMOVED` state because it keeps instances as
+durable rows; Nodus re-executes on resume (#486) and re-derives the list. A
+resume whose producer yields a different length is topology drift, and #470
+already refuses topology drift with a message naming the real cause.~~
+
+**Withdrawn at implementation: the refusal cannot fire, so it was not shipped.**
+The reasoning above is sound and the conclusion is unreachable. Drift requires
+the producer to re-run *and* the mapped node to re-expand, and those two are
+mutually exclusive:
+
+* If the producer **completed**, a resume restores its result rather than
+  recomputing it, so the fan-out re-derives the *same* list even against edited
+  source. Demonstrated with a run suspended mid fan-out whose source was then
+  changed to return a longer list: the resume used the restored one.
+* If the producer **re-runs** (the checkpoint is inside it), the mapped node
+  completed and is itself restored, so it never re-expands. Its result can then
+  disagree with the re-run producer — but that is ordinary resume semantics, not
+  a fan-out property: a plain step's restored result can disagree with a re-run
+  predecessor in exactly the same way, and both values are visible in `steps`.
+
+A check that cannot be made to fail is a guarantee nobody can rely on, so there
+is none. The same finding removed the *second* half of this: the cardinality is
+not persisted either, because the producer's own restored result already carries
+it, and a second copy of one fact is this codebase's signature defect.
+
+The eighth task status is still avoided, which was the point.
 
 **Sub-decision: expansion is bounded, and the bound is charged to the producer.**
 Airflow's `max_map_length` defaults to 1024 and is checked when the upstream
@@ -323,7 +343,7 @@ attributable and cleanable (parent linkage, cascade cleanup). D5 is not about
 gaining the capability; it is about the fan-out being *in the parent graph*
 instead of beside it.
 
-## D6 — #468 is subsumed by D5. Do not build a partial-success envelope
+## D6 — #468 is subsumed by D5. Do not build a partial-success envelope — **SHIPPED**
 
 **Decision: close #468 as superseded. A mapped node is the partial-success
 mechanism.**
@@ -477,7 +497,7 @@ Nothing here is blocked, and the ordering is by prerequisite, not by value.
 | **Now** | **D1** (#609, filed) — warn in 5.x, error at 6.0.0 | Prerequisite for D2's step half, D3's typed reading, D4's typed parameters |
 | **Next minor** | **D4** (#481 parameters, untyped) · **D9** (#488 `limits`) | Self-contained; D4 rides #470's shipped metadata mechanism |
 | **Next minor** | **D2 first half** (#479 schema-from-signature) | Forces D1 into the open at the one surface that cannot fall back to `any` |
-| **After that** | **D5** (#480 mapped nodes) — closes **D6** (#468) | Needs #470 (shipped); everything in group B waits on its addressing |
+| ~~**After that**~~ **SHIPPED** | **D5** (#480 mapped nodes) — closes **D6** (#468) | Needs #470 (shipped); everything in group B waits on its addressing |
 | **After D5** | **D7** (#577 compensation) | Unwinds per instance, so it needs D5's addressing |
 | **After D1** | **D2 second half** (`returns:`) · **D3** (#472 wait schema) | Both need a type name that means something |
 | **Deferred** | **D8** (#578 barrier) | Question answered, feature unjustified |
