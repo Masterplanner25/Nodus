@@ -1526,6 +1526,13 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             "checkpoints": checkpoints,
             "checkpoint": lambda label: _record_checkpoint(task, label),
             "resume_payload": resume_payload,
+            # #481: read by `workflow_arg`, which the lowering emits as a
+            # prelude `let` per declared parameter. Comes from the run's own
+            # metadata, so a resume reads back what the run started with.
+            "args": (
+                graph.metadata.get("workflow_args")
+                if isinstance(graph.metadata, dict) else None
+            ),
         }
         if execution_kind == "goal" and isinstance(goal_name, str):
             context["goal"] = goal_name

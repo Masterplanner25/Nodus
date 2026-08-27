@@ -713,6 +713,33 @@ class Parser:
 
     def flow_def(self, start: Tok, def_type, step_type, label: str):
         name = self.eat("ID").val
+        # `workflow build(mode) { ... }` (#481). Optional, so every existing flow
+        # parses unchanged. Empty parentheses are refused rather than silently
+        # accepted as "no parameters" — writing them says a list was intended.
+        params: list[Param] = []
+        if self.at("("):
+            paren = self.eat("(")
+            if self.at(")"):
+                self.error(
+                    f"{label} '{name}' declares an empty parameter list. Omit the "
+                    f"parentheses if it takes no parameters.",
+                    paren,
+                )
+            while True:
+                params.append(self.parse_param())
+                if self.at(","):
+                    self.eat(",")
+                    continue
+                break
+            self.eat(")")
+            seen_params: set[str] = set()
+            for param in params:
+                if param.name in seen_params:
+                    self.error(
+                        f"Duplicate parameter '{param.name}' in {label} '{name}'",
+                        start,
+                    )
+                seen_params.add(param.name)
         self.eat("{")
         steps = []
         states = []
@@ -749,7 +776,23 @@ class Parser:
             for dep in step.deps:
                 if dep not in name_set:
                     self.error(f"Unknown {label} dependency: {dep}", step._tok if step._tok is not None else start)
-        return self.mark(def_type(name, states, steps), start)
+        # #481: a parameter and a step sharing a name would make `mode` mean one
+        # thing at the top of a step body and another after `after mode`. Refuse
+        # rather than pick.
+        for param in params:
+            if param.name in name_set:
+                self.error(
+                    f"{label} '{name}' has a parameter and a step both named "
+                    f"'{param.name}'",
+                    start,
+                )
+            if any(state.name == param.name for state in states):
+                self.error(
+                    f"{label} '{name}' has a parameter and a state cell both "
+                    f"named '{param.name}'",
+                    start,
+                )
+        return self.mark(def_type(name, states, steps, params=params), start)
 
     def flow_state_decl(self, label: str):
         start = self.eat("ID")

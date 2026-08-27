@@ -208,6 +208,7 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     state_init = _lower_state_init(flow)
     state_names = [state.name for state in flow.states]
     fold_cells = _fold_cells(flow)
+    param_names = [param.name for param in getattr(flow, "params", []) or []]
     items: list[tuple[object, object]] = [
         (Str(marker), Str(execution_kind)),
         (Str("name"), Str(flow.name)),
@@ -215,11 +216,19 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
         (
             Str("steps"),
             ListLit([
-                _lower_step_ast(step, state_names, fold_cells, flow_name=flow.name)
+                _lower_step_ast(
+                    step, state_names, fold_cells,
+                    flow_name=flow.name, param_names=param_names,
+                )
                 for step in flow.steps
             ]),
         ),
     ]
+    # #481: declared, so the runner can refuse an unknown or missing argument
+    # rather than leaving a step to read `nil`. Data on the flow map, like
+    # `state_keys` -- it has to survive to the runner, which never sees the AST.
+    if param_names:
+        items.append((Str("params"), ListLit([Str(name) for name in param_names])))
     if state_init is not None:
         items.append((Str("state_init"), state_init))
     if state_names:
@@ -267,20 +276,36 @@ def _lower_step_ast(
     fold_cells: dict[str, str] | None = None,
     *,
     flow_name: str = "",
+    param_names: list[str] | None = None,
 ) -> MapLit:
     state_var = "__workflow_state"
+    params = list(param_names or [])
     body = step.body
     rewriter = _StateRewriter(
         set(state_names),
         state_var,
-        initial_locals=set(step.deps) | ({state_var} if state_names else set()),
+        # #481: parameters are locals from the body's first line, so the state
+        # rewriter must not mistake a read of one for a state-cell read.
+        initial_locals=(
+            set(step.deps)
+            | set(params)
+            | ({state_var} if state_names else set())
+        ),
         fold_cells=fold_cells,
     )
     rewritten_body = rewriter.rewrite_stmt(body)
+    prelude_stmts: list[object] = []
     if state_names:
-        prelude = Let(state_var, builtin_call("workflow_state", []))
+        prelude_stmts.append(Let(state_var, builtin_call("workflow_state", [])))
+    # #481: bound from the run rather than passed as a closure argument. That is
+    # what makes a parameter durable by construction -- the value comes from the
+    # run record on a resume too, so it cannot be re-derived into something else
+    # the way a module-level `let` read inside a step could be.
+    for name in params:
+        prelude_stmts.append(Let(name, builtin_call("workflow_arg", [Str(name)])))
+    if prelude_stmts:
         body_stmts = rewritten_body.stmts if isinstance(rewritten_body, Block) else [rewritten_body]
-        rewritten_body = Block([prelude] + body_stmts)
+        rewritten_body = Block(prelude_stmts + body_stmts)
     body = _return_last_action(rewritten_body)
     items: list[tuple[object, object]] = [
         (Str("name"), Str(step.name)),
@@ -443,7 +468,7 @@ def graph_topology(tasks) -> dict:
     return {"steps": steps, "edges": edges}
 
 
-def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_by_step: dict[str, str] | None = None) -> TaskGraph:
+def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_by_step: dict[str, str] | None = None, args=None, prebound_args: dict | None = None, require_args: bool = True) -> TaskGraph:
     kind = runtime_flow_kind(workflow_value)
     if kind not in {"workflow", "goal"}:
         vm.runtime_error("type", "workflow value expected")
@@ -532,6 +557,15 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
     # (`NodusRuntime(persist_workflow_source=False)`); the marker below keeps
     # the rebuild's explanation accurate when it later reads from disk.
     _persist_source = getattr(vm, "persist_workflow_source", True)
+    # #481: a rebuild reads the arguments back from the run record rather
+    # than re-binding them -- that is what makes a parameter durable, and it
+    # is also why a resume does not need the caller to pass them again.
+    if prebound_args is not None:
+        bound_args = dict(prebound_args)
+    else:
+        bound_args = _bind_flow_args(
+            vm, workflow_value, name, kind, args, require=require_args
+        )
     metadata = {
         "workflow_name": name,
         "execution_kind": kind,
@@ -546,6 +580,10 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         # with the real cause instead.
         "workflow_topology": graph_topology(tasks),
         "state_policies": _state_policies(vm, workflow_value, name),
+        # #481: part of run identity, next to `workflow_topology` and for the
+        # same reason -- a run resumed with different arguments is as wrong as
+        # one resumed against different source.
+        "workflow_args": bound_args,
     }
     if not _persist_source:
         metadata["workflow_source_persisted"] = False
@@ -564,6 +602,73 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         metadata["checkpoints"] = []
 
     return TaskGraph(tasks, metadata=metadata)
+
+
+def _bind_flow_args(vm, workflow_value, flow_name: str, kind: str | None, args, *, require: bool = True) -> dict:
+    """Check the caller's arguments against the declared parameters (#481).
+
+    Refused where they are written rather than left to a step reading `nil`.
+    That is the whole point of declaring them: the module-global workaround this
+    replaces failed silently, and its worst property was that the *spelling*
+    silently decided whether the value survived a resume.
+    """
+    from nodus.vm.types import Record
+
+    declared = workflow_value.get("params")
+    declared_names = [n for n in declared if isinstance(n, str)] if isinstance(declared, list) else []
+    entry = "run_goal" if kind == "goal" else "run_workflow"
+
+    if args is None:
+        # `plan_workflow` asks about shape, not values, so a parameterised flow
+        # stays plannable without arguments (#481).
+        if declared_names and require:
+            vm.runtime_error(
+                "call",
+                f"{kind} '{flow_name}' declares parameter(s) "
+                f"{', '.join(repr(n) for n in declared_names)} but none were given. "
+                f"Pass them as a map: {entry}({flow_name}, {{{declared_names[0]}: ...}})",
+            )
+        return {}
+
+    # `{mode: "lite"}` is a *record* (unquoted keys) and `{"mode": "lite"}` is a
+    # map. Named arguments read naturally as the first, and `with { ... }` on a
+    # step already uses that spelling, so both are accepted -- but a record is
+    # normalised to a plain map here, because the bound arguments go into run
+    # metadata and a Record is not JSON serializable (the persist-time failure
+    # that makes `state` reject records).
+    if isinstance(args, Record):
+        args = dict(args.fields)
+    if not isinstance(args, dict):
+        vm.runtime_error(
+            "type",
+            f"{entry}({flow_name}, args) expects args as a map or record, "
+            f'e.g. {{{declared_names[0] if declared_names else "name"}: value}}',
+        )
+    if not declared_names:
+        vm.runtime_error(
+            "call",
+            f"{kind} '{flow_name}' declares no parameters, so it takes no "
+            f"arguments. Declare them: `{kind} {flow_name}(name) {{ ... }}`",
+        )
+
+    given = set(args)
+    expected = set(declared_names)
+    unknown = sorted(given - expected)
+    if unknown:
+        vm.runtime_error(
+            "call",
+            f"{kind} '{flow_name}' has no parameter(s) "
+            f"{', '.join(repr(n) for n in unknown)}. It declares: "
+            f"{', '.join(repr(n) for n in declared_names)}",
+        )
+    missing = sorted(expected - given)
+    if missing:
+        vm.runtime_error(
+            "call",
+            f"{kind} '{flow_name}' is missing argument(s) "
+            f"{', '.join(repr(n) for n in missing)}",
+        )
+    return {name: args[name] for name in declared_names}
 
 
 def _state_policies(vm, workflow_value, flow_name: str) -> dict:
