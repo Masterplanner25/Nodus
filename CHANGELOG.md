@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#479: `tool.register` refuses a handler it could never invoke.** A tool
+  handler is called with **exactly one argument** — the args record
+  (`run_closure(handler, [args])`). A handler declaring any other number can
+  never run, and registration accepted it anyway; the failure surfaced at *call*
+  time as a bare `Stack underflow` naming the handler, with nothing connecting it
+  to the registration.
+
+  ```
+  tool.register: tool 'app.t' handler declares 2 parameters ('name', 'times'), but
+  a handler is called with exactly one argument: the args record. Take one
+  parameter and read the fields from it, e.g. `fn handler(args) { ... args.name ... }`.
+  ```
+
+  **This is not the schema derivation #479 asks for, and building it is what
+  showed why.** The `schema` names the keys of that one args record; a signature
+  cannot carry them, so deriving a schema from handler *parameters* would encode
+  a calling convention this registry does not have. The issue's own example
+  registered fine on `main` and then died on invoke — characterised and filed as
+  **#624**. What the signature genuinely says here is arity, and that was the
+  field going unchecked. The issue's premise holds exactly; the field is
+  different.
+
+### Changed
+
+- **#479: the compiler no longer discards a declared signature.**
+  `FunctionInfo` carries `param_types` and `return_type`, populated from the AST
+  at its single construction site. Static-only, exactly as before — nothing here
+  is enforced at run time. It is the prerequisite #479 names for both its halves,
+  and what `returns:` will need.
+
+  Also corrected: the issue suggests deriving in the frontend *"since
+  `tool.register` is lowered from source anyway"*. It is not lowered —
+  `stdlib/tool.nd` defines `fn register(meta) { return tool_register(meta) }`, an
+  ordinary call to a builtin — so no frontend pass knows a registration is
+  happening, and the signature has to survive compilation instead.
+
+- **#479: the tool schema's type vocabulary stops being a third enumeration.**
+  `_NODUS_TO_JSON_TYPE` was a private list of seven names beside `TYPE_NAMES` and
+  the parser, and it had already drifted: `record` and `function` were missing, so
+  neither could be named in a tool schema. `record` maps to `object`; `function`
+  is named and refused with a reason (a callable does not cross a tool boundary)
+  rather than reported as unknown. Pinned against `TYPE_NAMES` by test.
+
+
 ### Added
 
 - **#488: a goal can be bounded by what it spends.** `budget` gains `limits`, a
