@@ -216,49 +216,78 @@ class StoreReadLockingTests(unittest.TestCase):
         """A scanner or indexer can hold a handle for a few ms; waiting is enough.
 
         The in-process case is fixed by the lock above. This covers the rest.
+
+        #612: the fake is *injected*, not installed over the module-global
+        `os.replace`. Patching the global made this count every rename in the
+        process — it saw 7 where its own logic accounts for at most 3, because
+        the graph-state writer and the bytecode cache rename files too — and it
+        fed `PermissionError` to whichever caller happened to arrive first.
         """
         src = os.path.join(self._tmp.name, "src.tmp")
         dst = os.path.join(self._tmp.name, "dst.json")
         with open(src, "w", encoding="utf-8") as handle:
             handle.write("{}")
 
-        real_replace = os.replace
         calls = {"n": 0}
 
         def flaky_replace(a, b):
             calls["n"] += 1
             if calls["n"] < 3:
                 raise PermissionError(5, "Access is denied")
-            return real_replace(a, b)
+            return os.replace(a, b)
 
-        os.replace = flaky_replace
-        try:
-            LocalWorkflowStore._replace_with_retry(src, dst)
-        finally:
-            os.replace = real_replace
+        LocalWorkflowStore._replace_with_retry(src, dst, replace=flaky_replace)
 
         self.assertEqual(3, calls["n"], "the replace was not retried")
         self.assertTrue(os.path.isfile(dst), "the record was lost to a transient denial")
 
+    # closes: #612
+    def test_the_retry_does_not_touch_the_global_os_replace(self):
+        """#612, asserted on the mechanism rather than on the count.
+
+        A count-based test passes whether the fake was injected or installed
+        globally, so it cannot tell the two apart — which is how the original
+        survived. This one can: it fails if `_replace_with_retry` ignores the
+        injected callable and reaches for the global instead.
+        """
+        src = os.path.join(self._tmp.name, "src3.tmp")
+        dst = os.path.join(self._tmp.name, "dst3.json")
+        with open(src, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+
+        before = os.replace
+        seen = []
+
+        def recording_replace(a, b):
+            seen.append((a, b))
+            return before(a, b)
+
+        LocalWorkflowStore._replace_with_retry(src, dst, replace=recording_replace)
+
+        self.assertEqual([(src, dst)], seen, "the injected callable was not used")
+        self.assertIs(before, os.replace, "os.replace must not be reassigned")
+
     def test_atomic_write_gives_up_rather_than_hanging(self):
-        """A retry loop with no end is a worse bug than the one it fixes."""
+        """A retry loop with no end is a worse bug than the one it fixes.
+
+        #612: injected for the same reason as above, and this one was the more
+        dangerous of the pair — it made the global `os.replace` raise for the
+        whole retry window (~200 ms of `time.sleep`), so any concurrent rename
+        anywhere in the process failed outright while it ran.
+        """
         src = os.path.join(self._tmp.name, "src2.tmp")
         with open(src, "w", encoding="utf-8") as handle:
             handle.write("{}")
 
-        real_replace = os.replace
-
         def always_denied(a, b):
             raise PermissionError(5, "Access is denied")
 
-        os.replace = always_denied
-        try:
-            with self.assertRaises(PermissionError):
-                LocalWorkflowStore._replace_with_retry(
-                    src, os.path.join(self._tmp.name, "dst2.json")
-                )
-        finally:
-            os.replace = real_replace
+        with self.assertRaises(PermissionError):
+            LocalWorkflowStore._replace_with_retry(
+                src,
+                os.path.join(self._tmp.name, "dst2.json"),
+                replace=always_denied,
+            )
 
 
 class ResumeBudgetTests(unittest.TestCase):

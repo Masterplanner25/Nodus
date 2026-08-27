@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#612: two store tests patched the process-global `os.replace`, so a
+  concurrent rename anywhere failed them — or was failed by them.**
+  `LocalWorkflowStore._replace_with_retry` takes an injectable `replace=` now
+  (defaulting to `os.replace`, resolved late, so no real caller changes) and the
+  tests inject instead of patching.
+
+  The counting test asserted 3 and saw **7** on CI: its own logic accounts for at
+  most 3, so four renames came from elsewhere in the process — the graph-state
+  writer and the bytecode cache both call `os.replace`. Reproduced
+  deterministically with a background renamer: the old form counts **9**, the new
+  form counts **3**.
+
+  The sibling was the more dangerous of the two. It made the global raise
+  `PermissionError` for the whole retry window — roughly 200 ms of `time.sleep` —
+  so any concurrent rename in the process failed outright while it ran.
+
+  A third assertion comes with them, on the mechanism rather than the count: a
+  count-based test passes whether the fake was injected or installed globally, so
+  it cannot tell the two apart, which is how the original survived.
+
+
 ### Fixes
 
 - **#616: a capability policy could be bypassed by writing the async form, and
