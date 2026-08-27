@@ -15,21 +15,54 @@ MCP-shaped namespaced registry — bridged to the MCP wire protocol by `nodus-mc
 ```nd
 import "std:tool" as tool
 
-tool.register({
-    name: "myapp.search",
-    description: "Search the knowledge base",
-    handler: fn(query) {
-        return http_get("https://search.example.com?q=" + query)
-    },
-    schema: {
-        type: "object",
-        properties: { query: { type: "string" } },
-        required: ["query"]
-    }
-})
+fn main() {
+    tool.register({
+        name: "myapp.search",
+        description: "Search the knowledge base",
+        handler: fn(args) {
+            return "searching for: \(args.query)"
+        },
+        schema: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"]
+        }
+    })
 
-let result = tool.invoke("myapp.search", { query: "nodus coroutines" })
+    print(tool.invoke("myapp.search", { query: "nodus coroutines" }))
+}
 ```
+
+```
+$ nodus run search_tool.nd
+searching for: nodus coroutines
+```
+
+### A handler takes exactly one parameter: the args record
+
+This is the part worth reading twice, because the natural thing to write is
+wrong. The `schema` names the keys of **one record**, and the handler is called
+with that whole record — not with one argument per schema key:
+
+```
+handler: fn(args) { return args.query }     // correct
+
+handler: fn(query) { ... }                  // WRONG — `query` is the whole record
+handler: fn(query, limit) { ... }           // WRONG — refused at registration
+```
+
+A handler declaring anything other than one parameter is **refused when you
+register it**, naming the contract:
+
+```
+tool.register: tool 'myapp.search' handler declares 2 parameters ('query', 'limit'),
+but a handler is called with exactly one argument: the args record. Take one
+parameter and read the fields from it, e.g. `fn handler(args) { ... args.query ... }`.
+```
+
+A *single* misnamed parameter cannot be refused — `fn(query)` is a legal handler
+that happens to receive the record under a misleading name — so it is worth
+naming the parameter `args`.
 
 **Tool names must be dotted** (`"myapp.search"`, not `"search"`). The dotted
 namespace prevents collisions across modules and is required by the tool registry.

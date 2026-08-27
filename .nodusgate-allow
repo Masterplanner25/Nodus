@@ -80,7 +80,11 @@ blockhash:README.md:287d267d54e0
 blockhash:docs/guide/getting-started.md:30b9a1ead393
 blockhash:docs/guide/getting-started.md:943c4c8f8cc3
 
-# ai-primitives.md — all blocks are multi-file or context-dependent (require companion state/imports)
+# ai-primitives.md — context-dependent blocks (require companion state/imports).
+# NOT all of them: the std:tool registration example is self-contained and gate-
+# checked as of #624, which is how it was caught teaching the wrong handler shape
+# (`fn(query)` used as if the parameter were the schema key). An entry below may
+# now be dead; `--migrate-allowlist` drops those.
 blockhash:docs/guide/ai-primitives.md:440e0992c5fd
 blockhash:docs/guide/ai-primitives.md:899d30806393
 
