@@ -888,7 +888,35 @@ class Parser:
         return self.mark(step_type(name, deps, body, options=options, when=when), start)
 
     def parse_workflow_options(self):
-        return self.parse_named_map_literal(error_keys=STEP_OPTION_KEYS, error_template="Unsupported workflow step option: {key}")
+        options = self.parse_named_map_literal(
+            error_keys=STEP_OPTION_KEYS,
+            error_template="Unsupported workflow step option: {key}",
+        )
+        # #479: `returns:` names a type, so it is checked here against the one
+        # vocabulary (#609). Unlike an annotation on a function, this is **an
+        # error rather than a warning**: the option is new, so nothing can
+        # already be relying on a misspelling being ignored, and a `returns:`
+        # that silently means "any type at all" would be a declared-but-inert
+        # field -- the exact shape this cluster has been removing.
+        for key_node, value_node in options.items:
+            if getattr(key_node, "v", None) != "returns":
+                continue
+            declared = getattr(value_node, "v", None)
+            if not isinstance(declared, str):
+                self.error(
+                    "step `returns:` must be a type name in quotes, "
+                    'e.g. `with { returns: "int" }`',
+                    getattr(value_node, "_tok", None) or self.peek(),
+                )
+            if not is_known_type_name(declared):
+                hint = suggest_type_name(declared)
+                suffix = f" -- did you mean '{hint}'?" if hint else "."
+                self.error(
+                    f"step `returns:` names unknown type '{declared}'{suffix} "
+                    f"Known types: {', '.join(sorted(TYPE_NAMES))}.",
+                    getattr(value_node, "_tok", None) or self.peek(),
+                )
+        return options
 
     def expr(self):
         self._parse_depth += 1
