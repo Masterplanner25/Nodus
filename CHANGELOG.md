@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Docs
+
+- **#624: the `std:tool` guide taught the wrong handler shape.** Its registration
+  example — the thing people copy — was
+
+  ```
+  handler: fn(query) { return http_get("...?q=" + query) }
+  ```
+
+  alongside a `schema` declaring `query`. That reads unmistakably as *"the
+  parameter is the schema key"*. It is not: a handler is called with **one
+  argument, the whole args record**, so the example produced
+  `?q=record {"query": "..."}`.
+
+  That is why anyone wrote a multi-parameter handler in the first place — and
+  those crash on invoke with a bare `Stack underflow` (refused at registration
+  since #479).
+
+  The example is corrected, **self-contained, and gate-checked now**: its
+  allowlist entry stopped matching when the block changed, so a future edit
+  reintroducing the wrong shape fails `nodus_gate --runtime` rather than sitting
+  there. Verified by breaking it deliberately and watching the gate catch it.
+
+  The guide also states the contract explicitly, including the case that cannot
+  be refused: a *single* misnamed parameter — `fn(query)` — is a legal handler
+  that happens to receive the record under a misleading name, which is why the
+  correct spelling is `fn(args)`.
+
+  **Argument spreading was considered and rejected.** Supporting
+  `fn(query, limit)` by spreading the record would make the one-parameter case
+  ambiguous — is `fn(args)` the whole record, or the value of a key named `args`?
+  Backwards compatibility forces the first, leaving the semantics
+  arity-dependent: one rule for one parameter, another for two. One clear rule is
+  worth more.
+
+
 ### Fixes
 
 - **#479: `tool.register` refuses a handler it could never invoke.** A tool
