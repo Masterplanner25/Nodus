@@ -1,3 +1,15 @@
+**PARTLY SUPERSEDED 2026-08-26.** Milestones are not used in this project —
+all eleven are closed and none will be created (see `CLAUDE.md`). **Skip every
+milestone step below**: identifying one, listing its issues, and closing it.
+
+The rest of this skill is still the right shape and still worth running at a
+cycle's end — adding resolution comments to issues that lack them, closing what
+shipped, and verifying counts. Drive it from `CHANGELOG.md`'s released section
+rather than from a milestone; that is what the release process and
+`nodus_gate --closed-issues` already read.
+
+---
+
 Close out a completed Nodus release cycle: add resolution comments to issues
 that lack them, close any remaining open issues, close the milestone, and
 verify counts.

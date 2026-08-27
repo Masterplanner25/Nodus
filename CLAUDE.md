@@ -53,9 +53,27 @@ Standard issue shape:
     'title': 'BUG-NNN: short description',
     'body': '## Summary\n\n...\n\n## Reproduction\n\n...\n\n## Expected behavior\n\n...\n\n## Fix direction\n\n...\n\n## Affected versions\n\nv5.0.0 (current).',
     'labels': ['bug', 'subsystem:X', 'severity:low|medium|high|critical'],
-    'milestone': None   # check current milestone on GitHub
+    'milestone': None   # always None — see below
 }
 ```
+
+**Milestones are not used. Do not create one, and do not assign one.** Decided
+2026-08-26, and all eleven are closed.
+
+They were never a planning tool here — at the moment of the decision **zero of
+the 45 open issues carried one**, so nothing was scheduled by them and nothing
+moved by touching them. The practice had already lapsed: `v5.0` was the last
+milestone created, and 5.0.1 through 5.5.0 all shipped without one. What
+remained were five records of finished releases (`v2.1.1`, `v3.0`, `v4.0`,
+`v4.0.1`, `v4.1`) left marked open, each with 0 open issues.
+
+Release scope is tracked by `CHANGELOG.md`'s `[Unreleased]` section, which the
+release process already reads and which `nodus_gate --closed-issues` already
+drives off. That is one mechanism instead of two, and it is the one that has
+tests behind it.
+
+`/close-cycle` and `/milestone-transition` both operate on milestones and are
+superseded; their headers say so.
 
 Write the script to a temp file and run it — inline heredocs with
 triple-quoted strings cause PowerShell/Bash quoting issues.

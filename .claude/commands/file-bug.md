@@ -47,7 +47,7 @@ Arguments: $ARGUMENTS
                "## Affected versions\n\nv2.1.1 (current). Likely all prior versions."
            ),
            'labels': ['bug', 'subsystem:X', 'severity:Y'],
-           'milestone': 3
+           'milestone': None   # always — milestones are not used
        }
    ]
 
@@ -82,16 +82,16 @@ Arguments: $ARGUMENTS
   `severity:low`, `severity:cosmetic`
 - Always include `bug` as the first label
 
-## Milestone
+## Milestone — none, always
 
-Determine the current target milestone from the open milestone list — do not
-hardcode the number:
+**Do not assign a milestone and do not create one.** Decided 2026-08-26; all
+eleven are closed. Pass `'milestone': None`.
 
-```python
-import urllib.request, json
+They were never doing the job the name suggests: at the moment of the decision
+**zero of the 45 open issues carried one**, and the last milestone created was
+`v5.0` — 5.0.1 through 5.5.0 all shipped without any. Release scope lives in
+`CHANGELOG.md`'s `[Unreleased]` section, which the release process reads and
+`nodus_gate --closed-issues` drives off.
 
-# GET /repos/Masterplanner25/Nodus/milestones?state=open&per_page=10
-# Pick the lowest-numbered open milestone, or the one matching the target version.
-```
-
-Use that milestone number in the issue payload.
+What an issue *does* need is the label set above: `bug` where it applies, a
+`subsystem:`, and a `severity:`. Those are what triage actually reads.
