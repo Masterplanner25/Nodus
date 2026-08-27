@@ -439,7 +439,13 @@ class LocalWorkflowStore(WorkflowStore):
         self._replace_with_retry(tmp_path, path)
 
     @staticmethod
-    def _replace_with_retry(tmp_path: str, path: str, *, attempts: int = 5) -> None:
+    def _replace_with_retry(
+        tmp_path: str,
+        path: str,
+        *,
+        attempts: int = 5,
+        replace=None,
+    ) -> None:
         """`os.replace`, retried briefly on Windows sharing violations (#376).
 
         On Windows the replace fails with `[WinError 5] Access is denied` while
@@ -448,10 +454,24 @@ class LocalWorkflowStore(WorkflowStore):
         an indexer or another process reading the store can hold a handle for a
         few milliseconds, and losing a run record to that is not acceptable when
         waiting is enough. POSIX never takes this path.
+
+        `replace` exists for the tests and defaults to `os.replace` (#612). A
+        test that wants to observe the retry has to make the rename fail, and
+        the only other way to do that is to monkeypatch the *module-global*
+        `os.replace` — which every other caller in the process shares. That was
+        not a hypothetical: a test counting calls saw 7 where its own logic
+        accounts for 3, because the graph-state writer and the bytecode cache
+        renamed files in the same window, and the failure moved between runs.
+        Worse, the sibling test made the global raise for ~200 ms, so any
+        concurrent rename anywhere in the process failed outright.
+
+        Resolved late rather than bound as a default, so the behaviour of every
+        real caller is exactly what it was.
         """
+        do_replace = replace if replace is not None else os.replace
         for attempt in range(attempts):
             try:
-                os.replace(tmp_path, path)
+                do_replace(tmp_path, path)
                 return
             except PermissionError:
                 if attempt == attempts - 1:
