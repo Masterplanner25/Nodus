@@ -177,6 +177,17 @@ class WorkflowStep(Base):
     # expression would be compiled code, invisible to `plan_workflow` and beyond
     # what `nodus check` can verify. Restricted, it stays data.
     when: object | None = None
+    # `step process each item in plan { ... }` -- a **mapped node** (#480).
+    #
+    # The graph never grows: this is one node declared in the source, and only
+    # its *cardinality* is discovered at run time, when `plan` produces a list.
+    # That is what makes it resumable -- a rebuild reconstructs the declared node
+    # and re-derives the count from durable data, rather than needing to restore
+    # nodes that exist in the run and not in the source.
+    #
+    # `each item in plan` implies `after plan`; the parser adds the dependency.
+    each_var: str | None = None
+    each_source: str | None = None
 
 
 @dataclass
@@ -221,6 +232,17 @@ class GoalStep(Base):
     body: Block
     options: object | None = None
     when: object | None = None
+    # `step process each item in plan { ... }` -- a **mapped node** (#480).
+    #
+    # The graph never grows: this is one node declared in the source, and only
+    # its *cardinality* is discovered at run time, when `plan` produces a list.
+    # That is what makes it resumable -- a rebuild reconstructs the declared node
+    # and re-derives the count from durable data, rather than needing to restore
+    # nodes that exist in the run and not in the source.
+    #
+    # `each item in plan` implies `after plan`; the parser adds the dependency.
+    each_var: str | None = None
+    each_source: str | None = None
 
 
 @dataclass

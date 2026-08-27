@@ -4,6 +4,39 @@
 
 ### Added
 
+- **#480: a workflow step can map over a list.**
+
+  ```nd
+  step render each page in discover { return "rendered \(page)" }
+  step index after render { return "indexed \(len(render)) pages" }
+  ```
+
+  The body runs once per item, concurrently, and `render` stays **one step**:
+  `steps`, `statuses` and `failed` each name it once however many items it ran
+  over, and its result is the list of item results in the producer's order.
+  `index` joins the whole fan-out and receives that list as one argument.
+
+  `in` is itself the dependency, so `after discover` is neither needed nor able
+  to disagree with it. The graph does not grow: `plan_workflow` still shows one
+  node, and only the **cardinality** is discovered at run time, which is what
+  lets a resume rebuild the run.
+
+  Three outcomes at the edges, deliberately distinct. An **empty** list is
+  `skipped` with a result of `[]` (it ran; the answer was no items), so a join
+  opts in with `on: [..., "skipped"]` like any other skipped step. A producer
+  that returned **no list at all** *fails* and leaves no result, naming the
+  producer. Over **1024** instances the run fails before anything runs, charged
+  to the producer rather than reported against the scheduler afterwards.
+
+  Closes **#468** as subsumed: dynamic fan-out was the thing it asked for.
+
+  Two things the design doc (D5) anticipated that were removed rather than
+  built, because testing showed neither could happen. There is **no
+  cardinality-drift refusal on resume** — drift needs the producer to re-run
+  *and* the mapped node to re-expand, and those are mutually exclusive. And
+  there is **no second copy of the cardinality**, because a completed
+  producer's result is already durable and the fan-out re-derives from it.
+
 - **#479: a workflow step can declare its output type.**
 
   ```nd
@@ -69,6 +102,15 @@
 
 
 ### Fixes
+
+- **#480: a mapped step is one step in every aggregation that names steps.**
+  `steps`, `statuses`, `failed` and `tolerated` all key by step name, and each
+  learned separately that an instance is not a step, getting it wrong
+  differently each time. One failing item named its step **twice** in `failed`;
+  whichever instance was iterated last stood in for the step in `statuses`,
+  reporting `completed` for a step that had failed. Asked once now, at
+  `TaskNode.is_mapped_instance`, with a source assertion so a fifth aggregation
+  cannot quietly answer it again.
 
 - **#479: `tool.register` refuses a handler it could never invoke.** A tool
   handler is called with **exactly one argument** — the args record

@@ -69,6 +69,15 @@ class WorkflowRebuildError(Exception):
 # guards landed and not revisited when they did. `TASK_STATUSES` below now names the
 # reported vocabulary, and `tests/test_status_vocabulary.py` holds the guide to both
 # tuples, because the same staleness reached the CHANGELOG and the README.
+#: Most instances one mapped node may expand to (#480).
+#:
+#: Charged to the **producer** -- checked the moment its list arrives, and
+#: reported against the step that produced it, not against the scheduler after
+#: the fact. A fan-out is bounded by what upstream returned, so that is where
+#: the bound belongs and where an author can act on it.
+MAX_MAPPED_INSTANCES = 1024
+
+
 JOIN_ON_STATES = ("completed", "failed", "skipped")
 
 # Every value `task_statuses()` can report. Named here rather than left implicit in
@@ -114,6 +123,32 @@ class TaskNode:
     retry_classification: str | None = None
     cache: bool = False
     cache_key: str | None = None
+    # #480: a mapped node. `each_source` is the dependency whose result is the
+    # list; it is set on the *declared* node, which is never run. When that node
+    # becomes ready the runner replaces it with one instance per item, each
+    # carrying `each_index` and `each_value` and sharing every option the
+    # declared node had (retries, timeout, cache, join, tolerance).
+    #
+    # The graph does not grow in the sense that matters: the node exists in the
+    # source, and only the count is discovered at run time -- which is what a
+    # rebuild can reconstruct.
+    each_source: str | None = None
+    each_index: int | None = None
+    each_value: object | None = None
+    each_parent: str | None = None
+
+    @property
+    def is_mapped_instance(self) -> bool:
+        """Is this one item's execution rather than a step in the source? (#480)
+
+        Every aggregation keyed by step name has to know: `steps`, `statuses`,
+        `failed` and `tolerated` all name steps, and a mapped step is one step
+        however many instances it expanded to. Each site learned this
+        separately at first, and each got it wrong differently -- an arbitrary
+        instance's status standing in for the step, one failing item naming its
+        step twice. Asked once, here.
+        """
+        return self.each_parent is not None
     # #475: `with { allow_failure: true }` -- this step failing (after its
     # retries) does not fail the run. Its status stays `failed` (the truth),
     # dependents are poisoned exactly as before unless they opted in via
@@ -766,6 +801,13 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             pending_queue.append(task_id)
 
     results: dict[str, object] = {}
+    # #480: declared mapped nodes that concluded without running (empty or
+    # unmappable upstream), and the instances each expanded node produced.
+    mapped_skipped: set[str] = set()
+    mapped_expanded: dict[str, list[str]] = {}
+    #: Declared mapped nodes that had at least one instance fail tolerably.
+    mapped_tolerated: set[str] = set()
+    upstream_failed_ids: set[str] = set()
     timings: dict[str, dict] = {}
     attempts: dict[str, float] = {}
     task_values: dict[str, object] = {}
@@ -945,10 +987,29 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         if not isinstance(task_to_step, dict):
             return {}
         mapped = {}
+        # #480: a mapped node's instances all carry the same step name, so a
+        # plain assignment would make the last one win. They collect into a list
+        # in *index* order -- which is the order the producer's list was in, not
+        # the order they happened to finish.
+        fanned: dict[str, dict[int, object]] = {}
         for task_id, result in task_values.items():
             step_name = task_to_step.get(task_id)
-            if isinstance(step_name, str):
+            if not isinstance(step_name, str):
+                continue
+            node = by_id.get(task_id)
+            index = getattr(node, "each_index", None) if node is not None else None
+            if index is None:
                 mapped[step_name] = result
+            else:
+                fanned.setdefault(step_name, {})[index] = result
+        for step_name, by_index in fanned.items():
+            mapped[step_name] = [by_index[i] for i in sorted(by_index)]
+        # A declared node that expanded to nothing reports an empty list rather
+        # than being absent: it ran, and the answer was "no items".
+        for task_id in mapped_skipped:
+            step_name = task_to_step.get(task_id)
+            if isinstance(step_name, str) and step_name not in mapped:
+                mapped[step_name] = []
         return mapped
 
     def workflow_event_payload(task: TaskNode) -> dict | None:
@@ -1094,6 +1155,194 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
         return bool(vm._evaluate_goal_predicate(task.when, reached))
 
+    def expand_mapped(task: TaskNode) -> bool:
+        nonlocal failed
+        """Replace a declared mapped node with one instance per item (#480).
+
+        Called when the node is ready, which means its producer has completed.
+        Returns True if the caller should re-run its readiness pass -- the new
+        instances are ready immediately, exactly as a skip can make a dependent
+        classifiable in the same pass.
+
+        The declared node is never executed. It becomes the count.
+        """
+        source_task = None
+        for dep in task.dependencies:
+            if dep.step_name == task.each_source or dep.task_id == task.each_source:
+                source_task = dep
+                break
+        items = results.get(source_task.task_id) if source_task is not None else None
+
+        def _conclude(status: str, message: str | None = None) -> bool:
+            nonlocal failed
+            task.status = status
+            task.finished_at = runtime_time_ms()
+            if task.started_at is None:
+                task.started_at = task.finished_at
+            if message is not None:
+                task.error = message
+            _remove_task_from_pending(task.task_id)
+            timings[task.task_id] = {
+                "started_at": task.started_at, "finished_at": task.finished_at,
+            }
+            # A node that cannot expand has failed, and the run has to say so.
+            # `_conclude` does not go through the ordinary failure handler --
+            # nothing raised -- so the run-level payload is set here, in the same
+            # shape, or the step would be `failed` in `statuses` and absent from
+            # `failed`.
+            if status == "failed" and failed is None and not task.allow_failure:
+                failed = {
+                    "tasks": task_values,
+                    "steps": step_results(),
+                    "failed": [failed_id(task)],
+                    "error": message or "mapped step could not expand",
+                    "timings": timings,
+                    "attempts": attempts,
+                    "cache_hits": cache_hits,
+                    "graph_id": graph.graph_id,
+                }
+            return True
+
+        # A producer that returned nothing mappable is not a fan-out of zero --
+        # it is a fan-out that could not be computed (Airflow draws the same
+        # line). `upstream_failed` is the status that already means this.
+        if not isinstance(items, list):
+            # Deliberately not `mapped_skipped`: that set is what reports an
+            # empty list in `steps`, and "the fan-out could not be computed" is
+            # not "the fan-out was empty". A step that failed has no result, the
+            # same as any other failed step.
+            upstream_failed_ids.add(task.task_id)
+            return _conclude(
+                "failed",
+                f"step '{task.step_name}' maps over '{task.each_source}', which "
+                # The guest's vocabulary, not Python's: `NoneType` named a type
+                # no Nodus program can write.
+                f"returned {vm.builtin_type(items)} rather than a list",
+            )
+        if len(items) > MAX_MAPPED_INSTANCES:
+            return _conclude(
+                "failed",
+                f"step '{task.step_name}' would expand to {len(items)} instances, "
+                f"over the limit of {MAX_MAPPED_INSTANCES}. The bound is on what "
+                f"'{task.each_source}' returned -- narrow it there.",
+            )
+        # Zero items is a legitimate answer, and "ran nothing, reported success"
+        # is the wrong default for a declared node with a join behind it.
+        if not items:
+            mapped_skipped.add(task.task_id)
+            skipped_ids.add(task.task_id)
+            vm.event_bus.emit_event("task_skipped", name=task.task_id)
+            workflow_data = workflow_event_payload(task)
+            if workflow_data is not None:
+                vm.event_bus.emit_event(
+                    "workflow_step_skipped", name=task.step_name, data=workflow_data
+                )
+            return _conclude("skipped")
+
+        dep_index = task.dependencies.index(source_task) if source_task is not None else 0
+        instances: list[TaskNode] = []
+        for index, item in enumerate(items):
+            instance = TaskNode(
+                task_id=f"{task.task_id}[{index}]",
+                function=task.function,
+                dependencies=list(task.dependencies),
+                on_states=task.on_states,
+                when=task.when,
+                step_name=task.step_name,
+                worker=task.worker,
+                worker_timeout_ms=task.worker_timeout_ms,
+                timeout_ms=task.timeout_ms,
+                max_retries=task.max_retries,
+                retry_delay_ms=task.retry_delay_ms,
+                cache=task.cache,
+                cache_key=(f"{task.cache_key}[{index}]" if task.cache_key else None),
+                allow_failure=task.allow_failure,
+                each_index=index,
+                each_value=item,
+                each_parent=task.task_id,
+            )
+            instance._each_dep_index = dep_index  # type: ignore[attr-defined]
+            instances.append(instance)
+
+        _remove_task_from_pending(task.task_id)
+        task.status = "expanded"
+        mapped_expanded[task.task_id] = [i.task_id for i in instances]
+        # Instances answer to the same step name, so results and statuses can
+        # find them. Recorded on the graph's own map rather than a second one.
+        if isinstance(graph.metadata, dict):
+            t2s = graph.metadata.get("task_to_step")
+            if isinstance(t2s, dict) and task.step_name:
+                for instance in instances:
+                    t2s[instance.task_id] = task.step_name
+            # #480: the cardinality is deliberately NOT recorded here. It is
+            # already durable, in the producer's own restored result: a resume
+            # restores a completed producer and re-derives the same list, which
+            # is demonstrated by a run suspended mid fan-out resuming to the
+            # same instances against edited source. A second copy of one fact is
+            # this codebase's signature defect, so there is not one.
+
+        for instance in instances:
+            tasks.append(instance)
+            by_id[instance.task_id] = instance
+            _mark_task_pending(instance.task_id)
+        # Dependents are deliberately NOT rewired to the instances. `collect
+        # after process` declares one dependency and its body takes one
+        # argument; pointing it at N instances would hand it N and it received
+        # the last item instead of the list. The declared node stays the join:
+        # it completes when every instance has, carrying their results as a
+        # list. See `_settle_mapped_parent`.
+        return True
+
+    def _settle_mapped_parent(parent_id: str) -> bool:
+        """Complete a mapped node once all of its instances have finished (#480).
+
+        The declared node is the join. It produces the list, in *index* order --
+        the order the producer returned, not the order the instances finished.
+        Returns True if it settled now, so the caller can re-run its readiness
+        pass and let whatever waits on it become ready in the same turn.
+        """
+        parent = by_id.get(parent_id)
+        if parent is None or parent.status != "expanded":
+            return False
+        instance_ids = mapped_expanded.get(parent_id) or []
+        outcomes = []
+        for instance_id in instance_ids:
+            node = by_id.get(instance_id)
+            if node is None:
+                return False
+            if instance_id in results:
+                outcomes.append((node.each_index, results[instance_id]))
+                continue
+            if node.status == "failed" or instance_id in skipped_ids:
+                # One instance failing is the whole fan-out failing, unless the
+                # step tolerated it -- the same rule a plain step follows, with
+                # no new vocabulary.
+                if node.status == "failed" and parent.allow_failure:
+                    mapped_tolerated.add(parent_id)
+                if not parent.allow_failure and node.status == "failed":
+                    parent.status = "failed"
+                    parent.error = node.error
+                    parent.finished_at = runtime_time_ms()
+                    return True
+                outcomes.append((node.each_index, None))
+                continue
+            return False
+        parent.status = "done"
+        parent.finished_at = runtime_time_ms()
+        if parent.started_at is None:
+            parent.started_at = parent.finished_at
+        # `instance_ids` is the expansion order, which is the producer's list
+        # order, so this is already by index. Sorting on `each_index` here was
+        # dead: it could not be made to change the result, and dead defence
+        # reads as a guarantee somebody is relying on.
+        ordered_results = [value for _, value in outcomes]
+        parent.result = ordered_results
+        results[parent_id] = ordered_results
+        timings[parent_id] = {
+            "started_at": parent.started_at, "finished_at": parent.finished_at,
+        }
+        return True
+
     def schedule_ready() -> None:
         """Start everything that is ready, skipping whatever its guard excludes.
 
@@ -1103,6 +1352,13 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         """
         while True:
             skipped_any = False
+            # #480: an expanded node becomes ready to *complete* when its
+            # instances do, which is a different question from a task becoming
+            # ready to run. Checked here so a join behind a fan-out is released
+            # in the same pass that finishes the last item.
+            for parent_id in list(mapped_expanded):
+                if _settle_mapped_parent(parent_id):
+                    skipped_any = True
             for task in ready_tasks():
                 if not guard_holds(task):
                     skipped_ids.add(task.task_id)
@@ -1114,6 +1370,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                             "workflow_step_skipped", name=task.step_name, data=workflow_data
                         )
                     skipped_any = True
+                elif task.each_source is not None and task.each_index is None:
+                    if expand_mapped(task):
+                        skipped_any = True
                 else:
                     spawn_task(task)
             if not skipped_any:
@@ -1218,6 +1477,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             return {}
         mapped = {}
         for task_id, status in by_task.items():
+            # #480: every instance of a mapped step carries that step's name, so
+            # writing each one here let whichever happened to be iterated last
+            # stand in for the step -- reporting `completed` for a step that
+            # failed. The declared node holds the step's verdict; instances are
+            # visible in `task_to_step` for inspection, not for this.
+            node = by_id.get(task_id)
+            if node is not None and node.is_mapped_instance:
+                continue
             step_name = task_to_step.get(task_id)
             if isinstance(step_name, str):
                 mapped[step_name] = status
@@ -1236,7 +1503,12 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         payload["failed"] = [
             failed_id(task)
             for task in tasks
-            if task.status == "failed" and not task.allow_failure
+            # #480: an instance and its declared node share a step name, so
+            # listing both named the step twice for a single failing item.
+            # The declared node is the reporting unit -- `_settle_mapped_parent`
+            # has already carried the instance's failure up to it.
+            if not task.is_mapped_instance
+            and task.status == "failed" and not task.allow_failure
         ]
         _add_tolerated(payload)
         return payload
@@ -1253,7 +1525,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         tolerated = [
             failed_id(task)
             for task in tasks
-            if task.status == "failed" and task.allow_failure
+            if not task.is_mapped_instance
+            and (
+                (task.status == "failed" and task.allow_failure)
+                # A tolerated instance failure leaves the declared node
+                # `done` -- the run succeeded -- but the step still had a
+                # casualty, and that is what this key reports.
+                or task.task_id in mapped_tolerated
+            )
         ]
         if tolerated:
             payload["tolerated"] = tolerated
@@ -1612,6 +1891,13 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             # the error belongs with the partial-success envelope (#468), which is
             # where the shape of a "what happened" value gets decided.
             args = [results.get(dep.task_id) for dep in task.dependencies]
+            # #480: an instance is called with its item where the producer's
+            # list would be, which is why the lowering put the loop variable in
+            # that parameter slot. Arity and ordering are untouched.
+            if task.each_index is not None:
+                slot = getattr(task, "_each_dep_index", 0)
+                if 0 <= slot < len(args):
+                    args[slot] = task.each_value
         context = _workflow_context(task)
         if task.cache:
             key = task.cache_key or _default_cache_key(task, args)

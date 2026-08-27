@@ -293,6 +293,8 @@ def _lower_step_ast(
     state_var = "__workflow_state"
     params = list(param_names or [])
     body = step.body
+    step_each_var = getattr(step, "each_var", None)
+    each_locals: set[str] = {step_each_var} if isinstance(step_each_var, str) else set()
     rewriter = _StateRewriter(
         set(state_names),
         state_var,
@@ -301,6 +303,9 @@ def _lower_step_ast(
         initial_locals=(
             set(step.deps)
             | set(params)
+            # #480: the loop variable is a parameter of the step body, so a read
+            # of it is not a state-cell read.
+            | each_locals
             | ({state_var} if state_names else set())
         ),
         fold_cells=fold_cells,
@@ -319,6 +324,17 @@ def _lower_step_ast(
         body_stmts = rewritten_body.stmts if isinstance(rewritten_body, Block) else [rewritten_body]
         rewritten_body = Block(prelude_stmts + body_stmts)
     body = _return_last_action(rewritten_body)
+    # #480: a mapped step's body is called once per item, so the producer's
+    # parameter slot carries the *item* rather than the list. Substituting in
+    # place keeps arity and ordering identical to a plain step, which is what
+    # lets the existing arity check and the runner's positional dependency
+    # passing work unchanged.
+    each_var = getattr(step, "each_var", None)
+    each_source = getattr(step, "each_source", None)
+    fn_params = [
+        each_var if (each_var is not None and dep == each_source) else dep
+        for dep in step.deps
+    ]
     items: list[tuple[object, object]] = [
         (Str("name"), Str(step.name)),
         (Str("deps"), ListLit([Str(dep) for dep in step.deps])),
@@ -331,7 +347,7 @@ def _lower_step_ast(
         (
             Str("fn"),
             FnExpr(
-                [Param(dep) for dep in step.deps],
+                [Param(name) for name in fn_params],
                 body,
                 return_type=None,
                 step_owner=f"{flow_name}.{step.name}" if flow_name else step.name,
@@ -339,6 +355,14 @@ def _lower_step_ast(
         ),
         (Str("options"), step.options if step.options is not None else MapLit([])),
     ]
+    if each_var is not None:
+        # Data on the step map, like `when` and `deps` -- the runner never sees
+        # the AST, and `plan_workflow` should be able to show that this node
+        # fans out before anything runs.
+        items.append((Str("each"), MapLit([
+            (Str("var"), Str(each_var)),
+            (Str("source"), Str(each_source or "")),
+        ])))
     when = getattr(step, "when", None)
     if when is not None:
         # Data, not a compiled closure -- the same treatment a goal's `until` gets,
@@ -529,6 +553,12 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         if task_id is None:
             vm._task_counter += 1
             task_id = f"task_{vm._task_counter}"
+        each_raw = step.get("each") if isinstance(step.get("each"), dict) else None
+        each_source_name = None
+        if each_raw is not None:
+            each_source_name = each_raw.get("source")
+            if not isinstance(each_source_name, str) or not each_source_name:
+                vm.runtime_error("type", f"Workflow step '{step_name}' has an invalid `each` source")
         task = TaskNode(
             task_id=task_id,
             function=closure,
@@ -544,6 +574,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             when=step.get("when"),
             step_name=step_name,
             allow_failure=bool(options.get("allow_failure", False)),
+            each_source=each_source_name,
         )
         tasks.append(task)
         resolved[step_name] = task

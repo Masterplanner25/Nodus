@@ -270,6 +270,135 @@ a step that may be skipped is not an error.
 
 ---
 
+## 3.3 Mapping a step over a list
+
+A step can run once per item another step produced:
+
+```nd
+workflow publish {
+    step discover { return ["intro.md", "guide.md", "api.md"] }
+    step render each page in discover { return "rendered \(page)" }
+    step index after render { return "indexed \(len(render)) pages" }
+}
+
+fn main() {
+    let r = run_workflow(publish)
+    print(r["steps"]["render"])
+    print(r["steps"]["index"])
+    print(r["statuses"])
+}
+```
+
+```
+$ nodus run publish.nd
+["rendered intro.md", "rendered guide.md", "rendered api.md"]
+indexed 3 pages
+{"discover": "completed", "render": "completed", "index": "completed"}
+```
+
+`each page in discover` reads as it looks: `page` is bound to one item, and
+`discover` is the step whose result is the list. **`in` is itself a
+dependency** — there is no need to also write `after discover`, and no way for
+the two to disagree.
+
+Three things follow from that one line, and they are the reason to write it
+instead of a `for` loop inside a single step:
+
+* **The items run concurrently.** Four steps that sleep 120ms each finish in
+  about 120ms, not 480ms.
+* **`render` is still one step.** `steps`, `statuses` and `failed` all name
+  steps, so `render` appears once in each however many items it ran over. Its
+  result is the list of item results, **in the producer's order** rather than
+  the order they happened to finish.
+* **A dependent joins the whole fan-out.** `index after render` waits for every
+  item and receives the list — one argument, exactly as if `render` were an
+  ordinary step that had returned it.
+
+### An empty list is not a failure
+
+Zero items is a legitimate answer, and it is reported as `skipped` rather than
+`completed`:
+
+```nd
+workflow publish {
+    step discover { return [] }
+    step render each page in discover { return "rendered \(page)" }
+    step index after render with { on: ["completed", "skipped"] } { return "nothing to index" }
+}
+```
+
+```
+$ nodus run empty.nd
+skipped
+[]
+nothing to index
+```
+
+`skipped` rather than `completed` because "ran nothing, reported success" is
+the wrong default for a step with a join behind it: a dependent has to opt in
+with `on: [..., "skipped"]` to see it, which is the same rule §3.1 gives for
+every other skipped step. The step's own result is `[]` — it ran, and the
+answer was no items.
+
+### A producer that returned no list at all
+
+That is a different thing from an empty fan-out, and is not reported as one:
+
+```nd
+workflow publish {
+    step discover { return nil }
+    step render each page in discover { return "rendered \(page)" }
+}
+```
+
+```
+$ nodus run bad.nd
+["render"]
+step 'render' maps over 'discover', which returned nil rather than a list
+```
+
+The fan-out could not be computed, so the step **fails** and leaves no result
+behind, exactly as any other failed step does. The message names `discover`,
+because that is where an author can act.
+
+### The bound is on the producer
+
+A fan-out expands to at most 1024 instances. Over that, the run fails before
+anything runs:
+
+```
+step 'render' would expand to 2000 instances, over the limit of 1024. The bound is on what 'discover' returned -- narrow it there.
+```
+
+Charged to the producer and checked the moment its list arrives, rather than
+reported against the scheduler afterwards.
+
+### What a mapped step does to the graph
+
+Nothing, in the sense that matters. `plan_workflow` runs before anything
+executes, and shows the step once:
+
+```nd
+workflow publish {
+    step discover { return ["intro.md", "guide.md", "api.md"] }
+    step render each page in discover { return "rendered \(page)" }
+    step index after render { return "indexed \(len(render)) pages" }
+}
+
+fn main() { print(plan_workflow(publish)["levels"]) }
+```
+
+```
+$ nodus run plan.nd
+[["discover"], ["render"], ["index"]]
+```
+
+The node is in the source; only its **cardinality** is discovered at run time.
+That is what lets a resume rebuild the run: a completed producer's result is
+restored, so the fan-out re-derives to the same items even if the source has
+since been edited to return a different list.
+---
+
 ## 4. State and data flow
 
 Steps share a mutable state map declared at the workflow level.
