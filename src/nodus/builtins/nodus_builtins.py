@@ -90,8 +90,14 @@ BUILTIN_NAMES = {
     "memory_keys",
     "memory_has",
     "agent_call",
+    # #616: the async twin was in the VM dispatch table and not here, so it
+    # was outside `register_function`'s override guard *and* outside the
+    # capability classification -- a policy denying `agent.call` refused
+    # `agent_call` and allowed `agent_call_async` against the same agent.
+    "agent_call_async",
     "agent_available",
     "agent_describe",
+    "__workflow_checkpoint",
     "__action_tool",
     "__action_agent",
     "__action_memory_put",
@@ -245,6 +251,10 @@ BUILTIN_NAMES = {
     "memory_recall_from", "memory_recall_all", "memory_share",
     "syscall", "syscall_list",
     "effect_resolve", "effect_pending", "effect_complete", "effect_action_id", "effect_store_size",
+    "effect_get_result",
+    "state_contribute",
+    "chr", "ord",
+    "collection_validate_reduce_fn",
     "retry_available", "retry_call",
     "cb_available", "cb_create", "cb_call", "cb_state", "cb_reset",
 }

@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#616: a capability policy could be bypassed by writing the async form, and
+  seven builtins could be shadowed by a host.** `BUILTIN_NAMES` is a
+  hand-maintained set; the VM's dispatch table is what actually runs. They had
+  drifted by seven names, and two guards consult the stale one.
+
+  **The security half.** `agent_call` is governed by the `agent.call` capability;
+  `agent_call_async` was one of the seven, so it carried no capability at all:
+
+  ```
+  agent_call("picker", {})        -> Blocked: agent.call is not granted to this runtime
+  agent_call_async("picker", {})  -> {"choice": "rebase"}          <- same agent, same policy
+  ```
+
+  A `DenyList("agent.call")` refused one spelling and permitted the other. It is
+  governed by the same capability now.
+
+  **The shadowing half.** `register_function`'s "cannot override a builtin"
+  check reads `BUILTIN_NAMES`, so `register_function("chr", …)` was accepted and
+  `chr(65i)` returned `"HIJACKED"`. That guard is a security boundary: a host
+  installing a fail-loud guard under a guest-reachable name has to know the
+  guard is the only thing there. All seven are refused now.
+
+  The seven: `agent_call_async`, `chr`, `ord`, `effect_get_result`,
+  `state_contribute`, `collection_validate_reduce_fn`, `__workflow_checkpoint`.
+
+  **Why the existing coverage did not catch it.** `test_capability_coverage.py`
+  already requires `BUILTIN_CAPABILITIES | NO_AUTHORITY_BUILTINS ==
+  BUILTIN_NAMES`, precisely so a new builtin fails the suite until someone
+  decides which side it is on — but that totality was measured against the
+  *stale* set, so it was true of the wrong thing.
+  `tests/closed_issues/issue_616.py` anchors it to the dispatch table, read out
+  of a constructed `VM` the way `nodus_gate --opcodes` reads the instruction set.
+
+### Changed
+
+- **`state_contribute` and `__workflow_checkpoint` are now in `BUILTIN_NAMES`,
+  and that does not make them newly reachable.** A test asserted
+  `state_contribute` was absent from the set on the reading that absence made it
+  non-public. It did not: the name resolved from a guest program the whole time,
+  because the VM dispatches from its own table and `BUILTIN_NAMES` is not
+  consulted for resolution. What kept a program from contributing to a cell with
+  no policy was — and still is — the runtime guard `state contribution outside a
+  workflow step`.
+
+  Its neighbour asserted only that *some* error came back, so it passed on that
+  runtime guard's message rather than on non-resolution, and would have kept
+  passing if resolution had broken. Both are corrected to assert what they
+  actually mean.
+
+
 ### Changed
 
 - **#474: the positioning clause is "for building agentic hosts".** Ledger
