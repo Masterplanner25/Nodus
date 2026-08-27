@@ -1,3 +1,11 @@
+**SUPERSEDED 2026-08-26 — do not run this.** Milestones are not used in this
+project. All eleven are closed and none will be created; see `CLAUDE.md`
+("Milestones are not used"). This skill moves open issues between milestones,
+and at the moment of the decision **zero open issues carried one**, so there is
+nothing for it to move. Kept as a record of how the v2-v5.0 era was managed.
+
+---
+
 Transition open issues from a superseded milestone to a new one, then close
 the old milestone. Use this when a milestone is folded into a larger cycle
 rather than completed normally (e.g. v3.1 superseded by v4.0).

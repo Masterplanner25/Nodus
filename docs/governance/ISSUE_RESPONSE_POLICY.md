@@ -30,7 +30,8 @@ timeline for a filed bug is days to weeks, not months to years.
 
 1. **Triage** — within one week, the issue gets a severity label
    (`severity:critical`, `severity:high`, `severity:medium`, `severity:low`),
-   a subsystem label, and a milestone assignment. If it can't be triaged,
+   a subsystem label, and a severity label. (**Not** a milestone — they are
+   not used; see `CLAUDE.md`.) If it can't be triaged,
    it gets the `needs-repro` label and a clarifying comment.
 
 2. **Fix or defer decision** — CRITICAL and HIGH bugs get a fix started
@@ -38,7 +39,10 @@ timeline for a filed bug is days to weeks, not months to years.
    the next planned release. LOW bugs are batched or deferred to a quality
    sweep.
 
-3. **Transparency** — if a bug is deferred, the issue says so, with a milestone.
+3. **Transparency** — if a bug is deferred, the issue says so, and says what
+   it is waiting on. (Milestones are not used for this, or for anything —
+   see `CLAUDE.md`. A deferral names its blocker or its release window in
+   prose, which is what a reader can act on.)
    No ghost triage (no label + no comment = not triaged).
 
 ---
