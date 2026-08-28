@@ -29,7 +29,7 @@ findings in any eval cycle.
 
 ## Assessment: nodus-lang (core)
 
-**Current version:** 5.6.0 (published to PyPI 2026-08-27)
+**Current version:** 5.6.0 (published to PyPI 2026-08-28)
 **Previous published:** 3.0.2 (last pre-v4 release)
 
 | Dimension | Level |
