@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from nodus.runtime.diagnostics import LangSyntaxError
-from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, Tok
+from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, STEP_MAP_KEYWORDS, Tok
 from nodus.frontend.type_system import TYPE_NAMES, is_known_type_name, suggest_type_name
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
@@ -872,7 +872,7 @@ class Parser:
         # `after DEP` would let the two disagree.
         each_var = None
         each_source = None
-        if self.at("ID") and self.peek().val == "each":
+        if self.at("ID") and self.peek().val in STEP_MAP_KEYWORDS:
             each_tok = self.peek()
             self.eat("ID")
             each_var = self.eat("ID").val

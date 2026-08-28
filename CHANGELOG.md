@@ -265,6 +265,25 @@
 
 ### Fixes
 
+- **#480 follow-up: `each` is a named contextual keyword, and the keyword list
+  is checked in both directions.** `each` shipped as a bare string literal in
+  `parser.py`, so `lexer.ALL_KEYWORDS` never learned about it — which is the
+  exact defect #357 fixed, reintroduced. Editor grammars, docs and
+  `nodus_gate --consumers` all read that list, so the VS Code extension would
+  have rendered `each` as a plain identifier and the consumer gate could not
+  have noticed, because the fingerprint it compares never moved.
+
+  Every check in `tests/test_keyword_coverage.py` ran **list → parser** (each
+  word the list names must parse). Nothing ran **parser → list**, so a word the
+  parser recognised but the list did not name was invisible. That direction now
+  exists, and it reads `parser.py`'s source, because a behavioural test cannot
+  tell a word matched from a named set from the same word matched from a
+  literal.
+
+  It immediately found two more: **`checkpoint` and `state`** were also absent
+  from the list. The VS Code grammar happened to name them by hand, which is
+  precisely the coupling the list exists to remove.
+
 - **#632: `RuntimeService.close()` waits for its sweeper instead of only asking
   it to stop.** It set the stop event and notified the condition, then returned
   — so it could return while `_worker_sweeper_loop` was still inside `sweep()`,
