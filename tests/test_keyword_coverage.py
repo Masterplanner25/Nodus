@@ -37,6 +37,8 @@ from nodus.frontend.lexer import (  # noqa: E402
     EXPRESSION_KEYWORDS,
     GOAL_KEYWORDS,
     STEP_GUARD_KEYWORDS,
+    STEP_MAP_KEYWORDS,
+    WORKFLOW_BODY_KEYWORDS,
     KEYWORDS,
     LOOP_CONTROL_KEYWORDS,
 )
@@ -84,8 +86,44 @@ class KeywordListTests(unittest.TestCase):
 
     def test_contextual_keywords_are_split_by_where_they_parse(self):
         self.assertEqual(
-            LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS | STEP_GUARD_KEYWORDS,
+            LOOP_CONTROL_KEYWORDS
+            | EXPRESSION_KEYWORDS
+            | GOAL_KEYWORDS
+            | STEP_GUARD_KEYWORDS
+            | STEP_MAP_KEYWORDS
+            | WORKFLOW_BODY_KEYWORDS,
             CONTEXTUAL_KEYWORDS,
+        )
+
+    # closes: #480
+    def test_the_parser_recognises_no_word_the_list_does_not_name(self):
+        """The missing direction, which is the one that fails (#480).
+
+        Every check here ran list -> parser: each word the list names must
+        parse. Nothing ran parser -> list, so a contextual keyword introduced as
+        a bare string literal was invisible -- exactly the state #357 fixed and
+        exactly how `each` shipped. It was caught by a release gate noticing the
+        VS Code fingerprint had *not* moved, which is two steps too late: the
+        grammar would have rendered `each` as a plain identifier, which is the
+        two-release regression this file exists to prevent.
+
+        Reads the parser's source, because that is where the drift lives. A
+        behavioural test cannot see the difference between a word matched from a
+        named set and the same word matched from a literal.
+        """
+        source = Path(_REPO_ROOT / "src/nodus/frontend/parser.py").read_text(encoding="utf-8")
+        # `self.peek().val == "word"` and `self.peek(N).val == "word"`.
+        literals = set(re.findall(r"""\.val\s*==\s*["'](\w+)["']""", source))
+        # `_` is the `match` wildcard: a pattern token, not a word the language
+        # reserves, and nothing should highlight it as one.
+        exempt = {"_"}
+        unnamed = sorted(w for w in literals if w not in ALL_KEYWORDS and w not in exempt)
+        self.assertEqual(
+            [], unnamed,
+            f"parser.py matches {unnamed} as bare token text, but "
+            f"lexer.ALL_KEYWORDS does not name them. Editor grammars, docs and "
+            f"`nodus_gate --consumers` all read that list, so a word missing "
+            f"from it ships unhighlighted.",
         )
 
 

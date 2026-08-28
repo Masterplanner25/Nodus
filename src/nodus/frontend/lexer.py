@@ -97,8 +97,30 @@ STEP_GUARD_KEYWORDS = {
     "when",
 }
 
+# Recognised only in a workflow step header, before `after` (#480):
+# `step render each page in discover { ... }`. Contextual for the same reason as
+# the sets above -- `each` is a plausible variable name.
+STEP_MAP_KEYWORDS = {
+    "each",
+}
+
+# Recognised inside a workflow or goal body: `state count = 0i` at the top, and
+# `checkpoint "label"` inside a step. Contextual, and long-standing -- they were
+# missing from this list until #480 added the check that reads it back from the
+# parser. The VS Code grammar already named them, by hand, which is exactly the
+# coupling this list exists to remove.
+WORKFLOW_BODY_KEYWORDS = {
+    "checkpoint",
+    "state",
+}
+
 CONTEXTUAL_KEYWORDS = (
-    LOOP_CONTROL_KEYWORDS | EXPRESSION_KEYWORDS | GOAL_KEYWORDS | STEP_GUARD_KEYWORDS
+    LOOP_CONTROL_KEYWORDS
+    | EXPRESSION_KEYWORDS
+    | GOAL_KEYWORDS
+    | STEP_GUARD_KEYWORDS
+    | STEP_MAP_KEYWORDS
+    | WORKFLOW_BODY_KEYWORDS
 )
 
 # Every word the language treats as a keyword, reserved or contextual. This is
