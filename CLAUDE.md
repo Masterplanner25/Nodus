@@ -307,8 +307,36 @@ baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
 
-**Pre-existing flaky tests (pass individually, timing-sensitive in full suite):**
-- `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`
+**Known flaky tests — they fail under *load*, not under repetition.** Both were
+characterised on 2026-08-28 and both have issues; neither is fixed. The old wording
+here said "pass individually, timing-sensitive in full suite", which sent triage the
+wrong way twice: the full suite is merely one way to load the box, and re-running a
+test alone on an idle machine cannot clear either of these.
+
+- **`test_scheduler_fairness.py` — both tests, not one (#631).** Under CPU load, 9 of
+  10 runs red; idle, ~60 consecutive passes. It does *not* fail from repetition. And
+  it is not a fairness failure: the run is killed by the 200 ms wall-clock
+  `EXECUTION_TIMEOUT_MS` before the ordering assertion is reached
+  (`{'kind': 'sandbox', 'message': 'Execution timed out'}`), so the test asserts the
+  box can run 8000 iterations in 200 ms. An earlier revision named only
+  `test_long_running_task_rotates_with_budget`; `test_multiple_tasks_progress` fails
+  in the same runs.
+- **`test_server.py::SQLiteWorkflowServerTests::test_workflow_run_uses_sqlite_store_when_configured`
+  (#632).** Reads as a tempdir race and is not one: the database is still open when
+  the directory is removed. Windows says so outright (`WinError 32 ... the file is
+  being used by another process`); Linux reports only the consequence
+  (`Errno 39 Directory not empty`), because WAL leaves `-wal`/`-shm` sidecars. The
+  underlying gap is that `SQLiteWorkflowStore` has **no `close()`** — `grep "def
+  close" src/nodus_lang_workflow/*.py` is empty — so no caller can release it.
+
+**To reproduce either, load the machine; do not re-run it.** Burn every core but one
+in a background process, then run the file. Both go red in minutes that way and pass
+indefinitely without it, which is why "it passed when I ran it again" is not evidence
+about either of them.
+
+**Do not fix #334's three flakes twice.** `test_async_concurrency_timing.py`,
+`test_ieee754_division.py` and `test_workflow_dsl.py` were hardened in PR #581 and are
+not on this list.
 
 **Never run two suites at once — they share `.nodus/` and corrupt each other.**
 
