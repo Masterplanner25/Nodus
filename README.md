@@ -40,7 +40,7 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.5.0 is about the language telling the truth to the tools that read it.
+**Recent:** 5.6.0 is about workflows declaring what they used to only imply: parameters, per-step output types, fan-out over a list, and a budget a goal actually spends.
 
 An installed Nodus could not tell you where its own documentation was. The wheel
 shipped code and the stdlib; the guide, the machine-readable index and the agent
@@ -210,8 +210,8 @@ If you're building multi-step AI agents, embedding a scripting layer in a Python
 
 For a machine-readable project index see [llms.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms.txt).
 
-Beyond the core language, the Nodus ecosystem spans **32 standalone companion packages**
-published on PyPI (33 projects counting `nodus-lang` itself), all with source at
+Beyond the core language, the Nodus ecosystem spans **35 standalone companion packages**
+published on PyPI (36 projects counting `nodus-lang` itself), all with source at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
 story: `pip install nodus-sdk[agent,sql,fastapi]`. See the
 [ecosystem guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/ecosystem.md) for the package-by-package breakdown.

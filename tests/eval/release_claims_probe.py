@@ -1164,6 +1164,243 @@ def probe_debt_register_current(repo: Path):
     return "%d fixed issues, none still listed as open debt" % len(fixed)
 
 
+# ------------------------------------------------------- 5.6.0: the DSL cluster
+
+
+@probe("5.6.0: a step maps over a list, and stays one step")
+def probe_each_fanout():
+    r = run_nd(
+        'workflow w {\n'
+        '    step plan { return ["a", "b", "c"] }\n'
+        '    step process each item in plan { return "did \\(item)" }\n'
+        '    step collect after process { return len(process) }\n'
+        '}\n'
+        'fn main() {\n'
+        '    let r = run_workflow(w)\n'
+        '    print(r["steps"]["process"])\n'
+        '    print(r["steps"]["collect"])\n'
+        '    print(r["statuses"]["process"])\n'
+        '}\n'
+    )
+    assert r["ok"], r.get("error")
+    lines = r["stdout"].strip().splitlines()
+    assert '["did a", "did b", "did c"]' in lines[-3], lines
+    assert lines[-2] == "3", "the join must receive the list, not one item: " + str(lines)
+    # One step, not three: `statuses` names it once, and as itself.
+    assert lines[-1] == "completed", lines
+    return "fan-out runs per item; the join receives the list"
+
+
+@probe("5.6.0: an empty producer skips, an unmappable one fails")
+def probe_each_edges():
+    empty = run_nd(
+        'workflow w {\n'
+        '    step plan { return [] }\n'
+        '    step process each item in plan { return item }\n'
+        '}\n'
+        'fn main() { let r = run_workflow(w)\n'
+        '    print(r["statuses"]["process"]); print(r["steps"]["process"]) }\n'
+    )
+    assert empty["ok"], empty.get("error")
+    lines = empty["stdout"].strip().splitlines()
+    assert lines[-2] == "skipped", lines
+    assert lines[-1] == "[]", lines
+
+    bad = run_nd(
+        'workflow w {\n'
+        '    step plan { return nil }\n'
+        '    step process each item in plan { return item }\n'
+        '}\n'
+        'fn main() { let r = run_workflow(w)\n'
+        '    print(r["statuses"]["process"]); print(r["error"]) }\n'
+    )
+    assert bad["ok"], bad.get("error")
+    blines = bad["stdout"].strip().splitlines()
+    assert blines[-2] == "failed", blines
+    assert "'plan'" in blines[-1], blines[-1]
+    assert "NoneType" not in blines[-1], "leaks a Python type name: " + blines[-1]
+    return "empty -> skipped; unmappable -> failed, naming the producer"
+
+
+@probe("5.6.0: workflows and goals take parameters")
+def probe_workflow_parameters():
+    r = run_nd(
+        'workflow build(mode) {\n'
+        '    step compile { return "compiling in \\(mode)" }\n'
+        '}\n'
+        'fn main() {\n'
+        '    print(run_workflow(build, {mode: "lite"})["steps"]["compile"])\n'
+        '    print(run_workflow(build, {"mode": "full"})["steps"]["compile"])\n'
+        '}\n'
+    )
+    assert r["ok"], r.get("error")
+    assert "compiling in lite" in r["stdout"], r["stdout"]
+    assert "compiling in full" in r["stdout"], "the map spelling must bind too"
+    return "record and map spellings both bind"
+
+
+@probe("5.6.0: a step can declare its output type")
+def probe_step_returns():
+    good = run_nd(
+        'workflow w { step fetch with { returns: "map" } { return {"rows": 42i} } }\n'
+        'fn main() { print(run_workflow(w)["steps"]["fetch"]["rows"]) }\n'
+    )
+    assert good["ok"], good.get("error")
+    assert "42" in good["stdout"], good["stdout"]
+
+    # An unknown type name is an error here, not a warning: the option is new,
+    # so nothing can rely on a misspelling being ignored.
+    bad = run_nd(
+        'workflow w { step fetch with { returns: "mapp" } { return {} } }\n'
+        'fn main() {}\n'
+    )
+    assert not bad["ok"], "an unknown `returns:` type must be refused"
+    message = (bad.get("error") or {}).get("message") or ""
+    assert "mapp" in message, message
+    return "declared, and a misspelling is refused"
+
+
+@probe("5.6.0: a goal can be bounded by what it spends")
+def probe_budget_limits():
+    from nodus.frontend.lexer import tokenize
+    from nodus.frontend.parser import Parser
+
+    src = (
+        'workflow tune { step tweak { checkpoint "good_enough"\n'
+        '    return 1i } }\n'
+        'goal reach over tune {\n'
+        '    until reached("good_enough")\n'
+        '    budget { max_iterations: 3, limits: {steps: 100000i} }\n'
+        '}\n'
+    )
+    Parser(tokenize(src)).parse()  # raises if `limits` is not accepted
+    return "`budget { limits: ... }` parses"
+
+
+@probe("5.6.0: an unrecognised type name is reported, not silently `any`")
+def probe_unknown_type_name():
+    from nodus.frontend.lexer import tokenize
+    from nodus.frontend.parser import Parser
+
+    parser = Parser(tokenize("fn f(x: itn) { return x }"))
+    parser.parse()
+    found = [str(d) for d in getattr(parser, "unknown_type_names", [])]
+    assert found, "a misspelled type name must be recorded, not silently accepted"
+    assert any("itn" in f for f in found), found
+    return "misspellings are recorded (a warning until 6.0.0)"
+
+
+@probe("5.6.0: the agent registry is a published surface")
+def probe_register_agent():
+    from nodus.runtime.embedding import NodusRuntime
+
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    for name in ("register_agent", "unregister_agent"):
+        assert hasattr(rt, name), f"NodusRuntime.{name} is missing"
+    rt.register_agent("probe.echo", lambda payload: {"echoed": payload})
+    # `agent_available()` takes no arguments and lists what is registered.
+    r = rt.run_source('fn main() { print(agent_available()) }', filename="<probe>")
+    assert r["ok"], r.get("error")
+    assert "probe.echo" in r["stdout"], r["stdout"]
+
+    rt.unregister_agent("probe.echo")
+    after = rt.run_source('fn main() { print(agent_available()) }', filename="<probe>")
+    assert after["ok"], after.get("error")
+    assert "probe.echo" not in after["stdout"], "unregister_agent did not remove it"
+    return "register_agent / unregister_agent present, and both take effect"
+
+
+@probe("5.6.0: `each` is a named keyword, so editors can highlight it")
+def probe_each_is_a_keyword():
+    from nodus.frontend.lexer import ALL_KEYWORDS
+
+    # The claim this probe exists for: `each` shipped as a bare literal in the
+    # parser once already, and `nodus_gate --consumers` could not see it because
+    # the keyword fingerprint it compares never moved.
+    for word in ("each", "checkpoint", "state"):
+        assert word in ALL_KEYWORDS, f"{word!r} is not in ALL_KEYWORDS"
+    return f"ALL_KEYWORDS names {len(ALL_KEYWORDS)} words, `each` among them"
+
+
+@probe("5.6.0: RuntimeService.close() waits for its sweeper")
+def probe_service_close_joins():
+    import threading
+
+    from nodus.services.server import RuntimeService
+
+    service = RuntimeService(worker_sweep_interval_ms=10)
+    entered, release = threading.Event(), threading.Event()
+    original = service._run_workflow_sweep_once
+
+    def slow():
+        entered.set()
+        release.wait(timeout=5.0)
+        return original()
+
+    service._run_workflow_sweep_once = slow
+    try:
+        assert entered.wait(timeout=5.0), "the sweeper never ran"
+        thread = service._sweeper_thread
+        release.set()
+        service.close()
+        assert not thread.is_alive(), "close() returned with the sweeper still running"
+    finally:
+        release.set()
+        service.close()
+    return "close() joins, so a caller may remove the store directory"
+
+
+# ------------------------------------------------------------ 5.6.0: the prose
+
+
+@probe("5.6.0 prose: nothing still calls 5.5.0 the current release")
+def probe_no_stale_5_5_current(repo: Path):
+    stale = []
+    for rel in (
+        "README.md", "llms.txt", "llms-full.txt",
+        "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+        "skills/nodus.skill", "skills/project-CLAUDE.md", "skills/project-AGENTS.md",
+    ):
+        path = repo / rel
+        if not path.exists():
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "5.5.0" not in line:
+                continue
+            low = line.lower()
+            if any(k in low for k in ("current", "latest", "stable on pypi", "version:")):
+                stale.append(f"{rel}:{n}")
+    assert not stale, "still describes 5.5.0 as current: " + ", ".join(stale)
+    return "no artifact calls 5.5.0 current"
+
+
+@probe("5.6.0 prose: the guide documents mapping a step over a list")
+def probe_guide_documents_each(repo: Path):
+    guide = repo / "docs/guide/workflows-and-tasks.md"
+    text = guide.read_text(encoding="utf-8")
+    assert "each page in discover" in text, "no worked `each` example in the guide"
+    for claim in ("skipped", "1024"):
+        assert claim in text, f"the guide never mentions {claim!r}"
+    return "section 3.3 documents the fan-out, its edges and its bound"
+
+
+@probe("5.6.0 prose: the companion count matches the verified live count")
+def probe_package_count(repo: Path):
+    wrong = []
+    for rel in (
+        "README.md", "llms.txt", "llms-full.txt",
+        "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md", "CLAUDE.md",
+    ):
+        path = repo / rel
+        if not path.exists():
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\b32[- ](?:package|standalone)\b", line):
+                wrong.append(f"{rel}:{n}")
+    assert not wrong, "stale package count (should be 35): " + ", ".join(wrong)
+    return "no artifact still says 32"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -1251,6 +1488,20 @@ def main() -> int:
     probe_readme_absolute(args.repo)
     probe_debt_register_current(args.repo)
     probe_no_stale_5_4_claims(args.repo)
+
+    # --- 5.6.0 ---
+    probe_each_fanout()
+    probe_each_edges()
+    probe_workflow_parameters()
+    probe_step_returns()
+    probe_budget_limits()
+    probe_unknown_type_name()
+    probe_register_agent()
+    probe_each_is_a_keyword()
+    probe_service_close_joins()
+    probe_no_stale_5_5_current(args.repo)
+    probe_guide_documents_each(args.repo)
+    probe_package_count(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
