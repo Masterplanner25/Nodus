@@ -65,98 +65,6 @@
   misspelled would have made the whole field inert.
 
 
-### Docs
-
-- **#624: the `std:tool` guide taught the wrong handler shape.** Its registration
-  example — the thing people copy — was
-
-  ```
-  handler: fn(query) { return http_get("...?q=" + query) }
-  ```
-
-  alongside a `schema` declaring `query`. That reads unmistakably as *"the
-  parameter is the schema key"*. It is not: a handler is called with **one
-  argument, the whole args record**, so the example produced
-  `?q=record {"query": "..."}`.
-
-  That is why anyone wrote a multi-parameter handler in the first place — and
-  those crash on invoke with a bare `Stack underflow` (refused at registration
-  since #479).
-
-  The example is corrected, **self-contained, and gate-checked now**: its
-  allowlist entry stopped matching when the block changed, so a future edit
-  reintroducing the wrong shape fails `nodus_gate --runtime` rather than sitting
-  there. Verified by breaking it deliberately and watching the gate catch it.
-
-  The guide also states the contract explicitly, including the case that cannot
-  be refused: a *single* misnamed parameter — `fn(query)` — is a legal handler
-  that happens to receive the record under a misleading name, which is why the
-  correct spelling is `fn(args)`.
-
-  **Argument spreading was considered and rejected.** Supporting
-  `fn(query, limit)` by spreading the record would make the one-parameter case
-  ambiguous — is `fn(args)` the whole record, or the value of a key named `args`?
-  Backwards compatibility forces the first, leaving the semantics
-  arity-dependent: one rule for one parameter, another for two. One clear rule is
-  worth more.
-
-
-### Fixes
-
-- **#480: a mapped step is one step in every aggregation that names steps.**
-  `steps`, `statuses`, `failed` and `tolerated` all key by step name, and each
-  learned separately that an instance is not a step, getting it wrong
-  differently each time. One failing item named its step **twice** in `failed`;
-  whichever instance was iterated last stood in for the step in `statuses`,
-  reporting `completed` for a step that had failed. Asked once now, at
-  `TaskNode.is_mapped_instance`, with a source assertion so a fifth aggregation
-  cannot quietly answer it again.
-
-- **#479: `tool.register` refuses a handler it could never invoke.** A tool
-  handler is called with **exactly one argument** — the args record
-  (`run_closure(handler, [args])`). A handler declaring any other number can
-  never run, and registration accepted it anyway; the failure surfaced at *call*
-  time as a bare `Stack underflow` naming the handler, with nothing connecting it
-  to the registration.
-
-  ```
-  tool.register: tool 'app.t' handler declares 2 parameters ('name', 'times'), but
-  a handler is called with exactly one argument: the args record. Take one
-  parameter and read the fields from it, e.g. `fn handler(args) { ... args.name ... }`.
-  ```
-
-  **This is not the schema derivation #479 asks for, and building it is what
-  showed why.** The `schema` names the keys of that one args record; a signature
-  cannot carry them, so deriving a schema from handler *parameters* would encode
-  a calling convention this registry does not have. The issue's own example
-  registered fine on `main` and then died on invoke — characterised and filed as
-  **#624**. What the signature genuinely says here is arity, and that was the
-  field going unchecked. The issue's premise holds exactly; the field is
-  different.
-
-### Changed
-
-- **#479: the compiler no longer discards a declared signature.**
-  `FunctionInfo` carries `param_types` and `return_type`, populated from the AST
-  at its single construction site. Static-only, exactly as before — nothing here
-  is enforced at run time. It is the prerequisite #479 names for both its halves,
-  and what `returns:` will need.
-
-  Also corrected: the issue suggests deriving in the frontend *"since
-  `tool.register` is lowered from source anyway"*. It is not lowered —
-  `stdlib/tool.nd` defines `fn register(meta) { return tool_register(meta) }`, an
-  ordinary call to a builtin — so no frontend pass knows a registration is
-  happening, and the signature has to survive compilation instead.
-
-- **#479: the tool schema's type vocabulary stops being a third enumeration.**
-  `_NODUS_TO_JSON_TYPE` was a private list of seven names beside `TYPE_NAMES` and
-  the parser, and it had already drifted: `record` and `function` were missing, so
-  neither could be named in a tool schema. `record` maps to `object`; `function`
-  is named and refused with a reason (a callable does not cross a tool boundary)
-  rather than reported as unknown. Pinned against `TYPE_NAMES` by test.
-
-
-### Added
 
 - **#488: a goal can be bounded by what it spends.** `budget` gains `limits`, a
   map of **host-registered meters**, and `max_iterations`/`deadline_ms` become
@@ -197,7 +105,6 @@
   mutation testing, which hung. It is reported distinctly, naming what to check.
 
 
-### Added
 
 - **#481: workflows and goals take parameters.**
 
@@ -239,30 +146,156 @@
   New builtin `workflow_arg`, emitted by the lowering as a prelude `let` per
   declared parameter. Reached only through `builtin_call` (#411), so binding the
   name in guest code cannot intercept a step's own parameter reads.
-### Tooling
 
-- **#612: two store tests patched the process-global `os.replace`, so a
-  concurrent rename anywhere failed them — or was failed by them.**
-  `LocalWorkflowStore._replace_with_retry` takes an injectable `replace=` now
-  (defaulting to `os.replace`, resolved late, so no real caller changes) and the
-  tests inject instead of patching.
+- **#491: `NodusRuntime.register_agent` / `unregister_agent`.** The agent registry
+  was reachable only through `nodus.services.agent_runtime.register_agent`, which
+  defaults to the **process-global** registry — so an embedder who scoped a
+  runtime with `agent_registry={}` and registered the obvious way got a handler
+  that runtime could neither see nor call:
 
-  The counting test asserted 3 and saw **7** on CI: its own logic accounts for at
-  most 3, so four renames came from elsewhere in the process — the graph-state
-  writer and the bytecode cache both call `os.replace`. Reproduced
-  deterministically with a background renamer: the old form counts **9**, the new
-  form counts **3**.
+  ```
+  scoped runtime sees : []
+  calling it          : false | [{"type": "AgentError", "message": "No handler
+                                  registered for agent 'picker'", ...}]
+  ```
 
-  The sibling was the more dangerous of the two. It made the global raise
-  `PermissionError` for the whole retry window — roughly 200 ms of `time.sleep` —
-  so any concurrent rename in the process failed outright while it ran.
+  Registered, and invisible. The methods route to whichever registry *that*
+  runtime uses, so registration and scoping cannot disagree. This is a
+  correctness fix, not only the ergonomic one the issue asked for — an embedder
+  reaching for `register_agent` beside `register_function` got an
+  `AttributeError`, but an embedder who found the module-level function got
+  something worse.
 
-  A third assertion comes with them, on the mechanism rather than the count: a
-  count-based test passes whether the fake was injected or installed globally, so
-  it cannot tell the two apart, which is how the original survived.
+### Changed
 
+- **#479: the compiler no longer discards a declared signature.**
+  `FunctionInfo` carries `param_types` and `return_type`, populated from the AST
+  at its single construction site. Static-only, exactly as before — nothing here
+  is enforced at run time. It is the prerequisite #479 names for both its halves,
+  and what `returns:` will need.
+
+  Also corrected: the issue suggests deriving in the frontend *"since
+  `tool.register` is lowered from source anyway"*. It is not lowered —
+  `stdlib/tool.nd` defines `fn register(meta) { return tool_register(meta) }`, an
+  ordinary call to a builtin — so no frontend pass knows a registration is
+  happening, and the signature has to survive compilation instead.
+
+- **#479: the tool schema's type vocabulary stops being a third enumeration.**
+  `_NODUS_TO_JSON_TYPE` was a private list of seven names beside `TYPE_NAMES` and
+  the parser, and it had already drifted: `record` and `function` were missing, so
+  neither could be named in a tool schema. `record` maps to `object`; `function`
+  is named and refused with a reason (a callable does not cross a tool boundary)
+  rather than reported as unknown. Pinned against `TYPE_NAMES` by test.
+
+
+
+- **`state_contribute` and `__workflow_checkpoint` are now in `BUILTIN_NAMES`,
+  and that does not make them newly reachable.** A test asserted
+  `state_contribute` was absent from the set on the reading that absence made it
+  non-public. It did not: the name resolved from a guest program the whole time,
+  because the VM dispatches from its own table and `BUILTIN_NAMES` is not
+  consulted for resolution. What kept a program from contributing to a cell with
+  no policy was — and still is — the runtime guard `state contribution outside a
+  workflow step`.
+
+  Its neighbour asserted only that *some* error came back, so it passed on that
+  runtime guard's message rather than on non-resolution, and would have kept
+  passing if resolution had broken. Both are corrected to assert what they
+  actually mean.
+
+
+
+- **#474: the positioning clause is "for building agentic hosts".** Ledger
+  decision **D1**, open since Audit 01, is decided and applied:
+
+  > An orchestration DSL and embedded runtime for **building agentic hosts**.
+
+  It replaces *"for hosting agentic systems"* in `pyproject.toml` — which is the
+  **PyPI summary** and so is permanent at each tag — and in `llms.txt`,
+  `llms-full.txt` and `README.md`. The claim it makes is the one the audit series
+  converged on and six corpora support: the model loop belongs to the host, and
+  the absence of a model in the core is what makes that boundary unblurrable.
+  Nodus is what you build the host out of.
+
+  **A partial sweep had already run, and that is the part worth recording.**
+  Three of the four files said *"hosting agentic systems"*; `llms-full.txt` still
+  said *"building agentic systems"* — the one file `nodus_gate` did not scan
+  until #483. `tests/closed_issues/issue_474.py` now pins all four (plus the
+  packaged `src/nodus/llms.txt`) to one string, and was confirmed red against the
+  exact state the repo was found in.
+
+- **The companion-package count was wrong in seven places.** *"32-package
+  companion ecosystem"* against a verified live count of **35** — in `README.md`,
+  `llms.txt` (×4), `llms-full.txt`, `getting-started.md` and `CLAUDE.md`. Same
+  class as the version strings this project already refuses to carry in prose: a
+  hand-maintained number nothing checked. The test now at least requires the
+  prose to agree with itself.
+
+- **`llms-full.txt` dated v5.5.0 to 2026-08-25.** It published on the 26th.
+
+
+- **#609: an unrecognised type name is reported instead of silently meaning
+  `any`.** `fn b(name: strng)` used to check clean — one transposed letter
+  disabled checking on that parameter permanently, with no diagnostic at any
+  altitude. It is a **warning** now, in `nodus check` and inline in the editor,
+  and becomes an **error at 6.0.0** alongside #545 and #547. The exit code does
+  not change until then.
+
+  ```
+  $ nodus check typo.nd
+  typo.nd:2:12: warning: Unknown type name 'strng' — did you mean 'string'? ...
+  typo.nd: OK (1 warning(s))
+  ```
+
+  Two consequences of the same hole are fixed with it. **`map` is now a type
+  name**: it was absent while looking nameable, so `fn g(y: map) -> map` checked
+  clean and meant `any` — and `map` is what `run_workflow`, `plan_workflow` and
+  most step bodies return. **`record` and `nil` are now spellable**: both are
+  keywords, so they never reached the lookup, and `record` sat in the table as an
+  entry no program could use. `map` and `record` are interchangeable to the
+  checker, because the analyzer infers `record` for both literal forms and a
+  checker that told them apart would reject correct code.
+
+  The validation lives in `parser.parse_type_name` — the one place that sees an
+  annotation's name *and* its token — and `nodus check` and the editor
+  diagnostics both read the list it produces rather than each deciding what a
+  type name is. That is deliberate: those two walkers are the pair that drifted
+  in #401 and #597, and `tests/closed_issues/issue_609.py` asserts they agree
+  rather than checking each alone.
 
 ### Fixes
+
+- **#480: a mapped step is one step in every aggregation that names steps.**
+  `steps`, `statuses`, `failed` and `tolerated` all key by step name, and each
+  learned separately that an instance is not a step, getting it wrong
+  differently each time. One failing item named its step **twice** in `failed`;
+  whichever instance was iterated last stood in for the step in `statuses`,
+  reporting `completed` for a step that had failed. Asked once now, at
+  `TaskNode.is_mapped_instance`, with a source assertion so a fifth aggregation
+  cannot quietly answer it again.
+
+- **#479: `tool.register` refuses a handler it could never invoke.** A tool
+  handler is called with **exactly one argument** — the args record
+  (`run_closure(handler, [args])`). A handler declaring any other number can
+  never run, and registration accepted it anyway; the failure surfaced at *call*
+  time as a bare `Stack underflow` naming the handler, with nothing connecting it
+  to the registration.
+
+  ```
+  tool.register: tool 'app.t' handler declares 2 parameters ('name', 'times'), but
+  a handler is called with exactly one argument: the args record. Take one
+  parameter and read the fields from it, e.g. `fn handler(args) { ... args.name ... }`.
+  ```
+
+  **This is not the schema derivation #479 asks for, and building it is what
+  showed why.** The `schema` names the keys of that one args record; a signature
+  cannot carry them, so deriving a schema from handler *parameters* would encode
+  a calling convention this registry does not have. The issue's own example
+  registered fine on `main` and then died on invoke — characterised and filed as
+  **#624**. What the signature genuinely says here is arity, and that was the
+  field going unchecked. The issue's premise holds exactly; the field is
+  different.
+
 
 - **#616: a capability policy could be bypassed by writing the async form, and
   seven builtins could be shadowed by a host.** `BUILTIN_NAMES` is a
@@ -297,84 +330,77 @@
   `tests/closed_issues/issue_616.py` anchors it to the dispatch table, read out
   of a constructed `VM` the way `nodus_gate --opcodes` reads the instruction set.
 
-### Changed
 
-- **`state_contribute` and `__workflow_checkpoint` are now in `BUILTIN_NAMES`,
-  and that does not make them newly reachable.** A test asserted
-  `state_contribute` was absent from the set on the reading that absence made it
-  non-public. It did not: the name resolved from a guest program the whole time,
-  because the VM dispatches from its own table and `BUILTIN_NAMES` is not
-  consulted for resolution. What kept a program from contributing to a cell with
-  no policy was — and still is — the runtime guard `state contribution outside a
-  workflow step`.
+- **`llms-full.txt`'s workflow example had never parsed.** `step validate after []`
+  is `Expected identifier, got '['`. It went unnoticed because the doc gate's file
+  list included `llms.txt` and not `llms-full.txt` — so the file 5.5.0 shipped
+  inside the wheel for agents to read was the one nothing checked. Fixed, and
+  `llms-full.txt` is now scanned by `nodus_gate --static`/`--runtime`; its other
+  three blocks were already clean.
 
-  Its neighbour asserted only that *some* error came back, so it passed on that
-  runtime guard's message rather than on non-resolution, and would have kept
-  passing if resolution had broken. Both are corrected to assert what they
-  actually mean.
+### Tooling
 
+- **#612: two store tests patched the process-global `os.replace`, so a
+  concurrent rename anywhere failed them — or was failed by them.**
+  `LocalWorkflowStore._replace_with_retry` takes an injectable `replace=` now
+  (defaulting to `os.replace`, resolved late, so no real caller changes) and the
+  tests inject instead of patching.
 
-### Changed
+  The counting test asserted 3 and saw **7** on CI: its own logic accounts for at
+  most 3, so four renames came from elsewhere in the process — the graph-state
+  writer and the bytecode cache both call `os.replace`. Reproduced
+  deterministically with a background renamer: the old form counts **9**, the new
+  form counts **3**.
 
-- **#474: the positioning clause is "for building agentic hosts".** Ledger
-  decision **D1**, open since Audit 01, is decided and applied:
+  The sibling was the more dangerous of the two. It made the global raise
+  `PermissionError` for the whole retry window — roughly 200 ms of `time.sleep` —
+  so any concurrent rename in the process failed outright while it ran.
 
-  > An orchestration DSL and embedded runtime for **building agentic hosts**.
-
-  It replaces *"for hosting agentic systems"* in `pyproject.toml` — which is the
-  **PyPI summary** and so is permanent at each tag — and in `llms.txt`,
-  `llms-full.txt` and `README.md`. The claim it makes is the one the audit series
-  converged on and six corpora support: the model loop belongs to the host, and
-  the absence of a model in the core is what makes that boundary unblurrable.
-  Nodus is what you build the host out of.
-
-  **A partial sweep had already run, and that is the part worth recording.**
-  Three of the four files said *"hosting agentic systems"*; `llms-full.txt` still
-  said *"building agentic systems"* — the one file `nodus_gate` did not scan
-  until #483. `tests/closed_issues/issue_474.py` now pins all four (plus the
-  packaged `src/nodus/llms.txt`) to one string, and was confirmed red against the
-  exact state the repo was found in.
-
-- **The companion-package count was wrong in seven places.** *"32-package
-  companion ecosystem"* against a verified live count of **35** — in `README.md`,
-  `llms.txt` (×4), `llms-full.txt`, `getting-started.md` and `CLAUDE.md`. Same
-  class as the version strings this project already refuses to carry in prose: a
-  hand-maintained number nothing checked. The test now at least requires the
-  prose to agree with itself.
-
-- **`llms-full.txt` dated v5.5.0 to 2026-08-25.** It published on the 26th.
-
-### Known
-
-- **The wiki still names a v4-line release as its stable one** — four minors and
-  a major behind what ships — and repeats the 32-package count, in `Home.md` and
-  `Roadmap.md`. It carries no positioning clause, so it needed nothing for D1.
-  Left for a wiki-wide version sweep: a partial update there would be worse than
-  none.
+  A third assertion comes with them, on the mechanism rather than the count: a
+  count-based test passes whether the fake was injected or installed globally, so
+  it cannot tell the two apart, which is how the original survived.
 
 
-### Added
 
-- **#491: `NodusRuntime.register_agent` / `unregister_agent`.** The agent registry
-  was reachable only through `nodus.services.agent_runtime.register_agent`, which
-  defaults to the **process-global** registry — so an embedder who scoped a
-  runtime with `agent_registry={}` and registered the obvious way got a handler
-  that runtime could neither see nor call:
-
-  ```
-  scoped runtime sees : []
-  calling it          : false | [{"type": "AgentError", "message": "No handler
-                                  registered for agent 'picker'", ...}]
-  ```
-
-  Registered, and invisible. The methods route to whichever registry *that*
-  runtime uses, so registration and scoping cannot disagree. This is a
-  correctness fix, not only the ergonomic one the issue asked for — an embedder
-  reaching for `register_agent` beside `register_function` got an
-  `AttributeError`, but an embedder who found the module-level function got
-  something worse.
+- **`nodus_gate` scans `llms-full.txt`.** One list decides which documents are
+  checked; it had two AI-discoverability files in it and covered one.
 
 ### Docs
+
+- **#624: the `std:tool` guide taught the wrong handler shape.** Its registration
+  example — the thing people copy — was
+
+  ```
+  handler: fn(query) { return http_get("...?q=" + query) }
+  ```
+
+  alongside a `schema` declaring `query`. That reads unmistakably as *"the
+  parameter is the schema key"*. It is not: a handler is called with **one
+  argument, the whole args record**, so the example produced
+  `?q=record {"query": "..."}`.
+
+  That is why anyone wrote a multi-parameter handler in the first place — and
+  those crash on invoke with a bare `Stack underflow` (refused at registration
+  since #479).
+
+  The example is corrected, **self-contained, and gate-checked now**: its
+  allowlist entry stopped matching when the block changed, so a future edit
+  reintroducing the wrong shape fails `nodus_gate --runtime` rather than sitting
+  there. Verified by breaking it deliberately and watching the gate catch it.
+
+  The guide also states the contract explicitly, including the case that cannot
+  be refused: a *single* misnamed parameter — `fn(query)` — is a legal handler
+  that happens to receive the record under a misleading name, which is why the
+  correct spelling is `fn(args)`.
+
+  **Argument spreading was considered and rejected.** Supporting
+  `fn(query, limit)` by spreading the record would make the one-parameter case
+  ambiguous — is `fn(args)` the whole record, or the value of a key named `args`?
+  Backwards compatibility forces the first, leaving the semantics
+  arity-dependent: one rule for one parameter, another for two. One clear rule is
+  worth more.
+
+
 
 - **#491: `docs/guide/agent-host-boundary.md` — the host boundary was
   undocumented.** `agent_call` is the point where a program hands a *semantic*
@@ -403,38 +429,6 @@
   agentic patterns" section had exactly one file in it.
 
 
-### Changed
-
-- **#609: an unrecognised type name is reported instead of silently meaning
-  `any`.** `fn b(name: strng)` used to check clean — one transposed letter
-  disabled checking on that parameter permanently, with no diagnostic at any
-  altitude. It is a **warning** now, in `nodus check` and inline in the editor,
-  and becomes an **error at 6.0.0** alongside #545 and #547. The exit code does
-  not change until then.
-
-  ```
-  $ nodus check typo.nd
-  typo.nd:2:12: warning: Unknown type name 'strng' — did you mean 'string'? ...
-  typo.nd: OK (1 warning(s))
-  ```
-
-  Two consequences of the same hole are fixed with it. **`map` is now a type
-  name**: it was absent while looking nameable, so `fn g(y: map) -> map` checked
-  clean and meant `any` — and `map` is what `run_workflow`, `plan_workflow` and
-  most step bodies return. **`record` and `nil` are now spellable**: both are
-  keywords, so they never reached the lookup, and `record` sat in the table as an
-  entry no program could use. `map` and `record` are interchangeable to the
-  checker, because the analyzer infers `record` for both literal forms and a
-  checker that told them apart would reject correct code.
-
-  The validation lives in `parser.parse_type_name` — the one place that sees an
-  annotation's name *and* its token — and `nodus check` and the editor
-  diagnostics both read the list it produces rather than each deciding what a
-  type name is. That is deliberate: those two walkers are the pair that drifted
-  in #401 and #597, and `tests/closed_issues/issue_609.py` asserts they agree
-  rather than checking each alone.
-
-### Docs
 
 - **`docs/guide/types-and-values.md` said `nodus check` was syntax-only. It is
   not.** The page asserted twice — in §1 and §9 — that *"`nodus check` does not
@@ -445,6 +439,22 @@
   static-only and optional, and the unknown-name warning. Every example run and
   pasted verbatim.
 
+
+
+- **An `after` edge carries the dependency's value, and the guide never said so.**
+  Inside a step body each name declared with `after` is bound to that step's
+  return value, and a step that did not declare the dependency cannot read it —
+  correct scoping, working since the DSL shipped, documented nowhere in
+  `docs/guide/`, `llms.txt` or `llms-full.txt`. A reader concludes they must route
+  all data through `state`. New §3.1 in `docs/guide/workflows-and-tasks.md`, with
+  the skipped-dependency case: a `skipped` producer binds `nil`, indistinguishable
+  from a step that returned `nil`, and only `r["statuses"]` tells them apart.
+
+- **`docs/design/workflow-dsl/00-cluster-decisions.md`** — decisions for the eight
+  open workflow-DSL design questions (#468, #472, #479, #480, #481, #488, #577,
+  #578), taken together because three of them stop being independent when read
+  side by side. Records one prerequisite defect found while verifying them: an
+  unrecognised type name silently means `any`.
 
 ### Ecosystem
 
@@ -524,36 +534,13 @@ odus-a2a-wire` "the local worktree" of the wire repo. That directory's
   skill planned to publish the in-tree engine *as* `nodus-workflow`, which §8b now
   forbids; it is marked superseded.
 
-### Fixes
+### Known
 
-- **`llms-full.txt`'s workflow example had never parsed.** `step validate after []`
-  is `Expected identifier, got '['`. It went unnoticed because the doc gate's file
-  list included `llms.txt` and not `llms-full.txt` — so the file 5.5.0 shipped
-  inside the wheel for agents to read was the one nothing checked. Fixed, and
-  `llms-full.txt` is now scanned by `nodus_gate --static`/`--runtime`; its other
-  three blocks were already clean.
-
-### Tooling
-
-- **`nodus_gate` scans `llms-full.txt`.** One list decides which documents are
-  checked; it had two AI-discoverability files in it and covered one.
-
-### Docs
-
-- **An `after` edge carries the dependency's value, and the guide never said so.**
-  Inside a step body each name declared with `after` is bound to that step's
-  return value, and a step that did not declare the dependency cannot read it —
-  correct scoping, working since the DSL shipped, documented nowhere in
-  `docs/guide/`, `llms.txt` or `llms-full.txt`. A reader concludes they must route
-  all data through `state`. New §3.1 in `docs/guide/workflows-and-tasks.md`, with
-  the skipped-dependency case: a `skipped` producer binds `nil`, indistinguishable
-  from a step that returned `nil`, and only `r["statuses"]` tells them apart.
-
-- **`docs/design/workflow-dsl/00-cluster-decisions.md`** — decisions for the eight
-  open workflow-DSL design questions (#468, #472, #479, #480, #481, #488, #577,
-  #578), taken together because three of them stop being independent when read
-  side by side. Records one prerequisite defect found while verifying them: an
-  unrecognised type name silently means `any`.
+- **The wiki still names a v4-line release as its stable one** — four minors and
+  a major behind what ships — and repeats the 32-package count, in `Home.md` and
+  `Roadmap.md`. It carries no positioning clause, so it needed nothing for D1.
+  Left for a wiki-wide version sweep: a partial update there would be worse than
+  none.
 
 ## [5.5.0] - 2026-08-26
 
