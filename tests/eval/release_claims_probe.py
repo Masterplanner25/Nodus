@@ -1409,6 +1409,15 @@ def main() -> int:
         default=Path(__file__).resolve().parents[2],
         help="repo root for the prose probes (default: this checkout)",
     )
+    parser.add_argument(
+        "--require-installed",
+        action="store_true",
+        help=(
+            "fail if `nodus` resolves inside --repo. Gate 10b validates the "
+            "built wheel, and the repo-root `nodus.py` shim shadows an "
+            "installed package whenever CWD is the repo."
+        ),
+    )
     args = parser.parse_args()
 
     # A probe that dies while *reporting* a failure is worse than no probe: it
@@ -1433,6 +1442,36 @@ def main() -> int:
     print(f"  import    {getattr(nodus, '__file__', '?')}")
     print(f"  repo      {args.repo}")
     print("=" * 72)
+
+    # The wrong-tree trap, made mechanical. The repo-root `nodus.py` shim
+    # inserts `src/` on `sys.path` and re-execs the package from there, so ANY
+    # process whose CWD is the repo resolves `nodus` to the source tree no
+    # matter what is installed. Python puts the working directory first on
+    # `sys.path`, so this needs no PYTHONPATH and leaves no trace in `pip list`.
+    #
+    # 5.0.3 shipped past 32 green probes run against the wrong tree. 5.5.0 hit
+    # it and caught it by reading this header; its eval wrote the cause up in
+    # full. 5.6.0 hit it again anyway -- which is why it is a check now, and not
+    # a paragraph in the previous release's eval where nobody reads it in time.
+    # Specifically the source tree, not merely "somewhere under the repo": a
+    # validation venv created inside the checkout resolves correctly and must
+    # not be refused. The trap is `<repo>/src/nodus`, which is what the shim
+    # points at.
+    is_source_tree = False
+    try:
+        package_dir.relative_to(Path(args.repo).resolve() / "src")
+        is_source_tree = True
+    except ValueError:
+        pass
+    if is_source_tree:
+        print()
+        print("  !! `nodus` resolved INSIDE the repo, not to an installed package.")
+        print("     To validate a wheel, run from a directory outside the repo:")
+        print("     the repo-root nodus.py shim shadows site-packages via CWD.")
+        if args.require_installed:
+            print()
+            print("  refusing to validate the source tree (--require-installed)")
+            return 2
     print()
 
     probe_sum()
