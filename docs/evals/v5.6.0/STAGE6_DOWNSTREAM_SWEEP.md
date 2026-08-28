@@ -2,9 +2,8 @@
 
 Four questions. Three are tooled; the fourth is `git status` in each checkout.
 
-**Verdict: clear, with one consumer outstanding by design** — `nodus-vscode`
-needs a Marketplace upload, and its flag is deliberately left standing until
-that happens.
+**Verdict: clear.** Both consumers republished, all ranges float, no drift, no
+work left behind.
 
 ---
 
@@ -69,7 +68,7 @@ v1 (remote): 5134e2590a3eed502123ac29fa2f7bd080e8dff2
 v1.0.7:      5134e2590a3eed502123ac29fa2f7bd080e8dff2
 ```
 
-### `nodus-vscode` — packaged, awaiting a Marketplace upload
+### `nodus-vscode` — republished, flag cleared
 
 ```
 [--] nodus-vscode (0.1.3) — NEEDS REPUBLISH
@@ -79,15 +78,27 @@ v1.0.7:      5134e2590a3eed502123ac29fa2f7bd080e8dff2
 `each` is new in #480, and the TextMate grammar lists every keyword explicitly,
 so an unnamed one renders as a plain identifier. That is the two-release
 regression `tests/test_keyword_coverage.py` exists to prevent — and how this was
-found, from the fingerprint *not* moving when it should have.
+found, from the fingerprint *not* moving when it should have. `--consumers`
+reported `2/2 in step` against a release that adds a keyword, because the word
+had shipped as a bare string literal in the parser and never reached
+`lexer.ALL_KEYWORDS`.
 
-Prepared: grammar fix committed (`03aa535`), version bumped to 0.1.4 and pushed
-(`31d9978`), `nodus-lang-0.1.4.vsix` packaged and verified by reading the
-grammar back out of the zip rather than trusting the build.
+Grammar fix committed (`03aa535`), version bumped to 0.1.4 (`31d9978`), VSIX
+packaged and verified by reading the grammar back out of the zip rather than
+trusting the build, then uploaded to the Marketplace.
 
-**The flag stays set until the VSIX is actually uploaded.** Clearing it on the
-strength of a built artifact would be exactly the "flag cleared before the work
-is done" this manifest warns is worse than no flag.
+Confirmed live before the flag was touched, via the gallery API rather than by
+assuming the upload took — validation takes a few minutes and a check made
+immediately after reports the previous version:
+
+```
+name          : nodus-lang
+publisher     : MasterplanInfiniteWeave
+latest version: 0.1.4
+last updated  : 2026-08-28T13:20:30.883Z
+```
+
+Only then were `fingerprint` and `published` updated here, in that order.
 
 ## 4. Work left behind
 
@@ -112,5 +123,5 @@ only if the alias is touched for another reason.
 ## Ecosystem state after this release
 
 - **36 PyPI projects** — nodus-lang plus 35 companions, all admitting 5.6.0
-- **2 non-PyPI consumers** — one republished, one prepared and pending
+- **2 non-PyPI consumers** — both republished and verified live
 - **12 checkouts** — all clean
