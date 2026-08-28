@@ -1306,10 +1306,31 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.5.0** (live on PyPI, published 2026-08-26). Both files
+The current published version is **v5.6.0** (live on PyPI, published 2026-08-27). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.5.0"`
-- `pyproject.toml` — `version = "5.5.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.6.0"`
+- `pyproject.toml` — `version = "5.6.0"`
+
+**5.6.0 is additive. Every new surface is something a workflow could not previously
+say, and nothing that parsed before parses differently.** Four of them, all from the
+workflow-DSL cluster: a step can map over a list (`step render each page in discover`,
+#480); workflows and goals take parameters (#481); a step can declare its output type
+(`with { returns: "map" }`, #479); and a goal's `budget` gains `limits`, so it can be
+bounded by what it spends rather than only by iterations (#488).
+
+Two consequences worth knowing even though neither breaks code. **`each` is a new
+contextual keyword** — contextual, so it remains usable as an identifier, but an editor
+older than this release renders it as a plain identifier until the VS Code extension is
+republished. And **an unrecognised type name is now reported rather than silently meaning
+`any`** (#609), staged as a warning until 6.0.0, so a project that was "clean" may show
+new warnings on annotations that never meant what they said.
+
+One security fix, and it is the reason this release should not have waited: **a capability
+policy could be bypassed by writing the async form of a call** (#616, `severity:high`).
+Anything embedding a `NodusRuntime` with a policy should upgrade.
+
+`RuntimeService.close()` now waits for its sweeper instead of only asking it to stop
+(#632), which matters to embedders whose store lives in a directory they later remove.
 
 **5.5.0 has one behaviour a reader should know about, and it is a tightening: a workflow
 step body can no longer be called directly (#394).** `build["steps"][1]["fn"](nil)` used to

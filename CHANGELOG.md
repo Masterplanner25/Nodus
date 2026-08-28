@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-08-27
+
 ### Added
 
 - **#480: a workflow step can map over a list.**
@@ -404,6 +406,15 @@
   checked; it had two AI-discoverability files in it and covered one.
 
 ### Docs
+
+- **The companion count was still wrong in `README.md`, in a second place.** The
+  sweep that fixed seven occurrences of *"32-package"* missed the paragraph at
+  `README.md:213` and the summary in
+  `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md`, both of which still read
+  32 standalone / 33 projects against a verified live count of **35 / 36**.
+  Caught by a Gate 10b probe written before the tag, which matters because
+  `pyproject.toml` sets `readme = "README.md"`: whatever that file says at tag
+  time is the PyPI project page forever.
 
 - **#624: the `std:tool` guide taught the wrong handler shape.** Its registration
   example — the thing people copy — was
