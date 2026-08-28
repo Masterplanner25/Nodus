@@ -265,6 +265,25 @@
 
 ### Fixes
 
+- **#632: `RuntimeService.close()` waits for its sweeper instead of only asking
+  it to stop.** It set the stop event and notified the condition, then returned
+  — so it could return while `_worker_sweeper_loop` was still inside `sweep()`,
+  touching the workflow store. Any caller that then removed the store's
+  directory raced a live thread: on Windows `PermissionError: [WinError 32] ...
+  workflow_framework.sqlite3`, on Linux `sqlite3.OperationalError: no such
+  table: workflow_runs` followed by `OSError: [Errno 39] Directory not empty`.
+  Only Linux's symptom was ever seen in CI, which is why this was triaged for
+  months as a temporary-directory race.
+
+  This is the **second** sweeper. #591 fixed the same symptom by stopping the
+  default runner's `nodus-workflow-sweep` daemon and left this one running, so
+  the bug outlived its own fix — two threads, one question.
+
+  Affects embedders, not just tests: a service pointed at a scratch directory
+  could not reliably release it. A sweeper that overruns the join is reported
+  as a `RuntimeWarning` rather than raised, because `close()` runs from
+  `server_close()` inside `finally` blocks.
+
 - **#480: a mapped step is one step in every aggregation that names steps.**
   `steps`, `statuses`, `failed` and `tolerated` all key by step name, and each
   learned separately that an instance is not a step, getting it wrong

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 import threading
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -333,6 +334,14 @@ def _parse_optional_bool(value) -> bool | None:
     return None
 
 
+#: How long `RuntimeService.close()` waits for its sweeper to finish (#632).
+#:
+#: Generous on purpose: the loop's own wait is bounded by the sweep interval, so
+#: a thread that is still alive after this is stuck rather than slow, and that is
+#: worth reporting rather than waiting out.
+SWEEPER_JOIN_TIMEOUT_S = 10.0
+
+
 class RuntimeService:
     def __init__(
         self,
@@ -414,12 +423,47 @@ class RuntimeService:
                 self.workers._cond.wait(timeout=interval)
 
     def close(self) -> None:
+        """Stop this service's background work, and wait for it to actually stop.
+
+        The join is the load-bearing half (#632). Setting `_stop_event` and
+        notifying only asks the sweeper to finish; it does not wait, so `close()`
+        used to return while `_worker_sweeper_loop` was still inside `sweep()`
+        touching the workflow store. A caller that then removed the store's
+        directory -- every server test does, and so does any embedder pointing a
+        service at a scratch path -- raced a live thread. On Windows that surfaced
+        as `PermissionError: [WinError 32] ... workflow_framework.sqlite3`, on
+        Linux as `sqlite3.OperationalError: no such table: workflow_runs` followed
+        by `OSError: [Errno 39] Directory not empty`, and it read as a tempdir race
+        rather than an unstopped thread.
+
+        This is the second sweeper, not the one #591 fixed. That fix stopped the
+        default runner's `nodus-workflow-sweep` daemon via
+        `reset_default_workflow_runner()` and left this one running, so the
+        symptom survived its own fix. Two threads, one question.
+
+        Deliberately does not raise: `close()` runs from `server_close()`, which
+        runs in `finally` blocks, and raising there would replace whatever error
+        was already being handled. A sweeper still alive after the timeout is
+        reported instead, because silence is what let this persist.
+        """
         self._stop_event.set()
         if getattr(self, "_retry_sweeper_registered", False):
             self._retry_sweeper_registered = False
             unregister_retry_sweeper(self.workflow_runner)
         with self.workers._cond:
             self.workers._cond.notify_all()
+        thread = getattr(self, "_sweeper_thread", None)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=SWEEPER_JOIN_TIMEOUT_S)
+            if thread.is_alive():
+                warnings.warn(
+                    f"RuntimeService sweeper did not stop within "
+                    f"{SWEEPER_JOIN_TIMEOUT_S}s; its workflow store may still be "
+                    f"in use, so removing the store directory now can fail "
+                    f"(#632)",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
     def _workflow_vm_factory(self, _record=None) -> VM:
         vm = self._new_vm()
