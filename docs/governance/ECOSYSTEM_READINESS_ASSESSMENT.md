@@ -213,4 +213,4 @@ language features rather than optional library wiring.
 - `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md` — the rubric used here
 - `docs/governance/ECOSYSTEM_90_DAY_CHECKLIST.md` — what to complete before production
 - `docs/governance/LIBRARY_ECOSYSTEM.md` — ecosystem architecture
-- `docs/evals/v5.5.0/CREATOR_VALIDATION.md` — most recent Gate 10 results (v5.5.0 cycle)
+- `docs/evals/v5.6.0/CREATOR_VALIDATION.md` — most recent Gate 10 results (v5.6.0 cycle)
