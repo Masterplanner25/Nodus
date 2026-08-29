@@ -40,7 +40,7 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.6.0 is about workflows declaring what they used to only imply: parameters, per-step output types, fan-out over a list, and a budget a goal actually spends.
+**Recent:** 5.7.0 is about declaring contracts at the boundaries a program cannot see across: the host functions it requires (`extern`), the types a host function takes, the shape a resume payload must have, and the undo path for work that already succeeded (`compensates`).
 
 An installed Nodus could not tell you where its own documentation was. The wheel
 shipped code and the stdlib; the guide, the machine-readable index and the agent

@@ -1384,10 +1384,10 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.6.0** (live on PyPI, published 2026-08-28). Both files
+The current published version is **v5.7.0** (live on PyPI, published 2026-08-29). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.6.0"`
-- `pyproject.toml` — `version = "5.6.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.7.0"`
+- `pyproject.toml` — `version = "5.7.0"`
 
 **5.6.0 is additive. Every new surface is something a workflow could not previously
 say, and nothing that parsed before parses differently.** Four of them, all from the
