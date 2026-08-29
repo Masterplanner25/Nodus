@@ -409,6 +409,29 @@ Two classes can't share incompatible timeout requirements. If a test needs `sess
 (to observe expiry quickly) and another needs `session_timeout_ms=2000` (to survive load without
 expiring), split them into two classes with separate server instances — one per `setUpClass`.
 
+**The runtime clock cannot order two events — it ticks at ~15.6 ms.** `runtime_time_ms()`
+is `(time.monotonic() - _START) * 1000.0` (`runtime/runtime_stats.py`), and on this box
+`time.monotonic()` advances in ~15.6 ms steps — measured deltas between consecutive
+distinct readings: `[16.0, 16.0, 15.0, 16.0, 15.0, 16.0]`. So **any two things that happen
+without I/O between them get the same timestamp.** A task's `started_at` and `finished_at`
+are routinely equal, and a strict causal chain `a→b→c→d→e` stamped `265, 265, 281, 297, 297`
+— two ties in a sequence with no ambiguity at all.
+
+Consequences, in order of how much they cost:
+
+- **Never derive an ordering from a timestamp.** Sorting completed tasks by `finished_at`
+  puts them in an arbitrary order, not a wrong-but-close one. This is what #577's
+  compensation spec had to solve (`docs/design/workflow-dsl/01-compensation.md`): the
+  order exists — tasks settle one at a time on one scheduler — it is simply never
+  recorded, so the fix is a counter incremented where completion is already serialized,
+  not a finer clock.
+- **A duration measured across a fast operation is `0.0` and means nothing.** Do not
+  assert on one, and do not read it as "instant".
+- **This is platform-specific, which makes it worse.** `time.monotonic()` is
+  nanosecond-resolution on Linux, so a timestamp-ordering rule is *mostly* right on a CI
+  runner and wrong here — correct on the test platform, broken on the developer's. CI
+  cannot catch it; only a causal chain of trivial steps run locally can.
+
 **Sweeper startup race:** `RuntimeService` starts the sweeper thread in `__init__` with the default
 interval. If you set `_worker_heartbeat_timeout_ms` after construction, the sweeper sleeps the
 default interval (500ms) before adopting the new value. Fix: pass `worker_sweep_interval_ms=N`
