@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#631: the scheduler-fairness tests measured the machine, not fairness.**
+  Both tests in `tests/test_scheduler_fairness.py` ran under the default 200 ms
+  `EXECUTION_TIMEOUT_MS`, which is wall clock and counts time a coroutine did not
+  consume — so a `while (i < 8000)` loop under CPU contention was killed
+  (`{'kind': 'sandbox', 'message': 'Execution timed out'}`) before the ordering
+  assertion was ever reached. Measured in one load window: **3 of 5 runs red
+  before, 5 of 5 green after.**
+
+  The harness now sets its own generous deadline, in a single helper so a test
+  added later cannot forget it, and it reports a deadline kill as itself rather
+  than as a confusing ordering failure. The deadline is raised rather than the
+  loop shortened: fewer iterations would make the interleaving these tests exist
+  to observe less likely to happen at all.
+
+  Test-only. **`EXECUTION_TIMEOUT_MS` is unchanged** — it is a deliberate
+  production default, and `nodus run --time-limit` is what raises it.
+
 ### Fixes
 
 - **#629: `source_drift` was blind to a resume driven from a different file.**
