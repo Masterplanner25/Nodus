@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.7.0] - 2026-08-29
+
 ### Added
 
 - **#577: `compensates` — a declared undo path for work that already succeeded.**

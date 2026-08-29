@@ -119,6 +119,13 @@ Release order — the whole sequence, not just the publish half:
    version, when it passed by definition. It is only after step 2 that it can tell you
    which sentences still quote the version you just left — which is the failure that hit
    three releases running. It names each file, line, and the fix
+4c. **Re-run the suite too, after steps 2-4.** Step 1's run predates every edit
+   those steps make, and some of those edits are things tests assert on: `llms.txt`
+   ships **inside the wheel**, and `tests/test_llms_txt_shipped.py` byte-compares
+   the packaged copy at `src/nodus/llms.txt` against the root. Editing the root
+   version claim without running `python -m tools.sync_llms_txt` turns a green
+   Gate 1 into a red CI, which is how 5.7.0's release PR failed. Do not hand-edit
+   the packaged copy; the sync tool is idempotent and says `already in step`
 5. Commit, PR, CI, merge
 6. `git tag vX.Y.Z` → `git push origin vX.Y.Z`
 7. Build the wheel **from the tagged tree**
@@ -1384,10 +1391,10 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.6.0** (live on PyPI, published 2026-08-28). Both files
+The current published version is **v5.7.0** (live on PyPI, published 2026-08-29). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.6.0"`
-- `pyproject.toml` — `version = "5.6.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.7.0"`
+- `pyproject.toml` — `version = "5.7.0"`
 
 **5.6.0 is additive. Every new surface is something a workflow could not previously
 say, and nothing that parsed before parses differently.** Four of them, all from the

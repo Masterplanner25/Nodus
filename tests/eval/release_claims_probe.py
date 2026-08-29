@@ -1401,6 +1401,240 @@ def probe_package_count(repo: Path):
     return "no artifact still says 32"
 
 
+# --- 5.7.0 ------------------------------------------------------------------
+
+
+@probe("5.7.0: `extern` declares a host surface and `nodus check` gets strict")
+def probe_extern_declares_host_surface():
+    from nodus.tooling.runner import check_source
+
+    declared = 'extern delegate(who: string, task: string) -> string\n'
+    typo = declared + 'fn main() { print(delegat("a", "b")) }\n'
+    result = check_source(typo, filename="t.nd")
+    assert not result["ok"], "an undeclared name passed in a file that declares an extern"
+    assert "delegat" in (result.get("error") or {}).get("message", "")
+    good = declared + 'fn main() { print(delegate("a", "b")) }\n'
+    assert check_source(good, filename="t.nd")["ok"], "a declared name was rejected"
+    return "declaring a host surface makes an unknown call an error"
+
+
+@probe("5.7.0: a runtime refuses a program whose extern it has not registered")
+def probe_extern_preflight():
+    from nodus.runtime.embedding import NodusRuntime
+
+    program = 'extern delegate(who: string) -> string\nfn main() { print(delegate("x")) }\n'
+    refused = NodusRuntime(timeout_ms=None).run_source(program)
+    assert not refused["ok"], "an unregistered extern ran"
+    assert "has not registered" in (refused.get("error") or {}).get("message", "")
+
+    runtime = NodusRuntime(timeout_ms=None)
+    runtime.register_function("delegate", lambda who: "handled " + str(who), arity=1)
+    ok = runtime.run_source(program)
+    assert ok["ok"], ok.get("error")
+    assert "handled x" in (ok.get("stdout") or "")
+    return "refused before running; runs once registered"
+
+
+@probe("5.7.0: a file with no extern is unchanged (strictness is per file)")
+def probe_undeclared_file_unchanged():
+    from nodus.tooling.runner import check_source
+
+    result = check_source(
+        "fn main() { print(totally_made_up_function(1i)) }\n", filename="t.nd"
+    )
+    assert result["ok"], (
+        "a file declaring nothing became strict -- that would reject every "
+        "embedded program written before declarations existed"
+    )
+    return "an undeclared file still accepts unknown free calls"
+
+
+@probe("5.7.0: register_function takes a schema")
+def probe_host_function_schema():
+    from nodus.runtime.embedding import NodusRuntime
+
+    def write_file(path, contents):
+        return "wrote " + str(path)
+
+    runtime = NodusRuntime(timeout_ms=None)
+    runtime.register_function(
+        "host_write", write_file, arity=2,
+        schema={"path": "string", "contents": "string"},
+    )
+    bad = runtime.run_source('fn main() { print(host_write(42i, {"a": 1i})) }')
+    assert not bad["ok"], "wrong argument types reached the host function"
+    assert "must be a string" in (bad.get("error") or {}).get("message", "")
+
+    plain = NodusRuntime(timeout_ms=None)
+    plain.register_function("host_write", write_file, arity=2)
+    assert plain.run_source('fn main() { print(host_write(42i, {"a": 1i})) }')["ok"], (
+        "a registration without a schema changed behaviour"
+    )
+    return "typed args refused; an unschemaed registration is unchanged"
+
+
+@probe("5.7.0: workflow_wait declares its resume payload shape")
+def probe_wait_payload_schema():
+    from nodus.runtime.embedding import NodusRuntime
+
+    source = (
+        "workflow w {\n"
+        '    step a { return workflow_wait("approval", {schema: {approved: "bool"}}) }\n'
+        "}\n"
+        "fn main() {\n"
+        "    let r = run_workflow(w)\n"
+        '    print("R=\\(resume_workflow(r["graph_id"], nil, {approved: "yes"}))")\n'
+        "}\n"
+    )
+    result = NodusRuntime(timeout_ms=None).run_source(source)
+    assert result["ok"], result.get("error")
+    out = result.get("stdout") or ""
+    assert '"ok": false' in out, "a payload violating the declared schema was accepted"
+    assert "must be a boolean" in out
+    return "a mismatched resume payload is refused at the resume call"
+
+
+@probe("5.7.0: compensation unwinds in reverse completion order")
+def probe_compensation_unwind_order():
+    from nodus.runtime.embedding import NodusRuntime
+
+    source = (
+        "workflow saga {\n"
+        '    step reserve { return "res" }\n'
+        '    step charge after reserve { return "ch" }\n'
+        '    step ship after charge { throw "boom" }\n'
+        '    step release compensates reserve { return "released" }\n'
+        '    step refund compensates charge { return "refunded" }\n'
+        "}\n"
+        'fn main() { let r = run_workflow(saga); print("C=\\(r["compensation"])") }\n'
+    )
+    result = NodusRuntime(timeout_ms=None).run_source(source)
+    assert result["ok"], result.get("error")
+    out = result.get("stdout") or ""
+    assert '"step": "refund"' in out and '"step": "release"' in out, out
+    assert out.index('"step": "refund"') < out.index('"step": "release"'), (
+        "compensation ran in the wrong order -- later work must unwind first"
+    )
+    return "refund (later) unwinds before release (earlier)"
+
+
+@probe("5.7.0: a compensated run cannot be resumed")
+def probe_compensated_run_is_terminal():
+    from nodus.runtime.embedding import NodusRuntime
+
+    source = (
+        "workflow saga {\n"
+        '    step reserve { checkpoint "cp"\n        return "res" }\n'
+        '    step ship after reserve { throw "boom" }\n'
+        '    step release compensates reserve { return "released" }\n'
+        "}\n"
+        "fn main() {\n"
+        "    let r = run_workflow(saga)\n"
+        '    print("A=\\(resume_workflow(r["graph_id"], "cp"))")\n'
+        "}\n"
+    )
+    result = NodusRuntime(timeout_ms=None).run_source(source)
+    assert result["ok"], result.get("error")
+    assert "was compensated" in (result.get("stdout") or ""), "a compensated run was resumable"
+    return "resume refused, naming the reason"
+
+
+@probe("5.7.0: a failed pass does not satisfy a goal")
+def probe_failed_pass_does_not_satisfy():
+    from nodus.runtime.embedding import NodusRuntime
+
+    source = (
+        'workflow tune { step attempt { checkpoint "good"\n        throw "nope" } }\n'
+        'goal reach over tune { until reached("good") budget { max_iterations: 2i } }\n'
+        'fn main() { print("R=\\(run_goal(reach))") }\n'
+    )
+    result = NodusRuntime(timeout_ms=None).run_source(source)
+    assert result["ok"], result.get("error")
+    out = result.get("stdout") or ""
+    assert "exhausted its budget" in out, out
+    assert "goal_satisfied" not in out, "a failed pass still reported the goal satisfied"
+    return "a checkpoint recorded before a throw no longer satisfies `until`"
+
+
+@probe("5.7.0: fmt keeps a mapped step's `each` clause")
+def probe_fmt_keeps_each():
+    from nodus.tooling.formatter import format_source
+
+    out = format_source(
+        "workflow w {\n"
+        "    step discover { return [1i] }\n"
+        "    step render each page in discover { return page }\n"
+        "}\n"
+    )
+    assert "each page in discover" in out, out
+    assert "step render after discover" not in out, "fmt rewrote `each` as `after` again"
+    return "a mapped step round-trips through fmt"
+
+
+@probe("5.7.0: fmt keeps a goal budget's declared bounds")
+def probe_fmt_keeps_budget_limits():
+    from nodus.tooling.formatter import format_source
+
+    flow = 'workflow t { step a { checkpoint "g"\n        return 1i } }\n'
+    single = format_source(
+        flow + 'goal r over t { until reached("g") budget { max_iterations: 3i } }\n'
+    )
+    assert "budget { max_iterations: 3i }" in single, single
+    limited = format_source(
+        flow
+        + 'goal r over t { until reached("g") '
+        + 'budget { max_iterations: 3i, limits: { tokens: 100i } } }\n'
+    )
+    assert "limits: { tokens: 100i }" in limited, "fmt dropped the limits bound"
+    return "single-dimension budgets format, and limits survives"
+
+
+@probe("5.7.0: the new keywords are named where tooling reads them")
+def probe_new_keywords_named():
+    from nodus.frontend.lexer import ALL_KEYWORDS
+
+    for word in ("extern", "compensates"):
+        assert word in ALL_KEYWORDS, repr(word) + " is not in ALL_KEYWORDS"
+    return "ALL_KEYWORDS names {} words, including extern and compensates".format(
+        len(ALL_KEYWORDS)
+    )
+
+
+@probe("5.7.0: nothing still calls 5.6.0 the current release")
+def probe_no_stale_5_6_current(repo: Path):
+    """The half that has caught things: prose describing the previous release.
+
+    Deliberately narrow -- it looks for 5.6.0 asserted as *current*, not every
+    mention. A historical "shipped in 5.6.0" is correct and must not be
+    rewritten; a blanket sweep at 5.5.0 turned four such facts into lies.
+    """
+    pattern = re.compile(
+        r"(current(ly)?|latest|published version|now on PyPI)[^.\n]{0,40}5\.6\.0"
+        r"|5\.6\.0[^.\n]{0,40}(is current|current stable|latest release)",
+        re.IGNORECASE,
+    )
+    hits = []
+    candidates = (
+        list(repo.glob("*.md"))
+        + list(repo.glob("*.txt"))
+        + list((repo / "docs").rglob("*.md"))
+        + list((repo / "skills").glob("*"))
+    )
+    for path in candidates:
+        if not path.is_file() or "evals" in path.parts or "CHANGELOG" in path.name:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                hits.append("{}:{}".format(path.relative_to(repo), n))
+    assert not hits, "still describes 5.6.0 as current: " + ", ".join(hits[:6])
+    return "no artifact calls 5.6.0 the current release"
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -1541,6 +1775,20 @@ def main() -> int:
     probe_no_stale_5_5_current(args.repo)
     probe_guide_documents_each(args.repo)
     probe_package_count(args.repo)
+
+    # --- 5.7.0 ---------------------------------------------------------------
+    probe_extern_declares_host_surface()
+    probe_extern_preflight()
+    probe_undeclared_file_unchanged()
+    probe_host_function_schema()
+    probe_wait_payload_schema()
+    probe_compensation_unwind_order()
+    probe_compensated_run_is_terminal()
+    probe_failed_pass_does_not_satisfy()
+    probe_fmt_keeps_each()
+    probe_fmt_keeps_budget_limits()
+    probe_new_keywords_named()
+    probe_no_stale_5_6_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
