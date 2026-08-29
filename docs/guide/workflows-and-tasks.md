@@ -984,6 +984,15 @@ carries forward and successive passes differ — that is what stops the loop
 repeating itself. Run it with `nodus run --time-limit`, since several passes
 exceed the 200 ms default.
 
+**A pass that ends `failed` cannot satisfy the goal**, whatever checkpoints it
+recorded before failing (#642). The loop treats it as an unsuccessful attempt and
+tries again, which is what a goal is for; if every pass fails, the goal ends with
+`exhausted its budget … without satisfying its condition` rather than a
+success-shaped result.
+
+A **tolerated** failure is different: `allow_failure` means the run *completes*,
+so such a pass can satisfy the goal normally.
+
 **The unconditional `checkpoint "adjusted"` above is load-bearing, not
 decorative.** Because each pass resumes from the last checkpoint reached, the
 workflow must record a checkpoint on *every* pass — including passes where the
