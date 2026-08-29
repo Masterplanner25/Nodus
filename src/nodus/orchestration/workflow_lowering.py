@@ -363,6 +363,13 @@ def _lower_step_ast(
             (Str("var"), Str(each_var)),
             (Str("source"), Str(each_source or "")),
         ])))
+    compensates = getattr(step, "compensates", None)
+    if compensates is not None:
+        # #577: data on the step map, like `each` and `when`. The runner never
+        # sees the AST, and `plan_workflow` should be able to show that this node
+        # is a compensation handler -- excluded from the forward graph -- before
+        # anything runs.
+        items.append((Str("compensates"), Str(compensates)))
     when = getattr(step, "when", None)
     if when is not None:
         # Data, not a compiled closure -- the same treatment a goal's `until` gets,
@@ -531,6 +538,9 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
     tasks: list[TaskNode] = []
     resolved: dict[str, TaskNode] = {}
     step_to_task: dict[str, str] = {}
+    # #577: compensation handlers, by handler name. Kept off the forward graph
+    # and carried on the TaskGraph so the unwind can reach them.
+    handlers: dict[str, Any] = {}
     for step_name, step in ordered:
         fn = step.get("fn")
         closure = vm.ensure_function(fn, f"workflow step '{step_name}'")
@@ -553,6 +563,13 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         if task_id is None:
             vm._task_counter += 1
             task_id = f"task_{vm._task_counter}"
+        # #577: a compensation handler is reachable only as a handler, so it is
+        # not a node in the forward graph. Excluded here rather than filtered
+        # later, so nothing downstream has to know the difference -- `deps`,
+        # readiness and the run's verdict all see the forward graph only.
+        if isinstance(step.get("compensates"), str):
+            handlers[step_name] = step
+            continue
         each_raw = step.get("each") if isinstance(step.get("each"), dict) else None
         each_source_name = None
         if each_raw is not None:
@@ -581,6 +598,8 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
         step_to_task[step_name] = task_id
 
     for step_name, step in ordered:
+        if step_name in handlers:
+            continue
         deps = step.get("deps", [])
         if not isinstance(deps, list):
             vm.runtime_error("type", f"Workflow step '{step_name}' deps must be a list")
@@ -644,7 +663,7 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             metadata["workflow_state"] = {}
         metadata["checkpoints"] = []
 
-    return TaskGraph(tasks, metadata=metadata)
+    return TaskGraph(tasks, metadata=metadata, compensation_handlers=handlers)
 
 
 def _bind_flow_args(vm, workflow_value, flow_name: str, kind: str | None, args, *, require: bool = True) -> dict:

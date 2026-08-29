@@ -171,6 +171,11 @@ class TaskGraph:
     tasks: list[TaskNode]
     graph_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # #577: compensation handlers by handler name, each the step map the lowering
+    # produced. Off the forward graph on purpose -- `tasks` is what readiness,
+    # dependency resolution and the run's verdict see, and a handler is none of
+    # those things. Reached only by the unwind.
+    compensation_handlers: dict[str, Any] = field(default_factory=dict)
 
 
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
@@ -806,6 +811,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     # #577/D7.1: per-run, not global. Two runs in one process must not interleave
     # sequence numbers -- that is the module-scope-state shape (#185/#390).
     _completion_counter = 0
+    # #577: set when this execution transitions the run to failed. A resume that
+    # merely rebuilds a recorded failure never sets it, so it cannot re-unwind.
+    _compensation_pending = False
     def _remove_task_from_pending(task_id: str) -> None:
         pending.discard(task_id)
         try:
@@ -1514,6 +1522,82 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 mapped[step_name] = status
         return mapped
 
+    def _run_compensation(payload: dict) -> None:
+        """Undo completed work when the run ends failed (#577).
+
+        Runs each completed step's declared handler in **descending
+        `completion_seq`** -- reverse completion order, BPMN's rule. The order
+        comes from the recorded counter, never from `finished_at`: that is
+        `time.monotonic()`, which ties across a causal chain on a 15.6 ms clock,
+        and unwinding in the wrong order is the precise failure compensation
+        exists to prevent (refund before uncharge).
+
+        Reported under `compensation` as a **list in execution order** -- a map
+        would discard the ordering, and the ordering is the semantics. Handlers
+        do not appear in `steps`, `statuses` or `failed`: those describe the
+        forward run, and keeping handlers out of them means no eighth
+        `TASK_STATUSES` entry.
+
+        A failing handler is recorded and does not cascade. It does not
+        re-trigger compensation and does not change the run's verdict, which is
+        already `failed` -- deliberately not Argo's behaviour, where an exit
+        handler can fail the workflow status. There is no status left to change.
+        """
+        handlers = getattr(graph, "compensation_handlers", None) or {}
+        if not handlers:
+            return
+        by_compensated: dict[str, Any] = {}
+        for handler_name, handler in handlers.items():
+            target = handler.get("compensates")
+            if isinstance(target, str):
+                by_compensated[target] = (handler_name, handler)
+
+        # Completed work only, newest first. A mapped node's *instances* are the
+        # unit -- a node reporting `failed` can still hold completed instances
+        # whose effects are real, which is the situation compensation is for.
+        # Paired with the sequence rather than filtered in a comprehension: the
+        # comprehension guarantees both are non-None but mypy cannot narrow
+        # through it, and `completion_seq` is used as a sort key while
+        # `step_name` indexes a `dict[str, ...]`. Keeping the `is None` checks at
+        # the point of use is the rule CLAUDE.md records for exactly this.
+        completed: list[tuple[int, TaskNode]] = []
+        for task in tasks:
+            seq = task.completion_seq
+            step_name = task.step_name
+            if seq is None or step_name is None or step_name not in by_compensated:
+                continue
+            completed.append((seq, task))
+        completed.sort(key=lambda pair: pair[0], reverse=True)
+
+        records: list[dict] = []
+        for _seq, task in completed:
+            handler_name, handler = by_compensated[str(task.step_name)]
+            address = task.task_id if task.is_mapped_instance else task.step_name
+            record: dict[str, Any] = {"step": handler_name, "of": address}
+            try:
+                closure = vm.ensure_function(
+                    handler.get("fn"), f"compensation handler '{handler_name}'"
+                )
+                # step_authorized: this is the runner entering a step body it
+                # owns, the same grant the forward path uses (#394). The guard
+                # gates on authority, not on which function called -- a handler
+                # entered any other way is still refused.
+                record["result"] = vm.run_closure(
+                    closure, [task.result], step_authorized=True
+                )
+                record["status"] = "completed"
+            except Exception as exc:  # noqa: BLE001 - recorded, never cascaded
+                record["status"] = "failed"
+                record["error"] = str(exc)
+            records.append(record)
+            vm.event_bus.emit_event(
+                "compensation_ran",
+                name=handler_name,
+                data={"of": address, "status": record["status"]},
+            )
+        if records:
+            payload["compensation"] = records
+
     def _finalize_failed(payload: dict) -> dict:
         """Refresh the snapshot fields of a failure payload built mid-run.
 
@@ -1535,6 +1619,17 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             and task.status == "failed" and not task.allow_failure
         ]
         _add_tolerated(payload)
+        # #577: gated on a transition that happened in *this* execution, not on
+        # a failure payload being returned. `run_task_graph` has three failed
+        # exits, and the resume-rebuild path returns a recorded failure for a run
+        # that already unwound -- compensating there would run every handler
+        # again on a run whose effects were undone long ago.
+        #
+        # Run here rather than at `_fail_task` so the unwind sees everything that
+        # completed: the run keeps draining after the first failure, and work
+        # that lands during the drain is real work with real effects.
+        if _compensation_pending:
+            _run_compensation(payload)
         return payload
 
     def _add_tolerated(payload: dict) -> None:
@@ -2242,6 +2337,8 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             # authoritative for `error` and `retry`; the full set of failed steps
             # is recomputed from task state when the payload is finalised.
             return False
+        nonlocal _compensation_pending
+        _compensation_pending = True
         failed = {
             "tasks": task_values,
             "steps": step_results(),

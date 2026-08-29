@@ -90,6 +90,13 @@ goal g {
     step render each page in discover { return page }
 }
 """,
+    "compensation handler": """
+workflow saga {
+    step reserve { return "r" }
+    step charge after reserve { return "c" }
+    step release compensates reserve { return "released" }
+}
+""",
     "extern declaration": """
 extern delegate(who: string, task: string) -> string
 fn main() { print(delegate("a", "b")) }

@@ -1,6 +1,8 @@
 # Compensation: the spec (#577)
 
-**Status: decided 2026-08-28.** D7 in [`00-cluster-decisions.md`](00-cluster-decisions.md)
+**Status: shipped 2026-08-29.** Built as specified; the build order below was followed step for step. The only divergence: terminality is recorded as `compensated` in run **metadata** rather than as an eighth run status, because the lifecycle vocabulary is deliberately closed and this is a property of a failed run rather than a state beside it.
+
+**Originally: decided 2026-08-28.** D7 in [`00-cluster-decisions.md`](00-cluster-decisions.md)
 settled the *direction* — compensation is declared per step, not as a workflow
 exit hook — and answered the four sub-questions #577 asks. It did not describe a
 buildable surface. This document does.

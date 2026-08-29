@@ -837,6 +837,15 @@ class WorkflowFrameworkRunner:
                     record.metadata.pop("retry", None)
                 elif status == RUN_STATUS_FAILED:
                     _mark_terminal_retry_from_result(record, result)
+                    # #577/D7.6: a compensated run is terminal. Recorded in
+                    # metadata rather than as an eighth run status -- the
+                    # lifecycle vocabulary is deliberately closed, and this is a
+                    # property of a failed run rather than a state beside it.
+                    # Both recording sites are covered: a *resumed* run that
+                    # transitions to failed compensates too, so marking only the
+                    # first would leave that one resumable.
+                    if isinstance(result, dict) and result.get("compensation"):
+                        record.metadata["compensated"] = True
                 self.store.save_run(record)
             if status == RUN_STATUS_WAITING:
                 _mark_wait_from_result(self, graph_id, result)
@@ -899,6 +908,20 @@ class WorkflowFrameworkRunner:
             retry = record.metadata.get("retry")
             next_attempt_at = retry.get("next_attempt_at") if isinstance(retry, dict) else None
             return {"ok": False, "error": f"Retry not due for '{graph_id}'", "next_attempt_at": next_attempt_at}
+        # #577/D7.6: a compensated run cannot be resumed. Its completed work has
+        # been undone, so re-entering would re-execute steps against a remote
+        # that has already been refunded -- and a resume *does* re-execute
+        # (#494 / I-WFLOW-06). Refused with the reason, the shape #482 used for a
+        # checkpoint resume of a waiting run.
+        if record is not None and record.metadata.get("compensated"):
+            return {
+                "ok": False,
+                "error": (
+                    f"Workflow run '{graph_id}' was compensated: its completed "
+                    f"work has been undone, so it cannot be resumed. Start a new "
+                    f"run."
+                ),
+            }
         if record is not None and record.status == RUN_STATUS_WAITING:
             if event_type is not None and (record.wait is None or record.wait.event_type != event_type):
                 return {"ok": False, "error": f"Wait event type mismatch for '{graph_id}'"}
@@ -1081,6 +1104,15 @@ class WorkflowFrameworkRunner:
                     record.metadata.pop("retry", None)
                 elif status == RUN_STATUS_FAILED:
                     _mark_terminal_retry_from_result(record, result)
+                    # #577/D7.6: a compensated run is terminal. Recorded in
+                    # metadata rather than as an eighth run status -- the
+                    # lifecycle vocabulary is deliberately closed, and this is a
+                    # property of a failed run rather than a state beside it.
+                    # Both recording sites are covered: a *resumed* run that
+                    # transitions to failed compensates too, so marking only the
+                    # first would leave that one resumable.
+                    if isinstance(result, dict) and result.get("compensation"):
+                        record.metadata["compensated"] = True
                 self.store.save_run(record)
             if status == RUN_STATUS_WAITING:
                 _mark_wait_from_result(self, graph_id, result)

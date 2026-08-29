@@ -264,7 +264,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
 
     if isinstance(stmt, WorkflowStep):
-        mapped, deps = _format_step_map_clause(stmt)
+        clauses, deps = _format_step_map_clause(stmt)
         guard = ""
         when = getattr(stmt, "when", None)
         if when is not None:
@@ -272,12 +272,12 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{mapped}{deps}{guard}{options} {{"
+        header = f"{prefix}step {stmt.name}{clauses}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, GoalStep):
-        mapped, deps = _format_step_map_clause(stmt)
+        clauses, deps = _format_step_map_clause(stmt)
         guard = ""
         when = getattr(stmt, "when", None)
         if when is not None:
@@ -285,7 +285,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{mapped}{deps}{guard}{options} {{"
+        header = f"{prefix}step {stmt.name}{clauses}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
@@ -390,26 +390,36 @@ def _format_goal_budget(budget) -> str:
 
 
 def _format_step_map_clause(stmt) -> tuple[str, str]:
-    """Render `each VAR in SRC` and the `after` list for a step (#656).
+    """Render a step's header clauses and its `after` list (#656, #577).
 
-    Returns `(mapped, deps)`, both already prefixed with a space or empty.
+    Returns `(clauses, deps)`, both already prefixed with a space or empty.
 
-    The parser adds `each_source` to `deps` so the dependency cannot disagree
-    with the `in` clause (#480), so rendering `deps` naively printed a mapped
-    step as `after SRC` and dropped the loop variable — a file that still parsed
-    and silently produced a different result. `each_source` is therefore removed
-    from the `after` list here: it is being expressed by the `each` clause.
+    The parser records some dependencies through a *clause* rather than through
+    `after` — `each VAR in SRC` adds `SRC` (#480), and `compensates DEP` adds
+    `DEP` (#577) — so that the dependency cannot disagree with the clause. A
+    naive render of `deps` therefore printed those as a plain `after` and dropped
+    the clause: a file that still parsed and silently did something else, which
+    is #656. Each such dependency is removed from the `after` list here, because
+    the clause is what expresses it.
 
     Shared by `WorkflowStep` and `GoalStep`, which had the same omission twice.
     """
+    clauses = []
+    deps = list(stmt.deps or [])
+
+    compensates = getattr(stmt, "compensates", None)
+    if compensates is not None:
+        clauses.append(f"compensates {compensates}")
+        deps = [dep for dep in deps if dep != compensates]
+
     each_var = getattr(stmt, "each_var", None)
     each_source = getattr(stmt, "each_source", None)
-    mapped = ""
-    deps = list(stmt.deps or [])
     if each_var is not None and each_source is not None:
-        mapped = f" each {each_var} in {each_source}"
+        clauses.append(f"each {each_var} in {each_source}")
         deps = [dep for dep in deps if dep != each_source]
-    return mapped, (" after " + ", ".join(deps)) if deps else ""
+
+    rendered = (" " + " ".join(clauses)) if clauses else ""
+    return rendered, (" after " + ", ".join(deps)) if deps else ""
 
 
 def format_block(block: Block, indent: int, keep_trailing_comments: bool = False) -> list[str]:
