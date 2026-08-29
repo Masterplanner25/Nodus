@@ -169,6 +169,37 @@
 
 ### Docs
 
+- **#494: the resume determinism boundary is stated, and one invariant that got
+  it wrong is corrected.** A resume re-executes; nothing records what the
+  original execution observed, so any fresh read — the clock, randomness, the
+  environment, a file, an HTTP response — may come back different. Checkpointed
+  `state` is restored faithfully and is the whole of what holds. Measured:
+
+  ```
+  fresh now      = 1788019818831
+  state started_at = 1788019818831
+  fresh now      = 1788019818896     <- replay
+  state started_at = 1788019818831
+  ```
+
+  The step's **return value is the replay's reading**, so a caller reading
+  `steps[...]` after a resume gets the second one.
+
+  New `I-WFLOW-07` states the boundary; the guide's *Checkpoints* section gives
+  the supported answer (write it into `state` before the checkpoint) with a run
+  example. There is deliberately no replay-safe clock and no divergence
+  detection — both remain open on #494, which records the position rather than a
+  mechanism.
+
+  **`I-WFLOW-06` was wrong and is corrected.** It claimed completed steps are
+  never re-executed across a resume, naming *both* `resume_workflow(id)` and
+  `resume_workflow(id, "label")`. True of the plain form only. A label is a
+  re-entry point (#486), so its step runs again from the top **and every step
+  downstream of it runs again too**, whatever their saved status — measured on
+  three completed steps with the checkpoint in the middle. The labelled form is
+  the one a debugging loop reaches for, so the invariant was misleading exactly
+  where it mattered.
+
 - **The production checklist had the capability defaults backwards.** The
   Operator / Embedder Runbook §6 told operators to set `allow_subprocess=False`,
   `allow_network=False` and `allow_env=False`, each annotated *"(default is

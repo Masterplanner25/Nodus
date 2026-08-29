@@ -1225,6 +1225,63 @@ $ nodus workflow resume <graph_id> --checkpoint after-phase1
 > source that has no cycle. Step **bodies** and `when` guards are deliberately
 > not compared — editing them does not refuse a resume.
 
+### What a replayed step observes
+
+A resume from a label **re-executes** the step that recorded it, from its first
+line. Checkpointed `state` is restored faithfully; every *fresh read* is taken
+again and may come back different — the clock, randomness, the environment, a
+file, an HTTP response.
+
+```nd
+import "std:time" as time
+
+workflow report {
+    state started_at = 0i
+    step gather {
+        // Fresh read: different on every replay.
+        let now = time.now().epoch_ms
+        // Checkpointed read: stable across replays.
+        if (started_at == 0i) { started_at = now }
+        print("fresh now      = \(now)")
+        print("state started_at = \(started_at)")
+        checkpoint "gathered"
+        return now
+    }
+}
+
+fn main() {
+    let r = run_workflow(report)
+    let again = resume_workflow(r["graph_id"], "gathered")
+    print("returned by the step after resume = \(again["steps"]["gather"])")
+}
+```
+
+```
+fresh now      = 1788019818831
+state started_at = 1788019818831
+fresh now      = 1788019818896
+state started_at = 1788019818831
+returned by the step after resume = 1788019818896
+```
+
+`started_at` held because it went into `state` before the checkpoint. `now` moved
+because it was read fresh — and note the **step's return value is the replay's
+reading**, so a caller reading `steps["gather"]` after a resume gets the second
+one.
+
+**The rule: if a replay must agree with the first run about something, write it
+into `state` before the checkpoint.** That is the supported answer; there is no
+replay-safe clock and no divergence detection (#494).
+
+Two things make this easier to hit than it looks. A mid-step `checkpoint` is a
+re-entry label for the **whole step**, so reads placed before it — where an
+author might reasonably think they were done — run again. And a labelled resume
+re-runs every step **downstream** of the label's step too, whatever their saved
+status; only steps *upstream* of it are skipped.
+
+A step that merely *records* a fresh value is fine. The hazard is a step that
+**branches** on one: a replay can take the other path.
+
 ---
 
 ## 9. Common patterns
