@@ -213,6 +213,10 @@ class VM:
         # is how embedded runs became unresumable (#469). Both are parameters now
         # so a new entry point meets them together.
         self.source_code: str | None = source_code
+        # #629: set on a child VM built for a resume, carrying what the
+        # drift check needs about the module that drove it. None on a VM
+        # running its own program.
+        self._resume_origin: dict | None = None
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter
@@ -1395,6 +1399,11 @@ class VM:
             return self
         child = VM([], {}, code_locs=[], host_globals=self.host_globals,
                    source_path=self.source_path, event_bus=self.event_bus)
+        # #629: the drift check runs during the rebuild, on this child — which
+        # has the caller's `source_path` but neither its globals nor its source,
+        # so the "what is the caller holding?" referent is unreachable from
+        # there. Snapshot it here, while the caller is still intact.
+        child._resume_origin = self._resume_origin_snapshot()
         # #405: a resume must not be a way out of the jail. This child was
         # inheriting host_globals, memory_store, the dispatcher and the builtins
         # — and none of the sandbox: `allowed_paths` went from a jail to None and
@@ -1769,23 +1778,145 @@ class VM:
         Reported rather than refused: a resume that stops working because someone
         touched the file would be worse than one that explains itself. Returns
         whether drift was found, for tests.
+
+        **There are two ways the caller's view can differ from what runs, and for
+        a long time only one was checked (#629):**
+
+        1. the recorded file has been edited since the run started;
+        2. the resume is driven from a *different* file that has its own copy of
+           the flow.
+
+        Case 2 replayed stale source and reported no drift at all, so the signal
+        depended on which file the caller happened to be sitting in rather than
+        on anything about the run. Both referents are checked here, and both
+        report through one helper -- the question "is what runs what the caller
+        thinks they are running?" gets one answer, not one per referent.
         """
-        if not isinstance(source_path, str) or not source_path:
-            return False
-        try:
-            with open(source_path, "r", encoding="utf-8") as handle:
-                current = handle.read()
-        except OSError:
-            # The file has moved or gone. The run is still resumable from its
-            # stored source, and a missing file is not drift.
-            return False
-        if current == stored_source:
-            return False
-        message = (
-            f"resume: '{flow_name}' is replaying the source stored when the run "
-            f"started; {source_path} has changed since and those edits are not in "
-            f"this run. Start a new run to pick them up."
+        origin = getattr(self, "_resume_origin", None)
+        if isinstance(origin, dict):
+            # A resume that rebuilds runs on a child VM (`_resume_target_vm`), so
+            # the caller's own program is only reachable through this snapshot.
+            caller_path = origin.get("path")
+            caller_source = origin.get("source")
+            caller_declares = (origin.get("flows") or {}).get(flow_name)
+        else:
+            # Same-VM resume, or a bare runner VM with no program of its own.
+            caller_path = getattr(self, "source_path", None)
+            caller_source = getattr(self, "source_code", None)
+            caller_declares = self._flow_declarations(caller_source).get(flow_name)
+        recorded_known = isinstance(source_path, str) and bool(source_path)
+        same_file = (
+            recorded_known
+            and isinstance(caller_path, str)
+            and bool(caller_path)
+            and os.path.abspath(source_path) == os.path.abspath(caller_path)
         )
+
+        # Referent 1 -- the recorded path's current contents.
+        if recorded_known:
+            try:
+                with open(source_path, "r", encoding="utf-8") as handle:
+                    current = handle.read()
+            except OSError:
+                # The file has moved or gone. The run is still resumable from its
+                # stored source, and a missing file is not drift.
+                current = None
+            if current is not None and current != stored_source:
+                self._report_source_drift(
+                    flow_name, graph_id, source_path, "recorded_path",
+                    f"resume: '{flow_name}' is replaying the source stored when the run "
+                    f"started; {source_path} has changed since and those edits are not in "
+                    f"this run. Start a new run to pick them up.",
+                )
+                return True
+
+        # Referent 2 -- the module driving this resume (#629).
+        if same_file or caller_source == stored_source:
+            return False
+        if caller_declares is None:
+            # A driver script that only calls resume_workflow() holds no competing
+            # copy of the flow, so there is nothing for the caller to be wrong
+            # about. Without this, every resume from a helper script would warn.
+            return False
+        # Compared at the *flow*, not the file. A resume driver necessarily
+        # differs from the recorded program somewhere -- it has the
+        # `resume_workflow(...)` call the original did not -- so a file-level
+        # comparison would warn whenever someone copied the workflow verbatim
+        # into their driver, and the message claims specifically that the flow
+        # differs. Rendering both through the formatter makes that claim true:
+        # `format_stmt` is the same renderer CI's `fmt --check` uses, and
+        # `test_formatter_completeness` walks the AST node list, so a
+        # declaration form it cannot render fails the suite rather than
+        # silently comparing unequal here.
+        stored_declares = self._flow_declarations(stored_source).get(flow_name)
+        if stored_declares is None or stored_declares == caller_declares:
+            return False
+        self._report_source_drift(
+            flow_name, graph_id, source_path, "resuming_module",
+            f"resume: '{flow_name}' is replaying the source stored when the run "
+            f"started, from {source_path or '<unrecorded>'} — not the '{flow_name}' "
+            f"declared in {caller_path or 'the resuming module'}, which differs. "
+            f"Errors from this run name the recorded file. Start a new run to use "
+            f"the version you have.",
+        )
+        return True
+
+    def _resume_origin_snapshot(self) -> dict:
+        """What the drift check needs about the module driving a resume (#629).
+
+        Captured on the caller because the resume may run on a child VM that has
+        neither the caller's globals nor its source — `_resume_target_vm` builds
+        one precisely so the rebuild cannot clobber the caller's program.
+
+        Only names and text are copied. Handing the child the caller's globals
+        would put the caller's bindings inside a VM that is about to be
+        `reset_program`ed for someone else's run.
+        """
+        source = getattr(self, "source_code", None)
+        return {
+            "path": getattr(self, "source_path", None),
+            "source": source,
+            "flows": self._flow_declarations(source),
+        }
+
+    @staticmethod
+    def _flow_declarations(source) -> dict[str, str]:
+        """Every flow this source declares, name -> canonical rendering.
+
+        One helper for both referents, so "what does this program say `w` is?"
+        is answered in a single voice rather than once per call site.
+
+        Returns `{}` for anything unparseable: a caller whose source cannot be
+        read is a caller we know nothing about, and guessing there would produce
+        exactly the spurious warning the flow-level comparison exists to avoid.
+        """
+        if not isinstance(source, str) or not source:
+            return {}
+        try:
+            from nodus.frontend.ast.ast_nodes import GoalDef, GoalPursuit, WorkflowDef
+            from nodus.frontend.lexer import tokenize
+            from nodus.frontend.parser import Parser
+            from nodus.tooling.formatter import format_stmt
+            stmts = Parser(tokenize(source)).parse()
+        except Exception:
+            return {}
+        found: dict[str, str] = {}
+        for stmt in stmts:
+            if not isinstance(stmt, (WorkflowDef, GoalDef, GoalPursuit)):
+                continue
+            name = getattr(stmt, "name", None)
+            if not isinstance(name, str):
+                continue
+            try:
+                found[name] = "\n".join(format_stmt(stmt, 0))
+            except Exception:
+                continue
+        return found
+
+    def _report_source_drift(
+        self, flow_name: str, graph_id: str, source_path, referent: str, message: str
+    ) -> None:
+        """The single place a drift is announced, for either referent."""
         print(message, file=sys.stderr)
         self.event_bus.emit_event(
             "workflow_source_drift",
@@ -1793,9 +1924,11 @@ class VM:
                 "workflow": flow_name,
                 "graph_id": graph_id,
                 "source_path": source_path,
+                # Which referent disagreed, so a consumer can tell "the file was
+                # edited" from "you are resuming with a different program".
+                "referent": referent,
             },
         )
-        return True
 
     def _rebuild_workflow_graph(self, graph_id: str, state: dict) -> TaskGraph | None:
         _meta_raw = state.get("metadata")

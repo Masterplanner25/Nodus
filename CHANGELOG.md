@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#629: `source_drift` was blind to a resume driven from a different file.**
+  The check compared the recorded source against the file at the *recorded
+  path*, so it only ever noticed an edit to the file that created the run. A
+  resume driven from another file that has its own copy of the flow replayed the
+  recorded source, stale, and reported `source_drift: false` — no warning, no
+  key on the result. The signal depended on which file the caller happened to be
+  sitting in rather than on anything about the run.
+
+  Both referents are checked now, and the second one is compared **at the flow,
+  not the file**. That distinction is load-bearing: a resume driver necessarily
+  differs from the recorded program somewhere, because it holds the
+  `resume_workflow(...)` call the original did not — so a file-level comparison
+  would warn every time someone copied the workflow verbatim into their driver,
+  while the message claims specifically that the flow differs. Both
+  declarations are rendered through the formatter, so the claim is true.
+
+  The `workflow_source_drift` event gains a `referent` field
+  (`"recorded_path"` or `"resuming_module"`), so a consumer can tell "the file
+  was edited" from "you are resuming with a different program". What executes is
+  unchanged — replaying the recorded source is deliberate (#470) and only the
+  warning's blind spot was at issue.
+
 ### Docs
 
 - **The production checklist had the capability defaults backwards.** The
