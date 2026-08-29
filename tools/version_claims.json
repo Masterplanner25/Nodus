@@ -97,7 +97,8 @@
       "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [\u2014-] most recent",
       "expects": "latest_eval_version",
       "why": "Points a reader at the newest Gate 10 record. Nothing updates it when a release writes a new one, so it silently names an older cycle.",
-      "fix": "Point it at the newest docs/evals/vX.Y.Z/CREATOR_VALIDATION.md."
+      "fix": "Point it at the newest docs/evals/vX.Y.Z/CREATOR_VALIDATION.md.",
+      "points_at": "docs/evals/v{value}/CREATOR_VALIDATION.md"
     },
     {
       "file": "skills/nodus.skill",
