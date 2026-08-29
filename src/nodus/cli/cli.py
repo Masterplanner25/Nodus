@@ -127,13 +127,20 @@ def _server_auth_token_from_env() -> str | None:
 
 
 def _workflow_store_backend_from_env() -> str | None:
-    value = os.environ.get("NODUS_WORKFLOW_STORE_BACKEND")
-    return value if value else None
+    # Delegated, not duplicated (#174): the default runner reads the same two
+    # variables, and `nodus serve` honouring a backend the embedded runner
+    # ignored is what made this configurable in one half of the product only.
+    # Imported lazily -- `nodus_lang_workflow` at module scope here is the
+    # CIRC-001 shape.
+    from nodus_lang_workflow.store import workflow_store_backend_from_env
+
+    return workflow_store_backend_from_env()
 
 
 def _workflow_store_path_from_env() -> str | None:
-    value = os.environ.get("NODUS_WORKFLOW_STORE_PATH")
-    return value if value else None
+    from nodus_lang_workflow.store import workflow_store_path_from_env
+
+    return workflow_store_path_from_env()
 
 
 def _server_allow_input_from_env() -> bool:

@@ -28,7 +28,13 @@ from .models import (
     RUN_STATUS_WAITING,
     WorkflowRunRecord,
 )
-from .store import LocalWorkflowStore, WorkflowStore, create_workflow_store
+from .store import (
+    LocalWorkflowStore,
+    WorkflowStore,
+    create_workflow_store,
+    workflow_store_backend_from_env,
+    workflow_store_path_from_env,
+)
 
 
 _DEFAULT_RUNNER = None
@@ -1105,8 +1111,26 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # a new store instance for this root — otherwise the stale thread races
             # the new store on the same files (see _stop_default_sweep_locked).
             _stop_default_sweep_locked()
+            # #174: built through the same factory and the same environment
+            # overrides `nodus serve` honours. This used to hardcode
+            # `LocalWorkflowStore`, so an embedder calling `run_workflow()`
+            # without configuring a runner got the non-crash-safe JSON store with
+            # no way to say otherwise short of `configure_default_workflow_runner`
+            # — while `NODUS_WORKFLOW_STORE_BACKEND` sat there working for the
+            # server and doing nothing here.
+            #
+            # The default is still `local`. Flipping it is a 6.0.0 change, not
+            # because the file location moves but because runs already recorded
+            # in the JSON store are invisible to a SQLite one: an in-flight
+            # waiting run would silently become unresumable, and there is no
+            # backend migration today (`nodus workflow migrate-state` migrates
+            # graph *snapshots*, not stores).
             _DEFAULT_RUNNER = WorkflowFrameworkRunner(
-                LocalWorkflowStore(root=default_store_root())
+                create_workflow_store(
+                    backend=workflow_store_backend_from_env(),
+                    root=default_store_root(),
+                    path=workflow_store_path_from_env(),
+                )
             )
             _DEFAULT_RUNNER_ROOT = root
             # Auto-start a daemon thread that expires wait-timeouts periodically so

@@ -1207,6 +1207,26 @@ class SQLiteWorkflowStore(WorkflowStore):
         }
 
 
+#: Environment overrides for the store backend. Read **here** rather than at each
+#: consumer: `nodus serve` honoured these while the default runner every embedder
+#: gets hardcoded `LocalWorkflowStore`, so the same question had two answers and
+#: only one of them could be configured (#174).
+WORKFLOW_STORE_BACKEND_ENV = "NODUS_WORKFLOW_STORE_BACKEND"
+WORKFLOW_STORE_PATH_ENV = "NODUS_WORKFLOW_STORE_PATH"
+
+
+def workflow_store_backend_from_env() -> str | None:
+    """The configured backend name, or None when unset/blank."""
+    value = os.environ.get(WORKFLOW_STORE_BACKEND_ENV)
+    return value if value else None
+
+
+def workflow_store_path_from_env() -> str | None:
+    """The configured store path, or None when unset/blank."""
+    value = os.environ.get(WORKFLOW_STORE_PATH_ENV)
+    return value if value else None
+
+
 def create_workflow_store(
     *,
     backend: str | None = None,
