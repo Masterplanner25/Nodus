@@ -20,9 +20,9 @@
       "name": "nodus-vscode",
       "repo": "Masterplanner25/nodus-vscode",
       "kind": "VS Code extension (VSIX, Marketplace)",
-      "published": "0.1.4",
+      "published": "0.1.5",
       "tracks": "keywords",
-      "fingerprint": "526b2f659e90124e",
+      "fingerprint": "e73428188c6264c8",
       "why": "The TextMate grammar lists every keyword explicitly. A keyword the grammar does not name renders as a plain identifier, so any keyword added or removed here makes the published extension wrong.",
       "republish": "Bump version in package.json, `npm run package`, then upload the VSIX at https://marketplace.visualstudio.com/manage/publishers/MasterplanInfiniteWeave (row menu -> Update), or `npx vsce publish -p <PAT>`."
     },
