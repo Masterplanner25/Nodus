@@ -325,32 +325,32 @@ baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
 
-**Known flaky tests — they fail under *load*, not under repetition.** Both were
-characterised on 2026-08-28 and both have issues; neither is fixed. The old wording
-here said "pass individually, timing-sensitive in full suite", which sent triage the
-wrong way twice: the full suite is merely one way to load the box, and re-running a
-test alone on an idle machine cannot clear either of these.
+**Two tests were known-flaky here; both are fixed. The reproduction method is the
+part worth keeping.** Neither ever failed from repetition — only under *load* — so
+"it passed when I ran it again" was never evidence about either, and an idle box
+passes indefinitely.
 
-- **`test_scheduler_fairness.py` — both tests, not one (#631).** Under CPU load, 9 of
-  10 runs red; idle, ~60 consecutive passes. It does *not* fail from repetition. And
-  it is not a fairness failure: the run is killed by the 200 ms wall-clock
-  `EXECUTION_TIMEOUT_MS` before the ordering assertion is reached
-  (`{'kind': 'sandbox', 'message': 'Execution timed out'}`), so the test asserts the
-  box can run 8000 iterations in 200 ms. An earlier revision named only
-  `test_long_running_task_rotates_with_budget`; `test_multiple_tasks_progress` fails
-  in the same runs.
+- **`test_scheduler_fairness.py` (#631) — fixed 2026-08-28.** Never a fairness
+  failure: the run was killed by the 200 ms wall-clock `EXECUTION_TIMEOUT_MS`
+  before the ordering assertion was reached, so the test asserted the box could
+  run 8000 iterations in 200 ms. The harness sets its own generous deadline now,
+  in one helper so a test added later cannot forget it; `EXECUTION_TIMEOUT_MS`
+  is untouched. **Both** tests in the file were affected, not the one an earlier
+  note named.
 - **`test_server.py::SQLiteWorkflowServerTests::test_workflow_run_uses_sqlite_store_when_configured`
-  (#632).** Reads as a tempdir race and is not one: the database is still open when
-  the directory is removed. Windows says so outright (`WinError 32 ... the file is
-  being used by another process`); Linux reports only the consequence
-  (`Errno 39 Directory not empty`), because WAL leaves `-wal`/`-shm` sidecars. The
-  underlying gap is that `SQLiteWorkflowStore` has **no `close()`** — `grep "def
-  close" src/nodus_lang_workflow/*.py` is empty — so no caller can release it.
+  (#632) — fixed in 5.6.0.** Read as a tempdir race and was not one: the store
+  was still open when the directory was removed, and `SQLiteWorkflowStore` had
+  no `close()`. `RuntimeService.close()` waits for its sweeper now.
 
-**To reproduce either, load the machine; do not re-run it.** Burn every core but one
-in a background process, then run the file. Both go red in minutes that way and pass
-indefinitely without it, which is why "it passed when I ran it again" is not evidence
-about either of them.
+**To reproduce this class of failure, load the machine; do not re-run the test.**
+Burn every core but one in a background process, then run the file.
+
+**And keep the control inside the same load window.** Comparing "before" and
+"after" is worthless if the load generator expires partway: a first attempt at
+#631 showed the unfixed tests passing 5 of 6 with run times falling from 1.75 s
+to 0.49 s — the box had gone idle, so the comparison measured nothing. Re-run
+inside one window, both variants, and check the durations stayed up. Matched that
+way, #631 was 3 of 5 runs red before and 5 of 5 green after.
 
 **Do not fix #334's three flakes twice.** `test_async_concurrency_timing.py`,
 `test_ieee754_division.py` and `test_workflow_dsl.py` were hardened in PR #581 and are
