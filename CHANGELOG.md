@@ -133,6 +133,31 @@
 
 ### Tooling
 
+- **An opcode execution census, and one opcode nothing runs.** Phase 1 of the
+  opcode semantic audit (issue 412, which stays open for phases 2–3).
+  `nodus_gate --opcodes` verifies the *inventory*; nothing measured whether any
+  opcode is ever executed. `tools/opcode_census.py` wraps every dispatch entry,
+  runs the suite, and reports executions per opcode — executions, not
+  appearances in compiled code, because an opcode that is emitted and never
+  reached is the case worth finding.
+
+  Baseline: **49 declared, 48 executed, 895,076 executions** across a green
+  2,898-test suite. Sixteen opcodes run fewer than 100 times, and `POP_TRY` (18)
+  and `FINALLY_END` (60) are the ones to look at first — those two plus
+  `SETUP_TRY` are the exception-unwind path where #361, #370 and #371 all lived.
+
+  **`BUILD_MODULE` is executed zero times, and is not emitted either.** Its one
+  emit site is the compiler's `ModuleAlias` case, and `ModuleAlias` is built only
+  by `tooling/loader.py`, which `runtime/module_loader.py` superseded. Checked
+  rather than inferred: an aliased `std:` import, an aliased local-file import,
+  `run_source` and `run_file` all execute it zero times, and it does not appear
+  in the disassembly of an aliased import at all. `BYTECODE_REFERENCE.md` said
+  "Emitted by compiler: yes" and now records the measurement. The opcode stays —
+  the set is frozen and removing one is a bytecode-format change.
+
+  Phases 2 and 3 (per-opcode semantic specs, stack-discipline verification) are
+  untouched; the census is the risk register they start from.
+
 - **#536: the shell-completion scripts are executed, not just inspected.** Of
   the four shells `nodus completion` emits, only bash was exercised in the
   suite. PowerShell had been checked **by hand** during #534 and written down

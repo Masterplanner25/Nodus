@@ -68,3 +68,4 @@ tmp_demo/
 # Written so a red Gate 10 can be triaged without re-running the suite (#528);
 # machine-local by nature.
 .dependent-suites/
+.opcode-census.json
