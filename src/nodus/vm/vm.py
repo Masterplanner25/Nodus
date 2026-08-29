@@ -1591,7 +1591,23 @@ class VM:
             reached.update(pass_labels)
             history.extend(pass_labels)
 
-            if self._evaluate_goal_predicate(until, reached):
+            # #642: a pass that ended `failed` cannot satisfy `until`. The loop
+            # already retries a failed pass — a workflow that throws on pass 1
+            # and succeeds on pass 2 reports satisfied at iteration 2 — so
+            # stopping on a failed pass, only because its checkpoint happened to
+            # be recorded before the throw, made termination depend on statement
+            # order inside a failing step.
+            #
+            # This skips the *evaluation*, not the loop. "A failed pass does not
+            # satisfy" is not "a failed pass ends the goal": ending it here would
+            # pass the bug case and break the retry case, which is current and
+            # correct behaviour.
+            #
+            # `failed` is empty for a tolerated failure (`allow_failure`), which
+            # completes the run — so tolerance needs no special case.
+            pass_failed = bool(result.get("failed")) if isinstance(result, dict) else False
+
+            if not pass_failed and self._evaluate_goal_predicate(until, reached):
                 payload = dict(result) if isinstance(result, dict) else {}
                 payload.update({
                     "goal": goal_name,

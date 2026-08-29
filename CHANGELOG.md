@@ -108,6 +108,34 @@
 
 ### Changed
 
+- **#642: a pass that ended `failed` no longer satisfies a goal's `until`.**
+  `until` is evaluated against the checkpoints a pass recorded, and a checkpoint
+  recorded *before* a `throw` still counted — so a goal stopped and reported
+  `goal_satisfied: true` on a run that ended `failed`.
+
+  That was an artefact rather than a policy. The goal loop **already retries a
+  failed pass**: a workflow that throws on pass 1 and succeeds on pass 2 reports
+  satisfied at iteration 2. So a goal stopped only because the `checkpoint`
+  happened to sit before the `throw` — swap those two lines and the identical
+  workflow keeps iterating. Termination that depends on statement order inside a
+  failing step is not a contract anyone chose.
+
+  **This is a behaviour change.** A goal that stopped satisfied on a failing pass
+  now keeps iterating and, if every pass fails, ends with the existing
+  `budget_exhausted` err record (`goal 'reach' exhausted its budget (after 3
+  iteration(s)) without satisfying its condition`) rather than a success-shaped
+  result map. That is consistent with the invariant already stated at that
+  branch: a goal that ran out of budget has not met its objective and must never
+  return a success-shaped result.
+
+  A **tolerated** failure (`allow_failure`) is unaffected and needs no special
+  case — it means the run *completes*, so `failed` is empty and such a pass can
+  still satisfy.
+
+  Retrying a failed pass is unchanged, and is pinned: *"a failed pass does not
+  satisfy"* is **not** *"a failed pass ends the goal"*, and the obvious
+  implementation of the second passes the bug cases while breaking the first.
+
 - **#174: the default workflow runner honours `NODUS_WORKFLOW_STORE_BACKEND`.**
   `get_default_workflow_runner()` hardcoded `LocalWorkflowStore` — the JSON store
   that is explicitly not crash-safe — so an embedder calling `run_workflow()`
