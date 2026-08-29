@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Docs
+
+- **The production checklist had the capability defaults backwards.** The
+  Operator / Embedder Runbook §6 told operators to set `allow_subprocess=False`,
+  `allow_network=False` and `allow_env=False`, each annotated *"(default is
+  `True`)"*. All three have defaulted to **`False`** since v5.0.0, so the advice
+  described the pre-5.0.0 runtime and implied a bare `NodusRuntime()` could shell
+  out, open sockets and read the process environment. It cannot. The item now
+  reads as a confirmation that nothing has granted them, and notes that the CLI is
+  deliberately unaffected.
+
+- **The runbook now says which unit of concurrent work survives a crash.** A bare
+  `spawn()` coroutine lives in process memory only: an unclean exit loses it with
+  no record it ever ran, while a workflow step's state is persisted as it goes and
+  `rehydrate_runs()` replays it. The distinction was invisible in the API and is
+  now §6.2, with the recovery call and its dependence on a durable store (§6.1).
+  Closes the near-term half of #180; the coroutine checkpoint API it also asks for
+  is untouched.
+
+- **The runbook now states that `register_function()` runs host code unsandboxed.**
+  A registered callable executes in the host process with everything that process
+  can reach; the confinement flags bound the guest script, not the host function.
+  New §6.3 records that this is deliberate — it is the seam where a host lends the
+  guest one of its capabilities — names the two consequences (register only what
+  you authored; a registered function *is* a capability grant), and points at
+  `nodus-extension` for genuinely untrusted plugin code, which loads it in a
+  subprocess. Answers #169.
+
 ## [5.6.0] - 2026-08-28
 
 ### Added

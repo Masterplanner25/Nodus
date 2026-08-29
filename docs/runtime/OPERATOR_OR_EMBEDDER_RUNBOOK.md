@@ -394,11 +394,14 @@ Before deploying a Nodus-embedded application to production:
 - [ ] `allow_input=False` (the default; verify it has not been overridden)
 - [ ] `max_frames` is tightened for untrusted scripts (the default is 10,000 — a real
       cap, but a generous one)
-- [ ] `allow_subprocess=False` unless scripts genuinely need to shell out
-      (default is `True`)
-- [ ] `allow_network=False` unless scripts genuinely need network access
-      (default is `True`)
-- [ ] `allow_env=False` if the host environment holds credentials (default is `True`)
+- [ ] `allow_subprocess`, `allow_network` and `allow_env` are granted **only** where
+      scripts genuinely need them. All three default to **`False`** as of v5.0.0, so a
+      bare `NodusRuntime()` already cannot shell out, open sockets, or read the process
+      environment — the checklist item is to confirm nothing has granted them, not to
+      turn them off. (Advice written against the pre-5.0.0 permissive defaults reads
+      backwards. `nodus run` and the rest of the CLI are deliberately unaffected: the
+      CLI builds a `VM` directly, and deny-by-default protects work you did not fully
+      author.)
 - [ ] `allowed_commands` / `allowed_hosts` are set if subprocess or network access
       is enabled
 - [ ] `result["ok"]` is checked on every `run_source()` call
@@ -407,6 +410,8 @@ Before deploying a Nodus-embedded application to production:
 - [ ] Upgrade procedure has been tested (at minimum, a version bump smoke test)
 - [ ] Workflow persistence directory (`.nodus/`) is on a persistent volume if workflows are used
 - [ ] If workflows are used in production, `SQLiteWorkflowStore` is configured (see §6.1)
+- [ ] Work that must survive a crash runs inside a workflow, not a bare `spawn()` (see §6.2)
+- [ ] Every callable passed to `register_function()` is host-authored and trusted (see §6.3)
 
 ---
 
@@ -433,6 +438,79 @@ process exits. The default path can be any writable path on a persistent volume.
 
 The HTTP server (`nodus serve`) accepts `--workflow-store-backend sqlite` and
 `--workflow-store-path PATH` flags for the same effect.
+
+---
+
+## 6.2 A bare coroutine is transient — only a workflow survives a crash (#180)
+
+Nodus has **two** units of concurrent work, and only one of them is durable. The
+distinction is invisible in the API and costs in-flight work when it is discovered
+by a crash rather than by reading this.
+
+| | Bare coroutine | Workflow step |
+|---|---|---|
+| Started by | `spawn(coroutine(fn))` | `run_workflow(...)` |
+| State lives in | process memory only | `.nodus/graphs/` + the workflow store |
+| After a `SIGKILL` / OOM / power loss | **gone, with no record that it ran** | replayable |
+| Recovery API | none | `rehydrate_runs(vm_factory)` |
+
+So an embedder building a job-processing service on `spawn()` loses every in-flight
+job on an unclean exit, and nothing reports the loss — there is no partial record to
+find afterwards, because none was ever written.
+
+**What to do:** if the work must survive a restart, make it a workflow step. A
+workflow's step state is persisted as it goes, and `rehydrate_runs()` replays runs
+that were interrupted:
+
+```python
+from nodus_lang_workflow.runner import get_default_workflow_runner
+
+runner = get_default_workflow_runner()
+resumed = runner.rehydrate_runs(vm_factory=my_vm_factory)   # call at startup
+```
+
+Pair this with §6.1: rehydration can only replay what the store durably holds, so
+`LocalWorkflowStore` weakens the guarantee this section is about.
+
+`spawn()` remains the right tool for concurrency *within* a run — fan-out, overlapping
+I/O, anything whose lifetime is bounded by the call that started it. The rule is about
+what must outlive the process, not about which primitive is better.
+
+---
+
+## 6.3 `register_function()` runs host code with no sandbox (#169)
+
+A callable registered with `register_function()` executes **in the host Python
+process, with everything the host process can reach**. The runtime's confinement
+flags — `allowed_paths`, `allow_subprocess`, `allow_network` — bound what the *guest
+script* may do. They do not bound the host function, which can read any file the
+process can, import any module, mutate runtime internals, and call `os._exit()`.
+
+**This is by design, not a gap to work around.** `register_function()` is the seam
+where a host deliberately lends the guest one of its own capabilities, and a host
+function that could not act with host authority would be useless. Two consequences
+follow, and both are load-bearing:
+
+- **Only register callables you authored or audited.** Never register something
+  supplied by the same party as the untrusted script. The guest's confinement says
+  nothing about what your function does on its behalf.
+- **A registered function is a capability grant.** Registering a `read_file` helper
+  hands the guest file access whatever `allowed_paths` says, because the check is on
+  the runtime's own filesystem builtins, not on your function.
+
+Two properties of the surface work in your favour and are pinned by test, so you can
+rely on them:
+
+- **A builtin cannot be overridden.** `register_function()` refuses a name that is
+  already a builtin (see §3.3.3), so a host can install a fail-loud guard under a
+  guest-reachable name and know the guard is the only thing there.
+- **The confinement flags are keyword-only, and `__init__` takes no `**kwargs`**, so
+  a renamed or misspelled flag raises instead of being silently swallowed — which is
+  the failure that leaves a guest running unconfined while mock-based tests stay green.
+
+**For untrusted plugin code, use `nodus-extension` instead.** It loads third-party
+extensions in a **subprocess** with a declared capability manifest, which is the
+isolation `register_function()` deliberately does not provide.
 
 ---
 
