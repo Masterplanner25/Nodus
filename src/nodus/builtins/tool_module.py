@@ -3,6 +3,12 @@
 import re
 import sys
 
+from nodus.runtime.schema_contract import (
+    as_dict as _as_dict,
+    normalize_runtime_schema as _normalize_schema,
+    validate_args as _validate_args,
+    validate_return as _validate_return,
+)
 from nodus.vm.types import Closure, Record
 
 _TOOL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]*$')
@@ -21,33 +27,9 @@ _TOOL_NAME_MAX_LEN = 200
 # and the checker does not tell them apart either (see `is_assignable`).
 # `function` has no JSON Schema type at all -- a callable does not cross a
 # process boundary -- so it is named and refused rather than silently absent.
-_NODUS_TO_JSON_TYPE = {
-    "string": "string",
-    "int": "integer",
-    "float": "number",
-    "bool": "boolean",
-    "map": "object",
-    "record": "object",
-    "list": "array",
-    "nil": "null",
-}
-
-#: Type names that are real but cannot appear in a schema, and why.
-_UNSCHEMABLE_TYPES = {
-    "function": "a function value does not cross a tool boundary",
-}
-
 _VALID_EFFECTS = frozenset({
     "pure", "reads_state", "writes_state", "network", "filesystem", "spawns_task",
 })
-
-
-def _as_dict(value):
-    if isinstance(value, Record):
-        return dict(value.fields)
-    if isinstance(value, dict):
-        return value
-    return None
 
 
 def _validate_tool_name(name):
@@ -59,48 +41,6 @@ def _validate_tool_name(name):
     if not _TOOL_NAME_RE.match(name):
         return f"tool name '{name}' contains invalid characters (allowed: [a-z0-9_.-], must start with letter or digit)"
     return None
-
-
-def _normalize_schema(schema):
-    """Normalize simple-form or JSON Schema. Returns (normalized_dict, err_msg_or_None)."""
-    if not schema:
-        return {}, None
-    d = _as_dict(schema)
-    if d is None:
-        return None, "schema must be a map"
-    # JSON Schema form: has top-level "type": "object"
-    if d.get("type") == "object":
-        # Deep-convert nested Records in properties so "type" in prop works correctly
-        props_raw = _as_dict(d.get("properties") or {}) or {}
-        props = {k: (_as_dict(v) or {} if v is not None else {}) for k, v in props_raw.items()}
-        req = list(d.get("required") or [])
-        normalized: dict = {"type": "object", "properties": props}
-        if req:
-            normalized["required"] = req
-        return normalized, None
-    # Simple form: flat map of param name → Nodus type string
-    properties = {}
-    required = []
-    for param_name, type_name in d.items():
-        if type_name == "any":
-            properties[param_name] = {}
-        else:
-            json_type = _NODUS_TO_JSON_TYPE.get(type_name)
-            if json_type is None:
-                reason = _UNSCHEMABLE_TYPES.get(type_name)
-                if reason:
-                    return None, (
-                        f"type '{type_name}' cannot appear in a tool schema for "
-                        f"parameter '{param_name}': {reason}"
-                    )
-                allowed = ", ".join(sorted(_NODUS_TO_JSON_TYPE) + ["any"])
-                return None, (
-                    f"unknown type '{type_name}' for parameter '{param_name}' "
-                    f"(allowed: {allowed})"
-                )
-            properties[param_name] = {"type": json_type}
-        required.append(param_name)
-    return {"type": "object", "properties": properties, "required": required}, None
 
 
 def _handler_arity_error(handler, tool_name: str) -> str | None:
@@ -138,53 +78,6 @@ def _handler_arity_error(handler, tool_name: str) -> str | None:
         f"exactly one argument: the args record. Take one parameter and read the "
         f"fields from it, e.g. `fn handler(args) {{ ... args.{params[0]} ... }}`."
     )
-
-
-def _validate_args(args, schema: dict):
-    """Return error message if args fail schema validation, else None."""
-    if not schema or schema.get("type") != "object":
-        return None
-    args_d = _as_dict(args) if args is not None else {}
-    if args_d is None:
-        return "args must be a map"
-    required = schema.get("required", [])
-    props = schema.get("properties", {})
-    for req in required:
-        if req not in args_d:
-            return f"missing required argument: '{req}'"
-    for key, val in args_d.items():
-        if key in props:
-            prop = props[key]
-            if "type" in prop:
-                err = _check_json_type(val, prop["type"], key)
-                if err:
-                    return err
-    return None
-
-
-def _check_json_type(val, expected: str, key: str):
-    if expected == "string":
-        if not isinstance(val, str):
-            return f"argument '{key}' must be a string"
-    elif expected == "integer":
-        if not isinstance(val, int) or isinstance(val, bool):
-            return f"argument '{key}' must be an integer"
-    elif expected == "number":
-        if not isinstance(val, (int, float)) or isinstance(val, bool):
-            return f"argument '{key}' must be a number"
-    elif expected == "boolean":
-        if not isinstance(val, bool):
-            return f"argument '{key}' must be a boolean"
-    elif expected == "object":
-        if not isinstance(val, (dict, Record)):
-            return f"argument '{key}' must be a map"
-    elif expected == "array":
-        if not isinstance(val, list):
-            return f"argument '{key}' must be a list"
-    elif expected == "null":
-        if val is not None:
-            return f"argument '{key}' must be nil"
-    return None
 
 
 def _to_host_value(value):
@@ -256,23 +149,6 @@ def _validate_effects(effects_raw):
     if "pure" in effects_raw and len(effects_raw) > 1:
         return None, "'pure' cannot be combined with other effects"
     return list(effects_raw), None
-
-
-def _validate_return(result, schema: dict):
-    """Return error message if result fails returns_schema, else None.
-
-    Only validates object-type schemas (type: object). Returns None if the
-    schema is empty or non-object — those cases are not enforced in Phase A.
-    """
-    if not schema or schema.get("type") != "object":
-        return None
-    if isinstance(result, Record):
-        result_d = dict(result.fields)
-    elif isinstance(result, dict):
-        result_d = result
-    else:
-        return f"expected a map return value, got {type(result).__name__!r}"
-    return _validate_args(result_d, schema)
 
 
 def _entry_for_nodus(entry: dict) -> Record:

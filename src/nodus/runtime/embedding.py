@@ -15,6 +15,11 @@ from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFun
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
+from nodus.runtime.schema_contract import (
+    normalize_runtime_schema,
+    validate_args,
+    validate_return,
+)
 from nodus.runtime.capability import ALL_CAPABILITIES, ApprovalChannel, CapabilityPolicy
 from nodus.services.memory_runtime import MemoryStore
 from nodus.vm.vm import VM
@@ -501,6 +506,10 @@ class NodusRuntime:
         self._event_sinks: list = list(event_sinks) if event_sinks else []
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._host_capabilities: dict[str, str | None] = {}
+        # #493: (argument schema, return schema) per host function, normalised
+        # at registration. Kept beside the capability map because both are the
+        # same thing -- per-registration metadata enforced at the one chokepoint.
+        self._host_schemas: dict[str, tuple[dict | None, dict | None]] = {}
         # #488: accountants for `goal … budget { limits: { … } }`. Per-runtime,
         # not process-global — a meter reads *this* host's counter, and two
         # tenants in one process do not share one.
@@ -512,7 +521,16 @@ class NodusRuntime:
         self._tool_registry: ToolRegistry = ToolRegistry(self)
         self._run_lock = threading.Lock()
 
-    def register_function(self, name: str, fn, *, arity: int | tuple[int, ...] | None = None, requires: str | None = None) -> None:
+    def register_function(
+        self,
+        name: str,
+        fn,
+        *,
+        arity: int | tuple[int, ...] | None = None,
+        requires: str | None = None,
+        schema: dict | None = None,
+        returns_schema: dict | None = None,
+    ) -> None:
         """Register a Python callable as a host function available to Nodus scripts.
 
         The function will be available in every subsequent ``run_source`` /
@@ -554,6 +572,43 @@ class NodusRuntime:
             — means the function declares none and is always permitted, which is
             the pre-existing behaviour. Declaring one makes authority a property
             of the function rather than of the runtime.
+        schema:
+            The argument contract, checked before every call (#493). An **ordered**
+            map of parameter name to Nodus type name, applied positionally::
+
+                runtime.register_function(
+                    "host_write", write_file, arity=2,
+                    schema={"path": "string", "contents": "string"},
+                )
+
+            The names are for the error message; position is what binds, because a
+            host function takes positional arguments rather than the single args
+            map a ``std:tool`` handler receives. ``None`` — the default — means no
+            argument contract, which is the pre-existing behaviour.
+
+            This is the **same validator** `std:tool` uses
+            (``runtime/schema_contract.py``), so both surfaces accept the same
+            declarations and report failures identically. Until this existed the
+            weaker contract was on the more dangerous surface: a host function
+            runs Python outside the VM and the sandbox, and a map arriving where a
+            path was expected succeeded with a plausible-looking result.
+
+            Must name exactly ``arity`` parameters, and requires a fixed ``arity``
+            — a variadic function has no stable position for a name to mean, and a
+            contract that silently covered only some calls would be worse than
+            none.
+        returns_schema:
+            The return contract, checked after every call (#493). Same form; the
+            function must return a map for it to apply. ``None`` means unchecked.
+
+        Example with a full contract::
+
+            runtime.register_function(
+                "host_write", write_file, arity=2,
+                schema={"path": "string", "contents": "string"},
+                returns_schema={"bytes": "int"},
+                requires="fs.write",
+            )
         """
         if not isinstance(name, str) or not name:
             raise ValueError("Host function name must be a non-empty string")
@@ -573,8 +628,43 @@ class NodusRuntime:
                 f"unknown capability {requires!r}; known: {sorted(ALL_CAPABILITIES)}"
             )
         resolved_arity = self._resolve_arity(fn, arity)
+        arg_schema = self._resolve_host_schema(name, schema, resolved_arity)
+        ret_schema = self._resolve_host_schema(name, returns_schema, None, kind="returns_schema")
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
         self._host_capabilities[name] = requires
+        self._host_schemas[name] = (arg_schema, ret_schema)
+
+    def _resolve_host_schema(self, name, schema, resolved_arity, *, kind: str = "schema"):
+        """Normalise and check a host-function schema at *registration* time.
+
+        Refused here rather than on first call, for the reason `requires=` is:
+        a declaration nobody validated is the declared-but-not-enforced shape,
+        and an embedder who misspells a type should hear about it at startup
+        rather than the first time a guest happens to reach the function.
+        """
+        if schema is None:
+            return None
+        normalized, err = normalize_runtime_schema(schema)
+        if err is not None:
+            raise ValueError(f"host function {name!r}: {kind} {err}")
+        if resolved_arity is None:
+            return normalized
+        # Positional binding: the schema names parameters in order, so it can
+        # only mean something if there are exactly as many as the call takes.
+        if not isinstance(resolved_arity, int):
+            raise ValueError(
+                f"host function {name!r}: schema needs a fixed arity — a variadic "
+                f"function has no stable position for a parameter name to mean. "
+                f"Register it with an explicit `arity=<int>`, or drop the schema."
+            )
+        declared = list((normalized or {}).get("properties", {}))
+        if len(declared) != resolved_arity:
+            raise ValueError(
+                f"host function {name!r}: schema names {len(declared)} parameter(s) "
+                f"{declared} but arity is {resolved_arity}. A positional contract "
+                f"that covers only some arguments is worse than none."
+            )
+        return normalized
 
     def register_meter(self, name: str, reader) -> None:
         """Register an accountant for a `goal … budget { limits: { … } }` meter.
@@ -767,6 +857,7 @@ class NodusRuntime:
         self.__last_vm = None
         self._host_functions.clear()
         self._host_capabilities.clear()
+        self._host_schemas.clear()
         self._python_registered_tools.clear()
 
     def get_execution_stats(self) -> dict:
@@ -1199,12 +1290,37 @@ class NodusRuntime:
                 name or "<host function>",
                 "host_function", host_args,
             )
+        # #493: the argument contract, checked at the same chokepoint as the
+        # capability — the one place a guest cannot route around. Enforced on the
+        # converted host values, because those are what the callable actually
+        # receives and therefore what the contract is about.
+        arg_schema, ret_schema = self._host_schemas.get(name, (None, None)) if name else (None, None)
+        if arg_schema:
+            named = dict(zip(arg_schema.get("properties", {}), host_args))
+            err = validate_args(named, arg_schema)
+            if err:
+                # Raised, not returned. A tool reports through an err record
+                # because its caller is Nodus code holding a result; a host
+                # function's failure has no such envelope, and the defect this
+                # closes is precisely that a bad value *proceeded* and produced a
+                # plausible-looking success.
+                vm.runtime_error(
+                    "type",
+                    f"Host function '{name}': schema validation failed: {err}",
+                )
         try:
             result = fn(*host_args)
         except (LangRuntimeError, LangSyntaxError):
             raise
         except Exception as exc:
             raise HostFunctionError(exc) from exc
+        if ret_schema:
+            err = validate_return(result, ret_schema)
+            if err:
+                vm.runtime_error(
+                    "type",
+                    f"Host function '{name}': contract violation: {err}",
+                )
         return self._to_runtime_value(result)
 
     def _blocked_input(self, _prompt: str):

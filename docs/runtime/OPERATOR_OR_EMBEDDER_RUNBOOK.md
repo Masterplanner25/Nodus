@@ -531,6 +531,36 @@ rely on them:
 extensions in a **subprocess** with a declared capability manifest, which is the
 isolation `register_function()` deliberately does not provide.
 
+### Declare the argument contract
+
+`schema=` checks the arguments before every call, with the same validator
+`std:tool` uses, so both surfaces accept the same declarations and report
+failures identically:
+
+```python
+runtime.register_function(
+    "host_write", write_file, arity=2,
+    schema={"path": "string", "contents": "string"},
+    returns_schema={"bytes": "int"},
+    requires="fs.write",
+)
+```
+
+The schema is an **ordered** map of parameter name to Nodus type, applied
+positionally — a host function takes positional arguments, unlike a `std:tool`
+handler which receives one args map. It must name exactly `arity` parameters, and
+a variadic registration is refused rather than partly covered. A misspelled type
+fails at registration, not on the first call.
+
+Until 5.7.0 there was no such option (#493), so a host function had arity and
+nothing else: `write_file(42, {"not": "a string"})` ran and returned
+`"wrote 42 (1 bytes)"`, because `len()` of the map is 1 and nothing looked wrong.
+
+> **A schema is a type contract, not a sandbox.** It constrains the *shape* of
+> what reaches your function; it says nothing about what your function then does
+> with its host authority. Everything above about trusting the callable still
+> applies in full.
+
 ---
 
 ## 7. Companion library notes

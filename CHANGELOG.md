@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#493: `register_function` takes a schema, so a host function has a real
+  contract.** A tool declared in Nodus had its arguments and return shape
+  checked; a function registered from the host had **arity and nothing else** —
+  the weaker contract on the more dangerous surface, since a host function runs
+  Python outside the VM and the sandbox. The reported case succeeded with a
+  plausible-looking result: `write_file(42, {"not": "a string"})` returned
+  `"wrote 42 (1 bytes)"`, because `len()` of the map is 1.
+
+  ```python
+  runtime.register_function(
+      "host_write", write_file, arity=2,
+      schema={"path": "string", "contents": "string"},
+      returns_schema={"bytes": "int"},
+      requires="fs.write",
+  )
+  ```
+
+  The schema is an **ordered** map of parameter name to Nodus type, applied
+  positionally — a host function takes positional arguments, where a `std:tool`
+  handler receives one args map. It must name exactly `arity` parameters, and a
+  variadic registration with a schema is refused rather than partly covered: a
+  positional contract that covered only some arguments would be worse than none.
+  A misspelled type fails at registration rather than on the first call, the way
+  `requires=` already does.
+
+  **Additive** — a registration without a schema behaves exactly as before.
+
+  Enforced at `_invoke_host_function`, the same chokepoint `requires=` uses, and
+  it **raises** rather than returning an err record: a tool reports through an
+  envelope its Nodus caller is holding, whereas the defect here is precisely that
+  a bad value proceeded. A schema is a type contract, not a sandbox — it
+  constrains what reaches the function, not what the function then does.
+
 ### Changed
 
 - **#174: the default workflow runner honours `NODUS_WORKFLOW_STORE_BACKEND`.**
