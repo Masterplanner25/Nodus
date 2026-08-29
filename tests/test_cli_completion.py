@@ -43,6 +43,37 @@ HIDDEN = [e for e in COMMANDS.values() if e.hidden]
 
 
 class EveryShellTests(unittest.TestCase):
+    # closes: #536
+    def test_every_emitted_shell_has_an_execution_class(self):
+        """Every shell the CLI emits must be executed somewhere, not just parsed.
+
+        This is the regression guard for #536 itself. Structure-only coverage is
+        what let two of four shells ship unverified for a whole release, and the
+        failure was **silent** — the suite was green the entire time. A fifth
+        shell added to `SHELLS` with structural assertions only would repeat it
+        exactly, so this fails until that shell has an execution class.
+
+        It runs unguarded, unlike the execution classes it checks for: the point
+        is to notice a *missing* class, which cannot depend on whether the shell
+        that class needs happens to be installed.
+        """
+        module = sys.modules[__name__]
+        classes = {
+            name.lower()
+            for name, obj in vars(module).items()
+            if isinstance(obj, type) and name.endswith("ExecutionTests")
+        }
+        missing = [
+            shell for shell in SHELLS
+            if f"{shell}executiontests" not in classes
+        ]
+        self.assertEqual(
+            missing, [],
+            f"these shells are emitted but never executed: {missing}. "
+            f"Add a <Shell>ExecutionTests class, guarded on the shell being "
+            f"present, and install the shell in CI.",
+        )
+
     def test_every_declared_shell_generates(self):
         for shell in SHELLS:
             script = generate(shell)
