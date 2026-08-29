@@ -363,6 +363,28 @@ class _SemanticAnalyzer:
                 if getattr(step, "options", None) is not None:
                     self._walk_expr(step.options)
                 self._push_scope()
+                # A step body reads its dependencies by name -- `after a` binds
+                # `a` to a's return value, `each p in d` binds `p` to the item,
+                # and `compensates a` binds `a` to the compensated step's result
+                # (#577). The analyzer pushed a scope and bound none of them, so
+                # every such read was reported as `Undefined variable` on
+                # correct code. Editor-only noise until #489 wired `nodus check`
+                # to this analyzer for files declaring an `extern`, at which
+                # point it started *rejecting* correct programs.
+                #
+                # `each_var` replaces `each_source` in the binding, exactly as
+                # the lowering substitutes the item for the list in the step
+                # closure's parameter slot.
+                each_var = getattr(step, "each_var", None)
+                each_source = getattr(step, "each_source", None)
+                for dep in getattr(step, "deps", None) or []:
+                    name = each_var if (each_var is not None and dep == each_source) else dep
+                    self._bind(
+                        name,
+                        kind="variable",
+                        tok=getattr(step, "_tok", None),
+                    )
+                    self._mark_used(name)
                 self._walk_stmt(step.body)
                 self._pop_scope()
             self._pop_scope()

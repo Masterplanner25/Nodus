@@ -1391,10 +1391,10 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.7.0** (live on PyPI, published 2026-08-29). Both files
+The current published version is **v5.7.1** (live on PyPI, published 2026-08-29). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.7.0"`
-- `pyproject.toml` — `version = "5.7.0"`
+- `src/nodus/support/version.py` — `__version__ = "5.7.1"`
+- `pyproject.toml` — `version = "5.7.1"`
 
 **5.6.0 is additive. Every new surface is something a workflow could not previously
 say, and nothing that parsed before parses differently.** Four of them, all from the
@@ -1466,6 +1466,30 @@ half breaks nothing today.
 **A `run_source` behaviour change ships in 5.1.0 (#521):** `filename=` is a label and no
 longer selects the program. A change against every prior release, not just 5.0.x -- the full
 account is in the embedding section below.
+
+**Treat 5.7.0 as superseded, and note how it was retired — the pattern is the
+point.** Its `nodus check` rejects correct code: a file declaring an `extern`
+could not read any step dependency by name, because #489's strict mode inherited
+a long-standing analyzer defect that left `after` / `each` / `compensates`
+dependencies unbound (#662). Fixed in 5.7.1.
+
+It was found by **Stage 5**, after the PyPI upload — which is the stage's whole
+purpose, and the reason it exists as a separate step rather than being folded
+into Gate 10. Gate 10 asks "what can I make fail?" against a local wheel; Stage 5
+asks "does this work as a new user would expect?" against the published one, and
+only the second used both new features together.
+
+**Its GitHub release was deliberately never created.** PyPI is immutable, so
+5.7.0 exists there and cannot be withdrawn — but a GitHub release would have been
+a *second* published record asserting the same defective version, and the two
+would then disagree with reality once 5.7.1 landed. One superseded artifact is
+better than two. Both artifacts were cut together at 5.7.1.
+
+**The rule this leaves:** when a release is found defective between the PyPI
+upload (step 9) and the GitHub release (step 11), stop at step 10 and do not
+create the release. Roll the fix forward and cut both artifacts at the next
+version. Do not create a GitHub release "for completeness" — release
+immutability means it cannot be corrected later, only contradicted.
 
 **Treat 5.0.3 as superseded, not merely older.** It assigns a `memory_store` attribute that
 `nodus_sdk.NodusSDKRuntime` defines as a read-only property, so every construction of that

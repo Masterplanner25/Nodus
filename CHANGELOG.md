@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [5.7.1] - 2026-08-29
+
+### Fixes
+
+- **#662: a step body's dependencies were unbound in the analyzer, so reading one
+  was a false `Undefined variable` — and in 5.7.0 `nodus check` rejected it.**
+
+  `after a` binds `a` to a's return value, `each p in d` binds `p` to the item,
+  and `compensates a` binds the compensated step's result. All three run
+  correctly; the analyzer pushed a scope for the step body and bound none of
+  them.
+
+  Two consequences. The **pre-existing** one is false `Undefined variable`
+  squiggles in any editor using `nodus lsp` — confirmed against published
+  **5.6.0**, so it long predates the release that surfaced it. The **5.7.0**
+  one is that #489 wired `nodus check` to this analyzer for files declaring an
+  `extern`, turning that false positive into a rejection of correct programs:
+  a file with any `extern` could not read *any* step dependency by name.
+
+  Found by Stage 5 of the 5.7.0 release — installing the published wheel in a
+  fresh venv and running it as a new user would, on a program using both new
+  features together. **Neither feature is broken alone**; nothing covered the
+  pair, because the compensation tests declared no `extern` and the extern tests
+  used no compensation.
+
+  The fix binds the step's `deps` in the analyzer's step scope, substituting
+  `each_var` for `each_source` as the lowering does. Two properties are pinned
+  against binding too much: a genuine typo is still reported, and `each p in d`
+  binds `p` and not `d`.
+
+  **5.7.0 is superseded.** It is on PyPI and immutable; its GitHub release was
+  deliberately never created, so that one superseded artifact stands rather than
+  two published records disagreeing. Both are cut at 5.7.1.
+
 ## [5.7.0] - 2026-08-29
 
 ### Added
