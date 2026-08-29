@@ -14,13 +14,13 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.5.0** (re-checked
-2026-08-26 with `.venv/Scripts/nodus.exe --version`, at the 5.5.0 cut). Forgetting the
-prefix gets you a runtime **nine releases** behind — no `@exactly_once` forgery fix, no
-call-depth cap, doubled `main()` on cached runs, `run_source` still running the file its
-`filename` happens to name (#521), `nodus graph` still executing the file it inspects
-(#400), and none of the resume-durability cluster. The symptom is behaviour that
-contradicts the code you are reading.
+**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.6.0** (re-checked
+2026-08-28 with `.venv/Scripts/nodus.exe --version`, at the 5.6.0 cut). Forgetting the
+prefix gets you a runtime from before the `@exactly_once` forgery fix, the call-depth
+cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the file its
+`filename` happens to name (#521), `nodus graph` no longer executing the file it inspects
+(#400), the whole resume-durability cluster, and the entire workflow-DSL cluster (#479,
+#480, #481, #488). The symptom is behaviour that contradicts the code you are reading.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -163,9 +163,21 @@ Release order — the whole sequence, not just the publish half:
       it: three features touched one vocabulary, landed in sequence, and the last
       silently falsified prose written for the first two.
 
-      Probes must print the **resolved package path and version** before their results.
-      Gate 10 passed 5.0.3 with 32 green probes; validating the wrong tree is the failure
-      mode, and a header makes it visible.
+      **Run it from a directory outside the repo, and pass `--require-installed`.**
+      The repo-root `nodus.py` shim inserts `src/` on `sys.path` and re-execs the package
+      from there, so *any* process whose CWD is the checkout resolves `nodus` to the
+      **source tree** no matter what is installed -- no `PYTHONPATH`, nothing in
+      `pip list`. That is how 5.0.3 shipped past **32 green probes** run against the wrong
+      tree, and it recurred at 5.5.0 and again at 5.6.0. The probes print the resolved
+      package path first for this reason, and `--require-installed` now exits **2** rather
+      than relying on someone reading the header:
+
+      ```powershell
+      cd $env:TEMP   # anywhere outside the repo
+      & "C:/dev/Coding Language/.venv-validation/Scripts/python.exe" `
+        "C:/dev/Coding Language/tests/eval/release_claims_probe.py" `
+        --repo "C:/dev/Coding Language" --require-installed
+      ```
 9. Upload to PyPI
 10. **Stage 5** — install the *published* package in a fresh venv and check it works
     as a new user would expect → write `docs/evals/vX.Y.Z/POSTPUBLISH_EVAL.md`
@@ -194,6 +206,12 @@ It is **older than the sequence above** — it predates Stage 5, Stage 6, and th
 `--closed-issues --section X.Y.Z` re-run, and its Step 5 pushes to `main` directly, which
 `enforce_admins` rejects. **This file is the authority; use the skill as a prompt, not a
 script.**
+
+**There is no CI publish workflow in this repo.** `.github/workflows/` holds `ci.yml`
+and nothing else, no environments are configured, and pushing a tag runs CI only. The
+upload below is manual and is the only thing that publishes. (A tag-triggered,
+approval-gated publish exists in the *runtime* repo, not here -- do not assume this one
+behaves the same.)
 
 PyPI upload — use explicit flags; `~/.pypirc` may have an empty password field
 which causes a 403:
@@ -302,7 +320,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,725 tests collected** (`--collect-only`, 2026-08-25, after the 5.4.0 cut). Coverage
+**2,841 tests collected** (`--collect-only`, 2026-08-28, after the 5.6.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -603,6 +621,18 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   prints and exits 0; `--strict` makes a stale consumer fail. A manifest that
   cannot be read is always a failure. Clear a flag by republishing, then updating
   `fingerprint` and `published` in the same commit.
+
+  **It can only see what `lexer.ALL_KEYWORDS` names, so a keyword the parser
+  matches by bare string literal is invisible to it.** At the 5.6.0 cut it
+  reported `2/2 in step` on a release that adds `each` -- the fingerprint it
+  compares is a hash of that set, and `each` had never reached it. The finding
+  came from the gate staying *quiet* when it should have moved, which is a much
+  worse signal to read than a failure. `tests/test_keyword_coverage.py` now
+  checks **both** directions -- it used to verify only that every named word
+  parses, never that every word the parser recognises is named -- and reads
+  `parser.py`'s source, because a behavioural test cannot tell a word matched
+  from a named set from one matched from a literal. Add a contextual keyword to
+  a set in `lexer.py` and read it from there; never a literal in `parser.py`.
 - `--opcodes`: verifies the frozen instruction set — reads the dispatch table
   out of a constructed `VM` and requires `BYTECODE_REFERENCE.md` §3, its
   appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
@@ -837,7 +867,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **twenty-one** times across the v5.0.0–5.4.0
+of several paths goes through**. It has now surfaced **twenty-three** times across the v5.0.0–5.6.0
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -866,6 +896,15 @@ Instances, all confirmed by reading the code rather than inferred:
 | #401 | does static analysis enter a step body | **two** walkers skipped it: the type analyzer and the LSP diagnostics engine |
 | #394 | may this closure be entered | **four** doors, one of them outside `vm.py` — and then the bytecode cache, which dropped the mark and reopened it on run 2 |
 | #584 | which graph is this request's | two copies of `_graph_metadata`; the one that had **not** learned to read the VM's own events leaned on a process-global fallback instead |
+| #632 | stop the background work before the directory goes | **two** sweepers; #591 stopped the workflow one and left `_worker_sweeper_loop` running, so the symptom outlived its own fix |
+| #480 | is this word a keyword | `each` matched by a bare literal in `parser.py`, so `lexer.ALL_KEYWORDS` — which editors, docs and `--consumers` all read — never named it |
+
+**#632 adds the sharpest version of the follow-up question.** The symptom -- a test
+racing its own tempdir cleanup -- had already been diagnosed and *fixed*, by #591, which
+stopped the default runner's sweep daemon. It kept happening, because there are two
+sweepers and nothing stopped the other. So "is this fixed?" was answered yes for months
+by a fix that was real, correct, and covered one of two paths. When a known-fixed symptom
+recurs, the question is not whether the fix regressed; it is **how many things do that**.
 
 **#584 adds the variant worth naming separately: the missing case gets papered over
 rather than left broken.** Two copies of one question drifted — `server.py` learned to
@@ -1378,33 +1417,30 @@ the error says which word. `register_syscall` gained the same treatment for an u
 missing `capability` (#478); nothing in or out of tree registers a custom syscall, so that
 half breaks nothing today.
 
-**A `run_source` behaviour change ships in 5.1.0 (#521).** `filename=` used to select the
-program: if a file of that name existed, the loader read it and discarded the `source`
-argument, reporting `ok=True`. It is a label now, as the guide always said. Anything relying
-on the old behaviour to run a file should call `run_file`. Present since v0.4.0, so this
-is a change against every prior release, not just 5.0.x.
+**A `run_source` behaviour change ships in 5.1.0 (#521):** `filename=` is a label and no
+longer selects the program. A change against every prior release, not just 5.0.x -- the full
+account is in the embedding section below.
 
 **Treat 5.0.3 as superseded, not merely older.** It assigns a `memory_store` attribute that
 `nodus_sdk.NodusSDKRuntime` defines as a read-only property, so every construction of that
 subclass raises `AttributeError: ... has no setter`. It is the one release in the 5.0.x line
 that breaks a first-party companion. Fixed in 5.0.4.
 
-**Update this paragraph in the release PR, not afterwards.** It read 5.0.1 through the whole
-of 5.0.2, and `ECOSYSTEM_READINESS_ASSESSMENT.md` sat at v4.1.1 for four releases -- and was
-*still* stale at the 5.1.0 cut, reading v5.0.2 in one line and 4.1.1 in two others. No gate
-checks any of this.
+**Update the paragraph above in the release PR, alongside the version bump.** A
+version string in prose went stale in three consecutive releases, and the response each
+time was a longer list to check by hand.
 
-**The set of places that claim a current version is now `tools/version_claims.json`, and
-`nodus_gate --versions` checks it.** Do not maintain a list here; the list that lived here
-was wrong. It said `ECOSYSTEM_READINESS_ASSESSMENT.md` had *three* such lines, and the
-gate's discovery sweep found a fourth on its first run. The README *banner* deliberately
-names no version -- that is why it is the one that has never gone stale, and it is the
-pattern the rest should follow where it can.
+**The list is `tools/version_claims.json` now, and `nodus_gate --versions` checks it.**
+Do not maintain one here; the list that lived here was itself wrong, and the gate's
+discovery sweep found a claim it had missed on its first run. Re-run `--versions`
+**after** the bump -- before it, it passes by definition. At the 5.6.0 cut it named 13
+stale claims across 8 files, each with line and fix.
 
-**This section went stale during the 5.0.2 release** — it still read 5.0.1 afterwards, because
-the release PR bumped the two version files and the CHANGELOG but not this paragraph. That is the
-third time a version string in prose has gone stale in three releases, and it is exactly what the
-note below predicts. Update it in the release PR, alongside the version bump, not afterwards.
+The distinction is still yours to make when you *write* prose: *"X is current"* goes
+stale, *"as of X"* does not. The gate cannot tell them apart, which is why claims are
+declared rather than grepped. Register a new one, or word it so it never needs
+registering -- the README *banner* names no version at all, which is why it is the one
+line that has never gone stale.
 
 Patch releases (5.1.x) for bug fixes and stability graduations. A minor bump (5.2.0) requires a
 substantive feature addition. Never bump without a corresponding PyPI publish. If you see these
@@ -1414,10 +1450,6 @@ files at different values, fix the mismatch before doing anything else.
 subprocess/network/env by default (see the embedding section below). The bytecode format did not
 change: `BYTECODE_VERSION` is still **4** and the 49-opcode set is untouched, so a major bump does
 not imply recompilation.
-
-**v5.0.1 is additive only** — new exports (`GATED_BUILTINS`, `active_vm()`), new tests, docs.
-No behaviour change, no new syntax. Upgrading from 5.0.0 requires nothing. It exists because five
-companions capped `nodus-lang<5.0.0` and made 5.0.0 unadoptable; see the ecosystem section.
 
 **`README.md` is current, and the fix it got is the pattern to copy.** It advertised 4.2.0
 through the whole 5.0.0 cycle; the repair was not "remember to update it" but to make the
@@ -1630,9 +1662,13 @@ listed in `docs/ecosystem/README.md`; probe each against
 deliberately do **not**: `nodus-vscode` (Marketplace) and `nodus-run-action`
 (GitHub Action). `nodus-a2a-wire` was a third until 2026-08-26 (#477).
 
-Send `Cache-Control: no-cache` when you do. PyPI's JSON API served a stale `info.version`
-immediately after the `nodus-flow` publish — it reported the previous release as latest
-when the new one had landed, which reads exactly like a failed upload.
+**Verify a publish by installing it, not by reading `info.version`.** PyPI's JSON API
+serves a stale `info.version` for a while after an upload: it reports the *previous*
+release as latest, which reads exactly like a failed upload. Seen after the `nodus-flow`
+publish, and again at 5.6.0 -- where it also reported **zero files** for the version that
+had just landed. `Cache-Control: no-cache` is worth sending and did **not** prevent
+either; only `pip install <name>==<version>` is authoritative, and it succeeded at the
+moment the JSON API was still denying the release existed.
 
 **Version numbers are deliberately not listed here any more.** They were, and they went
 stale every cycle. Two scripts read them live and neither can be transcribed wrong:
