@@ -34,6 +34,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))  # noqa: E402
 from nodus.frontend.lexer import (  # noqa: E402
     ALL_KEYWORDS,
     CONTEXTUAL_KEYWORDS,
+    COMPENSATION_KEYWORDS,
     EXPRESSION_KEYWORDS,
     EXTERN_KEYWORDS,
     GOAL_KEYWORDS,
@@ -93,7 +94,8 @@ class KeywordListTests(unittest.TestCase):
             | STEP_GUARD_KEYWORDS
             | STEP_MAP_KEYWORDS
             | WORKFLOW_BODY_KEYWORDS
-            | EXTERN_KEYWORDS,
+            | EXTERN_KEYWORDS
+            | COMPENSATION_KEYWORDS,
             CONTEXTUAL_KEYWORDS,
         )
 

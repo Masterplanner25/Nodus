@@ -136,6 +136,15 @@ class TaskNode:
     each_index: int | None = None
     each_value: object | None = None
     each_parent: str | None = None
+    # #577/D7.1: the order in which this task *completed*, from a per-run
+    # counter incremented where completion is already serialized.
+    #
+    # Not derivable from `finished_at`. That is `time.monotonic()`, which ticks
+    # at ~15.6 ms on Windows, so a strict causal chain a->b->c->d->e stamps
+    # 265, 265, 281, 297, 297 -- two ties in a sequence with no ambiguity at
+    # all. Anything that needs an order over completed tasks (compensation
+    # unwinding in reverse) must read this, never the clock.
+    completion_seq: int | None = None
 
     @property
     def is_mapped_instance(self) -> bool:
@@ -794,6 +803,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     pending = set(task.task_id for task in tasks)
     pending_queue = [task.task_id for task in tasks]
     scheduler_order_map: dict[str, int] = {}
+    # #577/D7.1: per-run, not global. Two runs in one process must not interleave
+    # sequence numbers -- that is the module-scope-state shape (#185/#390).
+    _completion_counter = 0
     def _remove_task_from_pending(task_id: str) -> None:
         pending.discard(task_id)
         try:
@@ -2063,6 +2075,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         task.result = coroutine.last_result
         task.status = "done"
         task.finished_at = runtime_time_ms()
+        nonlocal _completion_counter
+        _completion_counter += 1
+        task.completion_seq = _completion_counter
         results[task.task_id] = task.result
         task_values[task.task_id] = task.result
         timings[task.task_id] = {

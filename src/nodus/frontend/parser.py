@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from nodus.runtime.diagnostics import LangSyntaxError
-from nodus.frontend.lexer import EXPRESSION_KEYWORDS, EXTERN_KEYWORDS, LOOP_CONTROL_KEYWORDS, STEP_MAP_KEYWORDS, Tok
+from nodus.frontend.lexer import COMPENSATION_KEYWORDS, EXPRESSION_KEYWORDS, EXTERN_KEYWORDS, LOOP_CONTROL_KEYWORDS, STEP_MAP_KEYWORDS, Tok
 from nodus.frontend.type_system import TYPE_NAMES, is_known_type_name, suggest_type_name
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
@@ -881,6 +881,20 @@ class Parser:
         name = self.eat("ID").val
         deps = []
         options = None
+        # `compensates DEP` (#577), first in the header: it says what this step
+        # *is* before what it depends on. A step carrying it is a compensation
+        # handler and is excluded from the forward graph.
+        compensates = None
+        if self.at("ID") and self.peek().val in COMPENSATION_KEYWORDS:
+            comp_tok = self.peek()
+            self.eat("ID")
+            compensates = self.eat("ID").val
+            if compensates == name:
+                self.error(
+                    f"step '{name}' compensates itself; a handler undoes another "
+                    f"step's work",
+                    comp_tok,
+                )
         # `each VAR in DEP` -- a mapped node (#480). Written before `after`,
         # because `in DEP` *is* a dependency: the step cannot be expanded until
         # the producer has run, and requiring the author to also write
@@ -925,9 +939,43 @@ class Parser:
         self.workflow_step_depth += 1
         body = self.block()
         self.workflow_step_depth -= 1
+        if compensates is not None:
+            # Refused here rather than left inert. Each of these could only ever
+            # be a no-op or an ambiguity, which is the shape this cluster has
+            # been removing -- see the table in
+            # docs/design/workflow-dsl/01-compensation.md.
+            # `each` is checked first: `each x in src` adds `src` to `deps`, so
+            # testing `deps` before it would refuse an `each` handler with the
+            # `after` message and send the author looking for a clause they did
+            # not write.
+            if each_var is not None:
+                self.error(
+                    f"compensation handler '{name}' cannot declare `each` — it "
+                    f"inherits the fan-out of the step it compensates, one "
+                    f"instance at a time",
+                    start,
+                )
+            if deps:
+                self.error(
+                    f"compensation handler '{name}' cannot declare `after` — it "
+                    f"is not part of the forward graph, so there is nothing "
+                    f"there for it to wait on",
+                    start,
+                )
+            if when is not None:
+                self.error(
+                    f"compensation handler '{name}' cannot declare `when` — its "
+                    f"trigger is the run ending failed, and a guard could only "
+                    f"suppress it silently",
+                    start,
+                )
+            # The compensated step's value binds by the rule `after` already
+            # uses, so the handler's body reads it by name.
+            deps = [compensates]
         return self.mark(
             step_type(name, deps, body, options=options, when=when,
-                      each_var=each_var, each_source=each_source),
+                      each_var=each_var, each_source=each_source,
+                      compensates=compensates),
             start,
         )
 

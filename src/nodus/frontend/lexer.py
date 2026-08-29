@@ -114,6 +114,13 @@ WORKFLOW_BODY_KEYWORDS = {
     "state",
 }
 
+# Recognised only in a workflow step header, before `each`/`after` (#577):
+# `step refund compensates charge { ... }`. Contextual for the same reason as the
+# sets above -- `compensates` is a plausible variable name.
+COMPENSATION_KEYWORDS = {
+    "compensates",
+}
+
 # Recognised only at module scope, opening a host-surface declaration (#489):
 # `extern delegate(who: string, task: string) -> string`. Contextual for the same
 # reason as the sets above -- `extern` was a legal identifier before this and
@@ -130,6 +137,7 @@ CONTEXTUAL_KEYWORDS = (
     | STEP_MAP_KEYWORDS
     | WORKFLOW_BODY_KEYWORDS
     | EXTERN_KEYWORDS
+    | COMPENSATION_KEYWORDS
 )
 
 # Every word the language treats as a keyword, reserved or contextual. This is
