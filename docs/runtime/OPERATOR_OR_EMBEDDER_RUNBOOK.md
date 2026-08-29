@@ -561,6 +561,33 @@ nothing else: `write_file(42, {"not": "a string"})` ran and returned
 > with its host authority. Everything above about trusting the callable still
 > applies in full.
 
+### Let the program declare what it needs
+
+A `.nd` program can declare the host surface it expects (#489):
+
+```
+extern delegate(who: string, task: string) -> string
+```
+
+`NodusRuntime` then refuses **before executing anything** if the program declares
+a function this runtime has not registered:
+
+```
+this program declares extern 'delegate', which this runtime has not
+registered. Register it with `register_function(...)` before running, or
+remove the declaration.
+```
+
+That matters operationally: without it, a missing registration surfaces at the
+call, partway through a run that may already have written files, charged
+something, or resumed a workflow. The declaration exists precisely so the
+mismatch is knowable without executing.
+
+It is a **compatibility contract in both directions** — the program says which
+vocabulary it speaks, the runtime says which it provides, and a mismatch is
+detectable by loading neither. A program that declares nothing is unaffected, so
+this costs an existing deployment nothing until it opts in.
+
 ---
 
 ## 7. Companion library notes

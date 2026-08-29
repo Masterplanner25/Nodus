@@ -20,6 +20,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExprStmt,
     ExportList,
     ExportFrom,
+    ExternDecl,
     FnDef,
     FnExpr,
     GoalDef,
@@ -916,6 +917,11 @@ class Compiler:
         if isinstance(stmt, ExportList):
             return
         if isinstance(stmt, ExportFrom):
+            return
+        if isinstance(stmt, ExternDecl):
+            # #489: a declaration, not code. It emits nothing -- the host supplies
+            # the value, and the call site compiles to the same lookup it did
+            # before the declaration existed. Its whole effect is static.
             return
 
         raise TypeError(f"Unknown stmt node: {stmt!r}")

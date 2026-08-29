@@ -634,6 +634,35 @@ class NodusRuntime:
         self._host_capabilities[name] = requires
         self._host_schemas[name] = (arg_schema, ret_schema)
 
+    def _unregistered_externs(self, source: str) -> list[str]:
+        """Names the program declares as `extern` that this runtime cannot supply.
+
+        Parsed rather than compiled: this runs before execution, and a program
+        that does not parse will fail with its own error a moment later — this
+        check must not pre-empt that with a worse message. Any parse failure
+        returns no missing names for exactly that reason.
+
+        A builtin counts as supplied. Declaring `extern print(...)` is redundant
+        rather than wrong, and refusing it would make the declaration a trap.
+        """
+        if "extern" not in source:
+            # The common case, and the whole cost of this feature for a program
+            # that does not use it.
+            return []
+        try:
+            from nodus.frontend.ast.ast_nodes import ExternDecl
+            from nodus.frontend.lexer import tokenize
+            from nodus.frontend.parser import Parser
+
+            stmts = Parser(tokenize(source)).parse()
+        except Exception:
+            return []
+        declared = [s.name for s in stmts if isinstance(s, ExternDecl)]
+        return [
+            name for name in declared
+            if name not in self._host_functions and name not in BUILTIN_NAMES
+        ]
+
     def _resolve_host_schema(self, name, schema, resolved_arity, *, kind: str = "schema"):
         """Normalise and check a host-function schema at *registration* time.
 
@@ -1087,6 +1116,32 @@ class NodusRuntime:
         on_error=None,
     ) -> dict:
         normalized = normalize_filename(filename)
+        # #489: refuse before anything runs when the program declares a host
+        # function this runtime has not registered. Up front, because the
+        # alternative is failing partway through a run that has already had
+        # effects -- and the declaration exists precisely so the mismatch is
+        # knowable without executing.
+        missing = self._unregistered_externs(source)
+        if missing:
+            names = ", ".join(repr(n) for n in missing)
+            normalized = normalize_filename(filename)
+            failure = LangSyntaxError(
+                f"this program declares extern {names}, which this runtime has "
+                f"not registered. Register it with `register_function(...)` "
+                f"before running, or remove the declaration."
+            )
+            # Shaped by the same helpers every other failure here uses, so a
+            # caller reading result["error"]["message"] sees this one too.
+            return Result(
+                ok=False,
+                stage="check",
+                filename=normalized,
+                stdout="",
+                stderr="",
+                error=legacy_error_dict(failure, filename=normalized),
+                errors=[coerce_error(failure, stage="check", filename=normalized).to_dict()],
+            ).to_dict()
+
         if import_state is None and self.project_root is not None:
             import_state = {
                 "loaded": set(),

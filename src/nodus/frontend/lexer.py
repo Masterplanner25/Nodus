@@ -114,6 +114,14 @@ WORKFLOW_BODY_KEYWORDS = {
     "state",
 }
 
+# Recognised only at module scope, opening a host-surface declaration (#489):
+# `extern delegate(who: string, task: string) -> string`. Contextual for the same
+# reason as the sets above -- `extern` was a legal identifier before this and
+# reserving it would break programs that used it as one.
+EXTERN_KEYWORDS = {
+    "extern",
+}
+
 CONTEXTUAL_KEYWORDS = (
     LOOP_CONTROL_KEYWORDS
     | EXPRESSION_KEYWORDS
@@ -121,6 +129,7 @@ CONTEXTUAL_KEYWORDS = (
     | STEP_GUARD_KEYWORDS
     | STEP_MAP_KEYWORDS
     | WORKFLOW_BODY_KEYWORDS
+    | EXTERN_KEYWORDS
 )
 
 # Every word the language treats as a keyword, reserved or contextual. This is

@@ -173,6 +173,11 @@ class EveryNodeIsAccountedForTests(unittest.TestCase):
         "Param", "WorkflowStep", "GoalStep", "GoalBudget", "MatchArm",
         "InterpolationPart", "StringLiteralPart", "Annotation", "ModuleAlias",
         "ModuleInfo", "ExportList", "ExportFrom",
+        # `extern` is a declaration and holds no expressions -- its parameter
+        # names are a signature, not a scope, and nothing inside it can reference
+        # a name. `_predeclare` binds the extern's own name so calls to it
+        # resolve; there is nothing further to walk (#489).
+        "ExternDecl",
         "ListPattern", "RecordPattern", "VarPattern",
         # --- the goal predicate tree: data, not code (#409) ---
         # `until reached("good")` lowers to a nested map the runtime walks, and

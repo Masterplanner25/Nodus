@@ -433,6 +433,24 @@ class FnDef(Base):
 
 
 @dataclass
+class ExternDecl(Base):
+    """A host function this program requires (#489).
+
+    Reuses `Param` and the `return_type` slot so the declaration is typed by the
+    same vocabulary a `fn` is (#609), and so `nodus check` can compare a call
+    against it without a second notion of a signature.
+
+    Declaring **any** extern opts the file into strict name resolution: an
+    unknown free call becomes an error rather than a possible host function.
+    That is per-file, so nothing already written changes.
+    """
+
+    name: str
+    params: list[Param]
+    return_type: str | None = None
+
+
+@dataclass
 class FnExpr(Base):
     params: list[Param]
     body: Block
