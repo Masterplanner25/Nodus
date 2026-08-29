@@ -317,17 +317,69 @@ The snapshot is atomic: `_record_checkpoint` calls `_persist_graph_state` and
 **Code:** `orchestration/task_graph.py::_record_checkpoint`,
 `orchestration/workflow_state.py::checkpoint_public`.
 
-### I-WFLOW-06: Resume from a checkpoint does not re-execute already-completed steps
+### I-WFLOW-06: A plain resume does not re-execute already-completed steps
 
-When a workflow is resumed (via `resume_workflow(id)` or `resume_workflow(id, "label")`),
-the engine loads the persisted graph state and marks any step whose saved status is
-`completed` or `done` as already finished — populating `results[task_id]` and removing
-the step from `pending`. Those steps are never spawned again. Only steps still `pending`
-(or not recorded at all) are eligible to run. This guarantees exactly-once execution of
-completed steps across a resume.
+**Scope: `resume_workflow(id)`, the form with no label.** The engine loads the persisted
+graph state and marks any step whose saved status is `completed` or `done` as already
+finished — populating `results[task_id]` and removing the step from `pending`. Those steps
+are never spawned again. Only steps still `pending` (or not recorded at all) are eligible
+to run.
+
+**`resume_workflow(id, "label")` is a different operation and this invariant does not
+hold for it.** A label is a **re-entry point**, not a position marker (#486): the step that
+recorded it runs again from its first line, and every step downstream of it runs again
+too — whatever their saved status. Measured on three completed steps with the checkpoint
+in the middle one:
+
+| Step | Relative to the label | Ran again |
+|---|---|---|
+| `a` | upstream | no |
+| `b` | **holds the checkpoint** | **yes**, from the top |
+| `c` | downstream | **yes** |
+
+An earlier revision of this invariant named both forms and claimed "exactly-once execution
+of completed steps across a resume". That is true only of the plain form, and the labelled
+form is the one a debugging loop reaches for. What a re-executed step may *observe* is
+I-WFLOW-07.
 
 **Code:** `orchestration/task_graph.py::_normalize_workflow_snapshot` and the resume
 path in `orchestration/task_graph.py`.
+
+---
+
+### I-WFLOW-07: A re-executed step observes the world at replay time, not at first run
+
+Resume works by **re-executing**, and nothing records what the original execution
+observed. Checkpointed `state` is restored faithfully; every *fresh read* is taken again
+and may return a different value — the clock, randomness, the environment, a file, an
+HTTP response.
+
+Measured: one step reading `time.now().epoch_ms`, resumed from its own checkpoint.
+
+```
+clock=1788019698706  state.first_seen=1788019698706     <- first run
+clock=1788019698753  state.first_seen=1788019698706     <- resume
+```
+
+`first_seen` held because it was checkpointed into `state`. `clock` moved because it was
+read fresh. The step's **return value is the replay's observation**, so a caller reading
+`steps["observe"]` after a resume gets the second reading, not the first.
+
+**This is a boundary, not a bug.** Re-execution is what makes checkpoint-restore cheap,
+and Nodus has never claimed replay determinism. It is stated here because it was
+previously undocumented, undetectable and unavoidable — and because #486 makes it more
+reachable than it looks: everything before a mid-step checkpoint re-runs, including reads
+an author placed there believing they were done.
+
+**What holds across a replay:** anything written to workflow `state` before the
+checkpoint. **What does not:** everything else. The supported way to make an observation
+stable is to checkpoint it — see the guide's *Checkpoints* section.
+
+There is deliberately **no** divergence detection and **no** replay-safe clock. Both are
+open design questions on #494; this invariant records the position, not a mechanism.
+
+**Code:** `orchestration/task_graph.py` resume path; `frontend/parser.py` checkpoint
+lowering.
 
 ---
 
@@ -377,7 +429,14 @@ Most of these invariants have direct test coverage. Known test gaps:
   reopening #394. Each of its assertions was checked against a deliberately broken tree
   and observed to go red.
 - I-WFLOW-05 (checkpoint snapshot): partially covered; state-copy depth not explicitly asserted.
-- I-WFLOW-06 (resume skips completed): covered by workflow resume tests; see also #110.
+- I-WFLOW-06 (a plain resume skips completed steps): covered by workflow resume
+  tests; see also #110. The **labelled** form's re-execution — the half this
+  invariant used to get wrong — is pinned by
+  `tests/test_resume_determinism_boundary.py`.
+- I-WFLOW-07 (replay observes replay-time values): pinned by
+  `tests/test_resume_determinism_boundary.py`, which asserts both halves — a
+  fresh read moves, a checkpointed one does not. A test of the first alone
+  would pass on a runtime that had frozen the whole step.
 
 ---
 
