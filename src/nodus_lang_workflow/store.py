@@ -100,6 +100,7 @@ class WorkflowStore(ABC):
         correlation_key: str | None = None,
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
+        schema: dict[str, object] | None = None,
     ) -> WorkflowRunRecord | None:
         raise NotImplementedError
 
@@ -299,6 +300,7 @@ def _register_wait_on_record(
     correlation_key: str | None = None,
     payload: dict[str, object] | None = None,
     deadline_ms: float | None = None,
+    schema: dict[str, object] | None = None,
 ) -> WorkflowRunRecord:
     record.status = RUN_STATUS_WAITING
     record.wait = WorkflowWaitRecord(
@@ -307,6 +309,7 @@ def _register_wait_on_record(
         payload=payload,
         registered_at=runtime_time_ms(),
         deadline_ms=deadline_ms,
+        schema=schema,
     )
     return record
 
@@ -624,6 +627,7 @@ class LocalWorkflowStore(WorkflowStore):
         correlation_key: str | None = None,
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
+        schema: dict[str, object] | None = None,
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
@@ -634,6 +638,7 @@ class LocalWorkflowStore(WorkflowStore):
             correlation_key=correlation_key,
             payload=payload,
             deadline_ms=deadline_ms,
+            schema=schema,
         )
         return self.save_run(record)
 
@@ -1064,6 +1069,7 @@ class SQLiteWorkflowStore(WorkflowStore):
         correlation_key: str | None = None,
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
+        schema: dict[str, object] | None = None,
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
@@ -1074,6 +1080,7 @@ class SQLiteWorkflowStore(WorkflowStore):
             correlation_key=correlation_key,
             payload=payload,
             deadline_ms=deadline_ms,
+            schema=schema,
         )
         return self.save_run(record)
 

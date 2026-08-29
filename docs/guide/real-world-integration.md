@@ -143,6 +143,37 @@ fourth argument.
 resume call. This is how the human's decision (approved/denied) crosses from
 the Python event router into the Nodus step body.
 
+**Declare what that payload must contain.** Argument 2 also accepts an options
+map, and `schema` types the payload a resume has to deliver:
+
+```nd
+workflow approval_flow {
+    step approve {
+        return workflow_wait("aindy.approval.granted", {
+            correlation_key: "approve-aindy",
+            schema: {approved: "bool", note: "string"}
+        })
+    }
+}
+```
+
+A resume whose payload does not match is refused **at the resume call**, the way
+a mismatched `event_type` already is:
+
+```
+{"ok": false,
+ "error": "Wait payload does not match the declared schema: argument 'approved'
+           must be a boolean. 'aindy.approval.granted' declares {approved, note}."}
+```
+
+That puts the failure on the caller that sent the wrong thing rather than inside
+the step that trusted it — which matters most for exactly this pattern, where the
+sender is a separate process and the step may have been waiting for days.
+
+The map form carries every option (`correlation_key`, `payload`, `deadline_ms`,
+`schema`); a **string** in argument 2 is still `correlation_key`, so nothing
+already written changes. Declaring no schema accepts anything, as before.
+
 > **A waiting run is advanced by a payload, not by a checkpoint.**
 > `resume_workflow(id, {payload})` satisfies the wait and the run moves on.
 > `resume_workflow(id, "checkpoint")` on a waiting run is **refused** with an
