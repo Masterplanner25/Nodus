@@ -369,7 +369,15 @@ says this "already works today," and D5 does not take it away.
 **What would reopen this:** a case where the sub-units genuinely cannot be nodes
 *and* the `state` workaround genuinely fails. Neither issue has produced one.
 
-## D7 — #577: per-step `compensate_with`, not a workflow exit hook
+## D7 — #577: per-step compensation, not a workflow exit hook
+
+> **Specified in [`01-compensation.md`](01-compensation.md) (2026-08-28).** The
+> direction below stands. Two things in it changed when it was made buildable:
+> the clause is **`compensates` on the handler**, not `compensate_with` on the
+> forward step, and *reverse completion order* needed a recorded completion
+> sequence — measured, `finished_at` ties across a causal chain because the
+> runtime clock ticks at ~15.6 ms. Read that document, not this section, before
+> building.
 
 **Decision: option 1 of the three the issue offers. Compensation is declared on
 the step whose work it undoes, and the runtime runs the named steps for completed
