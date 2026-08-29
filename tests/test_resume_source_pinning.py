@@ -184,5 +184,102 @@ class DriftReachesTheResultMapTests(unittest.TestCase):
         self.assertNotIn("source_drift", stdout)
 
 
+# The flow declaration a resume driver holds. `{body}` is what differs between
+# the recorded run and the driver's own copy.
+DRIVER_WITH_FLOW = r"""
+workflow w {{
+    state log = ""
+    step a {{ print("a ORIGINAL"); log = log + "a"; checkpoint "cp"; return 1i }}
+    step b after a {{ log = log + "b"; return {body} }}
+}}
+fn main() {{
+    let r = resume_workflow("{gid}", "cp")
+    print("RESULT=\(r)")
+}}
+"""
+
+DRIVER_NO_FLOW = r"""
+fn main() {{
+    let r = resume_workflow("{gid}", "cp")
+    print("RESULT=\(r)")
+}}
+"""
+
+
+# closes: #629
+class DriftSeesTheResumingModuleTests(unittest.TestCase):
+    """The drift check had one referent and needed two.
+
+    It compared the recorded source against the file at the *recorded path*, so
+    it only noticed an edit to the file that created the run. A resume driven
+    from a **different** file replayed the recorded source, stale, and reported
+    `source_drift: false` -- the signal depended on which file the caller
+    happened to be sitting in rather than on anything about the run.
+
+    The comparison is at the *flow*, not the file, and that is load-bearing: a
+    resume driver necessarily differs from the recorded program somewhere, since
+    it holds the `resume_workflow(...)` call the original did not. A file-level
+    comparison would fire whenever someone copied the workflow verbatim into
+    their driver -- while the message claims specifically that the flow differs.
+    `test_identical_flow_in_another_file_is_not_drift` is the one that fails if
+    that granularity is ever loosened.
+    """
+
+    def _resume_from_other_file(self, driver_template: str, **fmt) -> str:
+        with tempfile.TemporaryDirectory() as td:
+            cwd = os.getcwd()
+            os.chdir(td)
+            try:
+                recorded = os.path.join(td, "recorded.nd")
+                with open(recorded, "w", encoding="utf-8") as handle:
+                    handle.write(WORKFLOW.format(marker="ORIGINAL"))
+                started = NodusRuntime(timeout_ms=None).run_file(recorded)
+                gid = _gid(started.get("stdout"))
+
+                driver = os.path.join(td, "driver.nd")
+                with open(driver, "w", encoding="utf-8") as handle:
+                    handle.write(driver_template.format(gid=gid, **fmt))
+                # A *file*, not run_source: the blind spot is about which file
+                # the caller is in, so an in-memory driver cannot exercise it.
+                resumed = NodusRuntime(timeout_ms=None).run_file(driver)
+                return resumed.get("stdout") or ""
+            finally:
+                os.chdir(cwd)
+
+    def test_a_different_flow_in_another_file_is_drift(self):
+        """The reported bug: the driver holds its own, different `w`."""
+        stdout = self._resume_from_other_file(DRIVER_WITH_FLOW, body='"fixed"')
+        self.assertIn('"source_drift": true', stdout)
+
+    def test_identical_flow_in_another_file_is_not_drift(self):
+        """Copying the workflow verbatim into the driver is not drift.
+
+        Only the driver's `main` differs, which it must. Fails if the comparison
+        is ever done at file granularity.
+        """
+        stdout = self._resume_from_other_file(DRIVER_WITH_FLOW, body="2i")
+        self.assertIn("RESULT=", stdout)
+        self.assertNotIn("source_drift", stdout)
+
+    def test_a_driver_holding_no_flow_is_not_drift(self):
+        """A scratch script that only calls resume_workflow() holds no competing
+        copy, so there is nothing for the caller to be wrong about."""
+        stdout = self._resume_from_other_file(DRIVER_NO_FLOW)
+        self.assertIn("RESULT=", stdout)
+        self.assertNotIn("source_drift", stdout)
+
+    def test_both_referents_report_through_one_helper(self):
+        """Source assertion: one question, one answering site.
+
+        Two referents reporting independently is how the check came to disagree
+        with itself in the first place, so the announcement stays in one place.
+        """
+        import inspect
+
+        src = inspect.getsource(VM._warn_on_source_drift)
+        self.assertEqual(src.count("_report_source_drift("), 2)
+        self.assertNotIn("print(", src)
+
+
 if __name__ == "__main__":
     unittest.main()

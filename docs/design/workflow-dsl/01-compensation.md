@@ -73,15 +73,35 @@ Filed separately (#642) — it is a goal-semantics question, not a compensation
 one, and the trigger below is stated in terms of the run's verdict so it does not
 depend on the answer.
 
-### Two suspicions that measurement killed
+### Resuming a failed run re-executes — and the instrument that said otherwise was wrong
 
-Recorded because both would have changed the design, and both were wrong.
+**Corrected 2026-08-28.** An earlier revision of this section claimed that
+resuming a failed run does not re-execute completed steps and does not re-attempt
+the failed one. **Both halves are false.** Measured with `print`, which survives a
+throw:
 
-**Resuming a failed run does not re-execute completed steps.** The checkpoint
-list of a resumed run carries two entries for one label with different
-timestamps, which reads exactly like re-execution. A state counter says
-otherwise — `reserve_calls` stays `1` across two resumes, and the failed step is
-not re-attempted either. The resume returns the recorded failure.
+```
+RESERVE RAN / SHIP RAN     <- run 1
+--- run1 failed=["ship"]
+RESERVE RAN / SHIP RAN     <- resume
+--- run2 failed=["ship"]
+```
+
+`reserve` (completed, and the step holding the resume checkpoint) and `ship`
+(failed) each ran **twice**. This is the documented behaviour of #486 — a resume
+re-enters the checkpoint's step from the top, so effects before the checkpoint run
+again on every resume — and it is what #629 records as designed.
+
+**The instrument was the error, and it is worth naming.** The original claim came
+from a workflow `state` counter (`reserve_calls` stayed `1` across two resumes).
+Workflow state is **re-derived from the checkpoint on resume**, so a counter
+incremented before a throw does not survive to be read — the measurement reset
+itself and looked like an absence of work. A `state` cell cannot measure whether
+a step re-ran; only an effect outside the run's own state can.
+
+This *strengthens* D7's terminality decision rather than weakening it: a
+compensated run that could be resumed would re-execute steps whose effects had
+just been undone.
 
 **The third failed-run exit is not observably divergent.** `run_task_graph` has
 three: two return through `_finalize_failed`, and the resume-rebuild path at
@@ -272,9 +292,11 @@ same constraint that shaped D5/D6.
 
 ### D7.6 — a compensated run is terminal, and says so
 
-D7 decides terminality. Today a failed run *can* be resumed and returns its
-recorded failure without re-running anything (measured above), so "cannot be
-resumed" needs a refusal rather than an absence.
+D7 decides terminality. Today a failed run *can* be resumed, and it **re-executes**
+— the checkpoint's step from the top (#486) and the failed step again (measured
+above) — so "cannot be resumed" needs a refusal rather than an absence. Without
+one, a resume after compensation would re-run steps whose effects were just
+undone, against a remote that has already been refunded.
 
 **Decision: the run is recorded `compensated`, and a resume of it is refused
 naming that** — the shape #482 used for a checkpoint resume of a waiting run,
