@@ -484,6 +484,22 @@ the commit is blocked and the exact fix command is printed. Hook lives at `.git/
 That is CI's invocation verbatim. It is clean today; ignore the `annotation-unchecked`
 notes, which are informational and not failures.
 
+**Verbatim is not equivalent: locally it does not check `src/nodus_lang_workflow/` at
+all.** `nodus_lang_workflow` resolves to the **installed** nodus-lang in `.venv`
+(`site-packages/nodus_lang_workflow/`), so mypy follows imports into that copy and never
+reads the working tree's. CI has no install shadowing `src/`, so it does. This is the
+`.venv`-shadows-`src` gap the top of this file warns about, in a place it is not
+obvious — and it costs a red CI on a change that type-checked clean locally.
+
+Established by falsification, not inference: a deliberate `_deliberate: int = "nope"`
+inserted into `src/nodus_lang_workflow/runner.py` produced **no local output** and CI
+failed on the real error in the same file. **Passing the directory explicitly does not
+fix it** — `mypy src/nodus/ src/nodus_lang_workflow/` is also silent, because the
+installed package still wins module resolution.
+
+So for anything under `src/nodus_lang_workflow/`, **CI is the only type check**. Push and
+let it arbitrate rather than trusting a clean local run.
+
 The way this bites: **extracting a condition into a helper drops mypy's type narrowing.**
 Replacing `if source_path is not None and self._can_skip(...)` with
 `if self._cache_is_authoritative(source_path, source)` left `load_cached_bytecode` seeing

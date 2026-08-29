@@ -53,15 +53,25 @@ class WorkflowWaitRecord:
     payload: dict[str, object] | None = None
     registered_at: float | None = None
     deadline_ms: float | None = None
+    # #472: the declared shape of the payload a resume must deliver. Normalised
+    # at the wait site, so what is persisted is already a plain JSON-safe dict.
+    # None means "accept anything", which is what every wait written before this
+    # existed means.
+    schema: dict[str, object] | None = None
 
     def to_dict(self) -> dict:
-        return {
+        record = {
             "event_type": self.event_type,
             "correlation_key": self.correlation_key,
             "payload": dict(self.payload or {}),
             "registered_at": self.registered_at,
             "deadline_ms": self.deadline_ms,
         }
+        if self.schema:
+            # Omitted when absent so a run recorded before #472 round-trips
+            # byte-identically.
+            record["schema"] = dict(self.schema)
+        return record
 
     @classmethod
     def from_dict(cls, payload: dict | None) -> "WorkflowWaitRecord | None":
@@ -82,12 +92,16 @@ class WorkflowWaitRecord:
         deadline_ms = payload.get("deadline_ms")
         if not isinstance(deadline_ms, (int, float)):
             deadline_ms = None
+        schema = payload.get("schema")
+        if not isinstance(schema, dict):
+            schema = None
         return cls(
             event_type=event_type,
             correlation_key=correlation_key,
             payload=body,
             registered_at=registered_at,
             deadline_ms=deadline_ms,
+            schema=schema,
         )
 
 

@@ -4,6 +4,38 @@
 
 ### Added
 
+- **#472: `workflow_wait` can declare the shape of the payload a resume must
+  deliver.**
+
+  ```
+  step approve {
+      return workflow_wait("approval", {schema: {approved: "bool", note: "string"}})
+  }
+  ```
+
+  A resume whose payload does not match is refused **at the resume call**, the
+  way a mismatched `event_type` already was — so the failure lands on the caller
+  that sent the wrong thing rather than inside the step that trusted it:
+
+  ```
+  {"ok": false, "error": "Wait payload does not match the declared schema:
+   argument 'approved' must be a boolean. 'approval' declares {approved, note}."}
+  ```
+
+  **Argument 2 now type-dispatches**: a **string** is `correlation_key`, exactly
+  as before; a **map** is an options map carrying `correlation_key`, `payload`,
+  `deadline_ms` and `schema`. All four positions were already named, so there was
+  no free slot — and this caps positional growth rather than adding a fifth
+  argument to a signature that was one option away from unwritable. Mixing the
+  two forms is refused.
+
+  **An unspecified schema accepts anything**, so every wait written before this
+  is untouched. The schema is normalised and checked at the **wait site**: an
+  unknown option or an unrecognised type name fails there, not when someone
+  eventually tries to resume. It uses the same validator as `std:tool` and
+  `register_function` (#493), so all three typed boundaries word a failure
+  identically.
+
 - **#489: `extern` — a program can declare the host functions it requires.**
 
   ```

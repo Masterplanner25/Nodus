@@ -376,12 +376,50 @@ def _mark_wait_from_result(
     _ck = wait.get("correlation_key")
     _pl = wait.get("payload")
     _dl = wait.get("deadline_ms")
+    _sc = wait.get("schema")
     runner.mark_waiting(
         graph_id,
         event_type=_et if isinstance(_et, str) else "workflow.wait",
         correlation_key=_ck if isinstance(_ck, str) else None,
         payload=_pl if isinstance(_pl, dict) else {},
         deadline_ms=_dl if isinstance(_dl, (int, float)) else None,
+        schema=_sc if isinstance(_sc, dict) else None,
+    )
+
+
+def _wait_payload_schema_error(record, resume_payload) -> str | None:
+    """Does the resume payload match the shape the wait declared (#472)?
+
+    Returns a message, or None when it matches or nothing was declared.
+
+    **An undeclared schema accepts anything.** That is the compatible reading and
+    the one the issue prefers: every wait written before this existed declares
+    nothing, and warning on them would make the feature a nuisance rather than a
+    contract.
+
+    Uses the runtime schema dialect shared with `std:tool` and
+    `register_function`, so a payload failure is worded the way those are.
+    """
+    # Narrowed with an explicit `is None` rather than folded into a conditional
+    # expression: mypy cannot narrow through `getattr`, and `wait.event_type`
+    # below is used after the branch. That is the trap CLAUDE.md records — a
+    # condition extracted into a helper drops the narrowing, ruff stays clean,
+    # and CI fails on the type check.
+    wait = getattr(record, "wait", None)
+    if wait is None:
+        return None
+    schema = getattr(wait, "schema", None)
+    if not schema:
+        return None
+    from nodus.runtime.schema_contract import validate_args
+
+    error = validate_args(resume_payload or {}, schema)
+    if error is None:
+        return None
+    declared = ", ".join(sorted(schema.get("properties", {})))
+    return (
+        f"Wait payload does not match the declared schema: {error}. "
+        f"'{wait.event_type}' declares {{{declared}}}."
     )
 
 
@@ -710,6 +748,7 @@ class WorkflowFrameworkRunner:
         correlation_key: str | None = None,
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
+        schema: dict[str, object] | None = None,
     ) -> WorkflowRunRecord | None:
         return self.store.register_wait(
             run_id,
@@ -717,6 +756,7 @@ class WorkflowFrameworkRunner:
             correlation_key=correlation_key,
             payload=payload,
             deadline_ms=deadline_ms,
+            schema=schema,
         )
 
     def revive_dead_lettered_run(self, run_id: str) -> WorkflowRunRecord | None:
@@ -864,6 +904,13 @@ class WorkflowFrameworkRunner:
                 return {"ok": False, "error": f"Wait event type mismatch for '{graph_id}'"}
             if correlation_key is not None and (record.wait is None or record.wait.correlation_key != correlation_key):
                 return {"ok": False, "error": f"Wait correlation mismatch for '{graph_id}'"}
+            # #472: the declared payload shape, checked here — before the run is
+            # claimed and before the step re-runs — so the failure lands on the
+            # caller that sent the wrong thing rather than inside the step that
+            # trusted it. Same refusal shape as the two mismatches above.
+            schema_error = _wait_payload_schema_error(record, resume_payload)
+            if schema_error is not None:
+                return {"ok": False, "error": schema_error}
             claim = self.store.claim_waiting_run_for_resume(
                 graph_id,
                 owner=owner,

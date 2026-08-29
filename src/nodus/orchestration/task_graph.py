@@ -684,11 +684,20 @@ def _workflow_wait_info(value) -> dict | None:
     deadline_ms = value.get("deadline_ms")
     if not isinstance(deadline_ms, (int, float)):
         deadline_ms = None
+    # #472: the declared payload shape, already normalised at the wait site.
+    # This function rebuilds the wait field-by-field rather than passing the
+    # builtin's map through, so a new field must be added *here* as well or it
+    # is silently dropped between the step and the store -- which is what
+    # happened to `schema` on the first pass.
+    schema = value.get("schema")
+    if not isinstance(schema, dict):
+        schema = None
     return {
         "event_type": event_type,
         "correlation_key": correlation_key,
         "payload": payload,
         "deadline_ms": float(deadline_ms) if deadline_ms is not None else None,
+        "schema": schema,
     }
 
 
@@ -1054,6 +1063,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 "correlation_key": wait_info.get("correlation_key"),
                 "payload": wait_info.get("payload") or {},
                 "deadline_ms": wait_info.get("deadline_ms"),
+                # #472: the declared payload shape, carried to the store so a
+                # resume can refuse a wrong payload before the step re-runs.
+                "schema": wait_info.get("schema"),
                 "step": task.step_name,
                 "task_id": task.task_id,
             },

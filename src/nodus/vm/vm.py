@@ -2240,9 +2240,40 @@ class VM:
             return None
         return ctx.get("resume_payload")
 
+    #: Options `workflow_wait`'s map form accepts. Closed and checked, like the
+    #: `budget` and step-option vocabularies -- an unknown key is a mistake the
+    #: author can fix now, not a silently discarded declaration (#490's rule).
+    WAIT_OPTION_KEYS = ("correlation_key", "payload", "deadline_ms", "schema")
+
     def builtin_workflow_wait(self, event_type, correlation_key=None, payload=None, deadline_ms=None):
         if not isinstance(event_type, str) or not event_type:
             self.runtime_error("type", "workflow_wait(event_type, ...) expects event_type as non-empty string")
+        # #472: argument 2 type-dispatches. A **string** is `correlation_key`, as
+        # it has always been; a **map** is an options map carrying every option
+        # including `schema`. All four positions were already named, so there was
+        # no free slot -- and this caps positional growth rather than adding a
+        # fifth argument to a signature that was one option from unwritable.
+        schema = None
+        if isinstance(correlation_key, (dict, Record)):
+            options = dict(correlation_key.fields) if isinstance(correlation_key, Record) else dict(correlation_key)
+            unknown = sorted(k for k in options if k not in self.WAIT_OPTION_KEYS)
+            if unknown:
+                self.runtime_error(
+                    "type",
+                    f"workflow_wait: unknown option(s) {', '.join(repr(k) for k in unknown)}. "
+                    f"Known options: {', '.join(self.WAIT_OPTION_KEYS)}.",
+                )
+            if payload is not None or deadline_ms is not None:
+                self.runtime_error(
+                    "type",
+                    "workflow_wait(event_type, options) takes the options map alone — "
+                    "put correlation_key, payload and deadline_ms inside it rather than "
+                    "mixing the two forms",
+                )
+            correlation_key = options.get("correlation_key")
+            payload = options.get("payload")
+            deadline_ms = options.get("deadline_ms")
+            schema = self._normalize_wait_schema(options.get("schema"))
         if correlation_key is not None and not isinstance(correlation_key, str):
             self.runtime_error("type", "workflow_wait(..., correlation_key, ...) expects correlation_key as string or nil")
         if isinstance(payload, Record):
@@ -2253,13 +2284,43 @@ class VM:
             if isinstance(deadline_ms, bool) or not isinstance(deadline_ms, (int, float)):
                 self.runtime_error("type", "workflow_wait(..., deadline_ms) expects deadline_ms as number or nil")
             deadline_ms = float(deadline_ms)
-        return {
+        wait = {
             "__workflow_wait__": True,
             "event_type": event_type,
             "correlation_key": correlation_key,
             "payload": payload or {},
             "deadline_ms": deadline_ms,
         }
+        if schema:
+            # Only when declared, so a wait without one persists exactly the
+            # record it always did.
+            wait["schema"] = schema
+        return wait
+
+    def _normalize_wait_schema(self, schema):
+        """Normalise a declared resume-payload schema, refusing a bad one here.
+
+        Refused at the **wait site** rather than at the resume: that is where the
+        mistake is, and a schema that only failed when someone tried to resume
+        would be a declaration nobody validated — the shape this cluster keeps
+        removing.
+
+        Uses the runtime schema dialect (`runtime/schema_contract.py`), the same
+        one `std:tool` and `register_function` use, rather than
+        `nodus_lang_schema`. The design note for this predates that module and
+        named the ABI validator; the payload is a *runtime* value that may arrive
+        as a `Record` from an in-language resume, which the ABI validator does not
+        model — and sharing this one keeps the failure wording identical across
+        all three typed boundaries.
+        """
+        if schema is None:
+            return None
+        from nodus.runtime.schema_contract import normalize_runtime_schema
+
+        normalized, err = normalize_runtime_schema(schema)
+        if err is not None:
+            self.runtime_error("type", f"workflow_wait: schema {err}")
+        return normalized
 
     def builtin_current_workflow_id(self):
         ctx = self.current_workflow_context()
