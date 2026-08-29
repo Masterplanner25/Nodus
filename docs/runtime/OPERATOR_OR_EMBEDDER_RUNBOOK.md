@@ -433,6 +433,25 @@ configure_default_workflow_runner(backend="sqlite", path=".nodus/workflow.db")
 Call this once at application startup, before any `run_workflow()` or
 `NodusRuntime` usage that triggers a workflow.
 
+**Or set it in the environment**, which needs no startup hook and applies to the
+default runner, `nodus serve` and the CLI alike:
+
+```bash
+NODUS_WORKFLOW_STORE_BACKEND=sqlite
+NODUS_WORKFLOW_STORE_PATH=/var/lib/myapp/workflow.db   # optional
+```
+
+Until 5.7.0 these were honoured by `nodus serve` only, and the default runner
+every embedder reaches through `run_workflow()` ignored them (#174). An unknown
+backend name is refused rather than falling back to the JSON store, so a
+misspelling cannot quietly cost you the durability you asked for.
+
+> **Switching backends does not move existing runs.** Runs recorded in the JSON
+> store are invisible to a SQLite one and vice versa — an in-flight `waiting` run
+> becomes unresumable rather than relocated, and `nodus workflow migrate-state`
+> migrates graph *snapshots*, not store backends. Switch when nothing is in
+> flight, or drain first.
+
 `SQLiteWorkflowStore` uses WAL mode for atomic writes and survives unexpected
 process exits. The default path can be any writable path on a persistent volume.
 

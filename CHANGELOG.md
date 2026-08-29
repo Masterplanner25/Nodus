@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#174: the default workflow runner honours `NODUS_WORKFLOW_STORE_BACKEND`.**
+  `get_default_workflow_runner()` hardcoded `LocalWorkflowStore` — the JSON store
+  that is explicitly not crash-safe — so an embedder calling `run_workflow()`
+  could only get a durable store by calling `configure_default_workflow_runner()`
+  at startup. Meanwhile `nodus serve` had honoured
+  `NODUS_WORKFLOW_STORE_BACKEND` and `NODUS_WORKFLOW_STORE_PATH` all along: one
+  question, two answers, and the half every embedder reaches was the one that
+  could not be configured.
+
+  Both halves read the same two variables now, through one pair of readers.
+  Setting `NODUS_WORKFLOW_STORE_BACKEND=sqlite` gives a WAL-backed, crash-safe
+  store with no code change. An unknown backend name is **refused** rather than
+  falling back, so a misspelling cannot quietly cost the durability that was
+  asked for.
+
+  **The default is unchanged and stays `local` in 5.x.** Flipping it is a 6.0.0
+  change, and not merely because the file location moves: runs already recorded
+  in the JSON store are invisible to a SQLite one, so an in-flight `waiting` run
+  would silently become unresumable. `nodus workflow migrate-state` migrates
+  graph *snapshots*, not store backends, so the flip needs a migration that does
+  not exist yet. The same caution applies to switching by hand — switch when
+  nothing is in flight, or drain first.
+
 ### Tooling
 
 - **#631: the scheduler-fairness tests measured the machine, not fairness.**
