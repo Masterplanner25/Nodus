@@ -251,10 +251,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         header = f"{prefix}goal {stmt.name} over {stmt.workflow_name} {{"
         inner = "    " * (indent + 1)
         body_lines = [f"{inner}until {format_goal_predicate(stmt.until)}"]
-        body_lines.append(
-            f"{inner}budget {{ max_iterations: {format_expr(stmt.budget.max_iterations)}, "
-            f"deadline_ms: {format_expr(stmt.budget.deadline_ms)} }}"
-        )
+        body_lines.append(f"{inner}budget {_format_goal_budget(stmt.budget)}")
         if stmt.retry_from is not None:
             body_lines.append(f"{inner}retry from {format_expr(stmt.retry_from)}")
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
@@ -267,9 +264,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
 
     if isinstance(stmt, WorkflowStep):
-        deps = ""
-        if stmt.deps:
-            deps = " after " + ", ".join(stmt.deps)
+        mapped, deps = _format_step_map_clause(stmt)
         guard = ""
         when = getattr(stmt, "when", None)
         if when is not None:
@@ -277,14 +272,12 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{deps}{guard}{options} {{"
+        header = f"{prefix}step {stmt.name}{mapped}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, GoalStep):
-        deps = ""
-        if stmt.deps:
-            deps = " after " + ", ".join(stmt.deps)
+        mapped, deps = _format_step_map_clause(stmt)
         guard = ""
         when = getattr(stmt, "when", None)
         if when is not None:
@@ -292,7 +285,7 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         options = ""
         if stmt.options is not None:
             options = f" with {format_named_map(stmt.options)}"
-        header = f"{prefix}step {stmt.name}{deps}{guard}{options} {{"
+        header = f"{prefix}step {stmt.name}{mapped}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
         return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
 
@@ -374,6 +367,49 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
 
     raise TypeError(f"Unknown stmt node: {stmt!r}")
+
+
+def _format_goal_budget(budget) -> str:
+    """Render `budget { ... }`, printing only the bounds that are declared (#657).
+
+    `max_iterations` and `deadline_ms` were both mandatory until #488, and this
+    printed both unconditionally. Since they became individually optional, a goal
+    declaring one of them crashed `fmt` with `Unknown expr node: None`, and
+    `limits` — the third bound #488 added — was never rendered at all, so
+    formatting silently erased a spend bound.
+    """
+    parts = []
+    if getattr(budget, "max_iterations", None) is not None:
+        parts.append(f"max_iterations: {format_expr(budget.max_iterations)}")
+    if getattr(budget, "deadline_ms", None) is not None:
+        parts.append(f"deadline_ms: {format_expr(budget.deadline_ms)}")
+    limits = getattr(budget, "limits", None)
+    if limits is not None:
+        parts.append(f"limits: {format_named_map(limits)}")
+    return "{ " + ", ".join(parts) + " }"
+
+
+def _format_step_map_clause(stmt) -> tuple[str, str]:
+    """Render `each VAR in SRC` and the `after` list for a step (#656).
+
+    Returns `(mapped, deps)`, both already prefixed with a space or empty.
+
+    The parser adds `each_source` to `deps` so the dependency cannot disagree
+    with the `in` clause (#480), so rendering `deps` naively printed a mapped
+    step as `after SRC` and dropped the loop variable — a file that still parsed
+    and silently produced a different result. `each_source` is therefore removed
+    from the `after` list here: it is being expressed by the `each` clause.
+
+    Shared by `WorkflowStep` and `GoalStep`, which had the same omission twice.
+    """
+    each_var = getattr(stmt, "each_var", None)
+    each_source = getattr(stmt, "each_source", None)
+    mapped = ""
+    deps = list(stmt.deps or [])
+    if each_var is not None and each_source is not None:
+        mapped = f" each {each_var} in {each_source}"
+        deps = [dep for dep in deps if dep != each_source]
+    return mapped, (" after " + ", ".join(deps)) if deps else ""
 
 
 def format_block(block: Block, indent: int, keep_trailing_comments: bool = False) -> list[str]:
