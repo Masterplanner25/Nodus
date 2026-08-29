@@ -21,6 +21,7 @@ from nodus.frontend.ast.ast_nodes import (
     DestructureLet,
     ExportFrom,
     ExprStmt,
+    ExternDecl,
     FnDef,
     FnExpr,
     For,
@@ -346,6 +347,18 @@ class _DocumentIndexer:
                 return scope[name]
         return None
 
+    def _extern_signature(self, stmt) -> str:
+        """#489: rendered like a `fn`, because that is what it is to a caller.
+
+        The only difference a reader needs is the leading keyword, which says the
+        host supplies the body.
+        """
+        params = []
+        for param in stmt.params:
+            params.append(f"{param.name}: {param.type_hint}" if param.type_hint else param.name)
+        suffix = f" -> {stmt.return_type}" if stmt.return_type else ""
+        return f"extern {stmt.name}({', '.join(params)}){suffix}"
+
     def _function_signature(self, stmt: FnDef) -> str:
         params = []
         for param in stmt.params:
@@ -387,6 +400,28 @@ class _DocumentIndexer:
 
     def _predeclare(self, stmts: list) -> None:
         for stmt in stmts:
+            if isinstance(stmt, ExternDecl):
+                # #489: the declaration is the only place a host function is
+                # visible to the editor, so indexing it is what turns hover,
+                # go-to-definition and completion on for names the host supplies
+                # -- which the issue lists as one of the things declarations
+                # unlock.
+                tok = getattr(stmt, "_tok", None)
+                line = tok.line if tok is not None else 1
+                col = _identifier_column(self.lines, line, stmt.name, (tok.col + 2) if tok is not None else 1)
+                signature = self._extern_signature(stmt)
+                self._add_definition(
+                    stmt.name, "function", line, col, signature,
+                    type_text="function", signature=signature,
+                )
+                self.type_env.bind(
+                    stmt.name,
+                    FunctionType(
+                        [_name_to_type(param.type_hint) for param in stmt.params],
+                        _name_to_type(stmt.return_type),
+                    ),
+                )
+                continue
             if isinstance(stmt, FnDef):
                 tok = getattr(stmt, "_tok", None)
                 line = tok.line if tok is not None else 1
@@ -444,6 +479,11 @@ class _DocumentIndexer:
             col = _identifier_column(self.lines, line, stmt.name, (tok.col + 3) if tok is not None else 1)
             type_text = stmt.type_hint or _type_to_text(_infer_expr_type(stmt.expr, self.type_env))
             self._add_definition(stmt.name, "variable", line, col, f"let {stmt.name}", type_text=type_text)
+            return
+
+        if isinstance(stmt, ExternDecl):
+            # Bound in `_predeclare`; the declaration holds no expressions and
+            # its parameter names are a signature rather than a scope.
             return
 
         if isinstance(stmt, FnDef):

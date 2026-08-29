@@ -17,6 +17,7 @@ from nodus.frontend.ast.ast_nodes import (
     Comment,
     CompoundAssign,
     ExprStmt,
+    ExternDecl,
     FnDef,
     FieldAssign,
     FnExpr,
@@ -191,6 +192,13 @@ class _SemanticAnalyzer:
                     self._mark_used(stmt.name)
             elif isinstance(stmt, FnDef):
                 self._bind(stmt.name, kind="function", tok=tok)
+            elif isinstance(stmt, ExternDecl):
+                # #489: a declared host function is a name this program legitimately
+                # calls, so it resolves like any other. Marked used on arrival --
+                # an extern exists to be supplied by the host, and reporting it as
+                # unused would fire on every correct declaration.
+                self._bind(stmt.name, kind="function", tok=tok)
+                self._mark_used(stmt.name)
             elif isinstance(stmt, (WorkflowDef, GoalDef)):
                 self._bind(stmt.name, kind="variable", tok=tok)
                 if getattr(stmt, "exported", False):

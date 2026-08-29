@@ -4,6 +4,43 @@
 
 ### Added
 
+- **#489: `extern` — a program can declare the host functions it requires.**
+
+  ```
+  extern delegate(who: string, task: string) -> string
+
+  fn main() {
+      print(delegate("researcher", "find it"))
+  }
+  ```
+
+  Two things followed from having no such declaration, and both are closed.
+  `nodus check` could not catch a typo in any program using host functions,
+  because it could not tell one from a name the host would supply — the same
+  `OK` for the correct program and the broken one. And a host could not verify a
+  program before running it; you found out when the call failed, partway through
+  a run that had already had effects.
+
+  Now: a file that declares **any** `extern` gets strict name resolution, so an
+  undeclared unknown name is reported as the typo it is. And `NodusRuntime`
+  refuses **before executing anything** when a program declares a host function
+  the runtime has not registered, naming it.
+
+  **Strictness is per file, so nothing already written changes.** A program with
+  no `extern` behaves exactly as before — an unknown free name still passes,
+  because rejecting it would reject every embedded program. That permissiveness
+  stays pinned by test as decided behaviour.
+
+  `extern` is **contextual**, so it remains usable as an identifier. An unknown
+  type name in a declaration is an **error** rather than #609's staged warning:
+  the surface is new, so nothing can already depend on a misspelling being
+  ignored. The declaration is also indexed by the LSP, so hover,
+  go-to-definition and completion now work for names the host supplies.
+
+  **`nodus-vscode` needs republishing** — `extern` is a new keyword, and
+  `nodus_gate --consumers` reports the extension stale until it ships a grammar
+  that highlights it. The grammar change is made; the publish is not.
+
 - **#493: `register_function` takes a schema, so a host function has a real
   contract.** A tool declared in Nodus had its arguments and return shape
   checked; a function registered from the host had **arity and nothing else** —

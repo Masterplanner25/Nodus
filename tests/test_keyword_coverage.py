@@ -35,6 +35,7 @@ from nodus.frontend.lexer import (  # noqa: E402
     ALL_KEYWORDS,
     CONTEXTUAL_KEYWORDS,
     EXPRESSION_KEYWORDS,
+    EXTERN_KEYWORDS,
     GOAL_KEYWORDS,
     STEP_GUARD_KEYWORDS,
     STEP_MAP_KEYWORDS,
@@ -91,7 +92,8 @@ class KeywordListTests(unittest.TestCase):
             | GOAL_KEYWORDS
             | STEP_GUARD_KEYWORDS
             | STEP_MAP_KEYWORDS
-            | WORKFLOW_BODY_KEYWORDS,
+            | WORKFLOW_BODY_KEYWORDS
+            | EXTERN_KEYWORDS,
             CONTEXTUAL_KEYWORDS,
         )
 

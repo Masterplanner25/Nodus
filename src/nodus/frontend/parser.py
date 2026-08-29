@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from nodus.runtime.diagnostics import LangSyntaxError
-from nodus.frontend.lexer import EXPRESSION_KEYWORDS, LOOP_CONTROL_KEYWORDS, STEP_MAP_KEYWORDS, Tok
+from nodus.frontend.lexer import EXPRESSION_KEYWORDS, EXTERN_KEYWORDS, LOOP_CONTROL_KEYWORDS, STEP_MAP_KEYWORDS, Tok
 from nodus.frontend.type_system import TYPE_NAMES, is_known_type_name, suggest_type_name
 from nodus.frontend.ast.ast_nodes import (
     Annotation,
@@ -21,6 +21,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExportList,
     ExportFrom,
     ExprStmt,
+    ExternDecl,
     FnDef,
     FnExpr,
     GoalBudget,
@@ -187,6 +188,7 @@ class Parser:
         self.last_token: Tok | None = None
         self.workflow_depth = 0
         self.workflow_step_depth = 0
+        self._block_depth = 0
         self.goal_depth = 0
         self._parse_depth = 0
         # #609. Every consumer builds its own Parser (`check_source`, the
@@ -286,6 +288,12 @@ class Parser:
 
     def stmt(self):
         self.skip_seps()
+
+        # #489: contextual, and matched from the lexer's set rather than a bare
+        # literal -- a word the parser recognises but `lexer.ALL_KEYWORDS` does
+        # not name ships unhighlighted, which is how `each` shipped (#480).
+        if self.at("ID") and self.peek().val in EXTERN_KEYWORDS and self.peek_ahead(1).kind == "ID":
+            return self.extern_decl()
 
         if self.at("EXPORT"):
             start = self.eat("EXPORT")
@@ -437,11 +445,18 @@ class Parser:
         stmts = []
         self.skip_seps()
 
-        while not self.at("}"):
-            if self.at("EOF"):
-                self.error("Unterminated block")
-            stmts.append(self.stmt())
-            self.skip_seps()
+        # #489: `extern` is a module-scope declaration, so the parser needs to
+        # know it is inside something. Counted rather than inferred from the
+        # statement list afterwards, so the error can name the right token.
+        self._block_depth += 1
+        try:
+            while not self.at("}"):
+                if self.at("EOF"):
+                    self.error("Unterminated block")
+                stmts.append(self.stmt())
+                self.skip_seps()
+        finally:
+            self._block_depth -= 1
 
         self.eat("}")
         return self.mark(Block(stmts), start)
@@ -915,6 +930,71 @@ class Parser:
                       each_var=each_var, each_source=each_source),
             start,
         )
+
+    def extern_decl(self):
+        """`extern NAME(param: type, ...) -> type` -- a host function this program needs (#489).
+
+        Types are optional per parameter and reuse `parse_type_name`, so the
+        vocabulary is the one #609 made sound rather than a second list. There is
+        no body: an extern is a *declaration*, and the host supplies the value.
+        """
+        start = self.eat("ID")  # `extern`
+        if self._block_depth > 0:
+            self.error(
+                "`extern` declares a host function this program requires, so it "
+                "belongs at the top of the file rather than inside a block",
+                start,
+            )
+        name = self.eat("ID").val
+        self.eat("(")
+        params = []
+        seen: set[str] = set()
+        if not self.at(")"):
+            while True:
+                param_tok = self.peek()
+                param_name = self.eat("ID").val
+                if param_name in seen:
+                    self.error(
+                        f"extern '{name}' declares parameter '{param_name}' twice",
+                        param_tok,
+                    )
+                seen.add(param_name)
+                type_hint = None
+                if self.at(":"):
+                    self.eat(":")
+                    type_hint = self._extern_type_name(name, param_name)
+                params.append(Param(param_name, type_hint))
+                if not self.at(","):
+                    break
+                self.eat(",")
+        self.eat(")")
+        return_type = None
+        if self.at("->"):
+            self.eat("->")
+            return_type = self._extern_type_name(name, "return")
+        return self.mark(ExternDecl(name, params, return_type), start)
+
+    def _extern_type_name(self, extern_name: str, slot: str) -> str:
+        """A type in an `extern`, checked as an **error** rather than a warning.
+
+        #609 stages an unrecognised annotation as a warning until 6.0.0, because
+        code already exists that a sudden error would break. `extern` is new, so
+        nothing can be relying on a misspelling being ignored -- the same reason
+        #479 made `returns:` an error on arrival. A type that silently meant
+        "any" would make the declaration inert, which is the shape this whole
+        cluster has been removing.
+        """
+        tok = self.peek()
+        declared = self.parse_type_name()
+        if not is_known_type_name(declared):
+            hint = suggest_type_name(declared)
+            suffix = f" -- did you mean '{hint}'?" if hint else "."
+            self.error(
+                f"extern '{extern_name}' names unknown type '{declared}' for "
+                f"{slot}{suffix} Known types: {', '.join(sorted(TYPE_NAMES))}.",
+                tok,
+            )
+        return declared
 
     def parse_workflow_options(self):
         options = self.parse_named_map_literal(

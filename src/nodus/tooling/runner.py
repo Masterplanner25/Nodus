@@ -510,6 +510,21 @@ def check_source(
                 stage="check", filename=filename, stdout="", stderr="",
                 err=cycle_err, code=code,
             )
+        # #489: a file that declares a host surface opts into strict name
+        # resolution. Undeclared *and* unregistered is unambiguously a typo once
+        # the program has said what it expects, so the permissiveness that
+        # protected every embedded program is no longer needed for this file.
+        #
+        # Per-file, so nothing already written changes -- and it reuses the
+        # diagnostics engine rather than resolving names a second time here. Two
+        # resolvers is how `nodus check` and the editor came to disagree in the
+        # first place.
+        extern_err = _first_undeclared_name(ast, code, filename)
+        if extern_err is not None:
+            return _error_result(
+                stage="check", filename=filename, stdout="", stderr="",
+                err=extern_err, code=code,
+            )
         result = _success_result(stage="check", filename=filename, stdout="", stderr="")
         # Warnings, not failures, until 6.0.0 (#609). `ok` stays True so a
         # project that checks clean today keeps its exit code.
@@ -521,6 +536,43 @@ def check_source(
     except Exception as err:
         stage = _compile_stage(err)
         return _error_result(stage=stage, filename=filename, stdout="", stderr="", err=err, code=code)
+
+
+def _first_undeclared_name(ast, code: str, filename: str | None):
+    """Strict name resolution, but only for a file that declares an extern (#489).
+
+    Returns a `LangSyntaxError` for the first undefined name, or None.
+
+    A program with no `extern` keeps the old behaviour exactly: an unknown free
+    call may be a host-registered function, and rejecting it would reject every
+    embedded program written before declarations existed. Declaring even one
+    extern says "this is the host surface I use", which makes the remaining
+    unknowns typos.
+    """
+    from nodus.frontend.ast.ast_nodes import ExternDecl
+
+    if not any(isinstance(stmt, ExternDecl) for stmt in ast):
+        return None
+    from nodus.tooling.diagnostics import ERROR_SEVERITY, WorkspaceDiagnosticEngine
+
+    try:
+        analysis = WorkspaceDiagnosticEngine().analyze(filename or "<memory>", source=code)
+    except Exception:
+        # A diagnostics failure must not turn a checkable program into a failing
+        # one; the compile above is still the authority on whether it is valid.
+        return None
+    for diagnostics in analysis.diagnostics_by_file.values():
+        for diagnostic in diagnostics:
+            message = getattr(diagnostic, "message", "")
+            if diagnostic.severity == ERROR_SEVERITY and message.startswith("Undefined variable: "):
+                return LangSyntaxError(
+                    f"{message} — this file declares an `extern`, so every name it "
+                    f"calls must be declared, defined or built in. Add "
+                    f"`extern {message.split(': ', 1)[1]}(...)` if the host supplies it.",
+                    line=getattr(diagnostic, "line", 0) or 0,
+                    col=getattr(diagnostic, "column", 0) or 0,
+                )
+    return None
 
 
 def _first_workflow_cycle(ast) -> "LangSyntaxError | None":

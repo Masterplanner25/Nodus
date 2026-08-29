@@ -65,9 +65,15 @@ class CheckEntersStepBodiesTests(unittest.TestCase):
 
     def test_check_still_accepts_unknown_host_shaped_calls(self):
         """The deliberate permissiveness, pinned as decided: an unknown free
-        name may be a host-registered function, and until a program can
-        declare its host surface (#489) rejecting it would reject every
-        embedded program. This is the half of the issue that stays open."""
+        name may be a host-registered function, and rejecting it outright would
+        reject every embedded program written before declarations existed.
+
+        **#489 shipped and this test did not flip**, contrary to the plan
+        recorded on that issue. Strictness is opt-in *per file*: a program that
+        declares an `extern` gets its unknown names reported, and this program
+        declares none. So this is now the control proving an undeclared file is
+        untouched, rather than a decision awaiting reversal. The strict half
+        lives in `test_extern_declarations.py`."""
         result = check_source(
             "workflow w { step a { return maybe_a_host_function(1i) } }\n",
             filename="t.nd",

@@ -15,6 +15,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExportList,
     ExprStmt,
     FieldAssign,
+    ExternDecl,
     FnDef,
     FnExpr,
     For,
@@ -208,6 +209,15 @@ def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list
             return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
         lines.append(f"{prefix}return {format_expr(stmt.expr)}")
         return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+
+    if isinstance(stmt, ExternDecl):
+        # #489: a declaration, so it has no body and prints on one line. The
+        # parameter and return-type rendering is shared with FnDef below, so the
+        # two cannot drift into printing a signature differently.
+        param_text = ", ".join(format_param(param) for param in stmt.params)
+        return_text = f" -> {stmt.return_type}" if stmt.return_type else ""
+        header = f"{prefix}extern {stmt.name}({param_text}){return_text}"
+        return lines + [header] + trailing_lines(prefix, trailing)
 
     if isinstance(stmt, FnDef):
         param_text = ", ".join(format_param(param) for param in stmt.params)
