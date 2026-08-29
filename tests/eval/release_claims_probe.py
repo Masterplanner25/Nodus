@@ -1635,6 +1635,64 @@ def probe_no_stale_5_6_current(repo: Path):
 
 
 
+@probe("5.7.1: a step body may read its dependencies, including under `extern`")
+def probe_step_deps_are_bound():
+    """The 5.7.0 regression, and the analyzer defect under it (#662).
+
+    Deliberately exercises the *pair*: a file that declares an `extern` AND
+    reads a dependency by name. Neither feature was broken alone, which is why
+    5.7.0's 71 probes were green -- the compensation probes declared no extern
+    and the extern probes read no dependency. Stage 5 found it by running both
+    together as a user would.
+    """
+    from nodus.tooling.diagnostics import WorkspaceDiagnosticEngine
+    from nodus.tooling.runner import check_source
+
+    def undefined(source):
+        result = WorkspaceDiagnosticEngine().analyze("m.nd", source=source)
+        return [
+            d.message
+            for diags in result.diagnostics_by_file.values()
+            for d in diags
+            if "Undefined" in d.message
+        ]
+
+    # All three binding forms, none of which should be flagged.
+    assert undefined(
+        "workflow w { step a { return 1i } step b after a { return a } }"
+    ) == [], "an `after`-bound dependency is reported undefined"
+    assert undefined(
+        "workflow w { step d { return [1i] } step r each p in d { return p } }"
+    ) == [], "an `each` loop variable is reported undefined"
+    assert undefined(
+        "workflow w { step a { return 1i } "
+        'step s after a { throw "x" } '
+        "step u compensates a { return a } }"
+    ) == [], "a compensated step's name is reported undefined"
+
+    # And the analyzer is not simply permissive now.
+    assert undefined(
+        "workflow w { step a { return 1i } step b after a { return nope } }"
+    ) == ["Undefined variable: nope"], "a genuine typo stopped being reported"
+
+    # The pair: strict mode plus a dependency read. This is what 5.7.0 rejected.
+    source = (
+        "extern notify(who: string) -> string\n"
+        "workflow saga {\n"
+        '    step reserve { return "res-1" }\n'
+        '    step ship after reserve { throw "carrier down" }\n'
+        '    step release compensates reserve { return "released \\(reserve)" }\n'
+        "}\n"
+        'fn main() { print(notify("x")) }\n'
+    )
+    result = check_source(source, filename="saga.nd")
+    assert result["ok"], (
+        "nodus check rejected a correct program that declares an extern and "
+        "reads a dependency: " + str(result.get("error"))
+    )
+    return "after/each/compensates bind; typos still caught; strict mode accepts a dep read"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -1789,6 +1847,9 @@ def main() -> int:
     probe_fmt_keeps_budget_limits()
     probe_new_keywords_named()
     probe_no_stale_5_6_current(args.repo)
+
+    # --- 5.7.1 ---------------------------------------------------------------
+    probe_step_deps_are_bound()
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
