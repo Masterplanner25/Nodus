@@ -402,7 +402,7 @@ STORE x
 - Category: collections / module construction
 - Stack behavior: pops `count` key/value pairs, pushes a Record with `kind="module"`
 - Operands: field count (int)
-- Emitted by compiler: yes (module object construction in the module loader pipeline)
+- Emitted by compiler: **in principle only — measured never** (see below)
 - Purpose: construct a runtime module record that exposes named exports
 - Notes / edge cases:
   - Keys must be strings; non-string keys raise a runtime type error.
@@ -410,6 +410,19 @@ STORE x
     to use module-export semantics rather than plain record-field semantics.
   - Not the same as importing a module: this opcode constructs the module value that
     the module loader stores and makes available to importers.
+  - **It is the one opcode of the frozen 49 that nothing executes (#412).** The
+    execution census — every dispatch entry counted across the full suite,
+    **895,076 executions** — records 48 of 49 opcodes running and this one at
+    **zero**. Not a coverage gap in the ordinary sense: it is not *emitted*
+    either. Its single emit site is `compiler.py`'s `ModuleAlias` case, and
+    `ModuleAlias` is constructed only by `tooling/loader.py`, which the runtime's
+    `runtime/module_loader.py` superseded. Checked rather than inferred: an
+    aliased `std:` import, an aliased local-file import, `run_source` and
+    `run_file` all execute it zero times, and it does not appear in the
+    disassembly of an aliased import at all.
+  - Left in place rather than removed: the instruction set is **frozen**, and
+    removing an opcode is a bytecode-format change. What is corrected here is the
+    documentation, which claimed it is emitted.
 
 ### INDEX
 - Category: collections
