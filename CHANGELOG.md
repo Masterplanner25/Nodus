@@ -230,6 +230,38 @@
 
 ### Fixes
 
+- **#656: `nodus fmt` rewrote a mapped step's `each` clause as `after`, silently
+  changing what the program does.** `each` shipped in 5.6.0 (#480); the formatter
+  was never taught it, and the parser adds `each_source` to `deps` so the
+  dependency cannot disagree with the `in` clause — so a mapped step printed as
+  `after SRC` with the loop variable dropped. The result still parsed and still
+  ran:
+
+  ```
+  original    ok=True   {"discover": [1, 2], "render": [10, 20]}
+  after fmt   ok=True   {"discover": [1, 2]}
+  ```
+
+  Both report success; the mapped step simply disappears from the results. CI
+  runs `fmt --check` over every `.nd` file, so any committed workflow using
+  `each` was one format away from this.
+
+- **#657: `nodus fmt` crashed on a single-dimension goal budget, and silently
+  dropped `limits`.** #488 made `max_iterations` and `deadline_ms` individually
+  optional and added `limits`; the formatter still printed both unconditionally
+  and never read `limits`. `budget { max_iterations: 3i }` raised
+  `Unknown expr node: None`, and a goal bounded by host meters was reformatted
+  into one without that bound — the silent half, and the reason this is not
+  merely a crash fix.
+
+- **The formatter is now checked field by field, not node by node.**
+  `test_formatter_completeness.py` fails when a node *type* has no formatter
+  case, which is why both bugs above were invisible: `WorkflowStep` and
+  `GoalPursuit` were "handled", and the new *fields* were not. The new
+  round-trip property test parses a corpus, formats it, re-parses, and compares
+  the ASTs structurally — so a field the formatter does not render fails the
+  suite instead of corrupting a file. It found #657 on its first run.
+
 - **#629: `source_drift` was blind to a resume driven from a different file.**
   The check compared the recorded source against the file at the *recorded
   path*, so it only ever noticed an edit to the file that created the run. A
