@@ -1,19 +1,27 @@
 """`nodus completion <shell>` -- scripts generated from the command table.
 
-Coverage note, stated plainly (tracked in **#536**):
+Coverage, stated plainly (#536):
 
-    bash        syntax + behaviour, in this suite
-    powershell  syntax + behaviour, BY HAND ONLY -- not asserted here
-    zsh         structure and quoting only
-    fish        structure and quoting only
+    bash        structure + syntax + completes candidates
+    fish        structure + loads + completes candidates
+    powershell  structure + syntax + completes candidates
+    zsh         structure + syntax + loads and defines the completer
 
-`zsh` and `fish` are not installed on the development or CI machines. The
-structural assertions catch the failure that actually bites -- an unescaped
-separator in a summary containing `(`, `)` or `|` -- but nothing here proves
-either script loads. And because the only execution class is guarded on `bash`,
-a machine without it verifies nothing executable at all.
+Every execution class is guarded on the shell being present, so this file still
+passes on a machine with none of them — the structural assertions are what runs
+there, and they are not redundant: they catch the failure that actually bites,
+an unescaped separator in a summary containing `(`, `)` or `|`, on all four
+shells at once. **Do not delete them when adding execution coverage.**
 
-Saying so is better than implying four equally verified shells.
+CI installs `zsh` and `fish` (see `.github/workflows/ci.yml`) so their classes
+run there; a developer box without them skips those and keeps the rest.
+
+One gap remains and is deliberate: **zsh is not driven through an actual
+completion.** It has no non-interactive entry point comparable to fish's
+`complete -C`, and doing it properly needs a `zpty` harness — a large amount of
+fragile machinery for one assertion. What is asserted instead is that the script
+loads under a real `compinit` and defines `_nodus`, which is what a `compdef`
+arity error or an unbalanced `_arguments` would break.
 """
 
 from __future__ import annotations
@@ -182,6 +190,181 @@ class BashExecutionTests(unittest.TestCase):
         result = self._bash(["-s"], driver)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("dead-letters", result.stdout)
+
+
+@unittest.skipIf(shutil.which("zsh") is None, "zsh not available")
+class ZshExecutionTests(unittest.TestCase):
+    """zsh loads the script and defines the completer (#536).
+
+    Sourcing alone is not enough to prove much, but it is not nothing: the file
+    ends with `compdef _nodus nodus`, which fails outright unless the completion
+    system is initialised — so this exercises `compinit` + the real `#compdef`
+    header, and a `compdef` arity error or an unbalanced `_arguments` cannot pass.
+
+    **Driving an actual completion is deliberately not attempted.** zsh has no
+    non-interactive completion entry point comparable to fish's `complete -C`;
+    doing it properly needs a pty harness (`zpty`), which is a large amount of
+    fragile machinery for one assertion. Stated rather than silently skipped, so
+    the coverage table above stays honest.
+    """
+
+    def _zsh(self, body: str):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            script = root / "_nodus"
+            script.write_text(generate("zsh"), encoding="utf-8")
+            return subprocess.run(
+                ["zsh", "-c", body.format(script=script, dump=root / "zcompdump")],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+    def test_zsh_script_is_valid_syntax(self):
+        result = self._zsh("zsh -n {script}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_zsh_loads_and_defines_the_completer(self):
+        result = self._zsh(
+            "autoload -Uz compinit && compinit -u -d {dump} && "
+            "source {script} && "
+            "typeset -f _nodus >/dev/null && echo DEFINED"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("DEFINED", result.stdout)
+
+
+@unittest.skipIf(shutil.which("fish") is None, "fish not available")
+class FishExecutionTests(unittest.TestCase):
+    """fish loads the script and completes from it (#536).
+
+    fish is the one non-bash shell with a clean non-interactive completion
+    entry point — `complete -C <line>` returns exactly what a Tab press would —
+    so this asserts on candidates rather than on loading.
+    """
+
+    def _fish(self, body: str):
+        with tempfile.TemporaryDirectory() as td:
+            script = Path(td) / "nodus.fish"
+            script.write_text(generate("fish"), encoding="utf-8")
+            return subprocess.run(
+                ["fish", "-c", body.format(script=script)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+    def _candidates(self, line: str) -> list[str]:
+        result = self._fish("source {script}; complete -C '" + line + "'")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # `complete -C` prints "candidate<TAB>description".
+        return [row.split("\t", 1)[0].strip() for row in result.stdout.splitlines() if row.strip()]
+
+    def test_fish_script_loads(self):
+        result = self._fish("source {script}; echo LOADED")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("LOADED", result.stdout)
+
+    def test_fish_completes_a_command_prefix(self):
+        candidates = self._candidates("nodus wo")
+        self.assertIn("workflow", candidates)
+        self.assertIn("worker", candidates)
+
+    def test_fish_completes_a_subcommand(self):
+        self.assertIn("dead-letters", self._candidates("nodus workflow dead"))
+
+
+def _powershell() -> str | None:
+    """pwsh if present, else Windows PowerShell. Either can host the completer."""
+    return shutil.which("pwsh") or shutil.which("powershell")
+
+
+#: Parses the generated script, then optionally drives one completion through
+#: `TabExpansion2` — the entry point PowerShell itself uses for a Tab press, so
+#: this exercises the same path a user does rather than invoking the registered
+#: script block directly.
+_PS_DRIVER = r"""
+param([string]$ScriptPath, [string]$Line)
+$errors = $null
+$tokens = $null
+$null = [System.Management.Automation.Language.Parser]::ParseFile(
+    $ScriptPath, [ref]$tokens, [ref]$errors)
+if ($errors -and $errors.Count -gt 0) {
+    Write-Output "PARSE_ERRORS=$($errors.Count)"
+    foreach ($e in $errors) { Write-Output "  $($e.Message)" }
+    exit 1
+}
+Write-Output 'PARSE_OK'
+if (-not $Line) { exit 0 }
+. $ScriptPath
+$res = TabExpansion2 -inputScript $Line -cursorColumn $Line.Length
+foreach ($m in $res.CompletionMatches) { Write-Output "M:$($m.CompletionText)" }
+"""
+
+
+@unittest.skipIf(_powershell() is None, "no powershell available")
+class PowerShellExecutionTests(unittest.TestCase):
+    """Syntax and behaviour for the PowerShell script (#536).
+
+    This verification existed before — done by hand during #534 and written down
+    nowhere — so it did not survive the session that produced it. A hand-run
+    check is not coverage. It also closes the hole where a machine without
+    `bash` ran no executable check at all, since that was the only such class.
+    """
+
+    def _complete(self, line: str | None):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            completion = root / "nodus_completion.ps1"
+            driver = root / "driver.ps1"
+            # utf-8-sig: Windows PowerShell 5.1 reads a BOM-less UTF-8 file as
+            # the ANSI code page, so a non-ASCII character in a command summary
+            # would be mangled before the parser ever saw it — and the test
+            # would blame the emitter.
+            completion.write_text(generate("powershell"), encoding="utf-8-sig")
+            driver.write_text(_PS_DRIVER, encoding="utf-8-sig")
+            args = [
+                _powershell(),
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy", "Bypass",
+                "-File", str(driver),
+                "-ScriptPath", str(completion),
+            ]
+            if line is not None:
+                args += ["-Line", line]
+            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+
+    def _matches(self, line: str) -> list[str]:
+        result = self._complete(line)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return [
+            row[2:].strip()
+            for row in result.stdout.splitlines()
+            if row.startswith("M:")
+        ]
+
+    def test_powershell_script_is_valid_syntax(self):
+        result = self._complete(None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PARSE_OK", result.stdout)
+
+    def test_powershell_completes_a_command_prefix(self):
+        matches = self._matches("nodus wo")
+        self.assertIn("workflow", matches)
+        self.assertIn("worker", matches)
+
+    def test_powershell_completes_a_subcommand(self):
+        self.assertIn("dead-letters", self._matches("nodus workflow dead"))
+
+    def test_powershell_completes_a_flag(self):
+        self.assertIn("--format", self._matches("nodus graph --for"))
+
+    def test_powershell_offers_no_hidden_command(self):
+        """The emitter filters hidden commands; prove it survives to the shell."""
+        matches = self._matches("nodus ")
+        for entry in HIDDEN:
+            self.assertNotIn(entry.name, matches)
 
 
 class CliTests(unittest.TestCase):

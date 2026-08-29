@@ -29,6 +29,31 @@
 
 ### Tooling
 
+- **#536: the shell-completion scripts are executed, not just inspected.** Of
+  the four shells `nodus completion` emits, only bash was exercised in the
+  suite. PowerShell had been checked **by hand** during #534 and written down
+  nowhere, so it did not survive that session; zsh and fish had structural and
+  quoting assertions only, which cannot tell whether a script loads. A `compdef`
+  arity error or a bad `__fish_*` predicate would have shipped green.
+
+  Now: PowerShell is parsed with the parser API and driven through
+  `TabExpansion2` (the entry point a Tab press uses); fish is loaded and driven
+  through `complete -C`; zsh is syntax-checked and loaded under a real
+  `compinit`, proving it defines `_nodus`. CI installs zsh and fish so those
+  classes actually run — each is guarded on its shell being present, so without
+  the install they would skip in silence, which is the failure mode #536 is
+  about. The structural assertions are kept: they are what runs on a machine
+  with no shells, and they cover all four at once.
+
+  One gap remains, deliberately: **zsh is not driven through a real completion.**
+  It has no non-interactive entry point comparable to `complete -C`, and doing it
+  properly needs a `zpty` harness. The coverage table in the test module says so
+  rather than implying four equally verified shells.
+
+- **The coverage job stopped skipping the scheduler-fairness tests.** They were
+  deselected because they were flaky; #631 fixed that, so the deselection was
+  hiding the tests it was added for.
+
 - **#631: the scheduler-fairness tests measured the machine, not fairness.**
   Both tests in `tests/test_scheduler_fairness.py` ran under the default 200 ms
   `EXECUTION_TIMEOUT_MS`, which is wall clock and counts time a coroutine did not
