@@ -400,8 +400,15 @@ def _wait_payload_schema_error(record, resume_payload) -> str | None:
     Uses the runtime schema dialect shared with `std:tool` and
     `register_function`, so a payload failure is worded the way those are.
     """
+    # Narrowed with an explicit `is None` rather than folded into a conditional
+    # expression: mypy cannot narrow through `getattr`, and `wait.event_type`
+    # below is used after the branch. That is the trap CLAUDE.md records — a
+    # condition extracted into a helper drops the narrowing, ruff stays clean,
+    # and CI fails on the type check.
     wait = getattr(record, "wait", None)
-    schema = getattr(wait, "schema", None) if wait is not None else None
+    if wait is None:
+        return None
+    schema = getattr(wait, "schema", None)
     if not schema:
         return None
     from nodus.runtime.schema_contract import validate_args
