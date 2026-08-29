@@ -1293,6 +1293,64 @@ A step that merely *records* a fresh value is fine. The hazard is a step that
 
 ---
 
+## 8.1 Compensation — undoing work when a run fails
+
+`run_workflow` returns rather than throwing on failure, so the caller keeps the
+result. What it could not do until 5.7.0 is say what should be **undone**: a
+reservation made, a card charged, a lock taken — work that already succeeded when
+a later step failed.
+
+A step can now declare the handler that undoes it:
+
+```nd
+workflow saga {
+    step reserve { return "res-1" }
+    step charge after reserve { return "ch-1" }
+    step ship after charge { throw "carrier down" }
+
+    step release compensates reserve { return "released \(reserve)" }
+    step refund compensates charge { return "refunded \(charge)" }
+}
+```
+
+When the run ends failed, each completed step's handler runs in **reverse
+completion order** — the work that finished last is undone first:
+
+```
+compensation=[{"step": "refund", "of": "charge", "result": "refunded ch-1", "status": "completed"},
+              {"step": "release", "of": "reserve", "result": "released res-1", "status": "completed"}]
+```
+
+The compensated step's value is bound by its own name inside the handler, exactly
+as `after` binds a dependency — `refund` reads `charge` and gets `"ch-1"`.
+
+**A handler is not part of the forward graph.** It never runs in the forward
+pass, and never appears in `steps`, `statuses` or `failed`. Because that is
+derivable from the declaration, `plan_workflow` shows it before anything runs.
+
+What is refused at declaration, because each could only be inert or ambiguous: a
+handler with `after` (there is nothing in the forward graph for it to wait on),
+with `each` (it inherits the fan-out of the step it compensates), with `when`
+(its trigger is the run ending failed), and a step compensating itself.
+
+Four behaviours worth knowing:
+
+- **A tolerated failure does not unwind.** `allow_failure` means the run
+  *completes*, and a completed run has nothing to undo. Use `on: ["failed"]` to
+  react to the tolerated step instead.
+- **A failing handler is recorded and does not cascade.** It reports
+  `"status": "failed"` with its error and does not change the run's verdict,
+  which is already `failed`.
+- **A compensated run is terminal.** Resuming it is refused: its completed work
+  has been undone, and a resume *re-executes* (see *What a replayed step
+  observes* above), so it would run those steps again against a remote that has
+  already been refunded.
+- **Ends no step caused** — budget exhaustion, cancellation — reach the caller
+  with the result map rather than triggering compensation. That is what
+  `run_workflow` returning instead of throwing is for.
+
+---
+
 ## 9. Common patterns
 
 **Fan-out / fan-in:** One setup step, parallel processors, one aggregator.

@@ -188,6 +188,18 @@ class WorkflowStep(Base):
     # `each item in plan` implies `after plan`; the parser adds the dependency.
     each_var: str | None = None
     each_source: str | None = None
+    # `step refund compensates charge { ... }` -- the undo path for work that
+    # already succeeded when a run ends failed (#577).
+    #
+    # Declared on the *handler*, not on the step it undoes: the handler reads
+    # locally as what it is, the pair is named once rather than in two places
+    # that can disagree, and the compensated step's value binds by the rule
+    # `after` already uses.
+    #
+    # A step carrying this is **excluded from the forward graph** -- reachable
+    # only as a handler -- which is derivable at declaration, so `plan_workflow`
+    # can show it before anything runs.
+    compensates: str | None = None
 
 
 @dataclass
@@ -243,6 +255,18 @@ class GoalStep(Base):
     # `each item in plan` implies `after plan`; the parser adds the dependency.
     each_var: str | None = None
     each_source: str | None = None
+    # `step refund compensates charge { ... }` -- the undo path for work that
+    # already succeeded when a run ends failed (#577).
+    #
+    # Declared on the *handler*, not on the step it undoes: the handler reads
+    # locally as what it is, the pair is named once rather than in two places
+    # that can disagree, and the compensated step's value binds by the rule
+    # `after` already uses.
+    #
+    # A step carrying this is **excluded from the forward graph** -- reachable
+    # only as a handler -- which is derivable at declaration, so `plan_workflow`
+    # can show it before anything runs.
+    compensates: str | None = None
 
 
 @dataclass

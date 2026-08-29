@@ -4,6 +4,47 @@
 
 ### Added
 
+- **#577: `compensates` — a declared undo path for work that already succeeded.**
+
+  ```
+  workflow saga {
+      step reserve { return "res-1" }
+      step charge after reserve { return "ch-1" }
+      step ship after charge { throw "carrier down" }
+
+      step release compensates reserve { cancel(reserve) }
+      step refund  compensates charge  { refund_card(charge) }
+  }
+  ```
+
+  When the run ends failed, each completed step's handler runs in **reverse
+  completion order** and reports under a new `compensation` key — a list in
+  execution order, since the ordering is the semantics.
+
+  The declaration is on the **handler**, not the forward step, so it reads
+  locally as what it is and the pair is named once. The compensated step's value
+  binds by the rule `after` already uses, so `refund` reads `charge` to get
+  `"ch-1"`. A handler is **excluded from the forward graph** — it never appears
+  in `steps`, `statuses` or `failed`, which keeps `TASK_STATUSES` closed.
+
+  **Reverse completion order comes from a recorded counter, not the clock.**
+  `TaskNode` gains `completion_seq`, assigned where completion is already
+  serialized. `finished_at` is `time.monotonic()`, which ticks at ~15.6 ms — a
+  strict causal chain stamps `265, 265, 281, 297, 297`, two ties in a sequence
+  with no ambiguity, and sorting by it would refund before uncharging.
+
+  Sub-behaviours, each pinned: a **tolerated** failure does not unwind
+  (`allow_failure` completes the run); a **failing handler** is recorded and does
+  not cascade or change the verdict; a **compensated run is terminal** and a
+  resume is refused naming that, because a resume re-executes (#494) and would
+  re-run steps against a remote already refunded.
+
+  Refused at declaration: `after`, `each` or `when` on a handler, and a step
+  compensating itself.
+
+  **`nodus-vscode` needs republishing** — `compensates` is a new keyword, as is
+  `extern` (#489). One republish covers both.
+
 - **#472: `workflow_wait` can declare the shape of the payload a resume must
   deliver.**
 
