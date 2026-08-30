@@ -30,10 +30,10 @@ let inc = fn() {
 }
 ```
 
-Assigning to a **module-top-level** `let` from inside a function or closure creates a
-frame-local and silently leaves the top-level value unchanged (#671). A `let` declared
-*inside* a function can be captured and mutated normally — the map pattern is only needed
-for state shared across functions at module scope.
+Assigning to a **module-top-level** `let` from inside a function or closure created a
+frame-local and silently left the top-level value unchanged through 5.7.1 (#671, fixed
+after). A `let` declared *inside* a function was always captured and mutated normally —
+the map pattern is only needed on 5.7.1 and earlier, and only at module scope.
 
 ## Printing values
 

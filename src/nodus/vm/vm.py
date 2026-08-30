@@ -763,20 +763,45 @@ class VM:
             f'calls register_function("{name}", ...), or remove the declaration.'
         )
 
-    def store_name(self, name: str, value):
+    def binding_namespace(self, name: str) -> dict | None:
+        """The mutable namespace that currently binds `name`, or None (#671).
+
+        One rule, so `load_name` and `store_name` cannot answer *where does this
+        name live* differently. They used to: `load_name` walked
+        `locals -> module_globals -> functions -> host_globals`, `store_name`
+        stopped at `locals`. So a function assigning a module-top-level `let`
+        had its write captured by whatever frame happened to be on the stack,
+        and the global silently kept its old value.
+
+        Only the two **writable** namespaces are here. `functions` and
+        `host_globals` are readable sources a program may not assign through, so
+        they stay in `load_name` alone — the asymmetry that remains is
+        deliberate, and `tests/test_name_resolution_agreement.py` pins exactly
+        that boundary rather than requiring the two to be identical.
+        """
         locals_ = self.current_locals()
-        if locals_ is not None:
-            if name in locals_ and isinstance(locals_[name], Cell):
-                locals_[name].value = value
-            elif name in locals_ and isinstance(locals_[name], LiveBinding):
-                locals_[name].set(value)
-            else:
-                locals_[name] = value
+        if locals_ is not None and name in locals_:
+            return locals_
+        if name in self.module_globals:
+            return self.module_globals
+        return None
+
+    def store_name(self, name: str, value):
+        target = self.binding_namespace(name)
+        if target is None:
+            # Unbound: define it where execution currently is. Inside a frame
+            # that is a new local; at module level it is a new global.
+            locals_ = self.current_locals()
+            target = self.module_globals if locals_ is None else locals_
+            target[name] = value
+            return value
+        existing = target[name]
+        if isinstance(existing, Cell):
+            existing.value = value
+        elif isinstance(existing, LiveBinding):
+            cast("LiveBinding", existing).set(value)
         else:
-            if name in self.module_globals and isinstance(self.module_globals[name], LiveBinding):
-                cast("LiveBinding", self.module_globals[name]).set(value)
-            else:
-                self.module_globals[name] = value
+            target[name] = value
         return value
 
     def load_upvalue(self, index: int):

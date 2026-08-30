@@ -212,6 +212,22 @@ class SymbolTable:
     def _resolve_upvalue_in(self, func_scope: Scope, name: str) -> Symbol | None:
         enclosing = self._enclosing_function_scope(func_scope)
         if enclosing is None:
+            # A function declared at module level has no enclosing *function*
+            # scope, but it still has enclosing scopes -- the module's. Bailing
+            # here meant a module-level `let` was invisible from a top-level
+            # function, so `Assign` fell through to `symbols.define(name)` and
+            # created a local: the write went to a frame slot and the global
+            # never changed (#671).
+            #
+            # Globals are read and written directly rather than through upvalue
+            # indirection, which is exactly what the `scope == "global"` branch
+            # below already does -- it was simply unreachable from here.
+            scope = func_scope.parent
+            while scope:
+                symbol = scope.symbols.get(name)
+                if symbol is not None and symbol.scope == "global":
+                    return symbol
+                scope = scope.parent
             return None
 
         scope = func_scope.parent

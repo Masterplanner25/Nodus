@@ -120,13 +120,14 @@ coroutine all work:
 fn make_counter() { let n = 0i; return fn() { n = n + 1i; return n } }
 ```
 
-What silently fails is a `let` at **module top level** assigned from inside any function
-or closure ([#671](https://github.com/Masterplanner25/Nodus/issues/671)). The function
-gets its own frame slot and writes there; the top-level value never changes, and there is
-no error. If the right-hand side also reads the variable it reads `nil`, producing
-`Cannot add nil and int` — a message that names arithmetic, not scoping.
+A `let` at **module top level** assigned from inside a function or closure was broken
+**through 5.7.1** ([#671](https://github.com/Masterplanner25/Nodus/issues/671)): the
+function got its own frame slot and wrote there, the top-level value never changed, and
+there was no error. If the right-hand side also read the variable it read `nil`,
+producing `Cannot add nil and int` — a message naming arithmetic, not scoping.
 
-Use a **map with quoted keys** for state shared across functions at module scope:
+**Fixed after 5.7.1.** On 5.7.1 and earlier, use a **map with quoted keys** for state
+shared across functions at module scope:
 
 ```nd
 // ❌ Silent no-op — top-level count is never updated
@@ -510,7 +511,7 @@ at any tag-dispatch site.
 | Arithmetic | `+`, `-`, `*`, `/`, `%` | `/` always yields float |
 | Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` | cross-type (1i == 1) works |
 | Logical | `&&`, `\|\|`, `!` | short-circuit |
-| Compound assign | `+=`, `-=`, `*=`, `/=` | v4.0.1+; works on a function-scoped outer `let`, silently no-ops on a module-top-level one (#671) |
+| Compound assign | `+=`, `-=`, `*=`, `/=` | v4.0.1+; on a module-top-level `let` it silently no-opped through 5.7.1 (#671, fixed after) |
 | Missing | `**`, `&`, `\|`, `^`, `<<`, `>>` | use `math.pow()`, `math.bit_and()`, `math.bit_lshift()`, … |
 
 ---
@@ -683,8 +684,9 @@ count = count + 1i // long form — always worked
 
 **Note:** `**` (power) still does not exist — use `math.pow(x, n)`.
 Closure scope is the catch: `count += 1i` inside a closure where `count` is an
-module-top-level `let` still silently creates a frame-local (#671); a function-scoped
-one works. Use the map pattern for state shared across functions at module scope.
+module-top-level `let` silently created a frame-local through 5.7.1 (#671, fixed
+after); a function-scoped one always worked. On 5.7.1 and earlier use the map pattern
+for state shared across functions at module scope.
 
 ---
 
@@ -699,8 +701,8 @@ def increment():
 ```
 
 ```nd
-// ❌ Nodus — a MODULE-TOP-LEVEL let is not updated from inside a function (#671)
-// (a let declared inside a function does not have this problem)
+// ❌ Nodus through 5.7.1 — a MODULE-TOP-LEVEL let is not updated from inside a
+// function (#671, fixed after). A let declared inside a function always worked.
 let count = 0i
 let inc = fn() {
     count = count + 1i   // count reads as nil inside closure
@@ -1511,10 +1513,11 @@ and is therefore in `result["failed"]`, not `result["steps"]`.
 ---
 
 ### `Cannot add nil and int` (or any type with nil)
-**Context:** Usually a function or closure assigning a **module-top-level** `let` (#671).
+**Context:** On 5.7.1 and earlier, usually a function or closure assigning a
+**module-top-level** `let` (#671, fixed after).
 **Meaning:** The function created a frame-local of that name, which starts as `nil`. A
-`let` declared *inside* a function does not do this — check the scope before reaching for
-the workaround.
+`let` declared *inside* a function never did this — check the scope, and the version,
+before reaching for the workaround.
 The arithmetic then fails because `nil + int` is invalid.
 **Fix class:** CLOSURE-MAP-PATTERN
 ```nd
