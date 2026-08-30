@@ -298,10 +298,25 @@ Separable from §5.1 and, for an embedder, the more valuable half.
 > literal collection being a strict *subset* of another, and these were equal.
 > A real hole in the detector, recorded here rather than fixed.
 >
-> Still unbuilt from this section: §7.1's in-flight unwinding — cancelling a run
-> marks it and stops dispatch, but does not yet reach into a step coroutine that
-> is already running. The verb it needs (`cancel(t)`) now exists, so that is a
-> wiring job rather than a design one.
+> **§7.1 is built too.** `schedule_ready` asks at each dispatch pass, and on a
+> cancellation it stops dispatching *and* unwinds the steps already in flight —
+> through the `cancel` builtin, not a second unwind, so a step holding a lock
+> still gets its `finally`.
+>
+> The predicate is **injected, never imported**: `TaskGraph.cancel_check` is set
+> by the runner, because `task_graph` importing `nodus_lang_workflow` at module
+> scope would reinstate CIRC-001 (#103), whose lazy-import fix `CLAUDE.md` says
+> not to undo. A bare `run_graph` gets no predicate and is unaffected, which is
+> correct — a run no store knows about cannot be cancelled through one.
+>
+> A predicate that *raises* counts as "not cancelled". A store read failing must
+> not take down a run that is otherwise fine, and the next pass asks again.
+>
+> One consequence this section did not name: **the runner must not write the
+> result status back over `cancelled`.** The graph stops mid-flight, so
+> `_result_status` reads it as failed or completed depending on what had settled,
+> and writing that back would un-cancel the run in the record — losing the one
+> fact the operator asked for.
 
 ### 7.1 Both halves, not one
 

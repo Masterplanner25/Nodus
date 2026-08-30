@@ -878,11 +878,24 @@ class WorkflowFrameworkRunner:
             record.claim = claim
             record.metadata.update(metadata)
             self.store.save_run(record)
+        # #395 §7.1: how the graph asks whether it has been cancelled. Injected
+        # rather than imported -- `task_graph` importing this module at scope
+        # would reinstate CIRC-001 (#103), whose lazy-import fix CLAUDE.md says
+        # not to undo. A bare `run_graph` never gets one and is unaffected.
+        graph.cancel_check = lambda: self.run_is_cancelled(graph_id)
         try:
             result = run_task_graph(vm, graph)
             status, last_error = _result_status(result)
             record = self.store.get_run(graph_id)
             if record is not None:
+                # A cancelled run keeps its status. The graph stops mid-flight, so
+                # `_result_status` reads it as failed or completed depending on
+                # what had settled -- and writing that back would un-cancel the
+                # run in the record, losing the one fact an operator asked for.
+                if record.status == RUN_STATUS_CANCELLED:
+                    record.claim = None
+                    self.store.save_run(record)
+                    return result
                 record.status = status
                 record.last_error = last_error
                 record.current_checkpoint = _current_checkpoint_label(result)

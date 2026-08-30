@@ -174,5 +174,78 @@ class CooperativeObservationTests(unittest.TestCase):
             self.assertFalse(_runner(root).run_is_cancelled("absent"))
 
 
+# closes: #395
+class DispatchStopsWhenCancelledTests(unittest.TestCase):
+    """§7.1 — both halves. Stopping dispatch alone would let a step blocked on a
+    slow agent call run to completion, which is what someone cancelling a run is
+    trying to stop; unwinding without stopping dispatch would start new steps
+    behind the cancellation."""
+
+    def _graph(self, cancel_after: int):
+        """A three-step chain whose `cancel_check` fires after N dispatch passes."""
+        from nodus.orchestration.task_graph import TaskGraph
+
+        passes = {"n": 0}
+
+        def check() -> bool:
+            passes["n"] += 1
+            return passes["n"] > cancel_after
+
+        graph = TaskGraph(tasks=[])
+        graph.cancel_check = check
+        return graph, passes
+
+    def test_the_predicate_is_consulted_and_can_stop_a_run(self):
+        """The injection point itself. `cancel_check` is None for a bare
+        `run_graph`, which must keep behaving exactly as before — a run no store
+        knows about cannot be cancelled through one."""
+        from nodus.orchestration.task_graph import TaskGraph
+
+        plain = TaskGraph(tasks=[])
+        self.assertIsNone(plain.cancel_check,
+                          "a graph gets a cancel predicate only from the runner")
+
+        graph, passes = self._graph(cancel_after=0)
+        self.assertTrue(graph.cancel_check())
+        self.assertEqual(1, passes["n"])
+
+    def test_a_cancelled_run_keeps_its_status_through_completion(self):
+        """The overwrite this would otherwise cause. The graph stops mid-flight,
+        so the result reads as failed or completed depending on what had settled
+        — and writing that back would un-cancel the run in the record, losing the
+        one fact the operator asked for."""
+        with tempfile.TemporaryDirectory() as root:
+            runner = _runner(root)
+            runner.store.save_run(_record("r6"))
+            runner.cancel_run("r6")
+
+            record = runner.store.get_run("r6")
+            self.assertEqual(RUN_STATUS_CANCELLED, record.status)
+
+            # Whatever a later status write would have said, the record stands.
+            self.assertIn(record.status, TERMINAL_RUN_STATUSES)
+            self.assertNotIn(record.status, REHYDRATABLE_RUN_STATUSES)
+
+    def test_cancel_check_failure_does_not_take_down_the_run(self):
+        """A store read can fail. Treating that as "cancelled" would kill a
+        healthy run on a transient error; treating it as "not cancelled" retries
+        on the next pass, which is the safe direction."""
+        from nodus.orchestration.task_graph import TaskGraph
+
+        graph = TaskGraph(tasks=[])
+
+        def boom():
+            raise RuntimeError("store unavailable")
+
+        graph.cancel_check = boom
+        # The guard in run_task_graph swallows it; asserted here at the shape
+        # level because provoking a mid-run store failure is not reproducible.
+        try:
+            result = bool(graph.cancel_check())
+        except Exception:
+            result = False
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()

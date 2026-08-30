@@ -176,6 +176,16 @@ class TaskGraph:
     # dependency resolution and the run's verdict see, and a handler is none of
     # those things. Reached only by the unwind.
     compensation_handlers: dict[str, Any] = field(default_factory=dict)
+    # #395 §7.1: "has this run been cancelled?", asked at each dispatch pass.
+    #
+    # **Injected, never imported.** The answer lives in the workflow store, which
+    # `nodus_lang_workflow` owns, and importing that from here would reinstate
+    # CIRC-001 (#103) at module scope — the circular import whose lazy-import fix
+    # `CLAUDE.md` says explicitly not to undo. The runner sets this when it
+    # starts the graph; a bare `run_graph` leaves it None and behaves as before,
+    # which is correct: a run no store knows about cannot be cancelled through
+    # one.
+    cancel_check: Any = None
 
 
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
@@ -1375,6 +1385,53 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
         return True
 
+    def _run_was_cancelled() -> bool:
+        """Has this run been cancelled out from under us (#395 §7.1)?
+
+        Answered by a predicate the runner injected, never by importing the
+        store from here (see `TaskGraph.cancel_check`). A predicate that raises
+        is treated as "not cancelled": a store read failing must not take down a
+        run that is otherwise fine, and the next pass asks again.
+        """
+        check = getattr(graph, "cancel_check", None)
+        if check is None:
+            return False
+        try:
+            return bool(check())
+        except Exception:
+            return False
+
+    def _cancel_inflight_tasks() -> None:
+        """Unwind the steps that are already running (#395 §7.1).
+
+        Through the `cancel` builtin, not a second unwind: that verb already runs
+        pending `finally` blocks and refuses `catch`, and a step holding a lock
+        or an open transaction loses its release if it is dropped where it stands
+        — the #502 argument, one altitude up.
+
+        The coroutine is recovered from the scheduler rather than tracked in a
+        second registry beside `running`; two registries for "which steps are in
+        flight" is the shape, and this one can be derived.
+        """
+        cancel_builtin = vm.builtins.get("cancel")
+        if cancel_builtin is None or not running:
+            return
+        scheduler = getattr(vm, "scheduler", None)
+        if scheduler is None:
+            return
+        for coroutine in list(getattr(scheduler, "tasks", {}).values()):
+            if id(coroutine) not in running:
+                continue
+            task = running.get(id(coroutine))
+            try:
+                cancel_builtin.fn(coroutine)
+            except Exception:
+                pass  # the unwind delivered it, or a `finally` threw; it is done
+            if task is not None:
+                task.status = "failed"
+                task.error = "Run cancelled"
+                vm.event_bus.emit_event("task_cancelled", name=task.task_id)
+
     def schedule_ready() -> None:
         """Start everything that is ready, skipping whatever its guard excludes.
 
@@ -1383,6 +1440,15 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         that repeats removes at least one task from `pending`.
         """
         while True:
+            # #395 §7.1: the step boundary. Both halves of a run cancellation
+            # happen here -- stop dispatching, and unwind whatever is already in
+            # flight. Stopping dispatch alone would let a step blocked on a slow
+            # agent call run to completion, which is exactly what someone
+            # cancelling a run is trying to stop; unwinding without stopping
+            # dispatch would start new steps behind the cancellation.
+            if _run_was_cancelled():
+                _cancel_inflight_tasks()
+                return
             skipped_any = False
             # #480: an expanded node becomes ready to *complete* when its
             # instances do, which is a different question from a task becoming
