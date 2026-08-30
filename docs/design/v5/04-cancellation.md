@@ -1,6 +1,10 @@
 # Cancellation — design for #395
 
-**Status: proposal, except §9 which is done.** No cancellation code has been
+**Status: proposal, except §9 (done) and the handle, which is decided in
+`06-task-handle.md` — read that first for the object `cancel` acts on, and for
+why this issue and #157 were decided together.**
+
+**Status of the rest: proposal.** No cancellation code has been
 built; the documentation half landed first and §9 records what shipped. §3 is the
 part to read first:
 two of the four design questions #395 lists were answered by code that shipped
@@ -192,13 +196,17 @@ behaviour change, practically unobservable, since nothing can be done with `nil`
 It is additive in the sense that matters and should be called out in the
 changelog anyway.
 
-Handle shape: a **record**, so it reads with dot notation and serialises —
-`{ id: 3i, name: "worker", state: "running" }`. Not an opaque value: an
-inspectable handle is worth more than an encapsulated one in a language whose
-premise is inspectability, and `id` is already on `Coroutine`.
-
-`cancel(t)` also accepts a bare task id, so a program that recorded ids before
-this existed is not forced to restructure.
+> **Withdrawn — superseded by `06-task-handle.md` D1/D2.** This section proposed
+> a record handle, `{ id: 3i, name: "worker", state: "running" }`. That was
+> wrong: a record is a *value*, so `state` would freeze at spawn time and read
+> `"created"` for the life of the task. It was also unnecessary — the coroutine
+> value is already a live handle (`coroutine_status(c)` tracks it across the
+> spawn and the loop, measured) and is unforgeable, because `ensure_coroutine`
+> is an identity check while a record can be constructed by any guest.
+>
+> **Decided: `cancel(c)` takes the coroutine.** `spawn(c)` returns `c` for
+> convenience. No new value type, and no bare-id form — an id is exactly the
+> forgeable handle the coroutine type avoids being.
 
 ### 5.2 Host: `NodusRuntime.cancel_run(graph_id)`
 
@@ -240,6 +248,16 @@ handles the first two rows and not the rest is the recurring shape.
 
 The last two rows are the honest caveat. They are not new debt — they are #424's
 already-shipped answer, applied to a second trigger.
+
+**This table gains a sixth row if #157 is built** — a coroutine parked in
+`join(t)`, woken when `t` settles. That is not a hypothetical: `05-async-library-
+boundary.md §7` recommends the `join` verb on *this document's* task handle, and
+a table written to prevent a cancel from handling some blocked states and not
+others would be incomplete on the day `join` landed. The mitigation is the one
+CLAUDE.md prescribes for the shape: **name the set once** — `blocked_reason`
+becomes a named tuple that the cancel path and every blocking builtin drive off,
+so a seventh state fails the suite rather than being silently unhandled. Decide
+the two issues together; see §11.
 
 ### 6.3 Cancelling something already finished
 
@@ -386,13 +404,45 @@ achieve the same effect by returning. It is not in the class `CapabilityPolicy`
 exists to bound. The host-facing `cancel_run` is a Python API and is not
 guest-reachable at all.
 
-### 10.3 Does cancelling a parent run cancel child runs?
+### 10.3 Does cancelling a parent run cancel child runs? — **decided: yes**
 
-Runs have parents — `nodus workflow cleanup` removes children with their parent.
-**Recommendation: yes**, on the same argument as §7.1, but this is the decision
-in this document with the least evidence behind it, and it should be re-checked
-against the child-run mechanics before implementing rather than assumed from the
-cleanup behaviour.
+This was the decision in this document with the least evidence behind it, held
+open pending a read of the child-run mechanics rather than assumed from the
+cleanup behaviour. That read has been done, and it **replaces the argument**
+while keeping the answer.
+
+What the mechanics actually are (`orchestration/task_graph.py:765-795`, #501):
+
+- a child run is produced by a **nested `run_workflow` call inside a parent's
+  step body**. It is not a peer run scheduled elsewhere — it is synchronously
+  nested in the parent's step coroutine, which is blocked in `run_task_graph`
+  for the child's duration;
+- both directions of the link are durable: the child's metadata carries
+  `parent_graph_id` / `parent_step` / `parent_task_id`, the parent's accumulates
+  `child_graph_ids`;
+- `nodus workflow cleanup` already walks parent→child over `parent_graph_id` in
+  a fixpoint loop (`cli/cli.py:831-851`), so the traversal cancellation needs
+  exists and is exercised.
+
+**The cleanup analogy was the weak argument. The nesting is the strong one.**
+§7.1 already unwinds in-flight step coroutines — and the step running a child
+*is* one of them, so cancelling the parent stops the child's execution whether or
+not anything is decided here. What is left to decide is only whether the child's
+own **record** is marked, and the answer follows: if it is not, the unwind leaves
+a non-terminal run record whose parent is terminal and whose executor is gone —
+an orphan that `_REHYDRATABLE_STATUSES` may later resurrect. That is #476's
+half-state shape (state without record, record without state) arriving from a new
+direction.
+
+So: **cascade, marking non-terminal children `cancelled` transitively.** Two
+consequences to handle in the same change:
+
+- **Only non-terminal children.** A parent typically has *several* children, most
+  of them already `completed`: #486 re-entry means a resume re-enters the step
+  from the top, so each resume produces a **new** child. Marking them all would
+  rewrite finished history.
+- **Cross-process children inherit §7.2.** A child owned by another process can
+  only be marked and observed at its next step boundary.
 
 ### 10.4 A deadline for the unwind itself?
 
@@ -410,6 +460,13 @@ nothing.** A second budget for the same question is the shape.
 - **#480** made fan-out dynamic, which is the rest of it.
 - **#361/#370/#371** are why the `finally` guarantee under cancellation can be
   relied on rather than hoped for.
+- **#157 / `05-async-library-boundary.md`** wants the **same task handle** §5.1
+  proposes here, for a second verb (`join`) rather than a second mechanism. It
+  should be decided alongside this document for two reasons: the handle is the
+  prerequisite for both and neither is possible without it, and `join` adds the
+  sixth blocked state §6.2 would otherwise be missing. If only one change is
+  built, build the handle — `spawn` returning it is the part `cancel` and `join`
+  share.
 
 ## 12. Success criterion
 
