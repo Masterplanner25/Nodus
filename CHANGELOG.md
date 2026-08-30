@@ -27,8 +27,16 @@
   listed again as `_KNOWN_RUN_STATUSES`. Adding a status is exactly when that
   costs something. `models.py` owns it; the others import it.
 
-  Not yet built: cancelling a run stops dispatch but does not unwind a step
-  coroutine already in flight. The verb that needs (`cancel(t)`) now exists.
+  **Cancelling a run does both halves**: it stops dispatching new steps *and*
+  unwinds the ones already in flight, through the same `cancel` verb, so a step
+  holding a lock still runs its `finally`. Stopping dispatch alone would let a
+  step blocked on a slow agent call run to completion, which is exactly what
+  someone cancelling a run is trying to stop.
+
+  The graph asks via a predicate the runner **injects** rather than imports --
+  `task_graph` importing the workflow runner at module scope would reinstate the
+  circular import #103 fixed. A bare `run_graph` gets no predicate and is
+  unaffected: a run no store knows about cannot be cancelled through one.
 
 - **#395 / #157: `cancel(t)` and `wait(t)` — a task can be stopped, and its
   outcome can be asked for.**
