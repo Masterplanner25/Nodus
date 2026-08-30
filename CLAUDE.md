@@ -884,28 +884,27 @@ These burn time when forgotten:
   `recv(ch)`, `close(ch)`. No import needed.
 - **Workflow step dependencies use `after` keyword:**
   `step b after a { ... }` — not `depends_on`, not any other syntax.
-- **A step body calling an imported module's function is broken (#691, `severity:high`,
-  OPEN).** Including `std:` modules — so `retry.until` does not work inside a step,
-  which is the position its own documentation points at.
+- **A step body passing a callback to an imported module's function was broken
+  through 5.8.0 (#691, `severity:high`). Fixed on `main`.** Including `std:`
+  modules — so `retry.until` did not work inside a step, which is the position its
+  own documentation points at. On 5.8.0 and earlier, keep module calls out of step
+  bodies: call the module function from `fn main()` and pass the result in.
 
-  **The worst case is silent:** the step body stops at the module call, nothing is
-  raised, and the run reports `failed: []`. Other module shapes give `Stack
-  underflow`, `Cannot call non-function: nil`, or a spurious `nodus-retry is
-  required` — four symptoms from one construct, which is what says stack/dispatch
-  corruption rather than a logic bug.
+  Worth keeping for the diagnosis, not the workaround. **The worst case was
+  silent:** the step body stopped at the module call, nothing was raised, and the
+  run reported `failed: []` with `steps: {}`. Five symptoms came out of one
+  construct — also `Stack underflow`, `Cannot call non-function: nil`, `Iterator is
+  not supported`, and a coroutine that never ran — which is what said
+  stack/dispatch corruption rather than a logic bug.
 
-  ```
-  import "./m.nd" as m           // fn no_loop(f) { return f() }
-  workflow w { step a { let v = m.no_loop(fn() { return 7i }); print("got \(v)") } }
-  // prints nothing after the call; failed: []
-  ```
-
-  Sharpest clue for whoever fixes it: a module defining **only** `no_loop` works, a
-  module defining **only** `in_loop` works, a module defining **both** fails when
-  `no_loop` is called. **Not a regression** — 5.7.1 behaves identically.
-
-  Until it is fixed, keep module calls out of step bodies: call the module function
-  from `fn main()` and pass the result into the workflow, or inline the logic.
+  The cause: a closure's address indexes **the chunk it was compiled from**. A
+  module call from `fn main()` runs in a detached VM that wraps closure arguments
+  in a `_ClosureProxy`; a module call from inside a scheduler-managed coroutine
+  takes the #105 fast path, which swaps the module's code into the *running* VM
+  and wrapped nothing. **A step body is always a coroutine**, which is exactly why
+  it worked at top level and failed in a step. The number of symptoms was the
+  number of things that happened to sit at the callback's address in the module's
+  chunk.
 
   **The lesson generalises past this bug.** Every test and probe for `retry.until`
   ran inside `fn main()`, so the full suite, nine gate phases and 83 release probes
@@ -985,9 +984,10 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **twenty-five** times across the v5.0.0–5.7.1
-cycles, which is why it gets its own section: when you find one, the next question is always
-*"what else has this shape?"* — not *"is this fixed?"*
+of several paths goes through**. It has surfaced **once per row of the table below** across the
+v5.0.0–5.8.0 cycles — count the rows rather than trusting a word here, which had gone stale by
+one. That frequency is why it gets its own section: when you find one, the next question is
+always *"what else has this shape?"* — not *"is this fixed?"*
 
 Instances, all confirmed by reading the code rather than inferred:
 
@@ -1018,14 +1018,25 @@ Instances, all confirmed by reading the code rather than inferred:
 | #480 | is this word a keyword | `each` matched by a bare literal in `parser.py`, so `lexer.ALL_KEYWORDS` — which editors, docs and `--consumers` all read — never named it |
 | #657 | does `fmt` render this node | the completeness guard walks **node types**; `each` and `budget { limits }` are new **fields**, so every node had a case and `fmt` dropped them silently |
 | #662 | what names are bound in a step body | the lowering binds `after` / `each` / `compensates` deps; the analyzer pushed the same scope and bound **none** — two answers to one question, drifted |
+| #691 | which chunk was this closure compiled against | the detached module VM wrapped caller closures in a `_ClosureProxy`; the in-VM cross-module frame (the path a **step body** always takes) wrapped nothing and checked nothing |
 
-**#691 is an open candidate, deliberately not in the table above.** That table's
-standard is *confirmed by reading the code*, and #691 has only been confirmed by
-**observation**: calling an imported module's function works at top level and fails
-inside a workflow step body — silently, with the run reporting success. One
-question, two paths, one of them wrong, which is the shape's signature; but the
-mechanism is not yet read, so it is named here rather than counted there. Whoever
-diagnoses it should move it up or explain why it does not belong.
+**#691 adds the one about how a symptom count reads.** It presented as five
+unrelated failures — a silent truncation reporting success, `Stack underflow`,
+`Cannot call non-function: nil`, `Iterator is not supported`, a coroutine that
+never ran — and that spread was not five bugs, nor even evidence of complexity. A
+closure's address indexes the chunk it was compiled from; run it against a
+different chunk and **the symptom is whatever happens to sit at that address**. So
+the number of symptoms measured the number of module shapes tried, and nothing
+else. When one construct produces symptoms with no family resemblance, suspect a
+single wrong address or index before you suspect several defects.
+
+It also shows the shape's other tell. `_is_foreign_closure` *implied* `_caller_vm
+is not None`, and two callers in `coroutine.py` leaned on that implication instead
+of stating it — so "detached module VM" quietly became the definition of "running
+foreign code", and the other way of getting there was invisible to every reader
+including the ones who wrote the guards. Widening the predicate broke both callers
+immediately, which is how they were found. **An unstated implication between two
+predicates is a duplicated question wearing a disguise.**
 
 **#662 adds the one about blast radius: a drifted duplicate is as harmful as its
 consumers make it, and wiring a new consumer is what detonates it.** The analyzer had

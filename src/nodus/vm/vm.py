@@ -3086,6 +3086,15 @@ class VM:
             frame.locals_name_to_slot = fn.local_slots
         if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
             self.runtime_error("sandbox", "Call stack overflow")
+        # #691: `fn.addr` indexes the chunk the closure was COMPILED against. If
+        # that is not the chunk currently loaded, swap the origin context in for
+        # the duration of the frame -- otherwise we jump into unrelated
+        # instructions. This is the one place that decides it, because this is
+        # the one place that jumps to `fn.addr`.
+        origin = self._foreign_closure_origin(callee)
+        if origin is not None:
+            frame.cross_module_ctx = self._capture_module_ctx()
+            self._restore_module_ctx(origin)
         self.frames.append(frame)
         if self.profiler is not None and self.profiler.enabled:
             self.profiler.enter_function(self.display_name(fn.name))
@@ -3099,6 +3108,16 @@ class VM:
         # runner's worker path; every other caller of this method -- std:retry,
         # std:test, tool handlers, the iterator protocol -- leaves it False.
         self.guard_step_entry(closure, authorized=step_authorized)
+        # #691: the second site that jumps to `fn.addr`, and it asks the same
+        # question `call_closure` does. Resolved BEFORE the frames are cleared,
+        # because that is where the answer is written down. A builtin handed a
+        # callback -- `retry_call`, a tool handler, the iterator protocol --
+        # reaches this with whatever chunk the VM happens to be running.
+        origin = self._foreign_closure_origin(closure)
+        saved_module_ctx = None
+        if origin is not None:
+            saved_module_ctx = self._capture_module_ctx()
+            self._restore_module_ctx(origin)
         ctx = self.save_execution_context()
         try:
             self.stack = []
@@ -3136,6 +3155,8 @@ class VM:
             return result
         finally:
             self.restore_execution_context(ctx)
+            if saved_module_ctx is not None:
+                self._restore_module_ctx(saved_module_ctx)
 
     def record_instruction(self) -> None:
         self.instructions_executed += 1
@@ -3888,17 +3909,63 @@ class VM:
     def _is_foreign_closure(self, callee) -> bool:
         """True if ``callee`` is a Closure compiled against a different chunk.
 
-        Only meaningful inside a detached module VM (``_caller_vm`` set). A
-        closure is module-local when its FunctionInfo is one of this module's
-        own — including mangled anonymous entries such as ``__anon_1__fn2``.
+        A closure is local to the running chunk when its FunctionInfo is the one
+        registered under its name in ``self.functions`` — including mangled
+        anonymous entries such as ``__anon_1__fn2``. Identity, not the name: two
+        chunks routinely both hold an ``__anon_1``.
         """
-        if self._caller_vm is None or not isinstance(callee, Closure):
+        # `call_closure` runs this on every value call, so it stays free of
+        # `getattr` defaults: `Closure` always carries a `FunctionInfo`, and a
+        # `FunctionInfo` always carries a name.
+        if not isinstance(callee, Closure):
             return False
-        fn_info = getattr(callee, "function", None)
-        if fn_info is None:
-            return False
-        local = self.functions.get(getattr(fn_info, "name", None))
-        return local is not fn_info
+        fn_info = callee.function
+        return self.functions.get(fn_info.name) is not fn_info
+
+    def _foreign_closure_origin(self, callee):
+        """The context ``callee`` must run in, or None when it is already loaded.
+
+        A ``Closure`` is an address plus upvalues, and the address means nothing
+        without the chunk it was compiled against. The VM runs someone else's
+        chunk in two situations, and #691 is what it cost to answer this in only
+        one of them:
+
+        * a **detached module VM** (``invoke_function``), where the caller lives
+          in another VM entirely — its arguments are wrapped in ``_ClosureProxy``
+          on the way in, and the proxy carries the context;
+        * a **cross-module frame in this same VM** (``_try_enter_module_call``,
+          the #105 fast path taken inside a scheduler coroutine), where nothing
+          was wrapped and nothing was checked. A workflow step body always takes
+          this path, which is why `m.f(fn() { ... })` ran the module's
+          instructions at the callback's address — silently, because a short
+          module chunk simply ran off its end and halted.
+
+        The frame walk asks which saved context *owns* this FunctionInfo rather
+        than taking the nearest one. Nearest is wrong as soon as a closure is
+        passed through two modules: with ``main -> outer.forward(f) ->
+        inner.run_it(f)``, the innermost boundary saved `outer`, and `f` was
+        compiled in `main`. Ownership is identity on the ``functions`` table, so
+        it names the right frame however many boundaries the value crossed, and
+        it costs nothing on the common path -- a local closure never gets here.
+
+        Returns None when nothing claims the closure, which leaves the call to
+        behave as it did before this existed.
+        """
+        if not self._is_foreign_closure(callee):
+            return None
+        # A `_ClosureProxy` was wrapped at the boundary it crossed and carries
+        # the exact context; prefer it over any inference.
+        origin = getattr(callee, "origin_ctx", None)
+        if origin is not None:
+            return origin
+        fn_info = callee.function
+        for frame in reversed(self.frames):
+            saved = getattr(frame, "cross_module_ctx", None)
+            if saved is not None and self._ctx_functions(saved).get(fn_info.name) is fn_info:
+                return saved
+        if self._caller_vm is not None:
+            return self._caller_module_ctx()
+        return None
 
     def _op_make_closure(self, instr):
         fn_name = instr[1]
@@ -3924,6 +3991,14 @@ class VM:
         return (self.code, self.functions, self.module_globals, self.globals,
                 self.code_locs, self.source_path, self.builtins,
                 self.host_globals, self.bytecode_version)
+
+    @staticmethod
+    def _ctx_functions(saved) -> dict:
+        """The ``functions`` table of a context captured by `_capture_module_ctx`.
+
+        Named here, beside the tuple it indexes, so the layout is stated once.
+        """
+        return saved[1]
 
     def _restore_module_ctx(self, saved) -> None:
         """Restore a module context captured by _capture_module_ctx."""
