@@ -33,7 +33,12 @@
     "`version files agree` check already compares those two authorities directly. The",
     "restatement was removed rather than re-registered. A claim is worth having when",
     "prose asserts something a reader acts on; it is not worth having to guard a",
-    "transcription that did not need to exist."
+    "transcription that did not need to exist.",
+    "",
+    "One ignore entry was dropped 2026-08-30 with the CLAUDE.md trim: it suppressed a",
+    "'README.md is current' sentence that the SemVer rewrite deleted. An ignore entry",
+    "matching nothing is dead weight, and test_every_ignore_entry_still_matches_something",
+    "fails on it -- which is how this was caught. Delete the entry with the line."
   ],
   "claims": [
     {
@@ -141,11 +146,6 @@
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
       "contains": "**Current version:** 0.1.0",
       "why": "Companion-package versions, not nodus-lang's. Drift for those is owned by tools/check_publish_drift.py, which resolves published metadata rather than reading prose. Duplicating it here would give two sources for one fact."
-    },
-    {
-      "file": "CLAUDE.md",
-      "why": "'is current' here describes README.md being up to date, not a version being the current release. The 4.2.0 in the line is historical -- it is the version the banner used to advertise, which is the point the sentence makes.",
-      "contains": "**`README.md` is current, and the fix it got is the pattern to copy.**"
     }
   ],
   "scan": {
