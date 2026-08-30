@@ -588,6 +588,27 @@ vocabulary it speaks, the runtime says which it provides, and a mismatch is
 detectable by loading neither. A program that declares nothing is unaffected, so
 this costs an existing deployment nothing until it opts in.
 
+#### `nodus run` does not pre-flight, deliberately
+
+The CLI has no way to register a host function, so pre-flighting there would
+refuse **every** program declaring an `extern` — including the case the feature
+exists for, which is writing a program locally before handing it to a host. So
+`nodus run` runs it, and the call fails when it is reached (#664):
+
+```
+Undefined function: delegate -- declared `extern` in this program, but nothing
+has registered it. `nodus run` does not register host functions; run it from a
+host that calls register_function("delegate", ...), or remove the declaration.
+```
+
+`nodus check` still passes such a file: the name **is** declared, and reporting
+it would put a warning on every correct extern-declaring program.
+
+The practical consequence for developing one: everything except the extern calls
+can be exercised from the CLI, and the calls themselves need a host. A small
+Python driver that registers stubs and calls `run_file` is the shortest path — it
+is also what pre-flights the declarations.
+
 ---
 
 ## 7. Companion library notes

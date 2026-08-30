@@ -25,6 +25,7 @@ from nodus.frontend.ast.ast_nodes import (
     ExportFrom,
     ExportList,
     ExprStmt,
+    ExternDecl,
     FnDef,
     declared_flow_name,
     If,
@@ -92,6 +93,10 @@ class ModuleMetadata:
     # loader ran `main()` a second time on top of the call the body had already
     # made. `None` means "not yet determined" — the AST is still available.
     has_top_level_main_call: bool | None = None
+    # Names the module declares `extern` (#664). Carried for the same reason as
+    # the field above: read from the AST, and a cached module has none. `None`
+    # means "not yet determined" -- the AST is still available.
+    declared_externs: set[str] | None = None
 
 
 class ModuleLoader:
@@ -248,7 +253,12 @@ class ModuleLoader:
             if initial_globals:
                 module.globals.update(initial_globals)
             should_auto_run_main = auto_run_main and not self._has_top_level_main_call(metadata)
-            self._execute_module(module, source_path=source_path, auto_run_main=should_auto_run_main)
+            self._execute_module(
+                module,
+                source_path=source_path,
+                auto_run_main=should_auto_run_main,
+                declared_externs=self._declared_externs(metadata),
+            )
             module.exports = self._build_exports(metadata, module, dep_modules)
             module.initialized = True
             return module
@@ -357,7 +367,14 @@ class ModuleLoader:
             self._recompiled_modules.add(os.path.abspath(source_path))
         return bytecode_unit
 
-    def _execute_module(self, module: NodusModule, *, source_path: str | None, auto_run_main: bool = False) -> None:
+    def _execute_module(
+        self,
+        module: NodusModule,
+        *,
+        source_path: str | None,
+        auto_run_main: bool = False,
+        declared_externs: set[str] | None = None,
+    ) -> None:
         vm = self._vm
         if vm is None:
             vm = VM(
@@ -378,6 +395,12 @@ class ModuleLoader:
                 module_globals=module.globals,
                 host_globals=self.host_globals,
             )
+        # #664: accumulated, not replaced. `reset_program` runs once per module
+        # and every module executes on this one VM, so an assignment here would
+        # leave only the last module's declarations -- and the root module is
+        # executed last, after its imports.
+        if declared_externs:
+            vm.declared_externs.update(declared_externs)
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
         if self._debugger is not None:
@@ -421,6 +444,23 @@ class ModuleLoader:
                 result = True
                 break
         metadata.has_top_level_main_call = result
+        return result
+
+    def _declared_externs(self, metadata: ModuleMetadata) -> set[str]:
+        """Names the module declares `extern` (#664).
+
+        Same cold/warm split as `_has_top_level_main_call`: the recorded answer
+        wins, the AST is read only when there is one. A cached module has no AST,
+        and deriving this from it alone would give the hint on a script's first
+        run and drop it on every run after — the bytecode cache as a sibling path,
+        which is how #394, #521 and #400 each stayed half-fixed.
+        """
+        if metadata.declared_externs is not None:
+            return metadata.declared_externs
+        if metadata.parsed is None:
+            return set()
+        result = {stmt.name for stmt in metadata.parsed.ast if isinstance(stmt, ExternDecl)}
+        metadata.declared_externs = result
         return result
 
     def _ensure_dependency_graph(self) -> DependencyGraph | None:
@@ -477,6 +517,9 @@ class ModuleLoader:
             # #453: carried through the cache because a cached module is never
             # parsed, and recomputing this from a missing AST answered "no".
             "has_top_level_main_call": bool(self._has_top_level_main_call(metadata)),
+            # #664: same reason -- a cached module is never parsed, so an
+            # extern-aware error message would appear only on a cold run.
+            "declared_externs": sorted(self._declared_externs(metadata)),
             "exports": sorted(metadata.exports),
             "import_names": sorted(metadata.import_names),
             "import_specs": [
@@ -558,6 +601,15 @@ class ModuleLoader:
             has_top_level_main_call=(
                 bool(payload["has_top_level_main_call"])
                 if isinstance(payload.get("has_top_level_main_call"), bool)
+                else None
+            ),
+            # #664: absent in entries written before this field existed, which is
+            # only reachable within one nodus-lang version -- the cache refuses
+            # entries from another. `None` there falls back to the AST, and there
+            # is no AST on this path, so the hint is simply omitted.
+            declared_externs=(
+                {str(name) for name in payload["declared_externs"] if isinstance(name, str)}
+                if isinstance(payload.get("declared_externs"), list)
                 else None
             ),
         )

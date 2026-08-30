@@ -19,6 +19,7 @@ it becomes the control proving undeclared files are untouched.
 """
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
@@ -27,7 +28,7 @@ from nodus.frontend.lexer import tokenize  # noqa: E402
 from nodus.frontend.parser import Parser  # noqa: E402
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 from nodus.tooling.formatter import format_source  # noqa: E402
-from nodus.tooling.runner import check_source  # noqa: E402
+from nodus.tooling.runner import check_source, run_source  # noqa: E402
 
 DECLARED = 'extern delegate(who: string, task: string) -> string\n'
 PROGRAM = DECLARED + 'fn main() { print(delegate("researcher", "find it")) }\n'
@@ -163,6 +164,94 @@ class HostPreflightTests(unittest.TestCase):
         runtime.register_function("delegate", lambda who, task: "ok", arity=2)
         result = runtime.run_source('fn main() { print(delegate("a", "b")) }')
         self.assertTrue(result["ok"], result.get("error"))
+
+
+class CliCallSiteMessageTests(unittest.TestCase):
+    """`nodus run` does not pre-flight, and it should not (#664).
+
+    The CLI has no way to register a host function, so pre-flighting the way
+    `NodusRuntime` does would refuse *every* program declaring an extern --
+    breaking the workflow the feature exists for, which is writing a program
+    locally before embedding it. The divergence is the decision; the message
+    was the defect. A user who has just written `extern notify(...)` was told
+    `Undefined function: notify`, which is the pre-#489 wording and mentions
+    nothing they wrote.
+    """
+
+    def _write(self, root, code, name="callext.nd"):
+        path = os.path.join(root, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(code)
+        return path
+
+    def _run(self, root, path):
+        """Run an already-written file.
+
+        Rewriting the file per run is what a first draft of this did, and it
+        moves the mtime -- which is half the bytecode cache key, so every run
+        was cold and the warm-path test below could not fail. Write once, run
+        twice.
+        """
+        with open(path, "r", encoding="utf-8") as handle:
+            code = handle.read()
+        result, _vm = run_source(code, filename=path, timeout_ms=None, project_root=root)
+        return result
+
+    # closes: #664
+    def test_the_call_site_error_names_the_declaration(self):
+        with tempfile.TemporaryDirectory() as root:
+            result = self._run(root, self._write(root, PROGRAM))
+        self.assertFalse(result["ok"])
+        message = (result.get("error") or {}).get("message", "")
+        self.assertIn("Undefined function: delegate", message)
+        self.assertIn("extern", message)
+        self.assertIn("register_function", message)
+
+    def test_the_hint_survives_the_bytecode_cache(self):
+        """The second run of any script reads the cache, and a cached module is
+        never parsed. Deriving the declaration from the AST alone would give the
+        hint cold and drop it warm -- #394, #521 and #400 were each half-fixed
+        exactly that way. Asserting on run 2 is the whole test."""
+        with tempfile.TemporaryDirectory() as root:
+            path = self._write(root, PROGRAM)
+            first = self._run(root, path)
+            self.assertTrue(
+                os.path.isdir(os.path.join(root, ".nodus", "cache")),
+                "no cache was written, so run 2 would not exercise the warm path",
+            )
+            second = self._run(root, path)
+        for label, result in (("cold", first), ("warm", second)):
+            with self.subTest(run=label):
+                self.assertIn("extern", (result.get("error") or {}).get("message", ""))
+
+    def test_a_name_nobody_declared_keeps_the_plain_message(self):
+        """The hint is for a name the program said it expected. An ordinary typo
+        must not be told to go register a host function."""
+        with tempfile.TemporaryDirectory() as root:
+            result = self._run(
+                root, self._write(root, "fn main() { print(notify(1i)) }\n", name="typo.nd")
+            )
+        self.assertFalse(result["ok"])
+        message = (result.get("error") or {}).get("message", "")
+        self.assertIn("Undefined function: notify", message)
+        self.assertNotIn("extern", message)
+
+    def test_a_declared_name_used_as_a_value_gets_the_hint_too(self):
+        """Two undefined-name messages, one question. Naming the declaration at
+        the call site and not in value position is the sibling-path shape."""
+        with tempfile.TemporaryDirectory() as root:
+            result = self._run(
+                root,
+                self._write(
+                    root,
+                    DECLARED + "fn main() { let f = delegate; print(f) }\n",
+                    name="valext.nd",
+                ),
+            )
+        self.assertFalse(result["ok"])
+        message = (result.get("error") or {}).get("message", "")
+        self.assertIn("Undefined variable: delegate", message)
+        self.assertIn("register_function", message)
 
 
 class KeywordIsDiscoverableTests(unittest.TestCase):
