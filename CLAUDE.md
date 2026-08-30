@@ -14,8 +14,8 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.6.0** (re-checked
-2026-08-28 with `.venv/Scripts/nodus.exe --version`, at the 5.6.0 cut). Forgetting the
+**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.7.1** (re-checked
+2026-08-29 with `.venv/Scripts/nodus.exe --version`, after the 5.7.1 cut). Forgetting the
 prefix gets you a runtime from before the `@exactly_once` forgery fix, the call-depth
 cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the file its
 `filename` happens to name (#521), `nodus graph` no longer executing the file it inspects
@@ -335,7 +335,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,841 tests collected** (`--collect-only`, 2026-08-28, after the 5.6.0 cut). Coverage
+**2,940 tests collected** (`--collect-only`, 2026-08-29, after the 5.7.1 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -386,7 +386,7 @@ on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing eac
 This bit twice in one session, and both times the first reading was "the #376 race class is back."
 It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
 your own change, check whether anything else is running: `TaskStop` the background job, then
-re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 245 blocks and writes to
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 263 blocks and writes to
 the store) — do not run it alongside the suite.
 
 **How much of the "flaky machine" is actually this is not established**, and concurrency does
@@ -469,8 +469,19 @@ at the next bump.
 `nodus fmt` also **used to corrupt files it did not fully understand** — writing output that no
 longer parsed, for `GoalPursuit` nodes and `with { }` blocks (#427, fixed in 5.0.0). It now
 refuses rather than writing a broken file, and `tests/test_formatter_completeness.py` walks the
-AST node list so a **new** node type with no formatter case fails the suite instead of silently
-corrupting user code.
+AST node list so a **new node type** with no formatter case fails the suite.
+
+**That guard is node-level, and 5.6.0 shipped two defects underneath it** (#656, #657). `each`
+and `budget { limits: ... }` are new **fields on existing nodes**, so every node still had a
+formatter case and the suite stayed green while `fmt` **silently dropped them** — `step render
+each page in discover` came back as a plain step, and a goal's budget lost its bounds. Not a
+refusal and not a parse error: valid output, different program, in a published release.
+
+The lesson generalises past the formatter. **A completeness guard at node granularity does not
+cover field granularity**, and the fix that works is a **round-trip property**:
+`tests/test_formatter_round_trip.py` formats, reparses, and compares the AST field by field. It
+found #657 on its first run. When you add a field to an AST node, that test is what protects it
+— the node walker cannot.
 
 To format .nd files correctly (matches CI exactly):
 ```powershell
@@ -658,10 +669,10 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   -m tools.nodus_gate.cli --all
 ```
 
-- `--static`: verifies documented symbols exist in the codebase (**135 symbols**
-  across 38 documents, as of 2026-08-25)
+- `--static`: verifies documented symbols exist in the codebase (**136 symbols**
+  across 40 documents, as of 2026-08-29)
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (**245 blocks**); expects 0 failures with the `.nodusgate-allow`
+  in docs (**263 blocks**); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
@@ -921,7 +932,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has now surfaced **twenty-three** times across the v5.0.0–5.6.0
+of several paths goes through**. It has now surfaced **twenty-five** times across the v5.0.0–5.7.1
 cycles, which is why it gets its own section: when you find one, the next question is always
 *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -952,6 +963,23 @@ Instances, all confirmed by reading the code rather than inferred:
 | #584 | which graph is this request's | two copies of `_graph_metadata`; the one that had **not** learned to read the VM's own events leaned on a process-global fallback instead |
 | #632 | stop the background work before the directory goes | **two** sweepers; #591 stopped the workflow one and left `_worker_sweeper_loop` running, so the symptom outlived its own fix |
 | #480 | is this word a keyword | `each` matched by a bare literal in `parser.py`, so `lexer.ALL_KEYWORDS` — which editors, docs and `--consumers` all read — never named it |
+| #657 | does `fmt` render this node | the completeness guard walks **node types**; `each` and `budget { limits }` are new **fields**, so every node had a case and `fmt` dropped them silently |
+| #662 | what names are bound in a step body | the lowering binds `after` / `each` / `compensates` deps; the analyzer pushed the same scope and bound **none** — two answers to one question, drifted |
+
+**#662 adds the one about blast radius: a drifted duplicate is as harmful as its
+consumers make it, and wiring a new consumer is what detonates it.** The analyzer had
+never bound a step's dependencies — confirmed against published **5.6.0** — so reading
+`after a` inside the step body reported `Undefined variable` on correct code. That was
+*editor squiggles*: noise, easy to ignore, nobody filed it. Then #489 wired `nodus check`
+to that same analyzer for files declaring an `extern`, and the identical wrong answer
+became **`nodus check` rejecting correct programs**. Nothing about the defect changed; a
+new consumer did.
+
+So when you point a new surface at an existing implementation of a question, the review
+is not "does this surface work" — it is **"is this the copy that is right?"** Check what
+the *other* implementations of that question answer before you promote one of them from
+advisory to authoritative. And note what caught it: not the suite, not Gate 10's 71 green
+probes, but **Stage 5**, using both new features in one program. Neither was broken alone.
 
 **#632 adds the sharpest version of the follow-up question.** The symptom -- a test
 racing its own tempdir cleanup -- had already been diagnosed and *fixed*, by #591, which
@@ -1005,7 +1033,7 @@ call site would have been wrong, because the CLI legitimately passes a file's ow
 must keep its cache. The question is not "did the caller supply source" but "is it the same
 source".
 
-**There is a gate for this now — `nodus_gate --shapes`.** It will not find the shape for you in the sense of telling you what is broken; it finds *places where one question is answered in more than one voice*, which is where every instance above came from. Its first run produced #597 and #598. `tools/shape_manifest.json` holds the 43 it already knows about, so what it reports is the ones that are new. When you add a second implementation of anything, expect to justify it there.
+**There is a gate for this now — `nodus_gate --shapes`.** It will not find the shape for you in the sense of telling you what is broken; it finds *places where one question is answered in more than one voice*, which is where every instance above came from. Its first run produced #597 and #598. `tools/shape_manifest.json` holds the ones it already knows about — **39 known, 19 of them tracked as debt** at the 5.7.1 cut — so what it reports is the ones that are new. Do not transcribe that count by hand; the gate prints it every run and an earlier revision of this line was stale by four. When you add a second implementation of anything, expect to justify it there.
 
 **The fix is always the same: move the decision to one place, then assert on the source.** A
 behaviour-only test passes on whichever path is already correct. Working examples to copy:
@@ -1404,72 +1432,41 @@ must stay in sync:
 - `src/nodus/support/version.py` — `__version__ = "5.7.1"`
 - `pyproject.toml` — `version = "5.7.1"`
 
-**5.6.0 is additive. Every new surface is something a workflow could not previously
-say, and nothing that parsed before parses differently.** Four of them, all from the
-workflow-DSL cluster: a step can map over a list (`step render each page in discover`,
-#480); workflows and goals take parameters (#481); a step can declare its output type
-(`with { returns: "map" }`, #479); and a goal's `budget` gains `limits`, so it can be
-bounded by what it spends rather than only by iterations (#488).
+**5.7.1 repairs 5.7.0.** `nodus check` in 5.7.0 rejected correct
+code: a file declaring an `extern` could not read any step dependency by name, because
+#489's strict mode inherited a long-standing analyzer defect that left `after` / `each` /
+`compensates` dependencies unbound (#662). Nothing else in the pair changed.
 
-Two consequences worth knowing even though neither breaks code. **`each` is a new
-contextual keyword** — contextual, so it remains usable as an identifier, but an editor
-older than this release renders it as a plain identifier until the VS Code extension is
-republished. And **an unrecognised type name is now reported rather than silently meaning
-`any`** (#609), staged as a warning until 6.0.0, so a project that was "clean" may show
-new warnings on annotations that never meant what they said.
+5.7.0 itself is additive: `extern` declarations (#489), host-function schemas on
+`register_function` (#493), workflow **compensation** (`step release compensates reserve`,
+#577), and a wait-payload schema (#472). `extern` and `compensates` are new contextual
+keywords — 42 in `ALL_KEYWORDS` now.
 
-One security fix, and it is the reason this release should not have waited: **a capability
-policy could be bypassed by writing the async form of a call** (#616, `severity:high`).
-Anything embedding a `NodusRuntime` with a policy should upgrade.
+**What is *not* additive, 5.3.0 onward.** Everything else in those releases adds a way to
+say something; these are the changes that can break a reader's working setup. Full detail
+is in `CHANGELOG.md` — this table exists so you can tell in one pass whether a symptom
+belongs to a release rather than to your change.
 
-`RuntimeService.close()` now waits for its sweeper instead of only asking it to stop
-(#632), which matters to embedders whose store lives in a directory they later remove.
+| Release | What stopped working | Restore / fix |
+|---|---|---|
+| 5.7.0 | `nodus check` rejects a dependency read in any file declaring an `extern` (#662) | upgrade to 5.7.1 |
+| 5.6.0 | an unrecognised type name is reported, not silently `any` (#609) | it is a **warning** until 6.0.0 — fix the annotation |
+| 5.5.0 | a step body can no longer be called directly — `build["steps"][1]["fn"](nil)` raises (#394) | never supported; call the workflow |
+| 5.5.0 | `nodus.tooling.loader` dropped `resolve_with_extensions` / `try_resolve_with_extensions` (#598) | nothing outside the runtime consumed them |
+| 5.4.0 | `nodus graph` no longer executes the file it inspects (#400) | `--execute` for a graph built at runtime |
+| 5.4.0 | `nodus workflow cleanup` gained a **30-day default retention**; unset used to mean forever | `NODUS_WORKFLOW_RETENTION_SECONDS=0` |
+| 5.3.0 | `nodus.toml` refuses a table or key Nodus does not read (#490) | the error names the word and suggests the match |
+| 5.1.0 | `run_source(filename=)` is a label and no longer selects the program (#521) | `run_file` to run a file — see the embedding section |
 
-**5.5.0 has one behaviour a reader should know about, and it is a tightening: a workflow
-step body can no longer be called directly (#394).** `build["steps"][1]["fn"](nil)` used to
-run that step with its dependencies unmet; it now raises. The flow value's shape is
-unchanged — `keys(build)` and `build["steps"]` still read — so nothing breaks but the
-bypass, and the bypass was never a supported way to run a step. Two smaller tightenings in
-the same spirit: editor diagnostics now report typos inside string interpolations, compound
-assignments, field assignments, `match` scrutinees and `action` payloads, so a project that
-was "clean" may show new warnings on code that was always wrong; and `nodus check` resolves
-imports exactly as the runtime does, which means a pip-installed companion import stops
-reading as `Import not found`. Everything else is additive: `nodus docs`,
-`NODUS_RUN_STATE_ROOT`, `nodus_gate --shapes`, and `llms.txt` shipping inside the wheel.
+Two of those ask something of you rather than just explaining a symptom.
 
-**One internal removal.** `nodus.tooling.loader` no longer defines `resolve_import_path`,
-`ensure_project_root`, `import_error`, `resolve_with_extensions` or
-`try_resolve_with_extensions` — the first three are re-exported from
-`nodus.runtime.module_loader` and still import from the old path; the last two are gone,
-since nothing outside the runtime consumed them (#598).
+**#616 is why 5.6.0 should not be skipped by an embedder** (`severity:high`): a capability
+policy could be bypassed by writing the **async form** of a call. Anything embedding a
+`NodusRuntime` with a policy should be on 5.6.0 or later.
 
-**5.4.0 is additive except in one place a reader should know about: `nodus graph`
-no longer runs the file (#400).** Both `nodus graph <file>` and `nodus graph show`
-built their plan by executing the target, side effects included; they now plan from
-the workflow/goal declarations alone. A file whose graph is constructed at runtime
-(`task()` / `run_graph`, or a dynamically chosen flow) is **refused** with a message
-naming `--execute`, which restores the old behaviour — so a script relying on the
-executing path needs that flag. Nothing else in 5.4.0 removes a behaviour: the other
-changes either add a way to say something (`allow_failure`, `try`/`finally` without
-`catch`, blocking send on a bounded `channel(n)`), refuse a combination that could
-only ever no-op (a checkpoint resume of a *waiting* run, a goal whose every
-checkpoint is conditional, a reused `ModuleLoader` handed different source under one
-module name), or make an existing failure legible. **`nodus workflow cleanup` gained
-a 30-day default retention** where unset previously meant *forever* — the command
-still only runs when invoked, but it now removes something when it does
-(`NODUS_WORKFLOW_RETENTION_SECONDS=0` restores the old no-op).
-
-**5.3.0 has one input that used to load and now does not (#490).** A `nodus.toml`
-declaring a table or key Nodus does not read — `[project]`, `[runtime]`, a misspelled
-`verison` — was accepted and the unknown parts discarded. It is refused now, naming what it
-found and suggesting the close match. Strictly this makes previously-"working" input fail,
-so it is the one thing in 5.3.0 a reader should not assume is additive; it was shipped as a
-refusal rather than the warn-then-error staging used for `worker:` (#492) and concurrent
-writes (#547) because a manifest is configuration read once at load, not behaviour observed
-during a run, and a warning there is read by nobody. The fix is one word in most cases and
-the error says which word. `register_syscall` gained the same treatment for an unknown or
-missing `capability` (#478); nothing in or out of tree registers a custom syscall, so that
-half breaks nothing today.
+**#609 is staged, not done.** An unrecognised type name warns today and becomes an error at
+**6.0.0**, alongside #547 and #492 — see the 6.0.0 staging cohort. A project that is
+"clean" now can still be red at the major, so treat those warnings as a to-do list.
 
 **A `run_source` behaviour change ships in 5.1.0 (#521):** `filename=` is a label and no
 longer selects the program. A change against every prior release, not just 5.0.x -- the full

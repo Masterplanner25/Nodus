@@ -4,6 +4,12 @@
 
 ### Tooling
 
+- **The claim-discovery sweep now recognises the bare phrase "X is current".**
+  Its marker list had `current version` and `current stable` but not `is current`
+  -- which is the exact phrasing CLAUDE.md names as the one that goes stale
+  ("*'X is current' goes stale, 'as of X' does not*"). Adding it immediately
+  found two unregistered lines, one of them pre-existing.
+
 - **A version claim that names a *path* is now checked for that path existing.**
   Claim entries in `tools/version_claims.json` may declare `points_at`, and
   `nodus_gate --versions` fails when the document a claim sends a reader to is
