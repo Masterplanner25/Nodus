@@ -287,6 +287,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
@@ -738,6 +739,22 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   because an installed package shadowing the checkout would otherwise have the
   gate compare docs against the wrong version, silently and in the direction
   that hides a real mismatch
+- `--invariants`: verifies the **invariant-to-test ledger** is honest (#179).
+  `EXECUTION_INVARIANTS.md` documents 29 runtime invariants; which test checks
+  which was recorded in prose, in two different places, by hand, so a renamed
+  test left the document pointing at nothing and a new invariant arrived
+  uncovered — with no CI signal for either. `tools/invariant_coverage.json` is
+  the ledger; four checks fail the gate: an invariant with no entry, an entry
+  naming an invariant the document no longer has, a named test file that does
+  not exist, and an entry with no tests and no stated reason. Citation drift
+  (the document names a test the ledger has not learned) is advisory.
+
+  **It cannot verify an invariant holds** — the tests do that. It verifies the
+  mapping, which is the only part a gate can own. **6 of 29 name a covering
+  test**; the other 23 are `unrecorded`, which is deliberately not `uncovered`:
+  the behaviour may be tested, but nothing ties a test to the invariant. Do not
+  "fix" the count by guessing which test covers what — an invented mapping is
+  worse than a recorded gap. An unreadable manifest is always a failure
 
 The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the

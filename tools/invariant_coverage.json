@@ -1,0 +1,165 @@
+{
+  "_comment": [
+    "Invariant coverage ledger for docs/runtime/EXECUTION_INVARIANTS.md (#179).",
+    "Checked by `nodus_gate --invariants`. A gate cannot verify that an invariant",
+    "holds -- only that the ledger tying invariants to the tests which check them",
+    "is honest. Three things fail: an invariant in the document with no entry here,",
+    "an entry naming an invariant the document no longer has, and a named test file",
+    "that does not exist.",
+    "An entry with no tests must state a reason. 'unrecorded' means nothing ties a",
+    "test to the invariant -- not that the behaviour is untested."
+  ],
+  "invariants": {
+    "I-VM-01": {
+      "title": "Value stack is balanced across any instruction",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-02": {
+      "title": "Instruction pointer advances are explicit",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-03": {
+      "title": "Call frames are balanced",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-04": {
+      "title": "Local variables are slot-indexed after v0.8.0",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-05": {
+      "title": "Exception handler stack is consistent with call frame depth",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-06": {
+      "title": "`finally` blocks always execute",
+      "tests": [
+        "tests/test_finally_rethrow.py"
+      ]
+    },
+    "I-VM-07": {
+      "title": "Structured throw values are preserved",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-VM-08": {
+      "title": "Dispatch table is O(1) per instruction",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-SCHED-01": {
+      "title": "Round-robin fairness with budget enforcement",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-SCHED-02": {
+      "title": "Scheduler does not execute after deadline",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-SCHED-03": {
+      "title": "`max_steps` is a hard ceiling on total instructions",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-MOD-01": {
+      "title": "Each module is executed at most once per process",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-MOD-02": {
+      "title": "Relative imports cannot escape the project root",
+      "tests": [
+        "tests/test_import_containment.py"
+      ]
+    },
+    "I-MOD-03": {
+      "title": "Named imports bind live export bindings",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-ERR-01": {
+      "title": "`run_source()` never propagates Python exceptions to the caller",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-ERR-02": {
+      "title": "Err records have a canonical shape",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-SAND-01": {
+      "title": "`allowed_paths` restricts filesystem builtins",
+      "tests": [],
+      "reason": "Section 8 records it as needing both CLI-mode and embedded-mode tests, per TECH_DEBT.md's security boundary rule. Neither is named."
+    },
+    "I-SAND-02": {
+      "title": "`allow_input=False` blocks `input()` in embedded mode",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-SAND-03": {
+      "title": "`max_frames` caps call stack depth",
+      "tests": [
+        "tests/test_max_frames_default.py"
+      ]
+    },
+    "I-SAND-04": {
+      "title": "Bytecode cache is checksum-validated",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-WFLOW-01": {
+      "title": "Workflow state writes are atomic",
+      "tests": [],
+      "reason": "Section 8 records it as not unit-tested -- it relies on filesystem semantics."
+    },
+    "I-WFLOW-02": {
+      "title": "Workflow lowering produces no workflow-specific VM instructions",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-WFLOW-03": {
+      "title": "Task graph step execution is isolated per coroutine",
+      "tests": [],
+      "reason": "Section 8 says 'covered by task graph tests' without naming one, so nothing here can be checked."
+    },
+    "I-WFLOW-04": {
+      "title": "Steps do not execute until all declared dependencies are completed",
+      "tests": [
+        "tests/test_step_entry_guard.py"
+      ]
+    },
+    "I-WFLOW-05": {
+      "title": "A checkpoint snapshot captures the full workflow state at the moment of the `checkpoint` call",
+      "tests": [],
+      "reason": "Section 8 records it as partially covered: the state-copy depth is not explicitly asserted."
+    },
+    "I-WFLOW-06": {
+      "title": "A plain resume does not re-execute already-completed steps",
+      "tests": [
+        "tests/test_resume_determinism_boundary.py"
+      ]
+    },
+    "I-WFLOW-07": {
+      "title": "A re-executed step observes the world at replay time, not at first run",
+      "tests": [
+        "tests/test_resume_determinism_boundary.py"
+      ]
+    },
+    "I-CORO-01": {
+      "title": "Channel operations are FIFO",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    },
+    "I-CORO-02": {
+      "title": "`yield` suspends, not terminates",
+      "tests": [],
+      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+    }
+  }
+}

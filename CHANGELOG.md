@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#179: `nodus_gate --invariants` — the invariant-to-test ledger is checked
+  rather than asserted.**
+
+  `EXECUTION_INVARIANTS.md` documents 29 runtime invariants. Which test checked
+  which was recorded **in prose, in two different places** — sometimes inline
+  under the invariant, sometimes in §8's coverage bullets — and maintained by
+  hand. So a renamed test left the document pointing at a file that no longer
+  existed, and a new invariant could arrive with nothing covering it, with no CI
+  signal for either. The same failure mode the opcode inventory had before #366.
+
+  `tools/invariant_coverage.json` is the ledger, one entry per invariant. Four
+  things fail the gate: an invariant documented with no entry, an entry naming an
+  invariant the document no longer has, a named test file that does not exist,
+  and an entry with no tests and no stated reason. Citation drift — the document
+  naming a test the ledger has not learned — is advisory.
+
+  **The phase cannot verify that an invariant holds**; the tests do that. It
+  verifies the mapping, which is the only part a gate can own.
+
+  Two things the ledger made visible. **Six of the twenty-nine invariants name a
+  covering test** — §8 opened by claiming *"Most of these invariants have direct
+  test coverage"*, which the document that made the claim did not support. And
+  the remaining 23 are recorded as `unrecorded` rather than `uncovered`: the
+  behaviour may well be tested, but nothing ties a test to the invariant, which
+  is the gap the issue is about. Inventing a mapping would have been worse than
+  recording the gap.
+
 ### Changed
 
 - **#671: a function assigning to a module-top-level `let` now updates it. It used

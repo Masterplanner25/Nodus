@@ -406,7 +406,23 @@ instruction after `YIELD`. The coroutine is not terminated by `yield`.
 
 ## 8. Invariant coverage status
 
-Most of these invariants have direct test coverage. Known test gaps:
+**The ledger is `tools/invariant_coverage.json`, and `nodus_gate --invariants`
+checks it** (#179). One entry per invariant, naming the tests that cover it or
+stating why none is recorded. Three things fail the gate: an invariant documented
+here with no entry, an entry naming an invariant this document no longer has, and
+a named test file that does not exist. The prose below is commentary; the ledger
+is the record.
+
+**Six of the twenty-nine invariants name a covering test.** The other 23 are
+recorded as `unrecorded`, which is deliberately not the same as *uncovered* — the
+behaviour may well be tested, but nothing ties a test to the invariant, and an
+untied test is one nobody will think to keep when the invariant changes.
+
+This section previously opened *"Most of these invariants have direct test
+coverage"*. That was not supported by the document that made the claim: it named
+a test for six. The count is machine-derived now rather than asserted.
+
+Known test gaps and notes:
 
 - I-VM-06 (finally always runs): **holds on all five exit paths** (#361, #370, #371
   fixed on `main`; the last release affected is v4.1.1). Covered by `tests/test_finally_rethrow.py`, which asserts the
