@@ -43,7 +43,7 @@ from typing import Any, Callable, cast
 
 from nodus.runtime.coroutine import Coroutine, DEFERRED_NONE
 from nodus.runtime.channel import Channel, ChannelRecvRequest
-from nodus.orchestration.task_graph import TaskNode, TaskGraph, WorkflowRebuildError, run_task_graph, plan_graph, resume_graph, load_graph_state
+from nodus.orchestration.task_graph import TaskNode, TaskGraph, WorkflowRebuildError, run_task_graph, plan_graph, resume_graph, load_graph_state, step_name_metadata
 from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX, BuiltinInfo
 from nodus.support.config import MAX_STACK_DEPTH
 from nodus.builtins import BuiltinRegistry
@@ -1276,7 +1276,16 @@ class VM:
         cache_key = None
         worker = None
         worker_timeout_ms = None
+        step_name = None
         if isinstance(deps, dict):
+            # #679: the slot already existed on TaskNode and nothing could reach
+            # it, so every generated step was `task_N` and the run result's
+            # `steps` map came back empty.
+            step_name = deps.get("name")
+            if step_name is not None and not isinstance(step_name, str):
+                self.runtime_error("type", "task(fn, deps) name option expects a string")
+            if isinstance(step_name, str) and not step_name.strip():
+                self.runtime_error("value", "task(fn, deps) name option cannot be blank")
             timeout_ms = deps.get("timeout_ms")
             max_retries = deps.get("retries", 0) or 0
             retry_delay_ms = deps.get("retry_delay_ms", 0.0) or 0.0
@@ -1316,18 +1325,39 @@ class VM:
             cache_key=cache_key,
             worker=worker,
             worker_timeout_ms=worker_timeout_ms,
+            step_name=step_name,
         )
+
+    def _graph_from_nodes(self, nodes: list) -> TaskGraph:
+        """Build a guest-facing graph, carrying step names into its metadata (#679).
+
+        One helper because there are two construction sites -- `graph(tasks)` and
+        `run_graph([...])` -- and filling the mapping in only one of them is the
+        sibling-path shape: the same program would report its step results or not
+        depending on which spelling it used.
+        """
+        graph = TaskGraph(nodes)
+        try:
+            mapping = step_name_metadata(nodes)
+        except ValueError as err:
+            self.runtime_error("value", str(err))
+        if mapping:
+            graph.metadata = dict(graph.metadata or {})
+            graph.metadata["task_to_step"] = mapping
+        return graph
 
     def builtin_graph(self, tasks):
         if not isinstance(tasks, list):
             self.runtime_error("type", "graph(tasks) expects a list")
         nodes = [self.ensure_task(item, "graph(tasks)") for item in tasks]
-        return TaskGraph(nodes)
+        return self._graph_from_nodes(nodes)
 
     def builtin_run_graph(self, graph):
         tg = graph
         if isinstance(graph, list):
-            tg = TaskGraph([self.ensure_task(item, "run_graph(tasks)") for item in graph])
+            tg = self._graph_from_nodes(
+                [self.ensure_task(item, "run_graph(tasks)") for item in graph]
+            )
         else:
             tg = self.ensure_graph(graph, "run_graph(graph)")
         return run_task_graph(self, tg)
@@ -1344,7 +1374,11 @@ class VM:
         plan = plan_graph(graph_tasks, graph=graph)
         self.last_graph_plan = plan
         self.event_bus.emit_event("graph_plan_created", data={"nodes": float(len(plan.get("nodes", [])))})
-        return plan
+        # #679: a named generated step should read the same here as a declared
+        # one does in `plan_workflow`. Names come from the graph metadata that
+        # `graph()` now fills; an unnamed graph relabels to itself.
+        step_labels = graph.metadata.get("task_to_step", {}) if isinstance(graph.metadata, dict) else {}
+        return self._relabel_plan(plan, step_labels if isinstance(step_labels, dict) else {})
 
     def builtin_resume_graph(self, graph_id):
         if not isinstance(graph_id, str):
@@ -1801,6 +1835,35 @@ class VM:
             checkpoint,
             rebuild_graph=target._rebuild_workflow_graph,
         )
+
+    @staticmethod
+    def _relabel_plan(plan: dict, step_labels: dict) -> dict:
+        """Rewrite a raw plan's task ids to step names (#679).
+
+        One helper, because `plan_workflow` and `plan_graph` both need it and
+        two spellings of "map ids to names" is how one of them ends up missing a
+        field. Ids without a name pass through unchanged, so a partly-named
+        graph is legible rather than half-blank.
+        """
+        if not step_labels:
+            return dict(plan)
+        def _name(node):
+            return step_labels.get(node, node)
+        relabelled = dict(plan)
+        relabelled["nodes"] = [_name(n) for n in plan.get("nodes", [])]
+        relabelled["edges"] = [[_name(a), _name(b)] for a, b in plan.get("edges", [])]
+        relabelled["levels"] = [[_name(n) for n in level] for level in plan.get("levels", [])]
+        relabelled["parallel_groups"] = [
+            [_name(n) for n in level] for level in plan.get("parallel_groups", [])
+        ]
+        relabelled["conditional_edges"] = [
+            [_name(a), _name(b)] for a, b in plan.get("conditional_edges", [])
+        ]
+        relabelled["edge_conditions"] = {
+            f"{_name(key.split('->')[0])}->{_name(key.split('->')[1])}": value
+            for key, value in plan.get("edge_conditions", {}).items()
+        }
+        return relabelled
 
     def _step_plan_from_graph(self, graph: TaskGraph, *, label: str) -> dict:
         plan = plan_graph(graph.tasks, graph=graph)

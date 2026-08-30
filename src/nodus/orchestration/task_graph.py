@@ -188,6 +188,42 @@ class TaskGraph:
     cancel_check: Any = None
 
 
+def step_name_metadata(nodes: list[TaskNode]) -> dict[str, str]:
+    """`task_to_step` for a guest-built graph, from each node's `step_name` (#679).
+
+    `step_results()` keys the run result off `graph.metadata["task_to_step"]`, and
+    only the workflow-DSL lowering used to populate it — so a graph built with
+    `task()` / `graph()` returned an empty `steps` map no matter what the tasks
+    were called. The per-step results were computed and then discarded.
+
+    Naming the tasks without filling this in would have been a half-fix that
+    looked complete: `step_name` set, `steps` still empty. One question — *what
+    is this step called* — reached from two places, which is the shape.
+
+    Unnamed tasks are **absent**, not given a synthetic `task_N` key. A name is
+    either meaningful or missing; inventing one would put the unstable
+    VM-counter id into a result map that a program reads by name.
+
+    Raises on a duplicate name: the DSL cannot produce one, and silently
+    overwriting a result is worse than refusing to run.
+    """
+    mapping: dict[str, str] = {}
+    seen: dict[str, str] = {}
+    for node in nodes:
+        name = getattr(node, "step_name", None)
+        if not isinstance(name, str) or not name:
+            continue
+        if name in seen:
+            raise ValueError(
+                f"duplicate step name '{name}' in graph "
+                f"({seen[name]} and {node.task_id}) -- a result map is keyed by "
+                f"name, so one would silently overwrite the other"
+            )
+        seen[name] = node.task_id
+        mapping[node.task_id] = name
+    return mapping
+
+
 _GRAPH_REGISTRY: dict[str, TaskGraph] = {}
 _GRAPH_VMS: dict[str, object] = {}
 _DEFAULT_DISPATCHER = None
