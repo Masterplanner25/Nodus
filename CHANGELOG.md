@@ -2,7 +2,40 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#664: an undefined name the program declared `extern` now says so.**
+
+  `nodus run` cannot register host functions, so a declared extern reaches its
+  call site undefined and the message was the pre-#489 one:
+  `Undefined function: notify`. A user who had just written `extern notify(...)`
+  was told nothing connecting the two. It now names the declaration and says
+  what registers it, at both undefined-name sites — the call and the value
+  position.
+
+  The CLI still does not pre-flight the way `NodusRuntime` does, and that is the
+  decision rather than the defect: pre-flighting would refuse every
+  extern-declaring program from the CLI, which is the workflow the feature
+  exists for. `nodus check` still passes such a file. Both are documented in
+  `OPERATOR_OR_EMBEDDER_RUNBOOK.md` now, which is what #664 asked for.
+
+  The declared names travel in the module's cached metadata, not derived from
+  the AST at the error site — a cached module has no AST, so the hint would
+  otherwise appear on a script's first run and vanish on every run after.
+
 ### Tooling
+
+- **#655: `test_workflow_store_isolation` no longer counts an in-flight atomic
+  write as a leaked run record.**
+
+  It failed intermittently on CI naming a `g_….json.<hex>.tmp` — the temp half
+  of a write-then-rename, which exists only *during* a write — and reported it
+  as "the run wrote into the repo despite the override". The run under test had
+  written exactly where it was told; something else in the process was mid-write
+  while the directory was snapshotted. The snapshot ignores `*.tmp` now, so the
+  message is true when it fires, and the test stops the default runner's sweep
+  daemon first, so a thread bound to a repo-root runner from an earlier test is
+  not writing there at all.
 
 - **The claim-discovery sweep now recognises the bare phrase "X is current".**
   Its marker list had `current version` and `current stable` but not `is current`

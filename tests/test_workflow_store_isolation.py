@@ -32,7 +32,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT / "src"))  # noqa: E402
 sys.path.insert(0, str(_REPO_ROOT))  # noqa: E402
 
-from nodus_lang_workflow.runner import default_store_root  # noqa: E402
+from nodus_lang_workflow.runner import (  # noqa: E402
+    default_store_root,
+    reset_default_workflow_runner,
+)
 from tools.nodus_gate.runtime_phase import (  # noqa: E402
     _WORKFLOW_STORE_ENV,
     RuntimeResult,
@@ -41,8 +44,24 @@ from tools.nodus_gate.runtime_phase import (  # noqa: E402
 _REPO_RUNS = _REPO_ROOT / ".nodus" / "workflow_framework" / "runs"
 
 
+def _run_files(directory: Path) -> set[str]:
+    """Run records in *directory* — *completed* ones, not writes in flight (#655).
+
+    Records are written atomically, temp-then-rename, so a `*.tmp` exists only
+    during a write and is gone a moment later. Counting them made this snapshot
+    sensitive to whether anything happened to be mid-write, and the assertion
+    below then reported "the run wrote into the repo despite the override" for a
+    file the run under test did not produce and that no longer exists.
+
+    A leak leaves a `g_….json`. That is what this must compare.
+    """
+    if not directory.is_dir():
+        return set()
+    return {p.name for p in directory.iterdir() if p.suffix != ".tmp"}
+
+
 def _repo_run_files() -> set[str]:
-    return {p.name for p in _REPO_RUNS.iterdir()} if _REPO_RUNS.is_dir() else set()
+    return _run_files(_REPO_RUNS)
 
 
 class DefaultStoreRootTests(unittest.TestCase):
@@ -70,8 +89,49 @@ class DefaultStoreRootTests(unittest.TestCase):
                          default_store_root())
 
 
+# closes: #655
+class InFlightWritesAreNotLeaksTests(unittest.TestCase):
+    def test_a_temp_file_is_not_counted_as_a_run_record(self):
+        """The exact name CI reported, and why the message was untrue.
+
+        `g_9a6e48c5.json.<hex>.tmp` is the temp half of an atomic write — it
+        exists only while some *other* writer is mid-write, and is renamed away
+        a moment later. Counting it turned a snapshot of "what did this run
+        leave behind" into a sample of "was anything writing just then".
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "g_9a6e48c5.json").write_text("{}", encoding="utf-8")
+            (runs / "g_9a6e48c5.json.6d7ef2cc43a24487b3ca8f78369e357e.tmp").write_text(
+                "{}", encoding="utf-8"
+            )
+            self.assertEqual({"g_9a6e48c5.json"}, _run_files(runs))
+
+    def test_a_missing_directory_is_empty_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(set(), _run_files(Path(tmp) / "absent"))
+
+
 # closes: #380
+# closes: #655
 class RunsGoWhereTheOverrideSaysTests(unittest.TestCase):
+    def setUp(self):
+        """Stop any sweeper bound to a repo-root runner before snapshotting (#655).
+
+        `get_default_workflow_runner()` builds against the *current* working
+        directory and starts a 30-second daemon sweep thread bound to it. Any
+        earlier test that triggered one while the CWD was the repo root leaves a
+        thread writing into the repo's `.nodus/`, and nothing between there and
+        here stops it — the in-process form of the "never run two suites at
+        once" hazard, and the same family as #632 and #591.
+
+        `conftest.py` already sweeps the directory between tests; stopping the
+        writer is the missing half. Filtering `*.tmp` above makes the message
+        true when it fires; this removes the stray writer other
+        directory-sensitive tests can also see.
+        """
+        reset_default_workflow_runner()
+
     def test_a_workflow_run_writes_outside_the_repo(self):
         # End-to-end through the CLI, with the repo as CWD — the exact shape that
         # was filling `.nodus/` — and assert nothing lands there.

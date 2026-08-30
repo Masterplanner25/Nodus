@@ -324,6 +324,14 @@ class VM:
         self.on_error: Callable | None = None
         self.coroutine_timeout_ms: int | None = None
         self._bare_import_hints: dict[str, str] = {}
+        # #664: names this program declared `extern`. Diagnostics only -- nothing
+        # dispatches on it. The CLI cannot register host functions, so a declared
+        # extern reaches a call site undefined, and the pre-#489 message
+        # ("Undefined function: notify") told a user who had just written
+        # `extern notify(...)` nothing about why. Populated by the module loader,
+        # which is the only place that has seen the AST; a union across loaded
+        # modules, because the answer only shapes a sentence.
+        self.declared_externs: set[str] = set()
         self.builtins: dict[str, BuiltinInfo] = {
             "clock": BuiltinInfo("clock", 0, lambda: time.time()),
             "type": BuiltinInfo("type", 1, self.builtin_type),
@@ -737,7 +745,23 @@ class VM:
                 f"Module '{import_path}' was imported without an alias — "
                 f"add 'as {name}' to the import to use '{name}.method()' syntax",
             )
-        self.runtime_error("name", f"Undefined variable: {name}")
+        self.runtime_error("name", f"Undefined variable: {name}{self.extern_hint(name)}")
+
+    def extern_hint(self, name: str) -> str:
+        """The trailing sentence for a name this program declared `extern` (#664).
+
+        Empty for every other name, so the two undefined-name messages keep their
+        existing wording. Written once and called from both sites: the whole point
+        of the declaration is that the user has already said what they expect, and
+        a message that ignores it is the pre-#489 message.
+        """
+        if name not in self.declared_externs:
+            return ""
+        return (
+            f" -- declared `extern` in this program, but nothing has registered it. "
+            f"`nodus run` does not register host functions; run it from a host that "
+            f'calls register_function("{name}", ...), or remove the declaration.'
+        )
 
     def store_name(self, name: str, value):
         locals_ = self.current_locals()
@@ -3675,7 +3699,7 @@ class VM:
                 return None
             self.call_closure(callee, arg_count)
             return None
-        self.runtime_error("name", f"Undefined function: {fn_name}")
+        self.runtime_error("name", f"Undefined function: {fn_name}{self.extern_hint(fn_name)}")
 
     def _op_call_value(self, instr):
         arg_count = instr[1]
