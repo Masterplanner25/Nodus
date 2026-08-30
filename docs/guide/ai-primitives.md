@@ -262,6 +262,34 @@ always applies**: declare neither and an implicit cap of 10,000 attempts is
 imposed, because a predicate that never holds is an unbounded loop and that is
 precisely what this construct exists to prevent.
 
+**Inside a step body**, which is where most uses of this belong — a step that has
+to produce something valid before the steps after it can run:
+
+```nd
+import "std:retry" as retry
+
+workflow draft {
+    step compose {
+        let tries = {"n": 0i}
+        let r = retry.until(
+            fn() { tries["n"] = tries["n"] + 1i; return tries["n"] },
+            fn(value) { return value >= 2i },
+            {"max_attempts": 4i}
+        )
+        return "attempts=\(r["attempts"]) value=\(r["value"])"
+    }
+}
+
+fn main() {
+    let result = run_workflow(draft)
+    print(result["steps"]["compose"])
+}
+```
+
+```
+attempts=2 value=2
+```
+
 **Which altitude.** `goal … over … { until … }` re-runs a whole *workflow* until
 a checkpoint is reached, carrying state across passes durably. `retry.until` is a
 bounded in-process loop around a *single call* and persists nothing. Reach for

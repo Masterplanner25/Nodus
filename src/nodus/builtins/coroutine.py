@@ -20,12 +20,19 @@ def register(vm, registry) -> None:
             vm.runtime_error("call", "coroutine(fn) expects a zero-argument function")
         coro = Coroutine(closure)
         # ASYNC-MOD-003: a coroutine must run in the context its closure was
-        # compiled against. Inside a detached module VM, a closure that arrived
-        # from the caller (e.g. nested in the list passed to async.parallel)
-        # belongs to the caller's chunk — resuming it against the module's
-        # bytecode corrupts execution. Pin the owning context at creation.
-        if vm._is_foreign_closure(closure):
-            coro.module_ctx = vm._caller_vm._capture_module_ctx()
+        # compiled against. A closure that arrived from the caller (e.g. nested
+        # in the list passed to async.parallel) belongs to the caller's chunk —
+        # resuming it against the module's bytecode corrupts execution. Pin the
+        # owning context at creation.
+        #
+        # #691: this asked `_is_foreign_closure` and then reached for
+        # `_caller_vm` itself, which silently assumed the only way to be running
+        # foreign code is a detached module VM. A cross-module frame in this same
+        # VM is the other way, and it is the one a workflow step body takes.
+        # `_foreign_closure_origin` is where that is decided now.
+        origin = vm._foreign_closure_origin(closure)
+        if origin is not None:
+            coro.module_ctx = origin
         return coro
 
     def builtin_coroutine_status(value):
@@ -132,9 +139,10 @@ def register(vm, registry) -> None:
         # function (async.parallel([c1, c2])) carries no context, and the
         # spawning VM's context is the *module's* — resuming against it
         # corrupts execution. Pin the caller's context when the closure is
-        # foreign to this VM.
-        if coroutine.module_ctx is None and vm._is_foreign_closure(coroutine.closure):
-            coroutine.module_ctx = vm._caller_vm._capture_module_ctx()
+        # foreign to this VM (#691: whichever way this VM came to be running
+        # someone else's chunk).
+        if coroutine.module_ctx is None:
+            coroutine.module_ctx = vm._foreign_closure_origin(coroutine.closure)
         # ASYNC-MOD-001: capture the spawning module context so the coroutine's
         # first resume restores it (not a context another coroutine left behind).
         if coroutine.module_ctx is None and hasattr(vm, "_capture_module_ctx"):

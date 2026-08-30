@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#691: a callback handed to an imported module's function now runs against
+  its own chunk, wherever the call is made from.**
+
+  A `Closure` is an address plus its upvalues, and the address indexes the chunk
+  it was compiled from. A module function reached from `fn main()` runs in a
+  detached VM, which wrapped closure arguments in a `_ClosureProxy` on the way in
+  and dispatched them back correctly. A module function reached from inside a
+  scheduler-managed coroutine takes the #105 fast path instead — the module's
+  code is swapped into the *running* VM — and nothing there was wrapped or
+  checked, so the callback's address was executed against the module's
+  instructions. **A workflow step body is always a coroutine**, which is why the
+  construct worked at top level and failed inside a step.
+
+  Five symptoms came out of one construct, depending only on what happened to sit
+  at that address:
+
+  | Symptom | Shape |
+  |---|---|
+  | step truncates, `failed: []`, `steps: {}`, run reports success | module defines one function |
+  | `Stack underflow` | module defines two |
+  | `Cannot call non-function: nil` | callback is a named top-level `fn` |
+  | `Iterator is not supported` | callback reached through the iterator protocol |
+  | callback silently never runs | callback wrapped in a `coroutine()` |
+
+  `retry.until` (#466) is the feature this blocked: a `std:retry` function whose
+  documented home is a step body.
+
+  `VM._foreign_closure_origin` answers "which context does this closure need, if
+  not the one loaded" once, and both sites that jump to a closure's address —
+  `call_closure` and `run_closure` — consult it. `builtin_coroutine_create` and
+  `builtin_spawn` had their own version of the question and now ask the same one;
+  theirs assumed a detached VM was the only way to be running foreign code, which
+  is precisely the assumption that hid this. Origin is resolved by asking which
+  saved context *owns* the closure's `FunctionInfo`, not by taking the nearest
+  boundary — nearest is wrong as soon as a closure is passed through two modules.
+
+  Not a regression: v5.7.1 and every earlier release behave identically.
+
 ### Tooling
 
 - **`CLAUDE.md` trimmed from 1,889 to 1,619 lines; per-repo companion detail moved
