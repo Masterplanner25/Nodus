@@ -690,6 +690,46 @@ class ModuleLoader:
             for stmt, spec in zip(parsed.imports, import_specs):
                 dep_meta = self._build_metadata(spec.resolved_path, base_dir=os.path.dirname(spec.resolved_path), source_path=spec.resolved_path)
                 if spec.names:
+                    # #680: a named import of a builtin name cannot work, and
+                    # used to fail silently. `_op_call` resolves `self.builtins`
+                    # before locals and globals, so the builtin wins and the
+                    # binding this import created is never reached -- the program
+                    # then fails with an arity error naming neither the import
+                    # nor the shadowing.
+                    #
+                    # The builtin has to keep winning: `register_function`
+                    # refuses to override one precisely so a host can rely on a
+                    # builtin name meaning the builtin (a security boundary, see
+                    # `tests/test_downstream_contracts.py`). Letting an import
+                    # take the name would be the same hole through a second door.
+                    #
+                    # So this is refused rather than reordered. It cannot break a
+                    # working program: the import already did nothing.
+                    shadowed = [name for name in spec.names if name in BUILTIN_NAMES]
+                    if shadowed:
+                        tok = getattr(stmt, "_tok", None)
+                        names = ", ".join(f"'{name}'" for name in shadowed)
+                        # A usable identifier for the suggestion. The naive form
+                        # (last path segment) yields `shadowmod.nd` for a
+                        # relative import, which is not a legal alias -- a fix
+                        # suggestion that does not parse is worse than none.
+                        alias = os.path.basename(spec.path).split(":")[-1]
+                        if alias.endswith(".nd"):
+                            alias = alias[:-3]
+                        alias = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in alias)
+                        if not alias or alias[0].isdigit():
+                            alias = "mod"
+                        raise LangRuntimeError(
+                            "import",
+                            f"Import failed: {names} is a built-in function name and "
+                            f"cannot be imported -- the builtin would win and this "
+                            f"binding would never be reached. Import the module "
+                            f'instead: `import "{spec.path}" as {alias}` and '
+                            f'call `{alias}.{shadowed[0]}(...)`.',
+                            line=tok.line if tok is not None else None,
+                            col=tok.col if tok is not None else None,
+                            path=spec.resolved_path,
+                        )
                     missing = [name for name in spec.names if name not in dep_meta.exports]
                     if missing:
                         tok = getattr(stmt, "_tok", None)
