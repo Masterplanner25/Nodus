@@ -5,3 +5,73 @@ fn available() {
 fn call(func, policy) {
     return retry_call(func, policy)
 }
+
+// Retry until a predicate holds, not until a call stops failing (#466).
+//
+// `call` re-attempts on *error*. A result that returns successfully but is
+// wrong -- a malformed edit, a schema-invalid payload, a plan that fails its own
+// check -- is not a retry trigger for it. `until` is that trigger.
+//
+// The failing result is handed to the next attempt. `func` may take zero
+// arguments or one; with one it receives the previous result, `nil` on the first
+// attempt. Without that carrier the retry is a blind re-roll, which is the thing
+// this pattern exists to avoid: re-sending the error is the whole point.
+//
+// `goal ... over ... { until ... budget { max_iterations, deadline_ms } }`
+// (#409) is the same construct one altitude up, and the vocabulary matches
+// deliberately so the two read alike. What differs is scope: a goal re-runs a
+// whole workflow and carries state across passes durably; this is a bounded
+// in-process loop around one call and persists nothing.
+//
+// Returns a map: `value` (the last result), `satisfied` (did the predicate ever
+// hold), `attempts` (how many calls were made).
+// A bound that cannot be omitted. `budget` grew the same guarantee in #488:
+// when nothing else bounds the loop an implicit cap applies, because a
+// predicate that never holds is an unbounded loop and that is precisely what
+// this construct exists to prevent. Deliberately large -- no real validated
+// retry reaches it, and a caller who wants three says three.
+// `clock()` is seconds; the deadline is milliseconds so it reads the same
+// as `budget { deadline_ms }` one altitude up.
+// Normalised to a real boolean rather than stored raw: `satisfied`
+// is returned to the caller, and a predicate answering "yes" with
+// a non-empty string should not put that string in the result map.
+fn until(func, predicate, policy) {
+    let opts = policy
+    if (policy == nil) {
+        opts = {}
+    }
+    let max_attempts = 0i
+    if (has_key(opts, "max_attempts")) {
+        max_attempts = opts["max_attempts"]
+    }
+    let deadline_ms = 0
+    if (has_key(opts, "deadline_ms")) {
+        deadline_ms = opts["deadline_ms"]
+    }
+    if (max_attempts <= 0i && deadline_ms <= 0) {
+        max_attempts = 10000i
+    }
+    let takes_previous = runtime_fn_arity(func) == 1i
+    let started = clock() * 1000
+    let attempts = 0i
+    let last = nil
+    let satisfied = false
+    while (!satisfied) {
+        if (max_attempts > 0i && attempts >= max_attempts) {
+            break
+        }
+        if (deadline_ms > 0 && clock() * 1000 - started >= deadline_ms) {
+            break
+        }
+        if (takes_previous) {
+            last = func(last)
+        } else {
+            last = func()
+        }
+        attempts = attempts + 1i
+        if (predicate(last)) {
+            satisfied = true
+        }
+    }
+    return {"value": last, "satisfied": satisfied, "attempts": attempts}
+}

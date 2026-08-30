@@ -203,6 +203,71 @@ Built-in policies (pass as a string instead of a map):
 
 Wraps the `nodus-retry` package (required dependency of nodus-lang).
 
+### `retry.until` — retry on a *predicate*, not on failure
+
+`retry.call` re-attempts when a call **errors**. A call that returns
+successfully but returns something *wrong* — a malformed edit, a
+schema-invalid payload, a plan that fails its own check — is not a retry
+trigger for it. `retry.until` is that trigger.
+
+```nd
+import "std:retry" as retry
+
+fn main() {
+    let tries = {"n": 0i}
+    let r = retry.until(
+        fn() { tries["n"] = tries["n"] + 1i; return tries["n"] },
+        fn(value) { return value >= 3i },
+        {"max_attempts": 5i}
+    )
+    print("value=\(r["value"]) satisfied=\(r["satisfied"]) attempts=\(r["attempts"])")
+}
+```
+
+```
+value=3 satisfied=true attempts=3
+```
+
+**The failing result reaches the next attempt.** Give the function one parameter
+and it receives the previous result — `nil` on the first attempt:
+
+```nd
+import "std:retry" as retry
+
+fn main() {
+    let seen = []
+    retry.until(
+        fn(previous) { seen = list_push(seen, previous); return len(seen) },
+        fn(value) { return value >= 3i },
+        {"max_attempts": 5i}
+    )
+    print(seen)
+}
+```
+
+```
+[nil, 1, 2]
+```
+
+Without that carrier the retry is a blind re-roll, which is the thing the pattern
+exists to avoid: re-sending the error is the whole point.
+
+Returns `{value, satisfied, attempts}`. When the predicate never holds,
+`satisfied` is `false` and `value` is the last result — exhaustion is a reported
+outcome, not an error.
+
+**Bounds.** `{max_attempts, deadline_ms}` mean what `budget { max_iterations,
+deadline_ms }` means for a goal, so the two altitudes read alike. **A bound
+always applies**: declare neither and an implicit cap of 10,000 attempts is
+imposed, because a predicate that never holds is an unbounded loop and that is
+precisely what this construct exists to prevent.
+
+**Which altitude.** `goal … over … { until … }` re-runs a whole *workflow* until
+a checkpoint is reached, carrying state across passes durably. `retry.until` is a
+bounded in-process loop around a *single call* and persists nothing. Reach for
+the goal when the work is a pipeline and you want it resumable; reach for
+`retry.until` when it is one call you want validated.
+
 ---
 
 ## std:circuit_breaker — Three-State Breaker
