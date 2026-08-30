@@ -1492,10 +1492,34 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.7.1** (live on PyPI, published 2026-08-29). Both files
+The current published version is **v5.8.0** (live on PyPI, published 2026-08-30). Both files
 must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.7.1"`
-- `pyproject.toml` — `version = "5.7.1"`
+- `src/nodus/support/version.py` — `__version__ = "5.8.0"`
+- `pyproject.toml` — `version = "5.8.0"`
+
+**5.8.0 is about work already in motion.** Two surfaces, both of which existed only at
+the workflow altitude before: a run or a task can be **stopped**, and a call that
+returned the *wrong* thing rather than failing can be **retried against a predicate**.
+
+- **Cancellation** (#395, #157): `nodus workflow cancel <graph_id>` for a durable run, and
+  `cancel(t)` / `wait(t)` for a task. `cancelled` is a run status and a blocked reason, both
+  named once in a canonical tuple. A cancelled task's waiters are released rather than
+  orphaned.
+- **`retry.until(f, predicate, policy)`** (#466): `retry.call` re-attempts when a call
+  *errors*; a malformed edit or a schema-invalid payload is not an error. `retry.until` is
+  that trigger. The failing result is carried into the next attempt — without that carrier
+  it is a blind re-roll — and a bound **always** applies: declare neither `max_attempts` nor
+  `deadline_ms` and an implicit cap of 10,000 is imposed.
+- **`examples/plan_then_act.nd`** (#465): the plan-then-act handoff as a worked example
+  rather than a stdlib wrapper, because the properties worth having — inspectable on disk,
+  resumable, composable with `goal … over …` — come from *being a workflow*, and a wrapper
+  would hide it.
+- Runtime-built graphs can name their steps and get per-step results keyed by that name
+  (#679); an undefined name a program declared `extern` now says so (#664).
+
+Two changes are **not** additive and are in the table below: a function assigning to a
+module-top-level `let` now actually updates it (#671), and a named import of a builtin name
+is refused rather than silently ignored (#680).
 
 **5.7.1 repairs 5.7.0.** `nodus check` in 5.7.0 rejected correct
 code: a file declaring an `extern` could not read any step dependency by name, because
@@ -1514,6 +1538,8 @@ belongs to a release rather than to your change.
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.8.0 | a function assigning to a module-top-level `let` now updates it, where the write used to vanish (#671) | intended; nothing can have depended on a write disappearing |
+| 5.8.0 | a named import of a builtin name is refused at load instead of silently ignored (#680) | import the module and qualify — `import "std:async" as async` |
 | 5.7.0 | `nodus check` rejects a dependency read in any file declaring an `extern` (#662) | upgrade to 5.7.1 |
 | 5.6.0 | an unrecognised type name is reported, not silently `any` (#609) | it is a **warning** until 6.0.0 — fix the annotation |
 | 5.5.0 | a step body can no longer be called directly — `build["steps"][1]["fn"](nil)` raises (#394) | never supported; call the workflow |

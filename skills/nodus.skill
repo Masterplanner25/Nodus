@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "5.7.1"
+version: "5.8.0"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Package version is 5.7.1. Bytecode version is 4** — unchanged since v1.0, so a major
+**Package version is 5.8.0. Bytecode version is 4** — unchanged since v1.0, so a major
 bump does not imply recompilation. Installed via `pip install nodus-lang`.
 
 Run `nodus docs` for the guide, the machine-readable index and this skill's source,
