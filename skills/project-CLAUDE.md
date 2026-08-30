@@ -51,7 +51,7 @@ nodus repl                               # interactive REPL
 - All imports must be at the top level of the file — never inside functions or steps.
 
 **Closures**
-- Assigning to an outer `let` inside a closure creates a nil local shadow, not a mutation.
+- Assigning to a **module-top-level** `let` from inside a function or closure creates a nil frame-local, not a mutation (#671). A `let` declared inside a function is captured and mutated normally.
 - Use a map for shared mutable state: `let s = {"n": 0i}` then `s["n"] = s["n"] + 1i`.
 
 **Coroutines and channels**

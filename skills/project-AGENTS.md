@@ -37,7 +37,7 @@ nodus repl
 - `match` is an expression for value dispatch (4.1.0+): `match x { "a" => 1i, _ => 0i }`. `_` must be last; no binding patterns.
 - Bare numbers are floats. Use `i` suffix for counters, indices, loop bounds, and workflow state.
 - Imports must be top-level only.
-- Assigning to an outer `let` inside a closure creates a nil local shadow. Use a map for shared mutable state.
+- Assigning to a **module-top-level** `let` from inside a function or closure silently writes a frame-local; the top-level value never changes (#671). A `let` declared inside a function is captured and mutated normally. Use a map for state shared across functions at module scope.
 - `spawn()` takes a coroutine value, not a function literal.
 - Channels are built in. Use `channel()`, `send()`, `recv()`, `close()`. Do not import `std:channel`.
 - Workflow results are maps. Use `r["steps"]["name"]` and `r["state"]["name"]`.
