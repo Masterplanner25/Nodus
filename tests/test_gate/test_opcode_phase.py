@@ -21,12 +21,15 @@ from tools.nodus_gate.opcode_phase import (  # noqa: E402
     CLAIM_ANCHORS,
     OpcodeResult,
     _check_claims,
+    _check_semantic_specs,
     _compare,
     load_dispatch_opcodes,
     parse_freeze_stability_tables,
     parse_reference_appendix,
     parse_reference_inventory,
+    parse_reference_categories,
     parse_reference_removed_section,
+    parse_specified_opcodes,
     run_opcode_phase,
     scan_emitted_opcodes,
 )
@@ -136,6 +139,76 @@ class DriftDetectionTests(unittest.TestCase):
         _compare(result, "inventory", active, dispatch)
         self.assertEqual(1, len(result.findings))
         self.assertIn("MOD", result.findings[0].detail)
+
+
+class SemanticSpecTests(unittest.TestCase):
+    """#412 phase 2: the phase checks spec *coverage*, not only inventory.
+
+    It cannot check semantics -- `tests/test_opcode_semantics.py` does that. What
+    it checks is that the module which does is still aimed at the right set, so
+    the result does not rot the way the inventory did before #366.
+    """
+
+    def _dispatch(self) -> set:
+        dispatch, _ = load_dispatch_opcodes(str(_ROOT))
+        return dispatch
+
+    def test_the_real_repo_specifies_every_exception_opcode(self):
+        result = OpcodeResult()
+        _check_semantic_specs(result, str(_ROOT), _reference_text(), self._dispatch())
+        self.assertEqual([], [f.message for f in result.findings])
+
+    def test_the_exception_category_is_the_unwind_path(self):
+        """If this set ever changes, the coverage requirement changed with it --
+        which is the point of reading the category from the document."""
+        categories = parse_reference_categories(_reference_text())
+        exceptions = {op for op, cat in categories.items() if cat == "exceptions"}
+        self.assertEqual({"SETUP_TRY", "POP_TRY", "FINALLY_END", "THROW"}, exceptions)
+
+    def test_every_exception_opcode_is_named_in_the_spec_module(self):
+        specified = parse_specified_opcodes(str(_ROOT))
+        self.assertIsNotNone(specified)
+        for op in ("SETUP_TRY", "POP_TRY", "FINALLY_END", "THROW"):
+            self.assertIn(op, specified)
+
+    def test_an_unspecified_exception_opcode_is_reported(self):
+        """Drift in the direction that matters: a new unwind opcode, or a spec
+        quietly dropped."""
+        result = OpcodeResult()
+        _check_semantic_specs(
+            result, str(_ROOT),
+            # Inserted *inside* §3 — appending past its terminating heading
+            # puts the entry outside the section the parser reads, and the
+            # check then passes for the wrong reason.
+            _reference_text().replace(
+                "### SETUP_TRY\n",
+                "### NEW_UNWIND\n- Category: exceptions\n\n### SETUP_TRY\n",
+                1,
+            ),
+            self._dispatch() | {"NEW_UNWIND"},
+        )
+        self.assertTrue(any("no semantic spec" in f.message for f in result.findings),
+                        [f.message for f in result.findings])
+        self.assertIn("NEW_UNWIND", " ".join(f.detail for f in result.findings))
+
+    def test_a_spec_for_an_undispatched_opcode_is_reported(self):
+        """A rename leaves the spec module covering a name nothing dispatches;
+        that must be loud, not silently green."""
+        result = OpcodeResult()
+        _check_semantic_specs(result, str(_ROOT), _reference_text(),
+                              self._dispatch() - {"POP_TRY"})
+        self.assertTrue(any("does not dispatch" in f.message for f in result.findings),
+                        [f.message for f in result.findings])
+
+    def test_a_missing_spec_module_is_a_failure_not_a_skip(self):
+        """A check may not pass by being unable to run -- the rule the shapes
+        and consumers phases already follow."""
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        result = OpcodeResult()
+        _check_semantic_specs(result, str(root), _reference_text(), self._dispatch())
+        self.assertTrue(any("SPECIFIED" in f.message for f in result.findings),
+                        [f.message for f in result.findings])
 
 
 class ClaimAnchorTests(unittest.TestCase):

@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#412 phase 2: the ten control-flow and frame opcodes have a semantic spec,
+  and `nodus_gate --opcodes` checks that they still do.**
+
+  The gate verified the opcode *inventory* and `test_bytecode_golden.py` verifies
+  *emission*; between them nothing verified that an opcode does what it is
+  documented to do, which is why the gate was green through all three of the v5
+  cycle's exception-unwind bugs. `tests/test_opcode_semantics.py` builds a VM
+  state by hand, executes one instruction, and asserts the result — the pre-state
+  is constructed rather than arrived at, because a program that happens to reach
+  an opcode passes as long as the *program's* output is right.
+
+  Verified by mutation: fourteen deliberate defects applied to `vm.py`, all
+  fourteen killed, none survived.
+
+  Four handler/reference disagreements found and corrected in
+  `BYTECODE_REFERENCE.md §3` — `FINALLY_END` documented one of its three exits,
+  `CALL_METHOD` omitted that a module is a valid receiver, `THROW`'s `err.*`
+  fields describe the record a `catch` receives rather than the exception it
+  raises, and `CALL_VALUE` transfers control rather than pushing a result.
+
+  The gate's new check is coverage, not semantics: every opcode in the
+  reference's `exceptions` category must be specified, and every specified
+  opcode must still be dispatched. The category is read from the document, so a
+  fifth unwind opcode is covered by construction.
+
 ### Fixes
 
 - **#664: an undefined name the program declared `extern` now says so.**
