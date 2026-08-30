@@ -12,6 +12,53 @@ RUN_STATUS_RETRY_SCHEDULED = "retry_scheduled"
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_FAILED = "failed"
 RUN_STATUS_DEAD_LETTERED = "dead_lettered"
+# #395 §7.3: a cancelled run is not a failed one. It did not fail, it was
+# stopped, and reporting it as `failed` would corrupt every failure rate an
+# operator computes. Terminal, and deliberately NOT rehydratable -- a cancelled
+# run that resurrects on the next sweep has un-cancelled itself.
+RUN_STATUS_CANCELLED = "cancelled"
+
+# The run-status vocabulary, named once (#395 §7.3).
+#
+# It was named three times before: `REHYDRATABLE_RUN_STATUSES` in `store.py` and
+# `_REHYDRATABLE_STATUSES` in `runner.py` were two independent definitions of one
+# equal set, plus `_KNOWN_RUN_STATUSES` listing the members again. Adding an
+# eighth status is exactly when that costs something -- four edits, and the one
+# you miss is silent.
+#
+# `nodus_gate --shapes` did not catch it: its species-B detector looks for one
+# literal collection being a strict *subset* of another, and these were equal.
+# Worth knowing about the detector, not a reason to leave the duplication.
+#
+# Partitioned deliberately: every status is terminal or not, and the two sets
+# below must stay disjoint. `tests/test_run_status_vocabulary.py` drives off this
+# tuple, so a ninth status fails the suite until it is classified.
+RUN_STATUSES: tuple[str, ...] = (
+    RUN_STATUS_PENDING,
+    RUN_STATUS_RUNNING,
+    RUN_STATUS_WAITING,
+    RUN_STATUS_RETRY_SCHEDULED,
+    RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_DEAD_LETTERED,
+    RUN_STATUS_CANCELLED,
+)
+
+#: A run in one of these states can be picked up and continued after a restart.
+REHYDRATABLE_RUN_STATUSES = frozenset({
+    RUN_STATUS_WAITING,
+    RUN_STATUS_RUNNING,
+    RUN_STATUS_RETRY_SCHEDULED,
+})
+
+#: A run in one of these states is done, and `workflow cleanup` may retire it.
+#: `cancelled` belongs here or cancelled runs accumulate forever.
+TERMINAL_RUN_STATUSES = frozenset({
+    RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_DEAD_LETTERED,
+    RUN_STATUS_CANCELLED,
+})
 
 
 @dataclass

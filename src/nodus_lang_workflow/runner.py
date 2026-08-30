@@ -20,12 +20,16 @@ from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.state_paths import workflow_store_root
 
 from .models import (
+    REHYDRATABLE_RUN_STATUSES,
+    RUN_STATUSES,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_DEAD_LETTERED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RETRY_SCHEDULED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_WAITING,
+    TERMINAL_RUN_STATUSES,
     WorkflowRunRecord,
 )
 from .store import (
@@ -177,16 +181,11 @@ def reset_default_workflow_runner() -> None:
         _stop_default_sweep_locked()
         _DEFAULT_RUNNER = None
         _DEFAULT_RUNNER_ROOT = None
-_REHYDRATABLE_STATUSES = {RUN_STATUS_WAITING, RUN_STATUS_RUNNING, RUN_STATUS_RETRY_SCHEDULED}
-_KNOWN_RUN_STATUSES = {
-    "pending",
-    RUN_STATUS_RUNNING,
-    RUN_STATUS_WAITING,
-    RUN_STATUS_RETRY_SCHEDULED,
-    RUN_STATUS_COMPLETED,
-    RUN_STATUS_FAILED,
-    RUN_STATUS_DEAD_LETTERED,
-}
+# Both sourced from `models`, which owns the vocabulary (#395 §7.3). The
+# rehydratable set used to be defined here *and* in `store.py`, equal by
+# coincidence; `_KNOWN_RUN_STATUSES` listed the members a third time.
+_REHYDRATABLE_STATUSES = REHYDRATABLE_RUN_STATUSES
+_KNOWN_RUN_STATUSES = frozenset(RUN_STATUSES)
 
 
 def _normalize_statuses(statuses: set[str] | None) -> set[str] | None:
@@ -500,6 +499,60 @@ class WorkflowFrameworkRunner:
 
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
         return self.store.get_run(run_id)
+
+    def cancel_run(self, run_id: str) -> dict[str, object]:
+        """Stop a run. Returns what happened, rather than raising (#395 §7).
+
+        Marks the record `cancelled` — terminal, and deliberately not
+        rehydratable, so a cancelled run cannot resurrect on the next sweep.
+
+        **In-process this is immediate; across processes it is cooperative.** A
+        run in flight lives in some process's scheduler, and a CLI acting against
+        a shared store can only mark the record — the owning runner observes it
+        at the next step boundary, where it already decides whether to dispatch.
+        So a cancel is *eventually* effective, bounded by the duration of the
+        step that is currently running. That is a real limit and is documented as
+        one: a cancel that silently does nothing until a 40-minute agent call
+        returns is worse than a cancel that says so.
+
+        Cancelling an already-terminal run is a **no-op reporting what it found**,
+        not an error — matching `cancel(task)`. The caller of a cancel usually
+        cannot know the target's state, and raising would push every call site
+        into a check-then-act race.
+        """
+        record = self.store.get_run(run_id)
+        if record is None:
+            return {"ok": False, "run_id": run_id, "reason": "not found"}
+        if record.status in TERMINAL_RUN_STATUSES:
+            return {
+                "ok": False,
+                "run_id": run_id,
+                "reason": "already finished",
+                "status": record.status,
+            }
+
+        previous = record.status
+        record.status = RUN_STATUS_CANCELLED
+        record.claim = None
+        record.metadata["cancelled_from"] = previous
+        record.metadata["cancelled_at"] = runtime_time_ms()
+        self.store.save_run(record)
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "status": RUN_STATUS_CANCELLED,
+            "cancelled_from": previous,
+        }
+
+    def run_is_cancelled(self, run_id: str) -> bool:
+        """Has this run been cancelled out from under us?
+
+        The step-boundary question. Read by the dispatch loop so a cancellation
+        marked by another process takes effect without that process being able to
+        reach into this one's scheduler.
+        """
+        record = self.store.get_run(run_id)
+        return record is not None and record.status == RUN_STATUS_CANCELLED
 
     def list_runs(self) -> list[WorkflowRunRecord]:
         return self.store.list_runs()

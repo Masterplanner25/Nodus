@@ -301,6 +301,9 @@ COMMANDS: dict[str, Command] = {
                 frozenset(),
             ),
             "inspect": (_STORE, frozenset()),
+            # #395 SS7: stop a run. Cross-process this marks the record and the
+            # owning runner observes it at its next step boundary.
+            "cancel": (_STORE, frozenset()),
             "replay": (
                 _STORE | frozenset({"--checkpoint"}),
                 frozenset({"--rearm-only"}),
@@ -968,6 +971,9 @@ _DETAILED_HELP: dict[str, str] = {
         "             List workflow framework runs with optional filtering.",
         "  inspect <graph_id> [--project-root PATH]",
         "             Show a workflow framework run record.",
+        "  cancel <graph_id> [--project-root PATH]",
+        "             Cancel a run. Marks it cancelled (terminal); a run owned by",
+        "             another process stops at its next step boundary.",
         "  replay <graph_id> [--checkpoint LABEL] [--rearm-only] [--project-root PATH]",
         "             Replay or rearm a dead-lettered workflow run.",
         "  migrate-state [--graph-id ID] [--project-root PATH]",

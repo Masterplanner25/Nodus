@@ -15,6 +15,8 @@ from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.state_paths import workflow_sqlite_path, workflow_store_root
 
 from .models import (
+    REHYDRATABLE_RUN_STATUSES as _REHYDRATABLE_RUN_STATUSES,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_DEAD_LETTERED,
     RUN_STATUS_FAILED,
@@ -22,22 +24,43 @@ from .models import (
     RUN_STATUS_RETRY_SCHEDULED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_WAITING,
+    TERMINAL_RUN_STATUSES as _TERMINAL_RUN_STATUSES,
     WorkflowClaim,
     WorkflowRunRecord,
     WorkflowWaitRecord,
 )
 
+# Re-exported on purpose: callers import the run-status names from here as well
+# as from `models`, and several tests do. `ruff --fix` removed four of them the
+# moment they stopped being referenced *inside* this module -- which is correct
+# about the letter and wrong about the contract, and broke a test module at
+# import time. Listed in `__all__` so the re-export is a stated interface rather
+# than an accident of what happens to be imported.
+__all__ = [
+    "REHYDRATABLE_RUN_STATUSES",
+    "RUN_STATUS_CANCELLED",
+    "RUN_STATUS_COMPLETED",
+    "RUN_STATUS_DEAD_LETTERED",
+    "RUN_STATUS_FAILED",
+    "RUN_STATUS_PENDING",
+    "RUN_STATUS_RETRY_SCHEDULED",
+    "RUN_STATUS_RUNNING",
+    "RUN_STATUS_WAITING",
+    "TERMINAL_RUN_STATUSES",
+    "LocalWorkflowStore",
+    "SQLiteWorkflowStore",
+    "WorkflowStore",
+    "create_workflow_store",
+    "workflow_store_backend_from_env",
+    "workflow_store_path_from_env",
+]
 
-REHYDRATABLE_RUN_STATUSES = {
-    RUN_STATUS_WAITING,
-    RUN_STATUS_RETRY_SCHEDULED,
-    RUN_STATUS_RUNNING,
-}
-TERMINAL_RUN_STATUSES = {
-    RUN_STATUS_COMPLETED,
-    RUN_STATUS_FAILED,
-    RUN_STATUS_DEAD_LETTERED,
-}
+
+# Re-exported from `models`, which owns the vocabulary (#395 §7.3). These were
+# defined here independently of `runner.py`'s copy, and the two were equal by
+# coincidence rather than by construction.
+REHYDRATABLE_RUN_STATUSES = _REHYDRATABLE_RUN_STATUSES
+TERMINAL_RUN_STATUSES = _TERMINAL_RUN_STATUSES
 
 
 class WorkflowStore(ABC):

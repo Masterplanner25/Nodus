@@ -4,6 +4,32 @@
 
 ### Added
 
+- **#395: a workflow run can be cancelled — `nodus workflow cancel <graph_id>`,
+  and `cancel_run(run_id)` for an embedder.**
+
+  The run is marked `cancelled`, an **eighth run status**: terminal, and
+  deliberately *not* rehydratable, since a cancelled run that comes back on the
+  next sweep has un-cancelled itself. The status it was cancelled from is kept in
+  the record, so "what was it doing when it was stopped" has one place to look.
+
+  **In-process this is immediate; across processes it is cooperative.** A CLI
+  cannot reach into the scheduler of whichever process owns a running run, so it
+  marks the store and that process observes it at the next step boundary — a
+  cancel is *eventually* effective, bounded by the duration of the step currently
+  running. The command says so rather than implying otherwise.
+
+  Cancelling a finished or unknown run reports what it found instead of raising,
+  matching `cancel(task)`: the caller usually cannot know the target's state.
+
+  **The run-status vocabulary is now named once.** It was named three times —
+  `REHYDRATABLE_RUN_STATUSES` in `store.py` and `_REHYDRATABLE_STATUSES` in
+  `runner.py` were independent definitions of one equal set, with the members
+  listed again as `_KNOWN_RUN_STATUSES`. Adding a status is exactly when that
+  costs something. `models.py` owns it; the others import it.
+
+  Not yet built: cancelling a run stops dispatch but does not unwind a step
+  coroutine already in flight. The verb that needs (`cancel(t)`) now exists.
+
 - **#395 / #157: `cancel(t)` and `wait(t)` — a task can be stopped, and its
   outcome can be asked for.**
 
