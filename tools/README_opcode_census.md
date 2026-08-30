@@ -98,5 +98,34 @@ specified opcode must still be dispatched. The category is read from the
 document, so re-categorising an opcode moves it into or out of coverage in the
 same edit.
 
-Phase 3 (stack-discipline verification against the compiler's assumptions) is
-still open.
+## Phase 3 — `tests/test_stack_discipline.py`
+
+Whether an opcode's behaviour matches what the compiler assumed when it sized
+frames and patched jump targets. Two halves, split by what each can soundly
+answer.
+
+**Statically**, over every stdlib module: every jump target lands inside the
+code, no target survived unpatched (`emit("JUMP", None)` without its `patch`),
+every function body opens with `FRAME_SIZE`, and no slot or frame operand is
+negative. That last one is the case the runtime does *not* catch — a read past
+the end raises `IndexError`, but a negative index silently wraps to the far end
+of the frame and returns another variable's value.
+
+**At run time**, for frame sizing — and that split is a finding, not a
+convenience. The obvious static check is to attribute each `*_LOCAL_IDX` to the
+nearest preceding `FRAME_SIZE`. It does not work: a nested closure's body is
+emitted *inside* its parent's code at a higher address, so instructions after
+the closure get credited to it. That reports twelve violations in `async.nd`,
+all false — `worker_pool` (FRAME_SIZE 6) legitimately uses slot 5, and the
+closure at address 105 merely sits between. **A compiled function has no
+recorded end**, so there is no sound span to attribute against. At run time the
+question does not arise: the frame doing the access is the frame that was sized.
+
+Both halves are shown to detect something rather than merely to pass. The
+static checkers are run against synthetic broken input; the runtime check was
+verified by under-sizing every frame by one slot, which turns all three of its
+corpus tests red.
+
+Phases 1–3 are complete. The 39 opcodes outside phase 2's risk register still
+have no per-opcode semantic spec, deliberately — `ADD` and `POP` are not where
+the bugs were, and the census is the ordering.

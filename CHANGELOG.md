@@ -49,67 +49,6 @@
   validates, which is the second half of what the issue asked — and is only
   possible because it stayed a declaration.
 
-### Fixes
-
-- **#679: a runtime-built graph can name its steps, and its per-step results
-  stop being silently dropped.**
-
-  ```nodus
-  let a = task(fn() { return 1i }, {"name": "fetch",   "deps": []})
-  let b = task(fn() { return 2i }, {"name": "analyze", "deps": [a]})
-  run_graph(graph([a, b]))["steps"]     // {"fetch": 1, "analyze": 2}
-  ```
-
-  Before, `steps` came back **empty** for any generated graph — the results were
-  computed and then discarded — and every step was `task_N`, so a planner's
-  output was a second-class graph next to a declared `workflow`.
-
-  **Two halves, and fixing one would have looked complete.** `TaskNode.step_name`
-  already existed and `task()` could not reach it; separately, the result map is
-  keyed off graph metadata only the workflow-DSL lowering populated. Adding the
-  option without filling that metadata would have given named steps and an empty
-  `steps` map, so the regression tests assert both.
-
-  `plan_graph` now shows names too, through the same relabelling `plan_workflow`
-  already used — the same DAG read differently depending on how it was built.
-
-  Two decisions worth knowing: an **unnamed** task gets no entry rather than a
-  synthetic `task_N` key (a name is either meaningful or absent, and `task_N` is
-  an unstable VM-counter id), and two tasks in one graph sharing a name is
-  **refused at construction**, since one result would silently overwrite the
-  other. Unnamed graphs behave exactly as before.
-
-### Changed
-
-- **#680: a named import of a builtin name is refused instead of silently
-  ignored.**
-
-  ```nodus
-  import { sleep } from "./mod.nd"
-  sleep(1i, 2i)
-  ```
-
-  `_op_call` resolves builtins **before** locals and globals, so the binding that
-  import created was never reached. The program then failed somewhere else
-  entirely — `sleep expected 1 args, got 2`, naming neither the import nor the
-  shadowing. **Adding any builtin was therefore a silent breaking change** for
-  programs importing a matching name; it was found when a `join` builtin
-  collided with `std:strings.join`.
-
-  **Refused rather than reordered, deliberately.** `register_function` refuses to
-  override a builtin so a host can rely on a builtin name meaning the builtin —
-  a security boundary, since a guest that could redefine a guarded name would
-  walk past the guard. Letting an import take the name is the same hole through
-  a second door.
-
-  This cannot break a working program: the import already did nothing. The
-  message names the collision and the namespace form that does work
-  (`import "std:async" as async` → `async.sleep(...)`), which matters because
-  **thirteen stdlib functions share a builtin name** and every one of them is
-  reached that way. `nodus check` reports it too, so it is visible before
-  running.
-
-### Added
 
 - **#395: a workflow run can be cancelled — `nodus workflow cancel <graph_id>`,
   and `cancel_run(run_id)` for an embedder.**
@@ -194,6 +133,35 @@
 
 ### Changed
 
+- **#680: a named import of a builtin name is refused instead of silently
+  ignored.**
+
+  ```nodus
+  import { sleep } from "./mod.nd"
+  sleep(1i, 2i)
+  ```
+
+  `_op_call` resolves builtins **before** locals and globals, so the binding that
+  import created was never reached. The program then failed somewhere else
+  entirely — `sleep expected 1 args, got 2`, naming neither the import nor the
+  shadowing. **Adding any builtin was therefore a silent breaking change** for
+  programs importing a matching name; it was found when a `join` builtin
+  collided with `std:strings.join`.
+
+  **Refused rather than reordered, deliberately.** `register_function` refuses to
+  override a builtin so a host can rely on a builtin name meaning the builtin —
+  a security boundary, since a guest that could redefine a guarded name would
+  walk past the guard. Letting an import take the name is the same hole through
+  a second door.
+
+  This cannot break a working program: the import already did nothing. The
+  message names the collision and the namespace form that does work
+  (`import "std:async" as async` → `async.sleep(...)`), which matters because
+  **thirteen stdlib functions share a builtin name** and every one of them is
+  reached that way. `nodus check` reports it too, so it is visible before
+  running.
+
+
 - **`resume(c)` raises a coroutine's failure into the resumer — documented at
   last, and it decides a design question.**
 
@@ -217,36 +185,6 @@
   call, so its failure returns to the caller; `spawn` is a hand-off, and there is
   nobody to return to.
 
-### Tooling
-
-- **#179: `nodus_gate --invariants` — the invariant-to-test ledger is checked
-  rather than asserted.**
-
-  `EXECUTION_INVARIANTS.md` documents 29 runtime invariants. Which test checked
-  which was recorded **in prose, in two different places** — sometimes inline
-  under the invariant, sometimes in §8's coverage bullets — and maintained by
-  hand. So a renamed test left the document pointing at a file that no longer
-  existed, and a new invariant could arrive with nothing covering it, with no CI
-  signal for either. The same failure mode the opcode inventory had before #366.
-
-  `tools/invariant_coverage.json` is the ledger, one entry per invariant. Four
-  things fail the gate: an invariant documented with no entry, an entry naming an
-  invariant the document no longer has, a named test file that does not exist,
-  and an entry with no tests and no stated reason. Citation drift — the document
-  naming a test the ledger has not learned — is advisory.
-
-  **The phase cannot verify that an invariant holds**; the tests do that. It
-  verifies the mapping, which is the only part a gate can own.
-
-  Two things the ledger made visible. **Six of the twenty-nine invariants name a
-  covering test** — §8 opened by claiming *"Most of these invariants have direct
-  test coverage"*, which the document that made the claim did not support. And
-  the remaining 23 are recorded as `unrecorded` rather than `uncovered`: the
-  behaviour may well be tested, but nothing ties a test to the invariant, which
-  is the gap the issue is about. Inventing a mapping would have been worse than
-  recording the gap.
-
-### Changed
 
 - **#671: a function assigning to a module-top-level `let` now updates it. It used
   to silently write a frame-local.**
@@ -342,7 +280,110 @@
   tense, so the two documents contradicted each other and the spec was the wrong
   one. Both were verified working by running them.
 
+### Fixes
+
+- **#679: a runtime-built graph can name its steps, and its per-step results
+  stop being silently dropped.**
+
+  ```nodus
+  let a = task(fn() { return 1i }, {"name": "fetch",   "deps": []})
+  let b = task(fn() { return 2i }, {"name": "analyze", "deps": [a]})
+  run_graph(graph([a, b]))["steps"]     // {"fetch": 1, "analyze": 2}
+  ```
+
+  Before, `steps` came back **empty** for any generated graph — the results were
+  computed and then discarded — and every step was `task_N`, so a planner's
+  output was a second-class graph next to a declared `workflow`.
+
+  **Two halves, and fixing one would have looked complete.** `TaskNode.step_name`
+  already existed and `task()` could not reach it; separately, the result map is
+  keyed off graph metadata only the workflow-DSL lowering populated. Adding the
+  option without filling that metadata would have given named steps and an empty
+  `steps` map, so the regression tests assert both.
+
+  `plan_graph` now shows names too, through the same relabelling `plan_workflow`
+  already used — the same DAG read differently depending on how it was built.
+
+  Two decisions worth knowing: an **unnamed** task gets no entry rather than a
+  synthetic `task_N` key (a name is either meaningful or absent, and `task_N` is
+  an unstable VM-counter id), and two tasks in one graph sharing a name is
+  **refused at construction**, since one result would silently overwrite the
+  other. Unnamed graphs behave exactly as before.
+
+
+- **#664: an undefined name the program declared `extern` now says so.**
+
+  `nodus run` cannot register host functions, so a declared extern reaches its
+  call site undefined and the message was the pre-#489 one:
+  `Undefined function: notify`. A user who had just written `extern notify(...)`
+  was told nothing connecting the two. It now names the declaration and says
+  what registers it, at both undefined-name sites — the call and the value
+  position.
+
+  The CLI still does not pre-flight the way `NodusRuntime` does, and that is the
+  decision rather than the defect: pre-flighting would refuse every
+  extern-declaring program from the CLI, which is the workflow the feature
+  exists for. `nodus check` still passes such a file. Both are documented in
+  `OPERATOR_OR_EMBEDDER_RUNBOOK.md` now, which is what #664 asked for.
+
+  The declared names travel in the module's cached metadata, not derived from
+  the AST at the error site — a cached module has no AST, so the hint would
+  otherwise appear on a script's first run and vanish on every run after.
+
 ### Tooling
+
+- **#412 phase 3: stack discipline — does the runtime agree with what the
+  compiler assumed?**
+
+  Statically, over every stdlib module: every jump target lands inside the code,
+  none survived unpatched, every function body opens with `FRAME_SIZE`, and no
+  slot or frame operand is negative. That last is the case the runtime does not
+  catch — a read past the end raises `IndexError`, but a **negative index
+  silently wraps** to the far end of the frame and returns another variable's
+  value.
+
+  Frame sizing is checked **at run time**, and the reason is a finding rather
+  than a convenience. Attributing each slot access to the nearest preceding
+  `FRAME_SIZE` does not work: a nested closure's body is emitted inside its
+  parent's code at a higher address, so instructions after the closure get
+  credited to it — twelve false violations in `async.nd` alone. A compiled
+  function has no recorded end, so there is no sound span to attribute against.
+  At run time the frame doing the access is the frame that was sized.
+
+  Both halves are shown to detect something: the static checkers run against
+  synthetic broken input, and the runtime check was verified by under-sizing
+  every frame by one slot, which turns all three corpus tests red.
+
+  Phases 1–3 of #412 are complete.
+
+
+- **#179: `nodus_gate --invariants` — the invariant-to-test ledger is checked
+  rather than asserted.**
+
+  `EXECUTION_INVARIANTS.md` documents 29 runtime invariants. Which test checked
+  which was recorded **in prose, in two different places** — sometimes inline
+  under the invariant, sometimes in §8's coverage bullets — and maintained by
+  hand. So a renamed test left the document pointing at a file that no longer
+  existed, and a new invariant could arrive with nothing covering it, with no CI
+  signal for either. The same failure mode the opcode inventory had before #366.
+
+  `tools/invariant_coverage.json` is the ledger, one entry per invariant. Four
+  things fail the gate: an invariant documented with no entry, an entry naming an
+  invariant the document no longer has, a named test file that does not exist,
+  and an entry with no tests and no stated reason. Citation drift — the document
+  naming a test the ledger has not learned — is advisory.
+
+  **The phase cannot verify that an invariant holds**; the tests do that. It
+  verifies the mapping, which is the only part a gate can own.
+
+  Two things the ledger made visible. **Six of the twenty-nine invariants name a
+  covering test** — §8 opened by claiming *"Most of these invariants have direct
+  test coverage"*, which the document that made the claim did not support. And
+  the remaining 23 are recorded as `unrecorded` rather than `uncovered`: the
+  behaviour may well be tested, but nothing ties a test to the invariant, which
+  is the gap the issue is about. Inventing a mapping would have been worse than
+  recording the gap.
+
 
 - **#412 phase 2: the ten control-flow and frame opcodes have a semantic spec,
   and `nodus_gate --opcodes` checks that they still do.**
@@ -369,28 +410,6 @@
   opcode must still be dispatched. The category is read from the document, so a
   fifth unwind opcode is covered by construction.
 
-### Fixes
-
-- **#664: an undefined name the program declared `extern` now says so.**
-
-  `nodus run` cannot register host functions, so a declared extern reaches its
-  call site undefined and the message was the pre-#489 one:
-  `Undefined function: notify`. A user who had just written `extern notify(...)`
-  was told nothing connecting the two. It now names the declaration and says
-  what registers it, at both undefined-name sites — the call and the value
-  position.
-
-  The CLI still does not pre-flight the way `NodusRuntime` does, and that is the
-  decision rather than the defect: pre-flighting would refuse every
-  extern-declaring program from the CLI, which is the workflow the feature
-  exists for. `nodus check` still passes such a file. Both are documented in
-  `OPERATOR_OR_EMBEDDER_RUNBOOK.md` now, which is what #664 asked for.
-
-  The declared names travel in the module's cached metadata, not derived from
-  the AST at the error site — a cached module has no AST, so the hint would
-  otherwise appear on a script's first run and vanish on every run after.
-
-### Tooling
 
 - **#655: `test_workflow_store_isolation` no longer counts an in-flight atomic
   write as a leaked run record.**
