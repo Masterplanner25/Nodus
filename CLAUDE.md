@@ -847,8 +847,8 @@ These burn time when forgotten:
 - **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
 - **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183), including inside
   closures.
-- **Closures CAN mutate an outer `let` — but only a *function-scoped* one. A
-  module-top-level `let` assigned from inside any function silently does nothing (#671).**
+- **Closures CAN mutate an outer `let`. A module-top-level one silently did nothing
+  from inside a function through 5.7.1; fixed on `main` (#671).**
 
   This entry said the opposite for a long time ("in closures you still can't assign outer
   `let` variables at all — use a map with quoted keys"), and that advice sent every session
@@ -862,30 +862,40 @@ These burn time when forgotten:
   Also working: two closures sharing one captured variable, two-level nesting, mutation
   from inside a spawned coroutine, and `n += 5i`.
 
-  What is **broken** is module scope, and it is silent:
+  What was **broken through 5.7.1** is module scope, and it was silent:
 
   ```
   let g = 7i
   fn setit() { g = 99i }
-  setit()          // g is still 7 — no error, no warning
+  setit()          // 5.7.1: g is still 7, no error. Fixed on main: g is 99.
   ```
 
-  The function gets a frame slot for `g` and writes there (`STORE_LOCAL_IDX` vs the
-  top-level `STORE g`). If the right-hand side also reads the variable, you get
-  `Cannot add nil and int` — a type error that names arithmetic, not scoping, because the
-  fresh local is uninitialised. Reads of a top-level `let` are fine; mutating one *at* top
-  level is fine.
+  The function got a frame slot for `g` and wrote there (`STORE_LOCAL_IDX` vs the
+  top-level `STORE g`). If the right-hand side also read the variable, you got
+  `Cannot add nil and int` — a type error naming arithmetic, not scoping, because the
+  fresh local was uninitialised. Reads of a top-level `let` were always fine; so was
+  mutating one *at* top level.
 
-  Two sites, and they disagree: `SymbolTable._resolve_upvalue_in` bails without an
-  enclosing *function* scope so the module symbol is never found, and `VM.store_name`
-  writes into the current frame's locals whenever a frame exists, while `load_name` walks
-  on to `module_globals`. Patching only the first makes the *read* correct and still loses
-  the write.
+  **Two sites answered "where does this name live" and disagreed, and neither fix alone
+  is enough** — which is why it looked unfixable from either end.
+  `SymbolTable._resolve_upvalue_in` bailed without an enclosing *function* scope so the
+  module symbol was never found, and `VM.store_name` wrote into the current frame's
+  locals whenever a frame existed while `load_name` walked on to `module_globals`.
+  Patching only the first makes the *read* correct and still loses the write; patching
+  only the second is unreachable, because the compiler emits `STORE_LOCAL_IDX` rather
+  than `STORE`.
 
-  **Until #671 lands, the map workaround is still right for module-scope shared state** —
-  a quoted-key map mutated via bracket notation, `state["count"] = state["count"] + 1i`.
-  (`{"count": 0i}` — quoted-key map — NOT `{count: 0i}`, which is a record.) It is not
-  needed for anything scoped inside a function.
+  The rule is named once now — `VM.binding_namespace` — and both paths consult it.
+  `tests/test_name_resolution_agreement.py` pins the behaviour, the negative shadowing
+  cases (a `catch` var, a parameter, a loop variable and a function-local `let` must all
+  still shadow a same-named global), and the source-level property, with each site
+  verified to turn the suite red on its own.
+
+  **Fixed on `main` (#671); the map workaround is only needed on 5.7.1 and earlier.**
+  There, use a quoted-key map mutated via bracket notation,
+  `state["count"] = state["count"] + 1i` (`{"count": 0i}` — quoted-key map — NOT
+  `{count: 0i}`, which is a record). It was never needed for anything scoped inside a
+  function.
 - **Maps vs Records — dot vs bracket notation:**
   - `{"key": val}` (quoted keys) → **map** → access with `state["key"]`
   - `{key: val}` (unquoted keys) → **record** → access with `state.key`

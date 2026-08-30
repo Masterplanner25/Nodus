@@ -4,6 +4,47 @@
 
 ### Changed
 
+- **#671: a function assigning to a module-top-level `let` now updates it. It used
+  to silently write a frame-local.**
+
+  A behaviour change, and named as one rather than filed under fixes: a program
+  that relied on the old silence will now see its globals actually mutate. That
+  is the point — nothing can have depended on a write disappearing — but it is a
+  change in what running code does.
+
+  ```nodus
+  let g = 7i
+  fn setit() { g = 99i }
+  setit()
+  // g was 7. It is 99.
+  ```
+
+  There was no error and no warning. When the right-hand side also read the
+  variable, the fresh uninitialised local surfaced as `Cannot add nil and int` —
+  a type error naming arithmetic rather than scoping, which is why it was
+  diagnosed as everything except what it was.
+
+  **Two sites answered "where does this name live" and disagreed**, and neither
+  fix alone is sufficient — which is why the bug looked unfixable from either
+  end. `SymbolTable._resolve_upvalue_in` returned `None` whenever there was no
+  enclosing *function* scope, so a module-level `let` was invisible from a
+  top-level function and `Assign` allocated a frame slot instead. And
+  `VM.store_name` wrote into the current frame whenever one existed, while
+  `load_name` walked on to `module_globals` — so reads were correct throughout,
+  which is how this survived every behavioural test ever written.
+
+  The rule is named once now (`VM.binding_namespace`) and both paths consult it.
+  `tests/test_name_resolution_agreement.py` pins the behaviour, the negative
+  shadowing cases (a `catch` variable, a parameter, a loop variable and a
+  function-local `let` must all still shadow a same-named global), and the
+  source-level property — each site verified to turn the suite red on its own.
+
+  Unaffected, and worth stating because DESIGN-006 (#156) claimed otherwise for
+  years: **function-scoped upvalue mutation always worked**. Escaping closures,
+  two closures sharing one captured variable, nesting, `+=`, and mutation from a
+  spawned coroutine are all covered as controls. The map-with-quoted-keys
+  workaround is no longer needed for module scope either.
+
 - **The agent skill's first "non-negotiable rule" was wrong, and sent readers to an
   unnecessary workaround.**
 
