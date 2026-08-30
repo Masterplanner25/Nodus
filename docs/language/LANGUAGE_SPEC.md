@@ -265,6 +265,26 @@ Stability: Experimental (git-only, may change).
   - `nodus deps` prints the runtime module dependency graph from `.nodus/deps.json`
   - `nodus package-list` lists declared dependencies and resolved lock entries
 
+**A named import cannot bind a builtin's name (#680).** `import { sleep } from
+"std:async"` is refused, because `sleep` is a builtin and the builtin is resolved
+first — the binding would never be reached, and the program would fail later with
+an arity error naming neither. Use the namespace form, which binds the module
+rather than the name:
+
+```
+import "std:async" as async
+async.sleep(50i)
+```
+
+Thirteen stdlib functions share a builtin name (`sleep`, `len`, `exists`,
+`keys`, `spawn`, `task`, …), and the namespace form is how all of them are meant
+to be reached. A module-level `fn` of the same name in your own file is a
+different question and is unaffected: it is resolved *before* builtins.
+
+The refusal is not a preference. `register_function` refuses to override a
+builtin so that a host can rely on a builtin name meaning the builtin; an import
+that could take the name would defeat the same guarantee.
+
 ### Re-exports
 - `export { name } from "./module.nd"`
 - Re-exported names must already be exported by the target module.

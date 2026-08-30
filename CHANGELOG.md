@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#680: a named import of a builtin name is refused instead of silently
+  ignored.**
+
+  ```nodus
+  import { sleep } from "./mod.nd"
+  sleep(1i, 2i)
+  ```
+
+  `_op_call` resolves builtins **before** locals and globals, so the binding that
+  import created was never reached. The program then failed somewhere else
+  entirely — `sleep expected 1 args, got 2`, naming neither the import nor the
+  shadowing. **Adding any builtin was therefore a silent breaking change** for
+  programs importing a matching name; it was found when a `join` builtin
+  collided with `std:strings.join`.
+
+  **Refused rather than reordered, deliberately.** `register_function` refuses to
+  override a builtin so a host can rely on a builtin name meaning the builtin —
+  a security boundary, since a guest that could redefine a guarded name would
+  walk past the guard. Letting an import take the name is the same hole through
+  a second door.
+
+  This cannot break a working program: the import already did nothing. The
+  message names the collision and the namespace form that does work
+  (`import "std:async" as async` → `async.sleep(...)`), which matters because
+  **thirteen stdlib functions share a builtin name** and every one of them is
+  reached that way. `nodus check` reports it too, so it is visible before
+  running.
+
 ### Added
 
 - **#395: a workflow run can be cancelled — `nodus workflow cancel <graph_id>`,
