@@ -1,5 +1,11 @@
 # The async library boundary — design for #157
 
+> **The verb is `wait`, not `join`.** Renamed during the build: `join`
+> collides with `std:strings.join` and `std:path.join`, and a builtin
+> silently shadows an explicit named import (#680). Substitute `wait` for
+> `join` throughout this document; the semantics are unchanged. See
+> `06-task-handle.md` §2a.
+
 **Status: proposal, except the handle — decided in `06-task-handle.md`.**
 Nothing is built. Written in the shape `04-cancellation.md` uses, and **jointly
 decided with it**: the object `join` acts on is the one #395 also needs, and the

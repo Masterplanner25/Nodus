@@ -61,6 +61,45 @@ have shipped:
 
 So the object does not need designing. It needs two verbs and one exposure.
 
+## 2a. The verb is `wait`, not `join` — corrected during the build
+
+`join` collides with the shipped stdlib. `std:strings.join(items, sep)` and
+`std:path.join(parts)` both exist, and `examples/project_layout_demo/main.nd`
+imports one of them **by name**:
+
+```
+import { join } from "std:strings"
+print(join(["ready", "set", "run"], " -> "))
+```
+
+Registering a `join` builtin broke that program with `join expected 1 args, got
+2`. Three tests went red on a change that added a builtin and touched nothing
+else.
+
+The cause is worse than the name and is now **#680**: `VM._op_call` resolves
+`self.builtins` *before* locals and globals, so an explicitly imported name is
+silently shadowed by any builtin matching it — confirmed general, not
+`join`-specific. Adding any builtin is therefore a potential breaking change for
+programs importing that name, and the failure names arity rather than shadowing.
+
+The rename treats the symptom; #680 is the disease and is filed separately. But
+the rename is right on its own terms: `join` is among the most-collided function
+names in any language, and the pair reads better than it did —
+
+```
+let t = spawn(coroutine(fn() { ... }))
+let v = wait(t)
+cancel(t)
+```
+
+`cancel` needed no change; nothing in the stdlib or the keyword set claims it.
+`wait` was checked the same way — no stdlib export, no keyword, no `.nd` file in
+the repo uses it — and it matches the vocabulary `workflow_wait` already
+established.
+
+Everything else in D1–D8 stands unchanged; substitute `wait` for `join`
+throughout. The parked-task blocked reason is `task_wait`.
+
 ## 3. Decisions
 
 ### D1 — No new value type. The coroutine value is the task handle.

@@ -52,6 +52,12 @@ class Scheduler:
         self._run_loop_called: bool = False
         self._spawned_without_loop: int = 0
         self._coroutine_errors: list = []
+        # #395/#157: coroutines parked in `wait`, keyed by the id of the task
+        # they are waiting on. Kept here rather than on the target so a task
+        # that is never resumed still has its waiters reachable for the deadlock
+        # report, and so `release_waiters` is one place rather than a branch in
+        # every completion path.
+        self._waiters: dict[int, list] = {}
 
     def _trace(self, message: str) -> None:
         if self.trace:
@@ -160,6 +166,122 @@ class Scheduler:
             return
         self._completed_ids.add(coroutine.id)
         self.completed_tasks.append(coroutine)
+        # Every path that settles a task goes through here, so this is the one
+        # place a waiter has to be released from (#157/#395).
+        self.release_waiters(coroutine)
+
+    def park_waiter(self, waiter, target) -> None:
+        """Suspend *waiter* until *target* settles (#157/#395 D8, inside-a-coroutine case)."""
+        waiter.state = "suspended"
+        waiter.blocked_on = target
+        waiter.blocked_reason = "task_wait"
+        self._waiters.setdefault(target.id, []).append(waiter)
+
+    def release_waiters(self, target) -> None:
+        """Wake everything parked on *target*, now that it has settled.
+
+        Called from every path that finishes a coroutine — normal return, failure,
+        cancellation. Missing one would leave a waiter parked forever on a task
+        that is already done, which is the deadlock this makes impossible rather
+        than diagnosable.
+
+        The waiter is handed the outcome here: `last_result` on success, or a
+        pending error that `resume` delivers into it (D6 — a joined failure is
+        raised into the code that asked, and reported once).
+        """
+        if target.id is None:
+            return
+        waiters = self._waiters.pop(target.id, [])
+        failure = getattr(target, "cancelled_error", None) or getattr(target, "failure", None)
+        for waiter in waiters:
+            waiter.blocked_on = None
+            waiter.blocked_reason = None
+            if failure is not None:
+                waiter.pending_wait_error = failure
+            elif waiter.stack:
+                waiter.stack[-1] = target.last_result
+            if waiter.state == "suspended":
+                self.ready_queue.append(waiter)
+
+    def has_parked_waiters(self) -> bool:
+        return any(self._waiters.values())
+
+    def drive_until_settled(self, target) -> None:
+        """Run the loop until *target* settles — the top-level `wait` (D8).
+
+        Delegates to `run_loop` with a stopping condition rather than driving
+        coroutines itself. Two loops that resume coroutines would be two answers
+        to one question, and the second would be the one that forgot the timeout
+        check, or the module-context restore, or the error path -- which is the
+        defect shape this codebase catalogues. There is one driver.
+
+        A **bounded** drive, not an isolated one, and the distinction is the
+        point. It still runs other coroutines, because a task can depend on its
+        siblings and refusing to run them would deadlock a join on a queue it
+        declined to drain. What it bounds is the *stopping condition*: it returns
+        when the target settles rather than when the deque empties, so a library
+        function no longer runs its caller's unrelated long-running work to
+        completion as the price of waiting for its own.
+        """
+        self.run_loop(until=lambda: target.state == "finished")
+
+    def unpark(self, coroutine) -> None:
+        """Remove *coroutine* from every registry that could later wake it (#395).
+
+        Cancelling a parked coroutine has to unpark it first, and there are five
+        places it can be parked: the ready deque, the timer heap, a channel's
+        receiver queue, a channel's sender queue, and the thread-backed IO wait.
+        An unpark that clears four of five is a cancel that silently hangs on the
+        fifth — which is why `BLOCKED_REASONS` exists as a named set (D4) and why
+        this is one method rather than a branch at each call site.
+
+        Deliberately total rather than dispatching on `blocked_reason`: the
+        reason records *why* it parked, and a coroutine that has been requeued
+        may sit in the deque with a stale reason. Clearing everything is cheap
+        and cannot be half-right.
+        """
+        try:
+            self.ready_queue.remove(coroutine)
+        except ValueError:
+            pass
+
+        if self.timers:
+            remaining = [entry for entry in self.timers if entry[2] is not coroutine]
+            if len(remaining) != len(self.timers):
+                self.timers = remaining
+                heapq.heapify(self.timers)
+        if coroutine.id is not None:
+            self.sleeping_tasks.discard(coroutine.id)
+
+        blocked_on = getattr(coroutine, "blocked_on", None)
+        if blocked_on is not None:
+            receivers = getattr(blocked_on, "waiting_receivers", None)
+            if receivers is not None:
+                for waiter in [w for w in receivers if w is coroutine]:
+                    try:
+                        receivers.remove(waiter)
+                    except ValueError:  # pragma: no cover - concurrent drain
+                        pass
+            senders = getattr(blocked_on, "waiting_senders", None)
+            if senders is not None:
+                for entry in [e for e in senders if e[0] is coroutine]:
+                    try:
+                        senders.remove(entry)
+                    except ValueError:  # pragma: no cover - concurrent drain
+                        pass
+            # Deregister the channel once nothing is parked on it. Removing the
+            # waiter alone leaves the channel in `_recv_channels`/`_send_channels`,
+            # so the loop still believes a blocked operation is pending and
+            # reports "Deadlock: 0 coroutine(s) blocked on recv()" -- a deadlock
+            # of nobody. Found by the test for exactly this case, which is what
+            # D4's named set is for: the deque is not the only place a task waits.
+            if receivers is not None and not receivers:
+                self._recv_channels.discard(blocked_on)
+            if senders is not None and not senders:
+                self._send_channels.discard(blocked_on)
+
+        coroutine.blocked_on = None
+        coroutine.blocked_reason = None
 
     def _drain_io_channels(self) -> None:
         """Wake coroutines blocked on thread-backed channels that now have data."""
@@ -190,14 +312,25 @@ class Scheduler:
             elif not ch.waiting_receivers:
                 self._recv_channels.discard(ch)
 
-    def run_loop(self, on_complete=None, on_error=None) -> None:
+    def run_loop(self, on_complete=None, on_error=None, until=None) -> None:
+        """Drive coroutines until there is no work, or until `until()` holds.
+
+        `until` is the top-level `wait`'s stopping condition (#157/#395 D8).
+        It is a parameter rather than a second loop so there is exactly one
+        place that resumes a coroutine, applies its timeout, restores its
+        module context and routes its failure.
+        """
         self._run_loop_called = True
         self._spawned_without_loop = 0
         stop = False
         # Note: _spawned_without_loop is also reset at the end of this method.
         # Coroutines spawned *during* run_loop (e.g. by task callbacks) go into
         # ready_queue and are drained by the loop below, so they are not unrun.
-        while self.ready_queue or self.timers or self._io_channels or self._recv_channels or self._send_channels:
+        while (self.ready_queue or self.timers or self._io_channels
+               or self._recv_channels or self._send_channels
+               or self.has_parked_waiters()):
+            if until is not None and until():
+                break
             self._drain_timers()
             self._drain_io_channels()
             if not self.ready_queue:
@@ -315,13 +448,23 @@ class Scheduler:
                 # Do NOT swallow with the broad except below.
                 raise
             except Exception as _e:
-                self._coroutine_errors.append(_e)
+                # #395 D6: recorded on the task so a waiter can be handed it.
+                # It still goes to _coroutine_errors -- an UNjoined failure keeps
+                # today's behaviour byte for byte; `wait` is what removes it from
+                # that list, not the failing.
+                coroutine.failure = _e
+                # D6: reported once. A joined failure belongs to the code that
+                # asked for the outcome; duplicating it to stderr and the error
+                # list would make one failure look like two.
+                if not coroutine.waited_on:
+                    self._coroutine_errors.append(_e)
+                self.release_waiters(coroutine)
                 self._mark_completed(coroutine)
                 if coroutine.id is not None:
                     self.sleeping_tasks.discard(coroutine.id)
                 if on_error is not None:
                     stop = bool(on_error(coroutine, _e))
-                if not getattr(_e, "_retry_pending", False):
+                if not getattr(_e, "_retry_pending", False) and not coroutine.waited_on:
                     print(format_error(_e, path=self.vm.source_path), file=sys.stderr)
                 if stop:
                     break

@@ -219,9 +219,11 @@ of them is a bug:
   lifetime to the function it was spawned from.
 - **A failure does not stop its siblings.** The scheduler records the error and
   carries on with the other runnable coroutines.
-- **There is nothing to wait on, and nothing to cancel.** No `join`, no handle,
-  no way for a program to stop work it started. Cancellation exists only as an
-  internal response to a coroutine timeout (§9.4).
+- **A task can be waited on and cancelled, but nothing happens automatically.**
+  `spawn` returns the coroutine, `wait(t)` asks for its outcome and `cancel(t)`
+  stops it (#395/#157) — but only where a program explicitly asks. Nothing
+  propagates from a `spawn` on its own, and cancelling a waiter does not cancel
+  the task it was waiting on.
 
 This is the **worker pool** model — a bounded set of independent workers — and it
 is a weaker guarantee than *structured concurrency*, whose defining property is
@@ -276,6 +278,7 @@ not exist.
 | driving the work | failure arrives as |
 |---|---|
 | `resume(c)` | **raised into the caller**, catchable with `try`/`catch` |
+| `wait(t)` | **raised into the caller**, and reported *only* there (#395/#157) |
 | `spawn(c)` + `run_loop()` | **collected** — stderr trace, `run_loop()`'s return list, exit 0 (§9.1) |
 | `run_workflow(w)` | **returned** in the result map, under `failed` |
 

@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#395 / #157: `cancel(t)` and `wait(t)` — a task can be stopped, and its
+  outcome can be asked for.**
+
+  `spawn(c)` now returns the coroutine it was given instead of `nil`. That return
+  was the whole mechanical cause of #157: the value channel a program needs
+  already existed on the coroutine (`last_result`) and was simply unreachable, so
+  libraries reached for a channel to work around a discarded handle.
+
+  The handle is the coroutine, not a new record type. A record would be a
+  *value*, so a `state` field on it would freeze at spawn time.
+
+  ```nodus
+  let t = spawn(coroutine(fn() { return 77i }))
+  let v = wait(t)        // drive until it settles, return its value
+  cancel(t)              // stop it, running its `finally` blocks
+  ```
+
+  **`wait` has two contexts.** Inside a coroutine it suspends, like `recv`. At
+  top level it drives the scheduler until the task settles — a *bounded* drive,
+  not an isolated one: it still runs other coroutines, because a task can depend
+  on its siblings, but it returns when the task settles rather than when the
+  whole queue empties. That is what lets a library hand back a handle instead of
+  calling `run_loop()` and running its caller's unrelated work to completion.
+
+  **A waited failure is raised into the waiter, and reported once** — not also to
+  stderr and `run_loop()`'s error list. An *unwaited* failure is byte-identical
+  to before. This is not a new error-propagation path: `resume(c)` has always
+  raised a task's failure into the resumer, and having `wait` collect instead
+  would be one question answered in two voices.
+
+  **`cancel` reuses #502's unwind unchanged** — pending `finally` blocks run,
+  `catch` blocks are refused so a task cannot swallow its own cancellation, and
+  the whole thing is bounded by the same step budget. It returns whether it
+  actually stopped something; cancelling a finished or never-spawned task is a
+  no-op, not an error, because the caller usually cannot know.
+
+  Every reason a coroutine can be parked is now named in one place
+  (`BLOCKED_REASONS`), with a test that reads `src/` and fails when a literal
+  appears outside the set. That is not cosmetic: cancelling a *parked* task means
+  unparking it, and an unpark that handles five of six reasons is a cancel that
+  hangs on the sixth.
+
+  **The verb is `wait`, not `join` as the design record first said.** `join`
+  collides with `std:strings.join` and `std:path.join`, and a builtin silently
+  shadows an explicitly imported name — filed separately as issue 680, since it
+  makes *any* new builtin a potential breaking change.
+
 ### Changed
 
 - **`resume(c)` raises a coroutine's failure into the resumer — documented at

@@ -130,7 +130,26 @@ Stability: Experimental.
   after a `yield`, not only on the first resume. `resume` is a call, so its
   failure returns to the caller like any other — unlike `spawn`, which hands the
   coroutine to the scheduler and has nobody to return to (see `run_loop` below).
-- `spawn(coroutine)` schedules a coroutine to run on the event loop, and returns `nil`.
+- `spawn(coroutine)` schedules a coroutine to run on the event loop and **returns the
+  coroutine**, so it can be waited on or cancelled. (It returned `nil` before #157.)
+- `wait(task)` returns the task's value, driving or suspending as needed (below).
+- `cancel(task)` stops a task, running its `finally` blocks and skipping its `catch`
+  blocks. Returns whether it actually stopped something; cancelling a finished or
+  never-spawned task is a no-op, not an error.
+
+**`wait` has two contexts.** Inside a coroutine it *suspends*, like `recv`. At top level
+it *drives* the scheduler until the task settles. The top-level form still runs other
+coroutines — a task can depend on its siblings — so it is a **bounded** drive, not an
+isolated one: what it bounds is the stopping condition, returning when the task settles
+rather than when the queue empties.
+
+**`wait` raises the task's failure into the caller**, and that failure is then reported
+only once — not also to stderr and `run_loop()`'s list. An *unwaited* failure is
+unchanged. This matches `resume`, which has always propagated (above); a task's outcome
+reaches whoever asked for it.
+
+`wait` on a task that was never spawned is an error — it is asking for a value and there
+is none to invent. That is deliberately asymmetric with `cancel`'s no-op.
 - `run_loop()` runs the scheduler until there are no runnable coroutines or timers.
   It returns a **list of error strings** for any spawned coroutine that failed, or
   `nil` if none did. That return value is the only way a program can observe such
