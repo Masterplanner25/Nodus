@@ -124,19 +124,62 @@ set.
 
 ### D6 — `join` raises the task's failure into the joiner.
 
-The one decision here with language-identity weight, so it is stated as such:
-**this is the first error-propagation path in Nodus.**
+**Corrected 2026-08-30, after the claim was checked.** This decision first read:
+*"the one decision here with language-identity weight … this is the first
+error-propagation path in Nodus."* **That is false, and the correction changes
+the argument rather than the outcome.**
 
-It does not contradict `04 §6.4`'s "no propagation, there is no parent". Nothing
-propagates from a `spawn`. Propagation happens only where a program explicitly
-asked for an outcome, and only to the code that asked. A joined failure is
-reported **once** — to the joiner, not also into `scheduler._coroutine_errors`.
-An unjoined failure keeps today's behaviour exactly: stderr trace, scheduler
-list, `run_loop()`'s return value, siblings unaffected, exit 0.
+`resume(c)` has always raised a coroutine's failure into the resumer, catchably:
+
+```
+let c = coroutine(fn() { throw "task failed" })
+try { resume(c) } catch e { print("CAUGHT in the resumer: \(e.message)") }
+// CAUGHT in the resumer: task failed
+```
+
+Verified against 5.7.1 dev source, including a failure *after* a yield, with the
+full err record (`kind = "thrown"`, `origin = "user"`). It is **documented
+nowhere** — not `LANGUAGE_SPEC.md`, not `FAILURE_AND_DEGRADATION_MODEL.md`, not
+the guide — which is why it was missed here.
+
+So Nodus already answers "how does a task's failure reach me" three ways, chosen
+by the verb:
+
+| driving the work | failure arrives as |
+|---|---|
+| `resume(c)` | **raised** into the caller, catchable |
+| `spawn(c)` + `run_loop()` | collected — stderr, `run_loop()`'s return list, exit 0 |
+| `run_workflow(w)` | **returned** in the result map (`failed: ["a"]`) |
+
+**The real argument for D6 is consistency, and it is stronger than the one it
+replaces.** `resume(c)` and `join(c)` ask the same question — *drive this task,
+give me its outcome*. One raising while the other collected would be one question
+answered in two voices, which is the defect shape `CLAUDE.md` catalogues
+twenty-three instances of.
+
+Note this inverts the risk. The dangerous choice was the *other* one: `join`
+drives the scheduler, so pairing it with `run_loop`'s collect-and-continue is the
+intuitive move, and taking it would have shipped `resume` raising and `join`
+collecting for the same question.
+
+**What is actually being committed to**, stated narrowly so the line holds:
+propagation crosses a task boundary **only where a program asked for an outcome,
+only to the code that asked, and exactly once**. A joined failure goes to the
+joiner, not also into `scheduler._coroutine_errors`. An unjoined failure keeps
+today's behaviour byte for byte: stderr trace, scheduler list, `run_loop()`'s
+return value, siblings unaffected, exit 0. `join` is not the first such crossing
+and must not become a precedent for automatic ones.
 
 This does not make Nodus structurally concurrent. There is still no parent link,
 no scope, and no automatic propagation — cancelling a joiner does not cancel the
 joined.
+
+**One consequence of D8 to state rather than discover.** At top level `join`
+drives the scheduler, so a single `join` call can produce *both* behaviours at
+once: raised for the joined task, collected for any sibling that fails during
+that same drive. That is coherent — each failure reaches whoever asked for it,
+and nobody asked about the sibling — but it will read as an inconsistency unless
+the documentation says it outright.
 
 ### D7 — No language surface for either verb.
 
@@ -184,6 +227,13 @@ partial implementation:
 4. An unjoined failure's observable behaviour is byte-identical to today's;
    a joined failure is reported once.
 5. `spawn` returns its argument, and no caller depends on the old `nil`.
+6. **`join(c)` and `resume(c)` deliver a failure the same way** — same `kind`,
+   same `origin`, both catchable. D6 rests on that agreement, so it is asserted
+   rather than assumed. A test that only checks `join` raises would pass on an
+   implementation that had quietly diverged from `resume`.
+7. A `join` at top level that raises **also leaves any sibling failure on the
+   collected path**, unchanged. Both halves in one test, since the coexistence
+   is the part a reader will mistake for a bug.
 
 ## 6. Precedence
 
