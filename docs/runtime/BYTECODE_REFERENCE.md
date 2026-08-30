@@ -65,6 +65,12 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Emitted by compiler: yes
 - Purpose: variable and resolved namespace member access
 - Notes / edge cases:
+  - Resolution order, first match wins: `frame.locals` → `module_globals` →
+    `functions` → `host_globals`. A name found in `functions` is pushed as a
+    **zero-upvalue `Closure`**, not as a `FunctionInfo`, which is what makes
+    `let f = g` produce something `CALL_VALUE` can call.
+  - `Cell` (captured-variable boxing) and `LiveBinding` (a re-export) are
+    unwrapped, so what is pushed is always the value.
   - Raises runtime name error if undefined.
   - Names may be module-qualified (e.g., `__mod0__name`) after compile-time resolution.
 
@@ -145,6 +151,15 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Emitted by compiler: yes
 - Purpose: `let` binding and reassignment
 - Notes / edge cases:
+  - The target namespace is chosen by `VM.binding_namespace`, not by "the
+    current frame": if the name is bound in `frame.locals` the write goes there,
+    else if it is bound in `module_globals` it goes there. A function assigning
+    a module-level `let` therefore updates the global (#671); before that fix the
+    write landed in a fresh frame-local and the global silently kept its value.
+  - An **unbound** name is defined where execution currently is — a new local
+    inside a frame, a new global at module level.
+  - An existing `Cell` is updated in place rather than replaced, so closures
+    sharing the variable keep seeing each other's writes.
   - Assignment expressions then issue `LOAD` to return assigned value.
   - Names may be module-qualified after compile-time resolution.
 
@@ -162,7 +177,13 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: parameter name
 - Emitted by compiler: yes (function prologue)
 - Purpose: bind positional call arguments to function params
-- Notes / edge cases: VM errors if no active call frame.
+- Notes / edge cases:
+  - **Two writes, not one.** It sets `frame.locals[name]` *and* syncs the value
+    into `frame.locals_array` at the parameter's slot, so the parameter reads
+    correctly through both `LOAD` (dict) and `LOAD_LOCAL_IDX` (slot). A
+    parameter with no slot entry gets the dict write only.
+  - An existing `Cell` at the name is updated in place.
+  - VM errors if no active call frame.
 
 ### POP
 - Category: control flow / stack housekeeping
@@ -177,8 +198,14 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Stack behavior: pops `b`, `a`; pushes `a + b`
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
-- Purpose: numeric addition and string concatenation (host-language behavior)
-- Notes / edge cases: type behavior inherits Python `+` semantics at runtime.
+- Purpose: numeric addition, string concatenation, list concatenation
+- Notes / edge cases:
+  - Operand order: `b` is popped first, so the deeper value is `a` and the
+    result is `a + b`.
+  - The **success** cases follow Python `+`; the **failure** case does not. A
+    host `TypeError` is converted to a Nodus `type` error reading
+    `Cannot add <type> and <type>` — which is the message a program sees when an
+    uninitialised value reaches arithmetic.
 
 ### SUB
 - Category: arithmetic
@@ -186,7 +213,9 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: subtraction
-- Notes / edge cases: unary minus uses dedicated `NEG` opcode rather than `SUB`.
+- Notes / edge cases:
+  - Unary minus uses the dedicated `NEG` opcode rather than `SUB`.
+  - A host `TypeError` becomes `Cannot subtract <type> and <type>`.
 
 ### MUL
 - Category: arithmetic
@@ -194,7 +223,10 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: multiplication
-- Notes / edge cases: standard numeric multiplication semantics from host runtime.
+- Notes / edge cases:
+  - Inherited from the host and reachable from Nodus source: `"ab" * 3` is
+    string repetition, and `[0] * 3` list repetition. Neither is an error.
+  - A host `TypeError` becomes `Cannot multiply <type> and <type>`.
 
 ### DIV
 - Category: arithmetic
@@ -202,7 +234,18 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: division
-- Notes / edge cases: host float division behavior.
+- Notes / edge cases:
+  - **Three branches, and none of them is plain host division.**
+    1. both operands `int` (and **not** `bool`) → **floor** division `a // b`,
+       so `7 / 2` is `3` and `-7 / 2` is `-4`;
+    2. either operand `float` → true division, so `7 / 2.0` is `3.5`;
+    3. either operand non-numeric → `Cannot divide <type> and <type>`.
+  - `bool` is deliberately excluded from the int path even though
+    `isinstance(True, int)` holds in Python, so `4 / true` takes the float
+    branch and yields `4.0`.
+  - Division by zero raises a Nodus `math` error, not a host
+    `ZeroDivisionError`, and the two branches have **different messages**:
+    `Integer division by zero` and `Float division by zero`.
 
 ### MOD
 - Category: arithmetic
@@ -210,10 +253,16 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: `%`
-- Notes / edge cases: **Added post-freeze** in `7520fc3` (2026-05-24, BUG-010) without
-  the extension process required by `FREEZE_PROPOSAL.md` §"What Freeze Means" — no
-  `BYTECODE_VERSION` bump, no entry here, no amendment. Documented retroactively
-  2026-08-07. See §3.1.
+- Notes / edge cases:
+  - Same three-branch shape as `DIV`, including the exclusion of `bool` from the
+    int path and the two distinct zero errors (`Integer modulo by zero`,
+    `Float modulo by zero`).
+  - Sign follows the host: `-7 % 3` is `2`, not `-1` as in C. A reader arriving
+    from another language will assume the other answer.
+  - **Added post-freeze** in `7520fc3` (2026-05-24, BUG-010) without the
+    extension process required by `FREEZE_PROPOSAL.md` §"What Freeze Means" — no
+    `BYTECODE_VERSION` bump, no entry here, no amendment. Documented
+    retroactively 2026-08-07. See §3.1.
 
 ### EQ
 - Category: comparisons
@@ -221,7 +270,13 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: `==`
-- Notes / edge cases: Python value equality semantics.
+- Notes / edge cases:
+  - **Not Python equality.** `VM._nodus_eq` coerces `int` and `float` to each
+    other and refuses to coerce `bool` to either, so `1 == 1.0` is **true** and
+    `1 == true` is **false** — the opposite of Python in the second case.
+  - Lists and maps compare structurally. **Records compare by identity**: two
+    distinct records with equal fields are not equal (#545, staged to become
+    structural at 6.0.0).
 
 ### NE
 - Category: comparisons
@@ -229,7 +284,8 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: `!=`
-- Notes / edge cases: Python value inequality semantics.
+- Notes / edge cases: the exact negation of `EQ`, including its int/float
+  coercion, its refusal to coerce `bool`, and record identity.
 
 ### LT
 - Category: comparisons
@@ -237,7 +293,9 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (via `op_map`)
 - Purpose: `<`
-- Notes / edge cases: type mismatch errors come from host comparisons.
+- Notes / edge cases: operand order is `a < b` with `b` popped first. A
+  mismatched pair raises a Nodus `type` error `Cannot compare <type> and
+  <type>`, **not** the host `TypeError`; `int` and `float` are comparable.
 
 ### GT
 - Category: comparisons
@@ -277,7 +335,9 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: absolute target IP
 - Emitted by compiler: yes
 - Purpose: `if`/`while` and `&&` short-circuit path
-- Notes / edge cases: uses VM truthiness function.
+- Notes / edge cases: uses the VM truthiness function (see `TO_BOOL`), and pops
+  the condition **whether or not it jumps** — popping only on the taken branch
+  would leave the stack unbalanced on the other.
 
 ### JUMP_IF_TRUE
 - Category: boolean / logical flow
@@ -285,7 +345,8 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: absolute target IP
 - Emitted by compiler: yes
 - Purpose: `||` short-circuit path
-- Notes / edge cases: only needed for logical-OR lowering.
+- Notes / edge cases: only needed for logical-OR lowering; pops the condition
+  whether or not it jumps, as `JUMP_IF_FALSE` does.
 
 ### GET_ITER
 - Category: iteration
@@ -296,18 +357,31 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Notes / edge cases:
   - Lists are iterable by default.
   - Records can provide `__iter__` (returns list or record with `__next__`) or `__next__` directly.
-  - Runtime error if value is not iterable.
+    When a record has **both**, `__iter__` wins. `__next__` is called with the
+    record itself as its one argument.
+  - `__iter__` returning neither a list nor a record with `__next__` raises
+    `__iter__ must return a list or a record with __next__`.
+  - A **map** gets its own message rather than the generic one, because `for k
+    in m` is the natural first attempt: `maps are not directly iterable; use
+    'for k in keys(m)' ... or 'for v in values(m)' ...`. Anything else is
+    `Value is not iterable`.
 
 ### ITER_NEXT
 - Category: iteration
-- Stack behavior: pushes next value or jumps if finished
+- Stack behavior: **differs by branch.** The iterator stays on the stack and is
+  not consumed on the common path: on an item it is `iter → iter item` with
+  `ip += 1`; on exhaustion it is `iter →` (the iterator *is* popped) with
+  `ip = end`.
 - Operands: end target IP
 - Emitted by compiler: yes
 - Purpose: advance iterator and load next item
 - Notes / edge cases:
-  - For list iterators, end is reached when index exceeds length.
+  - For list iterators, end is reached when index exceeds length. A list
+    *containing* `nil` yields it as an ordinary element — only the record
+    protocol reads `nil` as completion.
   - For record iterators, `__next__` should return `nil` to signal completion.
-  - Runtime error if iterator is unsupported.
+  - Runtime error `ITER_NEXT without iterator` on an empty stack, and
+    `Iterator is not supported` if the top of stack is not an `Iterator`.
 
 ### SETUP_TRY
 - Category: exceptions
@@ -359,7 +433,12 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes
 - Purpose: ensure `&&`/`||` yield boolean values
-- Notes / edge cases: central to current “real boolean semantics” behavior.
+- Notes / edge cases:
+  - Truthiness: `nil` is false, a `bool` is itself, everything else is host
+    `bool()` — so `0`, `0.0`, `""`, `[]` and `{}` are false.
+  - **An empty record is true** while the empty map beside it is false: a
+    `Record` has no `__len__` for `bool()` to consult. Central to current
+    “real boolean semantics” behavior.
 
 ### NOT
 - Category: boolean / logical flow
@@ -375,7 +454,9 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes
 - Purpose: unary `-`
-- Notes / edge cases: expects a numeric value; host-language numeric negation errors will surface if applied to non-numbers.
+- Notes / edge cases: expects a numeric value. A non-numeric operand raises a
+  Nodus `type` error `Cannot negate <type>`; the host `TypeError` is converted,
+  not surfaced.
 
 Example source:
 
@@ -405,7 +486,11 @@ STORE x
 - Operands: pair count
 - Emitted by compiler: yes
 - Purpose: map literal construction
-- Notes / edge cases: key type validated (string/number); ordering preserved by reverse pass.
+- Notes / edge cases:
+  - Key type validated: strings and numbers only. **`bool` is refused** despite
+    being an `int` in Python, as is `nil` — `Map keys must be strings or numbers`.
+  - Ordering is preserved by the reverse pass, which is what makes "the later
+    duplicate key wins" well defined.
 
 ### BUILD_RECORD
 - Category: records
@@ -413,7 +498,9 @@ STORE x
 - Operands: field count
 - Emitted by compiler: yes
 - Purpose: record literal construction
-- Notes / edge cases: keys must be strings.
+- Notes / edge cases: keys must be strings — stricter than `BUILD_MAP`, which
+  also accepts numbers. The result has `kind="record"`; `BUILD_MODULE` is the
+  same opcode with `kind="module"`.
 
 ### BUILD_MODULE
 - Category: collections / module construction
@@ -463,15 +550,31 @@ STORE x
 - Operands: field name
 - Emitted by compiler: yes
 - Purpose: field access (`record.field`)
-- Notes / edge cases: runtime error if not a record or field missing.
+- Notes / edge cases:
+  - **A record is not the only valid receiver.** A `NodusModule` is one too, and
+    resolves through its export table: a missing name is
+    `Missing module export: <name>` rather than `Missing record field: <name>`.
+    (The same omission phase 2 corrected in `CALL_METHOD`, in the sibling
+    opcode.)
+  - Any other receiver — a map included — is
+    `Field access is only supported on records`. Maps take `[key]`, records take
+    `.field`; the two are not interchangeable.
 
 ### STORE_FIELD
 - Category: records
-- Stack behavior: pops value and record, pushes assigned value
+- Stack behavior: pops value and record, pushes assigned value (net **-1**, not
+  -2 — the push is what makes `r.f = v` usable as an expression)
 - Operands: field name
 - Emitted by compiler: yes
 - Purpose: field assignment (`record.field = value`)
-- Notes / edge cases: runtime error if not a record or field missing.
+- Notes / edge cases:
+  - **A missing field is created, not an error.** The earlier "field missing"
+    note was true only of a module receiver: a module's surface is declared, so
+    a name it does not export is `Missing module export: <name>`, while a record
+    gains the field.
+  - A `NodusModule` is a valid receiver here too, and the write goes through
+    `set_export`.
+  - Any other receiver is `Field assignment is only supported on records`.
 
 ### CALL
 - Category: calls / returns
@@ -479,7 +582,23 @@ STORE x
 - Operands: function name, arg count
 - Emitted by compiler: yes
 - Purpose: user-defined and builtin function invocation
-- Notes / edge cases: no first-class function values in bytecode; callee resolved to name at compile time.
+- Notes / edge cases:
+  - **Five resolution paths, in precedence order.** (1) A compiler-emitted
+    builtin call site — a name carrying `BUILTIN_CALL_PREFIX` — resolves
+    straight to the builtin, checked **first** so a program cannot shadow
+    machinery a lowering injected into its own code (#411). (2) `functions`:
+    pushes a frame and transfers control, pushing nothing. (3) `builtins`: pops
+    the arguments and pushes the result, with no frame. (4) A local or global
+    holding a callable, delegated to `call_closure` — or a `ModuleFunction`,
+    invoked with its result pushed. (5) Otherwise `Undefined function: <name>`.
+  - A user function is resolved **before** a builtin of the same name.
+  - A function whose `FunctionInfo` declares upvalues cannot be called this way
+    — `CALL` has no closure to draw them from, and the compiler emits
+    `MAKE_CLOSURE` + `CALL_VALUE` instead. Refused as `requires a closure`.
+  - The frame's `return_ip` is the call site **+ 1**. The `max_frames` cap is
+    checked *before* the frame is appended, so a refused call leaves the frame
+    stack as it was.
+  - No first-class function values in bytecode; callee resolved to name at compile time.
 
 ### CALL_VALUE
 - Category: calls / returns
@@ -557,11 +676,30 @@ STORE x
 
 ### RETURN
 - Category: calls / returns
-- Stack behavior: pops return value; restores caller; pushes return value to caller stack
+- Stack behavior: **depends which of three exits is taken** — see below. The
+  ordinary one pops the return value, restores the caller, and pushes the value
+  onto the caller's stack.
 - Operands: none
 - Emitted by compiler: yes
 - Purpose: function return transfer
-- Notes / edge cases: runtime error if executed outside a frame.
+- Notes / edge cases:
+  - **Three exits, in precedence order.**
+    1. **Deferred by a `finally`** — when the top `handler_stack` entry belongs
+       to *this* frame (`frame_depth == len(frames)`) and carries a non-zero
+       `finally_ip`. The value is parked in `_deferred_return`, `ip` goes to the
+       finally block, and **no frame is popped**: the finally body runs in it.
+       A handler recorded at an *outer* frame depth must not capture this
+       return, or a `finally` one level out would swallow it (#361).
+    2. **Coroutine completion** — the frame is a coroutine's outermost
+       (`return_ip is None`). The coroutine is marked `finished`, its state
+       cleared, and `("return", value)` is returned to the scheduler. **Nothing
+       is pushed.**
+    3. **Ordinary** — pop the frame, push the value, `ip = frame.return_ip`.
+  - Exits 2 and 3 restore a `cross_module_ctx` the frame carried, so a call that
+    swapped the running chunk swaps it back (ASYNC-MOD-001, and the mechanism
+    #691's fix installs on the way in).
+  - Handler-stack entries belonging to the popped frame are discarded.
+  - Runtime error `RETURN outside function` if executed outside a frame.
 
 ### HALT
 - Category: control flow
@@ -569,7 +707,9 @@ STORE x
 - Operands: none
 - Emitted by compiler: yes
 - Purpose: terminate VM execution
-- Notes / edge cases: program epilogue only.
+- Notes / edge cases: program epilogue only. Returns `("halt", None)` and
+  **does not advance `ip`**, which is what lets `execute()` tell a halted
+  program from one that ran off the end of its code.
 
 Unused/transitional/suspicious opcode notes:
 - No dispatched opcode appears unused in current compiler output.

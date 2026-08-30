@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#412 phase 4: all 49 opcodes now carry a semantic spec, and the gate
+  requires one.**
+
+  Phase 2 specified the ten control-flow opcodes #412's scope note names. The
+  other 39 were left deliberately — `ADD` and `POP` are not where the bugs were.
+  Two things about that reasoning did not hold up. Of the **sixteen** opcodes
+  phase 1's census found executing fewer than 100 times across the whole suite,
+  only three had a spec; `JUMP_IF_TRUE`, `NOT`, `STORE_UPVALUE` and `TO_BOOL`
+  execute **twice** each. And phase 2's rate of finding the reference wrong did
+  not depend on complexity — what drives it is a short entry describing a
+  multi-branch handler, which is exactly the shape of the simple ones.
+
+  `tests/test_opcode_semantics_core.py` specifies the remaining 39 in the shape
+  #412 asks for: construct a known VM state, execute one instruction, assert the
+  resulting state. **Verified by mutation** — 52 deliberate defects applied to
+  `vm.py` one at a time, all 52 killed. Two survived the first pass and both were
+  real gaps in the specs rather than in the VM.
+
+  `nodus_gate --opcodes` runs **29** checks rather than 28. The spec requirement
+  is now the whole dispatch table rather than the `exceptions` category, spec
+  modules are discovered by glob so a third is covered by construction, and a
+  new check requires every dispatched opcode to declare a `- Category:` in §3.
+
+  **Twenty-four corrections to `BYTECODE_REFERENCE.md §3`**, each one a test that
+  went red against what the document said. The consequential ones:
+
+  - **`DIV` and `MOD` have three branches each**, and "host float division
+    behavior" described none of them: int/int is *floor* division, `bool` is
+    excluded from the int path (so `4 / true` is `4.0`), and each has two
+    distinct zero errors rather than a host `ZeroDivisionError`.
+  - **`EQ`/`NE` are not "Python value equality semantics".** `1 == 1.0` is true
+    by explicit coercion and `1 == true` is **false** — the opposite of Python.
+    Records compare by identity (#545).
+  - **`STORE_FIELD` creates a missing record field rather than erroring**, which
+    the entry got backwards; only a *module* receiver requires the name to exist.
+    It also pushes the assigned value back, so its net effect is -1, not -2.
+  - **`RETURN` has three exits**, of which one was documented: deferred by a
+    pending `finally` with no frame popped, coroutine completion returning
+    `("return", value)` and pushing nothing, and the ordinary path.
+  - **`LOAD_FIELD` accepts a module receiver**, not only a record — the same
+    omission phase 2 corrected in `CALL_METHOD`, in the sibling opcode.
+  - **`ADD`/`SUB`/`MUL`/`NEG` and the four ordering comparisons convert the host
+    `TypeError`** into a Nodus `type` error; the entries pointed at host
+    behaviour for errors that never surface.
+  - `HALT` does not advance `ip`; `CALL` has five resolution paths including the
+    #411 compiler prefix; `BUILD_MAP` refuses a `bool` key; conditional jumps pop
+    whether or not they jump; an empty record is truthy while an empty map is not.
+
 ### Fixes
 
 - **#691: a callback handed to an imported module's function now runs against

@@ -126,6 +126,29 @@ static checkers are run against synthetic broken input; the runtime check was
 verified by under-sizing every frame by one slot, which turns all three of its
 corpus tests red.
 
-Phases 1–3 are complete. The 39 opcodes outside phase 2's risk register still
-have no per-opcode semantic spec, deliberately — `ADD` and `POP` are not where
-the bugs were, and the census is the ordering.
+## Phase 4 — the register was only 3/16 covered
+
+Phases 1–3 left the other 39 opcodes unspecified, deliberately: `ADD` and `POP`
+are not where the bugs were, and the census is the ordering. Two things about
+that ordering turned out to argue the other way.
+
+**Of the sixteen opcodes under 100 executions above, only three got a spec** —
+`POP_TRY`, `FINALLY_END` and `CALL_VALUE`. `JUMP_IF_TRUE`, `NOT`,
+`STORE_UPVALUE` and `TO_BOOL` execute **twice** each across the whole suite.
+"Simple" and "exercised" are different properties, and this file measures the
+second one.
+
+**And phase 2's find rate did not depend on complexity.** It corrected four
+reference entries out of ten opcodes; phase 4 corrected more, in opcodes as
+plain as `DIV` and `STORE_FIELD`. What drives the rate is the ratio of prose to
+behaviour — a one-line entry describing a three-branch handler is the shape that
+goes wrong, and the simple opcodes have the shortest entries.
+
+So `tests/test_opcode_semantics_core.py` specifies all 39, and
+`nodus_gate --opcodes` now requires a spec for **every dispatched opcode**
+rather than for the `exceptions` category. Verified the way phase 2 was: 52
+deliberate defects applied to `vm.py` one at a time, all 52 killed by the specs.
+Two survived the first pass and both were real gaps — a `LOAD_UPVALUE` spec
+using index 0 of a one-element list, where an off-by-one is indistinguishable,
+and a `CALL` frame-cap spec that checked the error but not that the refused
+frame was gone.
