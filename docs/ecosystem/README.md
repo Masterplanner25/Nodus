@@ -103,6 +103,10 @@ per row.
 | [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | see `tools/consumers.json` | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
 | [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | see `tools/consumers.json` | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
 
+> **Per-repo working notes** — checkout paths, test commands, publish paths and
+> the gotchas that have cost time — are in
+> [`COMPANION_REPOS.md`](./COMPANION_REPOS.md).
+
 > **This table is the source for the PyPI project count.** CLAUDE.md says to
 > re-derive that count by probing every first-party name listed here, rather than
 > adjusting it by arithmetic. That only works if the list is complete: at the

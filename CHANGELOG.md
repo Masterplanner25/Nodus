@@ -4,6 +4,31 @@
 
 ### Tooling
 
+- **`CLAUDE.md` trimmed from 1,889 to 1,619 lines; per-repo companion detail moved
+  to `docs/ecosystem/COMPANION_REPOS.md`.**
+
+  Eleven per-companion sections were scattered across three regions of the file,
+  interleaved with unrelated material, and the key-file table repeated all their
+  paths a fourth time. They are one document now, reached by a pointer and a
+  fourteen-row index. Every gotcha is preserved — the two `C:\codev` directories,
+  the egg-info pitfall, the VS Code PAT scope, the `nodus-flow` rename rule.
+
+  Two sections had said the same thing twice. The SemVer section carried a
+  narrative per release duplicating `CHANGELOG.md`, told 5.7.0's supersession
+  twice, and printed the *"X is current" vs "as of X"* paragraph verbatim in two
+  places (146 → 85 lines). "Published ecosystem" repeated per-package detail that
+  now lives in the new file (116 → 94).
+
+  **Two version claims were retired rather than re-registered.** They guarded
+  CLAUDE.md quoting `version.py`'s and `pyproject.toml`'s literal contents back at
+  the reader — a third copy of a fact with two authorities, while the gate's own
+  `version files agree` check compares those authorities directly. The
+  restatement was removed instead. A claim is worth having when prose asserts
+  something a reader acts on, not to guard a transcription that need not exist.
+
+  Facts re-measured rather than carried forward: 3,132 tests collected, 138 gate
+  symbols, 268 runtime blocks, `.venv` still at 5.0.0 against `src/` at 5.8.0.
+
 - **`nodus-workflow-ai` is published, and the registers that should have seen it
   now do.**
 
