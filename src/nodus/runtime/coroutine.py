@@ -31,7 +31,7 @@ BLOCKED_REASONS: tuple[str, ...] = (
     "subprocess_async",
     "subprocess_wait_async",
     "agent_async",
-    "task_join",
+    "task_wait",
 )
 
 BLOCKED_REASON_SET = frozenset(BLOCKED_REASONS)
@@ -79,20 +79,20 @@ class Coroutine:
     # is resumed once more to unwind before the error is delivered.
     cancelling: object = None
     # #395: why this task settled without a value -- a cancellation, or the
-    # error it failed with. `join` raises it into the joiner (D6); nothing else
+    # error it failed with. `wait` raises it into the waiter (D6); nothing else
     # reads it. Distinct from `cancelling`, which is live only during the unwind.
     cancelled_error: object = None
     failure: object = None
     # #395 D6: a joined task's failure, handed to this coroutine by
-    # `release_joiners` and delivered on its next resume. Carried rather
-    # than raised at release time because the joiner is suspended: there is
+    # `release_waiters` and delivered on its next resume. Carried rather
+    # than raised at release time because the waiter is suspended: there is
     # no stack to raise into until it is resumed.
-    pending_join_error: object = None
-    # #395 D6: someone has asked for this task's outcome. Set by `join`
+    pending_wait_error: object = None
+    # #395 D6: someone has asked for this task's outcome. Set by `wait`
     # before the task can settle, and read by the scheduler's failure path
-    # so a joined failure is reported ONCE -- to the joiner, not also to
+    # so a joined failure is reported ONCE -- to the waiter, not also to
     # stderr and `_coroutine_errors`. An UNjoined failure is untouched.
-    joined: bool = False
+    waited_on: bool = False
     workflow_context: dict | None = None
     # #394: set by the graph runner on the coroutine it creates for a step, and
     # by nothing else. A guest's own `coroutine(step_fn)` carries False, so the

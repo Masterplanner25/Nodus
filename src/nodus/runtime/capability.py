@@ -230,16 +230,16 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "time_to_http_date", "time_to_iso8601", "time_to_utc", "time_to_zone",
         "time_weeks",
     ),
-    # #395/#157: `cancel` and `join` are here deliberately, and 04 SS10.2 gives
+    # #395/#157: `cancel` and `wait` are here deliberately, and 04 SS10.2 gives
     # the reason. Cancellation *removes* authority rather than granting it -- a
     # guest that can cancel its own coroutines can already achieve the same
-    # effect by returning -- and `join` only reads an outcome the guest's own
+    # effect by returning -- and `wait` only reads an outcome the guest's own
     # task produced. Neither reaches anything outside the program, so neither is
     # in the class CapabilityPolicy exists to bound. The host-facing run-level
     # cancel is a Python API and is not guest-reachable at all.
     "in-process concurrency": (
         "__sleep", "cancel", "channel", "close", "coroutine", "coroutine_status",
-        "join", "recv", "resume", "run_loop", "send", "sleep", "spawn",
+        "wait", "recv", "resume", "run_loop", "send", "sleep", "spawn",
     ),
     "introspection of the running program": (
         "runtime_clear_events", "runtime_event_count", "runtime_events",

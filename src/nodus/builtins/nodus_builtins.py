@@ -61,7 +61,7 @@ BUILTIN_NAMES = {
     # this set is what the compiler resolves against, so a builtin missing here
     # compiles as an ordinary name and fails in a way that names nothing.
     "cancel",
-    "join",
+    "wait",
     "run_loop",
     "sleep",
     "__sleep",

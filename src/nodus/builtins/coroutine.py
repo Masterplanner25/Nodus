@@ -5,7 +5,7 @@ from nodus.runtime.channel import (
     Channel,
     ChannelRecvRequest,
     ChannelSendRequest,
-    TaskJoinRequest,
+    TaskWaitRequest,
 )
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.runtime.scheduler import SleepRequest
@@ -94,11 +94,11 @@ def register(vm, registry) -> None:
                 # #395 D6: a task this coroutine joined failed. Deliver it here,
                 # where there is a stack to raise into -- the same shape
                 # `unwind_cancelled_coroutine` uses. `handle_exception` gives the
-                # joiner's own `catch` a chance first, so a joined failure is an
+                # waiter's own `catch` a chance first, so a joined failure is an
                 # ordinary catchable error rather than a special case.
-                pending = coroutine.pending_join_error
+                pending = coroutine.pending_wait_error
                 if pending is not None:
-                    coroutine.pending_join_error = None
+                    coroutine.pending_wait_error = None
                     if not vm.handle_exception(pending):
                         raise pending
 
@@ -185,12 +185,12 @@ def register(vm, registry) -> None:
         err = LangRuntimeError("cancelled", "Task cancelled")
         if coroutine.state == "created":
             # Never entered, so there is nothing to unwind and no `finally` to
-            # run. Mark it settled so a joiner is released rather than parked
+            # run. Mark it settled so a waiter is released rather than parked
             # on a task that will never be scheduled.
             coroutine.state = "finished"
             coroutine.cancelled_error = err
             scheduler._mark_completed(coroutine)
-            scheduler.release_joiners(coroutine)
+            scheduler.release_waiters(coroutine)
             return True
 
         owner = getattr(coroutine, "owner_vm", None) or vm
@@ -206,13 +206,13 @@ def register(vm, registry) -> None:
         scheduler._mark_completed(coroutine)
         if coroutine.id is not None:
             scheduler.sleeping_tasks.discard(coroutine.id)
-        scheduler.release_joiners(coroutine)
+        scheduler.release_waiters(coroutine)
         return True
 
     def _settled_outcome(coroutine):
-        """The value a settled task yields to a joiner, or its failure raised.
+        """The value a settled task yields to a waiter, or its failure raised.
 
-        One place, because `join` reaches it from three directions -- already
+        One place, because `wait` reaches it from three directions -- already
         finished, released from a park, and settled during a top-level drive --
         and three answers to "what did this task produce" is the shape.
         """
@@ -221,35 +221,35 @@ def register(vm, registry) -> None:
             raise failure
         return coroutine.last_result
 
-    def builtin_join(value):
+    def builtin_wait(value):
         """Wait for a task and return its value; raise its failure (#157, #395).
 
-        Two contexts (D8). Inside a coroutine `join` **suspends**, like `recv` --
+        Two contexts (D8). Inside a coroutine `wait` **suspends**, like `recv` --
         there is a coroutine to park, so no reentrancy and no scheduler theft. At
         top level there is nothing to suspend, so it **drives** the scheduler
         until the task settles.
 
         The top-level drive still runs other coroutines: a task can depend on its
-        siblings, so refusing to run them would deadlock `join` on a queue it
+        siblings, so refusing to run them would deadlock `wait` on a queue it
         declined to drain. What it fixes is the *stopping condition* -- it returns
         when the task settles rather than when the whole deque empties, so a
         library no longer runs its caller's unrelated work to completion. That is
         a bounded drive, not an isolated one, and the documentation says so.
 
-        A failure is raised into the joiner (D6). That is not a new door: `resume`
-        has always propagated a coroutine's failure into the resumer. `join` and
+        A failure is raised into the waiter (D6). That is not a new door: `resume`
+        has always propagated a coroutine's failure into the resumer. `wait` and
         `resume` ask one question -- drive this task, give me its outcome -- and
         one raising while the other collected would be that question answered in
         two voices.
         """
-        coroutine = vm.ensure_coroutine(value, "join(task)")
+        coroutine = vm.ensure_coroutine(value, "wait(task)")
 
         if coroutine.id is None:
             # Unlike `cancel`, which no-ops: a join is asking for a value and
             # there is no value to invent (05 §6.5). The asymmetry is deliberate.
             vm.runtime_error(
                 "runtime",
-                "join(task) on a task that was never spawned — call spawn(c) first",
+                "wait(task) on a task that was never spawned — call spawn(c) first",
             )
 
         if coroutine.state == "finished":
@@ -258,8 +258,8 @@ def register(vm, registry) -> None:
         # Claimed before the task can settle, so the scheduler's failure path
         # knows the outcome is spoken for and does not also report it (D6).
         # A task that already failed *before* this call was necessarily reported
-        # then; "once" cannot retroactively unsay it, and `join` still raises.
-        coroutine.joined = True
+        # then; "once" cannot retroactively unsay it, and `wait` still raises.
+        coroutine.waited_on = True
         scheduler = vm.scheduler
         # "Am I inside a coroutine the scheduler is driving?" -- and the answer is
         # NOT `vm.current_coroutine is not None`. That attribute can hold an
@@ -268,25 +268,25 @@ def register(vm, registry) -> None:
         # resume it. `_try_enter_foreign_closure` already asks this question and
         # already answers it by identity against `scheduler.current_task`; asking
         # it a second way here would be the shape.
-        joiner = vm.current_coroutine
-        if joiner is not None and joiner is getattr(scheduler, "current_task", None):
-            if joiner is coroutine:
-                vm.runtime_error("runtime", "join(task) on the task doing the joining")
+        waiter = vm.current_coroutine
+        if waiter is not None and waiter is getattr(scheduler, "current_task", None):
+            if waiter is coroutine:
+                vm.runtime_error("runtime", "wait(task) on the task doing the joining")
             vm.stack.append(None)
             vm.save_current_coroutine_state(vm.ip + 1)
-            scheduler.park_joiner(joiner, coroutine)
+            scheduler.park_waiter(waiter, coroutine)
             # The sentinel `call_builtin` converts into a yield, exactly as
             # `recv` does. Returning the ("yield", ...) tuple directly does not
-            # suspend -- it is handed back as an ordinary value, and the joiner
+            # suspend -- it is handed back as an ordinary value, and the waiter
             # carries on with a tuple where its result should be. That was the
             # first version of this, and the symptom was a printed tuple.
-            return TaskJoinRequest(coroutine)
+            return TaskWaitRequest(coroutine)
 
         scheduler.drive_until_settled(coroutine)
         if coroutine.state != "finished":
             vm.runtime_error(
                 "deadlock",
-                f"join(task) cannot complete: task '{coroutine.name or coroutine.id}' "
+                f"wait(task) cannot complete: task '{coroutine.name or coroutine.id}' "
                 "is blocked and nothing can wake it",
             )
         return _settled_outcome(coroutine)
@@ -518,10 +518,10 @@ def register(vm, registry) -> None:
     registry.add("coroutine_status", 1, builtin_coroutine_status)
     registry.add("spawn", 1, builtin_spawn)
     # #395/#157 (D3): two verbs on the coroutine, and no third. `last_result`
-    # gets no separate accessor -- a `task_result(c)` beside `join(c)` would be
+    # gets no separate accessor -- a `task_result(c)` beside `wait(c)` would be
     # two answers to one question.
     registry.add("cancel", 1, builtin_cancel)
-    registry.add("join", 1, builtin_join)
+    registry.add("wait", 1, builtin_wait)
     registry.add("run_loop", 0, builtin_run_loop)
     registry.add("sleep", 1, builtin_sleep)
     registry.add("__sleep", 1, builtin_sleep)

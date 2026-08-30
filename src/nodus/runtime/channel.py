@@ -29,8 +29,8 @@ class ChannelSendRequest(ChannelRecvRequest):
     """
 
 
-class TaskJoinRequest(ChannelRecvRequest):
-    """A `join` suspended on another task (#157/#395).
+class TaskWaitRequest(ChannelRecvRequest):
+    """A `wait` suspended on another task (#157/#395).
 
     Subclassed for the reason `ChannelSendRequest` is, and it is the same reason:
     the VM asks one question at the suspend point -- *has this builtin parked the
