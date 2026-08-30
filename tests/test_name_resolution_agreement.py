@@ -148,8 +148,8 @@ class ShadowingIsStillShadowingTests(unittest.TestCase):
 # closes: #671
 class FunctionScopedCaptureStillWorksTests(unittest.TestCase):
     """The control. Upvalue mutation was already correct and must stay correct —
-    DESIGN-006 (#156) claimed it was broken, which sent readers to an
-    unnecessary map workaround for years."""
+    DESIGN-006 (#156, filed 2026-06-07) claimed it was broken, which sent readers
+    to an unnecessary map workaround until it was re-measured."""
 
     def test_an_escaping_counter_closure(self):
         out = stdout_of(

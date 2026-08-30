@@ -756,6 +756,28 @@ def _workflow_inspect(graph_id: str, project_root: str | None) -> int:
     return 0
 
 
+def _workflow_cancel_cli(run_id: str, project_root: str | None) -> int:
+    """`nodus workflow cancel <graph_id>` (#395 SS7).
+
+    Marks the record cancelled. This is the cross-process half, and it is
+    **cooperative**: the CLI cannot reach into the scheduler of whichever process
+    owns a running run, so it marks the store and that process stops at its next
+    step boundary. The message says so, because a cancel that silently does
+    nothing until a long agent call returns is worse than one that admits it.
+    """
+    with _project_root_context(project_root):
+        result = get_default_workflow_runner().cancel_run(run_id)
+    if not result.get("ok"):
+        reason = result.get("reason", "could not cancel")
+        if result.get("status"):
+            reason = f"{reason} (status: {result['status']})"
+        _print_stderr(f"Not cancelled: {run_id} -- {reason}")
+        return 1
+    print(f"Cancelled {run_id} (was {result.get('cancelled_from')})")
+    print("A run owned by another process stops at its next step boundary.")
+    return 0
+
+
 def _workflow_replay_cli(
     graph_id: str,
     checkpoint: str | None,
@@ -1806,6 +1828,16 @@ def main(argv: list[str] | None = None) -> int:
                 _print_stderr(err)
                 return 1
             return _workflow_inspect(positional[0], project_root)
+        if subcommand == "cancel":
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "cancel"))
+            if not positional:
+                _print_stderr("Usage: nodus workflow cancel <graph_id> [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_cancel_cli(positional[0], project_root)
         if subcommand == "replay":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "replay"))
             if not positional:

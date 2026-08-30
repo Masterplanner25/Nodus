@@ -275,9 +275,33 @@ timed-out coroutine's error goes today — `scheduler._coroutine_errors`, draine
 by `run_loop`. **No change to error collection**, and no parent to propagate to,
 per §4.1.
 
-## 7. Run-level cancellation
+## 7. Run-level cancellation — **built**
 
 Separable from §5.1 and, for an embedder, the more valuable half.
+
+> **Status: shipped.** `WorkflowFrameworkRunner.cancel_run(run_id)`,
+> `run_is_cancelled(run_id)`, and `nodus workflow cancel <graph_id>`.
+> `RUN_STATUS_CANCELLED` is the eighth run state, terminal and not rehydratable.
+>
+> **One thing this section did not anticipate.** The run-status vocabulary was
+> named *three* times: `REHYDRATABLE_RUN_STATUSES` in `store.py` and
+> `_REHYDRATABLE_STATUSES` in `runner.py` were independent definitions of one
+> equal set, with the members listed again as `_KNOWN_RUN_STATUSES`. Adding an
+> eighth status is precisely when that costs something — four edits, and the one
+> you miss is silent. The vocabulary now lives once in `models.py`
+> (`RUN_STATUSES`, `TERMINAL_RUN_STATUSES`, `REHYDRATABLE_RUN_STATUSES`) and the
+> other modules import it; `tests/test_run_cancellation.py` asserts the sets are
+> the *same objects*, not merely equal, since equality is what they already had
+> and is what let them sit unnoticed.
+>
+> `nodus_gate --shapes` did not flag it: its species-B detector looks for one
+> literal collection being a strict *subset* of another, and these were equal.
+> A real hole in the detector, recorded here rather than fixed.
+>
+> Still unbuilt from this section: §7.1's in-flight unwinding — cancelling a run
+> marks it and stops dispatch, but does not yet reach into a step coroutine that
+> is already running. The verb it needs (`cancel(t)`) now exists, so that is a
+> wiring job rather than a design one.
 
 ### 7.1 Both halves, not one
 
