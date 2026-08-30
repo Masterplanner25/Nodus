@@ -4,6 +4,25 @@
 
 ### Changed
 
+- **The agent skill's first "non-negotiable rule" was wrong, and sent readers to an
+  unnecessary workaround.**
+
+  `skills/nodus.skill` — the file `nodus docs` points users at — said *"`let` in
+  closures is read-only — use a map"*. Upvalue mutation works: an escaping counter
+  closure, two closures sharing one captured variable, two-level nesting, `+=`, and
+  mutation from inside a spawned coroutine were all verified working against 5.7.1.
+
+  What is actually broken is one scope narrower: a `let` at **module top level**
+  assigned from inside any function or closure silently writes a frame-local and
+  leaves the top-level value unchanged. Newly filed as issue 671, with both root-cause
+  sites. The map-with-quoted-keys pattern is still correct for module-scope shared
+  state, and unnecessary for anything declared inside a function.
+
+  Corrected in `skills/nodus.skill` (five places), `skills/nodus/references/idioms.md`,
+  `skills/project-AGENTS.md`, `skills/project-CLAUDE.md` and `CLAUDE.md`. The old
+  DESIGN-006 issue, whose reproduction was the still-broken top-level case but whose
+  title generalised it, is closed as superseded.
+
 - **The concurrency docs now state the worker-pool model plainly, and one of them
   was describing behaviour the runtime does not have.**
 

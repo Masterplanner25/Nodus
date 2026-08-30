@@ -845,10 +845,47 @@ to 7.0.0. It looks like a broken package and is a stale validator.
 These burn time when forgotten:
 
 - **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
-- **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183). In closures, you
-  still can't assign outer `let` variables at all — use a **map** with quoted keys and mutate
-  via bracket notation: `state["count"] = state["count"] + 1i`.
-  (The pattern uses `{"count": 0i}` — quoted-key map — NOT `{count: 0i}` record.)
+- **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183), including inside
+  closures.
+- **Closures CAN mutate an outer `let` — but only a *function-scoped* one. A
+  module-top-level `let` assigned from inside any function silently does nothing (#671).**
+
+  This entry said the opposite for a long time ("in closures you still can't assign outer
+  `let` variables at all — use a map with quoted keys"), and that advice sent every session
+  to an unnecessary workaround. Re-verified 2026-08-30 against 5.7.1 dev source by running
+  each case:
+
+  ```
+  fn make_counter() { let n = 0i; return fn() { n = n + 1i; return n } }   // 1, then 2
+  ```
+
+  Also working: two closures sharing one captured variable, two-level nesting, mutation
+  from inside a spawned coroutine, and `n += 5i`.
+
+  What is **broken** is module scope, and it is silent:
+
+  ```
+  let g = 7i
+  fn setit() { g = 99i }
+  setit()          // g is still 7 — no error, no warning
+  ```
+
+  The function gets a frame slot for `g` and writes there (`STORE_LOCAL_IDX` vs the
+  top-level `STORE g`). If the right-hand side also reads the variable, you get
+  `Cannot add nil and int` — a type error that names arithmetic, not scoping, because the
+  fresh local is uninitialised. Reads of a top-level `let` are fine; mutating one *at* top
+  level is fine.
+
+  Two sites, and they disagree: `SymbolTable._resolve_upvalue_in` bails without an
+  enclosing *function* scope so the module symbol is never found, and `VM.store_name`
+  writes into the current frame's locals whenever a frame exists, while `load_name` walks
+  on to `module_globals`. Patching only the first makes the *read* correct and still loses
+  the write.
+
+  **Until #671 lands, the map workaround is still right for module-scope shared state** —
+  a quoted-key map mutated via bracket notation, `state["count"] = state["count"] + 1i`.
+  (`{"count": 0i}` — quoted-key map — NOT `{count: 0i}`, which is a record.) It is not
+  needed for anything scoped inside a function.
 - **Maps vs Records — dot vs bracket notation:**
   - `{"key": val}` (quoted keys) → **map** → access with `state["key"]`
   - `{key: val}` (unquoted keys) → **record** → access with `state.key`

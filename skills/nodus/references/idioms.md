@@ -30,7 +30,10 @@ let inc = fn() {
 }
 ```
 
-Assigning to an outer `let` inside a closure creates a local shadow.
+Assigning to a **module-top-level** `let` from inside a function or closure creates a
+frame-local and silently leaves the top-level value unchanged (#671). A `let` declared
+*inside* a function can be captured and mutated normally — the map pattern is only needed
+for state shared across functions at module scope.
 
 ## Printing values
 
