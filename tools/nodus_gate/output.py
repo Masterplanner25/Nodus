@@ -248,6 +248,51 @@ def format_consumers(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_invariants(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """The ledger's state in one line when clean, every break when not."""
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        return "\n".join(lines)
+
+    if not quiet:
+        lines.append(
+            f"Checked {result.documented} documented invariant(s) against the coverage ledger"
+        )
+        lines.append("")
+
+    for finding in result.findings:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(f"  {mark} {finding.message}")
+        if finding.detail:
+            lines.append(f"       {finding.detail}")
+
+    if verbose:
+        for advisory in result.advisories:
+            mark = _c("[warn]", _YELLOW, use_color=use_color)
+            lines.append(f"  {mark} {advisory.message}")
+    elif result.advisories and not quiet:
+        lines.append(
+            f"  {len(result.advisories)} citation(s) in the document not in the ledger "
+            "(--verbose to list)"
+        )
+
+    if not quiet:
+        lines.append("")
+        lines.append(
+            f"  {result.with_tests} invariant(s) name a covering test, "
+            f"{result.unrecorded} unrecorded"
+        )
+
+    ok = not result.findings
+    status = _c("PASS", _GREEN, use_color=use_color) if ok else _c("FAIL", _RED, use_color=use_color)
+    lines.append("")
+    lines.append(
+        f"Invariants: {status} — {result.passed}/{result.checks_run} ledger checks passed"
+    )
+    return "\n".join(lines)
+
+
 def format_versions(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
     """The sync pair, then each declared claim, then anything unregistered."""
     lines = []

@@ -25,6 +25,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--shapes": False,
         "--opcodes": False,
         "--versions": False,
+        "--invariants": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -135,11 +136,12 @@ def main(argv: list[str] | None = None) -> int:
     run_consumers = args["--consumers"] or args["--all"]
     run_shapes = args["--shapes"] or args["--all"]
     run_versions = args["--versions"] or args["--all"]
+    run_invariants = args["--invariants"] or args["--all"]
 
     if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
-            or run_consumers or run_versions or run_shapes):
+            or run_consumers or run_versions or run_shapes or run_invariants):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
-              "[--opcodes] [--consumers] [--versions] [--shapes] [--all]")
+              "[--opcodes] [--consumers] [--versions] [--shapes] [--invariants] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
@@ -148,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  --consumers      Report non-PyPI consumers a release has left behind")
         print("  --versions       Verify prose still agrees with the version files")
         print("  --shapes         Report new instances of the recurring bug shape")
-        print("  --all            Run all eight phases")
+        print("  --invariants     Verify the invariant-to-test ledger is honest")
+        print("  --all            Run all nine phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -177,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
         format_opcodes, format_consumers, format_versions, format_shapes,
+        format_invariants,
         format_json_results,
     )
 
@@ -272,6 +276,19 @@ def main(argv: list[str] | None = None) -> int:
         # default -- hand-checking a list is exactly what failed three times.
         # The unregistered-line sweep stays advisory: it suggests, it does not decide.
         if versions_result.has_failure:
+            any_failure = True
+
+    if run_invariants:
+        from tools.nodus_gate.invariants_phase import run_invariants_phase
+        invariants_result = run_invariants_phase(root)
+        if output_fmt != "json":
+            print(format_invariants(invariants_result, use_color=use_color,
+                                    verbose=verbose, quiet=quiet))
+        # Fails by default. Every check here is wrong *now* with a one-line fix --
+        # an unclassified invariant, a stale entry, a test path that no longer
+        # exists. The citation-drift sweep stays advisory: it suggests, it does
+        # not decide. An unreadable manifest is a failure, never a skip.
+        if invariants_result.error or invariants_result.findings:
             any_failure = True
 
     if output_fmt == "json":
