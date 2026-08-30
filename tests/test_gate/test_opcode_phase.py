@@ -142,21 +142,43 @@ class DriftDetectionTests(unittest.TestCase):
 
 
 class SemanticSpecTests(unittest.TestCase):
-    """#412 phase 2: the phase checks spec *coverage*, not only inventory.
+    """#412: the phase checks spec *coverage*, not only inventory.
 
-    It cannot check semantics -- `tests/test_opcode_semantics.py` does that. What
-    it checks is that the module which does is still aimed at the right set, so
-    the result does not rot the way the inventory did before #366.
+    It cannot check semantics -- the `tests/test_opcode_semantics*.py` modules do
+    that. What it checks is that the modules which do are still aimed at the
+    right set, so the result does not rot the way the inventory did before #366.
+
+    Phase 2 required a spec of the `exceptions` category only, because that was
+    all that existed. Phase 4 specified the other 39, so the requirement is the
+    **whole dispatch table** and the relation is an equality: an opcode with no
+    spec and a spec with no opcode are both findings.
     """
 
     def _dispatch(self) -> set:
         dispatch, _ = load_dispatch_opcodes(str(_ROOT))
         return dispatch
 
-    def test_the_real_repo_specifies_every_exception_opcode(self):
+    def test_the_real_repo_specifies_every_dispatched_opcode(self):
         result = OpcodeResult()
         _check_semantic_specs(result, str(_ROOT), _reference_text(), self._dispatch())
         self.assertEqual([], [f.message for f in result.findings])
+
+    def test_the_spec_modules_cover_the_dispatch_table_exactly(self):
+        """An equality rather than two inclusions, so neither direction can be
+        satisfied by the other drifting to meet it."""
+        self.assertEqual(self._dispatch(), parse_specified_opcodes(str(_ROOT)))
+
+    def test_specs_are_collected_from_every_spec_module_not_just_one(self):
+        """The glob is the point: phase 2 and phase 4 live in separate modules
+        and neither alone covers the table."""
+        import tests.test_opcode_semantics as phase2
+        import tests.test_opcode_semantics_core as phase4
+        specified = parse_specified_opcodes(str(_ROOT))
+        self.assertTrue(set(phase2.SPECIFIED) <= specified)
+        self.assertTrue(set(phase4.SPECIFIED) <= specified)
+        self.assertFalse(
+            self._dispatch() <= set(phase2.SPECIFIED),
+            "phase 2 alone must not cover the table, or the glob is untested")
 
     def test_the_exception_category_is_the_unwind_path(self):
         """If this set ever changes, the coverage requirement changed with it --
@@ -165,15 +187,15 @@ class SemanticSpecTests(unittest.TestCase):
         exceptions = {op for op, cat in categories.items() if cat == "exceptions"}
         self.assertEqual({"SETUP_TRY", "POP_TRY", "FINALLY_END", "THROW"}, exceptions)
 
-    def test_every_exception_opcode_is_named_in_the_spec_module(self):
+    def test_every_exception_opcode_is_named_in_a_spec_module(self):
         specified = parse_specified_opcodes(str(_ROOT))
         self.assertIsNotNone(specified)
         for op in ("SETUP_TRY", "POP_TRY", "FINALLY_END", "THROW"):
             self.assertIn(op, specified)
 
-    def test_an_unspecified_exception_opcode_is_reported(self):
-        """Drift in the direction that matters: a new unwind opcode, or a spec
-        quietly dropped."""
+    def test_a_new_unspecified_opcode_is_reported(self):
+        """Drift in the direction that matters: a new opcode, or a spec quietly
+        dropped. Any category now, not only `exceptions`."""
         result = OpcodeResult()
         _check_semantic_specs(
             result, str(_ROOT),
@@ -190,6 +212,21 @@ class SemanticSpecTests(unittest.TestCase):
         self.assertTrue(any("no semantic spec" in f.message for f in result.findings),
                         [f.message for f in result.findings])
         self.assertIn("NEW_UNWIND", " ".join(f.detail for f in result.findings))
+
+    def test_an_opcode_with_no_category_line_is_reported(self):
+        """§4 groups the set into families and readers navigate by them, so an
+        uncategorised entry is invisible to that structure while looking
+        complete on the page."""
+        result = OpcodeResult()
+        _check_semantic_specs(
+            result, str(_ROOT),
+            _reference_text().replace("### SETUP_TRY\n- Category: exceptions",
+                                      "### SETUP_TRY\n- Uncategorised: yes", 1),
+            self._dispatch(),
+        )
+        self.assertTrue(any("no `- Category:`" in f.message for f in result.findings),
+                        [f.message for f in result.findings])
+        self.assertIn("SETUP_TRY", " ".join(f.detail for f in result.findings))
 
     def test_a_spec_for_an_undispatched_opcode_is_reported(self):
         """A rename leaves the spec module covering a name nothing dispatches;
@@ -209,6 +246,18 @@ class SemanticSpecTests(unittest.TestCase):
         _check_semantic_specs(result, str(root), _reference_text(), self._dispatch())
         self.assertTrue(any("SPECIFIED" in f.message for f in result.findings),
                         [f.message for f in result.findings])
+
+    def test_a_spec_module_with_no_readable_tuple_is_a_failure(self):
+        """Not a zero. With the glob, a new spec module that forgets its
+        `SPECIFIED` would otherwise contribute nothing and pass silently."""
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "tests").mkdir()
+        (root / "tests" / "test_opcode_semantics.py").write_text(
+            'SPECIFIED = (\n    "SETUP_TRY",\n)\n', encoding="utf-8")
+        (root / "tests" / "test_opcode_semantics_new.py").write_text(
+            "# a spec module that forgot its tuple\n", encoding="utf-8")
+        self.assertIsNone(parse_specified_opcodes(str(root)))
 
 
 class ClaimAnchorTests(unittest.TestCase):

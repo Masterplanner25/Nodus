@@ -694,7 +694,22 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   out of a constructed `VM` and requires `BYTECODE_REFERENCE.md` §3, its
   appendix table, and the `FREEZE_PROPOSAL.md` stability tables to name the same
   49 opcodes, with matching counts and `BYTECODE_VERSION`. **If you add an
-  opcode, this fails until you document it** — that is the point (#366)
+  opcode, this fails until you document it** — that is the point (#366).
+
+  It also requires every dispatched opcode to carry a **semantic spec** and a
+  `- Category:` line (#412 phase 4). The specs live in
+  `tests/test_opcode_semantics*.py`, discovered by glob, and the relation is an
+  equality — an opcode with no spec and a spec naming nothing dispatched are both
+  failures. The gate cannot check semantics, only that the thing which does is
+  still aimed at the whole set.
+
+  **Write the spec by executing one instruction against a hand-built VM state,
+  and prove it can fail.** "Run a program and check the output" is what the
+  golden tests already do, and it is why #370 survived — the opcode was wrong on
+  a path the program never reached. Phase 2 verified 14 deliberate defects and
+  phase 4 another 52, all killed; two of phase 4's survived the first pass, and
+  both were gaps in the spec rather than in the VM. A green spec run is not
+  evidence that a spec constrains anything
 - `--shapes`: reports **new instances of the recurring bug shape** — the section
   below is the reason this phase exists. It scans `src/` for the three species
   that leave a syntactic trace: one question implemented under the same name and

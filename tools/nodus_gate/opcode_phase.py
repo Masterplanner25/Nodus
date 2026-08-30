@@ -129,21 +129,35 @@ def parse_reference_categories(text: str) -> dict[str, str]:
 
 
 def parse_specified_opcodes(root: str) -> set[str] | None:
-    """The opcodes `tests/test_opcode_semantics.py` writes a semantic spec for.
+    """The union of every spec module's `SPECIFIED` tuple, or None if unreadable.
 
-    Read out of the module's own `SPECIFIED` tuple by literal evaluation, not by
-    importing it — the gate must not run a test module as a side effect of
-    checking one.
+    Read by literal evaluation, not by importing — the gate must not run a test
+    module as a side effect of checking one.
+
+    Discovered by glob rather than listed here (#412 phase 4). Phase 2's module
+    scoped itself to the ten control-flow opcodes and said why; folding the
+    other 39 into it would have falsified that framing, so they live in a second
+    module. A third would be covered by construction, which is the "name the set
+    once" rule applied to the gate itself — a hardcoded pair of filenames is one
+    more thing to keep in step, and this file exists because things drift.
+
+    A module that exists but has no readable tuple is a **failure**, not a zero:
+    a check may not pass by being unable to read what it checks.
     """
-    path = Path(root) / _SPEC_TESTS
-    try:
-        source = path.read_text(encoding="utf-8")
-    except OSError:
+    modules = sorted((Path(root) / "tests").glob(_SPEC_TESTS_GLOB))
+    if not modules:
         return None
-    m = re.search(r"^SPECIFIED\s*=\s*\((.*?)\)\s*$", source, re.M | re.S)
-    if not m:
-        return None
-    return set(re.findall(r'"([A-Z][A-Z_0-9]*)"', m.group(1)))
+    specified: set[str] = set()
+    for path in modules:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        m = re.search(r"^SPECIFIED\s*=\s*\((.*?)\)\s*$", source, re.M | re.S)
+        if not m:
+            return None
+        specified |= set(re.findall(r'"([A-Z][A-Z_0-9]*)"', m.group(1)))
+    return specified
 
 
 def parse_reference_removed_section(text: str) -> set[str]:
@@ -229,17 +243,20 @@ def scan_emitted_opcodes(root: str) -> dict[str, list[str]]:
 
 _REFERENCE = "docs/runtime/BYTECODE_REFERENCE.md"
 _FREEZE = "docs/governance/FREEZE_PROPOSAL.md"
-_SPEC_TESTS = "tests/test_opcode_semantics.py"
+_SPEC_TESTS = "tests/test_opcode_semantics*.py"
+_SPEC_TESTS_GLOB = "test_opcode_semantics*.py"
 
-# #412 phase 2: the category whose opcodes must carry a semantic spec.
+# #412 phase 4: **every dispatched opcode** must carry a semantic spec.
 #
-# Every VM bug of the v5 cycle (#361, #370, #371) was in the exception-unwind
-# path, and phase 1's census found `POP_TRY` executing 18 times and
-# `FINALLY_END` 60 across the whole suite -- which is not an exercised path.
-# Naming a *category* rather than four opcodes means a fifth exception opcode is
-# covered by construction: it fails this check until somebody specifies it,
-# which is the "make a test drive off the set" rule applied to the gate.
-_SPEC_REQUIRED_CATEGORY = "exceptions"
+# Phase 2 required this of the `exceptions` category only, because that is where
+# every VM bug of the v5 cycle (#361, #370, #371) lived and the rest were
+# unspecified. Phase 4 specified the other 39, so the requirement is now the
+# whole dispatch table and a new opcode fails this check until somebody writes
+# down what it does.
+#
+# Read from the VM rather than from a list here, for the same reason the
+# category was read from the document: a set maintained in this file is a second
+# thing to keep in step with the first.
 _SEMANTICS = "docs/runtime/INSTRUCTION_SEMANTICS.md"
 _ARCH = "docs/runtime/ARCHITECTURE_ANALYSIS.md"
 _STABILITY_INDEX = "docs/governance/LANGUAGE_STABILITY_INDEX.md"
@@ -317,10 +334,14 @@ def _check_semantic_specs(result: OpcodeResult, root: str, reference: str, dispa
     a gate cannot verify semantics, only that the thing which does is still
     pointed at the right set:
 
-    1. every opcode in the `exceptions` category has a spec;
+    1. every **dispatched** opcode has a spec (phase 4 widened this from the
+       `exceptions` category, which was all that was specified at phase 2);
     2. every specified opcode is still in the dispatch table, so a rename
        leaves the spec module dangling loudly rather than silently covering a
        name nothing dispatches.
+
+    The two together make the relation an equality, so drift in either direction
+    is a finding.
     """
     specified = parse_specified_opcodes(root)
 
@@ -332,15 +353,12 @@ def _check_semantic_specs(result: OpcodeResult, root: str, reference: str, dispa
         ))
         return
 
-    categories = parse_reference_categories(reference)
-    required = {op for op, cat in categories.items()
-                if cat == _SPEC_REQUIRED_CATEGORY and op in dispatch}
-    unspecified = sorted(required - specified)
+    unspecified = sorted(dispatch - specified)
     if unspecified:
         result.findings.append(OpcodeFinding(
-            message=f"{_SPEC_REQUIRED_CATEGORY} opcode(s) with no semantic spec",
-            detail=(f"{', '.join(unspecified)} — add a spec to {_SPEC_TESTS} "
-                    "and name it in SPECIFIED"),
+            message="dispatched opcode(s) with no semantic spec",
+            detail=(f"{', '.join(unspecified)} — add a spec to a "
+                    f"{_SPEC_TESTS} module and name it in SPECIFIED"),
         ))
 
     result.checks_run += 1
@@ -349,6 +367,21 @@ def _check_semantic_specs(result: OpcodeResult, root: str, reference: str, dispa
         result.findings.append(OpcodeFinding(
             message=f"{_SPEC_TESTS} specifies opcode(s) the VM does not dispatch",
             detail=", ".join(dangling),
+        ))
+
+    # Every §3 entry must declare a `- Category:`. §4 groups the set into
+    # families and readers navigate by them, so an entry with no category is
+    # invisible to that structure while looking complete on the page. This is
+    # also what keeps `parse_reference_categories` load-bearing now that the
+    # required set is read from the dispatch table rather than from a category.
+    result.checks_run += 1
+    categories = parse_reference_categories(reference)
+    uncategorised = sorted(op for op in dispatch if op not in categories)
+    if uncategorised:
+        result.findings.append(OpcodeFinding(
+            message="dispatched opcode(s) with no `- Category:` line in §3",
+            detail=(f"{', '.join(uncategorised)} — add one, and place the opcode "
+                    "in a §4 family"),
         ))
 
 
