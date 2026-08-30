@@ -40,7 +40,7 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.7.1 is about declaring contracts at the boundaries a program cannot see across: the host functions it requires (`extern`), the types a host function takes, the shape a resume payload must have, and the undo path for work that already succeeded (`compensates`).
+**Recent:** 5.8.0 is about work that is already in motion: a running workflow or task can be **stopped** (`nodus workflow cancel`, `cancel(t)`, `wait(t)`), and a call that returned the *wrong thing* rather than failing can be **retried against a predicate** (`retry.until`) — the failing result carried into the next attempt, under a bound that always applies.
 
 An installed Nodus could not tell you where its own documentation was. The wheel
 shipped code and the stdlib; the guide, the machine-readable index and the agent
@@ -361,7 +361,7 @@ built-ins — always available, no import needed.
 | `std:effects` | EXACTLY_ONCE idempotency — `resolve`, `pending`, `complete`, `action_id` |
 | `std:sys` | Versioned syscall dispatch — uniform `{status, data, error, trace_id}` response shape |
 | `std:memory` | `share(ns, key, val)`, `recall_from(ns, key)`, `recall_all(ns)`, `forget(ns, key)` |
-| `std:retry` | `retry.call(func, policy)` — exponential backoff, jitter, max attempts |
+| `std:retry` | `retry.call(func, policy)` — exponential backoff, jitter, max attempts; `retry.until(func, predicate, policy)` — retry until a *result* passes, not until it stops erroring |
 | `std:circuit_breaker` | `cb.create(name, cfg)` / `cb.call(name, func)` — three-state breaker |
 
 **Testing**

@@ -811,6 +811,36 @@ def probe_check_enters_steps():
     return "step bodies type-checked; unknown host-shaped calls still permitted"
 
 
+#: Sentences that were TRUE before 5.4.0 and are false now.
+#:
+#: One constant, not one per caller. It was written out twice -- once in the
+#: probe and once in the self-check that is supposed to hold the probe honest --
+#: so the self-check validated a *copy*, and tightening either one would have
+#: silently left the other unchanged. That is the shape this codebase catalogues,
+#: sitting inside a detector for it.
+#:
+#: The `nodus graph` clause carries a negation guard. Without it the pattern
+#: fired on **"`nodus graph` no longer executes the file it inspects"** -- a
+#: correct historical row in CLAUDE.md's "what stopped working" table, added
+#: 2026-08-29, after 5.7.1's Gate 10b had already run 72/72. The words between
+#: the subject and the verb are invisible to a regex, exactly as `not` is
+#: invisible to GitHub's closes-parser. A probe that cries wolf on true prose
+#: gets switched off, so the guard is the fix rather than an exemption for the
+#: one file -- that table gains a row every release.
+STALE_5_4_CLAIM = re.compile(
+    r"`?finally`?[^.\n]{0,40}requires[^.\n]{0,20}`?catch`?"
+    r"|try/finally[^.\n]{0,40}(alone is a syntax error|is a syntax error)"
+    r"|(channels?|send)[^.\n]{0,60}(no backpressure|raises? instead of block)"
+    r"|`?waiting_senders`?[^.\n]{0,40}(dead code|never read)"
+    r"|`?nodus graph`?(?![^.\n]{0,50}(no longer|does not|doesn't|never|stopped|instead of))"
+    r"[^.\n]{0,50}(executes the file|runs the file)"
+    r"|(analyzer|check)[^.\n]{0,60}never enters[^.\n]{0,30}step bodies"
+    r"|`?STEP_OPTION_KEYS`?[^.\n]{0,40}(is seven|seven entries)"
+    r"|does not check[^.\n]{0,60}undefined variable",
+    re.IGNORECASE,
+)
+
+
 @probe("5.4.0: prose does not still describe the pre-5.4.0 surface")
 def probe_no_stale_5_4_claims(repo: Path):
     """The half that has caught something every cycle.
@@ -819,17 +849,7 @@ def probe_no_stale_5_4_claims(repo: Path):
     now. Evals, design docs and the CHANGELOG are exempt: recording what was is
     their job.
     """
-    stale = re.compile(
-        r"`?finally`?[^.\n]{0,40}requires[^.\n]{0,20}`?catch`?"
-        r"|try/finally[^.\n]{0,40}(alone is a syntax error|is a syntax error)"
-        r"|(channels?|send)[^.\n]{0,60}(no backpressure|raises? instead of block)"
-        r"|`?waiting_senders`?[^.\n]{0,40}(dead code|never read)"
-        r"|`?nodus graph`?[^.\n]{0,50}(executes the file|runs the file)"
-        r"|(analyzer|check)[^.\n]{0,60}never enters[^.\n]{0,30}step bodies"
-        r"|`?STEP_OPTION_KEYS`?[^.\n]{0,40}(is seven|seven entries)"
-        r"|does not check[^.\n]{0,60}undefined variable",
-        re.IGNORECASE,
-    )
+    stale = STALE_5_4_CLAIM
     hits: list[str] = []
     for path in sorted(repo.glob("docs/**/*.md")) + sorted(repo.glob("*.md")) + [
         repo / "llms.txt", repo / "llms-full.txt"
@@ -864,20 +884,15 @@ def probe_5_4_pattern_selfcheck():
         "`try { } finally { }` works without a catch",
         "a bounded channel blocks the sender until a slot frees",
         "`nodus graph` plans without executing the file",
+        # The rows that made the negation guard necessary. A regex cannot
+        # see a negation: the true sentence and the stale one differ only by
+        # two words it steps straight over.
+        "| 5.4.0 | `nodus graph` no longer executes the file it inspects (#400) |",
+        "`nodus graph` does not execute the file it is asked to inspect",
         "`nodus check` now enters workflow step bodies",
         "STEP_OPTION_KEYS gained an eighth entry, allow_failure",
     ]
-    pattern = re.compile(
-        r"`?finally`?[^.\n]{0,40}requires[^.\n]{0,20}`?catch`?"
-        r"|try/finally[^.\n]{0,40}(alone is a syntax error|is a syntax error)"
-        r"|(channels?|send)[^.\n]{0,60}(no backpressure|raises? instead of block)"
-        r"|`?waiting_senders`?[^.\n]{0,40}(dead code|never read)"
-        r"|`?nodus graph`?[^.\n]{0,50}(executes the file|runs the file)"
-        r"|(analyzer|check)[^.\n]{0,60}never enters[^.\n]{0,30}step bodies"
-        r"|`?STEP_OPTION_KEYS`?[^.\n]{0,40}(is seven|seven entries)"
-        r"|does not check[^.\n]{0,60}undefined variable",
-        re.IGNORECASE,
-    )
+    pattern = STALE_5_4_CLAIM
     missed = [s for s in must_catch if not pattern.search(s)]
     assert not missed, f"pattern stopped catching: {missed}"
     false_positives = [s for s in must_ignore if pattern.search(s)]
@@ -1693,6 +1708,257 @@ def probe_step_deps_are_bound():
     return "after/each/compensates bind; typos still caught; strict mode accepts a dep read"
 
 
+# --- 5.8.0 -------------------------------------------------------------------
+
+
+@probe("5.8.0: `retry.until` retries on a predicate and carries the failing result")
+def probe_retry_until_carrier():
+    """The carrier is the claim, not the loop.
+
+    An implementation that re-calls the function and ignores what it returned
+    passes a happy-path assertion and is a blind re-roll -- precisely the thing
+    the construct exists to avoid. So the probe reads what the *next attempt
+    received*, not only the final value.
+    """
+    result = run_nd(
+        'import "std:retry" as retry\n'
+        "fn main() {\n"
+        "    let seen = []\n"
+        "    let r = retry.until(\n"
+        "        fn(previous) { seen = list_push(seen, previous); return len(seen) },\n"
+        "        fn(value) { return value >= 3i },\n"
+        '        {"max_attempts": 5i}\n'
+        "    )\n"
+        '    print("seen=\\(seen) value=\\(r["value"]) satisfied=\\(r["satisfied"]) attempts=\\(r["attempts"])")\n'
+        "}\n"
+    )
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "seen=[nil, 1, 2]" in text, "the previous result did not reach the next attempt: " + text
+    assert "value=3 satisfied=true attempts=3" in text, text
+    return "carrier delivers nil, 1, 2; stops at the first satisfying value"
+
+
+@probe("5.8.0: `retry.until` is bounded even when the caller declares no bound")
+def probe_retry_until_implicit_cap():
+    """A predicate that never holds and no policy is an unbounded loop.
+
+    `budget` grew the same guarantee in #488, where mutation testing found that
+    removing it hung the suite. The step limit is deliberately set high enough
+    that a *step limit* firing could not be mistaken for the bound holding.
+    """
+    from nodus.runtime.embedding import NodusRuntime
+
+    result = NodusRuntime(timeout_ms=None, max_steps=5_000_000).run_source(
+        'import "std:retry" as retry\n'
+        "fn main() {\n"
+        "    let r = retry.until(fn() { return 0i }, fn(v) { return false }, nil)\n"
+        '    print("attempts=\\(r["attempts"]) satisfied=\\(r["satisfied"])")\n'
+        "}\n",
+        filename="<probe>",
+    )
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "attempts=10000" in text, "no implicit cap: " + text
+    assert "satisfied=false" in text, text
+    return "an undeclared bound is 10,000 attempts, and exhaustion reports rather than raises"
+
+
+@probe("5.8.0: `cancel(t)` stops a task, running `finally` and not `catch`")
+def probe_cancel_runs_finally_not_catch():
+    """Both halves matter. A cancel that ran `catch` would let a task swallow
+    its own cancellation; a cancel that skipped `finally` would leak whatever the
+    task held.
+    """
+    result = run_nd(
+        "fn main() {\n"
+        "    let t = spawn(coroutine(fn() {\n"
+        '        try { sleep(50i); print("BODY AFTER SLEEP") }\n'
+        '        catch e { print("CATCH RAN") }\n'
+        '        finally { print("finally ran") }\n'
+        "    }))\n"
+        "    spawn(coroutine(fn() { sleep(1i); cancel(t) }))\n"
+        "    run_loop()\n"
+        "}\n"
+    )
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "finally ran" in text, "cancel skipped finally: " + text
+    assert "CATCH RAN" not in text, "a task swallowed its own cancellation"
+    assert "BODY AFTER SLEEP" not in text, "the task kept running past the cancel"
+    return "finally runs, catch does not, the body does not resume"
+
+
+@probe("5.8.0: cancel and wait compose -- a waiter is released, not orphaned")
+def probe_cancel_releases_waiters():
+    """The product of the two features, which is what 5.7.1 taught to probe.
+
+    #395 (cancel) and #157 (wait) each pass alone on an implementation where a
+    cancelled task's waiters are simply never woken -- the cancel works, the
+    wait works, and the *pair* hangs until the step limit. The only way to see
+    it is to run both.
+    """
+    result = run_nd(
+        "fn main() {\n"
+        "    let t = spawn(coroutine(fn() { sleep(50i); return 1i }))\n"
+        '    spawn(coroutine(fn() { try { wait(t) } catch e { print("waiter saw: \\(e.message)") } }))\n'
+        "    spawn(coroutine(fn() { sleep(1i); cancel(t) }))\n"
+        "    run_loop()\n"
+        '    print("run_loop returned")\n'
+        "}\n"
+    )
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "run_loop returned" in text, "the waiter was orphaned: " + text
+    assert "Task cancelled" in text, "the waiter was released without being told why: " + text
+    return "a waiter on a cancelled task is woken and told the task was cancelled"
+
+
+@probe("5.8.0: `cancelled` is one vocabulary, not three spellings")
+def probe_cancelled_vocabulary():
+    """The shape this codebase catalogues: a status enumerated in several places
+    with one member missing. Both tuples are read from the runtime, so a fourth
+    site that re-enumerates by hand is what this would catch.
+    """
+    from nodus.runtime.coroutine import BLOCKED_REASON_SET
+    from nodus_lang_workflow.models import (
+        RUN_STATUS_CANCELLED,
+        RUN_STATUSES,
+        TERMINAL_RUN_STATUSES,
+    )
+
+    assert RUN_STATUS_CANCELLED == "cancelled", RUN_STATUS_CANCELLED
+    assert RUN_STATUS_CANCELLED in RUN_STATUSES, RUN_STATUSES
+    assert RUN_STATUS_CANCELLED in TERMINAL_RUN_STATUSES, TERMINAL_RUN_STATUSES
+    assert "task_wait" in BLOCKED_REASON_SET, sorted(BLOCKED_REASON_SET)
+    return "cancelled is a run status and terminal; task_wait is a named blocked reason"
+
+
+@probe("5.8.0: `nodus workflow cancel` exists and its help says what it does")
+def probe_workflow_cancel_verb():
+    from nodus.cli.commands import flags_for
+
+    from nodus.cli.commands import command_help
+
+    flags_for("workflow", "cancel")  # raises if the subcommand is not registered
+
+    # argv includes the program name -- `cli(["workflow", "--help"])` consumes
+    # "workflow" as argv[0] and prints the general usage, which is a probe that
+    # passes on a CLI with no such verb at all.
+    code, out = cli(["nodus", "workflow", "--help"])
+    assert code == 0, code
+    assert "cancel <graph_id>" in out, "workflow --help does not list cancel: " + out[:400]
+    assert "cancel <graph_id>" in command_help("workflow"), "help table and CLI disagree"
+    return "the verb is in the command table and `nodus workflow --help` documents it"
+
+
+@probe("5.8.0: a function assigning to a module-top-level `let` updates it (#671)")
+def probe_toplevel_assignment():
+    """A behaviour change, not a fix -- a program that relied on the old silence
+    now sees its globals mutate. Nothing can have depended on a write vanishing,
+    but it is a change in what running code does, so it is probed as a claim.
+    """
+    result = run_nd(
+        "let g = 7i\n"
+        "fn setit() { g = 99i }\n"
+        "fn main() { setit(); print(g) }\n"
+    )
+    assert result["ok"], result.get("error")
+    assert "99" in (result.get("stdout") or ""), (
+        "the assignment still wrote a frame-local: " + (result.get("stdout") or "")
+    )
+    return "the write reaches the module global rather than a frame slot"
+
+
+@probe("5.8.0: a named import of a builtin name is refused, and says how to fix it (#680)")
+def probe_builtin_import_refused():
+    """The message is the deliverable. Refusing without naming the collision
+    reproduces the original defect one layer up -- the program failed somewhere
+    else entirely, naming neither the import nor the shadowing.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        mod = Path(td) / "mod.nd"
+        mod.write_text("fn sleep(a, b) { return a }\n", encoding="utf-8")
+        main = Path(td) / "main.nd"
+        main.write_text('import { sleep } from "./mod.nd"\nfn main() { print(1i) }\n', encoding="utf-8")
+
+        from nodus.runtime.embedding import NodusRuntime
+
+        result = NodusRuntime(timeout_ms=None).run_file(str(main))
+
+    assert not result["ok"], "the shadowing import was accepted: " + str(result)
+    message = (result.get("error") or {}).get("message", "")
+    assert "sleep" in message, message
+    assert "as" in message, "the message does not offer the namespace form: " + message
+    return "refused at load, naming the collision and the namespace form that works"
+
+
+@probe("5.8.0: a runtime-built graph names its steps, and results are keyed by name (#679)")
+def probe_named_runtime_steps():
+    result = run_nd(
+        "fn main() {\n"
+        '    let a = task(fn() { return "A" }, {"name": "fetch"})\n'
+        '    let b = task(fn() { return "B" }, {"name": "render", "after": [a]})\n'
+        "    let r = run_graph([a, b])\n"
+        '    print("steps=\\(keys(r["steps"]))")\n'
+        "}\n"
+    )
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "fetch" in text and "render" in text, (
+        "per-step results are not keyed by the declared name: " + text
+    )
+    return "declared step names key the result map"
+
+
+@probe("5.8.0: the plan-then-act example runs and hands off (#465)")
+def probe_plan_then_act_example(repo: Path):
+    example = repo / "examples" / "plan_then_act.nd"
+    assert example.is_file(), "the deliverable for #465 is missing: {}".format(example)
+    result = run_nd(example.read_text(encoding="utf-8"))
+    assert result["ok"], result.get("error")
+    text = result.get("stdout") or ""
+    assert "failed: []" in text, text
+    assert "applied: 1. rename the symbol" in text, (
+        "the second step did not consume the first step's plan: " + text
+    )
+    return "the example runs clean and the plan reaches the acting step"
+
+
+@probe("5.8.0: no artifact still calls 5.7.1 the current release")
+def probe_no_stale_5_7_current(repo: Path):
+    """The prose half. Narrow on purpose: it looks for 5.7.1 asserted as
+    *current*, not every mention -- a historical "fixed in 5.7.1" is correct and
+    a blanket sweep at 5.5.0 turned four such facts into lies.
+    """
+    pattern = re.compile(
+        r"(current(ly)?|latest|published version|now on PyPI)[^.\n]{0,40}5\.7\.1"
+        r"|5\.7\.1[^.\n]{0,40}(is current|current stable|latest release)",
+        re.IGNORECASE,
+    )
+    hits = []
+    candidates = (
+        list(repo.glob("*.md"))
+        + list(repo.glob("*.txt"))
+        + list((repo / "docs").rglob("*.md"))
+        + list((repo / "skills").glob("*"))
+    )
+    for path in candidates:
+        if not path.is_file() or "evals" in path.parts or "CHANGELOG" in path.name:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                hits.append("{}:{}".format(path.relative_to(repo), n))
+    assert not hits, "still describes 5.7.1 as current: " + ", ".join(hits[:6])
+    return "no artifact calls 5.7.1 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -1850,6 +2116,19 @@ def main() -> int:
 
     # --- 5.7.1 ---------------------------------------------------------------
     probe_step_deps_are_bound()
+
+    # --- 5.8.0 ---------------------------------------------------------------
+    probe_retry_until_carrier()
+    probe_retry_until_implicit_cap()
+    probe_cancel_runs_finally_not_catch()
+    probe_cancel_releases_waiters()
+    probe_cancelled_vocabulary()
+    probe_workflow_cancel_verb()
+    probe_toplevel_assignment()
+    probe_builtin_import_refused()
+    probe_named_runtime_steps()
+    probe_plan_then_act_example(args.repo)
+    probe_no_stale_5_7_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

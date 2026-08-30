@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.8.0] - 2026-08-30
+
 ### Added
 
 - **#466: `retry.until` — retry on a predicate, not on failure.**
@@ -331,6 +333,22 @@
   otherwise appear on a script's first run and vanish on every run after.
 
 ### Tooling
+
+- **The 5.4.0 stale-prose probe cried wolf on a true sentence, and its
+  self-check could not have caught it.**
+
+  The pattern was written out **twice** — once in the probe, once in the
+  self-check that exists to hold the probe honest — so the self-check validated
+  a *copy*. Tightening either one would have left the other unchanged and green.
+  One constant now, read by both.
+
+  What it fired on: `| 5.4.0 | `nodus graph` no longer executes the file it
+  inspects (#400) |`, a correct historical row in CLAUDE.md's "what stopped
+  working" table, added after 5.7.1's Gate 10b had already run clean. A regex
+  steps straight over the negation — the same blindness that makes GitHub close
+  an issue on "Filed, not fixed: #N". Fixed with a negation guard rather than an
+  exemption for that file, since the table gains a row every release, and both
+  the stale and the true forms are now pinned in the self-check.
 
 - **#412 phase 3: stack discipline — does the runtime agree with what the
   compiler assumed?**
