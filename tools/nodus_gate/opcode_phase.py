@@ -109,6 +109,43 @@ def parse_reference_inventory(text: str) -> tuple[set[str], set[str]]:
     return active, removed
 
 
+def parse_reference_categories(text: str) -> dict[str, str]:
+    """Map each §3 opcode to its declared `Category:` line.
+
+    Used by the spec-conformance check below. The category is read from the
+    document rather than hardcoded here, so re-categorising an opcode moves it
+    into or out of coverage in the same edit — a second list here would be one
+    more thing to keep in step.
+    """
+    body = _section(text, "3. Opcode Inventory")
+    entries = list(re.finditer(rf"^### ({_OPCODE_NAME})\s*$", body, re.M))
+    categories: dict[str, str] = {}
+    for i, m in enumerate(entries):
+        end = entries[i + 1].start() if i + 1 < len(entries) else len(body)
+        found = re.search(r"^- Category:\s*(.+?)\s*$", body[m.end():end], re.M)
+        if found:
+            categories[m.group(1)] = found.group(1).lower()
+    return categories
+
+
+def parse_specified_opcodes(root: str) -> set[str] | None:
+    """The opcodes `tests/test_opcode_semantics.py` writes a semantic spec for.
+
+    Read out of the module's own `SPECIFIED` tuple by literal evaluation, not by
+    importing it — the gate must not run a test module as a side effect of
+    checking one.
+    """
+    path = Path(root) / _SPEC_TESTS
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r"^SPECIFIED\s*=\s*\((.*?)\)\s*$", source, re.M | re.S)
+    if not m:
+        return None
+    return set(re.findall(r'"([A-Z][A-Z_0-9]*)"', m.group(1)))
+
+
 def parse_reference_removed_section(text: str) -> set[str]:
     body = _section(text, "Removed Opcodes")
     return set(re.findall(rf"^### ({_OPCODE_NAME})\s*$", body, re.M))
@@ -192,6 +229,17 @@ def scan_emitted_opcodes(root: str) -> dict[str, list[str]]:
 
 _REFERENCE = "docs/runtime/BYTECODE_REFERENCE.md"
 _FREEZE = "docs/governance/FREEZE_PROPOSAL.md"
+_SPEC_TESTS = "tests/test_opcode_semantics.py"
+
+# #412 phase 2: the category whose opcodes must carry a semantic spec.
+#
+# Every VM bug of the v5 cycle (#361, #370, #371) was in the exception-unwind
+# path, and phase 1's census found `POP_TRY` executing 18 times and
+# `FINALLY_END` 60 across the whole suite -- which is not an exercised path.
+# Naming a *category* rather than four opcodes means a fifth exception opcode is
+# covered by construction: it fails this check until somebody specifies it,
+# which is the "make a test drive off the set" rule applied to the gate.
+_SPEC_REQUIRED_CATEGORY = "exceptions"
 _SEMANTICS = "docs/runtime/INSTRUCTION_SEMANTICS.md"
 _ARCH = "docs/runtime/ARCHITECTURE_ANALYSIS.md"
 _STABILITY_INDEX = "docs/governance/LANGUAGE_STABILITY_INDEX.md"
@@ -257,6 +305,53 @@ def _compare(result: OpcodeResult, label: str, documented: set[str],
     ))
 
 
+def _check_semantic_specs(result: OpcodeResult, root: str, reference: str, dispatch: set[str]) -> None:
+    """Spec conformance, not just inventory (#412 phase 2).
+
+    The inventory checks above prove the *names* agree. They say nothing about
+    whether any opcode does what it is documented to do, which is what #412 was
+    filed about: `nodus_gate --opcodes` was green through all three of the
+    exception-unwind bugs.
+
+    Two checks, both cheap and both about rot rather than about semantics —
+    a gate cannot verify semantics, only that the thing which does is still
+    pointed at the right set:
+
+    1. every opcode in the `exceptions` category has a spec;
+    2. every specified opcode is still in the dispatch table, so a rename
+       leaves the spec module dangling loudly rather than silently covering a
+       name nothing dispatches.
+    """
+    specified = parse_specified_opcodes(root)
+
+    result.checks_run += 1
+    if specified is None:
+        result.findings.append(OpcodeFinding(
+            message=f"{_SPEC_TESTS} has no readable SPECIFIED tuple",
+            detail="opcode semantic specs cannot be verified without it",
+        ))
+        return
+
+    categories = parse_reference_categories(reference)
+    required = {op for op, cat in categories.items()
+                if cat == _SPEC_REQUIRED_CATEGORY and op in dispatch}
+    unspecified = sorted(required - specified)
+    if unspecified:
+        result.findings.append(OpcodeFinding(
+            message=f"{_SPEC_REQUIRED_CATEGORY} opcode(s) with no semantic spec",
+            detail=(f"{', '.join(unspecified)} — add a spec to {_SPEC_TESTS} "
+                    "and name it in SPECIFIED"),
+        ))
+
+    result.checks_run += 1
+    dangling = sorted(specified - dispatch)
+    if dangling:
+        result.findings.append(OpcodeFinding(
+            message=f"{_SPEC_TESTS} specifies opcode(s) the VM does not dispatch",
+            detail=", ".join(dangling),
+        ))
+
+
 def run_opcode_phase(root: str) -> OpcodeResult:
     """Verify every record of the frozen opcode set against the live VM."""
     result = OpcodeResult()
@@ -312,6 +407,8 @@ def run_opcode_phase(root: str) -> OpcodeResult:
                 message="an opcode documented as removed is back in the dispatch table",
                 detail=", ".join(resurrected),
             ))
+
+        _check_semantic_specs(result, root, reference, dispatch)
 
     if freeze is not None:
         stable, provisional, freeze_removed = parse_freeze_stability_tables(freeze)

@@ -333,8 +333,25 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Operands: none
 - Emitted by compiler: yes (at end of every finally block)
 - **Status: stable** (added and frozen at v1.0)
-- Purpose: complete a finally block; if a deferred RETURN is pending, execute it now; otherwise advance ip
-- Notes / edge cases: deferred return is set by RETURN executing while a finally-bearing handler is active.
+- Purpose: complete a finally block, taking whichever of three exits applies
+- Notes / edge cases:
+  - **Three exits, checked in this order** (#412 phase 2 — this entry named only
+    the second until then):
+    1. a **deferred error** is pending — the catch block raised and this finally
+       ran on the way out (#361). Propagation resumes: the error goes to the
+       enclosing handler, or is re-raised if there is none.
+    2. a **deferred return** is pending — set by RETURN executing while a
+       finally-bearing handler was active. The frame is popped, the value
+       pushed, and handlers recorded at a now-dead frame depth are dropped.
+    3. neither — `ip` advances by one.
+  - On exits 2 and 3 it also pops a **finally-gate sentinel**
+    (`handler_ip == -1`) left by `handle_exception` on the normal catch-exit
+    path, and only that sentinel — a real handler entry on top is left alone.
+  - **Exit 1 must be checked before the gate pop**, because
+    `handle_exception` has already consumed this region's gate: a gate still on
+    top belongs to an *enclosing* catch, and popping it here would skip that
+    region's finally.
+  - Semantics pinned by `tests/test_opcode_semantics.py`.
 
 ### TO_BOOL
 - Category: boolean / logical flow
@@ -470,7 +487,16 @@ STORE x
 - Operands: arg count
 - Emitted by compiler: yes
 - Purpose: call closures and other runtime function values
-- Notes / edge cases: runtime error if callee is not a closure or if arity mismatches.
+- Notes / edge cases:
+  - Arguments are popped and **re-ordered back into source order** before being
+    re-pushed, because the compiler pushes them left to right.
+  - For a `Closure` it **transfers control** — pushes a frame and sets `ip` to
+    the function's address — rather than pushing a result. A `ModuleFunction` or
+    a `_ClosureProxy` is invoked and its result pushed instead.
+  - A bare Python callable is **not** a valid callee: it is refused as
+    `Cannot call non-function`, the same as any non-function value (#412 phase
+    2). Only closures and the two wrapper types above are callable.
+  - Runtime error if the callee is not callable or if arity mismatches.
 
 ### CALL_METHOD
 - Category: records / calls
@@ -478,7 +504,19 @@ STORE x
 - Operands: field name, arg count
 - Emitted by compiler: yes
 - Purpose: call record methods with implicit `self`
-- Notes / edge cases: runtime error if not a record, missing field, or non-function.
+- Notes / edge cases:
+  - **A module is also a valid receiver**, not only a record — the export is
+    resolved and called, with no `self` injected (#412 phase 2; this entry read
+    "runtime error if not a record", which is true of every *other* receiver).
+  - `self` is injected only when the receiver's `kind` is not `"module"`.
+  - A `BuiltinMethod` field is invoked directly and its result pushed; a
+    suspend sentinel it returns propagates as a yield rather than being pushed
+    as a value.
+  - **Strings, lists and maps are not receivers.** `"Value".to_upper()` is a
+    type error in Nodus, not a method call.
+  - Arguments are re-ordered back into source order, as for `CALL_VALUE`.
+  - Runtime error if the receiver is neither record nor module, if the field is
+    missing, or if the field is not callable.
 
 ### MAKE_CLOSURE
 - Category: closure / function creation
@@ -495,7 +533,19 @@ STORE x
 - Emitted by compiler: yes
 - **Status: stable** (frozen at v1.0)
 - Purpose: raise a runtime error with a user-provided value. Non-string values preserved as structured payload (`err.kind="thrown"`, `err.payload=<original value>`). String values become `err.message` directly.
-- Notes / edge cases: if uncaught, error propagates to host with stack trace.
+- Notes / edge cases:
+  - **`err` here is the record a `catch` block receives**, not the exception the
+    opcode raises. `handle_exception` builds that record — `message`, `payload`,
+    `kind`, `origin`, `line`, `column`, `stack` — from the raised
+    `LangRuntimeError`, which itself has no `message` attribute (#412 phase 2).
+  - **The transfer of control happens one level up.** THROW always raises; the
+    handler stack is consulted by `execute()`'s except clause, so a THROW
+    executed in isolation propagates rather than jumping.
+  - `origin` is `"user"`, which is what separates a program's own `throw` from a
+    VM fault in error reporting.
+  - Ints, floats and bools are stringified into the message and carry **no**
+    payload; records and lists carry the original value.
+  - If uncaught, the error propagates to the host with a stack trace.
 
 ### YIELD
 - Category: coroutines

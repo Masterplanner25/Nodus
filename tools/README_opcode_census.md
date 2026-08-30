@@ -60,3 +60,43 @@ all lived, and 18 executions across the whole suite is not a exercised path.
 **A low count is not itself a defect.** `MUL` at 29 means test programs rarely
 multiply, not that multiplication is broken. The number tells you where a
 semantic bug could hide undetected, which is what phases 2–3 are for.
+
+## Phase 2 — `tests/test_opcode_semantics.py`
+
+The ten opcodes #412 names have a written spec now, checked by executing one
+instruction against a hand-built VM state: `SETUP_TRY`, `POP_TRY`,
+`FINALLY_END`, `THROW`, `YIELD`, `MAKE_CLOSURE`, `FRAME_SIZE`,
+`RESET_LOCAL_IDX`, `CALL_VALUE`, `CALL_METHOD`.
+
+The shape is what matters. A program that happens to reach an opcode passes as
+long as the *program's* output is right — which is how #370 survived — so the
+pre-state is constructed rather than arrived at.
+
+**Verified by mutation, not by passing.** Fourteen deliberate defects were
+applied to `vm.py` one at a time; all fourteen turned the specs red, none
+survived. A spec that cannot fail measures nothing, and the project has written
+three such assertions before (CLAUDE.md records them).
+
+Four disagreements between the handler and `BYTECODE_REFERENCE.md §3` were found
+and the reference corrected:
+
+- **`FINALLY_END`** documented one exit. It has three — deferred error (#361),
+  deferred return, plain advance — and it consumes a finally-gate sentinel on
+  two of them, in an order its own comment calls load-bearing.
+- **`CALL_METHOD`** said "runtime error if not a record". A **module** is also a
+  valid receiver. Strings are not: `"x".to_upper()` is a type error in Nodus.
+- **`THROW`**'s `err.message` / `err.payload` describe the record a `catch`
+  block receives, not the exception the opcode raises — which has no `message`
+  attribute at all. And its "transfers control" happens in `execute()`'s except
+  clause, one level up.
+- **`CALL_VALUE`** transfers control rather than pushing a result, and refuses a
+  bare Python callable.
+
+**`nodus_gate --opcodes` now checks spec coverage as well as inventory**: every
+opcode in the reference's `exceptions` category must be specified, and every
+specified opcode must still be dispatched. The category is read from the
+document, so re-categorising an opcode moves it into or out of coverage in the
+same edit.
+
+Phase 3 (stack-discipline verification against the compiler's assumptions) is
+still open.
