@@ -1,6 +1,8 @@
 # Cancellation — design for #395
 
-**Status: proposal.** Nothing here has been built. §3 is the part to read first:
+**Status: proposal, except §9 which is done.** No cancellation code has been
+built; the documentation half landed first and §9 records what shipped. §3 is the
+part to read first:
 two of the four design questions #395 lists were answered by code that shipped
 *after* the issue was filed, so the decision left is narrower than the issue
 describes.
@@ -323,22 +325,50 @@ untouched, and `tests/test_status_vocabulary.py` keeps passing unchanged.
 - **Does not give cancellation a language surface.** §5.4.
 - **Does not make cross-process cancellation immediate.** §7.2.
 
-## 9. The documentation change #395 actually asked for
+## 9. The documentation change #395 actually asked for — **done**
 
 > *"What it provides is **asynchronous primitives, not structured concurrency** —
 > and docs should say so rather than implying the stronger property."*
 
-This is separable from every line of code above and can land first. Three edits:
+Separable from every line of code above, and landed first. What shipped:
 
-1. `TECH_DEBT.md:588` — the stale "one `cancel` hit" claim (§2.6).
-2. Wherever the guide describes `spawn`, state the worker-pool model plainly: a
-   spawned coroutine has no parent, outlives the scope that created it, and its
-   failure does not stop its siblings.
-3. `task_graph.py:1497`'s reference to the closed #475.
+1. **`FAILURE_AND_DEGRADATION_MODEL.md §9.0`** — the worker-pool model stated
+   normatively, with the three consequences (a spawned coroutine outlives its
+   scope, a failure does not stop siblings, there is nothing to wait on or
+   cancel) and a pointer to the workflow DSL for the stronger property.
+2. **`§9.1` rewritten — it was wrong**, and wrong in the direction this issue is
+   about. It said the exception "is recorded on the coroutine object" and that
+   "the spawning code receives the error when it resumes or waits on the
+   coroutine" — implying a parent/child await that does not exist. Measured
+   behaviour: the trace goes to stderr, the error goes to the *scheduler's* list,
+   `coroutine_status()` reports plain `finished`, `run_loop()`'s **return value**
+   is the only way a program can see it, and the run still exits `0`.
+3. **`§9.4` added** — the timeout unwind is the one cancellation path, with
+   #424's un-preemptable-host-work caveat.
+4. **`LANGUAGE_SPEC.md`** — the same statement normatively, plus `run_loop()`'s
+   return value, which the spec had never documented.
+5. **`standard-library.md`** — a runnable two-coroutine example showing a sibling
+   surviving a failure, with the four takeaways.
+6. **`TECH_DEBT.md`** — the stale "one `cancel` hit" claim (§2.6) replaced with
+   what is actually built and what is actually missing.
+7. **`task_graph.py`** — the "open half of #475" comment; #475 closed in 5.4.0
+   and `allow_failure` is the answer. Verified by running a→{b,c}, d after c with
+   b failing: `d` is `cancelled` by default, `completed` when b is tolerated.
 
-Doing this first is worth it on its own. It is the only part of #395 that is
-purely a correctness-of-claims fix, and #412 phase 2 is a live reminder of what
-prose that outran the code costs.
+**Two stale claims were found while doing it**, neither of them in §2's list and
+both in the same neighbourhood:
+
+- `LANGUAGE_SPEC.md` still said *"`worker_pool` and `pipeline` are **currently
+  non-functional**"* citing #339 — three releases after #339 was fixed
+  (2026-08-15). `standard-library.md` had it correctly in the past tense, so the
+  two documents contradicted each other and the **spec** was the wrong one. Both
+  were verified working by running them.
+- `FAILURE_AND_DEGRADATION_MODEL.md §9` had a duplicated `### 9.2` heading.
+
+The lesson is the one #412 phase 2 had just finished teaching: the errors were
+not in the prose that describes the *missing* feature, they were in prose
+describing features that already **changed**. Nobody re-reads a document when the
+code beneath it moves.
 
 ## 10. Open decisions, with recommendations
 

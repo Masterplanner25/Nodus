@@ -125,8 +125,23 @@ Stability: Experimental.
 - Status: `coroutine_status(c)` returns `created`, `running`, `suspended`, or `finished`
 - Coroutines are cooperative, single-threaded, and preserve their own call stack between yields.
 - Resuming a `running` or `finished` coroutine is a runtime error.
-- `spawn(coroutine)` schedules a coroutine to run on the event loop.
+- `spawn(coroutine)` schedules a coroutine to run on the event loop, and returns `nil`.
 - `run_loop()` runs the scheduler until there are no runnable coroutines or timers.
+  It returns a **list of error strings** for any spawned coroutine that failed, or
+  `nil` if none did. That return value is the only way a program can observe such
+  a failure.
+
+**The model is a worker pool, not structured concurrency.** A spawned coroutine
+is independent: there is no parent/child relationship, `spawn` returns no handle,
+a spawned coroutine outlives the scope that created it, and its failure does not
+stop its siblings — nor does it fail the run, which still exits `0`. There is no
+`join` and no way to cancel work once started. Do not carry intuitions from
+Python's `asyncio.TaskGroup` or Go's `context` across.
+
+Where "first failure stops the rest" *does* exist is the workflow DSL, which has
+declared failure semantics (`allow_failure`) and dynamic fan-out (`step … each`).
+See `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9` for the full model and
+[#395](https://github.com/Masterplanner25/Nodus/issues/395) for the gap.
 
 ## Channels
 Stability: Experimental.
@@ -392,10 +407,14 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   - `queue()` returns a new channel
   - `worker_pool(worker, count)` returns a jobs channel serviced by `count` workers
   - `pipeline(stages)` returns `{input, output}` channels connected by stage functions
-  - **`worker_pool` and `pipeline` are currently non-functional**
-    ([#339](https://github.com/Masterplanner25/Nodus/issues/339)): they spawn onto
-    the module's own scheduler, which nothing drives, so the work is silently
-    dropped. `sleep`, `queue`, `parallel`, and `series` work.
+  - `worker_pool` and `pipeline` **work**; both were verified by running them at
+    5.7.1. They were entirely non-functional **through v4.1.1** — they spawned
+    onto the module's own scheduler, which nothing drove, so the work was
+    silently dropped, with no error and no output
+    ([#339](https://github.com/Masterplanner25/Nodus/issues/339), fixed
+    2026-08-15). This entry still said "currently non-functional" three releases
+    after the fix, while `docs/guide/standard-library.md` had it in the past
+    tense — the two disagreed, and the spec was the wrong one.
 
 ### Remaining modules
 

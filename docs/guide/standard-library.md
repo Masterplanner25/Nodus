@@ -951,6 +951,44 @@ regardless of whether `std:async` is imported.
 Coroutines and the scheduler are experimental. Do not rely on their behavior
 being stable across minor versions.
 
+#### What `spawn` gives you, and what it does not
+
+**A worker pool, not structured concurrency.** A spawned coroutine is
+independent — no parent, no handle, no scope:
+
+```nd
+spawn(coroutine(fn() { throw "first fails" }))
+spawn(coroutine(fn() { print("sibling ran anyway") }))
+let errs = run_loop()
+print("errors: \(errs)")
+```
+
+```
+sibling ran anyway
+errors: ["first fails"]
+```
+
+(The failing coroutine's stack trace also goes to stderr.) Four things to take
+from that:
+
+- **A failure does not stop its siblings.** The scheduler records it and carries
+  on.
+- **It does not fail the run either** — exit code `0`, and `result["ok"]` is
+  `true` when embedded. **Check what `run_loop()` returns**; it is the only way a
+  program can see the failure. A script that ignores it cannot tell a clean run
+  from one where every coroutine died.
+- **`spawn` returns `nil`.** There is no handle, so there is no `join` and no way
+  to cancel work once started.
+- **A spawned coroutine outlives the scope that created it.** Nothing binds its
+  lifetime to the function that spawned it.
+
+If you want "first failure stops the rest", that lives in the workflow DSL, which
+has declared failure semantics (`with { allow_failure: true }`) and dynamic
+fan-out (`step … each`) — see
+[workflows-and-tasks.md](workflows-and-tasks.md). The full model is
+`docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9`; the gap is
+[#395](https://github.com/Masterplanner25/Nodus/issues/395).
+
 ### std:tools
 
 ```nd
@@ -1292,4 +1330,21 @@ F-KEYS (FIXED): mem.keys() documented as returning insertion order
 F-FNMOD (FIXED): rt.fn_module() documented as returning nil for a function in
   the entry script. It returns that script's ABSOLUTE PATH. Example now prints
   type() since the value is machine-specific.
+
+ADDED 2026-08-30 against 5.7.1 (dev source) — "What `spawn` gives you, and what
+it does not", run verbatim; stdout matches the documented block exactly, and the
+failing coroutine's stack trace goes to stderr.
+
+F-SPAWN-EXIT: a script whose spawned coroutines ALL fail still exits 0, and an
+  embedded result["ok"] is true. `run_loop()`'s return value — a list of error
+  strings, or nil — is the only in-language signal. This is documented rather
+  than filed: it is the worker-pool model working as designed (issue 395,
+  docs/design/v5/04-cancellation.md), not a defect. It is listed here because it
+  is the single most surprising thing in this section and a reader who skips the
+  prose will not expect it.
+
+F-WORKERPOOL (FIXED elsewhere): LANGUAGE_SPEC.md said worker_pool and pipeline
+  were "currently non-functional" citing #339, three releases after that was
+  fixed; this file already had it in the past tense. Both verified working by
+  running them; the spec was corrected, not this file.
 -->
