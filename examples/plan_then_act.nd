@@ -1,0 +1,42 @@
+// Plan then act — one actor produces a plan, a second consumes it (#465).
+//
+// The most common multi-actor shape: a planner emits something, an editor acts
+// on it. Aider hard-codes an Architect->Editor handoff; the general shape is
+// task-graph data, not app glue rewritten per agent.
+//
+// Why this is a workflow rather than a library function taking two agent names:
+// the handoff becomes *inspectable state on disk* (`.nodus/graphs/<id>.json`)
+// and resumable through `resume_workflow`, instead of in-process glue that dies
+// with the process. A wrapper function would hide the workflow, and take that
+// property with it.
+//
+// The two steps below stand in for agents so this file runs anywhere. Replace
+// each body with `agent_call("planner", request)` / `agent_call("editor", plan)`
+// where the host has registered those handlers — the shape does not change.
+// In production: plan = agent_call("planner", request)
+// In production: return agent_call("editor", plan)
+// The plan reaches this step as a dependency value *and* as state; the
+// dependency is what orders them, the state is what survives a resume.
+workflow plan_then_act {
+    state plan = ""
+    state report = ""
+    step plan_it {
+        plan = "1. rename the symbol  2. update the callers"
+        checkpoint "planned"
+        return plan
+    }
+    step act_on_it after plan_it {
+        report = "applied: \(plan_it)"
+        return report
+    }
+}
+
+// The checkpoint is what makes the handoff resumable: a run interrupted
+// after planning re-enters at `planned` rather than re-planning. The
+// graph id is what `resume_workflow` takes.
+fn main() {
+    let r = run_workflow(plan_then_act)
+    print("steps: \(r["steps"])")
+    print("failed: \(r["failed"])")
+    print("checkpoints: \(r["checkpoints"])")
+}

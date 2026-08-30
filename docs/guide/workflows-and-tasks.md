@@ -1362,6 +1362,73 @@ list to collect results; each processor appends to it.
 expensive step. On re-runs, the step is skipped and the cached result is
 used. The result dict shows which steps were skipped: `r["cache_hits"]`.
 
+### Plan then act — one actor produces, a second consumes
+
+The most common multi-actor shape. A planner emits something; an editor acts on
+it. Write it as a workflow, not as glue:
+
+```nd
+workflow plan_then_act {
+    state plan = ""
+
+    step plan_it {
+        plan = "1. rename the symbol  2. update the callers"
+        checkpoint "planned"
+        return plan
+    }
+
+    step act_on_it after plan_it {
+        return "applied: \(plan_it)"
+    }
+}
+
+fn main() {
+    let r = run_workflow(plan_then_act)
+    print(r["steps"]["act_on_it"])
+}
+```
+
+```
+applied: 1. rename the symbol  2. update the callers
+```
+
+In production each body is an `agent_call`, and nothing else changes:
+
+```nd-no-run
+step plan_it   { plan = agent_call("planner", request); checkpoint "planned" }
+step act_on_it after plan_it { return agent_call("editor", plan) }
+```
+
+**Why a workflow rather than a `handoff(planner, editor, request)` helper.** The
+value of writing it this way is that the handoff becomes *inspectable state on
+disk* — `.nodus/graphs/<id>.json` — and resumable through `resume_workflow`,
+instead of in-process glue that dies with the process. A wrapper function would
+hide the workflow and take that property with it. It would also fix the shape at
+two actors and one hop, when real handoffs grow a third actor, a validation gate,
+or a conditional re-plan.
+
+The plan reaches the second step **two ways, and they do different jobs**: as the
+dependency value `plan_it`, which is what *orders* them, and as `state`, which is
+what *survives a resume*. A run interrupted after planning re-enters at the
+`planned` checkpoint rather than re-planning.
+
+**It composes with `goal … over …`,** which is the point of leaving it as a
+declaration:
+
+```nd-no-run
+goal until_valid over plan_then_act {
+    until reached("edit_ok")
+    budget { max_iterations: 3i }
+}
+```
+
+The same handoff re-runs until the edit validates, with the failure carried in
+`state` for the next pass to read. For a bounded validated retry around a *single
+call* rather than a whole workflow, see `retry.until` in
+[standard-library.md](standard-library.md) — the same idea one altitude down.
+
+A runnable version is `examples/plan_then_act.nd`.
+
 **Low-level task graph:** Use `task()` / `run_graph()` for programmatic
 graph construction — tasks built in a loop, dynamic dependency wiring:
 

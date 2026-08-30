@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#466: `retry.until` — retry on a predicate, not on failure.**
+
+  ```nodus
+  let r = retry.until(
+      fn(previous) { return edit(source, previous) },
+      fn(result) { return result["ok"] },
+      {"max_attempts": 3i}
+  )
+  ```
+
+  `retry.call` re-attempts when a call **errors**. A call that returns
+  successfully but returns something *wrong* — a malformed edit, a
+  schema-invalid payload, a plan that fails its own check — was not a retry
+  trigger, and that shape existed only at the workflow altitude
+  (`goal … over … { until … }`), so a bounded validated retry around one call
+  meant standing up a workflow.
+
+  **The failing result reaches the next attempt.** Give the function one
+  parameter and it receives the previous result, `nil` on the first. Without
+  that carrier the retry is a blind re-roll, which is the thing the pattern
+  exists to avoid. A zero-argument function still works.
+
+  Returns `{value, satisfied, attempts}` — exhaustion is a reported outcome, not
+  an error. `{max_attempts, deadline_ms}` mean what `budget { max_iterations,
+  deadline_ms }` means for a goal, so the two altitudes read alike, and **a bound
+  always applies**: declare neither and an implicit cap of 10,000 is imposed,
+  because a predicate that never holds is an unbounded loop. `budget` grew the
+  same guarantee in #488.
+
+- **#465: a documented plan-then-act handoff**, in
+  `docs/guide/workflows-and-tasks.md` §9 with a runnable
+  `examples/plan_then_act.nd`.
+
+  One actor produces a plan, a second consumes it — the shape every user was
+  re-deriving. **Deliberately a documented workflow rather than a
+  `handoff(planner, editor, request)` stdlib function**, which was the open
+  question on the issue: the value being claimed is that a handoff becomes
+  inspectable state on disk and resumable through `resume_workflow` instead of
+  in-process glue, and that property comes from *being a workflow*. A wrapper
+  would hide it, and would fix the shape at two actors and one hop.
+
+  It composes with `goal … over …` so the handoff re-runs until the edit
+  validates, which is the second half of what the issue asked — and is only
+  possible because it stayed a declaration.
+
 ### Fixes
 
 - **#679: a runtime-built graph can name its steps, and its per-step results
