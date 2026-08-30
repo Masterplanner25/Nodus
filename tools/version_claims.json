@@ -25,7 +25,20 @@
     "this is for.",
     "",
     "`scan` drives the second half: a sweep for claim-shaped lines that are NOT",
-    "registered here, so a new one cannot hide. That half is advisory."
+    "registered here, so a new one cannot hide. That half is advisory.",
+    "",
+    "Retired 2026-08-30: two claims quoted version.py's and pyproject.toml's literal",
+    "contents back at the reader from CLAUDE.md. That was a third copy of a fact that",
+    "already has two authorities, kept in step by a claim -- while the gate's own",
+    "`version files agree` check already compares those two authorities directly. The",
+    "restatement was removed rather than re-registered. A claim is worth having when",
+    "prose asserts something a reader acts on; it is not worth having to guard a",
+    "transcription that did not need to exist.",
+    "",
+    "One ignore entry was dropped 2026-08-30 with the CLAUDE.md trim: it suppressed a",
+    "'README.md is current' sentence that the SemVer rewrite deleted. An ignore entry",
+    "matching nothing is dead weight, and test_every_ignore_entry_still_matches_something",
+    "fails on it -- which is how this was caught. Delete the entry with the line."
   ],
   "claims": [
     {
@@ -37,7 +50,7 @@
     },
     {
       "file": "llms.txt",
-      "pattern": "PyPI: `nodus-lang` \\(v(\\d+\\.\\d+\\.\\d+) [\u2014-] current stable",
+      "pattern": "PyPI: `nodus-lang` \\(v(\\d+\\.\\d+\\.\\d+) [—-] current stable",
       "expects": "nodus_version",
       "why": "The canonical machine-readable map. A stale version here misdirects every AI reader.",
       "fix": "Update the PyPI line in the release PR."
@@ -57,20 +70,6 @@
       "fix": "Update the SemVer policy paragraph in the release PR, alongside the version bump."
     },
     {
-      "file": "CLAUDE.md",
-      "pattern": "- `src/nodus/support/version\\.py` \u2014 `__version__ = \"(\\d+\\.\\d+\\.\\d+)\"`",
-      "expects": "nodus_version",
-      "why": "Quotes the authority file's literal contents, so it is wrong the moment the authority moves.",
-      "fix": "Update the bullet under the SemVer policy paragraph."
-    },
-    {
-      "file": "CLAUDE.md",
-      "pattern": "- `pyproject\\.toml` \u2014 `version = \"(\\d+\\.\\d+\\.\\d+)\"`",
-      "expects": "nodus_version",
-      "why": "As above, for the other half of the version-sync pair.",
-      "fix": "Update the bullet under the SemVer policy paragraph."
-    },
-    {
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
       "pattern": "nodus-lang is at \\*\\*v(\\d+\\.\\d+\\.\\d+)\\*\\*",
       "expects": "nodus_version",
@@ -79,7 +78,7 @@
     },
     {
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
-      "pattern": "Publication status \\| \\*\\*Published\\*\\* [\u2014-] v(\\d+\\.\\d+\\.\\d+) live on PyPI",
+      "pattern": "Publication status \\| \\*\\*Published\\*\\* [—-] v(\\d+\\.\\d+\\.\\d+) live on PyPI",
       "expects": "nodus_version",
       "why": "Second of the lines in this file that claim a current version.",
       "fix": "Update the status table row in the release PR."
@@ -94,7 +93,7 @@
     },
     {
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
-      "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [\u2014-] most recent",
+      "pattern": "`docs/evals/v(\\d+\\.\\d+\\.\\d+)/CREATOR_VALIDATION\\.md` [—-] most recent",
       "expects": "latest_eval_version",
       "why": "Points a reader at the newest Gate 10 record. Nothing updates it when a release writes a new one, so it silently names an older cycle.",
       "fix": "Point it at the newest docs/evals/vX.Y.Z/CREATOR_VALIDATION.md.",
@@ -147,11 +146,6 @@
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
       "contains": "**Current version:** 0.1.0",
       "why": "Companion-package versions, not nodus-lang's. Drift for those is owned by tools/check_publish_drift.py, which resolves published metadata rather than reading prose. Duplicating it here would give two sources for one fact."
-    },
-    {
-      "file": "CLAUDE.md",
-      "why": "'is current' here describes README.md being up to date, not a version being the current release. The 4.2.0 in the line is historical -- it is the version the banner used to advertise, which is the point the sentence makes.",
-      "contains": "**`README.md` is current, and the fix it got is the pattern to copy.**"
     }
   ],
   "scan": {

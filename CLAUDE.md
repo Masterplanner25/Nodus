@@ -14,13 +14,15 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.7.1** (re-checked
-2026-08-29 with `.venv/Scripts/nodus.exe --version`, after the 5.7.1 cut). Forgetting the
+**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.8.0** (re-checked
+2026-08-30 with `.venv/Scripts/nodus.exe --version`, after the 5.8.0 cut). Forgetting the
 prefix gets you a runtime from before the `@exactly_once` forgery fix, the call-depth
 cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the file its
 `filename` happens to name (#521), `nodus graph` no longer executing the file it inspects
-(#400), the whole resume-durability cluster, and the entire workflow-DSL cluster (#479,
-#480, #481, #488). The symptom is behaviour that contradicts the code you are reading.
+(#400), the whole resume-durability cluster, the entire workflow-DSL cluster (#479,
+#480, #481, #488), and everything in 5.7.x and 5.8.0 — `extern`, `compensates`,
+cancellation and `retry.until` among them. The symptom is behaviour that contradicts
+the code you are reading.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -311,19 +313,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | AI discoverability (canonical map) | `llms.txt` |
 | AI discoverability (rich summaries) | `llms-full.txt` |
 | GitHub wiki (local) | `C:\dev\Nodus Wiki\nodus-wiki\` — git repo, branch `master`, remote `Masterplanner25/Nodus.wiki.git` |
-| nodus-mcp companion repo | `C:\dev\nodus-mcp` / github.com/Masterplanner25/nodus-mcp |
-| nodus-a2a companion repo | `C:\dev\nodus-a2a` / github.com/Masterplanner25/nodus-a2a |
-| nodus-memory companion repo | `C:\dev\nodus-memory` / github.com/Masterplanner25/nodus-memory |
-| nodus-native-memory-engine repo | `C:\dev\nodus-native-memory-engine` / github.com/Masterplanner25/nodus-native-memory-engine |
-| nodus-extension companion repo | `C:\dev\nodus-extension` / github.com/Masterplanner25/nodus-extension |
-| nodus-mcp-server repo | `C:\dev\nodus-mcp-server` / github.com/Masterplanner25/nodus-mcp-server |
-| nodus-jupyter repo | `C:\dev\nodus-jupyter` / github.com/Masterplanner25/nodus-jupyter |
-| nodus-vscode repo | `C:\dev\nodus-vscode` / github.com/Masterplanner25/nodus-vscode |
-| nodus-run-action repo | `C:\dev\nodus-run-action` / github.com/Masterplanner25/nodus-run-action |
-| nodus-flow repo | `C:\dev\nodus-workflow` (dir not yet renamed) / github.com/Masterplanner25/nodus-flow. **Was `nodus-workflow` until 0.2.0** — renamed because the name read as the engine behind the `workflow` keyword, which it is not (#483). The old PyPI name is a deprecation alias |
-| nodus-sdk repo | `C:\dev\nodus-sdk` / github.com/Masterplanner25/nodus-sdk |
-| nodus-store-sql repo | `C:\dev\nodus-store-sql` / github.com/Masterplanner25/nodus-store-sql |
-| nodus-workflow-ai repo | `C:\dev\nodus-workflow-ai` / github.com/Masterplanner25/nodus-workflow-ai. #93's bridge: a generated plan validated before it runs, under a grant narrowed to what it declared. **Published on PyPI** 2026-08-30 (version: `check_publish_drift`); its floor is `nodus-lang>=5.8.0`, because step names on `task()` shipped there (#679) — it was the first companion registered in `UNPUBLISHED_COMPANIONS` with a floor naming a version that did not exist yet, and it moved into `COMPANIONS` in the publishing commit |
+| **Companion repos (all 14)** | `docs/ecosystem/COMPANION_REPOS.md` — checkout paths, test commands, publish paths, per-repo gotchas. Indexed under **Companion repositories** below |
 | Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
 | Ecosystem incubator scaffolds | `packages/` — Python-first scaffolds for planned libraries |
 
@@ -337,7 +327,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**2,940 tests collected** (`--collect-only`, 2026-08-29, after the 5.7.1 cut). Coverage
+**3,132 tests collected** (`--collect-only`, 2026-08-30, after the 5.8.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -388,7 +378,7 @@ on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing eac
 This bit twice in one session, and both times the first reading was "the #376 race class is back."
 It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
 your own change, check whether anything else is running: `TaskStop` the background job, then
-re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 263 blocks and writes to
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 268 blocks and writes to
 the store) — do not run it alongside the suite.
 
 **How much of the "flaky machine" is actually this is not established**, and concurrency does
@@ -671,10 +661,10 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   -m tools.nodus_gate.cli --all
 ```
 
-- `--static`: verifies documented symbols exist in the codebase (**136 symbols**
+- `--static`: verifies documented symbols exist in the codebase (**138 symbols**
   across 40 documents, as of 2026-08-29)
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (**263 blocks**); expects 0 failures with the `.nodusgate-allow`
+  in docs (**268 blocks**); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
@@ -784,79 +774,47 @@ NODUS_UPDATE_GOLDEN=1 PYTHONPATH="C:/dev/Coding Language/src" `
   -m pytest tests/test_bytecode_golden.py -q
 ```
 
-## nodus-mcp companion library
+## Companion repositories
 
-- Repo: `C:\dev\nodus-mcp` / `github.com/Masterplanner25/nodus-mcp`
-- **Published on PyPI** (version: `check_publish_drift`). Its `nodus-lang` cap is floated.
-  BYTECODE_VERSION 4, no new opcodes.
-- **Dual layout**: `src/nodus_mcp/` = full MCP protocol library (Phase A–N);
-  `nodus_mcp_aindy/` = aindy-derived bridge adapter (wraps ToolRegistry as MCP server).
-  The pyproject.toml `where = ["src"]` installs the Phase A–N library; the aindy
-  adapter is importable as `nodus_mcp_aindy` but is not the primary package.
-- Dev install: `pip install -e . --no-deps`
-- Run tests: `cd C:\dev\nodus-mcp && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
-- **egg-info pitfall**: If `nodus_mcp.egg-info/` appears in the repo root (generated
-  by old `setup.py develop` runs), pytest adds the rootdir to sys.path and
-  `importlib.metadata` finds the stale egg-info instead of the site-packages dist-info.
-  This breaks entry-point discovery. Fix: `rm -rf nodus_mcp.egg-info && pip install -e . --no-deps`.
-  The `*.egg-info/` is in `.gitignore`.
-- Entry-point contract: `[project.entry-points."nodus.nd"]` → callable returns
-  absolute path to `.nd` root dir — see `docs/guide/library-entry-points.md`
-- Key contracts: TD-007–010 in `docs/governance/TECH_DEBT.md`.
+Per-repo detail — layout, test commands, publish paths, and the gotchas that have
+cost time — lives in **`docs/ecosystem/COMPANION_REPOS.md`**. It was eleven
+sections scattered across this file; consolidating it made both files navigable.
+What exists and in what tier: `docs/ecosystem/README.md`.
 
-## nodus-a2a companion library
+| Repo | Path | Channel |
+|---|---|---|
+| nodus-mcp | `C:\dev\nodus-mcp` | PyPI |
+| nodus-a2a | `C:\dev\nodus-a2a` | PyPI |
+| nodus-a2a-wire | `C:\codev\a2a-wire-pub` | PyPI |
+| nodus-memory | `C:\dev\nodus-memory` | PyPI |
+| nodus-native-memory-engine | `C:\dev\nodus-native-memory-engine` | PyPI |
+| nodus-extension | `C:\dev\nodus-extension` | PyPI |
+| nodus-sdk | `C:\dev\nodus-sdk` | PyPI |
+| nodus-store-sql | `C:\dev\nodus-store-sql` (`master`) | PyPI |
+| nodus-workflow-ai | `C:\dev\nodus-workflow-ai` | PyPI (#93, floor `>=5.8.0`) |
+| nodus-jupyter | `C:\dev\nodus-jupyter` (`master`) | PyPI |
+| nodus-mcp-server | `C:\dev\nodus-mcp-server` | PyPI |
+| nodus-flow | `C:\dev\nodus-workflow` (dir not renamed) | PyPI — **was `nodus-workflow` until 0.2.0** (#483) |
+| nodus-vscode | `C:\dev\nodus-vscode` | VS Code Marketplace |
+| nodus-run-action | `C:\dev\nodus-run-action` | GitHub Action |
 
-⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-a2a` is the Tier 2 AgentCoordinator (23 tests, no nodus-lang dep).
+**Do not write a published version number into this file.** They went stale every
+cycle. `tools/check_publish_drift.py` prints each companion's published version as
+a side effect of answering the question Stage 6 actually asks; `tools/consumers.json`
+is the authority for the two non-PyPI consumers.
 
-**Current local `C:\dev\nodus-a2a` (AgentCoordinator layer, 23 tests):**
-- `AgentRegistry`, `AgentCoordinator` (local/delegate mode), `DelegationRequest`
-- `DeadLetterService`, `StuckRunWatchdog`
-- No nodus-lang dependency; standalone coordination primitives
-- This is the one on PyPI, and the only one `check_publish_drift` tracks.
+Four traps worth knowing before you open the detail file:
 
-### The wire adapter, and the two `C:\codev` directories — corrected 2026-08-26
-
-The original A2A **wire-protocol** adapter (`A2AHttpServer`, transport layer,
-nodus-lang dep) is **188 tests**, not the 180 an earlier revision of this section
-claimed. It is **not on PyPI**, and it is a **CrewAI-showcase spin-off**, not a
-maintained companion — `C:\codev\nodus-showcase-crewai` is what needed it.
-
-**There are two `C:\codev` directories and they are not interchangeable.** An
-earlier revision named only the first and called it "the local worktree" of the wire
-repo. It is not:
-
-| Directory | Remote | Branch | What it actually is |
-|---|---|---|---|
-| `C:\codev\nodus-a2a-wire` | **`nodus-a2a`** | **detached at `10746ce`** | a worktree of the *coordinator* repo's old history — pulls and pushes go to the wrong project |
-| `C:\codev\a2a-wire-pub` | **`nodus-a2a-wire`** | `main` (tracked `origin/wire-adapter`, gone) | the one that actually corresponds to `github.com/Masterplanner25/nodus-a2a-wire` |
-
-So the directory named `nodus-a2a-wire` is the one that is *not* the wire repo. Use
-**`a2a-wire-pub`** for anything touching that GitHub repo.
-
-**Published 2026-08-26 as `nodus-a2a-wire` 0.1.0** (#477). Module `nodus_a2a_wire`,
-**no runtime dependencies**, 188 tests. Work in `C:\codev\a2a-wire-pub`, which is
-the only checkout wired to that repo.
-
-Three things it needed, and the middle one is the lesson:
-
-- `name = "nodus-a2a"` → `nodus-a2a-wire`. The distribution name was taken.
-- **The Python module was `nodus_a2a` — the same module the published coordinator
-  ships.** Renaming the distribution alone would have left both writing one
-  directory into site-packages. Measured: installing the wire adapter on top of
-  the coordinator left `AgentCoordinator`, `AgentRegistry` and `DeadLetterService`
-  **gone**, with pip reporting success both times. This is NAME-COL-001 again —
-  the distribution name is what a user types, the module name is what Python
-  resolves, and fixing one does not fix the other.
-- **`nodus-lang` was in `dependencies` and never imported.** `grep -rnE
-  "^\s*(from|import)\s+nodus" src/` is empty; the one import in the tests sits in
-  a `try/except ImportError` that skips. Per the dependency-audit rule, that is
-  not a dependency — a host constructs `A2AHttpServer` and wires it to their own
-  `NodusRuntime.tool_registry`. It is a `dev` extra now. The declaration had also
-  capped `<5.0.0`; the suite is 188/188 against 5.5.0, so the cap protected
-  nothing.
-
-**`twine` 6.2.0 rejects hatchling's `Metadata-Version: 2.5`** as invalid — upgrade
-to 7.0.0. It looks like a broken package and is a stale validator.
+- **`C:\codev\nodus-a2a-wire` is NOT the wire repo** — it is a worktree of the
+  *coordinator* repo's old history, so pulls and pushes go to the wrong project.
+  Use `C:\codev\a2a-wire-pub`.
+- **Renaming a distribution does not fix a module collision.** `nodus-a2a-wire`
+  and `nodus-a2a` both shipped `nodus_a2a`; installing one over the other deleted
+  the other's classes with pip reporting success both times (NAME-COL-001).
+- **Bridge and host functions return maps, not Records** — `.nd` must use
+  `r["key"]`, never `r.key`.
+- **VS Code spawns the *installed* `nodus.exe`**, so LSP server changes need a new
+  nodus-lang release before the extension sees them.
 
 ## Nodus language quirks (relevant when writing test .nd code)
 
@@ -926,6 +884,36 @@ These burn time when forgotten:
   `recv(ch)`, `close(ch)`. No import needed.
 - **Workflow step dependencies use `after` keyword:**
   `step b after a { ... }` — not `depends_on`, not any other syntax.
+- **A step body calling an imported module's function is broken (#691, `severity:high`,
+  OPEN).** Including `std:` modules — so `retry.until` does not work inside a step,
+  which is the position its own documentation points at.
+
+  **The worst case is silent:** the step body stops at the module call, nothing is
+  raised, and the run reports `failed: []`. Other module shapes give `Stack
+  underflow`, `Cannot call non-function: nil`, or a spurious `nodus-retry is
+  required` — four symptoms from one construct, which is what says stack/dispatch
+  corruption rather than a logic bug.
+
+  ```
+  import "./m.nd" as m           // fn no_loop(f) { return f() }
+  workflow w { step a { let v = m.no_loop(fn() { return 7i }); print("got \(v)") } }
+  // prints nothing after the call; failed: []
+  ```
+
+  Sharpest clue for whoever fixes it: a module defining **only** `no_loop` works, a
+  module defining **only** `in_loop` works, a module defining **both** fails when
+  `no_loop` is called. **Not a regression** — 5.7.1 behaves identically.
+
+  Until it is fixed, keep module calls out of step bodies: call the module function
+  from `fn main()` and pass the result into the workflow, or inline the logic.
+
+  **The lesson generalises past this bug.** Every test and probe for `retry.until`
+  ran inside `fn main()`, so the full suite, nine gate phases and 83 release probes
+  were green on a feature that does not work where it is meant to be used. **A
+  construct documented for use inside a step body must be tested inside a step
+  body** — the step-body path and the top-level path are two paths, and a test on
+  one says nothing about the other.
+
 - **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
   `step a { checkpoint "mid"; return "done" }` — correct.
   `workflow w { checkpoint "mid"; step a { ... } }` — syntax error.
@@ -1030,6 +1018,14 @@ Instances, all confirmed by reading the code rather than inferred:
 | #480 | is this word a keyword | `each` matched by a bare literal in `parser.py`, so `lexer.ALL_KEYWORDS` — which editors, docs and `--consumers` all read — never named it |
 | #657 | does `fmt` render this node | the completeness guard walks **node types**; `each` and `budget { limits }` are new **fields**, so every node had a case and `fmt` dropped them silently |
 | #662 | what names are bound in a step body | the lowering binds `after` / `each` / `compensates` deps; the analyzer pushed the same scope and bound **none** — two answers to one question, drifted |
+
+**#691 is an open candidate, deliberately not in the table above.** That table's
+standard is *confirmed by reading the code*, and #691 has only been confirmed by
+**observation**: calling an imported module's function works at top level and fails
+inside a workflow step body — silently, with the run reporting success. One
+question, two paths, one of them wrong, which is the shape's signature; but the
+mechanism is not yet read, so it is named here rather than counted there. Whoever
+diagnoses it should move it up or explain why it does not belong.
 
 **#662 adds the one about blast radius: a drifted duplicate is as harmful as its
 consumers make it, and wiring a new consumer is what detonates it.** The analyzer had
@@ -1137,51 +1133,6 @@ session. Needs review before repo commit and push. -->`** — including
 `DOCSET_INDEX.md`, which is the reader entry point, and `SECURITY_POSTURE.md`. They
 were committed and pushed on 2026-05-29, so the marker is self-contradicting. Left in
 place pending a decision on whether to strip them.
-
-## nodus-memory companion library
-
-⚠️ **LOCAL REPO REPLACED.** Local `C:\dev\nodus-memory` is the Tier 2 full memory library (28 tests).
-
-The original nodus-lang adapter (192 tests, `attach_to_runtime`, `nm_*` host functions,
-`import "nodus-memory"`) exists **in git history only** — commit `f02ab1e`, which still
-carries `src/nodus_memory/nodus_bindings.py`. Commit `6d3a241` ("remove stale nodus-lang
-adapter") deleted it from the tree. Earlier wording here said it was "preserved at
-`github.com/Masterplanner25/nodus-memory`", which reads as *go clone it*; the current
-tree there is the Tier 2 library. Recover with `git show f02ab1e:src/nodus_memory/nodus_bindings.py`,
-or give it its own repo the way `nodus-a2a-wire` got one.
-
-**Current local `C:\dev\nodus-memory` (Tier 2 full library, 28 tests):**
-- `MemoryNode`, `InMemoryStore`, MAS `build_path()`/`glob_match()`
-- `score_nodes()`, `update_feedback()`, `recall()`/`recall_async()`, `EmbeddingProvider` protocol
-- No runtime dependencies (`dependencies = []`); optional `pgvector` and `openai` extras
-- Flat layout (`nodus_memory/`), setuptools build
-- Run tests: `cd C:\dev\nodus-memory && python -m pytest -q`
-
-## nodus-native-memory-engine companion library
-
-- Repo: `C:\dev\nodus-native-memory-engine` / `github.com/Masterplanner25/nodus-native-memory-engine`
-- **Published on PyPI** (version: `check_publish_drift`). PyO3/Maturin Rust extension; pure-Python fallback for all operations. `is_native()` → True when Rust extension loaded.
-- **Build requires Rust:** `VIRTUAL_ENV="C:/dev/Coding Language/.venv" maturin develop --release`
-  Rust 1.93.1, PyO3 0.22.6, maturin 1.12.6 all installed.
-- Run tests: `cd C:\dev\nodus-native-memory-engine && "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest -q`
-
-## nodus-extension companion library
-
-- Repo: `C:\dev\nodus-extension` / `github.com/Masterplanner25/nodus-extension`
-- **Published on PyPI** (version: `check_publish_drift`). BYTECODE_VERSION 4, no new opcodes.
-- **Purpose:** Typed, versioned, sandboxed plugin framework. Third-party developers
-  write `nodus-extension.json` + `extension.py`; the framework loads them via subprocess.
-- **Python API:** `ExtensionRegistry`, `ExtensionHost`, `attach_to_runtime(runtime, registry)`
-- **Nodus bindings:** `import "nodus-extension"` → `ext_load(path)`, `ext_list()`,
-  `ext_invoke(name, tool, args_json)`, `ext_describe(name)`
-- **Host functions use `_ext_` prefix** (not `ext_`): `_ext_load`, `_ext_list`, etc.
-  The .nd wrappers are named `ext_load`, `ext_list` etc. (same split as nodus-memory)
-- **ext_invoke takes args as JSON string** — not a Nodus map. Caller must pass e.g.
-  `ext_invoke("myext", "tool.name", "{\"key\": \"value\"}")`.
-- **Sandbox tier 1 only** (subprocess, insecure-dev). OCI/VM deferred to v0.2.
-- **Capability gate:** extension must declare `"tool.invoke"` to call tools.
-- Dev install: `pip install -e . --no-deps` (from `C:\dev\nodus-extension`)
-- Run tests: `cd C:\dev\nodus-extension && PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ -q`
 
 ## Standalone package ecosystem (at `C:\dev\`)
 
@@ -1351,190 +1302,24 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 - **Note:** Not the same as the standalone `nodus-schema` package (`C:\dev\nodus-schema`).
   Option C post-launch will consolidate these. Skill: `/nodus-name-col-consolidation`.
 
-## nodus-vscode VS Code extension
-
-- Repo: `C:\dev\nodus-vscode` / `github.com/Masterplanner25/nodus-vscode`
-- **Live on the VS Code Marketplace** under publisher `MasterplanInfiniteWeave`. The
-  published version is recorded in `tools/consumers.json`, not here — this line said 0.1.2
-  for a full cycle after 0.1.3 shipped. Marketplace validation takes **~4 minutes**; a
-  gallery-API check immediately after upload still reports the previous version, which is
-  not a failure.
-- **It must be republished when the keyword set changes.** `nodus_gate --consumers`
-  fingerprints the keywords here and flags it when they move.
-- **Phase 1:** TextMate grammar, 23 snippets, bracket/fold config
-- **Phase 2:** Diagnostics via `nodus check` (fallback; skipped once LSP starts)
-- **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
-- **Phase 4:** LSP via `nodus lsp` — hover docs, go-to-definition, completions
-- **Build:** `cd C:\dev\nodus-vscode && npm run package` (requires `@vscode/vsce`)
-- **Publish — the update path is not the first-publish path.** `package.json`
-  `publisher` must be `MasterplanInfiniteWeave`, and bump `version` before packaging.
-  - **Updating an existing extension** (the normal case): go to
-    <https://marketplace.visualstudio.com/manage/publishers/MasterplanInfiniteWeave>,
-    find **Nodus Language** in the list, use the row's **`…` menu → Update**, and
-    upload the new `.vsix`. Validation takes a few minutes.
-  - **First publish only:** `+ New extension` → `Visual Studio Code`. Using this for
-    an update is wrong — the extension already exists.
-  - **Or by CLI:** `npx vsce publish -p <PAT>` from the repo (`vsce` is already in
-    `node_modules`). The PAT is an Azure DevOps token with **Marketplace → Manage**
-    scope and organization set to **All accessible organizations** — scoping it to a
-    single org is the failure that looks like a bad token.
-- **Verify a publish** without opening a browser:
-  ```powershell
-  # POST to the gallery API; latest version is versions[0]
-  # https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery
-  # filterType 7 = extension name, value "MasterplanInfiniteWeave.nodus-lang"
-  ```
-- **This extension is not on PyPI**, so the Stage 6 content-hash sweep cannot see it.
-  A release that adds or removes a keyword must republish it — see Gate 3b.
-- **Key settings:** `nodus.executablePath` (default: `nodus`), `nodus.lspCommand` (array, overrides LSP command — useful for dev source: `["C:/dev/Coding Language/.venv/Scripts/python.exe", "C:/dev/Coding Language/nodus.py", "lsp"]`)
-- **LSP note:** VS Code spawns the INSTALLED `nodus.exe`, not dev source. LSP server changes require a new nodus-lang release to take effect in the extension.
-
-## nodus-mcp-server
-
-- Repo: `C:\dev\nodus-mcp-server` / `github.com/Masterplanner25/nodus-mcp-server`
-- **Published on PyPI** (version: `check_publish_drift`). Install via `pipx install nodus-mcp-server`.
-- **Supports two transports:**
-  - **Claude Desktop (stdio):** Add to `claude_desktop_config.json` under `mcpServers`
-  - **ChatGPT Desktop (HTTP/SSE):** Run `nodus-mcp-server --http --port 8765`, tunnel via ngrok
-- **HTTP transport uses `StreamableHTTPSessionManager`** (MCP SDK 1.28.0), single endpoint `POST /mcp`.
-  The old `SseServerTransport` (two-endpoint SSE) is broken — do not use it.
-- **ngrok static domain:** `nodusmcpserver.ngrok.io` (paid plan). ChatGPT Desktop requires public HTTPS;
-  server runs plain HTTP, ngrok terminates SSL. Point ChatGPT at `https://nodusmcpserver.ngrok.io/mcp`.
-- **Windows auto-startup:** Registry `HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` runs
-  `C:\Users\shawn\.nodus-mcp-server\startup.ps1` at login (no admin needed). Starts server + ngrok.
-- **Shared memory:** Both Claude Desktop and ChatGPT Desktop read/write the same SQLite DB at
-  `~/.nodus-mcp-server/data/memory.db` — memory written in one AI is readable by the other.
-- **6 MCP tools:** `nodus_run_goal`, `nodus_run_workflow`, `nodus_resume_workflow`,
-  `nodus_store_memory`, `nodus_recall`, `nodus_list_graphs`
-- **goal vs workflow naming convention:** `goal` = outcome-oriented, single-shot (steps are impl details);
-  `workflow` = process-oriented, resumable (pipeline itself is the point, returns `graph_id`).
-
-  **Retry behaviour is now unified (#392/#393, 2026-08-16).** `run_task_graph` used to branch on
-  `execution_kind` — a `workflow` deferred (`retry_scheduled`, run ends, a sweeper must resume it)
-  while a `goal` retried in-process — so the same source with `retries: 2` gave workflow **1
-  attempt**, goal **3**. That branch is gone. Both kinds now defer if and only if **(a)** the run
-  is durably tracked — a `workflow` or `goal`, never a bare `run_graph`, which no store knows
-  about — and **(b)** a retry sweeper is registered on the runner owning that store
-  (`nodus_lang_workflow.runner.register_retry_sweeper(runner)`, held by `RuntimeService` for its
-  lifetime). Otherwise the retry is taken in-process and the run completes before returning.
-  `run_workflow_code`'s `inline_retries` parameter is removed.
-
-  Registration is **per-runner, not per-process** — and the default runner is rebuilt per working
-  directory. If you write a test that registers a sweeper, chdir *first*: `retry_sweeper()`
-  binds to the runner for the cwd at the moment you enter it, so
-  `with retry_sweeper(), _project_root_context(td)` silently registers on the wrong store.
-  That ordering bug cost a full suite run.
-
-  **Do not reintroduce the decision anywhere but `_retry_is_swept()`.** The wrapper-level version
-  of this guard (`inline_retries`, passed by one of five callers) is exactly how the bug survived
-  ten weeks. `tests/test_retry_path_unification.py` asserts on the source of the retry branch as
-  well as its behaviour, because a behaviour-only test passes on the goal side alone.
-
-  The result-shape half of #393 was **wrong and was retracted on the issue**: `status`/`retry`
-  appear on both kinds when a run defers and on neither when it completes. A goal result is a
-  workflow result plus a `goal` key. Only the entry points and the event prefix are kind-specific.
-
-  **#409 closed this out in v5.0.0.** Unification left `goal` as a workflow with different event
-  names, so it needed a stopping condition to mean anything distinct — that is the
-  `goal … over … { until … }` form (see the language-quirks section). A goal is now *a workflow
-  plus a predicate and a budget*, which is a real distinction rather than a naming one.
-- Run tests: `cd C:\dev\nodus-mcp-server && python -m pytest -q`
-
-## nodus-jupyter
-
-- Repo: `C:\dev\nodus-jupyter` / `github.com/Masterplanner25/nodus-jupyter`
-- **Published on PyPI** (version: `check_publish_drift`).
-- **Install:** `pip install nodus-jupyter && python -m nodus_jupyter install`
-- **32 unit tests** — require `ipykernel` installed (`pip install ipykernel`).
-- Provides a Jupyter kernel for `.nd` files; works in JupyterLab, Jupyter Notebook, VS Code notebooks.
-
-## nodus-run-action
-
-- Repo: `C:\dev\nodus-run-action` / `github.com/Masterplanner25/nodus-run-action`
-- **A GitHub Action, not a PyPI package.** Published version is in `tools/consumers.json`.
-- **Usage:** `uses: Masterplanner25/nodus-run-action@v1`
-- **Three modes:** `file` (run a .nd script), `test-path` (run test suite), `fmt-check` (format gate)
-- **Its README pins a `nodus-lang` version, and that pin is what new users copy**, so it goes
-  stale at every release and hands them an old runtime. Invisible to the Stage 6 content-hash
-  sweep because it is not on PyPI — `nodus_gate --consumers` is what catches it, and did, at
-  5.1.0. Republishing means: update the pins, tag, **and move the floating `v1` tag**; verify
-  with `git ls-remote origin 'refs/tags/v1^{}'`, since `rev-parse` on an annotated tag returns
-  the tag object rather than the commit.
-- No local test suite — tests run in CI via the action itself.
-
-## nodus-sdk companion package
-
-- Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
-- **Published on PyPI** (version: `check_publish_drift`).
-  99 tests. Unified platform SDK auto-wiring the 36-package companion ecosystem.
-  Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
-  suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
-  recorded it as a known-stale test rather than fixing it. Fixed in 0.1.2.
-- **Install:** `pip install nodus-sdk[agent,sql,fastapi]` (extras-based)
-- **Key exports:** `NodusSDKRuntime`, `create_runtime(**kwargs)`, `detect_available()`
-- **9 bridges:** redis, http, llm, observability (wrappers), sql, vector, scheduler, webhook, api (new)
-- **Bridge return type:** host functions return maps not Records — `.nd` must use `r["key"]` not `r.key`
-- **FastAPI bridge:** `create_nodus_router(rt)` → POST /run, GET /health, GET /syscalls, memory CRUD
-- **NodusTraceMiddleware:** reads X-Trace-ID header → `runtime.set_trace_id()`
-- Run tests: `cd C:\dev\nodus-sdk && PYTHONPATH="C:/dev/Coding Language/src" python -m pytest -q`
-
-## nodus-store-sql companion package
-
-- Repo: `C:\dev\nodus-store-sql` / `github.com/Masterplanner25/nodus-store-sql`
-- **Published on PyPI** (version: `check_publish_drift`).
-  47 tests (31 sync + 16 async). Promoted from `packages/nodus-store-sql` incubator scaffold.
-- **Async tests require `aiosqlite`** — not installed by default. Run `pip install aiosqlite` if async tests fail with `ModuleNotFoundError`.
-- **Three stores:** `RunStore` (optimistic locking), `EventStore` (append-only), `JobStore` (atomic claiming)
-- **Async:** `AsyncSqlStore` via `sqlalchemy.ext.asyncio`; test with `sqlite+aiosqlite:///:memory:`
-- **Tables:** `nodus_runs`, `nodus_events`, `nodus_jobs`
-- **No Alembic:** `create_all()` is the dev schema bootstrap; production manages migrations independently
-- Run tests: `cd C:\dev\nodus-store-sql && python -m pytest -q`
-
 ## SemVer policy
 
-The current published version is **v5.8.0** (live on PyPI, published 2026-08-30). Both files
-must stay in sync:
-- `src/nodus/support/version.py` — `__version__ = "5.8.0"`
-- `pyproject.toml` — `version = "5.8.0"`
+The current published version is **v5.8.0** (live on PyPI, published 2026-08-30).
+Two files must stay in sync — `src/nodus/support/version.py` and `pyproject.toml`.
+If they disagree, fix that before anything else.
 
-**5.8.0 is about work already in motion.** Two surfaces, both of which existed only at
-the workflow altitude before: a run or a task can be **stopped**, and a call that
-returned the *wrong* thing rather than failing can be **retried against a predicate**.
+Patch releases for bug fixes and stability graduations; a minor bump requires a
+substantive feature addition. **Never bump without a corresponding PyPI publish.**
 
-- **Cancellation** (#395, #157): `nodus workflow cancel <graph_id>` for a durable run, and
-  `cancel(t)` / `wait(t)` for a task. `cancelled` is a run status and a blocked reason, both
-  named once in a canonical tuple. A cancelled task's waiters are released rather than
-  orphaned.
-- **`retry.until(f, predicate, policy)`** (#466): `retry.call` re-attempts when a call
-  *errors*; a malformed edit or a schema-invalid payload is not an error. `retry.until` is
-  that trigger. The failing result is carried into the next attempt — without that carrier
-  it is a blind re-roll — and a bound **always** applies: declare neither `max_attempts` nor
-  `deadline_ms` and an implicit cap of 10,000 is imposed.
-- **`examples/plan_then_act.nd`** (#465): the plan-then-act handoff as a worked example
-  rather than a stdlib wrapper, because the properties worth having — inspectable on disk,
-  resumable, composable with `goal … over …` — come from *being a workflow*, and a wrapper
-  would hide it.
-- Runtime-built graphs can name their steps and get per-step results keyed by that name
-  (#679); an undefined name a program declared `extern` now says so (#664).
+**What each release added is in `CHANGELOG.md`, not here.** A narrative per release
+lived in this section and duplicated the changelog it was copied from. What follows
+is only what the changelog cannot tell you at a glance.
 
-Two changes are **not** additive and are in the table below: a function assigning to a
-module-top-level `let` now actually updates it (#671), and a named import of a builtin name
-is refused rather than silently ignored (#680).
+### What is *not* additive, 5.3.0 onward
 
-**5.7.1 repairs 5.7.0.** `nodus check` in 5.7.0 rejected correct
-code: a file declaring an `extern` could not read any step dependency by name, because
-#489's strict mode inherited a long-standing analyzer defect that left `after` / `each` /
-`compensates` dependencies unbound (#662). Nothing else in the pair changed.
-
-5.7.0 itself is additive: `extern` declarations (#489), host-function schemas on
-`register_function` (#493), workflow **compensation** (`step release compensates reserve`,
-#577), and a wait-payload schema (#472). `extern` and `compensates` are new contextual
-keywords — 42 in `ALL_KEYWORDS` now.
-
-**What is *not* additive, 5.3.0 onward.** Everything else in those releases adds a way to
-say something; these are the changes that can break a reader's working setup. Full detail
-is in `CHANGELOG.md` — this table exists so you can tell in one pass whether a symptom
-belongs to a release rather than to your change.
+Everything else in those releases adds a way to *say* something. These are the
+changes that can break a reader's working setup, so the table answers one question
+fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
@@ -1549,92 +1334,58 @@ belongs to a release rather than to your change.
 | 5.3.0 | `nodus.toml` refuses a table or key Nodus does not read (#490) | the error names the word and suggests the match |
 | 5.1.0 | `run_source(filename=)` is a label and no longer selects the program (#521) | `run_file` to run a file — see the embedding section |
 
-Two of those ask something of you rather than just explaining a symptom.
+Three of those ask something of you rather than just explaining a symptom.
 
-**#616 is why 5.6.0 should not be skipped by an embedder** (`severity:high`): a capability
-policy could be bypassed by writing the **async form** of a call. Anything embedding a
-`NodusRuntime` with a policy should be on 5.6.0 or later.
+- **#616 is why 5.6.0 should not be skipped by an embedder** (`severity:high`): a
+  capability policy could be bypassed by writing the **async form** of a call.
+  Anything embedding a `NodusRuntime` with a policy should be on 5.6.0 or later.
+- **#609 is staged, not done.** An unrecognised type name warns today and becomes
+  an error at **6.0.0**, alongside #547 and #492. A project that is "clean" now can
+  still be red at the major, so treat those warnings as a to-do list.
+- **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
+  account in the embedding section below.
 
-**#609 is staged, not done.** An unrecognised type name warns today and becomes an error at
-**6.0.0**, alongside #547 and #492 — see the 6.0.0 staging cohort. A project that is
-"clean" now can still be red at the major, so treat those warnings as a to-do list.
+### Two releases to treat as superseded
 
-**A `run_source` behaviour change ships in 5.1.0 (#521):** `filename=` is a label and no
-longer selects the program. A change against every prior release, not just 5.0.x -- the full
-account is in the embedding section below.
+- **5.7.0** — `nodus check` rejects correct code (#662). Fixed in 5.7.1.
+- **5.0.3** — assigns a `memory_store` attribute that `nodus_sdk.NodusSDKRuntime`
+  defines as a read-only property, so every construction of that subclass raises.
+  The one release in the 5.0.x line that breaks a first-party companion. Fixed in
+  5.0.4.
 
-**Treat 5.7.0 as superseded, and note how it was retired — the pattern is the
-point.** Its `nodus check` rejects correct code: a file declaring an `extern`
-could not read any step dependency by name, because #489's strict mode inherited
-a long-standing analyzer defect that left `after` / `each` / `compensates`
-dependencies unbound (#662). Fixed in 5.7.1.
+**The rule 5.7.0 left, because the pattern recurs:** when a release is found
+defective **between the PyPI upload (step 9) and the GitHub release (step 11)**,
+stop at step 10 and do not create the release. Roll the fix forward and cut both
+artifacts at the next version. PyPI is immutable, so the bad version cannot be
+withdrawn — but a GitHub release would be a *second* published record asserting it,
+and release immutability means it could never be corrected, only contradicted. One
+superseded artifact is better than two.
 
-It was found by **Stage 5**, after the PyPI upload — which is the stage's whole
-purpose, and the reason it exists as a separate step rather than being folded
-into Gate 10. Gate 10 asks "what can I make fail?" against a local wheel; Stage 5
-asks "does this work as a new user would expect?" against the published one, and
-only the second used both new features together.
+**That rule is about a release that a fix will supersede.** It does not apply when
+the defect found at Stage 5 is **pre-existing** — 5.8.0 shipped its GitHub release
+with #691 open, because #691 is equally present in 5.7.1 and nothing about 5.8.0
+needed superseding. Check which case you are in before applying it.
 
-**Its GitHub release was deliberately never created.** PyPI is immutable, so
-5.7.0 exists there and cannot be withdrawn — but a GitHub release would have been
-a *second* published record asserting the same defective version, and the two
-would then disagree with reality once 5.7.1 landed. One superseded artifact is
-better than two. Both artifacts were cut together at 5.7.1.
+### Version claims in prose
 
-**The rule this leaves:** when a release is found defective between the PyPI
-upload (step 9) and the GitHub release (step 11), stop at step 10 and do not
-create the release. Roll the fix forward and cut both artifacts at the next
-version. Do not create a GitHub release "for completeness" — release
-immutability means it cannot be corrected later, only contradicted.
+**`tools/version_claims.json` is the list, and `nodus_gate --versions` checks it.**
+Do not maintain one here; the list that used to live in this file was itself wrong,
+and the gate's discovery sweep found a claim it had missed on its first run.
 
-**Treat 5.0.3 as superseded, not merely older.** It assigns a `memory_store` attribute that
-`nodus_sdk.NodusSDKRuntime` defines as a read-only property, so every construction of that
-subclass raises `AttributeError: ... has no setter`. It is the one release in the 5.0.x line
-that breaks a first-party companion. Fixed in 5.0.4.
+**Re-run `--versions` after the bump** — before it, it passes by definition. At the
+5.6.0 cut it named 13 stale claims across 8 files; at 5.8.0, 13 again. Each comes
+with file, line and fix.
 
-**Update the paragraph above in the release PR, alongside the version bump.** A
-version string in prose went stale in three consecutive releases, and the response each
-time was a longer list to check by hand.
+The distinction is still yours to make when you *write* prose: **"X is current"
+goes stale, "as of X" does not.** The gate cannot tell them apart, which is exactly
+why claims are declared rather than grepped. Register a new one, or word it so it
+never needs registering — the README *banner* names no version at all, which is why
+it is the one line that has never gone stale.
 
-**The list is `tools/version_claims.json` now, and `nodus_gate --versions` checks it.**
-Do not maintain one here; the list that lived here was itself wrong, and the gate's
-discovery sweep found a claim it had missed on its first run. Re-run `--versions`
-**after** the bump -- before it, it passes by definition. At the 5.6.0 cut it named 13
-stale claims across 8 files, each with line and fix.
-
-The distinction is still yours to make when you *write* prose: *"X is current"* goes
-stale, *"as of X"* does not. The gate cannot tell them apart, which is why claims are
-declared rather than grepped. Register a new one, or word it so it never needs
-registering -- the README *banner* names no version at all, which is why it is the one
-line that has never gone stale.
-
-Patch releases (5.1.x) for bug fixes and stability graduations. A minor bump (5.2.0) requires a
-substantive feature addition. Never bump without a corresponding PyPI publish. If you see these
-files at different values, fix the mismatch before doing anything else.
-
-**v5.0.0 is the first major.** It carries exactly one breaking change — embedded runtimes deny
-subprocess/network/env by default (see the embedding section below). The bytecode format did not
-change: `BYTECODE_VERSION` is still **4** and the 49-opcode set is untouched, so a major bump does
-not imply recompilation.
-
-**`README.md` is current, and the fix it got is the pattern to copy.** It advertised 4.2.0
-through the whole 5.0.0 cycle; the repair was not "remember to update it" but to make the
-banner name **no version at all** and to register the "Recent:" paragraph as a claim in
-`tools/version_claims.json`, so `nodus_gate --versions` now fails on it rather than a reader
-noticing. Re-checked 2026-08-25: 11/11 registered claims agree with 5.4.0. The 4.2.0 mentions
-in `RELEASE_GATES.md` and `real-world-integration.md` are historical and correct as written,
-and the `docs/evals/v4.2.0/` hits are that release's own records.
-
-**A gate checks version strings now** — `nodus_gate --versions`, in `--all`. This paragraph
-used to read *"No gate checks version strings"*, which is why `COMPATIBILITY.md` and
-`docs/release.md` sat at 4.1.1 through an entire release before anyone noticed, and it stayed
-true through three more cycles because the response each time was a longer list to check by
-hand.
-
-The distinction it encodes is still yours to make when you *write* prose: *"X is current"*
-goes stale, *"as of X"* does not. The gate cannot tell them apart either — that is precisely
-why the claims are declared in `tools/version_claims.json` rather than grepped. Register a new
-claim there, or word it so it never needs registering.
+**v5.0.0 is the first major.** It carries exactly one breaking change: embedded
+runtimes deny subprocess/network/env by default. The bytecode format did not
+change — `BYTECODE_VERSION` is still **4** and the 49-opcode set is untouched — so
+a major bump does not imply recompilation.
 
 ## Embedding API — known blockers and operational traps
 
@@ -1773,117 +1524,95 @@ which *looks exactly like* the original bug. Use `spawn(c)` then `run_loop()`.
 
 ## Published ecosystem — how to find out, not what it was
 
-All packages are live. PyPI rate limits apply to **new project creation** (~a few
-per hour), not to version uploads on existing projects — republishing new versions
-of already-published packages is not session-limited.
+**Every number in this section used to be written down, and every one of them went
+stale.** What is left is how to ask, and the lessons that cost a day each.
 
-**nodus-lang:** the current version lives in the *SemVer policy* section above and in
-`src/nodus/support/version.py` — not here, where it was a release behind. `nodus-retry` is
-an optional dep (`nodus-lang[retry]`); the runtime falls back to the built-in
-`InMemoryEffectStore` when it is absent, which is why CI's `unittest` step catches things
-`pytest` passes locally when you have it installed.
-
-**Companion `nodus-lang` ranges — do not read them by eye. Run the check:**
+### Ask, do not transcribe
 
 ```powershell
+# does each companion's published range still admit the current nodus-lang?
 PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_downstream_constraints
-```
 
-All six dependents float and admit the current release; the script prints each range, so
-**do not transcribe them here** — a table of ranges in prose is the thing that failed below.
-
-That was true **as of 2026-08-17 and not before it.** An earlier revision of this section said
-"none caps it, so all six dependents picked up the 5.0.0 major automatically." The exact
-opposite was true: five of the six published `nodus-lang<5.0.0`, so
-`pip install nodus-lang==5.0.0 nodus-mcp` was `ResolutionImpossible` and 5.0.0 was unadoptable
-for anyone using the ecosystem. Only `nodus-jupyter` floated. It was found by the aindy-runtime
-team, not by us — the Stage 6 sweep asked exactly this question and transcribed five of six
-ranges with the upper bound dropped. Fixed by republishing all five (#445).
-
-Two durable lessons, both of which cost a day:
-
-- **`>=4.0.0,<5.0.0` reads as "admits 4.x", which is what the eye checks for.** The clause that
-  forbids the new version is at the far end of the string. This is not a lapse more care fixes;
-  resolve it with `packaging`, which is what the script does. It reads **published** PyPI
-  metadata, because a floated cap sitting unreleased in a companion's `main` helps nobody.
-- **A passing companion suite says nothing about installability.** The sweep correctly recorded
-  every dependent suite passing against 5.0.0 — they were run against the dev source. They could
-  not have been reached through a normal `pip install` at all, and noticing that would have
-  exposed the cap immediately.
-
-**Policy, decided 2026-08-17: companions do not cap `nodus-lang`.** A hard upper bound on a
-first-party dependency turns every major into a two-repo release train with consumers frozen in
-between. The companion's own suite is the check that catches a real break; a cap earns its place
-once a break is known, not before.
-
-**Standalone companion packages — 36 as of 2026-08-30**, plus `nodus-lang`, so **37
-PyPI projects** in total. Names and tiers: `docs/ecosystem/PACKAGE_QUICK_REF.md`.
-
-That count was **32/33** for several cycles and was wrong before `nodus-flow` was
-published — a hand-maintained number nothing checks, exactly like the version strings
-below. **Do not adjust it by arithmetic; re-derive it.** Every first-party name is
-listed in `docs/ecosystem/README.md`; probe each against
-`https://pypi.org/pypi/<name>/json` and count what resolves. Two first-party names
-deliberately do **not**: `nodus-vscode` (Marketplace) and `nodus-run-action`
-(GitHub Action). `nodus-a2a-wire` was a third until 2026-08-26 (#477).
-
-**Verify a publish by installing it, not by reading `info.version`.** PyPI's JSON API
-serves a stale `info.version` for a while after an upload: it reports the *previous*
-release as latest, which reads exactly like a failed upload. Seen after the `nodus-flow`
-publish, and again at 5.6.0 -- where it also reported **zero files** for the version that
-had just landed. `Cache-Control: no-cache` is worth sending and did **not** prevent
-either; only `pip install <name>==<version>` is authoritative, and it succeeded at the
-moment the JSON API was still denying the release existed.
-
-**Version numbers are deliberately not listed here any more.** They were, and they went
-stale every cycle. Two scripts read them live and neither can be transcribed wrong:
-
-```powershell
-# published version of each companion, and whether its source has drifted from it
+# published version of each companion, and whether its checkout has drifted from it
 PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.check_publish_drift
 ```
 
-`check_publish_drift` prints each companion's **published version** as a side effect of
-answering the question Stage 6 actually asks — has the checkout drifted from what users
-can install. It compares file contents from the published sdist. Do not substitute a git
-heuristic: counting commits since the version bump gave **four false positives** at
-v4.2.0, because a commit can touch only docs, only CI, or only tests. It exits **2** on a
-skip, because a companion that could not be checked is not one that passed.
+`check_downstream_constraints` resolves ranges with `packaging` against **published**
+metadata — a floated cap sitting unreleased in a companion's `main` helps nobody.
+`check_publish_drift` compares **file contents** from the published sdist and prints
+each companion's published version as a side effect; it exits **2** on a skip,
+because a companion that could not be checked is not one that passed.
 
-Note: the published `nodus-memory` and `nodus-a2a` are the **Tier 2 rewrites** — the same
-thing as the local `C:\dev` checkouts, not the nodus-lang adapters. Verified against PyPI
-2026-08-07:
+Per-repo detail: `docs/ecosystem/COMPANION_REPOS.md`. Non-PyPI consumers
+(`nodus-vscode`, `nodus-run-action`) are tracked in `tools/consumers.json` and
+reported by `nodus_gate --consumers` — **that manifest is the authority for what
+each has published**, not prose here, which had nodus-vscode a version behind for a
+whole cycle.
 
-- `nodus-a2a` 0.1.0 — *"Agent-to-Agent coordination: registry, delegation, dead letter,
-  and watchdog"*, no nodus-lang dep
-- `nodus-memory` 0.1.0 — *"Persistent agent memory: nodes, MAS path addressing, scoring,
-  embedding, and recall"*, optional pgvector/openai extras only
+### Why ranges are never read by eye
 
-Earlier wording here said they were "published from the GitHub repos, which hold the
-nodus-lang adapter versions — do not publish from the local checkouts." That was backwards
-on both counts: the adapters are **not on PyPI at all**, and the local checkouts are
-exactly what is published. `pip install nodus-a2a` does not give you `A2AHttpServer`;
-the wire adapter is `nodus-a2a-wire` on PyPI since 2026-08-26, module
-`nodus_a2a_wire` (worktree `C:\codev\a2a-wire-pub` — **not** the confusingly-named
-`C:\codev\nodus-a2a-wire`; see the nodus-a2a section). The nodus-memory adapter exists only in history —
-`git show f02ab1e:src/nodus_memory/nodus_bindings.py`.
+Five of six companions once published `nodus-lang<5.0.0`, so
+`pip install nodus-lang==5.0.0 nodus-mcp` was `ResolutionImpossible` and **5.0.0 was
+unadoptable for anyone using the ecosystem**. The Stage 6 sweep had asked exactly
+this question and transcribed five of six ranges with the upper bound dropped. It
+was found by the aindy-runtime team, not by us (#445).
 
-**Other published artifacts — neither is on PyPI, so both are invisible to the sweep
-above.** They are tracked by `tools/consumers.json` and reported by
-`nodus_gate --consumers`; that manifest is the authority for what each has published,
-not this file, which had nodus-vscode a version behind for a whole cycle:
+- **`>=4.0.0,<5.0.0` reads as "admits 4.x", which is what the eye checks for.** The
+  clause that forbids the new version is at the far end of the string. Not a lapse
+  more care fixes — resolve it with `packaging`.
+- **A passing companion suite says nothing about installability.** Every dependent
+  suite passed against 5.0.0 — run against dev source. They could not have been
+  reached through a normal `pip install` at all.
 
-- nodus-vscode — VS Code Marketplace (publisher `MasterplanInfiniteWeave`)
-- nodus-run-action — GitHub Action (`Masterplanner25/nodus-run-action@v1`)
+**Policy, decided 2026-08-17: companions do not cap `nodus-lang`.** A hard upper
+bound on a first-party dependency turns every major into a two-repo release train
+with consumers frozen in between. The companion's own suite catches a real break; a
+cap earns its place once a break is known, not before.
 
-**PyPI token note:** Each package in a separate repo (nodus-mcp, nodus-extension,
-nodus-memory, nodus-native-memory-engine, nodus-mcp-server) needs its own project-specific PyPI token.
-nodus-lang packages use the main nodus-lang token. Retrieve from user at upload time —
-never store tokens in any file.
+### The package count, and why re-deriving it is not enough
 
-**Future publish sequence:** For any new package, the pattern is:
-1. `python -m build` (in the package dir)
-2. `twine upload --username __token__ --password <token> dist/*`
-3. Add status badge to README, commit, push
+**Do not adjust the count by arithmetic; re-derive it** — every first-party name is
+listed in `docs/ecosystem/README.md`, so probe each against
+`https://pypi.org/pypi/<name>/json` and count what resolves. Two names deliberately
+do not: `nodus-vscode` (Marketplace) and `nodus-run-action` (GitHub Action).
+
+**But re-deriving only works if the list is complete, and at 5.8.0 it was not.**
+`nodus-a2a-wire` and `nodus-workflow-ai` had no row in that file, so the procedure
+returned 35 where the answer was 37. The fix was to add the rows and say in that
+file that it is the source for the count — fixing the number alone would have left
+it undercounting next cycle. `check_publish_drift` had already carried a comment
+about the same miss happening to `nodus-flow`, which sat outside the drift sweep
+under both its names. **A package published without a row there is invisible twice
+over.**
+
+As of 2026-08-30: **36 standalone companions, 37 PyPI projects** counting
+`nodus-lang`. Re-derive rather than trusting that sentence.
+
+### Verify a publish by installing it
+
+**PyPI's JSON API serves stale data after an upload** — it reports the *previous*
+release as latest, which reads exactly like a failed upload, and at 5.6.0 it
+reported **zero files** for the version that had just landed. The simple index lags
+too: `pip install nodus-lang==5.8.0` failed for minutes after the 5.8.0 upload
+succeeded. `Cache-Control: no-cache` does not prevent either.
+
+**Only `pip install <name>==<version>` is authoritative.**
+
+### Tokens
+
+**Never write a token into any file in any repo.** `~/.pypirc` holds an
+account-scoped token, which works for every first-party project **and creates a new
+project on first upload** — no PyPI-side pre-creation step is needed (established
+publishing `nodus-workflow-ai`, 2026-08-30). A project-scoped token is an
+alternative, not a requirement. If an upload 403s, the password field has gone
+empty again — ask the user rather than guessing.
+
+Rate limits apply to **new project creation** (~a few per hour), not to version
+uploads on existing projects.
+
+**Publishing a new package:** `python -m build`, `twine check dist/*`, install the
+built wheel into a clean venv and run its suite **from a neutral CWD** so you test
+the installed package rather than the source tree, then `twine upload`, then verify
+by installing from PyPI.
