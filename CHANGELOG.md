@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **`nodus-workflow-ai` is published, and the registers that should have seen it
+  now do.**
+
+  It moves from `UNPUBLISHED_COMPANIONS` into `COMPANIONS` in
+  `check_downstream_constraints.py`, per the rule that the move happens in the
+  publishing commit, and it is added to `check_publish_drift.py` so it is swept
+  from now on. It was the first companion registered with a floor naming a
+  version that did not exist yet; `nodus-lang` 5.8.0 made that floor satisfiable.
+
+- **The PyPI project count was re-derived and was two short, because the list it
+  is derived from was incomplete.**
+
+  CLAUDE.md says to re-derive the count by probing every first-party name in
+  `docs/ecosystem/README.md` rather than adjusting it by arithmetic. That only
+  works if the list is complete, and it was missing `nodus-a2a-wire` (published
+  2026-08-26) and `nodus-workflow-ai` — so the procedure returned 35 where the
+  answer is 37. Both now have rows, and the file says out loud that it is the
+  source for that count, since a package published without a row here is
+  invisible both to the count and to anyone reading the file for what exists.
+
+  Prose updated in five files: 36 standalone companions, 37 PyPI projects.
+
 ## [5.8.0] - 2026-08-30
 
 ### Added

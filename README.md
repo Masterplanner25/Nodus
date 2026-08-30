@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/nodus-lang.svg)](https://pypi.org/project/nodus-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Masterplanner25/Nodus/blob/main/LICENSE)
 
-> **Stable on PyPI** — `pip install nodus-lang` · Full 35-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
+> **Stable on PyPI** — `pip install nodus-lang` · Full 36-package companion ecosystem live: `pip install nodus-sdk[agent,sql,fastapi]`
 >
 > <sub>The badge above carries the current version. This line deliberately does not: it named a
 > stale release through three consecutive cycles, most recently advertising 4.2.0 for the whole
@@ -210,7 +210,7 @@ If you're building multi-step AI agents, embedding a scripting layer in a Python
 
 For a machine-readable project index see [llms.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms.txt).
 
-Beyond the core language, the Nodus ecosystem spans **35 standalone companion packages**
+Beyond the core language, the Nodus ecosystem spans **36 standalone companion packages**
 published on PyPI (36 projects counting `nodus-lang` itself), all with source at
 `github.com/Masterplanner25`. A unified SDK (`nodus-sdk`) provides a single installation
 story: `pip install nodus-sdk[agent,sql,fastapi]`. See the

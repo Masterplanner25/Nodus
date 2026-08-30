@@ -88,6 +88,8 @@ All packages are published on PyPI. Organized by build tier.
 | [`nodus-extension`](https://github.com/Masterplanner25/nodus-extension) | 126 | nodus-lang plugin framework (typed, versioned, sandboxed); **published** ✅ — see the naming note below |
 | [`nodus-native-memory-engine`](https://github.com/Masterplanner25/nodus-native-memory-engine) | 76 | PyO3/Maturin Rust extension with pure-Python fallback; **published** ✅ |
 | [`nodus-sdk`](https://github.com/Masterplanner25/nodus-sdk) | 99 | Unified platform SDK (9 bridges, FastAPI router); **published** ✅ |
+| [`nodus-a2a-wire`](https://github.com/Masterplanner25/nodus-a2a-wire) | 188 | A2A **wire protocol** adapter (`A2AHttpServer`); **published** ✅ — distinct from `nodus-a2a`, which is the coordinator. Module is `nodus_a2a_wire`; see the naming note below |
+| [`nodus-workflow-ai`](https://github.com/Masterplanner25/nodus-workflow-ai) | 28 | Runs a generated plan as a Nodus graph: validated before it runs, under a grant narrowed to what it declared (#93). Floor `nodus-lang>=5.8.0`; **published** ✅ |
 
 ### Tooling and editor artifacts
 
@@ -100,6 +102,14 @@ per row.
 | [`nodus-jupyter`](https://github.com/Masterplanner25/nodus-jupyter) | v0.1.0 | PyPI — Jupyter kernel for `.nd` files (32 unit tests) |
 | [`nodus-vscode`](https://github.com/Masterplanner25/nodus-vscode) | see `tools/consumers.json` | VS Code Marketplace (publisher: `MasterplanInfiniteWeave`) — grammar, snippets, diagnostics, run/format/DAP/LSP |
 | [`nodus-run-action`](https://github.com/Masterplanner25/nodus-run-action) | see `tools/consumers.json` | GitHub Actions Marketplace — `uses: Masterplanner25/nodus-run-action@v1` (file/test/fmt-check modes) |
+
+> **This table is the source for the PyPI project count.** CLAUDE.md says to
+> re-derive that count by probing every first-party name listed here, rather than
+> adjusting it by arithmetic. That only works if the list is complete: at the
+> 5.8.0 cut it was missing `nodus-a2a-wire` (published 2026-08-26) and
+> `nodus-workflow-ai`, so the re-derivation returned 35 where the answer was 37.
+> A package published without a row here is invisible to the count *and* to
+> anyone reading this file for what exists.
 
 ### Naming note: `nodus-extension` vs `nodus-extensions`
 

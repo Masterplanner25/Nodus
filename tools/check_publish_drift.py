@@ -59,6 +59,10 @@ COMPANIONS: dict[str, tuple[str, str]] = {
     # writing it clobbered each other.
     "nodus-a2a-wire": (r"C:\codev\a2a-wire-pub", "src/nodus_a2a_wire"),
     "nodus-flow": (r"C:\dev\nodus-workflow", "nodus_flow"),
+    # #93: published 2026-08-30, the first companion whose floor required an
+    # unreleased nodus-lang. Added here in the publishing commit -- the
+    # nodus-flow comment above records what happens otherwise.
+    "nodus-workflow-ai": (r"C:\dev\nodus-workflow-ai", "nodus_workflow_ai"),
 }
 
 PYPI = "https://pypi.org/pypi/{name}/json"
