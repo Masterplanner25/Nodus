@@ -266,6 +266,38 @@ from one where every spawned coroutine died.
 > parent/child await relationship that does not exist — there is no handle to
 > wait on, and resuming a `finished` coroutine is itself a runtime error.
 
+### 9.1a How a task's failure reaches you depends on how you drove it
+
+Three answers, and the verb chooses. This is the one place they are written down
+together; `resume`'s behaviour in particular was undocumented until 2026-08-30,
+which is long enough for a design decision to be taken on the belief that it did
+not exist.
+
+| driving the work | failure arrives as |
+|---|---|
+| `resume(c)` | **raised into the caller**, catchable with `try`/`catch` |
+| `spawn(c)` + `run_loop()` | **collected** — stderr trace, `run_loop()`'s return list, exit 0 (§9.1) |
+| `run_workflow(w)` | **returned** in the result map, under `failed` |
+
+```nd
+let c = coroutine(fn() { throw "task failed" })
+try { resume(c) } catch e { print("caught: \(e.message)") }
+```
+
+```
+caught: task failed
+```
+
+The raised value is an ordinary err record — `kind` is `"thrown"`, `origin` is
+`"user"` — and this holds for a failure after a `yield` too, not only on the
+first resume.
+
+The distinction is not arbitrary: **`resume` is a call, so its failure returns to
+the caller like any other; `spawn` is a hand-off, and there is nobody to return
+to.** A program that wants a spawned task's outcome has to ask for it, and asking
+is what makes propagation appropriate — the reasoning behind `join`'s semantics
+in `docs/design/v5/06-task-handle.md` §D6.
+
 ### 9.2 Deadlock
 
 If all coroutines are waiting on channels and no external sender can unblock them,

@@ -125,6 +125,11 @@ Stability: Experimental.
 - Status: `coroutine_status(c)` returns `created`, `running`, `suspended`, or `finished`
 - Coroutines are cooperative, single-threaded, and preserve their own call stack between yields.
 - Resuming a `running` or `finished` coroutine is a runtime error.
+- **A failure inside the coroutine is raised into the resumer** and is catchable
+  there, as an ordinary err record (`kind = "thrown"`). This holds for a failure
+  after a `yield`, not only on the first resume. `resume` is a call, so its
+  failure returns to the caller like any other — unlike `spawn`, which hands the
+  coroutine to the scheduler and has nobody to return to (see `run_loop` below).
 - `spawn(coroutine)` schedules a coroutine to run on the event loop, and returns `nil`.
 - `run_loop()` runs the scheduler until there are no runnable coroutines or timers.
   It returns a **list of error strings** for any spawned coroutine that failed, or

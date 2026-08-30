@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`resume(c)` raises a coroutine's failure into the resumer — documented at
+  last, and it decides a design question.**
+
+  It has always done this, catchably, including for a failure after a `yield`,
+  with the full err record (`kind = "thrown"`, `origin = "user"`). It was
+  documented nowhere — not `LANGUAGE_SPEC.md`, not
+  `FAILURE_AND_DEGRADATION_MODEL.md`, not the guide.
+
+  Long enough that the task-handle decision was nearly taken on the belief that
+  no such path existed: `06-task-handle.md` §D6 stated `join` raising would be
+  *"the first error-propagation path in Nodus"*. It would not be. §D6 is
+  corrected — the outcome stands, the argument changes from a fresh commitment to
+  consistency with `resume`, which is the stronger reason. `resume(c)` and
+  `join(c)` ask one question — drive this task, give me its outcome — and one
+  raising while the other collected would be that question answered in two
+  voices.
+
+  `FAILURE_AND_DEGRADATION_MODEL.md` §9.1a now puts the three answers in one
+  place: `resume` raises, `spawn` + `run_loop` collects, `run_workflow` returns
+  the failure in its result map. The distinction is not arbitrary — `resume` is a
+  call, so its failure returns to the caller; `spawn` is a hand-off, and there is
+  nobody to return to.
+
 ### Tooling
 
 - **#179: `nodus_gate --invariants` — the invariant-to-test ledger is checked
