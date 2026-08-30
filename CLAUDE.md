@@ -290,7 +290,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
-| Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata |
+| Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata. `UNPUBLISHED_COMPANIONS` registers a companion's `nodus-lang` floor **before** it is published, each with a stated reason, and reports a floor naming a version that does not exist yet — a package nobody can install. Register on the day the package is written, not the day it ships; move it into `COMPANIONS` in the publishing commit |
 | Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
@@ -323,6 +323,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | nodus-flow repo | `C:\dev\nodus-workflow` (dir not yet renamed) / github.com/Masterplanner25/nodus-flow. **Was `nodus-workflow` until 0.2.0** — renamed because the name read as the engine behind the `workflow` keyword, which it is not (#483). The old PyPI name is a deprecation alias |
 | nodus-sdk repo | `C:\dev\nodus-sdk` / github.com/Masterplanner25/nodus-sdk |
 | nodus-store-sql repo | `C:\dev\nodus-store-sql` / github.com/Masterplanner25/nodus-store-sql |
+| nodus-workflow-ai repo | `C:\dev\nodus-workflow-ai` / github.com/Masterplanner25/nodus-workflow-ai. #93's bridge: a generated plan validated before it runs, under a grant narrowed to what it declared. **Not on PyPI** — its floor is `nodus-lang>=5.8.0` (step names on `task()` shipped there, #679), so nobody can install it until that release. Registered in `check_downstream_constraints.py`'s `UNPUBLISHED_COMPANIONS`, which reports the gap on every run; move it into `COMPANIONS` in the commit that publishes it |
 | Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
 | Ecosystem incubator scaffolds | `packages/` — Python-first scaffolds for planned libraries |
 
