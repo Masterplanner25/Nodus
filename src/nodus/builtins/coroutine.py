@@ -1,7 +1,13 @@
 """Coroutine, channel, and scheduler builtin functions for the Nodus VM."""
 
 from nodus.runtime.coroutine import Coroutine
-from nodus.runtime.channel import Channel, ChannelRecvRequest, ChannelSendRequest
+from nodus.runtime.channel import (
+    Channel,
+    ChannelRecvRequest,
+    ChannelSendRequest,
+    TaskJoinRequest,
+)
+from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.runtime.scheduler import SleepRequest
 
 
@@ -85,6 +91,16 @@ def register(vm, registry) -> None:
             else:
                 vm.load_coroutine_context(coroutine)
                 coroutine.state = "running"
+                # #395 D6: a task this coroutine joined failed. Deliver it here,
+                # where there is a stack to raise into -- the same shape
+                # `unwind_cancelled_coroutine` uses. `handle_exception` gives the
+                # joiner's own `catch` a chance first, so a joined failure is an
+                # ordinary catchable error rather than a special case.
+                pending = coroutine.pending_join_error
+                if pending is not None:
+                    coroutine.pending_join_error = None
+                    if not vm.handle_exception(pending):
+                        raise pending
 
             try:
                 status, result = vm.execute()
@@ -131,7 +147,149 @@ def register(vm, registry) -> None:
         # `current_coroutine` consistent while the caller's scheduler drives it.
         coroutine.owner_vm = vm
         vm.scheduler.spawn(coroutine)
-        return None
+        # #395/#157 (D2): return the handle. It used to return nil, and that was
+        # the whole mechanical cause of #157 -- the value channel a program needs
+        # already existed (`Coroutine.last_result`), it was simply not reachable,
+        # so libraries reached for a channel to work around a discarded return.
+        #
+        # The handle is the coroutine itself, not a new record (D1): a record is
+        # a value, so a `state` field on it would freeze at spawn time, and
+        # `coroutine_status(c)` already tracks the live object across the spawn.
+        return coroutine
+
+    def builtin_cancel(value):
+        """Stop a task, running its `finally` blocks and no `catch` (#395).
+
+        The unwind mechanism is #502's and is reused unchanged -- adding a second
+        one would be the shape this codebase catalogues. What #395 was actually
+        missing is a trigger: the scheduler's timeout check was the only caller.
+
+        Returns `true` when this call moved a live coroutine into unwinding, and
+        `false` otherwise. Cancelling something already finished, never spawned,
+        or already cancelling is **not** an error: the caller of a cancel usually
+        cannot know the target's state, and raising would push every call site
+        into a check-then-act race (04 §6.3).
+        """
+        coroutine = vm.ensure_coroutine(value, "cancel(task)")
+
+        if coroutine.state == "finished":
+            return False
+        if coroutine.cancelling is not None:
+            return False          # already unwinding; do not unwind twice
+        if coroutine.id is None:
+            return False          # never spawned -- no scheduler state to stop
+
+        scheduler = vm.scheduler
+        scheduler.unpark(coroutine)
+
+        err = LangRuntimeError("cancelled", "Task cancelled")
+        if coroutine.state == "created":
+            # Never entered, so there is nothing to unwind and no `finally` to
+            # run. Mark it settled so a joiner is released rather than parked
+            # on a task that will never be scheduled.
+            coroutine.state = "finished"
+            coroutine.cancelled_error = err
+            scheduler._mark_completed(coroutine)
+            scheduler.release_joiners(coroutine)
+            return True
+
+        owner = getattr(coroutine, "owner_vm", None) or vm
+        try:
+            owner.unwind_cancelled_coroutine(coroutine, err)
+        except Exception:
+            # The unwind delivered the cancellation, or a `finally` threw
+            # something else. Either way the task is done and `err` is what it
+            # was cancelled with -- the same handling the timeout path uses.
+            pass
+        coroutine.state = "finished"
+        coroutine.cancelled_error = err
+        scheduler._mark_completed(coroutine)
+        if coroutine.id is not None:
+            scheduler.sleeping_tasks.discard(coroutine.id)
+        scheduler.release_joiners(coroutine)
+        return True
+
+    def _settled_outcome(coroutine):
+        """The value a settled task yields to a joiner, or its failure raised.
+
+        One place, because `join` reaches it from three directions -- already
+        finished, released from a park, and settled during a top-level drive --
+        and three answers to "what did this task produce" is the shape.
+        """
+        failure = coroutine.cancelled_error or coroutine.failure
+        if failure is not None:
+            raise failure
+        return coroutine.last_result
+
+    def builtin_join(value):
+        """Wait for a task and return its value; raise its failure (#157, #395).
+
+        Two contexts (D8). Inside a coroutine `join` **suspends**, like `recv` --
+        there is a coroutine to park, so no reentrancy and no scheduler theft. At
+        top level there is nothing to suspend, so it **drives** the scheduler
+        until the task settles.
+
+        The top-level drive still runs other coroutines: a task can depend on its
+        siblings, so refusing to run them would deadlock `join` on a queue it
+        declined to drain. What it fixes is the *stopping condition* -- it returns
+        when the task settles rather than when the whole deque empties, so a
+        library no longer runs its caller's unrelated work to completion. That is
+        a bounded drive, not an isolated one, and the documentation says so.
+
+        A failure is raised into the joiner (D6). That is not a new door: `resume`
+        has always propagated a coroutine's failure into the resumer. `join` and
+        `resume` ask one question -- drive this task, give me its outcome -- and
+        one raising while the other collected would be that question answered in
+        two voices.
+        """
+        coroutine = vm.ensure_coroutine(value, "join(task)")
+
+        if coroutine.id is None:
+            # Unlike `cancel`, which no-ops: a join is asking for a value and
+            # there is no value to invent (05 §6.5). The asymmetry is deliberate.
+            vm.runtime_error(
+                "runtime",
+                "join(task) on a task that was never spawned — call spawn(c) first",
+            )
+
+        if coroutine.state == "finished":
+            return _settled_outcome(coroutine)
+
+        # Claimed before the task can settle, so the scheduler's failure path
+        # knows the outcome is spoken for and does not also report it (D6).
+        # A task that already failed *before* this call was necessarily reported
+        # then; "once" cannot retroactively unsay it, and `join` still raises.
+        coroutine.joined = True
+        scheduler = vm.scheduler
+        # "Am I inside a coroutine the scheduler is driving?" -- and the answer is
+        # NOT `vm.current_coroutine is not None`. That attribute can hold an
+        # ambient coroutine with `id=None` that no scheduler ever queued, and
+        # taking the park path against it suspends onto a loop that will never
+        # resume it. `_try_enter_foreign_closure` already asks this question and
+        # already answers it by identity against `scheduler.current_task`; asking
+        # it a second way here would be the shape.
+        joiner = vm.current_coroutine
+        if joiner is not None and joiner is getattr(scheduler, "current_task", None):
+            if joiner is coroutine:
+                vm.runtime_error("runtime", "join(task) on the task doing the joining")
+            vm.stack.append(None)
+            vm.save_current_coroutine_state(vm.ip + 1)
+            scheduler.park_joiner(joiner, coroutine)
+            # The sentinel `call_builtin` converts into a yield, exactly as
+            # `recv` does. Returning the ("yield", ...) tuple directly does not
+            # suspend -- it is handed back as an ordinary value, and the joiner
+            # carries on with a tuple where its result should be. That was the
+            # first version of this, and the symptom was a printed tuple.
+            return TaskJoinRequest(coroutine)
+
+        scheduler.drive_until_settled(coroutine)
+        if coroutine.state != "finished":
+            vm.runtime_error(
+                "deadlock",
+                f"join(task) cannot complete: task '{coroutine.name or coroutine.id}' "
+                "is blocked and nothing can wake it",
+            )
+        return _settled_outcome(coroutine)
 
     def builtin_run_loop():
         on_error = getattr(vm, "on_error", None)
@@ -359,6 +517,11 @@ def register(vm, registry) -> None:
     registry.add("resume", 1, builtin_coroutine_resume)
     registry.add("coroutine_status", 1, builtin_coroutine_status)
     registry.add("spawn", 1, builtin_spawn)
+    # #395/#157 (D3): two verbs on the coroutine, and no third. `last_result`
+    # gets no separate accessor -- a `task_result(c)` beside `join(c)` would be
+    # two answers to one question.
+    registry.add("cancel", 1, builtin_cancel)
+    registry.add("join", 1, builtin_join)
     registry.add("run_loop", 0, builtin_run_loop)
     registry.add("sleep", 1, builtin_sleep)
     registry.add("__sleep", 1, builtin_sleep)
