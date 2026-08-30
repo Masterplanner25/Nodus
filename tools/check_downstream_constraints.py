@@ -54,6 +54,28 @@ COMPANIONS = [
     "nodus-jupyter",
 ]
 
+# Companions that declare a `nodus-lang` dependency and are **not published
+# yet**, with the reason.
+#
+# Registered here on the day the package is written rather than on the day it is
+# published, because the alternative is remembering — and a dependency range that
+# nobody is checking is exactly what made v5.0.0 unadoptable for a day. A name
+# here is reported on every run, so the gap is visible rather than pending in
+# somebody's head.
+#
+# Each entry gives the floor its `pyproject.toml` declares, so this file can say
+# whether that floor is a version that actually exists. A floor naming an
+# unreleased version means the package cannot be installed at all, which is a
+# more immediate problem than a stale cap.
+#
+# Move a name into COMPANIONS in the same commit that publishes it.
+UNPUBLISHED_COMPANIONS = {
+    "nodus-workflow-ai": {
+        "floor": "5.8.0",
+        "why": "#93. Needs step names on `task()` (#679), which ship in 5.8.0.",
+    },
+}
+
 PYPI_JSON = "https://pypi.org/pypi/{}/json"
 
 
@@ -121,6 +143,23 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name:<28} {published:<10} {spec:<26} BLOCKED")
                 blocked.append((name, published, spec))
 
+    unreleased_floors: list[tuple[str, str]] = []
+    if UNPUBLISHED_COMPANIONS:
+        print()
+        print("Declared but not yet published:")
+        for name, entry in sorted(UNPUBLISHED_COMPANIONS.items()):
+            floor = entry.get("floor")
+            # A floor naming a version that does not exist yet means the package
+            # cannot be installed at all -- a more immediate problem than a stale
+            # cap, and one that only shows up when somebody tries.
+            exists = floor is not None and Version(floor) <= Version(version)
+            mark = "ok" if exists else "FLOOR UNRELEASED"
+            print(f"  {name:<26} >= {floor or '?':<10} {mark}")
+            print(f"      {entry.get('why', '')}")
+            if not exists:
+                unreleased_floors.append((name, floor or "?"))
+        print("  Move each into COMPANIONS in the commit that publishes it.")
+
     print()
     if errors:
         print("Could not reach the index for:")
@@ -139,6 +178,22 @@ def main(argv: list[str] | None = None) -> int:
             "does not help, because pip reads the published metadata."
         )
         return 1
+
+    if unreleased_floors:
+        print(
+            f"{len(unreleased_floors)} unpublished companion(s) declare a nodus-lang "
+            "floor that is not released yet:"
+        )
+        print()
+        for name, floor in unreleased_floors:
+            print(f"  {name} requires nodus-lang>={floor}, and {version} is current")
+        print()
+        print(
+            "Each cannot be installed by anyone until that version ships. This is a "
+            "release-ordering fact, not a failure: publish the companion after the "
+            "nodus-lang release its floor names, not before."
+        )
+        print()
 
     print(f"All {len(COMPANIONS)} companions admit nodus-lang {version}.")
     return 0

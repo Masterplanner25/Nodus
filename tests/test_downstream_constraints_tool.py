@@ -14,7 +14,11 @@ No network: `admits()` is pure, and that is the part that was wrong.
 
 import unittest
 
-from tools.check_downstream_constraints import COMPANIONS, admits
+from tools.check_downstream_constraints import (
+    COMPANIONS,
+    UNPUBLISHED_COMPANIONS,
+    admits,
+)
 
 # Verbatim from PyPI on 2026-08-17, before the companions were republished.
 PUBLISHED_AT_V500_RELEASE = {
@@ -76,3 +80,49 @@ class TestAdmits(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# closes: #93
+class UnpublishedCompanionRegisterTests(unittest.TestCase):
+    """A companion's nodus-lang range is registered the day it is written.
+
+    The alternative is remembering on the day it is published, and a range
+    nobody is checking is what made v5.0.0 unadoptable for a day: five of six
+    companions capped `<5.0.0`, the Stage 6 sweep transcribed the ranges by eye
+    and dropped the caps, and a downstream team found it rather than us.
+
+    Registering before publication costs one dict entry and makes the gap show
+    up on every run instead of living in somebody's head.
+    """
+
+    def test_every_unpublished_entry_states_a_floor_and_a_reason(self):
+        for name, entry in UNPUBLISHED_COMPANIONS.items():
+            with self.subTest(companion=name):
+                self.assertTrue(entry.get("floor"), f"{name} declares no floor")
+                self.assertTrue(
+                    str(entry.get("why", "")).strip(),
+                    f"{name} has no stated reason -- an entry without one is a name "
+                    f"nobody can act on",
+                )
+
+    def test_no_name_is_in_both_registers(self):
+        """A published companion is checked against the index; an unpublished one
+        is reported. Being in both would mean the fetch is attempted for a
+        package that does not exist, which exits non-zero on a question that was
+        never real."""
+        overlap = set(COMPANIONS) & set(UNPUBLISHED_COMPANIONS)
+        self.assertEqual(set(), overlap)
+
+    def test_an_unpublished_floor_is_a_valid_version(self):
+        from packaging.version import Version
+
+        for name, entry in UNPUBLISHED_COMPANIONS.items():
+            with self.subTest(companion=name):
+                Version(entry["floor"])          # raises if it is not one
+
+    def test_no_unpublished_companion_caps_nodus_lang(self):
+        """The policy decided 2026-08-17: companions float. A cap turns every
+        major into a two-repo release train with consumers frozen between."""
+        for name, entry in UNPUBLISHED_COMPANIONS.items():
+            with self.subTest(companion=name):
+                self.assertNotIn("<", str(entry.get("floor", "")))
