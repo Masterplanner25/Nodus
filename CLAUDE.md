@@ -323,7 +323,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | nodus-flow repo | `C:\dev\nodus-workflow` (dir not yet renamed) / github.com/Masterplanner25/nodus-flow. **Was `nodus-workflow` until 0.2.0** — renamed because the name read as the engine behind the `workflow` keyword, which it is not (#483). The old PyPI name is a deprecation alias |
 | nodus-sdk repo | `C:\dev\nodus-sdk` / github.com/Masterplanner25/nodus-sdk |
 | nodus-store-sql repo | `C:\dev\nodus-store-sql` / github.com/Masterplanner25/nodus-store-sql |
-| nodus-workflow-ai repo | `C:\dev\nodus-workflow-ai` / github.com/Masterplanner25/nodus-workflow-ai. #93's bridge: a generated plan validated before it runs, under a grant narrowed to what it declared. **Not on PyPI** — its floor is `nodus-lang>=5.8.0` (step names on `task()` shipped there, #679), so nobody can install it until that release. Registered in `check_downstream_constraints.py`'s `UNPUBLISHED_COMPANIONS`, which reports the gap on every run; move it into `COMPANIONS` in the commit that publishes it |
+| nodus-workflow-ai repo | `C:\dev\nodus-workflow-ai` / github.com/Masterplanner25/nodus-workflow-ai. #93's bridge: a generated plan validated before it runs, under a grant narrowed to what it declared. **Published on PyPI** 2026-08-30 (version: `check_publish_drift`); its floor is `nodus-lang>=5.8.0`, because step names on `task()` shipped there (#679) — it was the first companion registered in `UNPUBLISHED_COMPANIONS` with a floor naming a version that did not exist yet, and it moved into `COMPANIONS` in the publishing commit |
 | Ecosystem incubator specs | `docs/ecosystem/` — spec docs for planned libraries |
 | Ecosystem incubator scaffolds | `packages/` — Python-first scaffolds for planned libraries |
 
@@ -1466,7 +1466,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 - Repo: `C:\dev\nodus-sdk` / `github.com/Masterplanner25/nodus-sdk`
 - **Published on PyPI** (version: `check_publish_drift`).
-  99 tests. Unified platform SDK auto-wiring the 35-package companion ecosystem.
+  99 tests. Unified platform SDK auto-wiring the 36-package companion ecosystem.
   Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
   suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
   recorded it as a known-stale test rather than fixing it. Fixed in 0.1.2.
@@ -1817,7 +1817,7 @@ first-party dependency turns every major into a two-repo release train with cons
 between. The companion's own suite is the check that catches a real break; a cap earns its place
 once a break is known, not before.
 
-**Standalone companion packages — 35 as of 2026-08-26**, plus `nodus-lang`, so **36
+**Standalone companion packages — 36 as of 2026-08-30**, plus `nodus-lang`, so **37
 PyPI projects** in total. Names and tiers: `docs/ecosystem/PACKAGE_QUICK_REF.md`.
 
 That count was **32/33** for several cycles and was wrong before `nodus-flow` was

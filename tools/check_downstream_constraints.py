@@ -52,6 +52,7 @@ COMPANIONS = [
     "nodus-sdk",
     "nodus-native-memory-engine",
     "nodus-jupyter",
+    "nodus-workflow-ai",
 ]
 
 # Companions that declare a `nodus-lang` dependency and are **not published
@@ -69,12 +70,7 @@ COMPANIONS = [
 # more immediate problem than a stale cap.
 #
 # Move a name into COMPANIONS in the same commit that publishes it.
-UNPUBLISHED_COMPANIONS = {
-    "nodus-workflow-ai": {
-        "floor": "5.8.0",
-        "why": "#93. Needs step names on `task()` (#679), which ship in 5.8.0.",
-    },
-}
+UNPUBLISHED_COMPANIONS: dict[str, dict[str, str]] = {}
 
 PYPI_JSON = "https://pypi.org/pypi/{}/json"
 
