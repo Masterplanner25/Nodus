@@ -585,12 +585,30 @@ here.
   can hand a step closure to any of them. `EXECUTION_INVARIANTS.md` I-WFLOW-04
   now states the guarantee and what enforces it.
 
-- **#395 (MEDIUM, design) — no cancellation anywhere.** One `cancel` hit in
-  `src/nodus/`, a CLI print. No parent/child links, no scoped cleanup, no error
-  propagation to a parent — `_coroutine_errors` collects rather than propagates.
-  What exists is asynchronous primitives, not structured concurrency, and docs
-  should say so. `Coroutine.blocked_on`/`blocked_reason` are the state a fix
-  would build on.
+- **#395 (MEDIUM, design) — nothing can *request* cancellation.** Design record:
+  `docs/design/v5/04-cancellation.md`.
+
+  The unwind mechanism exists and is correct: `VM.unwind_cancelled_coroutine`
+  resumes a timed-out coroutine with cancellation set, so pending `finally`
+  blocks run and `catch` blocks are refused (#502). What is missing is a trigger
+  — the scheduler's timeout check is the **only** caller, and there is no `cancel`
+  builtin, no host API, no CLI subcommand and no route.
+
+  Still absent: parent/child links, scoped cleanup, and error propagation to a
+  parent — `_coroutine_errors` collects, and there is no parent to propagate to.
+  What exists is a worker pool, not structured concurrency. **The docs now say
+  so** (`FAILURE_AND_DEGRADATION_MODEL.md §9.0`, `LANGUAGE_SPEC.md`,
+  `standard-library.md`), which was the docs-only half of this issue.
+
+  `Coroutine.blocked_on`/`blocked_reason` are part of the state a fix builds on,
+  but only part: every assignment is in `builtins/coroutine.py` and covers
+  channels. Sleeping uses the timer heap, and a host agent call blocks on a
+  thread join with nothing recorded on the coroutine — see the design doc's
+  five-state table.
+
+  An earlier revision of this entry said *"One `cancel` hit in `src/nodus/`, a
+  CLI print"*, copied from the issue, which was filed before #502. It is 23 hits
+  across six files.
 
 - **#396 (LOW) — `nodus check` does not catch dependency cycles.** #323 correctly
   moved detection ahead of the scheduler (`task_graph.py:549`); parse-time

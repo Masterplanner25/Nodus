@@ -1493,9 +1493,19 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 statuses[task.task_id] = "abandoned"
             elif failed_ids:
                 # Its dependencies were satisfiable, but the run stopped
-                # scheduling new work when the first step failed. Whether these
-                # should run anyway is the open half of #475 -- naming them makes
-                # the choice visible instead of silent.
+                # scheduling new work when the first step failed. Naming them
+                # makes the choice visible instead of silent.
+                #
+                # Whether these should run anyway *was* the open half of #475;
+                # it is closed, and `with { allow_failure: true }` on the failing
+                # step is the answer (5.4.0). Measured on a→{b,c}, d after c,
+                # with b failing: d is `cancelled` by default and `completed`
+                # when b is tolerated.
+                #
+                # Note this label means "never dispatched", which is not the same
+                # as a step actively stopped mid-flight -- #395's design record
+                # (docs/design/v5/04-cancellation.md) keeps them apart rather
+                # than overloading this one.
                 statuses[task.task_id] = "cancelled"
             else:
                 statuses[task.task_id] = task.status

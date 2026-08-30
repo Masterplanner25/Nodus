@@ -205,11 +205,66 @@ only the pending or failed steps. Successfully completed steps are not re-execut
 
 ## 9. Coroutine failure modes
 
+### 9.0 The concurrency model: a worker pool, not structured concurrency
+
+Read this before the failure modes below, because it is what makes them what they
+are.
+
+`spawn` starts an **independent** coroutine. There is no parent/child
+relationship: `Coroutine` carries no parent, the scheduler keeps no tree, and
+`spawn` returns `nil` rather than a handle. Three consequences follow, and none
+of them is a bug:
+
+- **A spawned coroutine outlives the scope that created it.** Nothing binds its
+  lifetime to the function it was spawned from.
+- **A failure does not stop its siblings.** The scheduler records the error and
+  carries on with the other runnable coroutines.
+- **There is nothing to wait on, and nothing to cancel.** No `join`, no handle,
+  no way for a program to stop work it started. Cancellation exists only as an
+  internal response to a coroutine timeout (§9.4).
+
+This is the **worker pool** model — a bounded set of independent workers — and it
+is a weaker guarantee than *structured concurrency*, whose defining property is
+that a task cannot outlive its lexical scope and that a failing scope cancels its
+children. Nodus has none of the three mechanisms that would require. Python's
+`asyncio.TaskGroup` and Go's `context` are the comparison points; do not carry
+intuitions from either across.
+
+**Where the stronger property does exist is the workflow DSL.** A step failure
+stops the run dispatching new work, `with { allow_failure: true }` opts a branch
+out, and `step … each` fans out over a list computed at runtime. If you need
+"first failure stops the rest", write a workflow, not a fan-out of `spawn`.
+
+Tracked in [#395](https://github.com/Masterplanner25/Nodus/issues/395); the
+design record is `docs/design/v5/04-cancellation.md`.
+
 ### 9.1 Unhandled exception in a spawned coroutine
 
-If a spawned coroutine raises an uncaught exception, the exception is recorded on
-the coroutine object. The scheduler continues running other coroutines. The spawning
-code receives the error when it resumes or waits on the coroutine.
+The scheduler catches it, records it, and **continues running other coroutines**.
+Specifically, all of the following happen — verified by running the case, not
+read off the code:
+
+1. The formatted error, with stack trace, is written to **stderr immediately**.
+2. The error is appended to the scheduler's error list — **not** to the coroutine
+   object, which exposes nothing about it. `coroutine_status()` reports
+   `finished`, the same as for a coroutine that returned normally.
+3. If the host registered an `on_error` hook, it is called with the coroutine and
+   the exception.
+4. **`run_loop()` returns a list of error strings** (`["boom"]`), or `nil` when
+   nothing failed. This is the only way a program can observe the failure.
+5. Sibling coroutines still run to completion.
+6. **The script's exit code is `0`** and an embedded `result["ok"]` is `true`.
+   An unhandled coroutine failure does not fail the run.
+
+Point 6 is the one that surprises people, and point 4 is the mitigation: **check
+`run_loop()`'s return value.** A program that ignores it cannot tell a clean run
+from one where every spawned coroutine died.
+
+> An earlier revision of this section said the exception "is recorded on the
+> coroutine object" and that "the spawning code receives the error when it
+> resumes or waits on the coroutine." Both were wrong, and the second implied a
+> parent/child await relationship that does not exist — there is no handle to
+> wait on, and resuming a `finished` coroutine is itself a runtime error.
 
 ### 9.2 Deadlock
 
@@ -222,6 +277,23 @@ whatever stdout was captured before the deadlock. This is a design limitation.
 
 A `recv()` on a closed channel with remaining items succeeds. A `recv()` on an empty
 closed channel raises a runtime error (channel exhausted). Script code can catch this.
+
+### 9.4 Coroutine timeout — the one cancellation path
+
+A coroutine with a deadline (`coroutine_timeout_ms`, or a step's `timeout_ms`)
+that outlives it is **unwound, not dropped**: it is resumed once more with
+cancellation set, so every pending `finally` block runs, and `catch` blocks are
+refused so it cannot swallow its own deadline. The unwind is bounded by a step
+budget, so a `finally` that loops forever cannot turn a timeout into a hang.
+
+This is the **only** cancellation path in the runtime, and nothing but the
+scheduler's own timeout check can reach it — there is no `cancel` builtin, no
+host API and no CLI command (#502; the gap is #395).
+
+**A host agent handler is a separate case and cannot be preempted.** The deadline
+stops the *wait*, not the handler: arbitrary Python keeps running on a daemon
+thread and is recorded as abandoned — `abandoned_agent_calls()`,
+`abandoned_agent_call_count()` (#424).
 
 ---
 

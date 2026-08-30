@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The concurrency docs now state the worker-pool model plainly, and one of them
+  was describing behaviour the runtime does not have.**
+
+  `FAILURE_AND_DEGRADATION_MODEL.md §9.1` said an unhandled exception in a
+  spawned coroutine "is recorded on the coroutine object" and that "the spawning
+  code receives the error when it resumes or waits on the coroutine". Neither is
+  true, and the second implies a parent/child await relationship that does not
+  exist — `spawn` returns `nil`, so there is no handle to wait on, and resuming a
+  `finished` coroutine is itself a runtime error.
+
+  What actually happens, measured: the trace goes to stderr, the error goes to
+  the scheduler's list, `coroutine_status()` reports plain `finished`,
+  **`run_loop()`'s return value is the only way a program can observe it**, and
+  the run still exits `0`. A script that ignores that return value cannot tell a
+  clean run from one where every spawned coroutine died. The spec had never
+  documented the return value at all.
+
+  A new `§9.0` states the model normatively — a spawned coroutine outlives its
+  scope, a failure does not stop its siblings, and there is nothing to wait on or
+  cancel — and points at the workflow DSL, which is where "first failure stops
+  the rest" actually lives (`allow_failure`, `step … each`). `LANGUAGE_SPEC.md`
+  and `standard-library.md` carry the same statement, the latter with a runnable
+  example. A new `§9.4` documents the timeout unwind as the one cancellation
+  path, with the un-preemptable-host-handler caveat.
+
+  This is the documentation half of issue 395, whose design record is
+  `docs/design/v5/04-cancellation.md`; the runtime is unchanged.
+
+- **`LANGUAGE_SPEC.md` no longer calls `std:async`'s `worker_pool` and `pipeline`
+  non-functional.** They were, through v4.1.1, and were fixed on 2026-08-15 —
+  three releases before this correction. `standard-library.md` had it in the past
+  tense, so the two documents contradicted each other and the spec was the wrong
+  one. Both were verified working by running them.
+
 ### Tooling
 
 - **#412 phase 2: the ten control-flow and frame opcodes have a semantic spec,
