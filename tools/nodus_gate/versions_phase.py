@@ -73,6 +73,7 @@ class ClaimStatus:
     line: int = 0
     claimed: str | None = None
     text: str = ""
+    dangling: str = ""
 
     @property
     def found(self) -> bool:
@@ -80,7 +81,7 @@ class ClaimStatus:
 
     @property
     def ok(self) -> bool:
-        return self.found and self.claimed == self.expected
+        return self.found and self.claimed == self.expected and not self.dangling
 
 
 @dataclass
@@ -227,6 +228,21 @@ def _check_claim(root: Path, entry: dict, expectations: dict[str, str]) -> Claim
             break
     if not status.found and after is not None and not armed:
         status.text = f"anchor not found in {status.file}: {after!r}"
+
+    # A claim that names a *path* is only half-checked by comparing the version
+    # inside it. `points_at` verifies the file the prose sends a reader to
+    # actually exists.
+    #
+    # This is not hypothetical. At the 5.7.1 cut the eval-record claim went red
+    # for naming v5.7.0, and the one-line "fix" -- edit the string to 5.7.1 --
+    # would have passed the gate while pointing at a CREATOR_VALIDATION.md that
+    # had never been written, because 5.7.1's directory held only two of the
+    # three release documents. The number agreed; the document did not exist.
+    template = entry.get("points_at")
+    if template and status.found:
+        target = template.format(value=status.claimed)
+        if not (root / target).is_file():
+            status.dangling = target
     return status
 
 

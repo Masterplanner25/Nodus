@@ -283,6 +283,20 @@ def format_versions(result, *, use_color: bool, verbose: bool, quiet: bool) -> s
                 "       The sentence moved or was reworded. Re-anchor the pattern in "
                 "tools/version_claims.json, or drop the entry if the claim is gone."
             )
+        elif claim.dangling:
+            lines.append(
+                f"  {mark} {claim.file}:{claim.line} — points at a file that "
+                f"does not exist: {claim.dangling}"
+            )
+            lines.append(f"       {claim.text}")
+            lines.append(
+                "       The version in the path is right; the document it names "
+                "was never written. Write it, or point the claim elsewhere."
+            )
+            if claim.fix:
+                lines.append(f"       fix: {claim.fix}")
+            lines.append("")
+            continue
         else:
             lines.append(
                 f"  {mark} {claim.file}:{claim.line} — says {claim.claimed}, "

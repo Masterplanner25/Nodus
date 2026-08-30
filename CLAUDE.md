@@ -208,6 +208,14 @@ is evidence; silence is not. Steps 8, 10 and 12 answer different questions — "
 make fail?" against a local wheel, "does this work as a new user would expect?" against the
 published one, and "what downstream did this break or leave behind?"
 
+**`nodus_gate --versions` enforces the first of the three now.** A claim in
+`tools/version_claims.json` may declare `points_at`, and the eval-record claim in
+`ECOSYSTEM_READINESS_ASSESSMENT.md` uses it — so the gate fails unless the newest
+`docs/evals/vX.Y.Z/` holds a `CREATOR_VALIDATION.md`. Added at 5.7.1, where 5.7.1's
+directory held two of its three documents and the claim's *version* was the only thing
+being compared: editing the string would have passed the gate while naming a file that
+did not exist. Stage 5 and Stage 6 are still on you.
+
 **`/release-prep` is a skill** (`.claude/commands/release-prep.md`) and walks this sequence.
 It is **older than the sequence above** — it predates Stage 5, Stage 6, and the
 `--closed-issues --section X.Y.Z` re-run, and its Step 5 pushes to `main` directly, which

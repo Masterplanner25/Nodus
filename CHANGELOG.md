@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **A version claim that names a *path* is now checked for that path existing.**
+  Claim entries in `tools/version_claims.json` may declare `points_at`, and
+  `nodus_gate --versions` fails when the document a claim sends a reader to is
+  not there.
+
+  Found at the 5.7.1 cut. The eval-record claim went red for naming the previous
+  cycle, and the obvious one-line fix -- edit the version in the string -- would
+  have passed the gate while pointing at a `CREATOR_VALIDATION.md` that had
+  never been written: 5.7.1's directory held two of its three release documents.
+  The number agreed; the file did not exist.
+
+  The effect is that a release cannot satisfy the gate without writing its
+  Gate 10 record, which CLAUDE.md required in prose and nothing enforced.
+
 ## [5.7.1] - 2026-08-29
 
 ### Fixes
