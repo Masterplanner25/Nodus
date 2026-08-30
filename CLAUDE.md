@@ -302,7 +302,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
 | Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint. **Its staging is not what shipped** — it puts builtins fourth; they had to come first |
 | Capability implementation | `src/nodus/runtime/capability.py` — `CapabilityPolicy`, `CapabilityDecision`, `DenyList`, `Floor`, `DEFAULT_FLOOR`, `inherit_authority()` |
-| v5 design docs | `docs/design/v5/` — `00-domain-statement.md` (what Nodus is for), `01-goal-stopping-condition.md` (#409), `02-capability-policy.md` (#405) |
+| v5 design docs | `docs/design/v5/` — `00-domain-statement.md` (what Nodus is for), `01-goal-stopping-condition.md` (#409), `02-capability-policy.md` (#405), `03-outcome-ambiguity.md`, `04-cancellation.md` (#395, proposal) |
 | Deny-by-default migration | `docs/migration/v5.0-deny-by-default.md` — the one breaking change in 5.0.0 |
 | Goal validation | `src/nodus/frontend/goal_validation.py` — compile-time `reached("label")` checking |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |
