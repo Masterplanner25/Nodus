@@ -147,6 +147,11 @@
       "file": "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
       "contains": "**Current version:** 0.1.0",
       "why": "Companion-package versions, not nodus-lang's. Drift for those is owned by tools/check_publish_drift.py, which resolves published metadata rather than reading prose. Duplicating it here would give two sources for one fact."
+    },
+    {
+      "file": "CLAUDE.md",
+      "why": "'is current' here describes README.md being up to date, not a version being the current release. The 4.2.0 in the line is historical -- it is the version the banner used to advertise, which is the point the sentence makes.",
+      "contains": "**`README.md` is current, and the fix it got is the pattern to copy.**"
     }
   ],
   "scan": {
@@ -159,14 +164,15 @@
       "docs/runtime/*.md"
     ],
     "currency_markers": [
-      "current version",
       "current stable",
+      "current version",
       "currently at",
       "is at **v",
-      "most recent",
+      "is current",
       "latest release",
       "latest version",
       "live on pypi",
+      "most recent",
       "now at v",
       "the current published"
     ]
