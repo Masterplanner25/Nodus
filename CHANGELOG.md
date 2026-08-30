@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#679: a runtime-built graph can name its steps, and its per-step results
+  stop being silently dropped.**
+
+  ```nodus
+  let a = task(fn() { return 1i }, {"name": "fetch",   "deps": []})
+  let b = task(fn() { return 2i }, {"name": "analyze", "deps": [a]})
+  run_graph(graph([a, b]))["steps"]     // {"fetch": 1, "analyze": 2}
+  ```
+
+  Before, `steps` came back **empty** for any generated graph — the results were
+  computed and then discarded — and every step was `task_N`, so a planner's
+  output was a second-class graph next to a declared `workflow`.
+
+  **Two halves, and fixing one would have looked complete.** `TaskNode.step_name`
+  already existed and `task()` could not reach it; separately, the result map is
+  keyed off graph metadata only the workflow-DSL lowering populated. Adding the
+  option without filling that metadata would have given named steps and an empty
+  `steps` map, so the regression tests assert both.
+
+  `plan_graph` now shows names too, through the same relabelling `plan_workflow`
+  already used — the same DAG read differently depending on how it was built.
+
+  Two decisions worth knowing: an **unnamed** task gets no entry rather than a
+  synthetic `task_N` key (a name is either meaningful or absent, and `task_N` is
+  an unstable VM-counter id), and two tasks in one graph sharing a name is
+  **refused at construction**, since one result would silently overwrite the
+  other. Unnamed graphs behave exactly as before.
+
 ### Changed
 
 - **#680: a named import of a builtin name is refused instead of silently

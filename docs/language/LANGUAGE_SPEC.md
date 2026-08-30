@@ -334,6 +334,13 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
 - `recv(channel)`
 - `close(channel)`
 - `task(fn, deps)` creates a task node (deps can be a task, list, or a map like `{ deps: [...], timeout_ms: 50, worker: "gpu", worker_timeout_ms: 1000 }`)
+  - **`name` names the step (#679).** A named generated step is indistinguishable
+    from a declared one: it appears in the run result's `steps` map and in
+    `plan_graph` output by name. Without a name the step has **no entry** in
+    `steps` — a name is either meaningful or absent, and a synthetic `task_N`
+    key would put an unstable VM-counter id into a map programs read by name.
+    Two tasks in one graph sharing a name is refused at graph construction,
+    since one result would silently overwrite the other.
 - `graph(tasks)` builds a task graph
 - `run_graph(graph_or_tasks)` executes a task graph
 - `run_workflow(workflow)`
