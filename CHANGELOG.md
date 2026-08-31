@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **#702: ~9.6x recovered on PyPy, by moving five constants off the instance.**
+
+  PyPy stores an instance's attributes in a compact map and its JIT specialises
+  reads against it — up to **80 attributes**. Past that it falls back to dict
+  storage and every attribute read in the dispatch loop deoptimises. Measured on
+  a generated class with one attribute read in a loop: **79 attrs → 786M
+  reads/sec, 80 attrs → 71.5M**. CPython is flat across the same range.
+
+  `VM.__init__` sat at 79. #488 — a goal-budget feature touching nothing in the
+  dispatch loop — made it 80, and cost ~9x of PyPy throughput. It shipped in
+  v5.6.0 and survived three releases with every gate green, because the cliff is
+  structurally invisible to CPython benchmarking.
+
+  **The commit was incidental**: adding a single *unrelated* attribute to
+  `__init__` at #488's parent reproduces the drop exactly. Any 80th attribute
+  does it.
+
+  Five constants with no constructor parameter behind them (`_resume_origin`,
+  `budget_meters`, `trace_errors`, `last_graph_plan`, `trace_count`) are now
+  class-level defaults. Reads resolve through the class; an instance entry
+  appears only when something writes one. No call site changes.
+
+  On `main` under PyPy, same probe: **1.87M → 17.93M instructions/sec**. CPython
+  is unchanged at 0.62M either way.
+
+### Tooling
+
+- **A test now counts the `VM`'s instance attributes (#702).**
+
+  `tests/test_vm_attribute_budget.py` fails if a bare VM or a `NodusRuntime`-built
+  VM reaches the cliff, with the measurement and the three ways out in its
+  docstring. This is the only thing that can see the problem: CPython — every
+  benchmark, gate and CI job this project runs — is flat across the boundary, so
+  the next crossing would otherwise surface releases later, as this one did.
+
+  It also pins the mechanism the headroom depends on: that the five hoisted names
+  still read correctly, are absent from the instance dict, and that writing one
+  creates an ordinary per-instance attribute rather than leaking across VMs.
+
 ### Added
 
 - **#170: `fs.read_bytes` / `fs.write_bytes` — binary file I/O.**
