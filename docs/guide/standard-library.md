@@ -542,6 +542,8 @@ import "std:fs" as fs
 | `exists` | `(path)` | `bool` | `true` if path exists (file or directory) |
 | `listdir` | `(path)` | `list` | List of filenames in directory |
 | `ensure_dir` | `(path)` | `nil` | Create directory if it does not exist |
+| `read_bytes` | `(path)` | `list` | Read a file in binary mode as a list of integers 0–255 |
+| `write_bytes` | `(path, bytes)` | `nil` | Write a list of integers 0–255 in binary mode |
 
 ```nd
 import "std:fs" as fs
@@ -570,6 +572,46 @@ list
 All filesystem operations are subject to the VM's path-sandboxing policy.
 Operations outside the allowed path raise a `sandbox` runtime error (thrown,
 not returned as an err record).
+
+### Binary files
+
+`read` and `write` are UTF-8 text. A file containing bytes that are not valid
+UTF-8 cannot be read as text at all — `read` returns an `io_error` rather than
+mangling it — and text mode would translate newlines on write. `read_bytes` and
+`write_bytes` are the binary pair, and **a byte sequence is an ordinary list of
+integers 0–255**: there is no separate byte type, so lists index, slice,
+concatenate and serialise as they always do.
+
+```nd
+import "std:fs" as fs
+
+let png_header = [137i, 80i, 78i, 71i, 13i, 10i, 26i, 10i]
+fs.write_bytes("header.bin", png_header)
+
+let back = fs.read_bytes("header.bin")
+print(back)
+print(len(back))
+
+let as_text = fs.read("header.bin")
+print(as_text.kind)
+```
+
+Output:
+
+```
+[137, 80, 78, 71, 13, 10, 26, 10]
+8
+io_error
+```
+
+That last line is the point: the same file read as text is an error, because
+`0x89` is not valid UTF-8. The `0x1A` byte in the middle is also why binary mode
+matters on Windows, where text mode treats it as end-of-file.
+
+`write_bytes` validates every element **before** opening the file, so a bad
+element leaves no partial file behind. A value outside 0–255 raises a `value`
+error naming its index; a non-integer — including `true`, which is not a byte
+here — raises a `type` error. Both are thrown, not returned.
 
 ### fs error records
 

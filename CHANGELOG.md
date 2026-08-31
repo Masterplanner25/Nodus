@@ -2,7 +2,57 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#170: `fs.read_bytes` / `fs.write_bytes` — binary file I/O.**
+
+  `std:fs` could only read and write UTF-8 text: `write_file` opens with
+  `encoding='utf-8'` and there was no binary mode, so a Nodus program could not
+  write a compiled artifact. The Runtime Readiness audit recorded that as a
+  Stage 3 bootstrap gap — to write a Nodus compiler in Nodus, the compiler has to
+  be able to write bytecode files.
+
+  **A byte sequence is a list of integers 0–255, not a new value type.** The issue
+  listed a `Bytes` type as "consider" and it is deliberately not taken: a real
+  byte type needs indexing, slicing, concatenation, equality, a literal syntax and
+  JSON serialisation before it is usable, and a list of ints already has all six.
+  If `Bytes` arrives later it can be a representation change behind the same two
+  builtins.
+
+  `write_bytes` validates every element before opening the file, so a refused
+  write leaves no partial file. Out-of-range values raise a `value` error naming
+  the index; non-integers — including `true`, which is an `int` in Python and is
+  not a byte here — raise a `type` error.
+
+  Both go through **both** filesystem mechanisms, which is the part that needed
+  care: `_ensure_path_allowed` (the `allowed_paths` jail and the Floor) *and*
+  `BUILTIN_CAPABILITIES` (what a `CapabilityPolicy` can see). #467 was a builtin
+  wired to the first and not the second — "the map, not the chokepoint" — and it
+  was invisible to a policy while looking confined.
+
 ### Tooling
+
+- **Two guards over the filesystem builtin surface, both driven off the named set
+  rather than a list written in the test (#170).**
+
+  - Every builtin classified `fs.read` or `fs.write` is asserted to refuse a path
+    outside `allowed_paths`. Deliberately behavioural: a source scan for
+    `_ensure_path_allowed` is unsound in both directions here — `hash_*_file`
+    reach it through a local helper and would read as uncovered, while the
+    subprocess builtins call it for `cwd` and redirects and would read as
+    filesystem builtins when their capability is `subprocess`.
+  - Every such builtin is asserted to actually reach a `CapabilityPolicy`. That is
+    the half #467 was, and the sweep above would have passed while it was live.
+
+- **`BUILTIN_NAMES` is now checked against the live registry, in both directions.**
+
+  `builtins/__init__.py` documents three steps for adding a builtin and only the
+  first two have any runtime effect, so step 3 is the one that gets forgotten —
+  **this change forgot it.** A builtin missing from `BUILTIN_NAMES` is not merely
+  undocumented: that set is what every capability totality check is measured
+  against, so the builtin is *exempt from classification* and one with real
+  authority can be added with nothing noticing. #616 recorded that after the fact;
+  it is enforced now.
 
 - **#412 phase 4: all 49 opcodes now carry a semantic spec, and the gate
   requires one.**

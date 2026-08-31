@@ -378,7 +378,7 @@ on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing eac
 This bit twice in one session, and both times the first reading was "the #376 race class is back."
 It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
 your own change, check whether anything else is running: `TaskStop` the background job, then
-re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 269 blocks and writes to
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 270 blocks and writes to
 the store) — do not run it alongside the suite.
 
 **How much of the "flaky machine" is actually this is not established**, and concurrency does
@@ -661,10 +661,10 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   -m tools.nodus_gate.cli --all
 ```
 
-- `--static`: verifies documented symbols exist in the codebase (**139 symbols**
+- `--static`: verifies documented symbols exist in the codebase (**140 symbols**
   across 40 documents, as of 2026-08-30)
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (**269 blocks**); expects 0 failures with the `.nodusgate-allow`
+  in docs (**270 blocks**); expects 0 failures with the `.nodusgate-allow`
   allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)

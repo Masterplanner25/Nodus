@@ -62,6 +62,7 @@ STRESS-TEST USER EVALUATION*
 # fmt check for the same reason.)
 notes.txt
 output.json
+header.bin
 tmp_demo/
 
 # Full pytest output from tools/check_dependent_suites.py, one file per companion.
