@@ -163,6 +163,29 @@ class VM:
     something a host could catch.
     """
 
+    # ---- class-level defaults: the instance-attribute budget (#702) ----
+    #
+    # PyPy stores an instance's attributes in a compact map and the JIT
+    # specialises reads against it -- up to 80 attributes. Past that it falls
+    # back to dict storage and every attribute read in the dispatch loop
+    # deoptimises. Measured on a generated class, one attribute read in a loop:
+    # 79 attrs 786M reads/sec, 80 attrs 71.5M. CPython is flat across the same
+    # range, which is why no CPython benchmark can see it.
+    #
+    # `__init__` sat at 79 and #488 made it 80, costing ~9x on PyPy for three
+    # releases with every gate green. These four are constants with no
+    # constructor parameter behind them, so a class attribute serves every read
+    # and an instance entry appears only if something actually writes one.
+    #
+    # `tests/test_vm_attribute_budget.py` fails if the count reaches the cliff
+    # again. Prefer a class-level default here over `self.x = <constant>`.
+    _resume_origin: dict | None = None
+    budget_meters: dict | None = None
+    trace_errors: bool = False
+    last_graph_plan: dict | None = None
+    trace_count: int = 0
+
+
     def __init__(
         self,
         code: list[tuple],
@@ -216,12 +239,10 @@ class VM:
         # #629: set on a child VM built for a resume, carrying what the
         # drift check needs about the module that drove it. None on a VM
         # running its own program.
-        self._resume_origin: dict | None = None
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter
         self.trace_limit = trace_limit
-        self.trace_count = 0
         self.debug = debug or debugger is not None
         self.debugger = debugger
         self.handler_stack: list[tuple[int, int, int, int]] = []
@@ -276,7 +297,6 @@ class VM:
         # #488: accountants for `goal … budget { limits: { … } }`, set by the
         # embedding runtime. A bare VM has none, and a goal declaring a limit on
         # one is refused rather than left unbounded.
-        self.budget_meters: dict | None = None
         # The workflow runner this VM belongs to (#390). None = fall back to the
         # process-global one, which is what the CLI and a bare VM want.
         self.workflow_runner = None
@@ -311,11 +331,9 @@ class VM:
         self.max_frames: int | None = MAX_STACK_DEPTH
         self.max_steps: int | None = None
         self.deadline: float | None = None
-        self.trace_errors: bool = False
         self.trace_scheduler = trace_scheduler
         self.scheduler_output = scheduler_output
         self._task_counter = 0
-        self.last_graph_plan: dict | None = None
         self.tool_registry: dict = {}
         self._tool_deprecated_warned: set = set()
         self._tool_registry_lock = threading.RLock()
