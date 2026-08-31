@@ -44,6 +44,24 @@ def source_mtime_ns(module_path: str) -> int:
     return os.stat(module_path).st_mtime_ns
 
 
+def source_sha256(module_path: str) -> str | None:
+    """Hash of the file's bytes, or None if it cannot be read (#704).
+
+    Deliberately over the raw bytes rather than decoded text: an encoding change
+    that leaves the characters identical still produces different bytes on disk,
+    and the cache is keyed to a file, not to a string.
+
+    `None` on an unreadable file makes the comparison in `_is_valid_cache_payload`
+    fail rather than raise, which is the right direction — a cache entry that
+    cannot be checked must not be used.
+    """
+    try:
+        with open(module_path, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
 def cache_key(module_path: str, mtime_ns: int) -> str:
     normalized_path = os.path.abspath(module_path)
     digest = hashlib.sha256(f"{normalized_path}\0{mtime_ns}".encode("utf-8")).hexdigest()
@@ -89,6 +107,10 @@ def write_cached_bytecode(project_root: str | None, module_path: str, module_byt
         "compiler_version": __version__,
         "module_path": os.path.abspath(module_path),
         "mtime_ns": mtime_ns,
+        # #704: what the entry was compiled *from*. The key and mtime cannot tell
+        # two programs apart when an edit lands inside the platform's mtime
+        # resolution; this can.
+        "source_sha256": source_sha256(module_path),
         "module_bytecode": module_bytecode.to_cache_payload(),
     }
     temp_path = final_path + ".tmp"
@@ -161,4 +183,24 @@ def _is_valid_cache_payload(payload: object, module_path: str, mtime_ns: int) ->
         and payload.get("compiler_version") == __version__
         and payload.get("module_path") == os.path.abspath(module_path)
         and payload.get("mtime_ns") == mtime_ns
+        # #704: the key and every field above are functions of the *path* and the
+        # *clock*, never of what the file contains. So an edit landing inside the
+        # platform's mtime resolution is invisible: the key matches, this returns
+        # True, and a stale program runs.
+        #
+        # The window is real on CPython and enormous on PyPy. Five rapid rewrites
+        # with different content each time, Windows:
+        #
+        #     CPython 3.11   2 distinct cache keys out of 5
+        #     PyPy 7.3.23    2 distinct cache keys out of 5  (whole-second mtimes)
+        #
+        # It surfaced as a resume-validation test comparing an edited workflow
+        # against itself, because the rebuild was handed the *original* program.
+        #
+        # Comparing the source hash is what makes the answer depend on the file
+        # rather than on the clock. The read it costs is not the saving: the cache
+        # exists to skip parse and compile, which dominate reading a few KB.
+        # An entry written before this check has no hash and is treated as a miss,
+        # so it recompiles once and is rewritten with one.
+        and payload.get("source_sha256") == source_sha256(module_path)
     )

@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#704: the bytecode cache now notices a content change the mtime does not.**
+
+  `cache_key` is `sha256(abspath + mtime_ns)` and the stored payload records
+  `mtime_ns`. Neither depends on what the file *contains*, so **any edit landing
+  inside the platform's mtime resolution was invisible**: the key matched,
+  validation passed, and a stale program ran.
+
+  The window is not hypothetical and not PyPy-only. Five rapid rewrites, each with
+  different content, on Windows:
+
+  | | distinct cache keys |
+  |---|---|
+  | CPython 3.11 | **2 of 5** |
+  | PyPy 7.3.23 | **2 of 5** |
+
+  CPython's `st_mtime_ns` here is roughly millisecond-grained, so the window is
+  small but real — write a file and re-run within it and you get the previous
+  program. PyPy on Windows reports whole seconds, so the window is a full second
+  and the collision is near-certain, which is how this surfaced: a
+  resume-validation test wrote a workflow, ran it, rewrote the file with an extra
+  step, and resumed. The rebuild was handed the **original** program from cache,
+  so the topology guard compared the old shape against itself, found nothing
+  wrong, and resumed a run whose workflow had changed.
+
+  The cache entry now carries a SHA-256 of the source bytes and validation
+  compares it. An entry written before this has no hash and is treated as a miss,
+  so it recompiles once. Measured cost on a warm-cache run importing 12 modules:
+  none above this machine's noise — the cache exists to skip parse and compile,
+  which dominate reading a few KB.
+
+  **This is the fourth time the cache has been a sibling path** — #521 (which
+  program `run_source` runs), #400 (does inspection execute), #394 (a mark that
+  survived compilation but not serialization). Those were about *what* was cached;
+  this one was the key itself.
+
 ### Performance
 
 - **#702: ~9.6x recovered on PyPy, by moving five constants off the instance.**
