@@ -312,7 +312,8 @@ class WorkflowFrameworkCompatibilityTests(unittest.TestCase):
         path = os.path.join(project_root, "demo.nd")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(WORKFLOW_SOURCE)
-        code = open(path, "r", encoding="utf-8").read()
+        with open(path, "r", encoding="utf-8") as handle:
+            code = handle.read()
         with nodus_cli._project_root_context(project_root):
             result, _vm = run_workflow_code(
                 VM([], {}, code_locs=[], source_path=None),
