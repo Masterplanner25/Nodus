@@ -107,7 +107,8 @@ BUILTIN_CAPABILITIES.update({
 })
 BUILTIN_CAPABILITIES.update({
     name: FS_WRITE
-    for name in ("write_file", "append_file", "mkdir", "fs_mkdir", "fs_delete")
+    for name in ("write_file", "write_file_bytes", "append_file", "mkdir",
+                 "fs_mkdir", "fs_delete")
 })
 # #467: FS_READ was declared and attached to nothing, so reads were invisible to
 # a policy for the same reason writes were visible -- the map, not the
@@ -117,7 +118,7 @@ BUILTIN_CAPABILITIES.update({
 BUILTIN_CAPABILITIES.update({
     name: FS_READ
     for name in (
-        "read_file", "list_dir", "path_exists", "exists",
+        "read_file", "read_file_bytes", "list_dir", "path_exists", "exists",
         "hash_md5_file", "hash_sha1_file", "hash_sha256_file",
         "hash_sha512_file", "hash_blake2b_file",
     )

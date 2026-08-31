@@ -93,6 +93,90 @@ def register(vm, registry) -> None:
             return vm.make_err("internal_error", 'unexpected internal error in fs.write')
         return None
 
+    def builtin_read_file_bytes(path):
+        """Read a file as a list of integers 0–255 (#170).
+
+        Nodus has no byte-array type, so the representation is a list of ints.
+        That is deliberate rather than a placeholder: a `Bytes` type would need
+        indexing, slicing, concatenation, equality, a literal syntax and JSON
+        serialisation before it was usable, and the bootstrap gap this closes —
+        a Nodus program writing a compiled artifact — needs none of them. A list
+        of ints already indexes, slices, concatenates and serialises.
+        """
+        if not isinstance(path, str):
+            vm.runtime_error("type", "read_file_bytes(path) expects a string path")
+        vm._ensure_path_allowed(path, "read_file_bytes(path)", write=False)
+        _emit_cap("fs_read", path)
+        try:
+            with open(path, "rb") as f:
+                return list(f.read())
+        except FileNotFoundError as exc:
+            _trace("fs.read_bytes", exc)
+            return vm.make_err("io_error", f'file not found: "{path}"')
+        except IsADirectoryError as exc:
+            _trace("fs.read_bytes", exc)
+            return vm.make_err("io_error", f'expected a file, got a directory: "{path}"')
+        except PermissionError as exc:
+            _trace("fs.read_bytes", exc)
+            if os.path.isdir(path):
+                return vm.make_err("io_error", f'expected a file, got a directory: "{path}"')
+            return vm.make_err("io_error", f'permission denied: "{path}"')
+        except OSError as exc:
+            _trace("fs.read_bytes", exc)
+            return vm.make_err("io_error", f'cannot read file: "{path}"')
+        except Exception as exc:
+            _trace("fs.read_bytes", exc)
+            return vm.make_err("internal_error", 'unexpected internal error in fs.read_bytes')
+
+    def builtin_write_file_bytes(path, data):
+        """Write a list of integers 0–255 to a file in binary mode (#170).
+
+        Every element is validated before the file is opened, so a bad element
+        cannot leave a half-written file behind — the same reason
+        `_ensure_path_allowed` runs first.
+        """
+        if not isinstance(path, str):
+            vm.runtime_error("type", "write_file_bytes(path, bytes) expects string path")
+        vm._ensure_path_allowed(path, "write_file_bytes(path, bytes)", write=True)
+        if not isinstance(data, list):
+            vm.runtime_error(
+                "type",
+                "write_file_bytes(path, bytes) expects a list of integers 0-255",
+            )
+        payload = bytearray()
+        for index, item in enumerate(data):
+            if isinstance(item, bool) or not isinstance(item, int):
+                vm.runtime_error(
+                    "type",
+                    f"write_file_bytes: element {index} is not an integer",
+                )
+            if not 0 <= item <= 255:
+                vm.runtime_error(
+                    "value",
+                    f"write_file_bytes: element {index} is {item}, outside 0-255",
+                )
+            payload.append(item)
+        _emit_cap("fs_write", path)
+        try:
+            with open(path, "wb") as f:
+                f.write(bytes(payload))
+        except PermissionError as exc:
+            _trace("fs.write_bytes", exc)
+            return vm.make_err("io_error", f'permission denied: "{path}"')
+        except IsADirectoryError as exc:
+            _trace("fs.write_bytes", exc)
+            return vm.make_err("io_error", f'expected a file, got a directory: "{path}"')
+        except FileNotFoundError as exc:
+            _trace("fs.write_bytes", exc)
+            return vm.make_err("io_error", f'cannot write file, parent directory does not exist: "{path}"')
+        except OSError as exc:
+            _trace("fs.write_bytes", exc)
+            return vm.make_err("io_error", f'cannot write file: "{path}"')
+        except Exception as exc:
+            _trace("fs.write_bytes", exc)
+            return vm.make_err("internal_error", 'unexpected internal error in fs.write_bytes')
+        return None
+
     def builtin_exists(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "exists(path) expects a string path")
@@ -278,6 +362,8 @@ def register(vm, registry) -> None:
     registry.add("input", 1, builtin_input)
     registry.add("read_file", 1, builtin_read_file)
     registry.add("write_file", 2, builtin_write_file)
+    registry.add("read_file_bytes", 1, builtin_read_file_bytes)
+    registry.add("write_file_bytes", 2, builtin_write_file_bytes)
     registry.add("exists", 1, builtin_exists)
     registry.add("path_exists", 1, builtin_exists)
     registry.add("append_file", 2, builtin_append_file)

@@ -6,6 +6,14 @@ fn write(path, content) {
     return write_file(path, content)
 }
 
+fn read_bytes(path) {
+    return read_file_bytes(path)
+}
+
+fn write_bytes(path, data) {
+    return write_file_bytes(path, data)
+}
+
 fn exists(path) {
     return path_exists(path)
 }
