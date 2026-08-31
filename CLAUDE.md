@@ -1061,6 +1061,19 @@ A correct question with no available answer is a much better place to be than a
 question nobody asks, and it is worth widening a predicate past its immediate
 caller for that reason alone.
 
+**And the pair is the first exception to "the bytecode cache is always one of the
+paths" — with a reason that generalises.** Both were checked the way that rule
+demands (each repro run three times against a warming cache, `.nbc` files
+confirmed present, plus three runs in one `NodusRuntime` and a second runtime in
+the same process): stable every time. That is not luck. The cache broke #394
+because its fix **marked** something — a mark survives compilation and not
+serialization, so the bypass came back on run 2. #691 and #696 mark nothing; they
+**resolve** at call time from objects that are live either way (frames, and the
+module's own `functions` table). **A resolve-don't-mark fix cannot have a
+cache-shaped sibling path**, because there is nothing to serialize. Worth knowing
+which kind of fix you have written before spending the second run — and worth
+still spending it, since knowing *why* it passed is the point.
+
 **#691 adds the one about how a symptom count reads.** It presented as five
 unrelated failures — a silent truncation reporting success, `Stack underflow`,
 `Cannot call non-function: nil`, `Iterator is not supported`, a coroutine that
