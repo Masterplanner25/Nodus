@@ -3948,6 +3948,21 @@ class VM:
         it names the right frame however many boundaries the value crossed, and
         it costs nothing on the common path -- a local closure never gets here.
 
+        **#696 is the same question in the other direction**: a closure a module
+        *returned*. Every source above records a context that a call is still
+        inside of, and by the time the returned closure is called there is no
+        such context — the proxy was for an argument, the cross-module frame has
+        been popped, and there is no caller VM. Nothing marks the value on the
+        way out.
+
+        Marking it would mean a hook at each exit, and closures also leave
+        nested in lists, maps and records — which is exactly the case #339 found
+        the *entry* side had missed. So the resolution is ownership again, over
+        the modules this VM can see rather than over its frames: a module holds
+        its `functions` table for its whole life, so the answer is available
+        long after every frame is gone, and it needs no mark, no walk of
+        returned containers, and no new module-scope registry.
+
         Returns None when nothing claims the closure, which leaves the call to
         behave as it did before this existed.
         """
@@ -3965,7 +3980,76 @@ class VM:
                 return saved
         if self._caller_vm is not None:
             return self._caller_module_ctx()
+        module = self._module_owning(fn_info)
+        if module is not None:
+            return self.module_ctx(module)
         return None
+
+    def _module_owning(self, fn_info):
+        """The loaded module whose `functions` table holds ``fn_info``, or None.
+
+        Breadth-first over the `NodusModule` values this VM can reach: the ones
+        its own namespaces bind, then the ones *those* modules bind, so a
+        closure returned from a transitively imported module is found too
+        (`main` imports `outer`, `outer` imports `inner`, and only `outer` is
+        bound here).
+
+        Reachability, deliberately, rather than a process-wide registry of every
+        module ever loaded. A global would be the module-scope-state shape that
+        produced #185 and #390 — shared by every participant in the process —
+        and it would let one tenant's VM resolve another's chunk. What a program
+        can call, it can see.
+
+        Only reached for a closure already known foreign, which is rare; the
+        common path never gets here.
+        """
+        seen: set[int] = set()
+        queue: list[NodusModule] = []
+
+        def enqueue(namespace) -> None:
+            for value in namespace.values():
+                if isinstance(value, NodusModule) and id(value) not in seen:
+                    seen.add(id(value))
+                    queue.append(value)
+
+        enqueue(self.module_globals)
+        enqueue(self.host_globals)
+        index = 0
+        while index < len(queue):
+            module = queue[index]
+            index += 1
+            if module.functions.get(getattr(fn_info, "name", None)) is fn_info:
+                return module
+            enqueue(module.globals)
+        return None
+
+    def module_ctx(self, module) -> tuple:
+        """A module's execution context, in `_capture_module_ctx` layout.
+
+        One definition, consulted by both places that need to *be* a module:
+        `_try_enter_module_call` on the way in, and `_foreign_closure_origin`
+        for a closure the module handed back. Two hand-built copies of this
+        tuple would be two answers to "what is this module's context", which is
+        the shape this file keeps getting bitten by.
+        """
+        version, instructions = normalize_bytecode(module.bytecode)
+        builtins = self.builtins
+        if getattr(module, "host_builtins", None):
+            builtins = {**builtins, **module.host_builtins}
+        host_globals = self.host_globals
+        if getattr(module, "host_globals", None) is not None:
+            host_globals = module.host_globals
+        return (
+            instructions,
+            module.functions,
+            module.globals,
+            module.globals,
+            module.code_locs or [(None, None, None)] * len(instructions),
+            module.path,
+            builtins,
+            host_globals,
+            version,
+        )
 
     def _op_make_closure(self, instr):
         fn_name = instr[1]
@@ -4041,18 +4125,10 @@ class VM:
         padded = list(args) + [None] * (expected - len(args))
 
         saved = self._capture_module_ctx()
-        version, instructions = normalize_bytecode(module.bytecode)
-        self.code = instructions
-        self.bytecode_version = version
-        self.functions = functions
-        self.module_globals = module.globals
-        self.globals = module.globals
-        self.code_locs = module.code_locs or [(None, None, None)] * len(instructions)
-        self.source_path = module.path
-        if getattr(module, "host_globals", None) is not None:
-            self.host_globals = module.host_globals
-        if getattr(module, "host_builtins", None):
-            self.builtins = {**self.builtins, **module.host_builtins}
+        # #696: `module_ctx` is the one definition of what it means to *be* this
+        # module, shared with `_foreign_closure_origin` so entering a module and
+        # re-entering a closure it returned cannot drift apart.
+        self._restore_module_ctx(self.module_ctx(module))
 
         if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
             self._restore_module_ctx(saved)

@@ -54,6 +54,37 @@
 
 ### Fixes
 
+- **#696: a closure *returned* from a module now runs against its own chunk too.**
+
+  The mirror of #691, and it needed a different answer. #691 fixed closures going
+  *into* a module; every context source that fix uses records something a call is
+  still inside of — a `_ClosureProxy` wrapped for an argument, a live cross-module
+  frame, a caller VM. By the time a **returned** closure is called, the frame has
+  been popped and there is no caller VM, so all three are empty and the closure
+  ran at its own address in whatever chunk happened to be loaded.
+
+  Same five-way symptom spread as #691, for the same reason — the symptom is
+  whatever sits at that address. Measured one repro each: `Method calls are only
+  supported on records`, `run_workflow(workflow) expects a workflow`, `Cannot add
+  int and string`, `Stack underflow`, `'NoneType' object is not subscriptable`,
+  and a stateful factory closure that **printed nothing at all**.
+
+  This did not need a workflow or a coroutine: `let f = m.plain_maker()` in
+  `fn main()` was enough, which makes a factory function — an ordinary thing for
+  a module to export — unusable.
+
+  The fix resolves rather than marks. Marking a closure on the way out would mean
+  a hook at each exit *and* a walk of returned lists, maps and records — the case
+  #339 found the entry side had missed. Instead `VM._foreign_closure_origin` asks
+  which of the modules this VM can **reach** owns the closure's `FunctionInfo`: a
+  module holds its `functions` table for its whole life, so the answer survives
+  every frame being gone. Reachability rather than a process-wide registry, which
+  would be the module-scope state shape behind #185 and #390.
+
+  `VM.module_ctx` is now the single definition of a module's execution context,
+  used both by `_try_enter_module_call` on the way in and by the resolution
+  above, so the two cannot drift.
+
 - **#691: a callback handed to an imported module's function now runs against
   its own chunk, wherever the call is made from.**
 

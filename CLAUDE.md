@@ -928,6 +928,13 @@ These burn time when forgotten:
   body** — the step-body path and the top-level path are two paths, and a test on
   one says nothing about the other.
 
+  **#696 is the same defect in the other direction and was fixed separately** — a
+  closure a module *returns*, so a factory function (`let f = m.make_adder(3i)`)
+  was unusable. Broken through 5.8.0 everywhere, no workflow needed. Worth knowing
+  when reading #691's fix: every context source it uses records something a call
+  is still *inside* of, and a returned closure is called after all of them are
+  gone, so the resolution is ownership over reachable modules instead.
+
 - **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
   `step a { checkpoint "mid"; return "done" }` — correct.
   `workflow w { checkpoint "mid"; step a { ... } }` — syntax error.
@@ -1034,6 +1041,25 @@ Instances, all confirmed by reading the code rather than inferred:
 | #657 | does `fmt` render this node | the completeness guard walks **node types**; `each` and `budget { limits }` are new **fields**, so every node had a case and `fmt` dropped them silently |
 | #662 | what names are bound in a step body | the lowering binds `after` / `each` / `compensates` deps; the analyzer pushed the same scope and bound **none** — two answers to one question, drifted |
 | #691 | which chunk was this closure compiled against | the detached module VM wrapped caller closures in a `_ClosureProxy`; the in-VM cross-module frame (the path a **step body** always takes) wrapped nothing and checked nothing |
+| #696 | the same question, for a closure going the **other way** | all three of #691's context sources record something a call is still *inside* of; a **returned** closure is called after the frame has popped, so all three are empty |
+
+**#696 is the one to read on "did I fix the whole shape?"** It was found by
+probing the neighbourhood of #691's fix on the *day* that fix merged, and it is
+the #476 lesson again: the asymmetry ran in both directions, and fixing "into a
+module" left "out of a module" untouched and still silent. But it adds something
+#476 does not. The two directions could not share a fix, because #691's answer is
+*"find the context this call is still inside of"* and a returned closure is called
+when there is no such context — the frame popped, the proxy was for an argument,
+the caller VM is gone. **Finding a second instance of a shape is not the same as
+finding a second instance of the fix**; check whether the mechanism you wrote can
+even reach the new case before assuming symmetry.
+
+What generalised instead was the *predicate*: `_is_foreign_closure` already
+detected the returned closure correctly, because #691's widening made it
+chunk-relative rather than `_caller_vm`-relative. Only the resolution was missing.
+A correct question with no available answer is a much better place to be than a
+question nobody asks, and it is worth widening a predicate past its immediate
+caller for that reason alone.
 
 **#691 adds the one about how a symptom count reads.** It presented as five
 unrelated failures — a silent truncation reporting success, `Stack underflow`,
