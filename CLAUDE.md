@@ -14,15 +14,16 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and wide: `.venv` is at 5.0.0, `src/` is at 5.8.0** (re-checked
-2026-08-30 with `.venv/Scripts/nodus.exe --version`, after the 5.8.0 cut). Forgetting the
-prefix gets you a runtime from before the `@exactly_once` forgery fix, the call-depth
-cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the file its
-`filename` happens to name (#521), `nodus graph` no longer executing the file it inspects
-(#400), the whole resume-durability cluster, the entire workflow-DSL cluster (#479,
-#480, #481, #488), and everything in 5.7.x and 5.8.0 — `extern`, `compensates`,
-cancellation and `retry.until` among them. The symptom is behaviour that contradicts
-the code you are reading.
+**The gap is live and nine minors wide: `.venv` is at 5.0.0, `src/` is at 5.9.0**
+(re-checked 2026-09-01 with `.venv/Scripts/nodus.exe --version`, after the 5.9.0 cut).
+Forgetting the prefix gets you a runtime from before the `@exactly_once` forgery fix, the
+call-depth cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the
+file its `filename` happens to name (#521), `nodus graph` no longer executing the file it
+inspects (#400), the whole resume-durability cluster, the entire workflow-DSL cluster
+(#479, #480, #481, #488), everything in 5.7.x and 5.8.0 — `extern`, `compensates`,
+cancellation and `retry.until` among them — and all of 5.9.0: cross-module closures in
+both directions (#691, #696), the content-keyed bytecode cache (#704) and binary file I/O
+(#170). The symptom is behaviour that contradicts the code you are reading.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -327,7 +328,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,132 tests collected** (`--collect-only`, 2026-08-30, after the 5.8.0 cut). Coverage
+**3,360 tests collected** (`--collect-only`, 2026-09-01, after the 5.9.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -411,6 +412,13 @@ Two practical consequences:
 Tests that race a sleep against a timeout need **5–10x headroom**, not 2x. Under full-suite parallel
 load, a 20ms sleep takes longer than 20ms wall-clock. Rule: if the test sleeps N ms and the code
 times out at M ms, ensure M ≥ 5N.
+
+**And the test does not have to sleep to be racing something.** A test that shells
+out to `nodus run` is racing the runtime's own 200ms default budget, which nothing
+in the test mentions — `test_cross_module_closure.py` failed on CI that way with
+`Execution timed out` and nothing else wrong (#711). Ask what deadline the code
+under test carries by default, not only what the test itself waits for. Details in
+the SCHED-001 entry under language quirks.
 
 Two classes can't share incompatible timeout requirements. If a test needs `session_timeout_ms=50`
 (to observe expiry quickly) and another needs `session_timeout_ms=2000` (to survive load without
@@ -718,11 +726,12 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   (**D**). Species C (the cache as a sibling path) and E (the bound on the wrong
   substrate) are not detectable and are not attempted.
 
-  `tools/shape_manifest.json` records **every shape currently in the tree** — 43
-  of them — each with `intentional` (these are not one question) or `tracked` (a
-  real debt, with its issue). That baseline is the design: the value is not the
-  list, it is that the *next* duplicated question shows up as **NEW** the day it
-  lands. It also records `sites` per species-A entry, because the key is
+  `tools/shape_manifest.json` records **every shape currently in the tree**, each
+  with `intentional` (these are not one question) or `tracked` (a real debt, with
+  its issue). The gate prints the count every run — do not transcribe it here; the
+  number that used to sit in this sentence was stale by four. That baseline is the
+  design: the value is not the list, it is that the *next* duplicated question
+  shows up as **NEW** the day it lands. It also records `sites` per species-A entry, because the key is
   name+signature and a *third* copy of an already-listed function would otherwise
   be silent — a hole found by probing the detector, not by reading it.
 
@@ -839,12 +848,11 @@ These burn time when forgotten:
 - **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183), including inside
   closures.
 - **Closures CAN mutate an outer `let`. A module-top-level one silently did nothing
-  from inside a function through 5.7.1; fixed on `main` (#671).**
+  from inside a function through 5.7.1; fixed in 5.8.0 (#671).**
 
   This entry said the opposite for a long time ("in closures you still can't assign outer
   `let` variables at all — use a map with quoted keys"), and that advice sent every session
-  to an unnecessary workaround. Re-verified 2026-08-30 against 5.7.1 dev source by running
-  each case:
+  to an unnecessary workaround. Re-verified by running each case:
 
   ```
   fn make_counter() { let n = 0i; return fn() { n = n + 1i; return n } }   // 1, then 2
@@ -853,37 +861,15 @@ These burn time when forgotten:
   Also working: two closures sharing one captured variable, two-level nesting, mutation
   from inside a spawned coroutine, and `n += 5i`.
 
-  What was **broken through 5.7.1** is module scope, and it was silent:
+  What was broken through 5.7.1 is **module scope**, and it was silent — `let g = 7i`
+  then `fn setit() { g = 99i }` left `g` at 7 with no error, because the function got a
+  frame slot for `g` and wrote there. If the right-hand side also *read* the variable you
+  got `Cannot add nil and int`: a type error naming arithmetic, not scoping, because the
+  fresh local was uninitialised. Reads of a top-level `let` were always fine, and so was
+  mutating one *at* top level. Mechanism and the lesson it left are in the
+  recurring-bug-shape table.
 
-  ```
-  let g = 7i
-  fn setit() { g = 99i }
-  setit()          // 5.7.1: g is still 7, no error. Fixed on main: g is 99.
-  ```
-
-  The function got a frame slot for `g` and wrote there (`STORE_LOCAL_IDX` vs the
-  top-level `STORE g`). If the right-hand side also read the variable, you got
-  `Cannot add nil and int` — a type error naming arithmetic, not scoping, because the
-  fresh local was uninitialised. Reads of a top-level `let` were always fine; so was
-  mutating one *at* top level.
-
-  **Two sites answered "where does this name live" and disagreed, and neither fix alone
-  is enough** — which is why it looked unfixable from either end.
-  `SymbolTable._resolve_upvalue_in` bailed without an enclosing *function* scope so the
-  module symbol was never found, and `VM.store_name` wrote into the current frame's
-  locals whenever a frame existed while `load_name` walked on to `module_globals`.
-  Patching only the first makes the *read* correct and still loses the write; patching
-  only the second is unreachable, because the compiler emits `STORE_LOCAL_IDX` rather
-  than `STORE`.
-
-  The rule is named once now — `VM.binding_namespace` — and both paths consult it.
-  `tests/test_name_resolution_agreement.py` pins the behaviour, the negative shadowing
-  cases (a `catch` var, a parameter, a loop variable and a function-local `let` must all
-  still shadow a same-named global), and the source-level property, with each site
-  verified to turn the suite red on its own.
-
-  **Fixed on `main` (#671); the map workaround is only needed on 5.7.1 and earlier.**
-  There, use a quoted-key map mutated via bracket notation,
+  **On 5.7.1 and earlier only**, use a quoted-key map mutated via bracket notation:
   `state["count"] = state["count"] + 1i` (`{"count": 0i}` — quoted-key map — NOT
   `{count: 0i}`, which is a record). It was never needed for anything scoped inside a
   function.
@@ -899,41 +885,23 @@ These burn time when forgotten:
   `recv(ch)`, `close(ch)`. No import needed.
 - **Workflow step dependencies use `after` keyword:**
   `step b after a { ... }` — not `depends_on`, not any other syntax.
-- **A step body passing a callback to an imported module's function was broken
-  through 5.8.0 (#691, `severity:high`). Fixed on `main`.** Including `std:`
-  modules — so `retry.until` did not work inside a step, which is the position its
-  own documentation points at. On 5.8.0 and earlier, keep module calls out of step
-  bodies: call the module function from `fn main()` and pass the result in.
+- **Cross-module closures were broken in both directions through 5.8.0; fixed in
+  5.9.0** (#691 `severity:high`, #696). A callback passed *into* an imported
+  module's function did not work from a **step body** — including `std:` modules,
+  so `retry.until` failed in the exact position its own documentation points at.
+  A closure a module *returns* did not work anywhere, so a factory
+  (`let f = m.make_adder(3i)`) was unusable. On 5.8.0 and earlier: call the module
+  function from `fn main()` and pass the result in, and do not use module
+  factories.
 
-  Worth keeping for the diagnosis, not the workaround. **The worst case was
-  silent:** the step body stopped at the module call, nothing was raised, and the
-  run reported `failed: []` with `steps: {}`. Five symptoms came out of one
-  construct — also `Stack underflow`, `Cannot call non-function: nil`, `Iterator is
-  not supported`, and a coroutine that never ran — which is what said
-  stack/dispatch corruption rather than a logic bug.
-
-  The cause: a closure's address indexes **the chunk it was compiled from**. A
-  module call from `fn main()` runs in a detached VM that wraps closure arguments
-  in a `_ClosureProxy`; a module call from inside a scheduler-managed coroutine
-  takes the #105 fast path, which swaps the module's code into the *running* VM
-  and wrapped nothing. **A step body is always a coroutine**, which is exactly why
-  it worked at top level and failed in a step. The number of symptoms was the
-  number of things that happened to sit at the callback's address in the module's
-  chunk.
-
-  **The lesson generalises past this bug.** Every test and probe for `retry.until`
-  ran inside `fn main()`, so the full suite, nine gate phases and 83 release probes
-  were green on a feature that does not work where it is meant to be used. **A
-  construct documented for use inside a step body must be tested inside a step
-  body** — the step-body path and the top-level path are two paths, and a test on
-  one says nothing about the other.
-
-  **#696 is the same defect in the other direction and was fixed separately** — a
-  closure a module *returns*, so a factory function (`let f = m.make_adder(3i)`)
-  was unusable. Broken through 5.8.0 everywhere, no workflow needed. Worth knowing
-  when reading #691's fix: every context source it uses records something a call
-  is still *inside* of, and a returned closure is called after all of them are
-  gone, so the resolution is ownership over reachable modules instead.
+  **The worst case was silent** — the step body stopped at the module call, nothing
+  was raised, and the run reported `failed: []` with `steps: {}`. Mechanism and the
+  three lessons it left are in the recurring-bug-shape section; the one that
+  matters when you are writing `.nd` tests is this: every test and probe for
+  `retry.until` ran inside `fn main()`, so the full suite, nine gate phases and 83
+  release probes were green on a feature that did not work where it is meant to be
+  used. **A construct documented for use inside a step body must be tested inside
+  a step body.**
 
 - **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
   `step a { checkpoint "mid"; return "done" }` — correct.
@@ -991,10 +959,32 @@ These burn time when forgotten:
   so `nodus check` catches the typo. Result map adds `goal_satisfied` and `iterations`.
   Five new **contextual** keywords: `over`, `until`, `budget`, `reached`, `retry` — contextual, so
   they remain usable as identifiers.
-- **Coroutine execution limits (scheduler quirk):** The default 200ms deadline
-  (`EXECUTION_TIMEOUT_MS=200`) counts wall-clock time including cooperative sleep.
-  A coroutine that sleeps 4 × 100ms will be killed after 200ms total even though it
-  consumed no CPU. Workaround: `nodus run --time-limit N`. SCHED-001, deferred to 4.0.1.
+- **`nodus run` bounds the WHOLE program at 200ms of wall clock**
+  (`EXECUTION_TIMEOUT_MS`), not just a coroutine. Cooperative sleep counts, so a
+  coroutine sleeping 4 × 100ms is killed having consumed no CPU — but so is any
+  script that simply does 200ms of work. Fix: `nodus run --time-limit N`, in
+  **seconds**. SCHED-001, deferred to 4.0.1.
+
+  **The reason nobody reads this off the CLI is a `None` that round-trips back to
+  the default.** `cli.py`'s `run` branch passes `timeout_ms=None if time_limit is
+  None else ...`, which looks like "unbounded unless asked"; two frames later
+  `cli.run_file` does `timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else
+  timeout_ms` and puts the 200ms back. Reading either site alone tells you the
+  opposite of what happens.
+
+  **An `import` is charged to that budget**, because the import compiles the
+  imported module *during* the run. So a two-file script can time out having
+  executed almost nothing of its own. This is what took
+  `test_cross_module_closure.py` down on CI (fixed in #711): measured, the case
+  spent ~78ms of the 200ms warm and failed outright below 40ms — a 2.5x margin
+  where the rule here is 5-10x, and CI is colder still, since a fresh process pays
+  the compiler's own lazy imports inside the window.
+
+  **A CLI subprocess test that imports a module needs `--time-limit`.** Put it on
+  the harness, not the one test that happened to go red — every case in the file
+  shares the exposure. And check the embedded half of any both-ways harness:
+  `NodusRuntime(timeout_ms=None)` is genuinely unbounded, so the two halves were
+  bounded differently while claiming to run the same program.
 
 ## Security boundary test rule
 
@@ -1007,7 +997,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
 of several paths goes through**. It has surfaced **once per row of the table below** across the
-v5.0.0–5.8.0 cycles — count the rows rather than trusting a word here, which had gone stale by
+v5.0.0–5.9.0 cycles — count the rows rather than trusting a word here, which had gone stale by
 one. That frequency is why it gets its own section: when you find one, the next question is
 always *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -1040,8 +1030,10 @@ Instances, all confirmed by reading the code rather than inferred:
 | #480 | is this word a keyword | `each` matched by a bare literal in `parser.py`, so `lexer.ALL_KEYWORDS` — which editors, docs and `--consumers` all read — never named it |
 | #657 | does `fmt` render this node | the completeness guard walks **node types**; `each` and `budget { limits }` are new **fields**, so every node had a case and `fmt` dropped them silently |
 | #662 | what names are bound in a step body | the lowering binds `after` / `each` / `compensates` deps; the analyzer pushed the same scope and bound **none** — two answers to one question, drifted |
+| #671 | where does this name live | `SymbolTable._resolve_upvalue_in` and `VM.store_name` disagreed, and **neither fix alone is reachable** — fixing the resolver makes the read correct and still loses the write; fixing the VM is dead code while the compiler emits `STORE_LOCAL_IDX`. Named once as `VM.binding_namespace` now |
 | #691 | which chunk was this closure compiled against | the detached module VM wrapped caller closures in a `_ClosureProxy`; the in-VM cross-module frame (the path a **step body** always takes) wrapped nothing and checked nothing |
 | #696 | the same question, for a closure going the **other way** | all three of #691's context sources record something a call is still *inside* of; a **returned** closure is called after the frame has popped, so all three are empty |
+| #704 | which program is this cache entry for | #521 fixed the branch, the cache **read** and the cache **write** — and the key itself still answered by path + mtime, so an edit inside the platform's timestamp resolution was invisible to all three |
 
 **#696 is the one to read on "did I fix the whole shape?"** It was found by
 probing the neighbourhood of #691's fix on the *day* that fix merged, and it is
@@ -1073,6 +1065,15 @@ module's own `functions` table). **A resolve-don't-mark fix cannot have a
 cache-shaped sibling path**, because there is nothing to serialize. Worth knowing
 which kind of fix you have written before spending the second run — and worth
 still spending it, since knowing *why* it passed is the point.
+
+**#704 shipped in the same release and is the rule holding from the other side.**
+There the cache *was* the whole defect: `cache_key` was `sha256(abspath + mtime_ns)`,
+so "is this entry for this program" was answered by a clock. Two edits inside the
+platform's timestamp resolution are one program to that key, and the second run
+silently executed the first program — the #521 question again, on the one path
+#521 did not reach. The key is content now (`source_sha256`), which is the same
+move as resolve-don't-mark: stop storing a proxy for the answer and compute the
+answer.
 
 **#691 adds the one about how a symptom count reads.** It presented as five
 unrelated failures — a silent truncation reporting success, `Stack underflow`,
@@ -1167,7 +1168,10 @@ behaviour-only test passes on whichever path is already correct. Working example
 `test_vm_authority_inheritance.py` reads `VM.__init__`'s signature so a **new** parameter nothing
 propagates fails; `test_annotation_forgery.py` fails if any lowering emits an unbound
 `Call(Var(...))`; `test_workflow_runner_ownership.py` fails if a **sixth** builtin resolves the
-runner from module state while the other five stay routed.
+runner from module state while the other five stay routed; `test_name_resolution_agreement.py`
+pins the two sites of #671 to one rule, and keeps the negative cases (a `catch` var, a
+parameter, a loop variable and a function-local `let` must all still shadow a same-named
+global) that a fix in either site alone would have broken.
 
 **A source assertion can be unfalsifiable — check that it fails.** Three written in one session
 could not: one matched a substring of the very function it tested (`"detect_cycle"` is inside
@@ -1434,6 +1438,14 @@ Three of those ask something of you rather than just explaining a symptom.
   still be red at the major, so treat those warnings as a to-do list.
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
+
+**5.9.0 has no row, and that was checked rather than assumed.** Its four changes
+are all repairs or additions: two closure fixes (#691, #696) where the old
+behaviour was a silent truncation nothing could depend on, a bytecode-cache key
+that now includes content (#704) — stale entries simply recompile once — and two
+new builtins (#170). Guest code may still shadow a builtin name with its own `fn`,
+verified by running it, so the new names cannot collide with an existing program.
+An absence recorded as checked is worth more than an absence.
 
 ### Two releases to treat as superseded
 
