@@ -1,13 +1,13 @@
 # v5.9.0 — Stage 6, downstream sweep
 
-**Verdict: one consumer needs republishing.** Nothing is broken; nothing is
-blocked. The four questions Stage 6 asks, answered.
+**Verdict: clean, after one republish.** Nothing was broken and nothing blocked.
+The four questions Stage 6 asks, answered.
 
 | question | answer |
 |---|---|
 | Do published ranges still admit the new version? | **yes, 7/7** |
 | Has a companion drifted from what it published? | **no, 12/12 identical** |
-| Are non-PyPI consumers left behind? | **`nodus-run-action` is stale** |
+| Are non-PyPI consumers left behind? | one was — **`nodus-run-action`, republished as v1.0.10** |
 | Is work left behind in any checkout? | **no, 14/14 clean** |
 
 ---
@@ -64,10 +64,34 @@ runtime two releases old — which is exactly the failure the `--consumers` phas
 was built to surface, because Stage 6's drift sweep hashes published sdists and
 structurally cannot see a GitHub Action or a VSIX.
 
-**Not cleared here.** The rule is that a flag is cleared only *after* republishing,
-with `fingerprint` and `published` updated in the same commit — a flag cleared
-before the work is done is worse than no flag. The action's checkout is clean and
-on `main`, so the republish is a README edit plus a tag whenever it is picked up.
+**Republished, then cleared — in that order.** The rule is that a flag is cleared
+only *after* the work is done, with `fingerprint` and `published` updated in the
+same commit; a flag cleared before is worse than no flag.
+
+```
+nodus-run-action  6f56222  pin README examples to nodus-lang 5.9.0
+                  tagged v1.0.10, and `v1` moved to it
+tools/consumers.json  published v1.0.9 -> v1.0.10
+                      fingerprint  5.8.0 -> 5.9.0
+```
+
+Re-run afterwards:
+
+```
+[ok] nodus-vscode (0.1.5)       keywords unchanged
+[ok] nodus-run-action (v1.0.10) nodus_version unchanged
+Consumers: PASS — 2/2 in step
+```
+
+Only the documented examples moved; the action's own `version` input still
+defaults to empty, meaning latest. And `v1` is a moving major tag, so it had to be
+force-updated to the new commit — a user pinned to `@v1` gets the corrected
+README's behaviour, and one pinned to `@v1.0.9` keeps exactly what they had.
+
+Worth noting what this consumer is *for*: a CI pin is the place an old runtime
+goes unnoticed longest. Nobody re-reads a working workflow file. That is why the
+`--consumers` phase exists at all — Stage 6's drift sweep hashes published sdists
+and structurally cannot see a GitHub Action.
 
 `nodus-vscode` is genuinely in step: the keyword set it highlights is unchanged by
 this release. That check reads `lexer.ALL_KEYWORDS` from this tree rather than a
@@ -93,6 +117,6 @@ old history, so a status check there answers about the wrong project.
 
 ## Follow-up
 
-**`nodus-run-action` needs its pinned `version:` bumped to 5.9.0 and a new tag.**
-It is the only outstanding item from this release, it is outward-facing, and it
-is left for a deliberate decision rather than folded into the release sweep.
+**None outstanding.** The one item this sweep found — `nodus-run-action`'s stale
+CI pin — was republished as `v1.0.10` and its flag cleared afterwards, so
+`--consumers` reports 2/2 in step.
