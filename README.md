@@ -40,7 +40,15 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.8.0 is about work that is already in motion: a running workflow or task can be **stopped** (`nodus workflow cancel`, `cancel(t)`, `wait(t)`), and a call that returned the *wrong thing* rather than failing can be **retried against a predicate** (`retry.until`) — the failing result carried into the next attempt, under a bound that always applies.
+**Recent:** 5.9.0 is about programs doing what they say. Three defects are fixed
+that all failed the same way — **silently, while reporting success**. A closure
+handed to an imported module's function, or returned from one, ran at its own
+address in the wrong chunk: inside a workflow step that truncated the step and
+reported no failures. And the bytecode cache keyed only on path and modification
+time, so an edit landing inside the filesystem's timestamp resolution ran the
+*previous* program. `std:fs` also gains binary I/O (`fs.read_bytes`,
+`fs.write_bytes`), which is what a Nodus program needs to write a compiled
+artifact.
 
 An installed Nodus could not tell you where its own documentation was. The wheel
 shipped code and the stdlib; the guide, the machine-readable index and the agent
