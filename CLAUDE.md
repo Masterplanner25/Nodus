@@ -1369,7 +1369,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.8.0** (live on PyPI, published 2026-08-30).
+The current published version is **v5.9.0** (live on PyPI, published 2026-08-31).
 Two files must stay in sync — `src/nodus/support/version.py` and `pyproject.toml`.
 If they disagree, fix that before anything else.
 

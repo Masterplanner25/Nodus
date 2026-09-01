@@ -1,6 +1,36 @@
-﻿# Changelog
+# Changelog
 
 ## [Unreleased]
+
+## [5.9.0] - 2026-08-31
+
+### Added
+
+- **#170: `fs.read_bytes` / `fs.write_bytes` — binary file I/O.**
+
+  `std:fs` could only read and write UTF-8 text: `write_file` opens with
+  `encoding='utf-8'` and there was no binary mode, so a Nodus program could not
+  write a compiled artifact. The Runtime Readiness audit recorded that as a
+  Stage 3 bootstrap gap — to write a Nodus compiler in Nodus, the compiler has to
+  be able to write bytecode files.
+
+  **A byte sequence is a list of integers 0–255, not a new value type.** The issue
+  listed a `Bytes` type as "consider" and it is deliberately not taken: a real
+  byte type needs indexing, slicing, concatenation, equality, a literal syntax and
+  JSON serialisation before it is usable, and a list of ints already has all six.
+  If `Bytes` arrives later it can be a representation change behind the same two
+  builtins.
+
+  `write_bytes` validates every element before opening the file, so a refused
+  write leaves no partial file. Out-of-range values raise a `value` error naming
+  the index; non-integers — including `true`, which is an `int` in Python and is
+  not a byte here — raise a `type` error.
+
+  Both go through **both** filesystem mechanisms, which is the part that needed
+  care: `_ensure_path_allowed` (the `allowed_paths` jail and the Floor) *and*
+  `BUILTIN_CAPABILITIES` (what a `CapabilityPolicy` can see). #467 was a builtin
+  wired to the first and not the second — "the map, not the chokepoint" — and it
+  was invisible to a policy while looking confined.
 
 ### Fixes
 
@@ -38,6 +68,76 @@
   program `run_source` runs), #400 (does inspection execute), #394 (a mark that
   survived compilation but not serialization). Those were about *what* was cached;
   this one was the key itself.
+
+
+- **#696: a closure *returned* from a module now runs against its own chunk too.**
+
+  The mirror of #691, and it needed a different answer. #691 fixed closures going
+  *into* a module; every context source that fix uses records something a call is
+  still inside of — a `_ClosureProxy` wrapped for an argument, a live cross-module
+  frame, a caller VM. By the time a **returned** closure is called, the frame has
+  been popped and there is no caller VM, so all three are empty and the closure
+  ran at its own address in whatever chunk happened to be loaded.
+
+  Same five-way symptom spread as #691, for the same reason — the symptom is
+  whatever sits at that address. Measured one repro each: `Method calls are only
+  supported on records`, `run_workflow(workflow) expects a workflow`, `Cannot add
+  int and string`, `Stack underflow`, `'NoneType' object is not subscriptable`,
+  and a stateful factory closure that **printed nothing at all**.
+
+  This did not need a workflow or a coroutine: `let f = m.plain_maker()` in
+  `fn main()` was enough, which makes a factory function — an ordinary thing for
+  a module to export — unusable.
+
+  The fix resolves rather than marks. Marking a closure on the way out would mean
+  a hook at each exit *and* a walk of returned lists, maps and records — the case
+  #339 found the entry side had missed. Instead `VM._foreign_closure_origin` asks
+  which of the modules this VM can **reach** owns the closure's `FunctionInfo`: a
+  module holds its `functions` table for its whole life, so the answer survives
+  every frame being gone. Reachability rather than a process-wide registry, which
+  would be the module-scope state shape behind #185 and #390.
+
+  `VM.module_ctx` is now the single definition of a module's execution context,
+  used both by `_try_enter_module_call` on the way in and by the resolution
+  above, so the two cannot drift.
+
+- **#691: a callback handed to an imported module's function now runs against
+  its own chunk, wherever the call is made from.**
+
+  A `Closure` is an address plus its upvalues, and the address indexes the chunk
+  it was compiled from. A module function reached from `fn main()` runs in a
+  detached VM, which wrapped closure arguments in a `_ClosureProxy` on the way in
+  and dispatched them back correctly. A module function reached from inside a
+  scheduler-managed coroutine takes the #105 fast path instead — the module's
+  code is swapped into the *running* VM — and nothing there was wrapped or
+  checked, so the callback's address was executed against the module's
+  instructions. **A workflow step body is always a coroutine**, which is why the
+  construct worked at top level and failed inside a step.
+
+  Five symptoms came out of one construct, depending only on what happened to sit
+  at that address:
+
+  | Symptom | Shape |
+  |---|---|
+  | step truncates, `failed: []`, `steps: {}`, run reports success | module defines one function |
+  | `Stack underflow` | module defines two |
+  | `Cannot call non-function: nil` | callback is a named top-level `fn` |
+  | `Iterator is not supported` | callback reached through the iterator protocol |
+  | callback silently never runs | callback wrapped in a `coroutine()` |
+
+  `retry.until` (#466) is the feature this blocked: a `std:retry` function whose
+  documented home is a step body.
+
+  `VM._foreign_closure_origin` answers "which context does this closure need, if
+  not the one loaded" once, and both sites that jump to a closure's address —
+  `call_closure` and `run_closure` — consult it. `builtin_coroutine_create` and
+  `builtin_spawn` had their own version of the question and now ask the same one;
+  theirs assumed a detached VM was the only way to be running foreign code, which
+  is precisely the assumption that hid this. Origin is resolved by asking which
+  saved context *owns* the closure's `FunctionInfo`, not by taking the nearest
+  boundary — nearest is wrong as soon as a closure is passed through two modules.
+
+  Not a regression: v5.7.1 and every earlier release behave identically.
 
 ### Performance
 
@@ -80,35 +180,6 @@
   still read correctly, are absent from the instance dict, and that writing one
   creates an ordinary per-instance attribute rather than leaking across VMs.
 
-### Added
-
-- **#170: `fs.read_bytes` / `fs.write_bytes` — binary file I/O.**
-
-  `std:fs` could only read and write UTF-8 text: `write_file` opens with
-  `encoding='utf-8'` and there was no binary mode, so a Nodus program could not
-  write a compiled artifact. The Runtime Readiness audit recorded that as a
-  Stage 3 bootstrap gap — to write a Nodus compiler in Nodus, the compiler has to
-  be able to write bytecode files.
-
-  **A byte sequence is a list of integers 0–255, not a new value type.** The issue
-  listed a `Bytes` type as "consider" and it is deliberately not taken: a real
-  byte type needs indexing, slicing, concatenation, equality, a literal syntax and
-  JSON serialisation before it is usable, and a list of ints already has all six.
-  If `Bytes` arrives later it can be a representation change behind the same two
-  builtins.
-
-  `write_bytes` validates every element before opening the file, so a refused
-  write leaves no partial file. Out-of-range values raise a `value` error naming
-  the index; non-integers — including `true`, which is an `int` in Python and is
-  not a byte here — raise a `type` error.
-
-  Both go through **both** filesystem mechanisms, which is the part that needed
-  care: `_ensure_path_allowed` (the `allowed_paths` jail and the Floor) *and*
-  `BUILTIN_CAPABILITIES` (what a `CapabilityPolicy` can see). #467 was a builtin
-  wired to the first and not the second — "the map, not the chokepoint" — and it
-  was invisible to a policy while looking confined.
-
-### Tooling
 
 - **Two guards over the filesystem builtin surface, both driven off the named set
   rather than a list written in the test (#170).**
@@ -180,78 +251,6 @@
     #411 compiler prefix; `BUILD_MAP` refuses a `bool` key; conditional jumps pop
     whether or not they jump; an empty record is truthy while an empty map is not.
 
-### Fixes
-
-- **#696: a closure *returned* from a module now runs against its own chunk too.**
-
-  The mirror of #691, and it needed a different answer. #691 fixed closures going
-  *into* a module; every context source that fix uses records something a call is
-  still inside of — a `_ClosureProxy` wrapped for an argument, a live cross-module
-  frame, a caller VM. By the time a **returned** closure is called, the frame has
-  been popped and there is no caller VM, so all three are empty and the closure
-  ran at its own address in whatever chunk happened to be loaded.
-
-  Same five-way symptom spread as #691, for the same reason — the symptom is
-  whatever sits at that address. Measured one repro each: `Method calls are only
-  supported on records`, `run_workflow(workflow) expects a workflow`, `Cannot add
-  int and string`, `Stack underflow`, `'NoneType' object is not subscriptable`,
-  and a stateful factory closure that **printed nothing at all**.
-
-  This did not need a workflow or a coroutine: `let f = m.plain_maker()` in
-  `fn main()` was enough, which makes a factory function — an ordinary thing for
-  a module to export — unusable.
-
-  The fix resolves rather than marks. Marking a closure on the way out would mean
-  a hook at each exit *and* a walk of returned lists, maps and records — the case
-  #339 found the entry side had missed. Instead `VM._foreign_closure_origin` asks
-  which of the modules this VM can **reach** owns the closure's `FunctionInfo`: a
-  module holds its `functions` table for its whole life, so the answer survives
-  every frame being gone. Reachability rather than a process-wide registry, which
-  would be the module-scope state shape behind #185 and #390.
-
-  `VM.module_ctx` is now the single definition of a module's execution context,
-  used both by `_try_enter_module_call` on the way in and by the resolution
-  above, so the two cannot drift.
-
-- **#691: a callback handed to an imported module's function now runs against
-  its own chunk, wherever the call is made from.**
-
-  A `Closure` is an address plus its upvalues, and the address indexes the chunk
-  it was compiled from. A module function reached from `fn main()` runs in a
-  detached VM, which wrapped closure arguments in a `_ClosureProxy` on the way in
-  and dispatched them back correctly. A module function reached from inside a
-  scheduler-managed coroutine takes the #105 fast path instead — the module's
-  code is swapped into the *running* VM — and nothing there was wrapped or
-  checked, so the callback's address was executed against the module's
-  instructions. **A workflow step body is always a coroutine**, which is why the
-  construct worked at top level and failed inside a step.
-
-  Five symptoms came out of one construct, depending only on what happened to sit
-  at that address:
-
-  | Symptom | Shape |
-  |---|---|
-  | step truncates, `failed: []`, `steps: {}`, run reports success | module defines one function |
-  | `Stack underflow` | module defines two |
-  | `Cannot call non-function: nil` | callback is a named top-level `fn` |
-  | `Iterator is not supported` | callback reached through the iterator protocol |
-  | callback silently never runs | callback wrapped in a `coroutine()` |
-
-  `retry.until` (#466) is the feature this blocked: a `std:retry` function whose
-  documented home is a step body.
-
-  `VM._foreign_closure_origin` answers "which context does this closure need, if
-  not the one loaded" once, and both sites that jump to a closure's address —
-  `call_closure` and `run_closure` — consult it. `builtin_coroutine_create` and
-  `builtin_spawn` had their own version of the question and now ask the same one;
-  theirs assumed a detached VM was the only way to be running foreign code, which
-  is precisely the assumption that hid this. Origin is resolved by asking which
-  saved context *owns* the closure's `FunctionInfo`, not by taking the nearest
-  boundary — nearest is wrong as soon as a closure is passed through two modules.
-
-  Not a regression: v5.7.1 and every earlier release behave identically.
-
-### Tooling
 
 - **`CLAUDE.md` trimmed from 1,889 to 1,619 lines; per-repo companion detail moved
   to `docs/ecosystem/COMPANION_REPOS.md`.**

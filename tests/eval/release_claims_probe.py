@@ -1959,6 +1959,165 @@ def probe_no_stale_5_7_current(repo: Path):
     return "no artifact calls 5.7.1 the current release"
 
 
+# ------------------------------------------- 5.9.0: silent wrongness, and bytes
+#
+# Every claim below is probed **in the position its documentation points at**,
+# which is #691's lesson rather than a preference: `retry.until` had a full suite,
+# nine gate phases and 83 release probes behind it and did not work inside a step
+# body, because every one of them ran in `fn main()`. A probe that exercises the
+# easy position proves the easy position.
+
+
+@probe("#691: a callback into a module runs, inside a step body")
+def probe_callback_into_module_in_step():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        mod = Path(td) / "m.nd"
+        mod.write_text(
+            "fn no_loop(f) { return f() }\n"
+            "fn in_loop(f) { let n = 0i let last = nil "
+            "while (n < 2i) { last = f() n = n + 1i } return last }\n",
+            encoding="utf-8",
+        )
+        from nodus.runtime.embedding import NodusRuntime
+
+        # `run_file`, not `run_source`: a relative import resolves against the
+        # process CWD, and `filename` is only a label (#521). The regression
+        # tests take the same route for the same reason.
+        main_nd = Path(td) / "main.nd"
+        main_nd.write_text(
+            'import "./m.nd" as m\n'
+            "workflow w {\n"
+            '    step a { print("got \\(m.no_loop(fn() { return 7i }))") return "ok" }\n'
+            "}\n"
+            'fn main() { let r = run_workflow(w) print("failed: \\(r["failed"])") '
+            'print("steps: \\(r["steps"])") }\n',
+            encoding="utf-8",
+        )
+        result = NodusRuntime(timeout_ms=None, max_steps=None,
+                              allowed_paths=[td]).run_file(str(main_nd))
+    assert result.get("ok"), result.get("errors")
+    out = result.get("stdout") or ""
+    # The silent case is the one that mattered: it printed nothing after the call
+    # and reported `failed: []` with `steps: {}`.
+    assert "got 7" in out, f"the step truncated at the module call: {out.strip()!r}"
+    assert '"a": "ok"' in out, f"the step was not recorded: {out.strip()!r}"
+    return "a step body's callback reaches the module and the step is recorded"
+
+
+@probe("#696: a closure returned from a module runs at top level")
+def probe_closure_returned_from_module():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        mod = Path(td) / "f.nd"
+        mod.write_text(
+            "fn make_adder(n) { return fn(x) { return x + n } }\n"
+            "fn counter() { let n = 0i return fn() { n = n + 1i return n } }\n"
+            "fn pad_a() { return 1i }\nfn pad_b() { return 2i }\n",
+            encoding="utf-8",
+        )
+        from nodus.runtime.embedding import NodusRuntime
+
+        main_nd = Path(td) / "main.nd"
+        main_nd.write_text(
+            'import "./f.nd" as f\n'
+            "fn main() {\n"
+            '    print("adder: \\(f.make_adder(3i)(10i))")\n'
+            "    let c = f.counter()\n"
+            '    print("counter: \\(c()) \\(c()) \\(c())")\n'
+            "}\n",
+            encoding="utf-8",
+        )
+        result = NodusRuntime(timeout_ms=None, max_steps=None,
+                              allowed_paths=[td]).run_file(str(main_nd))
+    assert result.get("ok"), result.get("errors")
+    out = result.get("stdout") or ""
+    assert "adder: 13" in out, f"a returned closure lost its upvalue: {out.strip()!r}"
+    assert "counter: 1 2 3" in out, f"a stateful factory closure failed: {out.strip()!r}"
+    return "a factory function exported by a module works, upvalues and all"
+
+
+@probe("#704: an edit at the same mtime is not served from cache")
+def probe_cache_notices_content():
+    import os as _os
+    import tempfile
+
+    from nodus.runtime.embedding import NodusRuntime
+
+    with tempfile.TemporaryDirectory() as td:
+        prog = Path(td) / "prog.nd"
+        prog.write_text('fn main() { print("first") }\n', encoding="utf-8")
+        mtime = _os.stat(prog).st_mtime_ns
+        first = NodusRuntime(timeout_ms=None, allowed_paths=[td]).run_file(str(prog))
+        assert "first" in (first.get("stdout") or ""), first
+
+        # Force the mtime back, which is what the platform does for free inside
+        # its timestamp resolution -- whole seconds on some interpreters.
+        prog.write_text('fn main() { print("second") }\n', encoding="utf-8")
+        _os.utime(prog, ns=(mtime, mtime))
+        second = NodusRuntime(timeout_ms=None, allowed_paths=[td]).run_file(str(prog))
+        out = second.get("stdout") or ""
+    assert "second" in out, f"a rewritten file ran the cached program: {out.strip()!r}"
+    assert "first" not in out, f"stale output leaked: {out.strip()!r}"
+    return "the program that runs is the program on disk"
+
+
+@probe("#170: binary file I/O round-trips bytes text mode cannot carry")
+def probe_binary_file_io():
+    import tempfile
+
+    from nodus.runtime.embedding import NodusRuntime
+
+    with tempfile.TemporaryDirectory() as td:
+        target = str(Path(td) / "raw.bin").replace("\\", "/")
+        result = NodusRuntime(timeout_ms=None, allowed_paths=[td]).run_source(
+            'import "std:fs" as fs\n'
+            "fn main() {\n"
+            "    fs.write_bytes(\"%s\", [0i, 128i, 26i, 255i, 10i])\n"
+            '    print("back: \\(fs.read_bytes("%s"))")\n'
+            '    print("as text: \\(fs.read("%s").kind)")\n'
+            "}\n" % (target, target, target),
+            filename="<probe>",
+        )
+    assert result.get("ok"), result.get("errors")
+    out = result.get("stdout") or ""
+    # 0x80 and 0xFF are not valid UTF-8 and 0x1A is end-of-file in Windows text
+    # mode -- which is the whole reason the pair exists.
+    assert "back: [0, 128, 26, 255, 10]" in out, f"bytes did not survive: {out.strip()!r}"
+    assert "as text: io_error" in out, (
+        f"reading the same file as text should fail, got {out.strip()!r}"
+    )
+    return "bytes survive a round trip that text mode refuses"
+
+
+@probe("prose: nothing still calls 5.8.0 the current release")
+def probe_no_stale_580_claim(repo: Path):
+    pattern = re.compile(
+        r"(current|latest|newest)[^.\n]{0,40}\b5\.8\.0\b"
+        r"|\b5\.8\.0\b[^.\n]{0,40}(current|latest|is live|stable on PyPI)",
+        re.I,
+    )
+    hits = []
+    for path in sorted(repo.rglob("*.md")) + sorted(repo.glob("*.txt")) + \
+            sorted(repo.glob("skills/*")):
+        parts = set(path.parts)
+        if parts & {".git", ".venv", "node_modules", "evals", "dist", "build"}:
+            continue
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                hits.append("{}:{}".format(path.relative_to(repo), n))
+    assert not hits, "still describes 5.8.0 as current: " + ", ".join(hits[:6])
+    return "no artifact calls 5.8.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -2129,6 +2288,13 @@ def main() -> int:
     probe_named_runtime_steps()
     probe_plan_then_act_example(args.repo)
     probe_no_stale_5_7_current(args.repo)
+
+    # 5.9.0
+    probe_callback_into_module_in_step()
+    probe_closure_returned_from_module()
+    probe_cache_notices_content()
+    probe_binary_file_io()
+    probe_no_stale_580_claim(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
