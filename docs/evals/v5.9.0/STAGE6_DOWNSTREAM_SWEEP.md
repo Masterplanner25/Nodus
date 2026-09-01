@@ -50,7 +50,7 @@ All 12 companions match what they published.      EXIT=0
 File contents compared against each downloaded sdist, not version strings. Exit
 **0**, not 2 — no companion was skipped, and a skip is not a pass.
 
-## 3. Non-PyPI consumers — one is stale
+## 3. Non-PyPI consumers — one was stale, and is now republished
 
 ```
 [ok] nodus-vscode (0.1.5)      keywords unchanged
