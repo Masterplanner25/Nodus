@@ -1,4 +1,6 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
+<!-- A dated record of the 2026-05-29 docset sweep. It is not maintained and is
+     not meant to be: it says what was true that day. Do not update it to match
+     the tree -- write a new record instead. -->
 
 # Docset Changelog
 

@@ -1,5 +1,3 @@
-﻿<!-- Reconciled 2026-05-29. Needs review before repo commit and push. -->
-
 # Nodus Compatibility & Deprecation Timeline
 
 > **This document is a deprecation timeline record, not a compatibility policy.**

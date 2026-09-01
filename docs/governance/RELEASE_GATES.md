@@ -1,5 +1,3 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Release Gates
 
 **Version:** 4.1.1

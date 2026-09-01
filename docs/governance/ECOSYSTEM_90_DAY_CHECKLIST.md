@@ -1,5 +1,3 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Ecosystem 90-Day Pre-Launch Checklist
 
 **Status:** COMPLETE — coordinated launch executed 2026-06-10 (nodus-lang 4.0.0 + full ecosystem)

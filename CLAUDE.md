@@ -1193,11 +1193,36 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
   "ACTION REQUIRED" for months after the fixes landed, because the tracker was
   maintained by hand separately from the work. Do not use it as a to-do list.
 
-**19 governance docs still open with `<!-- Authored by Codex during non coding
-session. Needs review before repo commit and push. -->`** — including
-`DOCSET_INDEX.md`, which is the reader entry point, and `SECURITY_POSTURE.md`. They
-were committed and pushed on 2026-05-29, so the marker is self-contradicting. Left in
-place pending a decision on whether to strip them.
+**The 2026-05-29 "needs review before repo commit and push" marker is resolved.**
+It was on **23** documents, not the 19 this file used to say — a count worth
+re-deriving rather than trusting, like every other count here.
+
+Resolved per file rather than uniformly, because `git log` showed two very
+different populations and one blanket answer would have been a lie either way:
+
+- **12 were maintained since** — `RELEASE_GATES.md` had *seventeen* later commits
+  and is what the release process reads; `SECURITY_POSTURE.md` had ten and carries
+  a section written for #192. Asking for "review before commit" on a file
+  committed and then edited seventeen more times is false, so the marker is gone.
+- **4 are dated records** of the sweep itself (the audits, `DOCSET_CHANGELOG.md`).
+  They say what was true that day and are not meant to move. Their marker now says
+  so — do not "update" them to match the tree.
+- **7 were genuinely untouched** and make live claims. Their marker now states
+  provenance rather than issuing an instruction about a commit that already
+  happened, so it stays true until someone actually reviews them.
+
+**Two findings came out of it, and they are the reason the marker existed.**
+`NODUS_POSITIONING.md` — a *governing* document with an explicit rule that it
+wins any positioning conflict — still carried the **superseded** one-sentence
+positioning, nine releases after D1 decided the current one. Anyone applying its
+own rule would have reverted `README.md` and `pyproject.toml`. Corrected. And
+`STDLIB_PHILOSOPHY.md`, `ECOSYSTEM_BOUNDARY.md` and `CHANGE_IMPACT_MATRIX.md` are
+still stamped `Version: 3.0.2`; that is recorded in their markers, not fixed, and
+the seven unreviewed documents have not had their claims checked.
+
+`DOCSET_GOVERNANCE.md` prescribed the original wording, so the convention was the
+generator. It now specifies a marker that stays true after the commit — otherwise
+the next non-coding session recreates the same contradiction.
 
 ## Standalone package ecosystem (at `C:\dev\`)
 

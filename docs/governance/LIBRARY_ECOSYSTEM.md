@@ -1,5 +1,3 @@
-<!-- Reconciled 2026-05-29: nodus-a2a and nodus-mcp Tier 3 entries corrected to reflect v0.1 scope. Needs review before repo commit and push. -->
-
 # Nodus — Library Ecosystem
 
 **Status:** Architectural reference. Updated alongside major release cycles.

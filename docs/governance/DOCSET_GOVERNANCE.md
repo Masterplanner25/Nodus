@@ -1,4 +1,8 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
+<!-- Authored 2026-05-29 in a non-coding session and committed without review.
+     Nothing has edited it since, across nine releases, so treat its claims as
+     unverified and check them against the tree before relying on one. The
+     original marker said "needs review before repo commit and push", which
+     contradicted itself the moment it was pushed. -->
 
 # Docset Governance
 
@@ -59,10 +63,26 @@ Before creating a new document:
 **Maintainer:** Shawn Knight (Masterplanner25)
 ```
 
-Documents created during non-coding sessions (by AI tooling) must include:
+Documents created during non-coding sessions (by AI tooling) must include a
+marker that stays true after the commit:
+
 ```
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
+<!-- Authored <YYYY-MM-DD> in a non-coding session and committed without review.
+     Treat its claims as unverified; check them against the tree before relying
+     on one. Remove this once someone has. -->
 ```
+
+**Not "needs review before repo commit and push".** That was the original
+wording, and it contradicted itself the moment the file was pushed — which is
+exactly what happened: twenty-three documents carried it from 2026-05-29, twelve
+of them were then edited up to seventeen more times, and the marker still asked
+for a review "before commit" on files committed months earlier. A marker that is
+false on its face gets read as noise, and then it is protecting nothing.
+
+The wording above is a statement about provenance, not an instruction about a
+commit that has already happened, so it stays accurate until the review it
+describes actually occurs. Delete it when that happens; do not delete it to tidy
+the header.
 
 ---
 

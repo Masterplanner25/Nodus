@@ -1,5 +1,3 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Invariant Test Mapping
 
 **Version:** 3.0.2

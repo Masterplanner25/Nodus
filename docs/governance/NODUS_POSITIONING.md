@@ -1,4 +1,8 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
+<!-- Authored 2026-05-29 in a non-coding session and committed without review.
+     Nothing has edited it since, across nine releases, so treat its claims as
+     unverified and check them against the tree before relying on one. The
+     original marker said "needs review before repo commit and push", which
+     contradicted itself the moment it was pushed. -->
 
 # Nodus Positioning
 
@@ -23,7 +27,22 @@ heterogeneous systems together.
 
 ## The one-sentence positioning
 
-> **Nodus is the programmable glue between the components of a modern automation system.**
+> **Nodus is an orchestration DSL and embedded runtime for building agentic hosts.**
+
+That clause was decided 2026-08-26 (D1) and is pinned in `README.md`,
+`pyproject.toml` — where it is the PyPI summary — and `llms.txt`. It supersedes
+this document's earlier sentence, *"the programmable glue between the components
+of a modern automation system"*, which is kept here only as the note below.
+
+**This is the correction the precedence rule below made urgent rather than
+academic.** That rule says this document wins any positioning conflict, and this
+document carried the superseded sentence for the nine releases after D1 was
+decided — so anyone applying the rule as written would have reverted the current
+positioning to the old one, on this document's own authority. A governing
+document that is stale is worse than one that is silent.
+
+The older sentence is still a fair description of what Nodus *does*; it is not
+the positioning, because it names the mechanism rather than who it is for.
 
 Longer form: you used to need Python + bash + YAML + LangChain to wire a workflow
 together. Nodus replaces the wiring without replacing the components. The components
