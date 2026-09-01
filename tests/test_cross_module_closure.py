@@ -81,10 +81,30 @@ class _ModuleCallCase(unittest.TestCase):
     def write(self, name: str, source: str) -> None:
         (self.tmpdir / name).write_text(textwrap.dedent(source), encoding="utf-8")
 
+    # `nodus run` with no `--time-limit` bounds the WHOLE program at
+    # EXECUTION_TIMEOUT_MS (200ms) of wall clock -- `cli.run_file` turns the
+    # CLI's `timeout_ms=None` back into the default. Every case here imports a
+    # module, and the import compiles that module *during* the run, so cold
+    # compilation is charged to those 200ms. That fits on an idle box and does
+    # not fit on a loaded CI runner: it took the iterator case down once, with
+    # "Execution timed out" and nothing else wrong.
+    #
+    # Measured: the iterator case spends ~78ms inside the budget with the
+    # compiler already imported, and fails outright below 40ms. That is a 2.5x
+    # margin warm, and CI is colder -- a fresh process pays the compiler's own
+    # lazy imports inside the deadline window. The rule is 5-10x.
+    #
+    # 30s is far past that. It bounds a hang without racing anything. Note the
+    # embedded half already ran unbounded (`timeout_ms=None`), so the two halves
+    # of `assertBoth` were bounded differently while claiming to run the same
+    # program -- which is the part worth not restoring.
+    CLI_TIME_LIMIT_SECONDS = 30
+
     def run_cli(self, source: str) -> str:
         self.write("main.nd", source)
         proc = subprocess.run(
-            [sys.executable, str(NODUS_PY), "run", str(self.tmpdir / "main.nd")],
+            [sys.executable, str(NODUS_PY), "run", str(self.tmpdir / "main.nd"),
+             "--time-limit", str(self.CLI_TIME_LIMIT_SECONDS)],
             capture_output=True, text=True, timeout=120,
             cwd=str(self.tmpdir),
             env={"PYTHONPATH": str(SRC), "SYSTEMROOT": "C:\\Windows", "PATH": ""},
