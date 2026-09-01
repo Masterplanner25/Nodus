@@ -1,4 +1,8 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
+<!-- Authored 2026-05-29 in a non-coding session and committed without review.
+     Nothing has edited it since, across nine releases, so treat its claims as
+     unverified and check them against the tree before relying on one. The
+     original marker said "needs review before repo commit and push", which
+     contradicted itself the moment it was pushed. -->
 
 # Change Impact Matrix
 

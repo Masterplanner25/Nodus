@@ -1,5 +1,3 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # High-Conflict Doc Reconciliation Plan
 
 **Date:** 2026-05-29

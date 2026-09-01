@@ -1,5 +1,3 @@
-<!-- Authored by Codex during non coding session. Needs review before repo commit and push. -->
-
 # Ecosystem Maturity Rubric
 
 **Version:** 3.0.2 / ecosystem pre-launch
