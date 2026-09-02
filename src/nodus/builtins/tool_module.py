@@ -10,6 +10,7 @@ from nodus.runtime.schema_contract import (
     validate_return as _validate_return,
 )
 from nodus.vm.types import Closure, Record
+from nodus_lang_schema.contracts import VALID_EFFECTS
 
 _TOOL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]*$')
 _TOOL_NAME_MAX_LEN = 200
@@ -27,9 +28,20 @@ _TOOL_NAME_MAX_LEN = 200
 # and the checker does not tell them apart either (see `is_assignable`).
 # `function` has no JSON Schema type at all -- a callable does not cross a
 # process boundary -- so it is named and refused rather than silently absent.
-_VALID_EFFECTS = frozenset({
-    "pure", "reads_state", "writes_state", "network", "filesystem", "spawns_task",
-})
+# The effect vocabulary is `HandlerContract`'s, not this module's (#685).
+#
+# It was enumerated here as well, and the two sets agreed -- by coincidence, not
+# by construction. `HandlerContract` calls itself the unified contract for every
+# handler surface (tools, syscalls, extension tools), so a private copy in the
+# tool registry meant adding an effect took two edits, and missing one would let
+# `tool.register()` accept an effect the contract rejects, or the reverse.
+#
+# Found by `nodus_gate --shapes` on the first run of its equal-enumeration
+# detector -- and note the comment directly above: #479 made exactly this fix to
+# the *type* vocabulary in this same file, and left its neighbour. That is the
+# whole argument for detecting the pre-drift state: the fix is one import, and
+# only while the two still agree.
+_VALID_EFFECTS = VALID_EFFECTS
 
 
 def _validate_tool_name(name):

@@ -7,7 +7,7 @@ report, then a human asking "what else has this shape?".
 
 This phase asks that question mechanically. It does not find bugs; it finds
 *places where one question is answered in more than one voice*, which is where
-the bugs have come from. Three species leave a syntactic trace:
+the bugs have come from. Four species leave a syntactic trace:
 
   A. **One question, N implementations.** `resolve_import_path` exists twice, 159
      lines and 55, and the short one has no entry-point lookup — so a pip-installed
@@ -15,10 +15,20 @@ the bugs have come from. Three species leave a syntactic trace:
      editor (#598). `_walk_stmt` exists twice, and #401 fixed one of them (#597).
      Detected as: same name, same parameter list, ≥2 files, non-trivial bodies.
 
-  B. **One vocabulary, two enumerations.** `_StateRewriter` knew `=`, `x[i] =` and
-     `x.f =` but not `+=` (#518); four sites enumerated declaration forms and three
-     had never heard of `goal … over …` (#487). Detected as: two collections of
-     string literals where one is a strict subset of a comparable-sized other.
+  B. **One vocabulary, two enumerations, already drifted.** `_StateRewriter` knew
+     `=`, `x[i] =` and `x.f =` but not `+=` (#518); four sites enumerated
+     declaration forms and three had never heard of `goal … over …` (#487).
+     Detected as: two collections of string literals where one is a strict subset
+     of a comparable-sized other.
+
+  B=. **The same, still in agreement** (#685). B fires only *after* a vocabulary
+     diverges, which is the expensive half: the pre-drift state is the one where
+     the fix is a single import. Two equal enumerations are still two voices; they
+     happen to be saying the same thing today, and nothing makes them. Detected
+     as: two *module-level named constants* with equal string members, related
+     names, and at least `MIN_EQUAL_MEMBERS` of them. An alias
+     (`B = A`) is not a literal and is never collected -- an alias is the fix, and
+     a detector that flagged the fixed state would teach people to silence it.
 
   D. **Process-global state, shared by every participant.** Per-tenant memory and
      run ownership were module-scope globals, so every runtime in a process shared
@@ -63,6 +73,11 @@ MIN_BODY_STATEMENTS = 8
 # instances were 3-of-4 (#518) and 4-of-8 (#473).
 MIN_SUBSET_RATIO = 0.6
 MAX_MISSING_MEMBERS = 4
+
+# Species B=: two *equal* vocabularies. Equality alone is far too weak a signal,
+# so this is a floor beneath the name-stem test, not the discriminator. Tuned
+# against the motivating instance (#685): the run-status pair had 5 members.
+MIN_EQUAL_MEMBERS = 4
 
 MUTATING_METHODS = {"append", "update", "add", "pop", "clear",
                     "setdefault", "extend", "remove", "discard"}
@@ -176,23 +191,72 @@ def _species_a(trees) -> list[Finding]:
     return findings
 
 
+def _string_members(node) -> frozenset[str] | None:
+    """The string members of a literal collection, or None if it is not one.
+
+    One answer for both species-B detectors. They ask the same question -- "is
+    this expression an enumerated vocabulary of strings?" -- and two copies of it
+    would be the shape this file exists to report, in this file.
+    """
+    elts = None
+    if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        elts = node.elts
+    elif (isinstance(node, ast.Call)
+          and getattr(node.func, "id", "") in {"frozenset", "set"}
+          and node.args
+          and isinstance(node.args[0], (ast.Set, ast.List, ast.Tuple))):
+        elts = node.args[0].elts
+    if not elts:
+        return None
+    values = [e.value for e in elts
+              if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    if len(values) < 3 or len(values) != len(elts):
+        return None
+    return frozenset(values)
+
+
 def _literal_collections(trees):
     for rel, tree in trees:
         for node in ast.walk(tree):
-            elts = None
-            if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
-                elts = node.elts
-            elif (isinstance(node, ast.Call)
-                  and getattr(node.func, "id", "") in {"frozenset", "set"}
-                  and node.args
-                  and isinstance(node.args[0], (ast.Set, ast.List, ast.Tuple))):
-                elts = node.args[0].elts
-            if not elts:
+            members = _string_members(node)
+            if members is not None:
+                yield rel, node.lineno, members
+
+
+def _module_constants(trees):
+    """Module-level names bound to a literal collection of strings.
+
+    Deliberately narrower than `_literal_collections`, and the narrowing is the
+    signal. A *named* vocabulary at module scope is a declaration that something
+    is the set; an anonymous literal inside an expression is usually an argument.
+    Comparing every equal anonymous pair in `src/` would report `{"true","false"}`
+    against itself all day.
+
+    An alias -- `_REHYDRATABLE_STATUSES = REHYDRATABLE_RUN_STATUSES` -- has an
+    `ast.Name` value, not a literal, so it is not collected. That matters: an
+    alias is the *fix* for this shape, and a detector that flagged the fixed state
+    would train people to silence it.
+    """
+    for rel, tree in trees:
+        for node in tree.body:
+            if (isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)):
+                name, value = node.targets[0].id, node.value
+            elif (isinstance(node, ast.AnnAssign)
+                  and isinstance(node.target, ast.Name)
+                  and node.value is not None):
+                name, value = node.target.id, node.value
+            else:
                 continue
-            values = [e.value for e in elts
-                      if isinstance(e, ast.Constant) and isinstance(e.value, str)]
-            if len(values) >= 3 and len(values) == len(elts):
-                yield rel, node.lineno, frozenset(values)
+            members = _string_members(value)
+            if members is not None:
+                yield rel, node.lineno, name, members
+
+
+def _name_tokens(name: str) -> frozenset[str]:
+    """`_REHYDRATABLE_STATUSES` -> {rehydratable, statuses}."""
+    return frozenset(t for t in name.strip("_").lower().split("_") if t)
 
 
 def _species_b(trees) -> list[Finding]:
@@ -223,6 +287,65 @@ def _species_b(trees) -> list[Finding]:
                         f"that {rel_b}:{line_b} has",
                 detail=[f"{rel_a}:{line_a}", f"{rel_b}:{line_b}",
                         f"missing: {', '.join(missing)}"],
+            ))
+    return findings
+
+
+def _species_b_equal(trees) -> list[Finding]:
+    """One vocabulary, two enumerations that still agree (#685).
+
+    Species B above requires one set to be a strict subset of the other, so it
+    reports a vocabulary that has **already drifted** and is silent on one that
+    is **about to**. That is backwards: the pre-drift state is the cheaper one to
+    fix and the only one where the fix is free.
+
+    It is not a missing case so much as half the definition. This file's own
+    docstring says the phase finds *places where one question is answered in more
+    than one voice* -- two equal enumerations are two voices, they simply happen
+    to be saying the same thing today. Nothing makes them agree, so adding a
+    member means N edits where the one you miss is silent. #518 (`_StateRewriter`
+    without `+=`) and #487 (three of four sites not knowing `goal … over …`) were
+    both found by a human *after* the divergence shipped.
+
+    Three discriminators, because equality alone is far too noisy:
+
+      1. **Both are module-level named constants** -- see `_module_constants`.
+      2. **The names share a stem**, compared as token sets with leading
+         underscores stripped. `REHYDRATABLE_RUN_STATUSES` and
+         `_REHYDRATABLE_STATUSES` differ by an underscore and a dropped word;
+         two unrelated sets that coincide in members almost never do.
+      3. **A size floor**, so two equal three-member sets stay quiet.
+
+    Advisory, like the rest of the phase, and `tools/shape_manifest.json` is
+    where a deliberate pair goes -- some equal vocabularies really are two
+    questions that happen to share members today.
+    """
+    constants = list(_module_constants(trees))
+    findings = []
+    seen: set[str] = set()
+    for i, (rel_a, line_a, name_a, a) in enumerate(constants):
+        for rel_b, line_b, name_b, b in constants[i + 1:]:
+            if a != b or len(a) < MIN_EQUAL_MEMBERS:
+                continue
+            tokens_a, tokens_b = _name_tokens(name_a), _name_tokens(name_b)
+            if not (tokens_a <= tokens_b or tokens_b <= tokens_a):
+                continue
+            # Keyed on the file pair and both names -- never line numbers, and
+            # never the members, so renaming a member does not orphan the entry.
+            left, right = sorted([f"{rel_a}::{name_a}", f"{rel_b}::{name_b}"])
+            key = f"B=:{left}|{right}"
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(Finding(
+                species="B=",
+                key=key,
+                summary=f"{name_a} ({rel_a}:{line_a}) and {name_b} "
+                        f"({rel_b}:{line_b}) enumerate the same {len(a)} members "
+                        f"independently — nothing keeps them in step",
+                detail=[f"{rel_a}:{line_a} {name_a}",
+                        f"{rel_b}:{line_b} {name_b}",
+                        f"members: {', '.join(sorted(a))}"],
             ))
     return findings
 
@@ -307,7 +430,8 @@ def run_shapes_phase(root) -> ShapesResult:
     trees = list(_modules(root))
     result.scanned = len(trees)
 
-    findings = _species_a(trees) + _species_b(trees) + _species_d(trees)
+    findings = (_species_a(trees) + _species_b(trees)
+                + _species_b_equal(trees) + _species_d(trees))
     for finding in findings:
         entry = entries.get(finding.key)
         if isinstance(entry, dict):
