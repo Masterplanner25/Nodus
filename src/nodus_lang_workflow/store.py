@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from nodus.runtime.runtime_stats import is_store_time, store_time_ms
+
 from abc import ABC, abstractmethod
 import json
 import os
@@ -11,7 +13,6 @@ import time
 import uuid
 from contextlib import contextmanager
 
-from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.state_paths import workflow_sqlite_path, workflow_store_root
 
 from .models import (
@@ -323,8 +324,13 @@ def _retry_due_for_record(record: WorkflowRunRecord, *, now_ms: float | None = N
     next_attempt_at = retry.get("next_attempt_at")
     if not isinstance(next_attempt_at, (int, float)):
         return True
+    if not is_store_time(next_attempt_at):
+        # Pre-#725 process clock (see the wait case above). Not due: firing a
+        # retry early is a side effect nobody asked for at that moment, and the
+        # backoff it was scheduled with is exactly what would be discarded.
+        return False
     if now_ms is None:
-        now_ms = runtime_time_ms()
+        now_ms = store_time_ms()
     return float(now_ms) >= float(next_attempt_at)
 
 
@@ -348,7 +354,7 @@ def _register_wait_on_record(
         event_type=event_type,
         correlation_key=correlation_key,
         payload=payload,
-        registered_at=runtime_time_ms(),
+        registered_at=store_time_ms(),
         deadline_ms=deadline_ms,
         schema=schema,
     )
@@ -373,8 +379,16 @@ def _expire_wait_timeout_on_record(
     registered_at = record.wait.registered_at
     if deadline_ms is None or registered_at is None:
         return None
+    if not is_store_time(registered_at):
+        # Pre-#725: `registered_at` is milliseconds since the *writing* process
+        # started, and nothing recorded when that was, so it cannot be converted.
+        # Left alone rather than compared: a deadline is permission to stop work,
+        # and resolving an uncomparable one as "due" would kill a run that was
+        # never asked to stop. The wait still resumes normally when its event
+        # arrives; `nodus workflow cleanup` retires it if it never does.
+        return None
     if now_ms is None:
-        now_ms = runtime_time_ms()
+        now_ms = store_time_ms()
     expires_at = float(registered_at) + float(deadline_ms)
     if float(now_ms) < expires_at:
         return None
@@ -545,7 +559,7 @@ class LocalWorkflowStore(WorkflowStore):
                 return False
 
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
-        record.updated_at = runtime_time_ms()
+        record.updated_at = store_time_ms()
         if record.created_at is None:
             record.created_at = record.updated_at
         return self._write_run(record)
@@ -609,7 +623,7 @@ class LocalWorkflowStore(WorkflowStore):
         execution_kind: str | None,
         metadata: dict[str, object] | None = None,
     ) -> WorkflowRunRecord:
-        now = runtime_time_ms()
+        now = store_time_ms()
         existing = self.get_run(run_id)
         if existing is not None:
             return existing
@@ -637,13 +651,19 @@ class LocalWorkflowStore(WorkflowStore):
             RUN_STATUS_RETRY_SCHEDULED,
         ),
     ) -> WorkflowClaim | None:
-        now = runtime_time_ms()
+        now = store_time_ms()
         with self._lock:
             record = self._load_run_unlocked(run_id)
             if record is None or record.status not in expected_statuses:
                 return None
             claim = record.claim
-            if claim is not None and claim.expires_at is not None and claim.expires_at > now:
+            # A legacy `expires_at` (pre-#725) resolves the other way from a
+            # deadline: a claim is a liveness marker, and one written by a
+            # process whose clock we cannot read is a process that is gone.
+            # Honouring it forever would strand the run; letting it be stolen is
+            # what claims exist to allow.
+            if (claim is not None and claim.expires_at is not None
+                    and is_store_time(claim.expires_at) and claim.expires_at > now):
                 return None
             fresh = WorkflowClaim(
                 token=f"claim_{uuid.uuid4().hex[:12]}",
@@ -663,7 +683,7 @@ class LocalWorkflowStore(WorkflowStore):
                 return None
             if token is None or record.claim is None or record.claim.token == token:
                 record.claim = None
-                record.updated_at = runtime_time_ms()
+                record.updated_at = store_time_ms()
                 self._atomic_write_json(self._run_path(run_id), record.to_dict())
             return record
 
@@ -983,7 +1003,7 @@ class SQLiteWorkflowStore(WorkflowStore):
             )
 
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
-        record.updated_at = runtime_time_ms()
+        record.updated_at = store_time_ms()
         if record.created_at is None:
             record.created_at = record.updated_at
         return self._write_run(record)
@@ -1028,7 +1048,7 @@ class SQLiteWorkflowStore(WorkflowStore):
         execution_kind: str | None,
         metadata: dict[str, object] | None = None,
     ) -> WorkflowRunRecord:
-        now = runtime_time_ms()
+        now = store_time_ms()
         record = WorkflowRunRecord(
             run_id=run_id,
             graph_id=graph_id,
@@ -1067,7 +1087,7 @@ class SQLiteWorkflowStore(WorkflowStore):
             RUN_STATUS_RETRY_SCHEDULED,
         ),
     ) -> WorkflowClaim | None:
-        now = runtime_time_ms()
+        now = store_time_ms()
         with self._lock, self._managed_conn() as conn:
             _exec(conn, "BEGIN IMMEDIATE")
             record = self._get_run_with_conn(conn, run_id)
@@ -1075,7 +1095,13 @@ class SQLiteWorkflowStore(WorkflowStore):
                 conn.rollback()
                 return None
             claim = record.claim
-            if claim is not None and claim.expires_at is not None and claim.expires_at > now:
+            # A legacy `expires_at` (pre-#725) resolves the other way from a
+            # deadline: a claim is a liveness marker, and one written by a
+            # process whose clock we cannot read is a process that is gone.
+            # Honouring it forever would strand the run; letting it be stolen is
+            # what claims exist to allow.
+            if (claim is not None and claim.expires_at is not None
+                    and is_store_time(claim.expires_at) and claim.expires_at > now):
                 conn.rollback()
                 return None
             fresh = WorkflowClaim(
@@ -1107,7 +1133,7 @@ class SQLiteWorkflowStore(WorkflowStore):
                 return None
             if token is None or record.claim is None or record.claim.token == token:
                 record.claim = None
-                record.updated_at = runtime_time_ms()
+                record.updated_at = store_time_ms()
                 _exec(
                     conn,
                     "UPDATE workflow_runs SET updated_at = ?, claim_json = NULL WHERE run_id = ?",

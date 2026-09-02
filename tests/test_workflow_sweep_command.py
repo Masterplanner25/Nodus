@@ -20,7 +20,6 @@ import json
 import os
 import subprocess
 import sys
-import textwrap
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -54,42 +53,23 @@ class SweepRunsWithoutAServerTests(unittest.TestCase):
     def _stranded_wait(self, run_id: str, deadline_ms: float) -> None:
         """A run left `waiting` by a process that is gone.
 
-        Registered from a **subprocess**, not from this one, and that is not
-        ceremony. A wait's deadline is stored as `registered_at + deadline_ms`
-        where `registered_at` is `runtime_time_ms()` -- milliseconds since *that*
-        process started (#725). Registering here would stamp it with pytest's
-        uptime, and the sweeping subprocess, whose clock starts near zero, would
-        find a one-millisecond deadline not yet due. Two short-lived processes
-        share a comparable origin, so the arithmetic holds.
-
-        Remove this indirection when #725 lands and the deadline is absolute.
+        Registered directly. Until #725 this had to go through a subprocess:
+        deadlines were stored against a per-process monotonic origin, so a wait
+        stamped with pytest's uptime looked "not yet due" to a freshly started
+        sweeper. Now that persisted timestamps are wall clock, any process's
+        reading is comparable with any other's — which is what makes this two
+        lines instead of twenty.
         """
-        script = textwrap.dedent(
-            """
-            import sys
-            sys.path.insert(0, {src!r})
-            from nodus_lang_workflow.runner import get_default_workflow_runner
-            store = get_default_workflow_runner().store
-            store.create_run(
-                run_id={run_id!r}, graph_id={graph_id!r},
-                workflow_name="w", execution_kind="workflow",
-            )
-            store.register_wait(
-                {run_id!r}, event_type="webhook", correlation_key="k",
-                deadline_ms={deadline!r},
-            )
-            """
-        ).format(
-            src=str(_REPO_ROOT / "src"),
-            run_id=run_id,
-            graph_id=f"g_{run_id}",
-            deadline=deadline_ms,
+        store = create_workflow_store(
+            backend="local", root=os.path.join(self.cwd, ".nodus", "workflow_framework")
         )
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True, text=True, cwd=self.cwd, timeout=120,
+        store.create_run(
+            run_id=run_id, graph_id=f"g_{run_id}",
+            workflow_name="w", execution_kind="workflow",
         )
-        self.assertEqual(0, proc.returncode, proc.stderr)
+        store.register_wait(
+            run_id, event_type="webhook", correlation_key="k", deadline_ms=deadline_ms
+        )
 
     # closes: #176
     def test_a_due_wait_is_expired_by_a_separate_process(self):
