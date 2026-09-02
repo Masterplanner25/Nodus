@@ -805,6 +805,44 @@ def _workflow_migrate_state(project_root: str | None, graph_id: str | None = Non
     return 0
 
 
+def _workflow_migrate_store(
+    project_root: str | None,
+    *,
+    to_backend: str,
+    from_backend: str | None,
+    store_path: str | None,
+    dry_run: bool,
+    overwrite: bool,
+) -> int:
+    """Copy run records between store backends (#174).
+
+    The source defaults to the store the default runner is *currently* using, so
+    the common case — "I have been running on `local` and want `sqlite`" — needs
+    only `--to sqlite`. Naming it explicitly is for the case where the default
+    has already been switched and the old store still holds runs.
+    """
+    from nodus_lang_workflow.store import create_workflow_store, migrate_workflow_store
+
+    with _project_root_context(project_root):
+        try:
+            source = (
+                get_default_workflow_runner().store
+                if from_backend is None
+                else create_workflow_store(backend=from_backend)
+            )
+            target = create_workflow_store(backend=to_backend, path=store_path)
+        except ValueError as exc:
+            _print_stderr(str(exc))
+            return 1
+        report = migrate_workflow_store(
+            source, target, dry_run=dry_run, overwrite=overwrite
+        )
+    _json_print(report)
+    # A record that could not be copied is the one case an operator must not
+    # miss: the run still exists in the source and will not be in the new store.
+    return 1 if report.get("failed_count") else 0
+
+
 def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, force: bool) -> int:
     now_ms = int(time.time() * 1000)
     threshold = retention_seconds if retention_seconds is not None else _default_retention_seconds()
@@ -1864,6 +1902,26 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             graph_id = str(flags["--graph-id"]) if "--graph-id" in flags else None
             return _workflow_migrate_state(project_root, graph_id)
+        if subcommand == "migrate-store":
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "migrate-store"))
+            if positional or "--to" not in flags:
+                _print_stderr(
+                    "Usage: nodus workflow migrate-store --to {local|sqlite} "
+                    "[--from BACKEND] [--store-path PATH] [--dry-run] [--overwrite]"
+                )
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            return _workflow_migrate_store(
+                project_root,
+                to_backend=str(flags["--to"]),
+                from_backend=str(flags["--from"]) if "--from" in flags else None,
+                store_path=str(flags["--store-path"]) if "--store-path" in flags else None,
+                dry_run="--dry-run" in flags,
+                overwrite="--overwrite" in flags,
+            )
         if subcommand == "cleanup":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "cleanup"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))

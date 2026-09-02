@@ -72,6 +72,24 @@ class WorkflowStore(ABC):
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         raise NotImplementedError
 
+    def restore_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
+        """Write a record verbatim, keeping its own timestamps (#174).
+
+        `save_run` stamps `updated_at` to now, which is right for a run that just
+        moved and wrong for one being *copied*. Migrating a store through
+        `save_run` would make every record equally fresh — and `updated_at` is not
+        decoration: it backs `nodus workflow runs --updated-after/--updated-before`
+        and orders `_prune_terminal_runs`, which deletes oldest-first. A migration
+        that stamps everything now silently destroys both.
+
+        **Concrete, not abstract, on purpose.** An out-of-tree store subclassing
+        this ABC would break at construction if a new abstract method appeared —
+        which is exactly how 5.0.3 broke `nodus_sdk` at construction (#185), and
+        why the dependent suites now run before any publish. The default is
+        therefore lossy-but-working; both in-tree stores override it faithfully.
+        """
+        return self.save_run(record)
+
     @abstractmethod
     def create_run(
         self,
@@ -528,9 +546,16 @@ class LocalWorkflowStore(WorkflowStore):
 
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         record.updated_at = runtime_time_ms()
+        if record.created_at is None:
+            record.created_at = record.updated_at
+        return self._write_run(record)
+
+    def restore_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
+        """Write verbatim, keeping the record's own timestamps (#174)."""
+        return self._write_run(record)
+
+    def _write_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         with self._lock:
-            if record.created_at is None:
-                record.created_at = record.updated_at
             self._atomic_write_json(self._run_path(record.run_id), record.to_dict())
         if record.status in TERMINAL_RUN_STATUSES:
             self._prune_terminal_runs()
@@ -961,6 +986,13 @@ class SQLiteWorkflowStore(WorkflowStore):
         record.updated_at = runtime_time_ms()
         if record.created_at is None:
             record.created_at = record.updated_at
+        return self._write_run(record)
+
+    def restore_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
+        """Write verbatim, keeping the record's own timestamps (#174)."""
+        return self._write_run(record)
+
+    def _write_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         with self._managed_conn() as conn:
             _exec(
                 conn,
@@ -1255,6 +1287,75 @@ def workflow_store_path_from_env() -> str | None:
     """The configured store path, or None when unset/blank."""
     value = os.environ.get(WORKFLOW_STORE_PATH_ENV)
     return value if value else None
+
+
+def migrate_workflow_store(
+    source: WorkflowStore,
+    target: WorkflowStore,
+    *,
+    dry_run: bool = False,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    """Copy every run from *source* into *target*, timestamps intact (#174).
+
+    This is the thing that has to exist before the default store can move from
+    `local` to `sqlite`. Runs recorded in the JSON store are **invisible** to a
+    SQLite one, so flipping the default without this would silently make every
+    in-flight `waiting` run unresumable at the moment of upgrade — a data-loss
+    bug that looks like nothing at all until someone waits for a webhook that
+    never lands. `nodus workflow migrate-state` does not cover it: that migrates
+    graph *snapshots*, not stores.
+
+    **The source is never modified.** A migration that empties the old store
+    before the new one is proven has no way back, and the whole point here is
+    that the old store may hold the only copy of a run someone is waiting on.
+    Delete it by hand once the new store is serving.
+
+    **Idempotent.** A run already present in the target is skipped unless
+    `overwrite=True`, so a re-run after an interruption finishes the job rather
+    than duplicating or clobbering it. Skipped ids are reported, not hidden — a
+    silent skip is how a partial migration passes for a complete one.
+
+    Returns a report naming what moved, what was skipped, and — separately —
+    how many **waiting** runs were carried, because that is the population the
+    default flip endangers and the number an operator should check.
+    """
+    migrated: list[str] = []
+    skipped: list[str] = []
+    waiting: list[str] = []
+    failed: list[dict[str, str]] = []
+
+    for record in source.list_runs():
+        run_id = record.run_id
+        try:
+            existing = target.get_run(run_id)
+            if existing is not None and not overwrite:
+                skipped.append(run_id)
+                continue
+            if record.status == RUN_STATUS_WAITING:
+                waiting.append(run_id)
+            if not dry_run:
+                target.restore_run(record)
+            migrated.append(run_id)
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            # One unreadable record must not abandon the rest: a migration that
+            # stops at the first bad row leaves the operator with two partial
+            # stores and no report of which.
+            failed.append({"run_id": run_id, "error": str(exc)})
+
+    return {
+        "dry_run": dry_run,
+        "source": source.store_info(),
+        "target": target.store_info(),
+        "migrated": migrated,
+        "migrated_count": len(migrated),
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "waiting_migrated": waiting,
+        "waiting_count": len(waiting),
+        "failed": failed,
+        "failed_count": len(failed),
+    }
 
 
 def create_workflow_store(
