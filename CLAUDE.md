@@ -914,8 +914,17 @@ These burn time when forgotten:
   pre-checkpoint contributions once per resume).
 - **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
   Skipping either flush or the advance causes the test to pass vacuously.
-- **`spawn()` takes a coroutine value**, not a function literal. Use
-  `let c = coroutine(fn() {...})` then `spawn(c)`.
+- **`spawn()` accepts a zero-argument function directly (#718, unreleased —
+  in `CHANGELOG.md`'s `[Unreleased]`)** — `spawn(fn() { ... })` wraps and spawns, and
+  returns the handle. `spawn(c)` after `let c = coroutine(fn() {...})` is unchanged
+  and still correct.
+
+  **Through 5.9.0 the two-step form is the only spelling**: `spawn(fn(){...})`
+  raises `spawn(coroutine) expects a coroutine`. That footgun is why #336 proposed a
+  `spawn { }` keyword; the keyword was rejected (the grammar position it needs is the
+  one `match` occupies, see #717) and the builtin was widened instead. Widening
+  delegates to `coroutine()`'s own path, so the zero-arity check and the
+  ASYNC-MOD-003/#691 origin pinning are not duplicated.
 - **`fn` is a reserved keyword** — can't use as a parameter name in `.nd` files.
 - **`if` conditions with function calls require parentheses.** `if (module.fn(a, b))` works;
   `if module.fn(a, b)` gives "Expected '(', got identifier". Simple field access works without

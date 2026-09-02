@@ -125,6 +125,41 @@ def _tok_desc(kind: str, val: str) -> str:
 
 _MAX_PARSE_DEPTH = 50
 
+# Token kinds that can only *follow* a completed value, never begin one (#717).
+#
+# `match` is a contextual keyword, which is supposed to mean it stays usable as
+# an identifier -- and it was the one word of fourteen that was not. The
+# expression-atom dispatch fired on the name alone, so `let match = 7i` bound
+# fine and every read (`print(match)`, `match + 1i`, `"\(match)"`) was a syntax
+# error. One token of lookahead separates the two: a match expression is
+# `match <scrutinee> { arm, ... }`, so the word is always followed by the start
+# of an expression, while an identifier read is followed by one of these.
+#
+# **This is a deny-list rather than an allow-list on purpose, and the direction
+# is what makes the change safe.** Before it, an `ID` named `match` in
+# expression position *always* took `parse_match`, so every program diverted
+# here is one that raises today -- `parse_match` calls `self.expr()` and it has
+# nothing to parse. Turning those into a `Var` read can only convert an error
+# into a working program; it cannot change the meaning of any match expression
+# that parses now. An allow-list ("kinds that may start a scrutinee") would have
+# the opposite failure mode: one omission silently breaks a shipped, Mostly
+# Stable construct.
+#
+# Residual ambiguity, stated rather than papered over: `match - 1i`,
+# `match(f)`, `match[0]` and `match ! x` still parse as match expressions,
+# because each token can also begin a scrutinee (unary minus, a parenthesised
+# or list scrutinee, unary not). A soft keyword cannot resolve those without
+# unbounded lookahead, and reserving the word would break the contract this
+# fixes. `let m = match; ... m - 1i` is the workaround, and the tests pin the
+# boundary so it does not drift silently.
+_VALUE_FOLLOWERS = frozenset({
+    ")", "]", "}", ",", ";", ":", "SEP", "EOF", "INTERP_END",
+    ".", "=", "=>", "->",
+    "+", "*", "/", "%",
+    "==", "!=", "<", ">", "<=", ">=", "&&", "||",
+    "+=", "-=", "*=", "/=",
+})
+
 # The two clauses that take a predicate. They share a grammar and a parser, so
 # the error naming the grammar has to be told which one the author wrote --
 # `step … when (x < 5)` used to be refused with a sentence about goal `until`,
@@ -1366,7 +1401,11 @@ class Parser:
         if self.at("STRING_START"):
             return self.parse_interpolated_string()
 
-        if self.at("ID") and self.peek().val in EXPRESSION_KEYWORDS:
+        if (
+            self.at("ID")
+            and self.peek().val in EXPRESSION_KEYWORDS
+            and self.peek_ahead(1).kind not in _VALUE_FOLLOWERS
+        ):
             return self.parse_match()
 
         if self.at("ID"):

@@ -990,13 +990,62 @@ directly without an import — `async.channel()` will fail with "Missing module
 export: channel". This is intentional: these primitives are always available
 regardless of whether `std:async` is imported.
 
-Coroutines and the scheduler are experimental. Do not rely on their behavior
-being stable across minor versions.
+`spawn`, `coroutine` and `channel` are **Mostly Stable** — they graduated at
+v4.0.5, and `LANGUAGE_STABILITY_INDEX.md` is the classification of record. (This
+paragraph said "experimental" until #718; the graduation had not reached it.)
+
+#### `spawn` takes a function or a coroutine
+
+```nd
+spawn(fn() { print("hello") })            // wraps and spawns
+run_loop()
+```
+
+```
+hello
+```
+
+The two-step form is unchanged and still correct — reach for it when you want the
+coroutine before it is scheduled:
+
+```nd
+let c = coroutine(fn() { print("hello") })
+spawn(c)
+run_loop()
+```
+
+Through **5.9.0**, the two-step form was the only spelling and `spawn(fn(){...})`
+raised `spawn(coroutine) expects a coroutine`. This brings `spawn` into line with
+`async.parallel`, which has always accepted either.
+
+The function must take **zero arguments**, in both forms — a coroutine has no
+caller to supply them.
 
 #### What `spawn` gives you, and what it does not
 
-**A worker pool, not structured concurrency.** A spawned coroutine is
-independent — no parent, no handle, no scope:
+**A worker pool, not structured concurrency.** A spawned coroutine has no parent
+and no enclosing scope: nothing joins it, nothing cancels it when a sibling
+fails, and it does not keep the program alive.
+
+It does give you a **handle** — `spawn` returns the coroutine itself, so
+`coroutine_status(t)` and `cancel(t)` work on the value it returns:
+
+```nd
+let t = spawn(fn() { print("worker") })
+print(coroutine_status(t))
+run_loop()
+print(coroutine_status(t))
+```
+
+```
+created
+worker
+finished
+```
+
+(This section read "no parent, no handle, no scope" until #718. The handle
+arrived with #395/#157 — before it, `spawn` returned `nil`, which is why
+libraries reached for a channel to get a result back out.)
 
 ```nd
 spawn(coroutine(fn() { throw "first fails" }))

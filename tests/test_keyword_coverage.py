@@ -167,14 +167,87 @@ goal g over w {
             with self.subTest(keyword=word):
                 self.assertIn(word, source, f"`{word}` is listed but unused by the check above")
 
-    def test_goal_keywords_are_still_usable_as_variable_names(self):
-        # Contextual, not reserved: making `until` or `budget` a hard keyword
-        # would break existing programs for no benefit.
-        for word in sorted(GOAL_KEYWORDS):
+    # closes: #717
+    def test_contextual_keywords_are_still_usable_as_identifiers(self):
+        """Every contextual keyword can be bound *and read back*.
+
+        This replaces two tests that asked the same question and disagreed. The
+        narrow one covered `GOAL_KEYWORDS` (5 words) and did bind-then-read; the
+        wide one covered all of `CONTEXTUAL_KEYWORDS` and only bound, never
+        reading the variable back. So the wider test was the weaker one -- and it
+        was the wider one whose name stated the property, which is why `match`
+        passed it for four minor releases while every read of `match` was a
+        syntax error (#717).
+
+        One question, one test. The read is the half that matters: binding is
+        what the parser does with a `let` target, and a soft keyword breaks in
+        expression position, not in declaration position.
+        """
+        for word in sorted(CONTEXTUAL_KEYWORDS):
             with self.subTest(keyword=word):
                 self.assertTrue(
                     self._parses("let %s = 1i\nprint(%s)" % (word, word)),
-                    f"`{word}` should remain usable as an identifier",
+                    f"`{word}` is contextual but cannot be read as an "
+                    f"identifier; it is reserved in practice",
+                )
+
+    # closes: #717
+    def test_match_is_readable_as_an_identifier_in_every_position(self):
+        """`match` is the only contextual keyword parsed at expression position.
+
+        The generic test above covers one read shape. These are the positions the
+        #717 report listed, each of which was a syntax error.
+        """
+        for expr in (
+            "print(match)",
+            "let y = match + 1i",
+            'print("\\(match)")',
+            "let l = [match, 2i]",
+            "match = 9i",
+            "if (match == 7i) { print(1i) }",
+        ):
+            with self.subTest(expr=expr):
+                self.assertTrue(
+                    self._parses("let match = 7i\n%s" % expr),
+                    f"`match` should be readable in `{expr}`",
+                )
+
+    # closes: #717
+    def test_match_expressions_still_parse(self):
+        """The fix must not narrow the construct it is disambiguating from.
+
+        A deny-list of value-following tokens can only divert programs that
+        raised before, so these cannot regress -- but a later change to
+        `_VALUE_FOLLOWERS` could, and this is what would catch it.
+        """
+        for src in (
+            'let r = match 1i { 1i => "one", _ => "other" }',
+            'let x = 2i\nlet r = match x { 1i => "one", _ => "other" }',
+            'let r = match (1i + 1i) { 2i => "two", _ => "o" }',
+            'let r = match "a" { "a" => "A", _ => "z" }',
+            'let r = match [1i] { _ => "z" }',
+            'let r = match -1i { _ => "z" }',
+        ):
+            with self.subTest(src=src):
+                self.assertTrue(self._parses(src), f"match expression broke: {src}")
+
+    # closes: #717
+    def test_the_residual_ambiguity_is_where_it_is_documented(self):
+        """Four follower tokens can also begin a scrutinee, so `match` still wins.
+
+        Pinned rather than hidden. `-`, `(`, `[` and `!` each start a valid
+        scrutinee (unary minus, a parenthesised or list scrutinee, unary not), so
+        one token of lookahead cannot separate `match - 1i` from `match -1i {…}`.
+        Resolving these needs unbounded lookahead; reserving the word would break
+        the contract #717 exists to enforce. If a later change makes one of these
+        work, that is an improvement -- update this test deliberately.
+        """
+        for expr in ("let y = match - 1i", "let y = match[0i]", "let y = match(1i)"):
+            with self.subTest(expr=expr):
+                self.assertFalse(
+                    self._parses("let match = 7i\n%s" % expr),
+                    f"`{expr}` now parses; the ambiguity note in parser.py "
+                    f"`_VALUE_FOLLOWERS` needs updating",
                 )
 
     def test_expression_keywords_parse_as_expressions(self):
@@ -191,13 +264,6 @@ goal g over w {
             with self.subTest(keyword=word):
                 self.assertFalse(self._parses("let %s = 1i" % word))
 
-    def test_contextual_keywords_are_still_usable_as_names(self):
-        for word in sorted(CONTEXTUAL_KEYWORDS):
-            with self.subTest(keyword=word):
-                self.assertTrue(
-                    self._parses("let %s = 1i" % word),
-                    f"`{word}` is reserved; it should be contextual",
-                )
 
 
 # closes: #357

@@ -2,6 +2,79 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#718: `spawn()` accepts a zero-argument function, not only a coroutine.**
+
+  `spawn(fn() { ... })` wraps and spawns, and returns the handle. Launching a task
+  used to cost two statements, and passing the function — the thing every reader
+  tries first — was a runtime type error documented as a language quirk. It also
+  brings `spawn` into line with `async.parallel`, which has always accepted either
+  form.
+
+  Strictly additive: `spawn(fn)` was a hard error before, so no program can depend
+  on the old behaviour, and `spawn(c)` is untouched.
+
+  **The wrapping delegates to `coroutine()`'s own builtin rather than constructing
+  a `Coroutine` in `spawn`.** That path carries the zero-arity check and the
+  ASYNC-MOD-003 / #691 `_foreign_closure_origin` pinning; a second construction
+  site would be one question answered in two voices and would drift the moment
+  either was amended — and the resulting failure (a cross-module coroutine resumed
+  against the wrong chunk) is #691's symptom class, which is not traceable back to
+  a duplicated constructor. `tests/test_spawn_accepts_function.py` asserts on the
+  source for that reason; behaviour cannot see the difference until one copy moves.
+
+  Checked, not reasoned: the new path is **not** a fifth door into a workflow step
+  body (#394). Creating a coroutine is not a door — the guard is at first resume —
+  and both spellings are refused with identical wording, which is what the test
+  pins.
+
+  This is the part of **#336** worth having. That issue proposed a `spawn { ... }`
+  keyword for the same footgun and was closed as not planned: the block form has to
+  be an expression to keep returning the handle, which puts it in the one grammar
+  position that is broken (#717), and it would have had to reproduce the wrapping
+  logic in the compiler.
+
+### Fixes
+
+- **#717: `match` can be used as an identifier, as a contextual keyword should be.**
+
+  `match` is listed in `lexer.EXPRESSION_KEYWORDS` — contextual, meaning the word
+  stays available as a name. It was the only one of the fourteen contextual
+  keywords that was not: `let match = 7i` bound fine and **every read was a syntax
+  error** (`print(match)`, `match + 1i`, `"\(match)"`, `[match]`, `match = 9i`).
+  Present since `match` shipped in v4.1.0 (#308).
+
+  The expression-atom dispatch fired on the name alone. It now takes one token of
+  lookahead against a deny-list of tokens that can only *follow* a value.
+
+  **The direction of that list is what makes the change safe.** Before it, an `ID`
+  named `match` in expression position always took `parse_match`, so every program
+  the lookahead diverts is one that raised — turning those into a variable read can
+  only convert an error into a working program, and cannot change the meaning of
+  any match expression that parses today. An allow-list would have the opposite
+  failure mode: one omission silently breaks a shipped construct.
+
+  Residual ambiguity is pinned by test rather than papered over: `match - 1i`,
+  `match(f)` and `match[0]` still parse as match expressions, because `-`, `(` and
+  `[` can each begin a scrutinee. Separating those needs unbounded lookahead, and
+  reserving the word would break the contract this fixes.
+
+### Tooling
+
+- **#717: the two tests for "a contextual keyword is still usable as an identifier"
+  are now one.**
+
+  `tests/test_keyword_coverage.py` had two, and they disagreed. The narrow one
+  covered `GOAL_KEYWORDS` (5 words) and did bind-then-read; the wide one covered all
+  14 and only *bound*, never reading the variable back. So the wider test was the
+  weaker one — and it was the wider one whose name stated the property, which is how
+  `match` passed it for four minor releases while being unreadable.
+
+  One question, one test, covering every contextual keyword and asserting on the
+  read. Verified red on the unfixed parser before landing, along with a boundary
+  test that goes red if the deny-list is widened.
+
 ## [5.9.0] - 2026-08-31
 
 ### Added
