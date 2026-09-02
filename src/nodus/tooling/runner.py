@@ -320,12 +320,16 @@ def run_source(
         if event_file is not None:
             event_file.close()
 
+    # #675: the "spawned task never executed" warning reached embedders only,
+    # because it was built inside `runtime/embedding.py`. The decision now lives
+    # on the scheduler and this door asks it too, so `nodus run` no longer exits
+    # 0 in silence on a program whose spawned work never ran.
     return (
         _success_result(
             stage="execute",
             filename=filename,
             stdout=stdout.getvalue(),
-            stderr=stderr.getvalue(),
+            stderr=stderr.getvalue() + (vm.scheduler.unrun_task_warning() or ""),
             result=None,
             extras=extras,
         ),

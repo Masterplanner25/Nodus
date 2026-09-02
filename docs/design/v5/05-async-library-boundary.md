@@ -284,18 +284,23 @@ caller forgot to drive the scheduler
 stderr: 'Warning: 1 spawned task never executed — call run_loop() after spawn() to run them.'
 ```
 
-The warning is built in `runtime/embedding.py:1291-1297` and reads
+> **Fixed (#675).** The transcript above is the pre-fix behaviour, kept because
+> it is the evidence. `Scheduler.unrun_task_warning()` is now the one place that
+> decides, and both doors ask it — `nodus run` prints the identical sentence, and
+> a test asserts the two are *equal* rather than merely both non-empty. Row 9's
+> silence is closed.
+
+The warning used to be built in `runtime/embedding.py` and read
 `scheduler._spawned_without_loop`. The CLI builds a `VM` directly and never
-constructs a `NodusRuntime`, so it never reaches that code — the same structural
-split CLAUDE.md documents for deny-by-default, but here it is a **diagnostic**,
+constructs a `NodusRuntime`, so it never reached that code — the same structural
+split CLAUDE.md documents for deny-by-default, but here it was a **diagnostic**,
 where the split has no justification. The deny-by-default asymmetry is a decision
 about authority over unauthored work; a warning that the work you spawned never
 ran is useful to exactly the same degree in both.
 
-This is the recurring bug shape (instance count in CLAUDE.md: 25), found by
-running one program two ways. It is **not** part of this proposal — it is a
-one-line fix worth its own issue, and it is worth filing whether or not any of
-§6 is built, because it is the only thing standing between a user and row 9's
+This was the recurring bug shape, found by running one program two ways, and it
+was **not** part of this proposal — it was worth fixing whether or not any of §6
+is built, because it was the only thing standing between a user and row 9's
 silence.
 
 ## 9. What this does not do
