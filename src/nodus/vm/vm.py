@@ -380,6 +380,7 @@ class VM:
             "runtime_tasks": BuiltinInfo("runtime_tasks", 0, self.builtin_runtime_tasks),
             "runtime_task": BuiltinInfo("runtime_task", 1, self.builtin_runtime_task),
             "runtime_scheduler_stats": BuiltinInfo("runtime_scheduler_stats", 0, self.builtin_runtime_scheduler_stats),
+            "runtime_capabilities": BuiltinInfo("runtime_capabilities", 0, self.builtin_runtime_capabilities),
             "runtime_time": BuiltinInfo("runtime_time", 0, self.builtin_runtime_time),
             "runtime_events": BuiltinInfo("runtime_events", 0, self.builtin_runtime_events),
             "runtime_clear_events": BuiltinInfo("runtime_clear_events", 0, self.builtin_runtime_clear_events),
@@ -1156,6 +1157,56 @@ class VM:
         if task is None:
             return None
         return task_snapshot(task)
+
+    def builtin_runtime_capabilities(self):
+        """What this program may do right now, per capability (#87).
+
+        `ALL_CAPABILITIES` -> `"allow"` / `"deny"` / `"ask"`. Self-referential:
+        asking what authority you hold grants none, which is why this sits in the
+        ungated "introspection of the running program" group in `capability.py`
+        alongside `runtime_scheduler_stats`.
+
+        Two mechanisms decide, and both are consulted here because both can
+        refuse a call:
+
+        - **The registration-time gates.** `allow_subprocess=False` and friends
+          replace those builtins with refusing stubs before a policy is ever
+          asked, so a withheld group is `"deny"` no matter what the policy says.
+          Detected from the stub's own marker rather than by re-deriving the
+          flags, so this cannot disagree with what was actually installed.
+        - **The floor and the policy**, through `capability_decision` -- the same
+          call `check_capability` makes. Reporting one answer and enforcing
+          another is the failure this shares a function to avoid.
+
+        **`"ask"` means decided per call, not permitted.** A policy sees the
+        call's arguments, so `http_get("https://internal/...")` may be refused
+        where `http_get("https://example.com")` is allowed; a question asked
+        without arguments cannot know. `"ask"` with no approval channel is
+        `"deny"` at the chokepoint, and is reported as `"ask"` here because the
+        channel is the host's to supply and may exist by the time it matters.
+        """
+        from nodus.runtime.capability import ALL_CAPABILITIES, BUILTIN_CAPABILITIES
+
+        representative: dict[str, str] = {}
+        for name in sorted(BUILTIN_CAPABILITIES):
+            representative.setdefault(BUILTIN_CAPABILITIES[name], name)
+
+        answers: dict[str, str] = {}
+        for capability in sorted(ALL_CAPABILITIES):
+            target = representative.get(capability)
+            if target is None:
+                # A capability nothing dispatches under. Reported rather than
+                # omitted: a missing key would read as "no such capability".
+                answers[capability] = "deny"
+                continue
+            installed = self.builtins.get(target)
+            fn = getattr(installed, "fn", None) if installed is not None else None
+            if installed is None or getattr(fn, "nodus_blocked_capability", None) is not None:
+                answers[capability] = "deny"
+                continue
+            _request, decision = self.capability_decision(capability, target, "builtin", ())
+            answers[capability] = "allow" if decision is None else decision.outcome
+        return answers
 
     def builtin_runtime_scheduler_stats(self):
         return scheduler_stats(self.scheduler)
@@ -3000,6 +3051,32 @@ class VM:
 
         self.runtime_error("type", "Index assignment is only supported on lists and maps")
 
+    def capability_decision(self, capability: str | None, target: str, kind: str, args=()):
+        """What the floor and the policy say about this call, without acting on it.
+
+        Split out of `check_capability` so that asking *"may I?"* and *"do it or
+        refuse"* cannot drift apart -- `runtime.capabilities()` (#87) reports
+        exactly what the chokepoint would decide, because it calls this. A second
+        implementation of the same question is the shape this repo catalogues.
+
+        Returns `(request, decision)`; a `None` decision means nothing objected.
+        """
+        policy = self.capability_policy
+        floor = self.capability_floor
+        request = CapabilityRequest(
+            capability=capability, target=target, kind=kind, args=tuple(args)
+        )
+        if policy is None and floor is None:
+            return request, None
+        # The floor is consulted FIRST and can only restrict — it has no way to
+        # return `allow`, so it can never grant what the policy would refuse.
+        # Ordering it ahead of the policy is the whole point: it must hold
+        # regardless of what any policy, or any future bypass switch, says.
+        decision = floor.check(request) if floor is not None else None
+        if decision is None and policy is not None:
+            decision = policy.check(request)
+        return request, decision
+
     def check_capability(self, capability: str | None, target: str, kind: str, args=()) -> None:
         """Consult the capability policy, or return immediately if there is none.
 
@@ -3008,21 +3085,7 @@ class VM:
         try that it was not allowed to?" is the question an operator running
         generated code actually has (#405).
         """
-        policy = self.capability_policy
-        floor = self.capability_floor
-        if policy is None and floor is None:
-            return
-        request = CapabilityRequest(
-            capability=capability, target=target, kind=kind, args=tuple(args)
-        )
-
-        # The floor is consulted FIRST and can only restrict — it has no way to
-        # return `allow`, so it can never grant what the policy would refuse.
-        # Ordering it ahead of the policy is the whole point: it must hold
-        # regardless of what any policy, or any future bypass switch, says.
-        decision = floor.check(request) if floor is not None else None
-        if decision is None and policy is not None:
-            decision = policy.check(request)
+        request, decision = self.capability_decision(capability, target, kind, args)
         if decision is None or decision.outcome == ALLOW:
             return
 

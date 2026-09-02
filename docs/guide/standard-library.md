@@ -790,7 +790,45 @@ import "std:runtime" as rt
 ```
 
 `std:runtime` provides introspection into the running VM — function
-metadata, record fields, type details, and timing.
+metadata, record fields, type details, timing, and what the program is
+currently allowed to do.
+
+### What am I allowed to do?
+
+`capabilities()` answers, per capability, before you try:
+
+```nd
+import "std:runtime" as rt
+
+let caps = rt.capabilities()
+print(caps["network"])
+print(caps["fs.read"])
+```
+
+```
+allow
+allow
+```
+
+Every capability in the runtime's vocabulary is present — `subprocess`,
+`network`, `env`, `fs.read`, `fs.write`, `tool.invoke`, `syscall`, `agent.call`,
+`memory.read`, `memory.write` — each `"allow"`, `"deny"` or `"ask"`.
+
+Under an embedded `NodusRuntime` the answers differ, because `subprocess`,
+`network` and `env` deny by default there:
+
+```
+deny
+allow
+```
+
+**`"ask"` means decided per call, not permitted.** A host policy sees a call's
+arguments, so `http_get("https://internal/…")` can be refused where
+`http_get("https://example.com")` is allowed — a question asked without arguments
+cannot know which. Treat `"ask"` as "this may prompt", not as "this will work".
+
+Asking costs nothing and grants nothing: `capabilities()` is itself ungated, so a
+program that has been denied everything can still discover that.
 
 ### Function introspection
 

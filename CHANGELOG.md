@@ -146,6 +146,45 @@
   stores and no record of which. The report counts **waiting** runs separately,
   because that is the population a backend switch strands.
 
+- **#87: `std:runtime.capabilities()` — what this program may do, before it tries.**
+
+  ```nd
+  import "std:runtime" as rt
+  if (rt.capabilities()["network"] == "allow") { ... }
+  ```
+
+  Every capability in the runtime's vocabulary, each `"allow"`, `"deny"` or
+  `"ask"`. The surface existed only in Python — `ALL_CAPABILITIES` and
+  `BUILTIN_CAPABILITIES` — so a Nodus program could not ask whether it may reach
+  the network except by attempting it and catching the refusal.
+
+  **Both mechanisms that can refuse a call are consulted**, because either alone
+  would be a lie: the registration-time gates (`allow_network=False` replaces
+  those builtins with refusing stubs before a policy is ever asked) and the floor
+  plus the policy. The gate is detected from a marker the stub carries rather than
+  by re-deriving the flags, so the report cannot disagree with what was installed.
+
+  **The report and the enforcement share one function.** `VM.capability_decision`
+  was split out of `check_capability`, and both go through it — asking *"may I?"*
+  and *"do it or refuse"* are one question, and two implementations would drift
+  into a program being told it may do something the runtime then refuses.
+
+  `"ask"` is reported as `"ask"`, not collapsed to `"deny"`: the approval channel
+  is the host's to supply and may be there by the time the call happens. It means
+  *decided per call* — a policy sees arguments, and a question asked without them
+  cannot know.
+
+  Ungated, in the existing "introspection of the running program" group: asking
+  what authority you hold grants none, and a capability report that itself
+  required a capability would be unusable by the program that most needs it.
+
+  **`runtime.workflows()`, the issue's other remaining item, is deliberately not
+  included.** The workflow store and `.nodus/graphs/` are process-global and
+  CWD-relative, so a builtin listing every run would hand a guest every other
+  tenant's records — #584 exactly. `_GRAPH_REGISTRY` and `_GRAPH_VMS` still have
+  no per-runtime knob, so that is a scoping decision rather than a missing
+  function. The issue stays open for it.
+
 - **#160: `max_memory_mb` — an embedder can bound how much a run grows the process.**
 
   ```python

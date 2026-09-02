@@ -33,6 +33,14 @@ def _make_blocked_stub(vm, reason: str, capability: str | None = None):
             reason,
         )
         vm.runtime_error("sandbox", f"Blocked: {reason}")
+
+    # #87: an explicit marker so `runtime.capabilities()` can tell a withheld
+    # group from a granted one. Sniffing `__name__ == "_blocked"` would work
+    # today and break the first time someone renames this function.
+    # setattr rather than attribute assignment: mypy rejects adding an attribute
+    # to a function object, and a `type: ignore` here would be flagged unused on
+    # the runner that type-checks CI.
+    setattr(_blocked, "nodus_blocked_capability", capability or True)
     return _blocked
 
 

@@ -243,7 +243,7 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "wait", "recv", "resume", "run_loop", "send", "sleep", "spawn",
     ),
     "introspection of the running program": (
-        "runtime_clear_events", "runtime_event_count", "runtime_events",
+        "runtime_capabilities", "runtime_clear_events", "runtime_event_count", "runtime_events",
         "runtime_execution_unit_id", "runtime_fields", "runtime_fn_arity",
         "runtime_fn_module", "runtime_fn_name", "runtime_has",
         "runtime_module_fields", "runtime_scheduler_stats",
