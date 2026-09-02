@@ -23,7 +23,9 @@
     "An entry that stops matching is reported as stale, so paying a debt down",
     "prompts you to delete its line rather than leaving a lie behind.",
     "",
-    "`sites` on a species-A entry records how many implementations existed when the entry was written. A THIRD copy of an already-listed function matches the same key and would otherwise be silent -- found by probing the detector with a deliberate duplicate and watching it report 0 new. Growth is reported; bump the number only when you have decided the new copy is acceptable."
+    "`sites` on a species-A entry records how many implementations existed when the entry was written. A THIRD copy of an already-listed function matches the same key and would otherwise be silent -- found by probing the detector with a deliberate duplicate and watching it report 0 new. Growth is reported; bump the number only when you have decided the new copy is acceptable.",
+    "",
+    "A `B=:` key is a pair of module-level constants enumerating the SAME vocabulary -- two voices that agree today and are kept in step by nothing (#685). Prefer paying it down over recording it: the fix is usually one import, and it is only this cheap while they still agree. An `intentional` verdict here needs to say why the two sets are genuinely two questions that happen to share members, not that they currently match."
   ],
   "entries": {
     "A:register(vm,registry)": {

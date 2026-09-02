@@ -62,6 +62,47 @@
 
 ### Tooling
 
+- **#685: `nodus_gate --shapes` detects a vocabulary before it drifts, not after.**
+
+  Species B required one enumeration to be a strict *subset* of another, so it
+  reported a vocabulary that had **already diverged** and was silent on one about
+  to. That is the wrong half: the pre-drift state is the cheaper one to fix and
+  the only one where the fix is free. Both #518 (`_StateRewriter` without `+=`)
+  and #487 (three of four sites not knowing `goal … over …`) were found by a human
+  *after* the divergence shipped.
+
+  New species **B=**: two module-level named constants with equal string members
+  and related names. Three discriminators, because equality alone would report
+  every `{"true", "false"}` pair in `src/` and get the phase switched off — module
+  scope (a name bound there declares that something *is* the set; an inline
+  literal is usually an argument), a normalised name-stem match, and a size floor.
+  Each is pinned by a test that was verified to fail when that discriminator is
+  removed.
+
+  **An alias is never collected.** `_B = A` has a `Name` value, not a literal — and
+  an alias is the *fix* for this shape, so a detector that still fired afterwards
+  would teach people to silence it in the manifest instead.
+
+  Advisory like the rest of the phase; `tools/shape_manifest.json` takes a
+  deliberate pair, and its comment now says an `intentional` verdict on a `B=:`
+  key has to explain why two sets are genuinely two questions — not that they
+  currently match.
+
+- **The tool registry's effect vocabulary is `HandlerContract`'s, not its own.**
+
+  `--shapes` found this on B='s first run: `_VALID_EFFECTS` in
+  `builtins/tool_module.py` and `VALID_EFFECTS` in `nodus_lang_schema/contracts.py`
+  enumerated the same six effects independently. `HandlerContract` describes itself
+  as the unified contract for every handler surface, so a private copy in the tool
+  registry meant adding an effect took two edits — and missing one would let
+  `tool.register()` accept an effect the contract rejects, or the reverse.
+  Behaviour is unchanged; the validation message is byte-identical.
+
+  Worth recording rather than just fixing: the comment *directly above* that
+  constant documents #479 making exactly this fix to the **type** vocabulary in
+  the same file, and leaving its neighbour alone. That is the argument for
+  detecting the pre-drift state in one line.
+
 - **#717: the two tests for "a contextual keyword is still usable as an identifier"
   are now one.**
 

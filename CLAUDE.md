@@ -719,12 +719,33 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   both were gaps in the spec rather than in the VM. A green spec run is not
   evidence that a spec constrains anything
 - `--shapes`: reports **new instances of the recurring bug shape** — the section
-  below is the reason this phase exists. It scans `src/` for the three species
+  below is the reason this phase exists. It scans `src/` for the four species
   that leave a syntactic trace: one question implemented under the same name and
   signature in two modules (**A**), one vocabulary enumerated twice with a member
-  missing (**B**), and module-scope state every participant in a process shares
-  (**D**). Species C (the cache as a sibling path) and E (the bound on the wrong
-  substrate) are not detectable and are not attempted.
+  missing (**B**), the same **still in agreement** (**B=**), and module-scope
+  state every participant in a process shares (**D**). Species C (the cache as a
+  sibling path) and E (the bound on the wrong substrate) are not detectable and
+  are not attempted.
+
+  **B= is the one to understand, because it inverts when the phase speaks
+  (#685).** B requires a strict subset, so it fires only once a vocabulary has
+  *already* drifted — the expensive half, and the half a human has always found
+  first anyway (#518, #487 were both diagnosed after the divergence shipped). Two
+  *equal* enumerations are still two voices; they simply agree today, and nothing
+  makes them. Adding a member is then N edits where the one you miss is silent.
+  Detected as two **module-level named constants** with equal string members and
+  related names — a name bound at module scope declares that something *is* the
+  set, where an inline literal is usually an argument, and the name-stem test is
+  what keeps `{"true","false"}` from matching itself all day. **An alias
+  (`_B = A`) is never collected**: an alias is the *fix*, and a detector that
+  still fired afterwards would teach people to silence it in the manifest instead.
+
+  Its first run found one instance in 135 modules — `_VALID_EFFECTS` in
+  `builtins/tool_module.py` against `VALID_EFFECTS` in
+  `nodus_lang_schema/contracts.py`, the "unified" handler contract. The two
+  agreed. The detail worth keeping: the comment *directly above* that constant
+  records #479 making exactly this fix to the **type** vocabulary in the same
+  file, and leaving its neighbour alone.
 
   `tools/shape_manifest.json` records **every shape currently in the tree**, each
   with `intentional` (these are not one question) or `tracked` (a real debt, with
