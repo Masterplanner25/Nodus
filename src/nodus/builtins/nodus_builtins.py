@@ -48,6 +48,7 @@ BUILTIN_NAMES = {
     "runtime_stack_frame",
     "runtime_tasks",
     "runtime_task",
+    "runtime_capabilities",
     "runtime_scheduler_stats",
     "runtime_time",
     "runtime_events",

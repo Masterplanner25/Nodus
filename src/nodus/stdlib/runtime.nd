@@ -22,6 +22,10 @@ fn module_fields(module) {
     return runtime_module_fields(module)
 }
 
+fn capabilities() {
+    return runtime_capabilities()
+}
+
 fn stack_depth() {
     return runtime_stack_depth()
 }
