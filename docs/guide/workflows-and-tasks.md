@@ -572,6 +572,47 @@ Two consequences worth knowing:
 - The contribution must match the policy: a number for `sum`, a list for
   `append`. Anything else fails the step with a message naming both.
 
+#### A reader must join every contributor
+
+**A step that reads a folded cell has to run after every step that contributes
+to it.** Otherwise it reads a partial fold — and *which* partial one would depend
+on scheduling, so the same program would answer differently on a fast and a slow
+machine.
+
+That is refused at compile time, so `nodus check` catches it:
+
+```nd
+workflow tally {
+    state counter = 0i with { merge: "sum" }
+    step a { counter += 1i; return "a" }
+    step b { counter += 1i; return "b" }
+    step reader after a { return counter }
+}
+```
+
+```
+Syntax error at tally.nd:5:5: step 'reader' reads state 'counter', declared
+merge: "sum", but does not run after step 'b', which also contributes to it. It
+would read a partial fold, and which one depends on scheduling. Add 'b' to
+'reader's dependencies, or read the cell from the run result after the flow
+completes.
+```
+
+`after a, b` fixes it. So does anything that orders both transitively — `after
+mid` where `mid after a, b` is accepted, because the contributors are finished
+before the reader starts.
+
+Three things this does **not** refuse:
+
+* **Contributing without joining.** `counter += 1i` never reads the cell, which
+  is the whole point of a fold — two branches that do not know about each other
+  are exactly the case `merge:` exists for.
+* **A mapped contributor.** `step render each page in discover` implies `after
+  discover`, and a dependent joins the whole fan-out, so `step index after
+  render` sees every instance's contribution.
+* **Reading the final value after the run.** `r["state"]["counter"]` is the
+  complete fold; the rule is about reading *from inside a step*.
+
 #### `union` and what counts as the same element
 
 `union` is `append` minus elements already present:

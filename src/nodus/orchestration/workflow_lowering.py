@@ -221,6 +221,7 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     state_names = [state.name for state in flow.states]
     fold_cells = _fold_cells(flow)
     param_names = [param.name for param in getattr(flow, "params", []) or []]
+    fold_usage: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
     items: list[tuple[object, object]] = [
         (Str(marker), Str(execution_kind)),
         (Str("name"), Str(flow.name)),
@@ -231,11 +232,13 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
                 _lower_step_ast(
                     step, state_names, fold_cells,
                     flow_name=flow.name, param_names=param_names,
+                    fold_usage=fold_usage,
                 )
                 for step in flow.steps
             ]),
         ),
     ]
+    _validate_fold_reads(flow, fold_usage, fold_cells)
     # #481: declared, so the runner can refuse an unknown or missing argument
     # rather than leaving a step to read `nil`. Data on the flow map, like
     # `state_keys` -- it has to survive to the runner, which never sees the AST.
@@ -249,6 +252,84 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
         if policies is not None:
             items.append((Str("state_policies"), policies))
     return MapLit(items)
+
+
+def _validate_fold_reads(flow, fold_usage, fold_cells) -> None:
+    """A reader of a folded cell must join every step that contributes to it (#722).
+
+    `merge:` (#485) fixed *lost* writes -- the final value is right. What it did
+    not close is that a reader which does not depend on every contributor
+    observes an **intermediate** value, silently, and which one depends on
+    scheduling: the same program printed `1` with a slow producer and `3` with a
+    fast one. A wrong answer that changes with the machine is worse than a wrong
+    answer, because a test can pass on the box that wrote it.
+
+    Refused rather than warned, matching what this rewriter already does to a
+    plain `=` on a folded cell, `merge:` policy validation, and #500's
+    unconditional-checkpoint check. The reader cannot mean "some of the
+    contributions": there is no ordering that makes a partial fold the intended
+    value, so there is nothing to preserve by allowing it.
+
+    **Transitive**, because `after b` where `b after a` already orders `a`. The
+    reader only needs the contributors to be *finished*, not named directly --
+    demanding a direct edge would refuse correct programs.
+
+    Two node kinds are deliberately not writers here:
+
+    - A **compensation** step is excluded from the forward graph by declaration
+      (#577), so no forward reader can name it in `after` and its writes land
+      during unwinding. Counting it would make every read of a cell it touches
+      unsatisfiable.
+    - An **`each`-mapped** step needs no special case: `each x in src` implies
+      `after src` and the parser adds it, and a dependent joins the whole
+      fan-out, so the writer set is a set of step *names* and stays static
+      however many instances run.
+    """
+    if not fold_usage:
+        return
+    forward = [s for s in flow.steps if getattr(s, "compensates", None) is None]
+    writers: dict[str, set[str]] = {}
+    for step in forward:
+        _reads, writes = fold_usage.get(step.name, (frozenset(), frozenset()))
+        for cell in writes:
+            writers.setdefault(cell, set()).add(step.name)
+    if not writers:
+        return
+
+    direct = {s.name: set(s.deps or []) for s in forward}
+    finished: dict[str, set[str]] = {}
+
+    def _upstream(name: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        if name in finished:
+            return finished[name]
+        if name in seen:      # a cycle is #396's error, not this one's
+            return set()
+        out: set[str] = set()
+        for dep in direct.get(name, ()):  # an unknown dep is reported elsewhere
+            out.add(dep)
+            out |= _upstream(dep, seen | {name})
+        finished[name] = out
+        return out
+
+    for step in forward:
+        reads, _writes = fold_usage.get(step.name, (frozenset(), frozenset()))
+        for cell in sorted(reads):
+            missing = sorted(writers.get(cell, set()) - _upstream(step.name) - {step.name})
+            if not missing:
+                continue
+            joined = ", ".join(f"'{n}'" for n in missing)
+            plural = "steps" if len(missing) > 1 else "step"
+            verb = "contribute" if len(missing) > 1 else "contributes"
+            raise LangSyntaxError(
+                f"step '{step.name}' reads state '{cell}', declared "
+                f"merge: \"{fold_cells.get(cell)}\", but does not run after "
+                f"{plural} {joined}, which also {verb} to it. It would read "
+                f"a partial fold, and which one depends on scheduling. Add "
+                f"{joined} to '{step.name}'s dependencies, or read the cell from "
+                f"the run result after the flow completes.",
+                line=_pos(step)[0],
+                col=_pos(step)[1],
+            )
 
 
 def _lower_state_policies(flow) -> MapLit | None:
@@ -289,6 +370,7 @@ def _lower_step_ast(
     *,
     flow_name: str = "",
     param_names: list[str] | None = None,
+    fold_usage: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
 ) -> MapLit:
     state_var = "__workflow_state"
     params = list(param_names or [])
@@ -311,6 +393,12 @@ def _lower_step_ast(
         fold_cells=fold_cells,
     )
     rewritten_body = rewriter.rewrite_stmt(body)
+    if fold_usage is not None:
+        # #722. Collected from the walk that just happened, not a second one.
+        fold_usage[step.name] = (
+            frozenset(rewriter.fold_reads),
+            frozenset(rewriter.fold_writes),
+        )
     prelude_stmts: list[object] = []
     if state_names:
         prelude_stmts.append(Let(state_var, builtin_call("workflow_state", [])))
@@ -928,6 +1016,15 @@ class _StateRewriter:
         # for these and the difference is decided here, at compile time, rather
         # than by a runtime branch inside the write.
         self.fold_cells = dict(fold_cells or {})
+        # #722: which folded cells this step body reads and which it contributes
+        # to. Recorded here rather than by a second walk because this rewriter
+        # already visits every reference -- a `Var` naming a cell is the read
+        # site and `CompoundAssign` is the contribution site, and it already
+        # tells folded cells from plain ones. A separate analysis pass would be
+        # two implementations of "what does this step body do with state cells",
+        # which is the shape `nodus_gate --shapes` reports.
+        self.fold_reads: set[str] = set()
+        self.fold_writes: set[str] = set()
 
     def _is_fold(self, name: str) -> bool:
         return name in self.fold_cells and not self._is_local(name)
@@ -1028,6 +1125,8 @@ class _StateRewriter:
             return expr
         if isinstance(expr, Var):
             if expr.name in self.state_names and not self._is_local(expr.name):
+                if self._is_fold(expr.name):
+                    self.fold_reads.add(expr.name)
                 return _mark_from(Index(Var(self.state_var), Str(expr.name)), expr)
             return expr
         if isinstance(expr, Assign):
@@ -1064,7 +1163,10 @@ class _StateRewriter:
                         )
                     # The contribution is the right-hand side alone. It never
                     # reads the cell, which is what closes the read-modify-write
-                    # window two concurrent branches lose an update through.
+                    # window two concurrent branches lose an update through --
+                    # and is why this is recorded as a write and not also a read
+                    # (#722).
+                    self.fold_writes.add(expr.name)
                     return _mark_from(
                         builtin_call("state_contribute", [Str(expr.name), value]),
                         expr,
