@@ -146,6 +146,54 @@
   stores and no record of which. The report counts **waiting** runs separately,
   because that is the population a backend switch strands.
 
+- **#160: `max_memory_mb` — an embedder can bound how much a run grows the process.**
+
+  ```python
+  NodusRuntime(max_memory_mb=256)
+  ```
+
+  `max_steps` bounds instructions and `timeout_ms` bounds wall clock; neither
+  stopped a script growing a list until the host got a `MemoryError`. Off by
+  default like the other two, because how much memory a run may have is host
+  policy.
+
+  **Three of the issue's four proposed approaches were measured and rejected**,
+  and the numbers are the reason this reads RSS from the OS instead:
+
+  | approach | measured |
+  |---|---|
+  | `tracemalloc` | **64x slowdown** (0.026s → 1.681s on a 300k loop), 11.9 µs/read |
+  | `sys.getallocatedblocks()` | 0.8 µs, but counts **blocks not bytes**, and absent on PyPy |
+  | RSS via the OS | **4.4 µs**, real megabytes, Windows and POSIX |
+
+  Polled every 256 instructions — about 0.6% overhead against Nodus's ~2.75 µs per
+  instruction (#173). It started at 2000 and was lowered because a string doubling
+  in a loop reached a `MemoryError` *between* two checks.
+
+  **Growth, not absolute RSS.** An embedded runtime shares a process with its
+  host, and an absolute bound would make a 100 MB limit fire immediately inside a
+  2 GB host. The baseline is read at the start of each run, and the VM carries a
+  single absolute *ceiling* rather than a limit plus a baseline plus a counter --
+  because `tests/test_vm_attribute_budget.py` caught the first version at **81
+  instance attributes against PyPy'''s 80-attribute map limit**, which cost ~9x
+  throughput the last time it was crossed (#702). Four attributes became one.
+
+  **Refused at construction where the platform cannot be metered**, rather than
+  accepted and silently unenforced — a security control an operator believes they
+  have is worse than none, which is what #473 and #478 were both filed for.
+
+  **It bounds a footprint, not an allocation count.** RSS is a process measure:
+  a 25 MB allocation can be satisfied from pages the process already holds and
+  move the reading not at all -- or down, if something else frees concurrently.
+  A test asserting otherwise passed locally and failed on CI with `179421184 not
+  greater than 180469760`, which is the meter behaving correctly and the
+  assumption being wrong.
+
+  Stated plainly in `SECURITY_POSTURE.md §5` rather than left implied: polling
+  bounds growth *over time*, not a **single** allocation. One enormous list is
+  served before the next check. OS-level limits (`ulimit -v`, cgroups, a container
+  cap) remain the answer for hard memory safety, not something this replaces.
+
 ### Fixes
 
 - **#725: a persisted deadline now means the same thing in every process.**

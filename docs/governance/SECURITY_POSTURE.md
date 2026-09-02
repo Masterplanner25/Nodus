@@ -112,6 +112,7 @@ The security controls available are:
 | Runtime-state floor | — | always on | Guest writes into the runtime's state — `.nodus/`, **and wherever `NODUS_RUN_STATE_ROOT` points** (#585) — are refused; no policy can override it |
 | Call stack cap | `max_frames` | `None` → `MAX_STACK_DEPTH` (10,000) | Deep recursion raises `Call stack overflow`; tighten to 200–1000 for untrusted code |
 | Instruction limit | `max_steps` | `MAX_STEPS` (large) | Prevents infinite loops from running indefinitely |
+| Memory limit | `max_memory_mb` | `None` (unbounded) | Aborts when the run has grown the process past the bound (#160). Bounds growth over time, not a single allocation — see §5 |
 | Wall-clock limit | `timeout_ms` | `None` (no deadline) | Prevents long-running scripts from blocking the host |
 
 > **`max_frames` had no working default through v4.1.1**
@@ -150,8 +151,21 @@ The Nodus sandbox is not a full security sandbox. It does not protect against:
 - **CPU exhaustion via tight computation** — `max_steps` limits instructions but not
   CPU time; a tight loop can consume significant CPU before the step limit fires.
   Use `timeout_ms` in addition to `max_steps`.
-- **Memory exhaustion** — No limit on heap allocation. A script that builds a large
-  list or map can exhaust host memory. No equivalent of `max_memory`.
+- **Memory exhaustion, in one direction only.** `max_memory_mb` (#160) bounds how
+  much a run may grow the process, polled every 256 instructions against the OS's
+  own RSS reading. It stops the case it was filed for — a script that grows a list
+  in a loop — and it is **off by default**, like `max_steps` and `timeout_ms`.
+
+  What it cannot do: polling bounds growth *over time*, not a **single**
+  allocation. A program that asks for one enormous list gets it, and the check
+  fires afterwards if the process survives. Only an OS-level limit (`ulimit -v`, a
+  cgroup, a container memory cap) prevents that, and for untrusted code it remains
+  the answer rather than something this replaces.
+
+  Two more caveats before relying on it. It measures **process** RSS, so a host
+  allocating concurrently on another thread is counted against the guest's budget.
+  And it is refused at construction where the platform cannot be metered, rather
+  than accepted and silently unenforced.
 - **Subprocess execution** — `std:subprocess` (v4.0+) allows arbitrary process execution.
   Disable via `allow_subprocess=False` on `NodusRuntime`. When enabled, the subprocess
   binary and its arguments are unrestricted — only `stdout`/`stderr` redirect paths and

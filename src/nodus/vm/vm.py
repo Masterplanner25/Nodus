@@ -56,6 +56,7 @@ from nodus.services.agent_runtime import (
     _effective_timeout_ms,  # #596: read the step budget before suspending
 )
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
+from nodus.runtime.memory import rss_bytes
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority
@@ -331,6 +332,20 @@ class VM:
         self.max_frames: int | None = MAX_STACK_DEPTH
         self.max_steps: int | None = None
         self.deadline: float | None = None
+        # #160: the third bound. `max_steps` limits instructions and `deadline`
+        # limits wall clock; neither stops a script growing a list until the host
+        # gets a MemoryError. Off by default like the other two, and for the same
+        # reason -- how much memory a run may have is host policy.
+        #
+        # An **absolute RSS ceiling**, not a limit plus a baseline. The caller
+        # sets it to `rss_at_start + budget`, so it still bounds *growth* -- and
+        # it costs the VM ONE instance attribute rather than four. That is not
+        # tidiness: `tests/test_vm_attribute_budget.py` caught the first version
+        # of this change at 81 attributes against PyPy's 80-attribute map limit,
+        # which cost ~9x throughput the last time it was crossed (#702, #488).
+        # The interval is a class constant below, and the modulo in
+        # `record_instruction` replaces a "last checked" counter.
+        self.max_memory_bytes: int | None = None
         self.trace_scheduler = trace_scheduler
         self.scheduler_output = scheduler_output
         self._task_counter = 0
@@ -2389,6 +2404,14 @@ class VM:
     #: Options `workflow_wait`'s map form accepts. Closed and checked, like the
     #: `budget` and step-option vocabularies -- an unknown key is a mistake the
     #: author can fix now, not a silently discarded declaration (#490's rule).
+    #: Instructions between RSS samples for `max_memory_bytes` (#160). 256, not
+    #: the deadline's 100 and not the 2000 this started at: one RSS read costs
+    #: ~4.4 us against ~2.75 us per Nodus instruction (#173), so this is ~0.6%
+    #: overhead -- while 2000 was coarse enough that a program doubling a string
+    #: reached a MemoryError between two checks. A class attribute, so it costs
+    #: no per-instance slot.
+    MEMORY_CHECK_INTERVAL = 256
+
     WAIT_OPTION_KEYS = ("correlation_key", "payload", "deadline_ms", "schema", "on_timeout")
 
     def builtin_workflow_wait(self, event_type, correlation_key=None, payload=None, deadline_ms=None):
@@ -3193,6 +3216,39 @@ class VM:
             if saved_module_ctx is not None:
                 self._restore_module_ctx(saved_module_ctx)
 
+    def _check_memory_limit(self) -> None:
+        """Abort if this run has grown the process past its bound (#160).
+
+        Measures **growth since the VM started**, not absolute RSS. An embedded
+        runtime shares a process with its host, and a host with a 2 GB footprint
+        would trip a 100 MB absolute limit before running an instruction. Growth
+        is the quantity an embedder can reason about without knowing their own
+        baseline -- with the caveat, stated in `SECURITY_POSTURE.md`, that a host
+        allocating concurrently on another thread is counted too.
+
+        Polling bounds growth *over time*, not a single allocation: one enormous
+        list is served before the next check runs. That is a real limit of this
+        approach and the reason OS-level limits remain the answer for hard memory
+        safety.
+        """
+        # Bound locally. The `is not None` guard is at the call site in
+        # `record_instruction`, and extracting the body into a helper drops
+        # mypy's narrowing across that boundary -- the same trap CLAUDE.md
+        # records from the bytecode-cache refactor.
+        ceiling = self.max_memory_bytes
+        if ceiling is None:
+            return
+        current = rss_bytes()
+        if current is None:
+            return  # metering vanished mid-run; refused at construction, not here
+        if current > ceiling:
+            err = RuntimeLimitExceeded(
+                f"Memory limit exceeded: this run grew the process to "
+                f"{current // 1048576} MB, past its {ceiling // 1048576} MB ceiling"
+            )
+            self.emit_runtime_error(err)
+            raise err
+
     def record_instruction(self) -> None:
         self.instructions_executed += 1
         if self.task_step_budget is not None:
@@ -3210,6 +3266,9 @@ class VM:
             err = RuntimeLimitExceeded("Execution step limit exceeded")
             self.emit_runtime_error(err)
             raise err
+        if (self.max_memory_bytes is not None
+                and self.instructions_executed % self.MEMORY_CHECK_INTERVAL == 0):
+            self._check_memory_limit()
         if self.instructions_executed - self._last_batch_emit >= self._instruction_batch_size:
             count = self.instructions_executed - self._last_batch_emit
             # Advanced whether or not the event is emitted: leaving it behind
