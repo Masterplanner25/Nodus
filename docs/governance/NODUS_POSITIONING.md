@@ -1,12 +1,6 @@
-<!-- Authored 2026-05-29 in a non-coding session and committed without review.
-     Nothing has edited it since, across nine releases, so treat its claims as
-     unverified and check them against the tree before relying on one. The
-     original marker said "needs review before repo commit and push", which
-     contradicted itself the moment it was pushed. -->
-
 # Nodus Positioning
 
-**Version:** 3.0.2 (current)
+**Last reviewed:** 2026-09-01, against 5.9.0
 **Status:** Governing document — supersedes any positioning claims in older docs
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -80,8 +74,9 @@ These are standing boundary decisions, not provisional deferrals:
 | Deterministic scheduler | Round-robin, budget-enforced; `runtime/scheduler.py` |
 | Coroutines, channels, task graphs | Implemented and tested; WORKFLOWS.md |
 | Embeddable via `NodusRuntime` | Stable API since v1.0; EMBEDDING.md |
-| MCP adapter (nodus-mcp) | Real repo, 280 tests, prepared v0.1.0 |
-| A2A adapter (nodus-a2a) | Real repo, 169 tests, prepared v0.1.0 |
+| MCP adapter (nodus-mcp) | Published on PyPI; `docs/ecosystem/COMPANION_REPOS.md` |
+| A2A adapter (nodus-a2a) | Published on PyPI; `docs/ecosystem/COMPANION_REPOS.md` |
+| A companion ecosystem, all published | `docs/ecosystem/README.md` is the roster and the source for the count |
 
 ---
 
@@ -92,9 +87,18 @@ this document wins. Phase plans, design docs, and roadmap docs describe aspirati
 this document describes ground truth as of the current release.
 
 In particular:
-- v4.0 plan documents describe design decisions for a future release
+- Phase plans (`docs/governance/V*_PLAN.md`) describe design decisions for the
+  cycle they were written for. All four — V2_1, V3_0, V3_1, V4_0 — describe
+  cycles that have shipped, so they are history, not intent.
 - LIBRARY_ECOSYSTEM.md describes architectural commitments and planned scope
-- This document describes current identity, which v4.0 will extend but not replace
+- This document describes current identity
+
+**The rule cuts both ways, which is the lesson this document is now the record
+of.** It carried the superseded one-sentence positioning for the nine releases
+after D1 replaced it, so anyone applying the rule as written would have reverted
+`README.md` and `pyproject.toml` — where that sentence is the PyPI summary — to
+the older one, on this document's own authority. Precedence is only worth having
+where currency is maintained. Check the date above before invoking the rule.
 
 ---
 
@@ -118,12 +122,20 @@ Nodus provides all six. It does not provide:
 
 ## Identity stability
 
-This positioning is locked through the v4.0 cycle. The only trigger for
-revisiting it is documented in `docs/governance/LIBRARY_ECOSYSTEM.md §"Reconsideration
-triggers"`:
+This positioning holds until one of the reconsideration triggers in
+`docs/governance/LIBRARY_ECOSYSTEM.md §"Reconsideration triggers"` fires:
 
 - Adapter pattern proves architecturally inadequate
 - General-purpose stdlib demand becomes overwhelming (10+ distinct-use-case issues)
 - Orchestration DSL identity becomes a competitive disadvantage
 
-None of these has fired as of 3.0.2.
+**None has fired as of 5.9.0.** Checked 2026-09-01: the adapter pattern carries
+the whole published companion ecosystem, no general-purpose stdlib request is
+open at all (let alone ten across distinct use cases), and the identity was
+sharpened rather than abandoned by D1.
+
+This section previously read *"locked through the v4.0 cycle"*, with a trigger
+status *"as of 3.0.2"*. A lock that expires with a cycle needs renewing at every
+cycle boundary and never was; the triggers are the real condition, and they do
+not expire. Stated that way it stays true without maintenance — the same reason
+the README banner names no version.
