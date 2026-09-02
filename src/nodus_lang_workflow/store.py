@@ -143,6 +143,7 @@ class WorkflowStore(ABC):
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
         schema: dict[str, object] | None = None,
+        on_timeout: str = "fail",
     ) -> WorkflowRunRecord | None:
         raise NotImplementedError
 
@@ -348,6 +349,7 @@ def _register_wait_on_record(
     payload: dict[str, object] | None = None,
     deadline_ms: float | None = None,
     schema: dict[str, object] | None = None,
+    on_timeout: str = "fail",
 ) -> WorkflowRunRecord:
     record.status = RUN_STATUS_WAITING
     record.wait = WorkflowWaitRecord(
@@ -357,6 +359,7 @@ def _register_wait_on_record(
         registered_at=store_time_ms(),
         deadline_ms=deadline_ms,
         schema=schema,
+        on_timeout=on_timeout,
     )
     return record
 
@@ -392,6 +395,13 @@ def _expire_wait_timeout_on_record(
     expires_at = float(registered_at) + float(deadline_ms)
     if float(now_ms) < expires_at:
         return None
+    if record.wait.on_timeout == "resume":
+        # #176: the deadline was a *schedule*, not a patience limit. Clearing the
+        # wait is the whole mechanism -- the run becomes rehydratable again, so
+        # the next sweep adopts it and carries on from where it parked. Nothing
+        # here starts it: whoever sweeps decides that, which keeps the security
+        # boundary where `nodus workflow sweep` put it.
+        return _clear_wait_on_record(record, next_status=RUN_STATUS_RUNNING)
     record.status = next_status
     record.claim = None
     record.last_error = f"Wait timeout expired for '{record.run_id}'"
@@ -696,6 +706,7 @@ class LocalWorkflowStore(WorkflowStore):
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
         schema: dict[str, object] | None = None,
+        on_timeout: str = "fail",
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
@@ -707,6 +718,7 @@ class LocalWorkflowStore(WorkflowStore):
             payload=payload,
             deadline_ms=deadline_ms,
             schema=schema,
+            on_timeout=on_timeout,
         )
         return self.save_run(record)
 
@@ -1151,6 +1163,7 @@ class SQLiteWorkflowStore(WorkflowStore):
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
         schema: dict[str, object] | None = None,
+        on_timeout: str = "fail",
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
@@ -1162,6 +1175,7 @@ class SQLiteWorkflowStore(WorkflowStore):
             payload=payload,
             deadline_ms=deadline_ms,
             schema=schema,
+            on_timeout=on_timeout,
         )
         return self.save_run(record)
 

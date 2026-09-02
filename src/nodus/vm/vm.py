@@ -65,7 +65,7 @@ from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, graph_topology, is_goal_pursuit_value, is_goal_value, is_workflow_value, workflow_to_graph
-from nodus.orchestration.workflow_state import checkpoints_public
+from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES, checkpoints_public
 
 _DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pending
 _FINALLY_GATE = -1         # handler_ip sentinel: RETURN and THROW inside a catch defer to finally
@@ -2389,7 +2389,7 @@ class VM:
     #: Options `workflow_wait`'s map form accepts. Closed and checked, like the
     #: `budget` and step-option vocabularies -- an unknown key is a mistake the
     #: author can fix now, not a silently discarded declaration (#490's rule).
-    WAIT_OPTION_KEYS = ("correlation_key", "payload", "deadline_ms", "schema")
+    WAIT_OPTION_KEYS = ("correlation_key", "payload", "deadline_ms", "schema", "on_timeout")
 
     def builtin_workflow_wait(self, event_type, correlation_key=None, payload=None, deadline_ms=None):
         if not isinstance(event_type, str) or not event_type:
@@ -2400,6 +2400,7 @@ class VM:
         # no free slot -- and this caps positional growth rather than adding a
         # fifth argument to a signature that was one option from unwritable.
         schema = None
+        on_timeout = "fail"
         if isinstance(correlation_key, (dict, Record)):
             options = dict(correlation_key.fields) if isinstance(correlation_key, Record) else dict(correlation_key)
             unknown = sorted(k for k in options if k not in self.WAIT_OPTION_KEYS)
@@ -2420,6 +2421,21 @@ class VM:
             payload = options.get("payload")
             deadline_ms = options.get("deadline_ms")
             schema = self._normalize_wait_schema(options.get("schema"))
+            if "on_timeout" in options:
+                on_timeout = options.get("on_timeout")
+                if on_timeout not in WAIT_TIMEOUT_POLICIES:
+                    # Refused where it is written, like `merge:` and `budget:`.
+                    # A typo silently meaning "fail" would turn a schedule into a
+                    # dead-letter, which is the failure this option exists to
+                    # avoid and would surface hours later as work that never ran.
+                    self.runtime_error(
+                        "type",
+                        f"workflow_wait: on_timeout must be one of "
+                        f"{', '.join(sorted(WAIT_TIMEOUT_POLICIES))}, got "
+                        f"{on_timeout!r}. \"fail\" dead-letters the run when the "
+                        f"deadline passes; \"resume\" carries on, which is how a "
+                        f"workflow schedules itself.",
+                    )
         if correlation_key is not None and not isinstance(correlation_key, str):
             self.runtime_error("type", "workflow_wait(..., correlation_key, ...) expects correlation_key as string or nil")
         if isinstance(payload, Record):
@@ -2436,6 +2452,7 @@ class VM:
             "correlation_key": correlation_key,
             "payload": payload or {},
             "deadline_ms": deadline_ms,
+            "on_timeout": on_timeout,
         }
         if schema:
             # Only when declared, so a wait without one persists exactly the

@@ -37,6 +37,46 @@
 
 ### Added
 
+- **#176: a wait whose deadline resumes instead of failing — self-scheduling.**
+
+  ```nd
+  step park { return workflow_wait("later", {deadline_ms: 3600000i, on_timeout: "resume"}) }
+  step work after park { return "ran an hour later, in whichever process swept" }
+  ```
+
+  `workflow_wait` has always meant *"park until this event arrives, and
+  dead-letter if it does not"*, which makes a deadline a patience limit.
+  `on_timeout: "resume"` reads it the other way — as a **schedule**. The run
+  parks, the process exits, and a later `nodus workflow sweep` releases the wait
+  and carries the workflow on from where it stopped. That closes #176's *"all
+  automation that spans process boundaries requires host code"*.
+
+  **A scheduled run is just a run that parked**, which is the point: rehydration,
+  resume, the store and the sweep all work unchanged, and nothing new executes
+  anything. The explicit sweep is still the only thing that starts work, so the
+  security boundary stays where it was put — a run record carries the program's
+  whole source (#499), and a runtime that rehydrated on startup would execute
+  whatever the working directory's store happened to hold.
+
+  `"fail"` remains the default and every wait written before this behaves exactly
+  as it did. An unknown policy is refused where it is written, because a typo
+  silently meaning `"fail"` would turn a schedule into a dead-letter and surface
+  hours later as work that never ran.
+
+  The sweep report gains `released_schedules`, separate from `expired_waits`:
+  those are opposite outcomes, and one number for both tells an operator nothing.
+  A released schedule is **resumed in the same sweep** — adopting it and stopping
+  left the run `running` with its steps `pending` and nothing to move them, which
+  reads as success and is not. Program output from a resumed workflow is captured
+  into the report rather than printed around it, since the JSON is this command's
+  contract with the cron calling it.
+
+  **The wait record is rebuilt field by field in four places** between the builtin
+  and the store, and `on_timeout` was silently dropped at the third on the first
+  pass — the run parked, the report looked right, and the policy was not there.
+  `schema` was lost the same way when it was added (#472); the code comment left
+  behind from that is what found this one.
+
 - **#176: `nodus workflow sweep` drives one sweep without a server.**
 
   ```

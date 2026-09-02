@@ -434,6 +434,40 @@ Call `sweep_loop.start()` at service startup, before the first request is
 accepted. In a multi-worker deployment, every worker runs its own sweep loop;
 the store backend (SQLite or Postgres) serializes concurrent sweep attempts.
 
+**Without a service, `nodus workflow sweep` does one pass** — the same one, from
+the command line. Point a cron at it and waiting runs are no longer stranded
+between processes. The run's own deadline decides what is due, so the cron's
+period bounds latency rather than correctness.
+
+### A deadline that resumes instead of failing
+
+By default a `deadline_ms` that passes is an **error**: the event never arrived,
+and the run is dead-lettered. `on_timeout: "resume"` reads the deadline the other
+way — as a **schedule**:
+
+```nd
+workflow deferred {
+    step park { return workflow_wait("later", {deadline_ms: 3600000i, on_timeout: "resume"}) }
+    step work after park { return "ran an hour later, in whichever process swept" }
+}
+```
+
+The run parks, the process exits, and the next sweep — minutes or hours later, in
+an unrelated process — releases the wait and carries the workflow on from where it
+stopped. That is self-scheduling across a process lifetime with no host code.
+
+Three things worth knowing:
+
+* **Nothing auto-starts.** The sweep is an explicit command or an explicit
+  `sweep_loop`. A run record carries the program's whole source, so a runtime that
+  rehydrated on startup would execute whatever the working directory's store
+  happened to hold.
+* **The step re-runs on resume.** It is the same resume path an event delivery
+  uses, so a step that should not park twice must say so — check
+  `workflow_resume_payload()`, or split the wait into its own step as above.
+* **`"fail"` is still the default**, and every wait written before this behaves
+  exactly as it did.
+
 ---
 
 ## Running the full example

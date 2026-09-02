@@ -8,7 +8,8 @@ import json
 import os
 import sys
 import time
-from contextlib import contextmanager
+import io
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any, Callable
 
@@ -842,7 +843,17 @@ def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
             vm.workflow_runner = runner
             return vm
 
-        report = runner.sweep(_vm_factory, min_idle_ms=min_idle_ms)
+        # A resumed workflow runs *here*, so its `print`s land on this process's
+        # stdout -- ahead of the JSON, breaking the one contract this command has
+        # with the cron that calls it. Captured and carried in the report instead:
+        # nothing is lost, and the output stays parseable. Found by scheduling a
+        # step that prints (#176).
+        program_output = io.StringIO()
+        with redirect_stdout(program_output):
+            report = runner.sweep(_vm_factory, min_idle_ms=min_idle_ms)
+    captured = program_output.getvalue()
+    if captured:
+        report["stdout"] = captured
     _json_print(report)
 
     def _failures(value: object) -> list[object]:
