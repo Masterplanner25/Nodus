@@ -313,6 +313,9 @@ COMMANDS: dict[str, Command] = {
             # `migrate-state`, which rewrites graph *snapshots* -- the two were
             # confused in the issue, and the gap between them is what blocked
             # making SQLite the default.
+            # #176: one shot of the sweep `nodus serve` runs in the background,
+            # so an external cron can drive resumption without host code.
+            "sweep": (_STORE | frozenset({"--min-idle-ms"}), frozenset()),
             "migrate-store": (
                 _STORE | frozenset({"--to", "--from", "--store-path"}),
                 frozenset({"--dry-run", "--overwrite"}),
@@ -986,6 +989,12 @@ _DETAILED_HELP: dict[str, str] = {
         "             Replay or rearm a dead-lettered workflow run.",
         "  migrate-state [--graph-id ID] [--project-root PATH]",
         "             Rewrite persisted workflow state into the normalized format.",
+        "  sweep [--min-idle-ms N] [--project-root PATH]",
+        "             Expire due waits, resume due retries, and adopt orphaned runs",
+        "             once. The same sweep `nodus serve` runs in the background --",
+        "             point a cron at this to resume work across process lifetimes.",
+        "             Rehydration is deliberately explicit: a run record carries the",
+        "             program's source, so this compiles and runs it (#499).",
         "  migrate-store --to {local|sqlite} [--from BACKEND] [--store-path PATH]",
         "                [--dry-run] [--overwrite] [--project-root PATH]",
         "             Copy run records to another store backend, timestamps intact.",
