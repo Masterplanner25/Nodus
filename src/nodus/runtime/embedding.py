@@ -13,6 +13,7 @@ from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
+from nodus.runtime.memory import memory_metering_available, rss_bytes
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.runtime.schema_contract import (
@@ -275,6 +276,7 @@ class NodusRuntime:
         allowed_commands: list[str] | None = None,
         allowed_hosts: list[str] | None = None,
         max_frames: int | None = None,
+        max_memory_mb: float | None = None,
         on_error: Callable | None = None,
         coroutine_timeout_ms: int | None = None,
         event_sinks: list | None = None,
@@ -501,6 +503,21 @@ class NodusRuntime:
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
+        # #160. Refused at construction when the platform cannot meter, rather
+        # than accepted and silently unenforced -- a security control an operator
+        # believes they have is worse than none, which is what #473 and #478 were
+        # both filed for.
+        if max_memory_mb is not None:
+            if not isinstance(max_memory_mb, (int, float)) or max_memory_mb <= 0:
+                raise ValueError("max_memory_mb must be a positive number of megabytes")
+            if not memory_metering_available():
+                raise RuntimeError(
+                    "max_memory_mb cannot be enforced on this platform: this "
+                    "runtime could not read the process's resident memory. Use an "
+                    "OS-level limit (ulimit -v, a cgroup, or a container memory "
+                    "cap) instead of a limit that would not fire."
+                )
+        self.max_memory_mb = max_memory_mb
         self.on_error = on_error
         self.coroutine_timeout_ms = coroutine_timeout_ms
         self._event_sinks: list = list(event_sinks) if event_sinks else []
@@ -1231,6 +1248,17 @@ class NodusRuntime:
         resolved_frames = self.max_frames if max_frames is None else max_frames
         if resolved_frames is not None:
             vm.max_frames = resolved_frames
+        if self.max_memory_mb is not None:
+            # The baseline is read **here**, at the start of the run, so the VM
+            # carries a single absolute ceiling instead of a limit plus a
+            # baseline plus a counter -- four instance attributes where one will
+            # do, and PyPy's 80-attribute map limit made that difference matter
+            # (#702). Reading it now rather than at construction also means the
+            # budget covers what *this call* grows, not whatever the host
+            # allocated in between.
+            baseline = rss_bytes()
+            if baseline is not None:
+                vm.max_memory_bytes = baseline + int(self.max_memory_mb * 1048576)
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
             try:
