@@ -1,6 +1,6 @@
 # Security Posture
 
-**Version:** 3.0.2
+**Last reviewed:** 2026-09-01, against 5.9.0
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -272,16 +272,25 @@ limitation.
 
 ## 10. Companion library security notes
 
-### nodus-mcp (v0.1.0, prepared)
-- Bearer token only; no OAuth in v0.1
+Both are **published on PyPI** — this section described them as "prepared"
+(built but unpublished) until 2026-09-01. Do not write a version number here;
+`tools/check_publish_drift.py` prints each companion's published version.
+
+### nodus-mcp
+- Bearer token only; no OAuth
 - `requestState` is visible to the MCP client — never checkpoint secrets in sentinel state
 - Server-initiated requests over HTTP are stdio-only (no push channel in HTTP)
 - See `nodus-mcp/docs/governance/TECH_DEBT.md` for detailed TD items
 
-### nodus-a2a (v0.1.0, prepared)
+### nodus-a2a
 - Production deployments must configure a `token_validator`; dev mode accepts all requests
 - No authentication without `token_validator` — do not expose to the internet without one
 - HTTP+JSON only; no TLS in the stdlib HTTP server; use a reverse proxy for production
+
+### Every other companion
+The security-relevant contract a companion must meet is
+`docs/governance/COMPANION_LIBRARY_CONTRACT.md`. Per-repo notes are in
+`docs/ecosystem/COMPANION_REPOS.md`.
 
 ---
 
@@ -292,15 +301,34 @@ The CLI (`nodus run`) and the embedding API (`NodusRuntime`) have different secu
 | Control | CLI (`nodus run`) | Embedded (`NodusRuntime()`) |
 |---------|-------------------|-----------------------------|
 | Filesystem | Restricted to project root / CWD automatically | Restricted to `[os.getcwd()]` by default |
-| Wall-clock timeout | 200 ms (`EXECUTION_TIMEOUT_MS`) | None — no deadline |
-| Subprocess | Available (no flag) | Available — set `allow_subprocess=False` to disable |
-| Network | Available (no flag) | Available — set `allow_network=False` to disable |
-| Env vars | Available (no flag) | Available — set `allow_env=False` to disable |
+| Wall-clock timeout | **200 ms** (`EXECUTION_TIMEOUT_MS`), for the **whole program** | `None` — no deadline |
+| Subprocess | Available (no flag) | **Denied** — pass `allow_subprocess=True` to enable |
+| Network | Available (no flag) | **Denied** — pass `allow_network=True` to enable |
+| Env vars | Available (no flag) | **Denied** — pass `allow_env=True` to enable |
 
-The critical difference: `timeout_ms` defaults to `None` in embedded mode (unlimited).
-Scripts that call `http.get()` or `subprocess.run()` over a slow network or slow process
-will block the host process indefinitely unless the embedder sets `timeout_ms` explicitly.
-EMBED-001 (#97) is closed: `NodusRuntime()` now defaults to `timeout_ms=None` (fixed in v4.0.1).
+The last three rows read *"Available — set `allow_subprocess=False` to disable"* until
+2026-09-01, describing the pre-5.0.0 default. That is **the opposite of current
+behaviour**, and it contradicted §4 of this same document, which has said `False`
+since #405 shipped. Verified by construction, not by reading: a bare
+`NodusRuntime()` reports `allow_subprocess`, `allow_network` and `allow_env` all
+`False`. Any advice written against the old default — including "a bare runtime can
+shell out" — is now backwards.
+
+Two live differences remain:
+
+- **`timeout_ms` is `None` in embedded mode**, so a script calling `http.get()` or
+  `subprocess.run()` over a slow network blocks the host indefinitely unless the
+  embedder sets it. That is deliberate (EMBED-001, #97: the old 200 ms default made
+  `NodusRuntime` unusable for servers), and it is the embedder's job to bound.
+- **The CLI's 200 ms budget bounds the whole program**, not just a coroutine —
+  a plain counting loop dies the same way a sleeping one does, and an `import` is
+  charged to it because the import compiles the module during the run. `--time-limit N`
+  (in **seconds**) raises it. SCHED-001.
+
+The divergence itself is a decision, not an oversight: the CLI builds a `VM` directly
+and never constructs a `NodusRuntime`, and a test pins **both** halves so a later
+reader does not "fix" the inconsistency. Deny-by-default protects against *hosting
+code you did not author*; a developer running a script they just wrote is not that.
 
 The filesystem default changed from `None` (unrestricted) to `[os.getcwd()]` in v4.0.1
 (security fix #119). An explicit `allowed_paths=None` still grants unrestricted access.
@@ -309,24 +337,34 @@ The filesystem default changed from `None` (unrestricted) to `[os.getcwd()]` in 
 
 ## 12. Multi-tenant isolation
 
-**Process-level singletons are NOT isolated between `NodusRuntime` instances.**
+**Memory is isolated per `NodusRuntime` as of 5.0.3** (#185 / #390, closing
+DESIGN-005 / #155). Two runtimes in one process no longer share a memory store —
+verified by construction: `NodusRuntime()._memory_store is NodusRuntime()._memory_store`
+is `False`.
 
-Two scripts running in separate `NodusRuntime` instances in the same process share:
+| Surface | Isolated by default? | How to change it |
+|---|---|---|
+| `std:memory` store | **Yes**, per runtime | `share_process_state=True` restores the old process-global sharing; `memory_store=` injects a specific store |
+| Agent registry | **No — deliberately** | `agent_registry=` scopes it per tenant |
+| Workflow runner | No — process-global | `workflow_runner=` gives a runtime its own |
 
-- `GLOBAL_MEMORY_STORE` — all `std:memory` reads/writes go to the same store.
-  Script A writing `mem.put("secret", value)` is readable by Script B.
-- `AGENT_REGISTRY` — agent registrations from one runtime are visible to all others.
+**A guest cannot register an agent**, which is why the registry is shared by
+default. The only agent builtins are `agent_call` / `agent_available` /
+`agent_describe`; registration is host-only from Python. So a shared registry
+holds what the *host* put there, and isolating it by default would break
+`register_agent(...)` → `run_source(...)` — it broke 11 tests when tried — to
+prevent a leak guests cannot cause. Memory is the opposite: a guest script writes
+it via `memory_put`, so a shared store was a channel between tenants.
 
-`shutdown()` does not clear these stores.
+**A bare `VM` and the CLI keep the process-global memory store**, single-tenant by
+construction.
 
-**Consequence:** multi-tenant script execution (one runtime per user/request in the same
-process) is not secure if scripts use `std:memory` or `std:agent`. Any tenant can read
-or overwrite any other tenant's memory keys.
-
-**Workaround:** avoid `std:memory` and `std:agent` in multi-tenant contexts, or run each
-tenant's scripts in a separate OS process.
-
-**Tracking issue:** DESIGN-005 (#155) — per-instance memory store parameter.
+**What this section said until 2026-09-01:** that `GLOBAL_MEMORY_STORE` is shared,
+that multi-tenant execution *"is not secure if scripts use `std:memory`"*, that the
+workaround is a separate OS process per tenant, and that #155 was the open tracking
+issue. #155 has been closed since 5.0.3. The advice was not merely stale — it told
+an embedder to pay for process isolation it no longer needs, in the document they
+would consult to decide.
 
 ---
 
