@@ -1253,11 +1253,53 @@ one sequencing mistake release immutability makes unrecoverable.
 `DOCSET_GOVERNANCE.md` prescribed `**Version:** X.Y.Z (the release this doc was
 created for)` — a claim about the present that goes stale at every cut, and one
 that cannot tell a reader whether the document was *checked* at that version or
-merely *written* then. **Seven maintained governance documents are still stamped
-`Version: 3.0.2`** nine minors on — including `DOCSET_INDEX.md` and
-`SECURITY_POSTURE.md`, both of which have been edited many times since. Recorded,
-not restamped: a date implies a review nobody has done. Same rule as
-`version_claims.json` — *"X is current" goes stale, "as of X" does not.*
+merely *written* then. Same rule as `version_claims.json` — *"X is current" goes
+stale, "as of X" does not.* **Every governance document carries `Last reviewed:`
+now**; a further seven were stamped `Version: 3.0.2` and were reviewed on the same
+day (#715).
+
+### What reviewing the other seven found (#715)
+
+**#710's "maintained since" split was too generous.** It classified by commit
+count, and four of these seven have exactly one substantive edit since creation —
+each a one-line touch from an unrelated PR. Only `SECURITY_POSTURE.md` (12
+commits) and `DOCSET_INDEX.md` (6) were maintained in any real sense. A commit
+count measures whether a file was *touched*, not whether anything in it was
+*checked*.
+
+**A security document contradicted itself about a live boundary.**
+`SECURITY_POSTURE.md` §4 has said deny-by-default since #405; §11's comparison
+table still said embedded subprocess/network/env were *"Available"*. And §12 told
+embedders to run one OS process per tenant because `std:memory` is shared —
+isolated per runtime since 5.0.3, with #155 closed. Both were falsified by
+constructing a `NodusRuntime` and reading the values, which is the only way this
+class of error surfaces.
+
+**`COMPATIBILITY_MODEL.md` is #1 in its own reading order and recorded a reversed
+policy as current** — F0-07, "cap companions at `<5.0.0`". That cap is what made
+5.0.0 `ResolutionImpossible` with the ecosystem installed (#445), and it was
+reversed 2026-08-17. Second time a *governing* document has been found propagating
+superseded policy under its own precedence rule, after `NODUS_POSITIONING.md`.
+**Check `Last reviewed:` before letting a document win a conflict.**
+
+**A coverage claim that names a file has to be checked against the filesystem, and
+prose cannot be.** `INVARIANT_TEST_MAPPING.md` cited 13 test files; **six do not
+exist**, four of them under a ✅ meaning "a test exists that would fail on
+violation" — one being the `allowed_paths` boundary. It also mapped 25 of 29
+invariants and had never noticed the other four. That is #179's exact failure mode
+still live in one of the two prose copies #179 names. Superseded by
+`tools/invariant_coverage.json`; do not restore a prose table.
+
+**`TEST_GAP_BACKLOG.md` was 8-of-11 stale, including its Critical and its High** —
+two closed by tests written for unrelated purposes. Nothing links a gap to the test
+that closes it, so closing one is silent. If a gap matters, file an issue.
+
+**And the one that held up says why the others did not.**
+`ECOSYSTEM_MATURITY_RUBRIC.md` needed a single correction because it **defines a
+vocabulary and claims almost nothing about the tree**. Everything that rotted held
+a *list* or a *classification* something else also holds. When writing a governing
+document: **prefer defining a distinction to enumerating its instances**, and put
+the enumeration where a gate can read it.
 
 ## Standalone package ecosystem (at `C:\dev\`)
 
