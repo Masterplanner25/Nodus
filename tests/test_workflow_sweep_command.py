@@ -103,8 +103,18 @@ class SweepRunsWithoutAServerTests(unittest.TestCase):
     def test_an_empty_store_sweeps_cleanly(self):
         code, report = sweep_in(self.cwd)
         self.assertEqual(0, code)
+        # Exact, not "every value is empty": a new bucket appearing in the report
+        # is a change to this command's contract with whatever parses it, so it
+        # should require a deliberate edit here. #176's `released_schedules` was
+        # added that way.
         self.assertEqual(
-            {"expired_waits": [], "resumed_retries": [], "rehydrated_runs": []}, report
+            {
+                "expired_waits": [],
+                "released_schedules": [],
+                "resumed_retries": [],
+                "rehydrated_runs": [],
+            },
+            report,
         )
 
     # closes: #176

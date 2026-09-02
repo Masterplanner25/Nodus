@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
+
 from dataclasses import dataclass, field
 from typing import Any, cast
 import copy
@@ -752,12 +754,18 @@ def _workflow_wait_info(value) -> dict | None:
     schema = value.get("schema")
     if not isinstance(schema, dict):
         schema = None
+    # #176: same rule as `schema` above -- rebuilt explicitly, so it must be
+    # named here or it is dropped between the step and the store.
+    on_timeout = value.get("on_timeout")
+    if on_timeout not in WAIT_TIMEOUT_POLICIES:
+        on_timeout = "fail"
     return {
         "event_type": event_type,
         "correlation_key": correlation_key,
         "payload": payload,
         "deadline_ms": float(deadline_ms) if deadline_ms is not None else None,
         "schema": schema,
+        "on_timeout": on_timeout,
     }
 
 
@@ -1132,6 +1140,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 # #472: the declared payload shape, carried to the store so a
                 # resume can refuse a wrong payload before the step re-runs.
                 "schema": wait_info.get("schema"),
+                # #176. A **fourth** field-by-field rebuild of one record, after
+                # the VM's map, `_workflow_wait_info` and `_mark_wait_from_result`
+                # -- so a new wait field has to be named in all four or it is
+                # dropped somewhere along the way and nothing reports it. That is
+                # what happened to `schema` on its first pass, and to this field
+                # on its first pass: the run parked correctly and the persisted
+                # wait simply had no `on_timeout`.
+                "on_timeout": wait_info.get("on_timeout", "fail"),
                 "step": task.step_name,
                 "task_id": task.task_id,
             },

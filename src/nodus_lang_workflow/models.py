@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
+
 
 RUN_STATUS_PENDING = "pending"
 RUN_STATUS_RUNNING = "running"
@@ -105,6 +107,12 @@ class WorkflowWaitRecord:
     # None means "accept anything", which is what every wait written before this
     # existed means.
     schema: dict[str, object] | None = None
+    #: What a passed `deadline_ms` means (#176). `"fail"` -- the long-standing
+    #: behaviour and still the default -- dead-letters the run: the event did not
+    #: arrive and that is an error. `"resume"` makes the deadline a *schedule*:
+    #: the wait clears and the run carries on, which is what lets a workflow park
+    #: itself and be picked up by a later process.
+    on_timeout: str = "fail"
 
     def to_dict(self) -> dict:
         record = {
@@ -114,6 +122,10 @@ class WorkflowWaitRecord:
             "registered_at": self.registered_at,
             "deadline_ms": self.deadline_ms,
         }
+        if self.on_timeout != "fail":
+            # Omitted at the default so a run recorded before #176 round-trips
+            # byte-identically -- the same rule `schema` follows.
+            record["on_timeout"] = self.on_timeout
         if self.schema:
             # Omitted when absent so a run recorded before #472 round-trips
             # byte-identically.
@@ -142,6 +154,11 @@ class WorkflowWaitRecord:
         schema = payload.get("schema")
         if not isinstance(schema, dict):
             schema = None
+        on_timeout = payload.get("on_timeout")
+        if on_timeout not in WAIT_TIMEOUT_POLICIES:
+            # A record written before #176, or a value nothing wrote. Defaults to
+            # the behaviour every such record was created under.
+            on_timeout = "fail"
         return cls(
             event_type=event_type,
             correlation_key=correlation_key,
@@ -149,6 +166,7 @@ class WorkflowWaitRecord:
             registered_at=registered_at,
             deadline_ms=deadline_ms,
             schema=schema,
+            on_timeout=on_timeout,
         )
 
 

@@ -406,6 +406,20 @@ def writers_agree(by_task: dict, tasks: list[str]) -> bool:
 #
 # Dedup keeps the first occurrence, which is what makes it batching-invariant:
 # `dedup(dedup(a) + b) == dedup(a + b)`.
+#: What a wait's `deadline_ms` means when it passes (#176).
+#:
+#: `"fail"` dead-letters the run: the event did not arrive and that is an error.
+#: `"resume"` makes the deadline a **schedule** -- the wait clears and the run
+#: carries on, which is what lets a workflow park itself and be picked up by a
+#: later process.
+#:
+#: Defined in core rather than in `nodus_lang_workflow.models`, where the record
+#: lives, because the VM, the task graph and the store all validate against it and
+#: `nodus_lang_workflow` already imports *from* nodus. Putting it the other way
+#: round would make `task_graph` import the workflow package, which is the
+#: direction CIRC-001 (#103) was fixed to remove.
+WAIT_TIMEOUT_POLICIES = frozenset({"fail", "resume"})
+
 FOLD_STATE_MERGE_POLICIES = ("sum", "append", "union")
 STATE_MERGE_POLICIES = ("any", "once", *FOLD_STATE_MERGE_POLICIES)
 DEFAULT_STATE_MERGE = "any"

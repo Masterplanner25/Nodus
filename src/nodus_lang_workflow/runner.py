@@ -6,6 +6,7 @@ import os
 import threading
 from contextlib import contextmanager
 
+from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
 from nodus.runtime.runtime_stats import is_store_time, store_time_ms
 from nodus.orchestration.task_graph import (
     TaskGraph,
@@ -376,6 +377,7 @@ def _mark_wait_from_result(
     _pl = wait.get("payload")
     _dl = wait.get("deadline_ms")
     _sc = wait.get("schema")
+    _ot = wait.get("on_timeout")
     runner.mark_waiting(
         graph_id,
         event_type=_et if isinstance(_et, str) else "workflow.wait",
@@ -383,6 +385,7 @@ def _mark_wait_from_result(
         payload=_pl if isinstance(_pl, dict) else {},
         deadline_ms=_dl if isinstance(_dl, (int, float)) else None,
         schema=_sc if isinstance(_sc, dict) else None,
+        on_timeout=_ot if _ot in WAIT_TIMEOUT_POLICIES else "fail",
     )
 
 
@@ -673,12 +676,53 @@ class WorkflowFrameworkRunner:
         cannot tell the difference between an orphan and a run someone is in the
         middle of, and guessing wrong corrupts the live one.
         """
-        expired = self.expire_wait_timeouts(now_ms=now_ms)
+        # #176: `expire_wait_timeouts` now returns two populations. A wait
+        # declared `on_timeout: "resume"` was a *schedule*, so its deadline
+        # releases the run to carry on; every other wait dead-letters. They are
+        # partitioned here rather than reported together, because "expired" and
+        # "released on schedule" are opposite outcomes and an operator reading one
+        # number for both learns nothing.
+        settled = self.expire_wait_timeouts(now_ms=now_ms)
+        expired = [r for r in settled if r.status == RUN_STATUS_DEAD_LETTERED]
+        released = [r for r in settled if r.status != RUN_STATUS_DEAD_LETTERED]
+        # Only the dead-lettered are skipped below. A released schedule is exactly
+        # what the rehydration pass should pick up, in *this* sweep -- skipping it
+        # would leave the work until the next one, so a scheduled task would need
+        # two sweeps to run and its deadline would mean "one sweep after".
         expired_ids = {record.run_id for record in expired}
+        # A released schedule follows the **resume** path, not the rehydration
+        # one. Rehydration only *adopts* an orphan -- it registers the graph and
+        # marks the run running so someone can carry it on. For a schedule the
+        # sweep is that someone: the deadline passing is the event, so the run is
+        # resumed exactly as a due retry is. Adopting it and stopping left the
+        # run `running` with its remaining steps `pending` and nothing to move
+        # them, which reads as success and is not.
+        released_schedules: list[dict[str, object]] = []
+        for record in released:
+            vm = vm_factory(record)
+            rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
+            if vm is None or not callable(rebuild_graph):
+                continue
+            result = self.resume_workflow(
+                vm,
+                record.run_id,
+                now_ms=now_ms,
+                rebuild_graph=rebuild_graph,
+            )
+            released_schedules.append(
+                {
+                    "run_id": record.run_id,
+                    "workflow_name": record.workflow_name,
+                    "ok": not (isinstance(result, dict) and result.get("ok") is False),
+                    "result": result,
+                }
+            )
+        released_ids = {item["run_id"] for item in released_schedules}
+
         resumed_retries: list[dict[str, object]] = []
         due_retries = self.list_due_retry_runs(now_ms=now_ms)
         for record in due_retries:
-            if record.run_id in expired_ids:
+            if record.run_id in expired_ids or record.run_id in released_ids:
                 continue
             vm = vm_factory(record)
             rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
@@ -699,7 +743,7 @@ class WorkflowFrameworkRunner:
                 }
             )
 
-        skip_ids = expired_ids | {item["run_id"] for item in resumed_retries}
+        skip_ids = expired_ids | released_ids | {item["run_id"] for item in resumed_retries}
         rehydrated: list[dict[str, object]] = []
         idle_before = (now_ms if now_ms is not None else store_time_ms()) - min_idle_ms
         # A record whose `updated_at` predates #725 carries a process-relative
@@ -727,6 +771,7 @@ class WorkflowFrameworkRunner:
 
         return {
             "expired_waits": [record.run_id for record in expired],
+            "released_schedules": released_schedules,
             "resumed_retries": resumed_retries,
             "rehydrated_runs": rehydrated,
         }
@@ -812,6 +857,7 @@ class WorkflowFrameworkRunner:
         payload: dict[str, object] | None = None,
         deadline_ms: float | None = None,
         schema: dict[str, object] | None = None,
+        on_timeout: str = "fail",
     ) -> WorkflowRunRecord | None:
         return self.store.register_wait(
             run_id,
@@ -820,6 +866,7 @@ class WorkflowFrameworkRunner:
             payload=payload,
             deadline_ms=deadline_ms,
             schema=schema,
+            on_timeout=on_timeout,
         )
 
     def revive_dead_lettered_run(self, run_id: str) -> WorkflowRunRecord | None:
