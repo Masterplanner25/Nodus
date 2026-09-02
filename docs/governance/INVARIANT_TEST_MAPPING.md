@@ -1,121 +1,63 @@
 # Invariant Test Mapping
 
-**Version:** 3.0.2
-**Status:** Working document — update as tests are added/removed
+**Last reviewed:** 2026-09-01, against 5.9.0
+**Status:** Superseded by `tools/invariant_coverage.json`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
-This document maps each runtime invariant from `docs/runtime/EXECUTION_INVARIANTS.md`
-to the tests that verify it, and notes where coverage is absent or weak.
+> **The invariant-to-test mapping is `tools/invariant_coverage.json`, and it is the
+> only copy.** `nodus_gate --invariants` checks it. Do not restore a prose table
+> here — this document *was* that table, and the section below is what it had
+> become.
 
 ---
 
-## Coverage legend
+## Where to look
 
-| Symbol | Meaning |
-|--------|---------|
-| ✅ | Covered — test(s) exist that would fail on violation |
-| ⚠️ | Partially covered — some paths tested, edge cases missing |
-| ❌ | Not covered — no test would catch a violation |
-| 🔍 | Needs verification — test may exist, not confirmed |
+| Question | Where |
+|---|---|
+| What are the runtime invariants? | `docs/runtime/EXECUTION_INVARIANTS.md` — **29** of them |
+| Which test covers invariant X? | `tools/invariant_coverage.json` |
+| Is the mapping honest? | `nodus_gate --invariants` — four checks, all failing the gate |
+| What test gaps are open? | `docs/governance/TEST_GAP_BACKLOG.md` |
+| What are the test standards? | `docs/governance/TEST_STRATEGY.md` |
 
----
+The gate fails on: an invariant with no entry, an entry naming an invariant the
+document no longer has, a named test file that does not exist, and an entry with no
+tests and no stated reason. Citation drift is advisory.
 
-## 1. VM correctness invariants
-
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| Stack balanced across instructions | I-VM-01 | ⚠️ | VM execution tests (various) | Stack underflow is caught at runtime; no systematic stack-effect test |
-| IP advances are explicit | I-VM-02 | 🔍 | Opcode tests | Checked implicitly by execution correctness tests |
-| Call frames balanced | I-VM-03 | ✅ | `test_functions.py`, `test_recursion.py` | Deep recursion and nested calls tested |
-| Local variables are slot-indexed | I-VM-04 | ✅ | `test_closures.py`, compiler emit tests | LOAD_LOCAL_IDX emitted; confirmed by benchmarks |
-| Exception handler stack consistent with frame depth | I-VM-05 | ⚠️ | `test_try_catch.py` | Basic cases tested; deeply nested try-in-function edge cases unclear |
-| `finally` always executes | I-VM-06 | ⚠️ | `test_finally.py` | Happy path and basic exception path tested; return-inside-try and exception-inside-finally may have gaps |
-| Structured throw values preserved | I-VM-07 | ✅ | `test_try_catch.py` (post-v1.0 fix) | Record/list payload preservation tested |
-| Dispatch is O(1) | I-VM-08 | ❌ | No performance regression test | Verified by code inspection and manual benchmark; no automated guard |
+**`unrecorded` is not `uncovered`.** Six of the 29 name a covering test; the other 23
+are `unrecorded`, meaning the behaviour may well be tested but nothing ties a test to
+the invariant. Do not "improve" that count by guessing a mapping — an invented one is
+worse than a recorded gap, and is precisely how this document failed.
 
 ---
 
-## 2. Scheduler invariants
+## Why this document was superseded
 
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| Round-robin with budget enforcement | I-SCHED-01 | ✅* | `test_scheduler_fairness.py` | *Deselected from coverage run (timing-sensitive) |
-| No execution after deadline | I-SCHED-02 | ⚠️ | Embedding tests with `timeout_ms` | Deadline fires correctly; check interval is batched, not exact |
-| `max_steps` is hard ceiling | I-SCHED-03 | ✅ | Embedding limit tests | Verified via `NodusRuntime(max_steps=N)` tests |
+#179 is the issue: which test checks which invariant was recorded **in prose, in two
+different places, by hand**, so a renamed test left the document pointing at nothing
+and a new invariant arrived uncovered — with no CI signal for either. This file was
+one of those two places. Reviewed against the tree on 2026-09-01, both failure modes
+had happened here, and neither had ever surfaced:
 
----
+- **Six of the thirteen test files it named do not exist** — `test_functions.py`,
+  `test_recursion.py`, `test_try_catch.py`, `test_imports.py`, `test_sandbox.py`,
+  `test_workflows.py`. Four of those sat under a **✅**, whose legend in this very
+  document read *"Covered — test(s) exist that would fail on violation."* One of the
+  four was **I-SAND-01**, the `allowed_paths` filesystem boundary.
+- **It had never learned four invariants.** It mapped 25; `EXECUTION_INVARIANTS.md`
+  documents 29. `I-WFLOW-04` through `I-WFLOW-07` were simply absent — no row, no
+  gap entry, nothing to notice.
+- **The gate does not read this file**, deliberately. So nothing could have caught
+  either.
 
-## 3. Module system invariants
+The lesson generalises past invariants, and it is the reason the ledger is JSON
+rather than a nicer table: **a coverage claim that names a file has to be checked
+against the filesystem, and prose cannot be.** A ✅ next to a filename that does not
+exist is worse than no document, because it answers "is this covered?" with a
+confident yes.
 
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| Each module executed at most once | I-MOD-01 | 🔍 | `test_imports.py` | Module caching is tested; once-only guarantee may not be explicitly asserted |
-| Relative imports cannot escape root | I-MOD-02 | ✅ | `tests/test_import_containment.py` | Containment enforced and tested for project mode, single-file mode, REPL |
-| Named imports bind live | I-MOD-03 | 🔍 | Import tests | Live binding semantics may not be explicitly tested |
-
----
-
-## 4. Error handling invariants
-
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| `run_source()` never propagates Python exceptions | I-ERR-01 | ✅ | Embedding tests | BUG-005 regression test exists |
-| Err records have canonical shape | I-ERR-02 | ⚠️ | Various error tests | Shape tested for common cases; field completeness not systematically checked |
-
----
-
-## 5. Sandbox invariants
-
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| `allowed_paths` restricts filesystem | I-SAND-01 | ✅* | `test_sandbox.py` | *Requires both CLI and embedded mode coverage; verify both paths are tested |
-| `allow_input=False` blocks `input()` | I-SAND-02 | 🔍 | Sandbox tests | Likely tested; confirm explicitly |
-| `max_frames` caps call stack | I-SAND-03 | ✅ | `test_max_frames_default.py` | Covers the embedded default, per-call override, and both CLI paths (#350) |
-| Bytecode cache checksum verified | I-SAND-04 | 🔍 | Cache tests | Checksum mechanism tested; tamper case may not be |
-
----
-
-## 6. Workflow invariants
-
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| Workflow state writes are atomic | I-WFLOW-01 | ❌ | No test | Relies on filesystem semantics; atomic write not tested |
-| Lowering produces no workflow-specific opcodes | I-WFLOW-02 | ✅ | `test_workflows.py`, `FREEZE_PROPOSAL.md` | Opcode freeze tests indirectly verify this |
-| Step execution isolated per coroutine | I-WFLOW-03 | ✅* | `test_task_graph.py` | *`test_worker_death_detection` is timing-sensitive and deselected from coverage |
-
----
-
-## 7. Coroutine and channel invariants
-
-| Invariant | ID | Coverage | Test file(s) | Notes |
-|-----------|-----|----------|-------------|-------|
-| Channel operations are FIFO | I-CORO-01 | 🔍 | Coroutine tests | FIFO ordering may be tested implicitly but not explicitly asserted |
-| `yield` suspends, not terminates | I-CORO-02 | ✅ | `test_coroutines.py` | Yield/resume semantics tested |
-
----
-
-## Gap summary
-
-Invariants with no coverage or weak coverage that represent real risk:
-
-| Gap | Invariant | Priority | Notes |
-|-----|-----------|----------|-------|
-| Stack effect invariant | I-VM-01 | Medium | Add a test that verifies stack depth after each instruction category |
-| `finally` edge cases | I-VM-06 | High | return-inside-try, exception-inside-finally, nested finally |
-| O(1) dispatch guard | I-VM-08 | Low | Manual verification; hard to auto-test |
-| Module once-only guarantee | I-MOD-01 | Medium | Add explicit test that side effects run once |
-| Live binding semantics | I-MOD-03 | Low | Edge case; add explicit assertion |
-| `allowed_paths` CLI mode | I-SAND-01 | High | Security boundary; must have CLI-mode test |
-| `allow_input` test | I-SAND-02 | Medium | Confirm test exists |
-| `max_frames` test | I-SAND-03 | Medium | Confirm test exists |
-| Bytecode tamper test | I-SAND-04 | Low | Optional; relies on filesystem |
-| Atomic workflow write | I-WFLOW-01 | Low | Hard to test; document as untested |
-| FIFO channel ordering | I-CORO-01 | Medium | Add explicit ordering assertion |
-
----
-
-## Related documents
-
-- `docs/runtime/EXECUTION_INVARIANTS.md` — invariant definitions
-- `docs/governance/TEST_GAP_BACKLOG.md` — gap tracking and prioritization
-- `docs/governance/TEST_STRATEGY.md` — test standards
+The `🔍 Needs verification` rows are the second half of the same problem — a hedge
+recorded on 2026-05-29 and never resolved across the nine releases since. Where the
+ledger cannot say, it says `unrecorded`, and the gate prints that state on every run
+rather than leaving it as a symbol nobody sweeps.

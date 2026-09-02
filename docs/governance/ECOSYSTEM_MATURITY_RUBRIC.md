@@ -1,6 +1,6 @@
 # Ecosystem Maturity Rubric
 
-**Version:** 3.0.2 / ecosystem pre-launch
+**Last reviewed:** 2026-09-01, against 5.9.0
 **Status:** Governing document
 **Maintainer:** Shawn Knight (Masterplanner25)
 
@@ -71,7 +71,7 @@ Is the library accessible to users?
 
 | Level | Meaning |
 |-------|---------|
-| **Published** | Available on PyPI or the Nodus registry. Can be installed by any user. |
+| **Published** | Available on PyPI. Can be installed by any user. (There is no Nodus registry; this row said "PyPI or the Nodus registry" until 2026-09-01.) |
 | **Prepared-unpublished** | Built, tested, packaged — but not yet on any registry. Cannot be installed by users. |
 | **Development-only** | Only available as a development checkout. No distribution package. |
 
@@ -120,6 +120,25 @@ When writing about a companion library:
 
 **Example (incorrect):**
 > nodus-mcp is ready to use and has everything you need.
+
+---
+
+## A note on this document's durability
+
+Reviewed against 5.9.0 on 2026-09-01 as part of a sweep of seven governance documents.
+**It needed one correction**, above; the other six needed between four and eight each,
+and two were wrong in ways a reader would have acted on.
+
+The difference is not care taken. **This document makes almost no claims about the
+tree.** It defines a vocabulary — five dimensions and their levels — and vocabulary does
+not go stale when code moves. The documents that rotted were the ones holding a *list*
+or a *classification* that something else also holds: which surfaces are experimental,
+which modules are Tier 1, which tests cover which invariant, what the release sequence
+is.
+
+Worth generalising when writing a governing document: **prefer defining a distinction
+to enumerating its instances.** The enumeration belongs wherever it can be checked — a
+manifest a gate reads, or the code itself.
 
 ---
 
