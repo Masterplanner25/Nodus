@@ -805,6 +805,52 @@ def _workflow_migrate_state(project_root: str | None, graph_id: str | None = Non
     return 0
 
 
+def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
+    """Drive one sweep without a server: expire waits, resume retries, adopt orphans (#176).
+
+    `WorkflowFrameworkRunner.sweep()` has always done all three, and until now the
+    only thing that called it was `nodus serve`'s background loop. So *"all
+    automation that spans process boundaries requires host code"* was true for a
+    narrow reason: the mechanism existed and had no door onto it. An external cron
+    calling this command is the missing half of self-scheduling — and the run's
+    own `deadline_ms` decides what is due, so the cron's period only bounds
+    latency, not correctness.
+
+    **Rehydration is explicit, and that is a security decision, not an
+    ergonomics one.** The issue asks for a `rehydrate_runs()` call in the default
+    runner's constructor. Since #499 a run record carries the whole program
+    source, and `.nodus/` is CWD-relative — so auto-rehydration on construction
+    would mean that entering a directory someone else prepared compiles and runs
+    their program, at import time, with nobody having asked. `SECURITY_POSTURE.md
+    §6b` already treats the stored source as sensitive; executing it
+    automatically would turn a confidentiality note into an execution boundary.
+    Requiring the operator to type this is the whole guard.
+
+    `min_idle_ms` gates the adoption half only. A background sweeper cannot tell
+    an orphan from a run someone is in the middle of, so it should pass one; a
+    one-shot invocation defaults to 0 and adopts immediately, matching `sweep()`'s
+    own default.
+    """
+    with _project_root_context(project_root):
+        runner = get_default_workflow_runner()
+
+        def _vm_factory(_record):
+            # The same shape `nodus serve` builds (#390): a bare VM that carries
+            # *this* runner, so rehydration reads the store the caller meant and
+            # not whatever module state happened to be set.
+            vm = VM([], {}, code_locs=[], source_path=None)
+            vm.workflow_runner = runner
+            return vm
+
+        report = runner.sweep(_vm_factory, min_idle_ms=min_idle_ms)
+    _json_print(report)
+    failed = [item for item in report.get("rehydrated_runs", []) if item.get("ok") is False]
+    failed += [item for item in report.get("resumed_retries", []) if item.get("ok") is False]
+    # A run that was adopted and then failed to resume is the case an operator
+    # must not miss: it is no longer waiting, and nothing else will pick it up.
+    return 1 if failed else 0
+
+
 def _workflow_migrate_store(
     project_root: str | None,
     *,
@@ -1902,6 +1948,23 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             graph_id = str(flags["--graph-id"]) if "--graph-id" in flags else None
             return _workflow_migrate_state(project_root, graph_id)
+        if subcommand == "sweep":
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "sweep"))
+            if positional:
+                _print_stderr("Usage: nodus workflow sweep [--min-idle-ms N] [--project-root <path>]")
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            min_idle_ms = 0.0
+            if "--min-idle-ms" in flags:
+                try:
+                    min_idle_ms = float(_parse_int(str(flags["--min-idle-ms"]), "--min-idle-ms"))
+                except ValueError as _e:
+                    _print_stderr(str(_e))
+                    return 1
+            return _workflow_sweep(project_root, min_idle_ms=min_idle_ms)
         if subcommand == "migrate-store":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "migrate-store"))
             if positional or "--to" not in flags:

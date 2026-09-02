@@ -37,6 +37,39 @@
 
 ### Added
 
+- **#176: `nodus workflow sweep` drives one sweep without a server.**
+
+  ```
+  nodus workflow sweep [--min-idle-ms N]
+  ```
+
+  `WorkflowFrameworkRunner.sweep()` has always expired due waits, resumed due
+  retries and adopted orphaned runs — and the only thing that called it was
+  `nodus serve`'s background loop. So the issue's *"all automation that spans
+  process boundaries requires host code"* was true for a narrow reason: the
+  mechanism existed and had no door onto it. An external cron pointed at this
+  command is the missing half, and the run's own deadline decides what is due, so
+  the cron's period bounds latency rather than correctness.
+
+  **Rehydration stays explicit, and that is a security decision.** The issue asks
+  for a `rehydrate_runs()` call in the default runner's constructor. Since #499 a
+  run record carries the whole program source and `.nodus/` is CWD-relative, so
+  that would mean entering a directory someone else prepared compiles and runs
+  their program, at import time, with nobody having asked — turning
+  `SECURITY_POSTURE.md §6b`'s confidentiality note into an execution boundary.
+  Requiring an operator to type the command is the guard, and a test pins the
+  constructor against acquiring one later.
+
+  The split was already half-drawn: the constructor starts a daemon that expires
+  wait-timeouts (safe — expiring a deadline executes nothing) and deliberately
+  does not rehydrate, its own comment saying that needs a host-supplied
+  `vm_factory`. This adds the door for the other half.
+
+  **Known limitation, filed as #725:** a wait's deadline is stored against a
+  per-process monotonic origin, so a deadline written by one process means
+  something different in another. A cron-driven sweep is subject to it. That is
+  the reason #176 stays open rather than closing here.
+
 - **#174: `nodus workflow migrate-store` copies run records between backends.**
 
   ```
