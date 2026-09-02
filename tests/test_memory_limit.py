@@ -126,14 +126,36 @@ class AnUnenforceableLimitIsRefusedTests(unittest.TestCase):
 
 class TheMeterItselfTests(unittest.TestCase):
     # closes: #160
-    def test_rss_is_readable_and_grows(self):
+    def test_rss_is_readable(self):
         self.assertTrue(memory_metering_available())
+        reading = rss_bytes()
+        self.assertIsInstance(reading, int)
+        self.assertGreater(reading, 1_000_000, "an interpreter under 1 MB is not a reading")
+
+    # closes: #160
+    def test_a_large_allocation_moves_the_reading(self):
+        """Deliberately large, because RSS is a **process** measure and does not
+        track individual allocations.
+
+        An earlier version allocated ~25 MB and asserted the reading rose. It
+        passed locally and failed on CI with `179421184 not greater than
+        180469760` -- the reading went *down*. Python satisfied the allocation
+        from pages the process already held, while the surrounding suite freed
+        others. Nothing was wrong with the meter; the assumption that a small
+        allocation must move RSS was wrong.
+
+        That granularity is worth knowing before relying on `max_memory_mb`: it
+        bounds a run's *footprint*, not its allocation count, and small churn is
+        invisible to it by design.
+        """
         before = rss_bytes()
-        self.assertIsInstance(before, int)
-        self.assertGreater(before, 1_000_000, "an interpreter under 1 MB is not a reading")
-        hog = [[0] * 100 for _ in range(30000)]
+        hog = [bytearray(1024 * 1024) for _ in range(150)]  # ~150 MB of new pages
         try:
-            self.assertGreater(rss_bytes(), before)
+            grown = rss_bytes() - before
+            self.assertGreater(
+                grown, 50 * 1024 * 1024,
+                f"150 MB of fresh allocation moved RSS by only {grown // 1048576} MB",
+            )
         finally:
             del hog
 

@@ -182,6 +182,13 @@
   accepted and silently unenforced — a security control an operator believes they
   have is worse than none, which is what #473 and #478 were both filed for.
 
+  **It bounds a footprint, not an allocation count.** RSS is a process measure:
+  a 25 MB allocation can be satisfied from pages the process already holds and
+  move the reading not at all -- or down, if something else frees concurrently.
+  A test asserting otherwise passed locally and failed on CI with `179421184 not
+  greater than 180469760`, which is the meter behaving correctly and the
+  assumption being wrong.
+
   Stated plainly in `SECURITY_POSTURE.md §5` rather than left implied: polling
   bounds growth *over time*, not a **single** allocation. One enormous list is
   served before the next check. OS-level limits (`ulimit -v`, cgroups, a container
