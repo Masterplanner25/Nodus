@@ -105,6 +105,36 @@ class Scheduler:
         if coroutine.created_time is None:
             coroutine.created_time = runtime_time_ms()
 
+    def unrun_task_warning(self) -> str | None:
+        """"You spawned and never drove the scheduler" — or None if you did (#675).
+
+        The counter has always lived here; the *sentence* used to live in
+        `runtime/embedding.py`, so only `NodusRuntime` callers ever saw it. The
+        CLI builds a `VM` directly and never constructs a `NodusRuntime`, so
+        `nodus run` on a program that spawns and forgets `run_loop()` printed
+        nothing, exited 0, and silently did none of the work. Same runtime, two
+        doors, two answers.
+
+        This repo has a deliberate CLI-vs-`NodusRuntime` asymmetry, and it does
+        **not** cover this. Deny-by-default splits the two because it is a
+        decision about authority over work you did not fully author, and a
+        developer running a script they just wrote is not that. A warning that
+        the work you spawned never ran is worth exactly the same through both
+        doors.
+
+        The decision is here so there is one of it. Delivery necessarily differs
+        — the embedding accumulates stderr into a `Result`, the CLI prints it —
+        and that difference is real rather than a second answer to this question.
+        """
+        unrun = self._spawned_without_loop
+        if unrun <= 0:
+            return None
+        noun = "task" if unrun == 1 else "tasks"
+        return (
+            f"\nWarning: {unrun} spawned {noun} never executed"
+            " — call run_loop() after spawn() to run them.\n"
+        )
+
     def run_task_graph(self, graph) -> object:
         return self.vm.builtin_run_graph(graph)
 

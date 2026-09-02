@@ -37,6 +37,32 @@
 
 ### Fixes
 
+- **#675: `nodus run` warns when spawned work never ran, as embedders already did.**
+
+  A program that spawns a coroutine and never calls `run_loop()` silently does
+  nothing. The scheduler has always *counted* that — but the sentence was built
+  inside `runtime/embedding.py`, so only `NodusRuntime` callers saw it. The CLI
+  constructs a `VM` directly and never builds a `NodusRuntime`, so `nodus run`
+  printed nothing and exited `0`.
+
+  Same runtime, two doors, two answers — the recurring shape in its **diagnostic**
+  variant, which is the worse one to leave: the entire point of the check is to
+  tell a human something they cannot otherwise see, so a door that skips it is not
+  degraded, it is silent.
+
+  **This repo's deliberate CLI-vs-`NodusRuntime` asymmetry does not cover this.**
+  Deny-by-default splits the two because it is a decision about authority over
+  work you did not fully author, and a developer running a script they just wrote
+  is not that. "The work you spawned never ran" is worth the same through both
+  doors.
+
+  `Scheduler.unrun_task_warning()` is now the one place that decides; each door
+  only delivers it, which is a real difference (one accumulates stderr into a
+  `Result`, the other prints it) rather than a second answer. A test asserts the
+  two doors produce the **same sentence**, not merely that each is non-empty —
+  two independent wordings would drift on the next edit, which is how this
+  started.
+
 - **#717: `match` can be used as an identifier, as a contextual keyword should be.**
 
   `match` is listed in `lexer.EXPRESSION_KEYWORDS` — contextual, meaning the word

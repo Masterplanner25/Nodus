@@ -1288,14 +1288,9 @@ class NodusRuntime:
 
         raw_errors = getattr(vm.scheduler, "_coroutine_errors", [])
         spawned_errors = [coerce_error(e, stage="execute", filename=normalized).to_dict() for e in raw_errors]
-        unrun = vm.scheduler._spawned_without_loop
-        extra_stderr = stderr.getvalue()
-        if unrun > 0:
-            noun = "task" if unrun == 1 else "tasks"
-            extra_stderr += (
-                f"\nWarning: {unrun} spawned {noun} never executed"
-                " — call run_loop() after spawn() to run them.\n"
-            )
+        # #675: the sentence used to be built here, which is why only embedders
+        # saw it. `Scheduler.unrun_task_warning` is the one place that decides.
+        extra_stderr = stderr.getvalue() + (vm.scheduler.unrun_task_warning() or "")
         return Result.success(
             stage="execute",
             filename=normalized,
