@@ -9,15 +9,19 @@ from nodus.runtime.channel import (
 )
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.runtime.scheduler import SleepRequest
+from nodus.vm.types import Closure
 
 
 def register(vm, registry) -> None:
     """Register coroutine, channel, and sleep builtins onto the registry."""
 
-    def builtin_coroutine_create(value):
-        closure = vm.ensure_function(value, "coroutine(fn)")
+    def builtin_coroutine_create(value, _called_as="coroutine(fn)"):
+        # `_called_as` exists only so `spawn(fn() { ... })` (#336) reports its own
+        # name. It is not a second parameter of the `coroutine` builtin -- the
+        # registry declares arity 1 and never passes it.
+        closure = vm.ensure_function(value, _called_as)
         if len(closure.function.params) != 0:
-            vm.runtime_error("call", "coroutine(fn) expects a zero-argument function")
+            vm.runtime_error("call", f"{_called_as} expects a zero-argument function")
         coro = Coroutine(closure)
         # ASYNC-MOD-003: a coroutine must run in the context its closure was
         # compiled against. A closure that arrived from the caller (e.g. nested
@@ -131,7 +135,26 @@ def register(vm, registry) -> None:
                 vm._restore_module_ctx(caller_module_ctx)
 
     def builtin_spawn(value):
-        coroutine = vm.ensure_coroutine(value, "spawn(coroutine)")
+        # #336: a zero-argument function is accepted directly, so
+        # `spawn(fn() { ... })` works. It used to be a type error, and the
+        # two-step `let c = coroutine(fn(){...}); spawn(c)` was the only
+        # spelling -- passing the function was a documented footgun.
+        #
+        # Delegating to `builtin_coroutine_create` rather than constructing a
+        # `Coroutine` here is the whole point. That function carries the
+        # zero-arity check and the ASYNC-MOD-003 / #691 origin pinning, so a
+        # second construction site would be one question answered in two
+        # voices -- and it would drift the moment either is amended. A keyword
+        # form (#336's original proposal) would have had to reproduce the same
+        # logic in the compiler; this cannot.
+        if isinstance(value, Closure):
+            value = builtin_coroutine_create(value, "spawn(fn)")
+        elif not isinstance(value, Coroutine):
+            vm.runtime_error(
+                "type",
+                "spawn(value) expects a coroutine or a zero-argument function",
+            )
+        coroutine = value
         coro_timeout = getattr(vm, "coroutine_timeout_ms", None)
         if coro_timeout is not None:
             coroutine.task_timeout_ms = coro_timeout
