@@ -844,10 +844,20 @@ def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
 
         report = runner.sweep(_vm_factory, min_idle_ms=min_idle_ms)
     _json_print(report)
-    failed = [item for item in report.get("rehydrated_runs", []) if item.get("ok") is False]
-    failed += [item for item in report.get("resumed_retries", []) if item.get("ok") is False]
+
+    def _failures(value: object) -> list[object]:
+        # `sweep()` returns `dict[str, object]`, so each bucket has to be narrowed
+        # before it can be walked. Written out rather than indexed blindly because
+        # mypy on CI reads the working tree's annotation while a local run reads
+        # the *installed* nodus_lang_workflow -- the gap CLAUDE.md documents, here
+        # reaching a consumer in `src/nodus/` rather than the package itself.
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict) and item.get("ok") is False]
+
     # A run that was adopted and then failed to resume is the case an operator
     # must not miss: it is no longer waiting, and nothing else will pick it up.
+    failed = _failures(report.get("rehydrated_runs")) + _failures(report.get("resumed_retries"))
     return 1 if failed else 0
 
 
