@@ -35,6 +35,44 @@
   position that is broken (#717), and it would have had to reproduce the wrapping
   logic in the compiler.
 
+### Added
+
+- **#174: `nodus workflow migrate-store` copies run records between backends.**
+
+  ```
+  nodus workflow migrate-store --to sqlite [--from local] [--dry-run] [--overwrite]
+  ```
+
+  This is what had to exist before the default store can move from `local` to
+  `sqlite`. **Runs recorded in the JSON store are invisible to a SQLite one**, so
+  flipping the default without a migration would silently make every in-flight
+  `waiting` run unresumable at the moment of upgrade — a run nothing will ever
+  resume, and nothing reporting it. The issue expected the breakage to be "the JSON
+  file location moves"; it is not, it is that the records do not follow.
+  `nodus workflow migrate-state` does not cover this: it migrates graph
+  *snapshots*, not stores.
+
+  **Timestamps are preserved, which is the constraint the design turns on.**
+  `save_run` stamps `updated_at` to now — right for a run that just moved, wrong
+  for one being copied — and `updated_at` is not decoration: it backs
+  `workflow runs --updated-after/--updated-before` and orders
+  `_prune_terminal_runs`, which deletes oldest-first. A migration built on
+  `save_run` passes every other test and quietly destroys both. `restore_run` is
+  the separate verb, sharing one `_write_run` with `save_run` so the two cannot
+  drift.
+
+  `restore_run` is **concrete on `WorkflowStore`, not abstract**: a new abstract
+  method breaks any out-of-tree subclass at construction, which is exactly how
+  5.0.3 broke `nodus_sdk` (#185). The default is lossy but working; both in-tree
+  stores override it faithfully.
+
+  The source is never modified — the old store may hold the only copy of a run
+  someone is waiting on. Re-running skips what already arrived, so an interrupted
+  migration is finished by repeating it. One unreadable record is reported and the
+  rest still move; a migration that stops at the first failure leaves two partial
+  stores and no record of which. The report counts **waiting** runs separately,
+  because that is the population a backend switch strands.
+
 ### Fixes
 
 - **#722: reading a `merge:` cell without joining every contributor is refused.**

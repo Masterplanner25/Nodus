@@ -309,6 +309,14 @@ COMMANDS: dict[str, Command] = {
                 frozenset({"--rearm-only"}),
             ),
             "migrate-state": (_STORE | frozenset({"--graph-id"}), frozenset()),
+            # #174: copies run records between store backends. Distinct from
+            # `migrate-state`, which rewrites graph *snapshots* -- the two were
+            # confused in the issue, and the gap between them is what blocked
+            # making SQLite the default.
+            "migrate-store": (
+                _STORE | frozenset({"--to", "--from", "--store-path"}),
+                frozenset({"--dry-run", "--overwrite"}),
+            ),
             "cleanup": (
                 _STORE | frozenset({"--retention-seconds"}),
                 frozenset({"--force"}),
@@ -978,6 +986,12 @@ _DETAILED_HELP: dict[str, str] = {
         "             Replay or rearm a dead-lettered workflow run.",
         "  migrate-state [--graph-id ID] [--project-root PATH]",
         "             Rewrite persisted workflow state into the normalized format.",
+        "  migrate-store --to {local|sqlite} [--from BACKEND] [--store-path PATH]",
+        "                [--dry-run] [--overwrite] [--project-root PATH]",
+        "             Copy run records to another store backend, timestamps intact.",
+        "             The source is never modified, and a re-run skips what already",
+        "             arrived. Reports how many *waiting* runs were carried --",
+        "             those are the ones a backend switch would strand.",
         "  cleanup [--retention-seconds N] [--force] [--project-root PATH]",
         "             Remove old workflow snapshots and their run records.",
         "             Default retention: terminal runs older than 30 days",
