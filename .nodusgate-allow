@@ -46,6 +46,8 @@ blockhash:docs/guide/types-and-values.md:ebd539eeebb8
 blockhash:docs/guide/types-and-values.md:6eb546d2aef5
 
 # workflows-and-tasks.md — context-dependent workflow examples
+# #722: a deliberate error demo -- the refusal IS the documented output.
+blockhash:docs/guide/workflows-and-tasks.md:ce898428e97d
 blockhash:docs/guide/workflows-and-tasks.md:3121318e2bb0
 blockhash:docs/guide/workflows-and-tasks.md:5dea727297e5
 blockhash:docs/guide/workflows-and-tasks.md:645e392994ea

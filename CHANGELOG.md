@@ -37,6 +37,40 @@
 
 ### Fixes
 
+- **#722: reading a `merge:` cell without joining every contributor is refused.**
+
+  A step that read a folded cell while a contributor was still pending saw a
+  **partial fold**, silently — and which one depended on scheduling. The same
+  program printed `1` with a slow producer and `3` with a fast one. A wrong answer
+  that changes with the machine is worse than a wrong answer, because a test can
+  pass on the box that wrote it.
+
+  `merge:` (#485) fixed *lost* writes; the final value was always right. What was
+  open is that a reader could observe an intermediate one with no signal.
+
+  Refused at compile time, so `nodus check` catches it — matching what the same
+  rewriter already does to a plain `=` on a folded cell. There is no ordering that
+  makes a partial fold the intended value, so allowing it preserved nothing.
+  Nothing in the tree, the docs or the doc gate relied on it, so this needed no
+  staging.
+
+  **Transitive**: `after mid` where `mid after a, b` is accepted, because the
+  contributors are finished before the reader starts — requiring a direct edge
+  would refuse correct programs. Two node kinds are deliberately not contributors:
+  a **`compensates`** step is excluded from the forward graph by declaration
+  (#577), so counting it would make every read of a cell it touches unsatisfiable;
+  and an **`each`-mapped** step needs no special case, since `each x in src`
+  implies `after src` and a dependent joins the whole fan-out.
+
+  The writer and reader sets come from the walk `_StateRewriter` already performs
+  to rewrite state references — a second analysis pass would have been two
+  implementations of "what does this step body do with state cells".
+
+  **The rule was undocumented**, which is the other half of the defect: the guide
+  covered `+=` vs `=` and same-step visibility but never said a downstream reader
+  must join every contributor, and every fold example happened to do so. Now
+  stated, in `docs/guide/workflows-and-tasks.md`.
+
 - **#675: `nodus run` warns when spawned work never ran, as embedders already did.**
 
   A program that spawns a coroutine and never calls `run_loop()` silently does
