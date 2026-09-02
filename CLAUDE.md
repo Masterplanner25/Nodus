@@ -1211,22 +1211,53 @@ different populations and one blanket answer would have been a lie either way:
 - **4 are dated records** of the sweep itself (the audits, `DOCSET_CHANGELOG.md`).
   They say what was true that day and are not meant to move. Their marker now says
   so — do not "update" them to match the tree.
-- **7 were genuinely untouched** and make live claims. Their marker now states
-  provenance rather than issuing an instruction about a commit that already
-  happened, so it stays true until someone actually reviews them.
-
-**Two findings came out of it, and they are the reason the marker existed.**
-`NODUS_POSITIONING.md` — a *governing* document with an explicit rule that it
-wins any positioning conflict — still carried the **superseded** one-sentence
-positioning, nine releases after D1 decided the current one. Anyone applying its
-own rule would have reverted `README.md` and `pyproject.toml`. Corrected. And
-`STDLIB_PHILOSOPHY.md`, `ECOSYSTEM_BOUNDARY.md` and `CHANGE_IMPACT_MATRIX.md` are
-still stamped `Version: 3.0.2`; that is recorded in their markers, not fixed, and
-the seven unreviewed documents have not had their claims checked.
+- **7 were genuinely untouched** and made live claims. **All seven were reviewed
+  against 5.9.0 on 2026-09-01 (#713) and their markers are gone.** What that
+  review found is below.
 
 `DOCSET_GOVERNANCE.md` prescribed the original wording, so the convention was the
 generator. It now specifies a marker that stays true after the commit — otherwise
 the next non-coding session recreates the same contradiction.
+
+### What reviewing the seven found (#713)
+
+**A governing document can be wrong in the direction that costs a user a
+guarantee, and nothing will notice.** `STABILITY.md` — listed in
+`DOCSET_INDEX.md` as governing — classified `workflow`/`goal`/`step` and
+`spawn`/`coroutine`/`channel` as **Experimental** for nine releases after both
+graduated to Mostly Stable at v4.0.5. It also had `export` as Stable where the
+index has it Mostly Stable, which errs the other way, and named 47 opcodes where
+there are 49. Two of the seven were wrong in ways a reader would act on:
+`ECOSYSTEM_BOUNDARY.md` made *"is distributed through the Nodus registry"* a
+criterion of ecosystem membership, and **no member satisfies it** — everything
+ships on PyPI, and the registry it promised to define "before the v4.0 launch"
+never was.
+
+**#710 is itself an instance of the recurring shape, in documentation form.** It
+froze `DOCSET_CHANGELOG.md` and `DOCSET_STATUS_AUDIT.md` with *"Do not update it
+to match the tree"* and left the three procedures in `DOCSET_GOVERNANCE.md` — and
+a table row in `CHANGE_IMPACT_MATRIX.md` — instructing you to write to them. One
+question, two places, one updated. The requirement had already lapsed before it
+became contradictory: `DOCSET_CHANGELOG.md` holds exactly one entry across nine
+releases. Doc changes are recorded in the commit and in `DOCSET_INDEX.md`; there
+is no docset log.
+
+**Four of the seven held a second copy of a list that lives elsewhere** — the
+stability classification, the release sequence, the Tier 1 membership, the
+precedence order — and every one had drifted. They point now rather than
+restating. `RELEASE_CHECKLIST.md` is the one to remember: it prescribed *"tag →
+publish release notes"*, i.e. the GitHub release **before** PyPI, which is the
+one sequencing mistake release immutability makes unrecoverable.
+
+**The `Version:` header was the generator, and is now `Last reviewed:`.**
+`DOCSET_GOVERNANCE.md` prescribed `**Version:** X.Y.Z (the release this doc was
+created for)` — a claim about the present that goes stale at every cut, and one
+that cannot tell a reader whether the document was *checked* at that version or
+merely *written* then. **Seven maintained governance documents are still stamped
+`Version: 3.0.2`** nine minors on — including `DOCSET_INDEX.md` and
+`SECURITY_POSTURE.md`, both of which have been edited many times since. Recorded,
+not restamped: a date implies a review nobody has done. Same rule as
+`version_claims.json` — *"X is current" goes stale, "as of X" does not.*
 
 ## Standalone package ecosystem (at `C:\dev\`)
 
