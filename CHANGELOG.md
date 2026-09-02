@@ -108,6 +108,46 @@
 
 ### Fixes
 
+- **#725: a persisted deadline now means the same thing in every process.**
+
+  Workflow timestamps were stamped with `runtime_time_ms()` — milliseconds since
+  *this* process started. Written to a store and compared by a different process,
+  the two readings had different origins, so a deadline meant whatever the
+  sweeping process's uptime made it:
+
+  ```
+  Process A, alive 2s:  1ms deadline -> expires_at = 4548.0
+  Process B, fresh:     now = 516.0  -> not due
+  ```
+
+  A one-millisecond deadline, set two seconds ago, was not due. It failed both
+  ways — a short deadline outlived a fresh sweeper, a long one expired instantly
+  under an old one. Every test registered and expired inside one process, where
+  both readings share an origin and the arithmetic is correct, which is why it
+  survived.
+
+  `store_time_ms()` (wall clock) now backs everything persisted or compared across
+  a process; `runtime_time_ms()` keeps in-process timing, and the two sit next to
+  each other in `runtime_stats.py` because they are interchangeable at a glance
+  and only one is right in any given place. **17 call sites** moved, and a test
+  fails if the workflow package reaches for the process clock again.
+
+  **A legacy timestamp resolves by what it measures, and the safe direction is not
+  the same for both.** Pre-fix records carry unconvertible values — nothing
+  recorded when the writing process started. A *deadline* (a wait's
+  `registered_at`, a retry's `next_attempt_at`) resolves to **not due**: firing
+  early kills work nobody asked to stop. A *liveness* marker (a claim's TTL, a
+  run's idle age) resolves to **stale**: the process that wrote it is gone by
+  definition, so honouring it would strand the run. Both directions are pinned by
+  test.
+
+  Not converted, deliberately: a task's `started_at` / `finished_at`. Those are
+  in-process telemetry, and `CLAUDE.md` already records that they cannot order two
+  events anyway — the clock ticks at ~15.6 ms here.
+
+  Found while building `nodus workflow sweep` (#176), which is exactly the
+  cross-process comparison this broke. `schedule_at()` was blocked on it.
+
 - **#722: reading a `merge:` cell without joining every contributor is refused.**
 
   A step that read a folded cell while a contributor was still pending saw a

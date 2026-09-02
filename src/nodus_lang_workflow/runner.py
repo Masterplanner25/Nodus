@@ -6,6 +6,7 @@ import os
 import threading
 from contextlib import contextmanager
 
+from nodus.runtime.runtime_stats import is_store_time, store_time_ms
 from nodus.orchestration.task_graph import (
     TaskGraph,
     WorkflowRebuildError,
@@ -16,7 +17,6 @@ from nodus.orchestration.task_graph import (
     register_graph_vm,
     run_task_graph,
 )
-from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.runtime.state_paths import workflow_store_root
 
 from .models import (
@@ -472,7 +472,7 @@ def _metadata_from_graph(graph: TaskGraph, vm) -> dict[str, object]:
     metadata.setdefault("source_path", getattr(vm, "source_path", None))
     metadata.setdefault("coordination_mode", "local_only")
     metadata.setdefault("framework", "nodus_lang_workflow")
-    metadata.setdefault("framework_created_at", runtime_time_ms())
+    metadata.setdefault("framework_created_at", store_time_ms())
     return metadata
 
 
@@ -535,7 +535,7 @@ class WorkflowFrameworkRunner:
         record.status = RUN_STATUS_CANCELLED
         record.claim = None
         record.metadata["cancelled_from"] = previous
-        record.metadata["cancelled_at"] = runtime_time_ms()
+        record.metadata["cancelled_at"] = store_time_ms()
         self.store.save_run(record)
         return {
             "ok": True,
@@ -701,11 +701,21 @@ class WorkflowFrameworkRunner:
 
         skip_ids = expired_ids | {item["run_id"] for item in resumed_retries}
         rehydrated: list[dict[str, object]] = []
-        idle_before = (now_ms if now_ms is not None else runtime_time_ms()) - min_idle_ms
+        idle_before = (now_ms if now_ms is not None else store_time_ms()) - min_idle_ms
+        # A record whose `updated_at` predates #725 carries a process-relative
+        # number, so it cannot be compared with a wall-clock cutoff. Treated as
+        # idle, which is the liveness direction: the process that stamped it is
+        # gone, and refusing to adopt would strand the run permanently. The
+        # deadline cases resolve the other way -- see `clock.is_store_time`.
+        def _idle_enough(record) -> bool:
+            updated_at = record.updated_at
+            if not is_store_time(updated_at):
+                return True
+            return float(updated_at) <= idle_before
         for record in self.list_rehydratable_runs():
             if record.run_id in skip_ids:
                 continue
-            if min_idle_ms > 0 and (record.updated_at or 0) > idle_before:
+            if min_idle_ms > 0 and not _idle_enough(record):
                 continue  # recently touched: someone is probably still on it
             vm = vm_factory(record)
             rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
@@ -766,9 +776,9 @@ class WorkflowFrameworkRunner:
         graph = register_graph(graph)
         register_graph_vm(run_id, vm)
         if isinstance(graph.metadata, dict):
-            graph.metadata["framework_rehydrated_at"] = runtime_time_ms()
+            graph.metadata["framework_rehydrated_at"] = store_time_ms()
             graph.metadata["framework_rehydrated_status"] = record.status
-        record.metadata["rehydrated_at"] = runtime_time_ms()
+        record.metadata["rehydrated_at"] = store_time_ms()
         record.metadata["rehydrated_status"] = record.status
         self.store.save_run(record)
         return {
@@ -818,7 +828,7 @@ class WorkflowFrameworkRunner:
             return None
         if record.status != RUN_STATUS_DEAD_LETTERED:
             return record
-        revived_at = runtime_time_ms()
+        revived_at = store_time_ms()
         next_status = RUN_STATUS_WAITING if record.wait is not None else RUN_STATUS_FAILED
         replay_history = record.metadata.get("replay_history")
         if not isinstance(replay_history, list):

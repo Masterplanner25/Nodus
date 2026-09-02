@@ -13,7 +13,7 @@ import os
 import threading
 import uuid
 
-from nodus.runtime.runtime_stats import runtime_time_ms
+from nodus.runtime.runtime_stats import runtime_time_ms, store_time_ms
 from nodus.runtime.state_paths import graph_root
 from nodus.runtime.coroutine import Coroutine
 from nodus.orchestration.workflow_state import (
@@ -2363,7 +2363,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 task.status = "retry_scheduled"
                 task.finished_at = runtime_time_ms()
                 task.retry_classification = "retryable"
-                task.next_retry_at = runtime_time_ms() + float(task.retry_delay_ms)
+                # #725: a **persisted** deadline, compared by whichever process
+                # later sweeps for due retries -- so it takes wall clock, unlike
+                # `finished_at` above, which is in-process telemetry. This site is
+                # outside `nodus_lang_workflow` and was missed by the first pass
+                # at #725: the store was converted and the value written *into*
+                # it was not, so retries stayed uncomparable across processes
+                # while every wait was fixed.
+                task.next_retry_at = store_time_ms() + float(task.retry_delay_ms)
                 _mark_task_pending(task.task_id)
                 retry_info = {
                     "next_attempt_at": task.next_retry_at,
