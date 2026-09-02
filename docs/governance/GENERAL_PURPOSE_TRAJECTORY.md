@@ -3,6 +3,21 @@
 **Status:** Strategic direction document — v4.0.0 baseline assessment  
 **Date:** 2026-06-08
 
+> **The ladder tables below are a v4.0.0 snapshot and are not maintained.** They
+> are kept as the baseline the trajectory was measured from; do not update them
+> to match the tree. Four rows have since moved, checked 2026-09-01 against
+> 5.9.0 — the first two because reading them as current would send you to a
+> workaround you do not need:
+>
+> | Row | Said at v4.0.0 | True at 5.9.0 |
+> |---|---|---|
+> | Closure upvalue mutation | ❌ Missing — *"Can't assign outer `let` from closure — workaround: map"* | **Works.** A closure has always been able to mutate a `let` scoped inside a function; the module-top-level case wrote to a frame slot silently and was fixed in 5.8.0 ([#671](https://github.com/Masterplanner25/Nodus/issues/671)). The map workaround is not needed. |
+> | Pattern matching | ❌ Missing — *"No `match/case`"* | **Shipped v4.1.0** ([#308](https://github.com/Masterplanner25/Nodus/issues/308)). Value-matching arms, `_` catch-all last. Still no destructuring patterns or exhaustiveness checking. |
+> | Bytecode stability | *"All 47 opcodes"* | **49.** `MOD` and `RESET_LOCAL_IDX` were added after the v1.0 freeze ([#366](https://github.com/Masterplanner25/Nodus/issues/366)). `BYTECODE_VERSION` is still 4. |
+> | Async / coroutines / channels | *"Marked Experimental in stability index"* | **Mostly Stable** since v4.0.5, as are `workflow` / `goal` / `step`. |
+>
+> `LANGUAGE_STABILITY_INDEX.md` is the current classification for any row here.
+
 ---
 
 ## The shift being proposed
