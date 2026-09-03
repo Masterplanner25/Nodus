@@ -63,12 +63,45 @@ class RunStatusVocabularyTests(unittest.TestCase):
 
     def test_every_status_is_terminal_or_not_and_never_both(self):
         """The partition. A status in neither set is one nothing knows how to
-        retire or resume; a status in both is a contradiction."""
+        retire or resume; a status in both is a contradiction.
+
+        The loop below used to assert `status in set(RUN_STATUSES)` while
+        iterating `RUN_STATUSES` -- true by construction, so it checked nothing
+        and the docstring above described a guard that did not exist. A ninth
+        status classified into neither set was caught only by the count
+        assertion above it, which a maintainer fixes by bumping the count; doing
+        that left the suite green with the status still unclassified (verified,
+        #733). `models.py` cited this behaviour as its reason for naming the
+        vocabulary once, so the comment there was resting on it too.
+        """
         overlap = REHYDRATABLE_RUN_STATUSES & TERMINAL_RUN_STATUSES
         self.assertEqual(frozenset(), overlap)
+
+        # `pending` is in neither set today, and that is a real gap rather than a
+        # deliberate third category: such a run is adopted by nothing and retired
+        # by nothing, so it leaks (#734). Recorded here rather than asserted away,
+        # so the guard states what is true while #734 is open -- and so a *tenth*
+        # status cannot arrive unclassified by hiding behind it.
+        unclassified = {"pending"}
+        classified = REHYDRATABLE_RUN_STATUSES | TERMINAL_RUN_STATUSES
         for status in RUN_STATUSES:
+            if status in unclassified:
+                continue
             with self.subTest(status=status):
-                self.assertIn(status, set(RUN_STATUSES))
+                self.assertIn(
+                    status,
+                    classified,
+                    "a status in neither set can be neither retired nor resumed",
+                )
+        self.assertEqual(
+            set(RUN_STATUSES) - unclassified,
+            set(classified),
+            "the partition covers the vocabulary and invents nothing beyond it",
+        )
+        self.assertTrue(
+            unclassified <= set(RUN_STATUSES),
+            "the recorded exception names a status that still exists",
+        )
 
     def test_cancelled_is_terminal(self):
         """Or `workflow cleanup` never retires one and they accumulate forever."""

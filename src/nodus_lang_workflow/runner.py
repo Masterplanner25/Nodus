@@ -56,6 +56,13 @@ def _auto_sweep_loop(runner_ref: "WorkflowFrameworkRunner", stop_event: threadin
     # runner can stop exactly its own thread without racing a successor.
     while not stop_event.wait(timeout=_DEFAULT_SWEEP_INTERVAL_S):
         try:
+            # #733: no `release_schedules=True` here, and it is not an omission.
+            # This loop discards what it settles -- it dead-letters waits that
+            # ran out of patience and has no way to resume anything. Releasing a
+            # schedule from here cleared the wait, marked the run `running`, and
+            # left nothing able to find it again, so a scheduled task in any
+            # process holding the default runner was silently dropped every 30
+            # seconds. Schedules belong to `sweep()`, which resumes them.
             runner_ref.expire_wait_timeouts()
         except Exception:
             pass
@@ -653,8 +660,22 @@ class WorkflowFrameworkRunner:
             if record.status == RUN_STATUS_DEAD_LETTERED
         ]
 
-    def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
-        return self.store.expire_wait_timeouts(now_ms=now_ms)
+    def expire_wait_timeouts(
+        self,
+        *,
+        now_ms: float | None = None,
+        release_schedules: bool = False,
+    ) -> list[WorkflowRunRecord]:
+        """Settle every wait whose deadline has passed.
+
+        `release_schedules` defaults to **False**: only a caller that goes on to
+        resume may release an `on_timeout: "resume"` schedule, because releasing
+        one without resuming it strands the run permanently (#733). `sweep()` is
+        the caller that can.
+        """
+        return self.store.expire_wait_timeouts(
+            now_ms=now_ms, release_schedules=release_schedules
+        )
 
     def list_due_retry_runs(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
         return self.store.list_due_retry_runs(now_ms=now_ms)
@@ -682,7 +703,9 @@ class WorkflowFrameworkRunner:
         # partitioned here rather than reported together, because "expired" and
         # "released on schedule" are opposite outcomes and an operator reading one
         # number for both learns nothing.
-        settled = self.expire_wait_timeouts(now_ms=now_ms)
+        # #733: the one call that may release a schedule, because it is the one
+        # that resumes what it releases -- immediately below.
+        settled = self.expire_wait_timeouts(now_ms=now_ms, release_schedules=True)
         expired = [r for r in settled if r.status == RUN_STATUS_DEAD_LETTERED]
         released = [r for r in settled if r.status != RUN_STATUS_DEAD_LETTERED]
         # Only the dead-lettered are skipped below. A released schedule is exactly
@@ -793,6 +816,16 @@ class WorkflowFrameworkRunner:
             self.store.release_claim(run_id, claim.token)
 
     def _rehydrate_run_claimed(self, vm, run_id: str, *, rebuild_graph):
+        # #733: adoption is not resumption, so this may not release a schedule.
+        # Rehydration registers the graph and marks the run adoptable; it
+        # deliberately does not execute anything, because a run record carries
+        # the program's whole source (#499) and running it on adoption is the
+        # security boundary #176 refused to cross. A due schedule is therefore
+        # left `waiting` here and settled by the next `sweep()`, which resumes
+        # what it releases. Before this, a due schedule that adoption reached
+        # first -- a plain `rehydrate_runs()`, or a run armed *during* a sweep --
+        # was released here and then only adopted, leaving it `running` with
+        # pending steps and no wait, which no later sweep could recover.
         expired = self.store.expire_wait_timeout(run_id)
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return None
@@ -991,7 +1024,9 @@ class WorkflowFrameworkRunner:
         rebuild_graph,
     ):
         owner = f"vm:{id(vm)}"
-        expired = self.store.expire_wait_timeout(graph_id)
+        # #733: releasing a due schedule is safe here -- this method resumes the
+        # run a few lines down, which is the whole condition on releasing one.
+        expired = self.store.expire_wait_timeout(graph_id, release_schedules=True)
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": expired.last_error or f"Wait timeout expired for '{graph_id}'"}
         record = self.store.get_run(graph_id)

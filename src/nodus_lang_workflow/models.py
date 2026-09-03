@@ -33,8 +33,21 @@ RUN_STATUS_CANCELLED = "cancelled"
 # Worth knowing about the detector, not a reason to leave the duplication.
 #
 # Partitioned deliberately: every status is terminal or not, and the two sets
-# below must stay disjoint. `tests/test_run_status_vocabulary.py` drives off this
+# below must stay disjoint. `tests/test_run_cancellation.py` drives off this
 # tuple, so a ninth status fails the suite until it is classified.
+#
+# All three of those claims were false until #733 checked them. The file was
+# named `test_run_status_vocabulary.py` here and does not exist; the test that
+# does exist asserted `status in set(RUN_STATUSES)` while iterating
+# `RUN_STATUSES`, which cannot fail; and so an unclassified ninth status tripped
+# only the *count* beside it, which a maintainer fixes by bumping the count --
+# leaving the suite green and the status unclassified. Fixing the tautology
+# immediately found `pending`, in neither set and therefore neither adoptable nor
+# retirable (#734), which had been violating this comment all along.
+#
+# The lesson is the citation, not the tautology: a comment naming the test that
+# enforces it is load-bearing, and nothing checks that the file exists or that it
+# still checks what the sentence says.
 RUN_STATUSES: tuple[str, ...] = (
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,

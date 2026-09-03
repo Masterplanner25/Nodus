@@ -197,11 +197,26 @@ class WorkflowStore(ABC):
         *,
         now_ms: float | None = None,
         next_status: str = RUN_STATUS_DEAD_LETTERED,
+        release_schedules: bool = False,
     ) -> WorkflowRunRecord | None:
+        """Settle a wait whose deadline has passed.
+
+        `release_schedules` says whether the caller is able to **resume** the run
+        afterwards, and defaults to no (#733). A wait declared
+        `on_timeout: "resume"` is a schedule: releasing it clears the wait and
+        marks the run `running`, which removes the only handle anything has on
+        it — so a caller that releases without resuming strands the run for good.
+        Leaving it waiting instead costs one sweep of latency and nothing else.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
+    def expire_wait_timeouts(
+        self,
+        *,
+        now_ms: float | None = None,
+        release_schedules: bool = False,
+    ) -> list[WorkflowRunRecord]:
         raise NotImplementedError
 
     @abstractmethod
@@ -375,6 +390,7 @@ def _expire_wait_timeout_on_record(
     *,
     now_ms: float | None = None,
     next_status: str = RUN_STATUS_DEAD_LETTERED,
+    release_schedules: bool = False,
 ) -> WorkflowRunRecord | None:
     if record.status != RUN_STATUS_WAITING or record.wait is None:
         return None
@@ -396,11 +412,30 @@ def _expire_wait_timeout_on_record(
     if float(now_ms) < expires_at:
         return None
     if record.wait.on_timeout == "resume":
-        # #176: the deadline was a *schedule*, not a patience limit. Clearing the
-        # wait is the whole mechanism -- the run becomes rehydratable again, so
-        # the next sweep adopts it and carries on from where it parked. Nothing
-        # here starts it: whoever sweeps decides that, which keeps the security
-        # boundary where `nodus workflow sweep` put it.
+        # #176: the deadline was a *schedule*, not a patience limit, so it
+        # releases the run instead of dead-lettering it.
+        #
+        # #733: but releasing and resuming are not separable. A released run is
+        # `running` with its steps `pending` and no wait record, which makes it
+        # invisible to `expire_wait_timeouts` forever -- so a caller that clears
+        # the wait and cannot then resume strands the run permanently, silently,
+        # and unrecoverably. Two of the four callers were exactly that, one of
+        # them a background thread that is on by default.
+        #
+        # So the caller has to say it can resume, and the default is that it
+        # cannot: leaving the wait in place costs a sweep's worth of latency,
+        # and the next sweep -- which does resume -- settles it. Losing time is
+        # recoverable and losing the work is not, so the safe answer is the
+        # default one and a caller added later gets a late schedule rather than
+        # a lost one.
+        #
+        # An earlier comment here claimed clearing the wait "is the whole
+        # mechanism" because "the next sweep adopts it and carries on". Adoption
+        # does not carry anything on; that is what #729 established at the one
+        # site it was looking at, and three other callers were leaning on the
+        # sentence rather than on the behaviour.
+        if not release_schedules:
+            return None
         return _clear_wait_on_record(record, next_status=RUN_STATUS_RUNNING)
     record.status = next_status
     record.claim = None
@@ -811,16 +846,27 @@ class LocalWorkflowStore(WorkflowStore):
         *,
         now_ms: float | None = None,
         next_status: str = RUN_STATUS_DEAD_LETTERED,
+        release_schedules: bool = False,
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
             return None
-        expired = _expire_wait_timeout_on_record(record, now_ms=now_ms, next_status=next_status)
+        expired = _expire_wait_timeout_on_record(
+            record,
+            now_ms=now_ms,
+            next_status=next_status,
+            release_schedules=release_schedules,
+        )
         if expired is None:
             return None
         return self.save_run(expired)
 
-    def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
+    def expire_wait_timeouts(
+        self,
+        *,
+        now_ms: float | None = None,
+        release_schedules: bool = False,
+    ) -> list[WorkflowRunRecord]:
         # #380: only runs that are actually waiting can expire. This used to call
         # expire_wait_timeout() for every run, and that re-reads the file it was
         # just handed — two full reads of the whole directory per sweep, on a
@@ -830,7 +876,9 @@ class LocalWorkflowStore(WorkflowStore):
         for record in self.list_runs():
             if record.status != RUN_STATUS_WAITING:
                 continue
-            updated = self.expire_wait_timeout(record.run_id, now_ms=now_ms)
+            updated = self.expire_wait_timeout(
+                record.run_id, now_ms=now_ms, release_schedules=release_schedules
+            )
             if updated is not None:
                 expired.append(updated)
         return _sorted_run_records(expired)
@@ -1258,16 +1306,27 @@ class SQLiteWorkflowStore(WorkflowStore):
         *,
         now_ms: float | None = None,
         next_status: str = RUN_STATUS_DEAD_LETTERED,
+        release_schedules: bool = False,
     ) -> WorkflowRunRecord | None:
         record = self.get_run(run_id)
         if record is None:
             return None
-        expired = _expire_wait_timeout_on_record(record, now_ms=now_ms, next_status=next_status)
+        expired = _expire_wait_timeout_on_record(
+            record,
+            now_ms=now_ms,
+            next_status=next_status,
+            release_schedules=release_schedules,
+        )
         if expired is None:
             return None
         return self.save_run(expired)
 
-    def expire_wait_timeouts(self, *, now_ms: float | None = None) -> list[WorkflowRunRecord]:
+    def expire_wait_timeouts(
+        self,
+        *,
+        now_ms: float | None = None,
+        release_schedules: bool = False,
+    ) -> list[WorkflowRunRecord]:
         # #380: only runs that are actually waiting can expire. This used to call
         # expire_wait_timeout() for every run, and that re-reads the file it was
         # just handed — two full reads of the whole directory per sweep, on a
@@ -1277,7 +1336,9 @@ class SQLiteWorkflowStore(WorkflowStore):
         for record in self.list_runs():
             if record.status != RUN_STATUS_WAITING:
                 continue
-            updated = self.expire_wait_timeout(record.run_id, now_ms=now_ms)
+            updated = self.expire_wait_timeout(
+                record.run_id, now_ms=now_ms, release_schedules=release_schedules
+            )
             if updated is not None:
                 expired.append(updated)
         return _sorted_run_records(expired)
