@@ -146,6 +146,42 @@
   stores and no record of which. The report counts **waiting** runs separately,
   because that is the population a backend switch strands.
 
+- **`nodus-container` spec and scaffold — and the capability question, settled.**
+
+  A Tier 2 proposal (issue #85) for container execution (Docker, Podman) from a
+  workflow. Spec at `docs/ecosystem/NODUS_CONTAINER.md`, scaffold at
+  `packages/nodus-container/` with 17 tests. **Not published, and the issue stays
+  open** — which is why the number is here in prose rather than on the bullet:
+  `--closed-issues` reads entry lines only, and it was right to demand a closing
+  test for a claim this change does not make.
+
+  **The first commit was a decision, not code: no new capability.** The instinct
+  is that container execution deserves its own entry in `ALL_CAPABILITIES` —
+  `docker run -v /:/host` is materially more authority than an ordinary
+  subprocess. It would be **unenforceable**: anything holding `subprocess` can
+  already run `docker` directly, so a control beside it is bypassed by the
+  permission the caller already has. That is the pattern #473 and #478 were filed
+  for, and the same reason `max_memory_mb` is refused where it cannot be metered
+  rather than accepted and ignored.
+
+  **The enforceable boundary already exists** — `allowed_commands`, verified
+  against 5.9.0: it gates the binary, and setting any allowlist also refuses
+  `subprocess.shell`, so `sh -c "docker …"` cannot step around it.
+
+  Verified against **Docker 29.2.1** rather than asserted: the generated argv runs
+  (exit 0, expected stdout), and the read-only mount default is enforced by the
+  engine — a container's write to a default mount fails with a read-only
+  filesystem, while `read_only=False` **overwrites the host file**. That second
+  result is the `allowed_paths` escape the docs warn about, demonstrated rather
+  than described.
+
+  `build_argv` is pure and `run` takes an injected runner, so nothing in the
+  package imports a subprocess module — which is what lets it declare no
+  capability of its own, and what lets a `CapabilityPolicy` inspect the argv a
+  call *would* make instead of pattern-matching a shell string. A test pins that
+  no execution import creeps in, because the security argument stops being true
+  if one does.
+
 - **#87: `std:runtime.capabilities()` — what this program may do, before it tries.**
 
   ```nd

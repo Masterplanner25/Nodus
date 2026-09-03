@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nodus-container"
+version = "0.1.0"
+description = "Container execution primitives for Nodus runtimes (Docker, Podman)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "platform-team" }]
+# No runtime dependencies, and no `nodus-lang` floor: the engine is reached
+# through an injected runner, so nothing here imports a subprocess module or the
+# runtime. Companions do not cap nodus-lang (policy, 2026-08-17) -- see #445.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=9.0"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# The scaffold's own package must win over any same-named production install
+# (#312): `import nodus_container` here means *this* tree.
+pythonpath = ["src"]
