@@ -1,0 +1,302 @@
+// nodus-scheduler -- when should this run next? (#88)
+//
+// Pure functions over `std:time`. Nothing here parks a run, writes to a store,
+// or executes anything: it answers "what is the next instant this schedule
+// fires" and converts that to the `deadline_ms` a `workflow_wait` takes.
+//
+// That is the whole remaining surface, because #176 put the rest in the runtime.
+// A wait declared `on_timeout: "resume"` is a schedule; `nodus workflow sweep`
+// releases it and carries the run on; a resumed step arming its successor
+// recurs indefinitely. So a scheduler library needs no daemon and no state --
+// the daemon is cron calling the sweep, and the state is the workflow store.
+//
+//     step park {
+//         return workflow_wait("tick", {deadline_ms: sched.next_delay_ms("0 3 * * *"), on_timeout: "resume"})
+//     }
+//     step work after park { ...; run_workflow(nightly); return "rearmed" }
+//
+// Written in Nodus rather than Python, which is a departure from
+// `WHY_PYTHON_NOT_NODUS.md` and argued in `docs/ecosystem/NODUS_SCHEDULER.md`:
+// the only caller is a `.nd` step body, so a Python implementation would have to
+// be bridged back into Nodus to be usable at all.
+import "std:time" as time
+import "std:strings" as strings
+import "std:math" as math
+
+// Cron's day-of-week is 0=Sunday..6=Saturday (7 also Sunday). `std:time`'s
+// `weekday` is 0=Monday..6=Sunday, Python's convention. Converting in one named
+// place because getting it wrong shifts every weekly schedule by a day and the
+// result still looks like a working schedule.
+fn cron_weekday(dt) {
+    return (dt.weekday + 1i) % 7i
+}
+
+fn includes(items, value) {
+    let i = 0i
+    while (i < len(items)) {
+        if (items[i] == value) {
+            return true
+        }
+        i = i + 1i
+    }
+    return false
+}
+
+// Deduplicate and sort a field's values.
+//
+// The sort is an insertion sort written out: these lists are at most 60 long,
+// and there is no sort builtin for a list of ints to call instead.
+//
+// (Both halves are described here rather than beside the loops they belong to,
+// because `nodus fmt` hoists every in-body comment to the function header --
+// see issue 737. Written where it lands so it reads correctly there.)
+fn sorted_unique(items) {
+    let out = []
+    let seen = {}
+    let i = 0i
+    while (i < len(items)) {
+        let v = items[i]
+        let key = "\(v)"
+        if (has_key(seen, key) == false) {
+            seen[key] = true
+            out = push(out, v)
+        }
+        i = i + 1i
+    }
+    let a = 1i
+    while (a < len(out)) {
+        let value = out[a]
+        let b = a - 1i
+        while (b >= 0i && out[b] > value) {
+            out[b + 1i] = out[b]
+            b = b - 1i
+        }
+        out[b + 1i] = value
+        a = a + 1i
+    }
+    return out
+}
+
+// One comma-separated term of a cron field: `*`, `N`, `A-B`, `*/N`, `A-B/N`.
+//
+// The subtlety is the bare value. `N` alone is the single value N, but `N` with
+// a step means "from N to the end of the range" -- so the high bound depends on
+// whether a step was given. `5` is minute 5; `5/20` is 5, 25, 45.
+fn parse_term(term, lo, hi) {
+    let body = term
+    let by = 1i
+    let slash = strings.split(term, "/")
+    if (len(slash) == 2i) {
+        body = slash[0]
+        by = math.parse_int(slash[1])
+    }
+    if (by < 1i) {
+        throw "schedule step must be positive: \(term)"
+    }
+    let low = lo
+    let high = hi
+    if (body != "*") {
+        let dash = strings.split(body, "-")
+        if (len(dash) == 2i) {
+            low = math.parse_int(dash[0])
+            high = math.parse_int(dash[1])
+        } else {
+            low = math.parse_int(body)
+            if (by == 1i) {
+                high = low
+            } else {
+                high = hi
+            }
+        }
+    }
+    if (low < lo || high > hi || low > high) {
+        throw "schedule field out of range: \(term) (expected \(lo)-\(hi))"
+    }
+    let out = []
+    let v = low
+    while (v <= high) {
+        out = push(out, v)
+        v = v + by
+    }
+    return out
+}
+
+fn parse_field(field, lo, hi) {
+    let out = []
+    let terms = strings.split(field, ",")
+    let i = 0i
+    while (i < len(terms)) {
+        let piece = strings.trim(terms[i])
+        if (piece == "") {
+            throw "empty term in schedule field: \(field)"
+        }
+        let values = parse_term(piece, lo, hi)
+        let j = 0i
+        while (j < len(values)) {
+            out = push(out, values[j])
+            j = j + 1i
+        }
+        i = i + 1i
+    }
+    return sorted_unique(out)
+}
+
+// A parsed five-field cron expression: minute hour day-of-month month day-of-week.
+//
+// `dom_any` / `dow_any` are kept because standard cron treats the two day fields
+// as a **union** when both are restricted, and as a plain filter when one is
+// `*`. Losing that distinction makes `0 0 13 * 5` mean "Friday the 13th" instead
+// of "the 13th, and every Friday", which is a schedule that fires roughly a
+// hundred times less often than intended.
+//
+// Day-of-week 7 and 0 are both Sunday; the parse normalises 7 to 0 so that
+// `day_matches` never has to know there are two spellings.
+fn parse(expression) {
+    let fields = strings.split(strings.trim(expression), " ")
+    let cleaned = []
+    let i = 0i
+    while (i < len(fields)) {
+        if (fields[i] != "") {
+            cleaned = push(cleaned, fields[i])
+        }
+        i = i + 1i
+    }
+    if (len(cleaned) != 5i) {
+        throw "a schedule needs 5 fields (minute hour day month weekday), got \(len(cleaned)): \(expression)"
+    }
+    let weekdays = parse_field(cleaned[4], 0i, 7i)
+    if (includes(weekdays, 7i)) {
+        weekdays = sorted_unique(push(weekdays, 0i))
+    }
+    return record {minutes: parse_field(cleaned[0], 0i, 59i), hours: parse_field(cleaned[1], 0i, 23i), days: parse_field(cleaned[2], 1i, 31i), months: parse_field(cleaned[3], 1i, 12i), weekdays: weekdays, dom_any: strings.trim(cleaned[2]) == "*", dow_any: strings.trim(cleaned[4]) == "*"}
+}
+
+fn day_matches(spec, dt) {
+    if (includes(spec.months, dt.month) == false) {
+        return false
+    }
+    let dom_ok = includes(spec.days, dt.day)
+    let dow_ok = includes(spec.weekdays, cron_weekday(dt))
+    if (spec.dom_any && spec.dow_any) {
+        return true
+    }
+    if (spec.dom_any) {
+        return dow_ok
+    }
+    if (spec.dow_any) {
+        return dom_ok
+    }
+    return dom_ok || dow_ok
+}
+
+// The earliest firing on `dt`'s calendar day that is not before `dt`'s time of
+// day, or nil if the day has none left.
+fn first_firing_on_day(spec, dt) {
+    let hours = spec.hours
+    let h = 0i
+    while (h < len(hours)) {
+        let hour = hours[h]
+        if (hour >= dt.hour) {
+            let minutes = spec.minutes
+            let m = 0i
+            while (m < len(minutes)) {
+                let minute = minutes[m]
+                let usable = true
+                if (hour == dt.hour && minute < dt.minute) {
+                    usable = false
+                }
+                if (usable) {
+                    return time.at(dt.year, dt.month, dt.day, hour, minute, 0i, 0i, dt.zone, nil)
+                }
+                m = m + 1i
+            }
+        }
+        h = h + 1i
+    }
+    return nil
+}
+
+//: How many days ahead `next_after` will look before giving up. Four years, so a
+//: February 29th schedule resolves rather than reporting "never" -- the one
+//: legitimate schedule that can skip three consecutive years.
+let SEARCH_HORIZON_DAYS = 1500i
+
+// The next firing strictly after `origin`. Returns a `std:time` datetime, or nil
+// if the schedule cannot fire within the search horizon (`2 30 31 2 *` -- a day
+// that does not exist).
+//
+// Searched day by day rather than minute by minute: a yearly schedule is half a
+// million minutes away, and stepping those in the interpreter is not a plan. Per
+// day the work is bounded by the field sizes, so the whole search is a few
+// thousand cheap comparisons in the worst case.
+// Strictly after: advance a minute, then drop seconds so a schedule matching
+// the current minute does not fire twice within it.
+fn next_after(expression, origin) {
+    let spec = parse(expression)
+    let moved = time.add(origin, time.minutes(1i))
+    let cursor = time.at(moved.year, moved.month, moved.day, moved.hour, moved.minute, 0i, 0i, moved.zone, nil)
+    let looked = 0i
+    while (looked < SEARCH_HORIZON_DAYS) {
+        if (day_matches(spec, cursor)) {
+            let hit = first_firing_on_day(spec, cursor)
+            if (hit != nil) {
+                return hit
+            }
+        }
+        cursor = time.start_of_day(time.add(cursor, time.days(1i)))
+        looked = looked + 1i
+    }
+    return nil
+}
+
+fn next(expression) {
+    return next_after(expression, time.now())
+}
+
+// The `deadline_ms` for a `workflow_wait` that should release at the next
+// firing. Milliseconds from now, which is what the runtime wants -- an absolute
+// instant would be re-interpreted against the sweeping process's clock.
+fn next_delay_ms(expression) {
+    let now = time.now()
+    let upcoming = next_after(expression, now)
+    if (upcoming == nil) {
+        throw "schedule never fires: \(expression)"
+    }
+    return time.duration_between(now, upcoming).total_ms
+}
+
+// Fixed intervals, for schedules with no calendar in them. Present because
+// `every_minutes(5)` reads better at a call site than a cron expression that
+// cannot express it anyway -- `*/5` fires at :00 :05 :10, not five minutes from
+// now, and the difference matters for a job that should not stampede.
+fn after_ms(n) {
+    return n
+}
+
+fn after_seconds(n) {
+    return time.duration_between(time.now(), time.add(time.now(), time.seconds(n))).total_ms
+}
+
+fn after_minutes(n) {
+    return time.duration_between(time.now(), time.add(time.now(), time.minutes(n))).total_ms
+}
+
+fn after_hours(n) {
+    return time.duration_between(time.now(), time.add(time.now(), time.hours(n))).total_ms
+}
+
+fn after_days(n) {
+    return time.duration_between(time.now(), time.add(time.now(), time.days(n))).total_ms
+}
+
+// Milliseconds from now until `dt`, floored at zero. A past instant yields 0 --
+// "fire on the next sweep" -- rather than a negative deadline, which the store
+// would read as already expired anyway but by an accident rather than a rule.
+fn delay_until(dt) {
+    let now = time.now()
+    let ms = time.duration_between(now, dt).total_ms
+    if (ms < 0i) {
+        return 0i
+    }
+    return ms
+}
