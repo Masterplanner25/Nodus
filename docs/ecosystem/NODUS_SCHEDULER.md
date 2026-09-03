@@ -174,8 +174,13 @@ the weekday conversion is load-bearing in most of the suite.
 
 1. A repo of its own, and a row in `docs/ecosystem/README.md` — a package with no
    row there is invisible to the ecosystem count *and* to the drift sweep.
-2. `UNPUBLISHED_COMPANIONS` registers its `nodus-lang` floor (`>=5.9.0`, for
-   #733) on the day it is written, not the day it ships.
-3. A decision on distribution: this is a `.nd` module, so PyPI is a poor fit and
-   the Nodus registry is the right channel. That question is open and is the
-   reason the package is a reference implementation rather than a release.
+2. A decision on distribution. This is a `.nd` module, so PyPI is a poor fit and
+   the Nodus registry is the right channel. The question is open, and is why this
+   is a reference implementation rather than a release.
+3. Somewhere to record its runtime floor. It needs **nodus-lang >= 5.9.0** —
+   `on_timeout: "resume"` is 5.9.0, and recurrence additionally needs #733 —
+   and **no mechanism currently tracks that for a `.nd` package**.
+   `UNPUBLISHED_COMPANIONS` in `tools/check_downstream_constraints.py` is the
+   obvious candidate and is the wrong one: it resolves *published PyPI* metadata,
+   so it can neither read nor check a Nodus-registry module. Recorded as a gap
+   rather than filed against the wrong tool, because the fix depends on (2).
