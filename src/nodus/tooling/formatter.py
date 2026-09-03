@@ -550,7 +550,11 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         header = f"fn({param_text}){return_text}"
         if not expr.body.stmts:
             return f"{header} {{}}"
-        if len(expr.body.stmts) == 1:
+        # #737: a body that is *only* a comment must not collapse. `// x` would
+        # swallow the closing brace and the file would no longer parse. A
+        # statement carrying `_comments` is already safe, because `format_stmt`
+        # emits the comment as its own line and the length check below fails.
+        if len(expr.body.stmts) == 1 and not isinstance(expr.body.stmts[0], Comment):
             body_lines = format_stmt(expr.body.stmts[0], indent=0)
             if len(body_lines) == 1:
                 return f"{header} {{ {body_lines[0].strip()} }}"

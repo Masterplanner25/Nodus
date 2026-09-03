@@ -1,11 +1,11 @@
-# inline
-// neg
 fn outer() {
     if (true) {
         fn inner() {
             if (false) {
+                # inline
                 print(-1)
             } else {
+                // neg
                 let x = -(2 + 3)
                 while (x > 0) {
                     x = x - 1

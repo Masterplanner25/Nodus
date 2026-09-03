@@ -33,12 +33,6 @@ fn fires_from(expression, dt) {
     return time.to_iso8601(hit)
 }
 
-// On the last case: 14:30 matches the schedule, and the contract is *strictly*
-// after the origin. The remaining hour in the list (14) has no minute left after
-// :30, so the search rolls to the next day and takes the first hour, 02.
-//
-// (`nodus fmt` hoists in-body comments to the top-level statement -- issue 737 --
-// so a note about one case lands above its whole suite. Worded for where it lands.)
 test.suite("next_after: the ordinary schedules", fn() {
     test.case("origin is the Thursday the weekday cases depend on", fn() {
     test.assert_eq(time.to_iso8601(origin()), ORIGIN_ISO, "fixed origin")
@@ -48,6 +42,9 @@ test.suite("next_after: the ordinary schedules", fn() {
     test.case("every minute -> the very next minute", fn() { test.assert_eq(fires("* * * * *"), "2026-09-03T14:31:00.000+00:00", "next minute") })
     test.case("daily at 03:00 -> tomorrow, because today's has passed", fn() { test.assert_eq(fires("0 3 * * *"), "2026-09-04T03:00:00.000+00:00", "next 03:00") })
     test.case("*/15 from :30 -> :45, the same hour", fn() { test.assert_eq(fires("*/15 * * * *"), "2026-09-03T14:45:00.000+00:00", "quarter past") })
+    // 14:30 matches the schedule, and the contract is *strictly* after the
+    // origin. The remaining hour in the list (14) has no minute left after :30,
+    // so the search rolls to the next day and takes the first hour, 02.
     test.case("lists in two fields -> 02:00 tomorrow, not 14:30 today", fn() { test.assert_eq(fires("0,30 2,14 * * *"), "2026-09-04T02:00:00.000+00:00", "strictly after") })
 })
 test.suite("next_after: weekdays, where the off-by-one lives", fn() {
@@ -65,9 +62,6 @@ test.suite("next_after: the day fields are a union, not a filter", fn() {
     test.case("the 13th alone -> the 13th", fn() { test.assert_eq(fires("0 0 13 * *"), "2026-09-13T00:00:00.000+00:00", "day-of-month only") })
     test.case("Fridays alone -> the 4th", fn() { test.assert_eq(fires("0 0 * * 5"), "2026-09-04T00:00:00.000+00:00", "day-of-week only") })
 })
-// On the leap-day case: February 29th is the one legitimate schedule that can
-// skip three consecutive years, and the reason the search horizon is four years
-// rather than one.
 test.suite("next_after: boundaries", fn() {
     test.case("a schedule may cross into the next year", fn() {
     let eve = time.at(2026i, 12i, 31i, 23i, 59i, 0i, 0i, "UTC", nil)
@@ -77,6 +71,8 @@ test.suite("next_after: boundaries", fn() {
     let late = time.at(2026i, 9i, 3i, 23i, 59i, 0i, 0i, "UTC", nil)
     test.assert_eq(fires_from("*/30 * * * *", late), "2026-09-04T00:00:00.000+00:00", "midnight")
 })
+    // The one legitimate schedule that can skip three consecutive years, and
+    // the reason the search horizon is four years rather than one.
     test.case("February 29th skips three non-leap years and resolves", fn() {
     let jan = time.at(2026i, 1i, 1i, 0i, 0i, 0i, 0i, "UTC", nil)
     test.assert_eq(fires_from("0 0 29 2 *", jan), "2028-02-29T00:00:00.000+00:00", "leap day")
@@ -116,12 +112,9 @@ test.suite("parse: the field sets themselves", fn() {
 })
     test.case("duplicates across terms collapse and the set is sorted", fn() { test.assert_eq(sched.parse("30,0,30,15 * * * *").minutes, [0i, 15i, 30i], "sorted, deduped") })
 })
-// Two notes for the cases below. `next_delay_ms` returns a delay rather than an
-// instant, because an absolute timestamp would be re-read against the sweeping
-// process's clock rather than the arming one's. And the interval helpers are not
-// cron: `*/5` fires at :00 :05 :10, wall-clock aligned, so every armed job
-// stampedes together -- `after_minutes(5)` is five minutes from *now*.
 test.suite("the runtime hand-off", fn() {
+    // A delay rather than an instant, because an absolute timestamp would be
+    // re-read against the sweeping process's clock rather than the arming one's.
     test.case("next_delay_ms is a positive number of milliseconds from now", fn() {
     let ms = sched.next_delay_ms("* * * * *")
     test.assert(ms > 0i, "a future schedule is a positive delay")
@@ -131,6 +124,8 @@ test.suite("the runtime hand-off", fn() {
     let past = time.at(2020i, 1i, 1i, 0i, 0i, 0i, 0i, "UTC", nil)
     test.assert_eq(sched.delay_until(past), 0i, "fire on the next sweep, not a negative deadline")
 })
+    // `*/5` fires at :00 :05 :10 -- wall-clock aligned, so every armed job
+    // stampedes together. `after_minutes(5)` is five minutes from *now*.
     test.case("the interval helpers are not cron and do not pretend to be", fn() {
     let ms = sched.after_minutes(5i)
     test.assert(ms > 299000i, "about five minutes")

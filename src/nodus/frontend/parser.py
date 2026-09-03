@@ -279,27 +279,63 @@ class Parser:
         self.eat("SEP")
         self.skip_seps()
 
+    def take_pending_comments(self) -> list[str]:
+        """Claim the comments queued so far, before parsing the next statement.
+
+        **Taken before, not bound after** — and that ordering is the whole fix
+        (#737). By the time a body is entered, the comment written above the
+        function and the comment written above the body's first statement are
+        both sitting on one queue, indistinguishable. Whichever loop drains first
+        claims both: draining only in `parse()` pulled the inner comment out to
+        the header, and draining only in `block()` pushed the outer comment down
+        into the body. Claiming at the point the statement *starts* is what
+        separates them, because that is the moment only one of them exists.
+
+        Safe to hand back a plain list: `stmt()` never returns a `Comment` — the
+        only construction site is `flush_trailing_comments` — so nothing claimed
+        here can be discarded by the caller.
+        """
+        taken = [tok.val for tok in self.pending_comments]
+        self.pending_comments.clear()
+        return taken
+
+    def bind_comments(self, stmt, leading: list[str]):
+        """Attach `leading` to `stmt`, plus whatever trailed it while parsing.
+
+        The two run in opposite directions and that is not a mistake: a leading
+        comment is queued *before* its statement, a trailing one *during* it.
+        """
+        if leading:
+            setattr(stmt, "_comments", leading)
+        if self.pending_trailing:
+            setattr(stmt, "_trailing_comments", [tok.val for tok in self.pending_trailing])
+            self.pending_trailing.clear()
+        if self.last_token is not None:
+            self.last_stmt = stmt
+            self.last_stmt_end_line = self.last_token.line
+        return stmt
+
+    def flush_trailing_comments(self, stmts: list) -> None:
+        """A comment with no statement after it becomes a node of its own.
+
+        At the end of a block as well as the end of a file: without this the
+        comment above a closing brace would stay queued and re-attach itself to
+        whatever statement came next, outside the block.
+        """
+        for tok in self.pending_comments:
+            stmts.append(Comment(tok.val))
+        self.pending_comments.clear()
+
     def parse(self) -> list:
         stmts = []
         self.skip_seps()
         while not self.at("EOF"):
+            leading = self.take_pending_comments()
             stmt = self.stmt()
-            if not isinstance(stmt, Comment):
-                if self.pending_comments:
-                    setattr(stmt, "_comments", [tok.val for tok in self.pending_comments])
-                    self.pending_comments.clear()
-                if self.pending_trailing:
-                    setattr(stmt, "_trailing_comments", [tok.val for tok in self.pending_trailing])
-                    self.pending_trailing.clear()
+            self.bind_comments(stmt, leading)
             stmts.append(stmt)
-            if not isinstance(stmt, Comment) and self.last_token is not None:
-                self.last_stmt = stmt
-                self.last_stmt_end_line = self.last_token.line
             self.skip_seps()
-        if self.pending_comments:
-            for tok in self.pending_comments:
-                stmts.append(Comment(tok.val))
-            self.pending_comments.clear()
+        self.flush_trailing_comments(stmts)
         # #409: a goal's checkpoints are checked against the workflow it pursues.
         # Module-level rather than inside `goal_pursuit`, because the workflow may
         # be declared after the goal that pursues it.
@@ -488,8 +524,15 @@ class Parser:
             while not self.at("}"):
                 if self.at("EOF"):
                     self.error("Unterminated block")
-                stmts.append(self.stmt())
+                # #737: claimed here, exactly as the top-level loop claims its
+                # own. Without this the queue drains upward and every comment in
+                # the body lands on the enclosing function.
+                leading = self.take_pending_comments()
+                inner = self.stmt()
+                self.bind_comments(inner, leading)
+                stmts.append(inner)
                 self.skip_seps()
+            self.flush_trailing_comments(stmts)
         finally:
             self._block_depth -= 1
 

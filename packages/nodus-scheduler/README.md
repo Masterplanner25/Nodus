@@ -114,7 +114,7 @@ a `deadline_ms`, so a Python implementation would have to be bridged back into
 Nodus to be usable at all. Full reasoning, and the measurements behind it, in
 `docs/ecosystem/NODUS_SCHEDULER.md`.
 
-One consequence to know before editing: `nodus fmt` hoists every comment out of
-every block to the enclosing top-level statement (issue 737), and CI enforces the
-format. The comments here are written where the formatter puts them, which is why
-some read as "on the case below" rather than sitting beside it.
+One consequence to know before editing: `nodus fmt` demotes a same-line trailing
+comment onto its own line, and the result does not survive a second pass — so
+`fmt` can write a file that `fmt --check` then rejects (issue 739). Keep comments
+on their own line and it does not arise.

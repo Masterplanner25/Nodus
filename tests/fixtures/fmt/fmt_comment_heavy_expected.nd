@@ -1,11 +1,11 @@
 # top comment
-# inner comment
-// trailing one
-// standalone
-# trail y
-// sum
 fn demo() {
+    # inner comment
     let x = 1
+    // trailing one
+    // standalone
     let y = -(x + 1)
+    # trail y
     print(x + y)
+    // sum
 }
