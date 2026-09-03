@@ -68,11 +68,14 @@ jobs:
 
       - name: Check .nd formatting
         run: |
-          find . -name "*.nd" \
-            -not -path "./.git/*" \
-            -not -path "./.venv/*" \
-            -not -path "./tmp_demo/*" \
-            -not -path "./tests/fixtures/fmt/*" \
+          # `git ls-files` rather than `find`: the exclusion list only named
+          # `./.venv/`, so running this command locally also swept every other
+          # virtualenv in the tree -- 240 installed stdlib copies next to 61
+          # real files, and roughly half an hour of interpreter startups. The
+          # tracked list is exact, is the same on every machine, and drops
+          # gitignored paths without having to enumerate them.
+          git ls-files '*.nd' \
+            | grep -v '^tests/fixtures/fmt/' \
             | xargs -I {} python nodus.py fmt --check {}
 
       - name: Static checks
