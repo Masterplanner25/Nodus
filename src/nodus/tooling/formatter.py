@@ -95,6 +95,21 @@ def _split_demoted_trailing(stmt, produced: list[str]):
     return produced[: -len(demoted)], demoted
 
 
+def _needs_blank_line(prev_import: bool, prev_fn: bool, is_import: bool, is_fn: bool) -> bool:
+    """Does a blank line go between the previous top-level statement and this one?
+
+    Named once because it is asked twice: for each statement in the loop, and
+    again for trailing comments left over at the end of the file, which re-parse
+    as standalone `Comment` statements and must be given the same answer. Written
+    out inline the second time, it disagreed — the tail checked only `prev_fn`,
+    so a trailing comment on the last `import` got no blank on the first pass and
+    one on the second, which is #739 surviving its own fix in a corner.
+    """
+    if prev_import and not is_import:
+        return True
+    return prev_fn or is_fn
+
+
 def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
     """Render top-level statements, with the blank-line policy between them.
 
@@ -128,11 +143,8 @@ def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
             stmt, indent=0, keep_trailing_comments=keep_trailing_comments
         )
         own, demoted = _split_demoted_trailing(stmt, produced)
-        if lines:
-            if prev_import and not is_import:
-                lines.append("")
-            elif prev_fn or is_fn:
-                lines.append("")
+        if lines and _needs_blank_line(prev_import, prev_fn, is_import, is_fn):
+            lines.append("")
         lines.extend(carried)
         lines.extend(own)
         carried = demoted
@@ -141,8 +153,9 @@ def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
 
     if carried:
         # Nothing follows, so on re-parse these become standalone `Comment`
-        # statements — and those take the same blank line a statement would.
-        if lines and prev_fn:
+        # statements — neither an import nor a function — and they take whatever
+        # blank line the rule gives such a statement.
+        if lines and _needs_blank_line(prev_import, prev_fn, False, False):
             lines.append("")
         lines.extend(carried)
 

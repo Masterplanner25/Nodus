@@ -40,6 +40,15 @@ UNFORMATTED = {
         'import "std:math" as math // why we need it\nlet a = 1\n',
     "trailing on the last statement":
         "let a = 1 // last\n",
+    # A trailing comment with nothing after it re-parses as a standalone
+    # `Comment` statement, which the blank-line rule treats as neither an import
+    # nor a function. These three put the previous statement in each of the
+    # states that rule cares about, because the tail once answered it by hand and
+    # answered it differently.
+    "trailing on the last import":
+        'import "std:math" as math // t\n',
+    "trailing on the last of several imports":
+        'import "a.nd" as a\nimport "std:math" as math // t\n',
     "trailing on a function, at end of file":
         "fn f() {\n    return 1i\n} // done\n",
     "trailing between two functions":
