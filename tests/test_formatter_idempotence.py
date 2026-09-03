@@ -50,6 +50,14 @@ UNFORMATTED = {
         "fn f() {\n    let a = 1i // note\n    let b = 2i\n    return b\n}\n",
     "trailing next to a leading comment":
         "// leading\nlet a = 1 // trailing\n// another leading\nlet b = 2\n",
+    # The interleaving: a carried trailing comment and the next statement's own
+    # leading comment end up adjacent, with a blank line inserted between the
+    # statements. Both have to land on the same side of that blank, in source
+    # order, or the second pass reorders them.
+    "carried and leading comments meet across a blank line":
+        'import "std:math" as math // trailing on the import\n'
+        "// leading on the let\n"
+        "let a = 1\n",
     "trailing on a statement before a function":
         "let a = 1 // about a\nfn f() {\n    return 1i\n}\n",
     "unformatted spacing as well":
