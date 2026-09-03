@@ -305,6 +305,66 @@
 
 ### Fixes
 
+- **#737: `nodus fmt` keeps a comment where it was written.**
+
+  It used to move **every** comment inside **any** block to above the enclosing
+  top-level statement, stacking them in source order. Position and nesting depth
+  made no difference, so four comments about four different lines became one
+  block above the function, explaining none of them. `.nd` files structurally
+  could not carry an explanation next to the code it explained — and since CI
+  runs `fmt --check`, declining to format was not an option.
+
+  Every `.nd` file in the tree showed it: scanning all 300 for a comment inside a
+  block found **zero**. Not a house style, the formatter.
+
+  The formatter was never the problem. It has always emitted `_comments` at the
+  right indent and handled a `Comment` node inside a block; the **parser** never
+  gave it the chance. One question — *which statement was this comment written
+  above?* — was answered in `parse()` and nowhere else, so a comment written in a
+  body stayed queued until the enclosing top-level statement finished and was
+  bound to that.
+
+  **The fix is where the claim is made, not that one is made.** Draining in
+  `block()` too moved the comments the other way: by the time a body is entered,
+  the comment above the function and the comment above the body's first statement
+  are both on one queue, and whichever loop drains first takes both. Claiming at
+  the moment a statement *starts* separates them, because only one of them exists
+  yet. One level down is where that matters — a comment above a nested `if` and
+  one inside it are both queued when the block is entered.
+
+  **Three loops parse a sequence of statements, not two.** A workflow body is not
+  a `block()` — it is a bespoke loop over `step` and `state` — so it needed its
+  own claim, and the omission was the same defect one level in: the comment above
+  a `step` was taken by the step body's first statement. Found by trying the
+  shape rather than by reading the parser, which is the argument for exercising
+  each construct that has its own statement loop instead of assuming `block()`
+  covers everything.
+
+  **And a fourth place claims for the opposite reason.** A `goal … over …` body
+  holds no statements at all — `until` and `budget` are fields — so a comment
+  inside it has nothing to attach to and no position to be rendered at. It still
+  has to be *claimed*: unclaimed, it was taken by the next top-level statement,
+  or flushed to the **end of the file** when there was none. That is strictly
+  worse than the hoisting being fixed here — a comment above the goal is coarse,
+  a comment at the end of the file has left its subject — and it was a regression
+  this change introduced, caught by trying the shape afterwards. It now lands
+  directly above the goal, which is where it went before.
+
+  A test names all four and says which of the two kinds each is, so a fifth has
+  to classify itself rather than be counted.
+
+  Three formatter fixtures had inputs generated from the buggy output, so they
+  were hoisted fixed points and could not detect the change. Rewritten by hand
+  from intent. The one fixture written by hand originally,
+  `fmt_import_export_comments_keep`, is the one that went red on the fix — which
+  is the argument against ever regenerating an expectation from current output.
+
+  Known issue, filed separately and **not** introduced here: with
+  `keep_trailing_comments` off, `fmt` demotes a same-line trailing comment onto
+  its own line, where it re-parses as a *leading* comment of the next statement.
+  So `fmt` can write a file that `fmt --check` immediately rejects. Verified
+  identical before this change.
+
 - **#733: a due schedule is no longer released by anything that cannot resume it.**
 
   `on_timeout: "resume"` (#176) makes a deadline a schedule. Settling one clears

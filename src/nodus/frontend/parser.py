@@ -279,27 +279,68 @@ class Parser:
         self.eat("SEP")
         self.skip_seps()
 
+    def take_pending_comments(self) -> list[str]:
+        """Claim the comments queued so far, before parsing the next statement.
+
+        **Taken before, not bound after** — and that ordering is the whole fix
+        (#737). By the time a body is entered, the comment written above the
+        function and the comment written above the body's first statement are
+        both sitting on one queue, indistinguishable. Whichever loop drains first
+        claims both: draining only in `parse()` pulled the inner comment out to
+        the header, and draining only in `block()` pushed the outer comment down
+        into the body. Claiming at the point the statement *starts* is what
+        separates them, because that is the moment only one of them exists.
+
+        Safe to hand back a plain list: `stmt()` never returns a `Comment` — the
+        only construction site is `flush_trailing_comments` — so nothing claimed
+        here can be discarded by the caller.
+        """
+        taken = [tok.val for tok in self.pending_comments]
+        self.pending_comments.clear()
+        return taken
+
+    def bind_comments(self, stmt, leading: list[str]):
+        """Attach `leading` to `stmt`, plus whatever trailed it while parsing.
+
+        The two run in opposite directions and that is not a mistake: a leading
+        comment is queued *before* its statement, a trailing one *during* it.
+        """
+        # Prepended rather than assigned: a construct with no statements of its
+        # own may already have claimed its body's comments and attached them
+        # here (`goal_pursuit`), and those belong *after* the ones written above
+        # the construct itself.
+        existing = getattr(stmt, "_comments", None)
+        if leading or existing:
+            setattr(stmt, "_comments", list(leading) + list(existing or []))
+        if self.pending_trailing:
+            setattr(stmt, "_trailing_comments", [tok.val for tok in self.pending_trailing])
+            self.pending_trailing.clear()
+        if self.last_token is not None:
+            self.last_stmt = stmt
+            self.last_stmt_end_line = self.last_token.line
+        return stmt
+
+    def flush_trailing_comments(self, stmts: list) -> None:
+        """A comment with no statement after it becomes a node of its own.
+
+        At the end of a block as well as the end of a file: without this the
+        comment above a closing brace would stay queued and re-attach itself to
+        whatever statement came next, outside the block.
+        """
+        for tok in self.pending_comments:
+            stmts.append(Comment(tok.val))
+        self.pending_comments.clear()
+
     def parse(self) -> list:
         stmts = []
         self.skip_seps()
         while not self.at("EOF"):
+            leading = self.take_pending_comments()
             stmt = self.stmt()
-            if not isinstance(stmt, Comment):
-                if self.pending_comments:
-                    setattr(stmt, "_comments", [tok.val for tok in self.pending_comments])
-                    self.pending_comments.clear()
-                if self.pending_trailing:
-                    setattr(stmt, "_trailing_comments", [tok.val for tok in self.pending_trailing])
-                    self.pending_trailing.clear()
+            self.bind_comments(stmt, leading)
             stmts.append(stmt)
-            if not isinstance(stmt, Comment) and self.last_token is not None:
-                self.last_stmt = stmt
-                self.last_stmt_end_line = self.last_token.line
             self.skip_seps()
-        if self.pending_comments:
-            for tok in self.pending_comments:
-                stmts.append(Comment(tok.val))
-            self.pending_comments.clear()
+        self.flush_trailing_comments(stmts)
         # #409: a goal's checkpoints are checked against the workflow it pursues.
         # Module-level rather than inside `goal_pursuit`, because the workflow may
         # be declared after the goal that pursues it.
@@ -488,8 +529,15 @@ class Parser:
             while not self.at("}"):
                 if self.at("EOF"):
                     self.error("Unterminated block")
-                stmts.append(self.stmt())
+                # #737: claimed here, exactly as the top-level loop claims its
+                # own. Without this the queue drains upward and every comment in
+                # the body lands on the enclosing function.
+                leading = self.take_pending_comments()
+                inner = self.stmt()
+                self.bind_comments(inner, leading)
+                stmts.append(inner)
                 self.skip_seps()
+            self.flush_trailing_comments(stmts)
         finally:
             self._block_depth -= 1
 
@@ -698,10 +746,26 @@ class Parser:
                 f"`budget {{ max_iterations: N, deadline_ms: M }}`",
                 start,
             )
-        return self.mark(
+        node = self.mark(
             GoalPursuit(name, workflow_name, until, budget, retry_from=retry_from),
             start,
         )
+        # #737: a goal-pursuit body holds no statements — `until` and `budget`
+        # are fields — so a comment written inside it has nothing of its own to
+        # attach to, and the formatter has no position to render it at. Claimed
+        # here and bound to the goal, which puts it directly above the construct
+        # it describes.
+        #
+        # It has to be claimed *somewhere*: left on the queue it is taken by the
+        # next top-level statement's claim, or flushed to the end of the file if
+        # there is none. That is strictly worse than the behaviour this issue is
+        # about — a comment above the goal is merely coarse, one at the end of
+        # the file has left its subject entirely. Caught by trying the shape
+        # after the main fix, not before.
+        body_comments = self.take_pending_comments()
+        if body_comments:
+            setattr(node, "_comments", body_comments)
+        return node
 
     def goal_budget(self, start: Tok):
         # #488: the outer vocabulary stays **closed and parse-checkable**, which
@@ -846,10 +910,16 @@ class Parser:
         while not self.at("}"):
             if self.at("EOF"):
                 self.error(f"Unterminated {label}")
+            # #737: a workflow body is its own statement loop, not a `block()`,
+            # so it needs its own claim. Without one, the comment above a `step`
+            # stayed queued while the step's body was parsed and was taken by the
+            # *step body's* first statement — the same defect one level in, and
+            # the reason a workflow is worth testing separately from a function.
+            leading = self.take_pending_comments()
             if self.at("ID") and self.peek().val == "state":
-                states.append(self.flow_state_decl(label))
+                states.append(self.bind_comments(self.flow_state_decl(label), leading))
             elif self.at("STEP"):
-                steps.append(self.flow_step(step_type))
+                steps.append(self.bind_comments(self.flow_step(step_type), leading))
             else:
                 self.error(f"{label} body must contain state declarations or steps")
             self.skip_seps()

@@ -43,13 +43,6 @@ fn includes(items, value) {
 }
 
 // Deduplicate and sort a field's values.
-//
-// The sort is an insertion sort written out: these lists are at most 60 long,
-// and there is no sort builtin for a list of ints to call instead.
-//
-// (Both halves are described here rather than beside the loops they belong to,
-// because `nodus fmt` hoists every in-body comment to the function header --
-// see issue 737. Written where it lands so it reads correctly there.)
 fn sorted_unique(items) {
     let out = []
     let seen = {}
@@ -63,6 +56,8 @@ fn sorted_unique(items) {
         }
         i = i + 1i
     }
+    // Insertion sort, written out: these lists are at most 60 long, and there
+    // is no sort builtin for a list of ints to call instead.
     let a = 1i
     while (a < len(out)) {
         let value = out[a]
@@ -78,10 +73,6 @@ fn sorted_unique(items) {
 }
 
 // One comma-separated term of a cron field: `*`, `N`, `A-B`, `*/N`, `A-B/N`.
-//
-// The subtlety is the bare value. `N` alone is the single value N, but `N` with
-// a step means "from N to the end of the range" -- so the high bound depends on
-// whether a step was given. `5` is minute 5; `5/20` is 5, 25, 45.
 fn parse_term(term, lo, hi) {
     let body = term
     let by = 1i
@@ -102,6 +93,9 @@ fn parse_term(term, lo, hi) {
             high = math.parse_int(dash[1])
         } else {
             low = math.parse_int(body)
+            // `N` alone is the single value N, but `N` *with* a step means
+            // "from N to the end of the range" -- so the high bound depends on
+            // whether one was given. `5` is minute 5; `5/20` is 5, 25, 45.
             if (by == 1i) {
                 high = low
             } else {
@@ -149,8 +143,6 @@ fn parse_field(field, lo, hi) {
 // of "the 13th, and every Friday", which is a schedule that fires roughly a
 // hundred times less often than intended.
 //
-// Day-of-week 7 and 0 are both Sunday; the parse normalises 7 to 0 so that
-// `day_matches` never has to know there are two spellings.
 fn parse(expression) {
     let fields = strings.split(strings.trim(expression), " ")
     let cleaned = []
@@ -165,6 +157,8 @@ fn parse(expression) {
         throw "a schedule needs 5 fields (minute hour day month weekday), got \(len(cleaned)): \(expression)"
     }
     let weekdays = parse_field(cleaned[4], 0i, 7i)
+    // 7 and 0 are both Sunday. Normalised here so `day_matches` never has to
+    // know there are two spellings.
     if (includes(weekdays, 7i)) {
         weekdays = sorted_unique(push(weekdays, 0i))
     }

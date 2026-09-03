@@ -5,10 +5,10 @@ import { b, a } from "mod.nd" // trailing import
 export { z, y } # trailing export list
 export { x } from "other.nd" // reexport
 
-# before body
-// sum
 export fn add(a, b) {
+    # before body
     return a + b
+    // sum
 }
 
 export let value = 1 // trailing let
