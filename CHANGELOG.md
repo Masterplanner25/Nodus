@@ -146,6 +146,40 @@
   stores and no record of which. The report counts **waiting** runs separately,
   because that is the population a backend switch strands.
 
+- **`nodus-scheduler`: cron and interval schedules, as pure functions — written in Nodus.**
+
+  A Tier 2 proposal (issue 88) for cron/interval/calendar scheduling. Spec at
+  `docs/ecosystem/NODUS_SCHEDULER.md`, implementation at
+  `packages/nodus-scheduler/` with 26 tests. **Not published, so the number is
+  here in prose rather than on the bullet.**
+
+  It is much smaller than the issue asked for, because #176 already shipped the
+  hard half: `on_timeout: "resume"` makes a deadline a schedule, `nodus workflow
+  sweep` fires it, and a resumed step arming its successor recurs indefinitely.
+  So the daemon is an ordinary system cron calling the sweep, and what was left
+  is arithmetic — *given a schedule, when does it next fire?* Nothing in the
+  library parks a run, holds state, or executes anything.
+
+  That answer is why the issue was held rather than built: had it been written
+  before #176, it would have baked in whichever runtime design the implementer
+  assumed, and the two candidate shapes were different packages.
+
+  **Written in Nodus rather than Python, which departs from
+  `WHY_PYTHON_NOT_NODUS.md`** and is argued in the spec. The gap that document
+  names — "no substring/slice builtin" — does not bind, checked by parsing
+  `*/15 2 * * 1-5` field by field with `strings.split` and `math.parse_int`. The
+  real argument is the consumer: every other pure-logic candidate it lists is
+  called by a Python host, while this one's only caller is a `.nd` step body
+  computing a `deadline_ms`, so a Python version would have to be bridged back
+  into Nodus to be used at all. That is the document's own Rule of Three.
+
+  Two behaviours are pinned by mutation rather than assertion alone, because both
+  produce a schedule that still looks like it works: the day fields are a
+  **union** (`0 0 13 * 5` is "the 13th, and every Friday", not "Friday the
+  13th" — flipping it moves the case to 2026-11-13, which is one), and cron's
+  day-of-week numbering differs from `std:time`'s by one (removing the conversion
+  turns four cases red, each off by exactly a day).
+
 - **`nodus-container` spec and scaffold — and the capability question, settled.**
 
   A Tier 2 proposal (issue #85) for container execution (Docker, Podman) from a

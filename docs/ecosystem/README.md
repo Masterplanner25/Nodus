@@ -19,6 +19,7 @@ below.
 | [NODUS_A2A.md](./NODUS_A2A.md) | [`nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a) | Local = AgentCoordinator layer (23 tests); full A2A wire-protocol spec preserved on GitHub |
 | [NODUS_EVENT.md](./NODUS_EVENT.md) | `nodus-event` | **Not yet implemented** — higher-level event framework; `nodus-events` (transport layer) is built |
 | [NODUS_CONTAINER.md](./NODUS_CONTAINER.md) | `nodus-container` | **Scaffold only, not published** (#85) — 17 tests in `packages/nodus-container/`; argv verified against Docker 29.2.1 |
+| [NODUS_SCHEDULER.md](./NODUS_SCHEDULER.md) | `nodus-scheduler` | **Reference implementation, not published** (#88) — 26 tests in `packages/nodus-scheduler/`; **written in Nodus**, not Python |
 
 ## Full ecosystem status
 

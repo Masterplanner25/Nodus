@@ -1,0 +1,139 @@
+// nodus-scheduler tests (#88)
+//
+// Run with:  nodus test packages/nodus-scheduler/tests/scheduler_test.nd
+//
+// Every expected instant below is hand-computed and stated in the case name, so
+// a failure says what the schedule should have meant rather than only that two
+// strings differ. The origin is fixed: 2026-09-03T14:30Z, a **Thursday**, which
+// is cron day-of-week 4 and `std:time` weekday 3 -- the off-by-one that shifts
+// every weekly schedule by a day, and still looks like a working schedule.
+import "std:test" as test
+import "std:time" as time
+import "../src/scheduler.nd" as sched
+
+let ORIGIN_ISO = "2026-09-03T14:30:00.000+00:00"
+
+fn origin() {
+    return time.at(2026i, 9i, 3i, 14i, 30i, 0i, 0i, "UTC", nil)
+}
+
+fn fires(expression) {
+    let hit = sched.next_after(expression, origin())
+    if (hit == nil) {
+        return "never"
+    }
+    return time.to_iso8601(hit)
+}
+
+fn fires_from(expression, dt) {
+    let hit = sched.next_after(expression, dt)
+    if (hit == nil) {
+        return "never"
+    }
+    return time.to_iso8601(hit)
+}
+
+// On the last case: 14:30 matches the schedule, and the contract is *strictly*
+// after the origin. The remaining hour in the list (14) has no minute left after
+// :30, so the search rolls to the next day and takes the first hour, 02.
+//
+// (`nodus fmt` hoists in-body comments to the top-level statement -- issue 737 --
+// so a note about one case lands above its whole suite. Worded for where it lands.)
+test.suite("next_after: the ordinary schedules", fn() {
+    test.case("origin is the Thursday the weekday cases depend on", fn() {
+    test.assert_eq(time.to_iso8601(origin()), ORIGIN_ISO, "fixed origin")
+    test.assert_eq(origin().weekday, 3i, "std:time weekday: 0=Monday, so Thursday is 3")
+    test.assert_eq(sched.cron_weekday(origin()), 4i, "cron weekday: 0=Sunday, so Thursday is 4")
+})
+    test.case("every minute -> the very next minute", fn() { test.assert_eq(fires("* * * * *"), "2026-09-03T14:31:00.000+00:00", "next minute") })
+    test.case("daily at 03:00 -> tomorrow, because today's has passed", fn() { test.assert_eq(fires("0 3 * * *"), "2026-09-04T03:00:00.000+00:00", "next 03:00") })
+    test.case("*/15 from :30 -> :45, the same hour", fn() { test.assert_eq(fires("*/15 * * * *"), "2026-09-03T14:45:00.000+00:00", "quarter past") })
+    test.case("lists in two fields -> 02:00 tomorrow, not 14:30 today", fn() { test.assert_eq(fires("0,30 2,14 * * *"), "2026-09-04T02:00:00.000+00:00", "strictly after") })
+})
+test.suite("next_after: weekdays, where the off-by-one lives", fn() {
+    test.case("Mon-Fri at 09:00 from Thursday afternoon -> Friday", fn() { test.assert_eq(fires("0 9 * * 1-5"), "2026-09-04T09:00:00.000+00:00", "Friday 09:00") })
+    test.case("Sunday as 0 -> the 6th", fn() { test.assert_eq(fires("0 9 * * 0"), "2026-09-06T09:00:00.000+00:00", "Sunday 09:00") })
+    test.case("Sunday as 7 means the same day as 0", fn() { test.assert_eq(fires("0 9 * * 7"), fires("0 9 * * 0"), "7 and 0 are both Sunday") })
+})
+// Standard cron: when *both* day-of-month and day-of-week are restricted, a day
+// matches if *either* does. Reading it as an intersection turns "the 13th, and
+// every Friday" into "Friday the 13th" -- about a hundredfold less often, and
+// silently. Verified by mutation: flipping the `||` to `&&` moves the first case
+// from 2026-09-04 to 2026-11-13, which is indeed a Friday the 13th.
+test.suite("next_after: the day fields are a union, not a filter", fn() {
+    test.case("13th OR Friday -> Friday the 4th, sooner than the 13th", fn() { test.assert_eq(fires("0 0 13 * 5"), "2026-09-04T00:00:00.000+00:00", "the union's nearer arm") })
+    test.case("the 13th alone -> the 13th", fn() { test.assert_eq(fires("0 0 13 * *"), "2026-09-13T00:00:00.000+00:00", "day-of-month only") })
+    test.case("Fridays alone -> the 4th", fn() { test.assert_eq(fires("0 0 * * 5"), "2026-09-04T00:00:00.000+00:00", "day-of-week only") })
+})
+// On the leap-day case: February 29th is the one legitimate schedule that can
+// skip three consecutive years, and the reason the search horizon is four years
+// rather than one.
+test.suite("next_after: boundaries", fn() {
+    test.case("a schedule may cross into the next year", fn() {
+    let eve = time.at(2026i, 12i, 31i, 23i, 59i, 0i, 0i, "UTC", nil)
+    test.assert_eq(fires_from("0 0 1 1 *", eve), "2027-01-01T00:00:00.000+00:00", "new year")
+})
+    test.case("23:59 rolls the day rather than reporting nothing", fn() {
+    let late = time.at(2026i, 9i, 3i, 23i, 59i, 0i, 0i, "UTC", nil)
+    test.assert_eq(fires_from("*/30 * * * *", late), "2026-09-04T00:00:00.000+00:00", "midnight")
+})
+    test.case("February 29th skips three non-leap years and resolves", fn() {
+    let jan = time.at(2026i, 1i, 1i, 0i, 0i, 0i, 0i, "UTC", nil)
+    test.assert_eq(fires_from("0 0 29 2 *", jan), "2028-02-29T00:00:00.000+00:00", "leap day")
+})
+    test.case("a day that never exists returns nil, it does not hang", fn() {
+    let jan = time.at(2026i, 1i, 1i, 0i, 0i, 0i, 0i, "UTC", nil)
+    test.assert_eq(fires_from("0 0 30 2 *", jan), "never", "February 30th")
+})
+})
+// Every case here throws rather than defaulting. A schedule that silently means
+// something else surfaces hours later as work that did not run, which is the
+// worst way to learn about a typo.
+test.suite("parse: a malformed schedule is refused where it is written", fn() {
+    test.case("wrong field count", fn() {
+    test.assert_throws(fn() { sched.parse("0 3 * *") }, "four fields")
+    test.assert_throws(fn() { sched.parse("0 3 * * * *") }, "six fields")
+})
+    test.case("a value outside its field's range", fn() {
+    test.assert_throws(fn() { sched.parse("60 3 * * *") }, "minute 60")
+    test.assert_throws(fn() { sched.parse("0 24 * * *") }, "hour 24")
+    test.assert_throws(fn() { sched.parse("0 3 * * 8") }, "weekday 8")
+    test.assert_throws(fn() { sched.parse("0 3 32 * *") }, "day 32")
+})
+    test.case("a step of zero, which would not terminate", fn() { test.assert_throws(fn() { sched.parse("*/0 * * * *") }, "zero step") })
+    test.case("a reversed range", fn() { test.assert_throws(fn() { sched.parse("30-10 * * * *") }, "high before low") })
+    test.case("an empty term", fn() { test.assert_throws(fn() { sched.parse("0,,30 * * * *") }, "empty term") })
+})
+test.suite("parse: the field sets themselves", fn() {
+    test.case("a star covers its whole range", fn() {
+    test.assert_eq(len(sched.parse("* * * * *").minutes), 60i, "0-59")
+    test.assert_eq(len(sched.parse("* * * * *").hours), 24i, "0-23")
+    test.assert_eq(len(sched.parse("* * * * *").months), 12i, "1-12")
+})
+    test.case("a bare value is that value alone; with a step it runs to the end", fn() {
+    test.assert_eq(sched.parse("5 * * * *").minutes, [5i], "bare 5 is one minute")
+    test.assert_eq(sched.parse("5/20 * * * *").minutes, [5i, 25i, 45i], "5/20 runs to 59")
+})
+    test.case("duplicates across terms collapse and the set is sorted", fn() { test.assert_eq(sched.parse("30,0,30,15 * * * *").minutes, [0i, 15i, 30i], "sorted, deduped") })
+})
+// Two notes for the cases below. `next_delay_ms` returns a delay rather than an
+// instant, because an absolute timestamp would be re-read against the sweeping
+// process's clock rather than the arming one's. And the interval helpers are not
+// cron: `*/5` fires at :00 :05 :10, wall-clock aligned, so every armed job
+// stampedes together -- `after_minutes(5)` is five minutes from *now*.
+test.suite("the runtime hand-off", fn() {
+    test.case("next_delay_ms is a positive number of milliseconds from now", fn() {
+    let ms = sched.next_delay_ms("* * * * *")
+    test.assert(ms > 0i, "a future schedule is a positive delay")
+    test.assert(ms <= 60000i, "the next minute is at most a minute away")
+})
+    test.case("delay_until floors a past instant at zero", fn() {
+    let past = time.at(2020i, 1i, 1i, 0i, 0i, 0i, 0i, "UTC", nil)
+    test.assert_eq(sched.delay_until(past), 0i, "fire on the next sweep, not a negative deadline")
+})
+    test.case("the interval helpers are not cron and do not pretend to be", fn() {
+    let ms = sched.after_minutes(5i)
+    test.assert(ms > 299000i, "about five minutes")
+    test.assert(ms < 301000i, "about five minutes")
+})
+})

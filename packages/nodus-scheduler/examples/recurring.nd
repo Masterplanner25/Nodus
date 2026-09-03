@@ -1,0 +1,32 @@
+// A recurring job, surviving process exit (#88).
+//
+// Run it once to arm, then let cron call `nodus workflow sweep`. Each sweep
+// fires the job and re-arms it, so this recurs forever across processes without
+// any host code.
+//
+//   nodus run examples/recurring.nd --time-limit 30
+//   nodus workflow sweep      # fires, and arms the next one
+//   nodus workflow sweep      # fires again
+//
+// `after_seconds(2)` is used rather than a cron expression only so the example
+// is observable in a few seconds. Swap in `sched.next_delay_ms("0 3 * * *")` for
+// a nightly job -- nothing else changes, which is the point: the schedule is
+// just a number of milliseconds, and the runtime owns everything after that.
+import "../src/scheduler.nd" as sched
+import "std:time" as time
+
+workflow heartbeat {
+    step park {
+        return workflow_wait("tick", record {deadline_ms: sched.after_seconds(2i), on_timeout: "resume"})
+    }
+    step beat after park {
+        print("beat at \(time.to_iso8601(time.now()))")
+        let next = run_workflow(heartbeat)
+        return "rearmed"
+    }
+}
+
+fn main() {
+    run_workflow(heartbeat)
+    print("armed -- run `nodus workflow sweep` to fire it")
+}
