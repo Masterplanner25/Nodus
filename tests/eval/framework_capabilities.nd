@@ -185,9 +185,9 @@ fn probe_coroutines() {
     spawn(coroutine(fn() { send(ch, "a") }))
     spawn(coroutine(fn() { send(ch, "b") }))
     spawn(coroutine(fn() {
-    results = list_push(results, recv(ch))
-    results = list_push(results, recv(ch))
-}))
+        results = list_push(results, recv(ch))
+        results = list_push(results, recv(ch))
+    }))
     run_loop()
     check("two messages received", len(results), 2i)
     let both = results[0] + results[1]

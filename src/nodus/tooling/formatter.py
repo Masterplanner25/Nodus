@@ -216,7 +216,44 @@ def format_goal_predicate(node, *, parent: str | None = None) -> str:
     raise TypeError(f"Unknown goal predicate node: {node!r}")
 
 
+def _reindent_embedded(lines: list[str], prefix: str) -> list[str]:
+    """Split multi-line entries apart and give the continuation lines `prefix`.
+
+    `format_expr` renders a multi-line closure body against column 0, because an
+    expression is not told how deep it sits — its signature is
+    `format_expr(expr, parent_prec)`, and threading an indent through some fifty
+    recursive call sites so that two of them can read it is a poor trade. The
+    statement *does* know its depth, so the shift happens once, here, on the way
+    out (#742).
+
+    It composes with nesting rather than having to know about it: every
+    `format_stmt` fixes up whatever multi-line text it was handed, relative to
+    its own indent, so a closure inside a closure inside a function comes out
+    right without anyone counting levels.
+
+    **Splitting matters as much as the indent.** A statement whose rendering
+    spans lines used to arrive as *one* entry with newlines inside it, so
+    anything measuring `len(lines)` — the single-line collapse in the `FnExpr`
+    branch above all — read a four-line closure as one line and inlined it.
+    """
+    out: list[str] = []
+    for line in lines:
+        if "\n" not in line:
+            out.append(line)
+            continue
+        head, *rest = line.split("\n")
+        out.append(head)
+        out.extend(prefix + tail if tail else tail for tail in rest)
+    return out
+
+
 def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list[str]:
+    return _reindent_embedded(
+        _format_stmt(stmt, indent, keep_trailing_comments), INDENT * indent
+    )
+
+
+def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list[str]:
     prefix = INDENT * indent
     lines: list[str] = []
 
@@ -558,8 +595,14 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         return "true" if expr.v else "false"
     if isinstance(expr, Match):
         # Fallback for match in a nested/inline expression position; statement
-        # positions get correct indentation via format_stmt. Closing brace lands
-        # at column 0 (same limitation as inline fn expressions).
+        # positions get their indentation from `format_stmt`'s own Match branch.
+        #
+        # Rendered against column 0 like every other multi-line expression, and
+        # shifted to its real depth on the way out of `format_stmt` (#742). This
+        # used to note that the closing brace landed at column 0 "same limitation
+        # as inline fn expressions" — that limitation is gone for both, and the
+        # same one change fixed them, because neither ever needed to know its own
+        # depth.
         return "\n".join(format_match(expr, 0))
     if isinstance(expr, Str):
         return format_string(expr.v)

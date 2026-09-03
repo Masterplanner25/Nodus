@@ -66,18 +66,18 @@ fn _avg_total(verdicts) {
 // 3. SYNTHESIZE — start from the winner, graft the best runner-up ideas.
 export fn run_panel(task, angles, judges) {
     let candidates = ax.fan_out(angles, fn(angle) {
-    let payload = {"task": task, "bias": angle}
-    let sol = ax.typed("solver", payload, SOLUTION_KEYS, 3)
-    sol["angle"] = angle
-    return sol
-})
+        let payload = {"task": task, "bias": angle}
+        let sol = ax.typed("solver", payload, SOLUTION_KEYS, 3)
+        sol["angle"] = angle
+        return sol
+    })
     let scored = ax.fan_out(candidates, fn(candidate) {
-    let verdicts = ax.fan_out(judges, fn(judge) {
-    let payload = {"judge": judge, "task": task, "candidate": candidate}
-    return ax.typed("judge", payload, SCORE_KEYS, 3)
-})
-    return {"candidate": candidate, "avg": _avg_total(verdicts), "verdicts": verdicts}
-})
+        let verdicts = ax.fan_out(judges, fn(judge) {
+            let payload = {"judge": judge, "task": task, "candidate": candidate}
+            return ax.typed("judge", payload, SCORE_KEYS, 3)
+        })
+        return {"candidate": candidate, "avg": _avg_total(verdicts), "verdicts": verdicts}
+    })
     let winner_idx = _argmax_index(scored)
     let winner = scored[winner_idx]
     let payload = {"task": task, "winner": winner["candidate"], "graft_ideas": _best_ideas_except(scored, winner_idx)}

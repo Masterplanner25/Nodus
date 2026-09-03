@@ -72,17 +72,17 @@ fn _fanout_raw(n) {
 // fallback has regressed — the idiomatic async path is serial again.
 test.suite("agent fan-out overlaps (gate for guard fix #1)", fn() {
     test.case("raw direct builtin partially overlaps (beats serial; #3 cap open)", fn() {
-    let t0 = _now_ms()
-    _fanout_raw(N)
-    let elapsed = _now_ms() - t0
-    print("raw builtin fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
-    test.assert(elapsed < SERIAL_MS, "raw async path should at least beat serial; if not, the test server is not concurrent")
-})
+        let t0 = _now_ms()
+        _fanout_raw(N)
+        let elapsed = _now_ms() - t0
+        print("raw builtin fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
+        test.assert(elapsed < SERIAL_MS, "raw async path should at least beat serial; if not, the test server is not concurrent")
+    })
     test.case("idiomatic http.get_async wrapper overlaps", fn() {
-    let t0 = _now_ms()
-    _fanout_wrapper(N)
-    let elapsed = _now_ms() - t0
-    print("wrapper fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
-    test.assert(elapsed < OVERLAP_CEILING_MS, "http.get_async fan-out went serial — wrapper->sync fallback regression (guard fix #1).")
-})
+        let t0 = _now_ms()
+        _fanout_wrapper(N)
+        let elapsed = _now_ms() - t0
+        print("wrapper fan-out: " + str(elapsed) + "ms (serial would be " + str(SERIAL_MS) + "ms)")
+        test.assert(elapsed < OVERLAP_CEILING_MS, "http.get_async fan-out went serial — wrapper->sync fallback regression (guard fix #1).")
+    })
 })

@@ -305,6 +305,53 @@
 
 ### Fixes
 
+- **#742: `nodus fmt` indents a closure body for where the closure sits.**
+
+  A multi-line closure body came out one level from the left margin and its
+  closing brace at column 0, wherever the closure actually was — and worse with
+  depth, since a three-level nest put every inner body at the same column:
+
+  ```nd
+  fn f() {
+      let g = fn() {
+      let a = 1i          <- should be 8 spaces
+      return a
+  }                       <- should be 4
+      return g
+  }
+  ```
+
+  `format_expr(expr, parent_prec)` is never told how deep it is, so the `FnExpr`
+  branch had nothing to indent against and hardcoded one level. Threading an
+  indent through some fifty recursive call sites so that two of them could read
+  it is a poor trade; the shift happens once instead, on the way out of
+  `format_stmt`, which is the first place that knows. It composes with nesting
+  rather than counting levels — each statement fixes up whatever multi-line text
+  it was handed, relative to its own indent.
+
+  **Splitting those lines apart matters as much as the shift.** A statement
+  whose rendering spanned lines used to arrive as *one* entry with newlines
+  inside it, so anything measuring `len(lines)` read a four-line closure as a
+  one-liner — including the single-line collapse in the `FnExpr` branch, which
+  would then inline it.
+
+  The same change fixed the inline `match` fallback, whose comment had recorded
+  the identical symptom as a separate limitation ("closing brace lands at column
+  0, same limitation as inline fn expressions"). It was the same limitation:
+  neither construct ever needed to know its own depth.
+
+  Five tracked `.nd` files were reformatted by this, `std:async` among them —
+  the AST round-trip test and the async suite both pin that nothing changed
+  meaning. **#737 is why it was worth fixing now**: before it, a comment inside a
+  short closure body was hoisted out, the body collapsed onto one line, and the
+  multi-line branch was rarely reached. Once comments stayed put, the bad
+  indentation started appearing in ordinary code.
+
+  `tests/test_formatter_completeness.py` went red on this and was right to: it
+  read the dispatch out of `format_stmt` by name, and the fix moved the chain
+  into `_format_stmt`. It scans the module now, so where the dispatch lives is no
+  longer part of what it asserts.
+
 - **#739: `nodus fmt` has a fixed point — it no longer writes files `fmt --check`
   rejects.**
 
