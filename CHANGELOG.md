@@ -271,6 +271,52 @@
 
 ### Fixes
 
+- **#733: a due schedule is no longer released by anything that cannot resume it.**
+
+  `on_timeout: "resume"` (#176) makes a deadline a schedule. Settling one clears
+  the wait record and marks the run `running` — which destroys the only handle
+  anything has on it: `expire_wait_timeouts` looks for *waiting* runs, and
+  adoption only registers a graph. So a caller that released a schedule and could
+  not then resume it left the run `running`, steps `pending`, work never done,
+  and **unrecoverable by any later sweep** — reporting success the whole time.
+
+  Four callers released; two resumed. The two that did not were the worst
+  possible pair. `_auto_sweep_loop` runs every 30 seconds in any process holding
+  the default runner, discards what it settles, and can resume nothing — so a
+  scheduled task was dropped by the mere passage of time in `nodus serve`, the
+  deployment #176 was built for. `_rehydrate_run_claimed` is orphan adoption,
+  which a bare `rehydrate_runs()` and every run armed *during* a sweep goes
+  through; that is why a self-perpetuating schedule fired exactly once.
+
+  The fix is a **default, not a check**: `release_schedules` defaults to
+  `False`, so a caller that has not thought about it leaves the wait in place and
+  the next sweep settles it. That trades a sweep of latency for the work itself,
+  which is the only direction worth failing in — and a caller added later gets a
+  late schedule rather than a lost one. `sweep()` and `resume_workflow` opt in,
+  and a test names them, because a stranded run reports success and behaviour
+  cannot tell a permitted caller from a lucky one until something is gone.
+
+  Recurring schedules work as a result: a resumed step arming its own successor
+  now fires once per sweep indefinitely, where it previously fired once.
+
+  The false half was written down. `_expire_wait_timeout_on_record` said clearing
+  the wait "is the whole mechanism" because "the next sweep adopts it and carries
+  on" — the exact claim #729 disproved at the one site it was looking at, leaving
+  the sentence in place for three other callers to lean on.
+
+- **The run-status partition guard could not fail, and fixing it found a leak.**
+
+  `pending` is in neither partition, so a run left there is adopted by nothing
+  and retired by nothing, and leaks — filed as issue 734, still open, so the
+  number is here in prose rather than on the bullet. Found by repairing the guard
+  that was supposed to prevent exactly this: `models.py` cited
+  `tests/test_run_status_vocabulary.py`, which does not exist, and the test that
+  does exist asserted `status in set(RUN_STATUSES)` while iterating
+  `RUN_STATUSES` — true by construction. So "a ninth status fails the suite until
+  it is classified" was false in three ways at once, each propping up the next.
+  The partition test now checks coverage and records `pending` as a known
+  exception, so a *tenth* status cannot hide behind it.
+
 - **#725: a persisted deadline now means the same thing in every process.**
 
   Workflow timestamps were stamped with `runtime_time_ms()` — milliseconds since
