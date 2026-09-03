@@ -170,6 +170,39 @@ class TheOuterCommentDoesNotFallIntoTheBodyTests(unittest.TestCase):
         self.assertEqual(source, format_source(source))
 
 
+class AWorkflowBodyIsItsOwnLoopTests(unittest.TestCase):
+    """A workflow body is not a `block()` — it is a bespoke loop over `step` and
+    `state` declarations. So it needed its own claim, and the omission was the
+    same defect one level in: the comment above a `step` was taken by the step
+    body's first statement.
+
+    Found by trying the shape rather than by reading the parser, which is the
+    argument for testing each construct that has its own statement loop instead
+    of assuming `block()` covers everything.
+    """
+
+    # closes: #737
+    def test_comments_above_steps_and_state_stay_where_written(self):
+        source = (
+            "// above the workflow\n"
+            "workflow build {\n"
+            "    // above the state declaration\n"
+            "    state count = 0\n"
+            "    // above the first step\n"
+            "    step compile {\n"
+            "        // inside a step body\n"
+            '        checkpoint "ok"\n'
+            '        return "compiled"\n'
+            "    }\n"
+            "    // above the second step\n"
+            "    step ship after compile {\n"
+            '        return "shipped"\n'
+            "    }\n"
+            "}\n"
+        )
+        self.assertEqual(source, format_source(source))
+
+
 class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
     """Asserted on the source. Both loops must claim through the same pair of
     helpers, and must claim *before* parsing — draining afterwards is what moved
@@ -181,15 +214,32 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
         )
 
     # closes: #737
-    def test_both_loops_claim_through_the_same_helper(self):
-        source = self._parser_source()
-        self.assertEqual(
-            2,
-            source.count("self.take_pending_comments()"),
-            "the top-level loop and the block loop must both claim, and through "
-            "the same helper -- one draining and the other not is #737",
-        )
-        self.assertEqual(2, source.count("self.bind_comments("))
+    def test_every_statement_loop_claims_through_the_same_helper(self):
+        """Three loops parse a sequence of statements, and all three must claim.
+
+        `parse` and `block` are the obvious two. `flow_def` is the one that was
+        missed on the first pass: a workflow body is its own loop over `step` and
+        `state`, not a `block()`, so the comment above a `step` stayed queued
+        while the step's body was parsed and was taken by the step body's first
+        statement. Same defect, one level in.
+
+        A fourth loop over statements is not forbidden — it has to claim, and add
+        itself here.
+        """
+        import ast
+
+        tree = ast.parse(self._parser_source())
+        claiming = {
+            function.name
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef)
+            and any(
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", None) == "take_pending_comments"
+                for node in ast.walk(function)
+            )
+        }
+        self.assertEqual({"parse", "block", "flow_def"}, claiming)
 
     # closes: #737
     def test_the_claim_precedes_the_parse_in_both_loops(self):
@@ -204,34 +254,40 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
         """
         import ast
 
+        # What each loop calls to produce the statement it is about to bind.
+        producers = {"stmt", "flow_step", "flow_state_decl"}
         tree = ast.parse(self._parser_source())
         checked = []
         for function in ast.walk(tree):
-            if not isinstance(function, ast.FunctionDef) or function.name not in {"parse", "block"}:
+            if not isinstance(function, ast.FunctionDef):
                 continue
             for loop in ast.walk(function):
                 if not isinstance(loop, ast.While):
                     continue
-                claim_line = parse_line = None
+                claim = None
+                produced = []
                 for node in ast.walk(loop):
                     if not isinstance(node, ast.Call):
                         continue
                     name = getattr(node.func, "attr", None)
                     if name == "take_pending_comments":
-                        claim_line = node.lineno
-                    elif name == "stmt":
-                        parse_line = node.lineno
-                if claim_line is None or parse_line is None:
+                        claim = node.lineno
+                    elif name in producers:
+                        produced.append((name, node.lineno))
+                if claim is None or not produced:
                     continue
                 checked.append(function.name)
-                with self.subTest(loop=function.name):
-                    self.assertLess(
-                        claim_line, parse_line,
-                        "the comments must be claimed before the statement is "
-                        "parsed, or the body's parse claims the outer comment",
-                    )
+                for name, line in produced:
+                    with self.subTest(loop=function.name, produces=name):
+                        self.assertLess(
+                            claim, line,
+                            "the comments must be claimed before the statement is "
+                            "parsed, or parsing the body claims the outer comment",
+                        )
         self.assertEqual(
-            {"parse", "block"}, set(checked), "both loops must have been checked"
+            {"parse", "block", "flow_def"},
+            set(checked),
+            "every claiming loop must have been checked",
         )
 
     # closes: #737

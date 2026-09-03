@@ -889,10 +889,16 @@ class Parser:
         while not self.at("}"):
             if self.at("EOF"):
                 self.error(f"Unterminated {label}")
+            # #737: a workflow body is its own statement loop, not a `block()`,
+            # so it needs its own claim. Without one, the comment above a `step`
+            # stayed queued while the step's body was parsed and was taken by the
+            # *step body's* first statement — the same defect one level in, and
+            # the reason a workflow is worth testing separately from a function.
+            leading = self.take_pending_comments()
             if self.at("ID") and self.peek().val == "state":
-                states.append(self.flow_state_decl(label))
+                states.append(self.bind_comments(self.flow_state_decl(label), leading))
             elif self.at("STEP"):
-                steps.append(self.flow_step(step_type))
+                steps.append(self.bind_comments(self.flow_step(step_type), leading))
             else:
                 self.error(f"{label} body must contain state declarations or steps")
             self.skip_seps()

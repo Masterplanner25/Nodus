@@ -332,6 +332,14 @@
   yet. One level down is where that matters — a comment above a nested `if` and
   one inside it are both queued when the block is entered.
 
+  **Three loops parse a sequence of statements, not two.** A workflow body is not
+  a `block()` — it is a bespoke loop over `step` and `state` — so it needed its
+  own claim, and the omission was the same defect one level in: the comment above
+  a `step` was taken by the step body's first statement. Found by trying the
+  shape rather than by reading the parser, which is the argument for exercising
+  each construct that has its own statement loop instead of assuming `block()`
+  covers everything. A test names all three, so a fourth has to justify itself.
+
   Three formatter fixtures had inputs generated from the buggy output, so they
   were hoisted fixed points and could not detect the change. Rewritten by hand
   from intent. The one fixture written by hand originally,
