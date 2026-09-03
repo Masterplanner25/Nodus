@@ -357,8 +357,15 @@
   could not carry an explanation next to the code it explained — and since CI
   runs `fmt --check`, declining to format was not an option.
 
-  Every `.nd` file in the tree showed it: scanning all 300 for a comment inside a
-  block found **zero**. Not a house style, the formatter.
+  Every `.nd` file in the tree showed it: scanning all 61 tracked ones for a
+  comment inside a block found **zero**. Not a house style, the formatter.
+
+  (That count read 300 when this was written. The sweep was globbing the working
+  tree, which here holds nine virtualenvs full of installed stdlib copies — 240
+  files of an older release standing next to 61 of this repo's own source. The
+  conclusion is unchanged, since none of either had an inner comment; the number
+  was inflated in the flattering direction, which is the direction to distrust.
+  The corpus test drives off `git ls-files` now.)
 
   The formatter was never the problem. It has always emitted `_comments` at the
   right indent and handled a `Comment` node inside a block; the **parser** never

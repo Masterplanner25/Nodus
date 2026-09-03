@@ -104,18 +104,31 @@ class FormattingTwiceChangesNothingTests(unittest.TestCase):
         """Weak on its own — every `.nd` file here has been formatted, so this
         would pass against a formatter that converged nowhere. It is here to
         catch the opposite failure: a fix that converges but changes what the
-        tree already contains."""
-        checked = 0
-        for path in sorted(_REPO_ROOT.rglob("*.nd")):
-            if any(part in path.parts for part in (".git", ".venv", "tmp_demo")):
-                continue
-            if "fixtures" in path.parts:
-                continue  # deliberately unformatted inputs live there
+        tree already contains.
+
+        **Driven off `git ls-files`, not `rglob`.** Globbing the working tree
+        swept nine local virtualenvs holding installed copies of the stdlib —
+        240 files of somebody else's release next to 61 of this repo's own
+        source. That made the count environment-dependent (this test asserted
+        `> 200` and CI collected 61), and it made the coverage claim wrong in
+        the flattering direction: most of what was "checked" was a formatted
+        artefact of an older release, not code anyone edits here.
+        """
+        listed = subprocess.run(
+            ["git", "ls-files", "*.nd"],
+            capture_output=True, text=True, cwd=str(_REPO_ROOT), timeout=120,
+        )
+        self.assertEqual(0, listed.returncode, listed.stderr)
+        paths = [
+            _REPO_ROOT / line
+            for line in listed.stdout.splitlines()
+            if line and "fixtures" not in Path(line).parts  # deliberately unformatted
+        ]
+        for path in paths:
             text = path.read_text(encoding="utf-8")
-            checked += 1
             with self.subTest(path=path.relative_to(_REPO_ROOT).as_posix()):
                 self.assertEqual(text, format_source(text))
-        self.assertGreater(checked, 200, "the corpus sweep collected almost nothing")
+        self.assertGreater(len(paths), 40, "the corpus sweep collected almost nothing")
 
 
 class TheCliAcceptsWhatItJustWroteTests(unittest.TestCase):
