@@ -305,6 +305,49 @@
 
 ### Fixes
 
+- **#739: `nodus fmt` has a fixed point — it no longer writes files `fmt --check`
+  rejects.**
+
+  A same-line trailing comment is demoted onto its own line, and read back a
+  comment on its own line is a **leading** comment of whatever follows. The
+  blank-line policy then put the blank on the other side of it, so the second
+  pass produced a different file and the third another. `fmt` writes in place and
+  `fmt --check` compares a file to its own formatting, so this meant the
+  formatter emitting output it then refused — with the pre-commit hook and CI
+  both refusing along with it, and nothing to converge on.
+
+  ```
+  $ nodus fmt idem.nd && nodus fmt --check idem.nd
+  File not formatted: idem.nd
+  ```
+
+  A demoted comment is now emitted **where the re-parse will put it**, after the
+  blank line, which makes the output a fixed point by construction rather than by
+  adjustment: the second pass formats the same shape the first pass printed. The
+  comment's association with its original line is still lost — that is what
+  `--keep-trailing` is for — but the formatter no longer disagrees with itself
+  about where it went.
+
+  **The split is decided by reading the rendered lines, not by the mode**, and
+  that is load-bearing. `keep_trailing_comments` looks like it decides whether a
+  comment was demoted and does not: sixteen branches of `format_stmt` — every
+  block-bodied statement — call `trailing_lines` directly instead of
+  `attach_trailing`, so they demote in *both* modes. Keying off the flag
+  reproduced this bug inside the mode that was supposed to be immune. That
+  inconsistency is user-visible in its own right (`--keep-trailing` silently does
+  nothing for a `fn`) and is reported as issue 743, not fixed here: routing those
+  through `attach_trailing` would move a comment written on a function's *header*
+  line down onto its closing brace, and the parser keeps only the text, so the
+  two cases cannot be told apart after parsing.
+
+  **A fixture suite could not have caught this.** `test_formatter_fixtures.py`
+  does assert idempotence, but every fixture input is already a fixed point, so
+  the second assertion re-checks a file with nothing left to move — the property
+  held there because it could not fail there. `test_formatter_idempotence.py`
+  drives off deliberately unformatted sources instead. With that in place the
+  `fmt_import_export_comments` pair could finally go back to sharing one
+  hand-written input, which is what the pair was for.
+
 - **#737: `nodus fmt` keeps a comment where it was written.**
 
   It used to move **every** comment inside **any** block to above the enclosing
@@ -314,8 +357,15 @@
   could not carry an explanation next to the code it explained — and since CI
   runs `fmt --check`, declining to format was not an option.
 
-  Every `.nd` file in the tree showed it: scanning all 300 for a comment inside a
-  block found **zero**. Not a house style, the formatter.
+  Every `.nd` file in the tree showed it: scanning all 61 tracked ones for a
+  comment inside a block found **zero**. Not a house style, the formatter.
+
+  (That count read 300 when this was written. The sweep was globbing the working
+  tree, which here holds nine virtualenvs full of installed stdlib copies — 240
+  files of an older release standing next to 61 of this repo's own source. The
+  conclusion is unchanged, since none of either had an inner comment; the number
+  was inflated in the flattering direction, which is the direction to distrust.
+  The corpus test drives off `git ls-files` now.)
 
   The formatter was never the problem. It has always emitted `_comments` at the
   right indent and handled a `Comment` node inside a block; the **parser** never

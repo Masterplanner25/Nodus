@@ -70,22 +70,94 @@ def format_source(src: str, keep_trailing_comments: bool = False) -> str:
     return format_program(stmts, keep_trailing_comments=keep_trailing_comments)
 
 
+def _split_demoted_trailing(stmt, produced: list[str]):
+    """Separate a statement's own lines from any trailing comments it demoted.
+
+    **Decided by reading the rendered lines, not by the mode**, and that is
+    load-bearing. `keep_trailing_comments` looks like it decides this, and does
+    not: sixteen branches of `format_stmt` — every block-bodied statement, `fn`
+    and `workflow` and `if` among them — call `trailing_lines` directly instead
+    of `attach_trailing`, so they demote in *both* modes. Keying off the flag
+    left those statements' comments uncarried and the blank line on the wrong
+    side of them, which is #739 again in the mode that was supposed to be
+    immune.
+
+    Comparing the tail also protects the other direction: a branch that returns
+    without emitting the trailing comments at all would otherwise have real code
+    chopped off it.
+    """
+    trailing = getattr(stmt, "_trailing_comments", None)
+    if not trailing:
+        return produced, []
+    demoted = trailing_lines("", trailing)
+    if len(produced) < len(demoted) or produced[-len(demoted):] != demoted:
+        return produced, []
+    return produced[: -len(demoted)], demoted
+
+
+def _needs_blank_line(prev_import: bool, prev_fn: bool, is_import: bool, is_fn: bool) -> bool:
+    """Does a blank line go between the previous top-level statement and this one?
+
+    Named once because it is asked twice: for each statement in the loop, and
+    again for trailing comments left over at the end of the file, which re-parse
+    as standalone `Comment` statements and must be given the same answer. Written
+    out inline the second time, it disagreed — the tail checked only `prev_fn`,
+    so a trailing comment on the last `import` got no blank on the first pass and
+    one on the second, which is #739 surviving its own fix in a corner.
+    """
+    if prev_import and not is_import:
+        return True
+    return prev_fn or is_fn
+
+
 def format_program(stmts: list, keep_trailing_comments: bool = False) -> str:
+    """Render top-level statements, with the blank-line policy between them.
+
+    **A demoted trailing comment is emitted where re-parsing will put it** — as a
+    leading comment of the *next* statement, after the blank line — rather than
+    directly under the statement it was written on (#739).
+
+    That looks like a cosmetic choice and is not. Moving a comment onto its own
+    line destroys the association the source had: read back, `// note` on a line
+    of its own belongs to whatever follows it. Printing it above the blank line
+    therefore produced a file that parsed as something else, and formatting that
+    file gave a third arrangement — so `nodus fmt` wrote files that
+    `nodus fmt --check` immediately rejected, with no fixed point to converge on.
+
+    Emitting it where it will be read makes the output a fixed point by
+    construction: the second pass formats the same shape the first pass printed.
+    The association is still lost, which is what `keep_trailing_comments` is for;
+    this only stops the formatter from disagreeing with itself about it.
+    """
     lines: list[str] = []
     prev_import = False
     prev_fn = False
+    # The previous statement's demoted trailing comments, held back so they land
+    # after this statement's blank line instead of before it.
+    carried: list[str] = []
 
     for stmt in stmts:
         is_import = isinstance(stmt, Import)
         is_fn = isinstance(stmt, FnDef)
-        if lines:
-            if prev_import and not is_import:
-                lines.append("")
-            elif prev_fn or is_fn:
-                lines.append("")
-        lines.extend(format_stmt(stmt, indent=0, keep_trailing_comments=keep_trailing_comments))
+        produced = format_stmt(
+            stmt, indent=0, keep_trailing_comments=keep_trailing_comments
+        )
+        own, demoted = _split_demoted_trailing(stmt, produced)
+        if lines and _needs_blank_line(prev_import, prev_fn, is_import, is_fn):
+            lines.append("")
+        lines.extend(carried)
+        lines.extend(own)
+        carried = demoted
         prev_import = is_import
         prev_fn = is_fn
+
+    if carried:
+        # Nothing follows, so on re-parse these become standalone `Comment`
+        # statements — neither an import nor a function — and they take whatever
+        # blank line the rule gives such a statement.
+        if lines and _needs_blank_line(prev_import, prev_fn, False, False):
+            lines.append("")
+        lines.extend(carried)
 
     return "\n".join(lines).rstrip() + "\n"
 

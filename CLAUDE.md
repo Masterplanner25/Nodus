@@ -491,8 +491,11 @@ python nodus.py fmt src/nodus/stdlib/hash.nd
 # Format all stdlib .nd files
 python nodus.py fmt src/nodus/stdlib/*.nd
 
-# Verify (verbatim CI check):
-find . -name "*.nd" -not -path "./.git/*" -not -path "./.venv/*" -not -path "./tmp_demo/*" -not -path "./tests/fixtures/fmt/*" | xargs -I {} python nodus.py fmt --check {}
+# Verify (verbatim CI check -- `git ls-files`, not `find`: the old exclusion list
+# named `./.venv/` only, so locally it also swept every other virtualenv in the
+# tree -- 240 installed stdlib copies beside 61 real files, and about half an
+# hour of interpreter startups):
+git ls-files '*.nd' | grep -v '^tests/fixtures/fmt/' | xargs -I {} python nodus.py fmt --check {}
 ```
 
 A pre-commit hook enforces this: if staged `.nd` files fail `python nodus.py fmt --check`,
