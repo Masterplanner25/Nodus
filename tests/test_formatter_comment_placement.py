@@ -20,6 +20,13 @@ answered in `parse()` and nowhere else. `block()` never drained the queue, so a
 comment written inside a body stayed on it until the enclosing top-level
 statement finished, and was bound to that.
 
+**Four places claim, and they were found one at a time by trying shapes rather
+than by reading the parser.** `parse` and `block` are the obvious two; `flow_def`
+is a workflow body, its own loop over `step` and `state`; and `goal_pursuit`
+claims for the opposite reason — its body has no statements, so it claims to stop
+a comment travelling rather than to place one. A grep of `block()`'s thirteen
+call sites suggested it covered every body. It did not.
+
 `TheClaimIsMadeWhereTheStatementStartsTests` is the one that earns its place.
 The first fix drained in `block()` too, and moved the comments the *other* way:
 by the time a body is entered, the comment above the function and the comment
@@ -203,6 +210,71 @@ class AWorkflowBodyIsItsOwnLoopTests(unittest.TestCase):
         self.assertEqual(source, format_source(source))
 
 
+class AConstructWithNoStatementsStillClaimsTests(unittest.TestCase):
+    """A `goal … over …` body holds no statements — `until` and `budget` are
+    fields — so a comment inside it has nothing of its own to attach to and no
+    position to be rendered at.
+
+    It still has to be *claimed*. Left on the queue it is taken by the next
+    top-level statement, or flushed to the end of the file if there is none —
+    which is strictly worse than the hoisting this issue is about: a comment
+    above the goal is coarse, a comment at the end of the file has left its
+    subject entirely. Making the main fix caused exactly that, and it was found
+    by trying the shape rather than by reasoning about the parser.
+    """
+
+    SOURCE = (
+        "workflow w {\n"
+        "    step a {\n"
+        '        checkpoint "ok"\n'
+        "        return 1i\n"
+        "    }\n"
+        "}\n"
+        "// above the goal\n"
+        "// above until\n"
+        "// above budget\n"
+        "goal g over w {\n"
+        '    until reached("ok")\n'
+        "    budget { max_iterations: 3i }\n"
+        "}\n"
+        "\n"
+        "fn main() {\n"
+        "    return 1i\n"
+        "}\n"
+    )
+
+    # closes: #737
+    def test_body_comments_land_above_the_goal_and_stay_there(self):
+        """Coarse but adjacent, and a fixed point — so `fmt --check` accepts it."""
+        self.assertEqual(self.SOURCE, format_source(self.SOURCE))
+
+    # closes: #737
+    def test_they_do_not_migrate_to_a_later_statement(self):
+        """The failure that mattered: with no claim they travel forward, past
+        code that has nothing to do with them."""
+        written = (
+            "workflow w {\n"
+            "    step a {\n"
+            '        checkpoint "ok"\n'
+            "        return 1i\n"
+            "    }\n"
+            "}\n"
+            "goal g over w {\n"
+            "    // written inside the goal\n"
+            '    until reached("ok")\n'
+            "    budget { max_iterations: 3i }\n"
+            "}\n"
+            "\n"
+            "fn main() {\n"
+            "    return 1i\n"
+            "}\n"
+        )
+        formatted = format_source(written)
+        before_main, _, after_main = formatted.partition("fn main")
+        self.assertIn("// written inside the goal", before_main)
+        self.assertNotIn("// written inside the goal", after_main)
+
+
 class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
     """Asserted on the source. Both loops must claim through the same pair of
     helpers, and must claim *before* parsing — draining afterwards is what moved
@@ -214,17 +286,19 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
         )
 
     # closes: #737
-    def test_every_statement_loop_claims_through_the_same_helper(self):
-        """Three loops parse a sequence of statements, and all three must claim.
+    def test_exactly_these_four_places_claim_comments(self):
+        """Four claim, for two different reasons, and both are worth naming.
 
-        `parse` and `block` are the obvious two. `flow_def` is the one that was
-        missed on the first pass: a workflow body is its own loop over `step` and
-        `state`, not a `block()`, so the comment above a `step` stayed queued
-        while the step's body was parsed and was taken by the step body's first
-        statement. Same defect, one level in.
+        **Three parse a sequence of statements** and claim so each comment lands
+        on the statement it was written above: `parse`, `block`, and — missed on
+        the first pass — `flow_def`, because a workflow body is its own loop over
+        `step` and `state` rather than a `block()`.
 
-        A fourth loop over statements is not forbidden — it has to claim, and add
-        itself here.
+        **`goal_pursuit` claims for the opposite reason.** Its body has no
+        statements at all, so there is nowhere to place a comment; it claims so
+        the comment does not *travel*, which is what an unclaimed one does.
+
+        A fifth has to add itself here, and say which of the two it is.
         """
         import ast
 
@@ -239,7 +313,7 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
                 for node in ast.walk(function)
             )
         }
-        self.assertEqual({"parse", "block", "flow_def"}, claiming)
+        self.assertEqual({"parse", "block", "flow_def", "goal_pursuit"}, claiming)
 
     # closes: #737
     def test_the_claim_precedes_the_parse_in_both_loops(self):

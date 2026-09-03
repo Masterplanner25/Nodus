@@ -338,7 +338,20 @@
   a `step` was taken by the step body's first statement. Found by trying the
   shape rather than by reading the parser, which is the argument for exercising
   each construct that has its own statement loop instead of assuming `block()`
-  covers everything. A test names all three, so a fourth has to justify itself.
+  covers everything.
+
+  **And a fourth place claims for the opposite reason.** A `goal … over …` body
+  holds no statements at all — `until` and `budget` are fields — so a comment
+  inside it has nothing to attach to and no position to be rendered at. It still
+  has to be *claimed*: unclaimed, it was taken by the next top-level statement,
+  or flushed to the **end of the file** when there was none. That is strictly
+  worse than the hoisting being fixed here — a comment above the goal is coarse,
+  a comment at the end of the file has left its subject — and it was a regression
+  this change introduced, caught by trying the shape afterwards. It now lands
+  directly above the goal, which is where it went before.
+
+  A test names all four and says which of the two kinds each is, so a fifth has
+  to classify itself rather than be counted.
 
   Three formatter fixtures had inputs generated from the buggy output, so they
   were hoisted fixed points and could not detect the change. Rewritten by hand
