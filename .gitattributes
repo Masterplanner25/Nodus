@@ -1,0 +1,6 @@
+# Scoped deliberately narrow: this pins the pre-commit hook to LF and touches
+# nothing else. `core.autocrlf=true` is set here, so a fresh clone on Windows
+# would otherwise check the hook out with CRLF, and a shebang line ending in a
+# carriage return fails with "bad interpreter" -- an installed hook that cannot
+# run is worse than no hook at all (#741).
+tools/hooks/* text eol=lf

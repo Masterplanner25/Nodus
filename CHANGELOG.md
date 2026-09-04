@@ -305,6 +305,40 @@
 
 ### Fixes
 
+- **#741: one answer to "which `.nd` files get format-checked", and the hook is
+  tracked.**
+
+  Three things answered that question and no two agreed. CI globbed the tree with
+  `find`, excluding `./.venv/` and nothing else shaped like it — so run anywhere
+  but CI it swept every other virtualenv, 301 files instead of 61. The
+  pre-commit hook restated CI's list in its own words, omitted **all four** of
+  its exclusions, and claimed in its own header to be running *"the same command
+  as CI"*; it blocked commits on `tests/fixtures/fmt/`, where an `_input.nd` is
+  unformatted on purpose. And `tools/list_fmt_targets.py` held a third list,
+  excluded no virtualenv at all, and was dead code — nothing had called it since
+  the initial commit. It is deleted.
+
+  `tools/check_nd_format.py` is the single answer; CI, the hook and the
+  documented command all call it. The list comes from **git**, not the
+  filesystem, so every gitignored path drops out without being enumerated and a
+  tenth virtualenv cannot quietly rejoin the sweep.
+
+  **It does not reimplement "is this file formatted".** That belongs to
+  `nodus fmt --check`, so `_format_file` is imported and used directly — a second
+  implementation of the question a gate is gating would be the same defect one
+  layer down. A test asserts the delegation, because behaviour cannot distinguish
+  a gate that shares the check from one that currently agrees with it.
+
+  **The hook is tracked now**, which is the half that was not about exclusions:
+  it existed only as an untracked `.git/hooks/pre-commit`, so a correction helped
+  exactly one checkout and the next clone installed whatever copy it had. It
+  lives at `tools/hooks/pre-commit`, decides nothing itself, and `.gitattributes`
+  pins it to LF — `core.autocrlf` is on here, and a shebang ending in a carriage
+  return fails with "bad interpreter", which would be worse than no hook.
+
+  Incidentally 85x faster: one process instead of one per file, about 4s for the
+  61 tracked files against 5m41s for the `xargs -I {}` form.
+
 - **#743: `nodus fmt --keep-trailing` applies to every statement, not just the
   simple ones.**
 
