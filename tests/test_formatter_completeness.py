@@ -68,14 +68,22 @@ def _all_ast_nodes() -> set[str]:
 
 
 def _formatter_handles() -> set[str]:
-    """Node names `format_stmt` dispatches on.
+    """Node names the formatter's statement dispatch checks for.
 
-    Read out of the source because `format_stmt` is a chain of `isinstance`
+    Read out of the source because the dispatch is a chain of `isinstance`
     checks with no registry to consult. Uglier than a registry and far cheaper
-    than constructing a valid instance of every node type — and it is the
-    dispatch itself being read, so it cannot drift from the implementation.
+    than constructing a valid instance of every node type.
+
+    **Scanned across the module rather than out of one named function.** It used
+    to read `inspect.getsource(formatter.format_stmt)`, on the reasoning that
+    reading the dispatch itself cannot drift from the implementation. It drifted
+    the first time the dispatch moved: #742 split `format_stmt` into a thin
+    wrapper plus `_format_stmt`, and the reader was left looking at three lines
+    that check nothing. The tests went red rather than silently passing, which is
+    the good outcome — but the fix is to stop naming the function at all, since
+    where the chain lives is not the thing being asserted.
     """
-    source = inspect.getsource(formatter.format_stmt)
+    source = inspect.getsource(formatter)
     return set(re.findall(r"isinstance\(stmt,\s*([A-Za-z_][A-Za-z0-9_]*)\)", source))
 
 
