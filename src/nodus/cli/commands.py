@@ -316,6 +316,13 @@ COMMANDS: dict[str, Command] = {
             # #176: one shot of the sweep `nodus serve` runs in the background,
             # so an external cron can drive resumption without host code.
             "sweep": (_STORE | frozenset({"--min-idle-ms"}), frozenset()),
+            # #181: the lookup a dispatcher could not do. `resume` needs a
+            # graph_id; a webhook receiver has an event type. Same explicit-call
+            # boundary as `sweep` -- this closes the lookup, not the boundary.
+            "deliver": (
+                _STORE | frozenset({"--correlation-key", "--payload"}),
+                frozenset({"--all"}),
+            ),
             "migrate-store": (
                 _STORE | frozenset({"--to", "--from", "--store-path"}),
                 frozenset({"--dry-run", "--overwrite"}),
@@ -995,6 +1002,14 @@ _DETAILED_HELP: dict[str, str] = {
         "             point a cron at this to resume work across process lifetimes.",
         "             Rehydration is deliberately explicit: a run record carries the",
         "             program's source, so this compiles and runs it (#499).",
+        "  deliver EVENT_TYPE [--correlation-key K] [--payload JSON] [--all]",
+        "                     [--project-root PATH]",
+        "             Deliver an external event to the run(s) waiting for it, by",
+        "             event type rather than by graph id -- the lookup a webhook",
+        "             receiver cannot do for itself. Refuses when more than one run",
+        "             matches and no --correlation-key names one; --all fans out.",
+        "             Matching nothing is reported, not an error: the event may have",
+        "             arrived before the run parked or after it finished.",
         "  migrate-store --to {local|sqlite} [--from BACKEND] [--store-path PATH]",
         "                [--dry-run] [--overwrite] [--project-root PATH]",
         "             Copy run records to another store backend, timestamps intact.",
@@ -1018,6 +1033,8 @@ _DETAILED_HELP: dict[str, str] = {
         "  nodus workflow runs --workflow demo --limit 10",
         "  nodus workflow runs --has-wait true --updated-after-ms 0 --cursor o:10",
         "  nodus workflow replay g_abc123 --rearm-only",
+        '  nodus workflow deliver order.paid --correlation-key cust-42',
+        '  nodus workflow deliver order.paid --payload \'{"amount": 4200}\' --all',
         "  nodus workflow migrate-state --graph-id g_abc123",
     ]),
     "publish": "\n".join([

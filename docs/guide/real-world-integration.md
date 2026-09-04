@@ -468,6 +468,42 @@ Three things worth knowing:
 * **`"fail"` is still the default**, and every wait written before this behaves
   exactly as it did.
 
+### Delivering the event when you have no `graph_id`
+
+The sweep above handles a deadline. For a wait that is genuinely waiting on the
+outside world — a webhook, a queue message, a human clicking approve — the event
+has to be delivered, and the delivering process is usually not the one that
+started the run.
+
+Every resume path takes a `graph_id`. A webhook receiver has an **event type**:
+
+```bash
+nodus workflow deliver order.paid --correlation-key cust-42 --payload '{"amount": 4200}'
+```
+
+`POST /workflow/deliver` takes the same fields (`event_type`, `correlation_key`,
+`resume_payload`, `all_matching`), and a Python host can call
+`runner.deliver_event(vm_factory, "order.paid", correlation_key="cust-42")`
+directly. The run's wait is matched by its own `event_type`, so the dispatcher
+never needs to have seen the run.
+
+That closes the middle of the three steps this used to require of a host —
+receive the event, *find the run*, resume it. The first and third are still
+yours, and the third deliberately so: this is an explicit call for the same
+reason the sweep is.
+
+Two behaviours to design around:
+
+* **More than one run waiting on the same event type is refused, not guessed.**
+  The error lists the candidates. Give each parked run a `correlation_key` — an
+  order id, a tenant, a session — and deliver against that. `--all` fans out to
+  every match when that is genuinely what you mean. The CLI exits `2` for an
+  ambiguity and `1` for a delivery that failed, so a retrying cron can tell the
+  difference between "try again" and "this will never succeed as asked".
+* **Matching nothing is a success with an empty `matched` list.** The event can
+  beat the run into the store, or arrive after it completed. Check the count if
+  you need to distinguish those; do not read a non-zero exit for it.
+
 ---
 
 ## Running the full example

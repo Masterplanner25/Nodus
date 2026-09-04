@@ -361,6 +361,62 @@
   #473 — and recorded in `tools/shape_manifest.json` as tracked debt rather than
   silenced. Notable because the detector has usually fired *after* two copies
   drifted; here it fired the day the second copy was written.
+- **#181: an external event can be delivered by event type, without a run id.**
+
+  ```
+  nodus workflow deliver order.paid --correlation-key cust-42 --payload '{"amount": 4200}'
+  ```
+
+  Also `POST /workflow/deliver`, and `WorkflowFrameworkRunner.deliver_event()`
+  for a Python host. A webhook receiver has an event type; every delivery path
+  required a `graph_id` it had no way to obtain. A wait has always recorded its
+  `event_type` durably, and `resume_workflow` has always been willing to
+  *verify* one — but nothing could answer **which run is waiting for this
+  event**, so a host had to `list_runs()` and reach into `record.wait`, which is
+  not a published surface.
+
+  **Only the lookup is new.** #181 framed the gap as three host steps: receive
+  the webhook, look up the waiting run, resume it. The first is irreducibly the
+  host's. The third is the host's *by decision* — #176 settled that a run record
+  carries the program's whole source (#499), so a runtime that re-entered runs
+  on its own would compile and execute whatever the working directory's store
+  happened to hold. `deliver_event` is an explicit call for exactly the reason
+  `sweep` is, and the issue's proposed `wait_event()` — a Nodus-native call that
+  subscribes and resumes itself — is deliberately *not* what was built, because
+  it would make the guest the subscriber.
+
+  Everything per-run is `resume_workflow`'s, unchanged: it re-verifies the event
+  type and correlation key, validates the wait's declared payload schema (#472),
+  and claims through `claim_waiting_run_for_resume` — so two dispatchers racing
+  one event was already handled, and none of it is re-implemented.
+
+  Two decisions that could have gone the other way:
+
+  - **Ambiguity is refused, not resolved.** More than one run waiting and no
+    `--correlation-key` to name one fails, listing the candidates; `--all` opts
+    into fan-out. Returning an arbitrary one of N is #584's exact failure mode —
+    the copy that could not answer correctly returned something *plausible*, and
+    the defect hid for as long as the substitute looked reasonable. The CLI
+    exits **2** here and **1** on a delivery that failed, so a cron can retry the
+    second and knows not to retry the first.
+  - **Matching nothing is an outcome, not an error.** A dispatcher does not
+    control ordering: the event can beat the run into the store, or arrive after
+    it finished. Failing the call would make a correct caller look broken.
+
+  `WorkflowStore.list_runs_waiting_for` is **concrete on the ABC**, joining
+  `restore_run` and `delete_run`. A new *abstract* method breaks every
+  out-of-tree store at construction, which is precisely how 5.0.3 broke
+  `nodus_sdk` (#185) — and the warning is written in that file, three methods
+  above where this one was first added as abstract. The default scans
+  `list_runs()`, so any store gains the capability without changing; a backend
+  that can push the filter into its query engine may override it. Neither
+  in-tree store does yet, and the scan cost is #380's, shared with
+  `list_rehydratable_runs` and `list_due_retry_runs`.
+
+  The route is registered on **both** server tables — the FastAPI app and the
+  stdlib fallback — and a test now pins that every `/workflow/` POST route is in
+  both. One surface behind two tables is the recurring shape with the bypass
+  selected by whether an optional dependency happens to be installed.
 
 ### Fixes
 
