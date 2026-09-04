@@ -175,9 +175,20 @@ def _species_a(trees) -> list[Finding]:
 
     findings = []
     for (name, params), sites in sorted(by_key.items()):
-        if len({rel for rel, _, _ in sites}) < 2:
-            continue
-        if any(n < MIN_BODY_STATEMENTS for _, _, n in sites):
+        # The size threshold filters *sites*, not the group (#736). It used to
+        # be `if any(n < MIN_BODY_STATEMENTS ...): continue` -- a whole-group
+        # veto, so one small sibling hid every real implementation beside it. A
+        # trivial body is not evidence of a duplicated question; a trivial body
+        # next to two substantial ones is not evidence of its absence.
+        #
+        # It hid three groups here, two of them genuine: `_root_vm(vm)` in three
+        # builtin modules, byte-identical, one of them documented as a copy of
+        # another; and `run()` byte-identical across the DAP and LSP servers. The
+        # veto scales with the number of small same-named functions in the tree,
+        # so the detector was quietly weakening as the codebase grew -- while
+        # reporting `0 new`, which is the reading that costs most.
+        sites = [site for site in sites if site[2] >= MIN_BODY_STATEMENTS]
+        if len(sites) < 2 or len({rel for rel, _, _ in sites}) < 2:
             continue
         key = f"A:{name}({','.join(params)})"
         where = [f"{rel}:{line} ({n} stmts)" for rel, line, n in sites]
