@@ -305,6 +305,36 @@
 
 ### Fixes
 
+- **#736: `--shapes` species A filters sites, not whole groups.**
+
+  `MIN_BODY_STATEMENTS` keeps trivial functions out — below it a shared name is a
+  coincidence rather than a shared decision. It was applied as a **whole-group
+  veto**, so one small sibling suppressed every genuine implementation beside it.
+  A trivial body is not evidence of a duplicated question; a trivial body next to
+  two substantial ones is not evidence of its absence.
+
+  It hid three groups, and the sharpest is the reason this matters:
+  **`_root_vm(vm)` is implemented four times**, privately, in four builtin
+  modules — the walk up the `_caller_vm` chain to the root VM, byte-identical,
+  with `test_module`'s docstring saying so outright. Three carry a docstring and
+  come to exactly eight statements; `subprocess_module`'s is the same walk
+  *without* one, so it counts seven. **That single short copy vetoed all four**,
+  and the phase reported `0 new` throughout. Filed as issue 751 — it is the
+  `_caller_vm` chain #691 and #696 turned on, where two callers have already been
+  bitten leaning on an unstated implication about it.
+
+  Also uncovered: `run()` byte-identical across the DAP and LSP servers, joining
+  `_read_message` in the cluster already recorded there; and `_worker()`, whose
+  cross-file grouping is coincidence but whose two same-file bodies in
+  `http_module` are genuine near-duplicates the detector structurally cannot
+  report on its own. All three are classified in `tools/shape_manifest.json`,
+  each `tracked` — none silenced.
+
+  The veto's cost scaled with the number of small same-named functions in the
+  tree, so the detector was quietly weakening as the codebase grew, while
+  reporting `0 new`. That is the reading #480 and the `--consumers` keyword miss
+  both turned on: a check that goes *quiet* is worse than one that fails.
+
 - **#734: `workflow cleanup` retires a run that never started.**
 
   `pending` is in neither `REHYDRATABLE_RUN_STATUSES` nor
