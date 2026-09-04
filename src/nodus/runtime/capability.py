@@ -332,6 +332,17 @@ class GatedBuiltinGroup:
     names: tuple[str, ...]
     """The builtins withheld when the flag is False."""
 
+    @property
+    def grant(self) -> str:
+        """How a host turns this back on, for the denial message.
+
+        A property rather than a formatted string at the call site, because
+        `DomainBuiltinGroup` is granted by a *list* rather than a boolean (#167)
+        and both are blocked by the same `block_group`. Each group type says how
+        it is granted; the message template stays one sentence.
+        """
+        return f"{self.flag}=True"
+
 
 # The registration-time gates, as data.
 #
@@ -391,6 +402,118 @@ GATED_BUILTIN_NAMES: frozenset[str] = frozenset(
     name for group in GATED_BUILTINS.values() for name in group.names
 )
 """Every builtin withheld by some capability flag, flattened."""
+
+
+@dataclass(frozen=True)
+class DomainBuiltinGroup:
+    """One slice of the agentic surface, and what withholding it costs (#167).
+
+    Deliberately **not** a `GatedBuiltinGroup`, though the fields line up. That
+    one answers *"which builtins does capability flag X withhold"* — a security
+    question, answered by a boolean, denying by default. This answers *"which
+    builtins make up domain surface Y"* — a composition question, answered by a
+    list, and granting everything by default because withholding a domain is a
+    choice about what the runtime is *for*, not about what a program may be
+    trusted with. Same shape, different question; merging them would put one
+    name on two decisions.
+
+    The attribute names match `GatedBuiltinGroup` so `BuiltinRegistry.block_group`
+    serves both without knowing which it has. That much sharing is the point:
+    a withheld builtin should refuse identically however it came to be withheld.
+    """
+
+    name: str
+    """The extension name — what goes in `NodusRuntime(extensions=[...])`."""
+
+    capability: str
+    """The capability label recorded on the `capability_denied` event."""
+
+    description: str
+    """The human phrase used in the denial message ("workflow orchestration")."""
+
+    arity: tuple[int, ...]
+    """Arity accepted by the blocked stubs. Wide, for the reason
+    `GatedBuiltinGroup.arity` gives: the stub must accept whatever the real
+    builtin would, or the caller gets an arity error instead of the refusal."""
+
+    names: tuple[str, ...]
+    """The builtins withheld when this extension is not selected."""
+
+    @property
+    def grant(self) -> str:
+        """How a host turns this back on, for the denial message."""
+        return f'extensions=["{self.name}"]'
+
+
+#: The agentic surface, sliced into what a host might want whole or not at all.
+#:
+#: An embedder who wants Nodus as a general-purpose scripting engine carried the
+#: whole orchestration and agent surface regardless — 34 builtins for workflows,
+#: tools, agents, syscalls and memory actions, on every VM, with no way to omit
+#: them short of forking (#167).
+#:
+#: **Everything is granted unless a host says otherwise**, which is the opposite
+#: default from `GATED_BUILTINS` and deliberately so. Denying a capability
+#: protects against a program; omitting a domain narrows what the runtime is,
+#: and a runtime that silently lost `run_workflow` on upgrade would be a far
+#: worse failure than one that carries a surface nobody calls.
+#:
+#: `emit` is *not* here on purpose. It takes a name and a JSON payload and puts
+#: an event on the bus — general-purpose observability that a lean runtime still
+#: wants. `__action_emit` is here, because it is the lowering of an `action`
+#: statement, which only exists inside a flow.
+DOMAIN_BUILTIN_GROUPS: dict[str, DomainBuiltinGroup] = {
+    "workflow": DomainBuiltinGroup(
+        name="workflow",
+        capability="workflow",
+        description="workflow, goal and graph orchestration",
+        arity=(0, 1, 2, 3, 4),
+        names=(
+            "task", "graph", "run_graph", "plan_graph", "resume_graph",
+            "run_workflow", "plan_workflow", "resume_workflow",
+            "run_goal", "plan_goal", "resume_goal",
+            "workflow_state", "workflow_arg", "state_contribute",
+            "workflow_resume_payload", "workflow_wait", "workflow_checkpoints",
+            "current_workflow_id", "__workflow_checkpoint", "__action_emit",
+        ),
+    ),
+    "tool": DomainBuiltinGroup(
+        name="tool",
+        capability=TOOL_INVOKE,
+        description="tool invocation",
+        arity=(0, 1, 2),
+        names=("tool_call", "tool_available", "tool_describe", "__action_tool"),
+    ),
+    "agent": DomainBuiltinGroup(
+        name="agent",
+        capability=AGENT_CALL,
+        description="agent invocation",
+        arity=(0, 1, 2),
+        names=(
+            "agent_call", "agent_call_async", "agent_available", "agent_describe",
+            "__action_agent",
+        ),
+    ),
+    "syscall": DomainBuiltinGroup(
+        name="syscall",
+        capability=SYSCALL,
+        description="syscall dispatch",
+        arity=(0, 1, 2),
+        names=("syscall", "syscall_list"),
+    ),
+    "memory": DomainBuiltinGroup(
+        name="memory",
+        capability=MEMORY_WRITE,
+        description="memory actions",
+        arity=(1, 2),
+        names=("__action_memory_put", "__action_memory_get"),
+    ),
+}
+
+DOMAIN_BUILTIN_NAMES: frozenset[str] = frozenset(
+    name for group in DOMAIN_BUILTIN_GROUPS.values() for name in group.names
+)
+"""Every builtin belonging to some domain extension, flattened."""
 
 
 @dataclass(frozen=True)
