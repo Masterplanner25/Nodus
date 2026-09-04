@@ -305,6 +305,38 @@
 
 ### Fixes
 
+- **#192: the two execution paths are documented completely, and pinned.**
+
+  `NodusRuntime` is the documented embedding entry point, but
+  `tooling/runner.py` builds `VM` instances directly — seven constructions, zero
+  references to `NodusRuntime` — and the CLI, the HTTP service and the
+  `nodus_execute` tool all take that second path.
+
+  Part of the divergence is **decided**: deny-by-default protects work you did
+  not fully author, and a developer running their own script is not that.
+  `SECURITY_POSTURE.md` §3 already published the sandbox-flag and deadline rows.
+  Two more were missing, and both are now measured and recorded:
+
+  - **`capability_policy`, `approval_channel` and `agent_timeout_ms` are never
+    wired** on the runner path, and there is no CLI surface to set them. Not a
+    decision — an absence.
+  - **The filesystem is confined by a different *mechanism*.** The CLI sets
+    `fs_root` to the project root; `NodusRuntime` sets `allowed_paths` to the
+    cwd. They coincide only while those are the same directory. Run from a
+    subdirectory, the same program reading the same file is allowed on one path
+    and refused on the other — demonstrated rather than described.
+
+  `tests/test_two_execution_paths.py` pins the whole table. A new difference
+  fails it, **and so does one that disappears**, so unification is deliberate
+  rather than accidental.
+
+  Filed separately as issue 754: `nodus serve` runs *submitted* code on the
+  permissive path, so `POST /execute` can shell out, open sockets and read the
+  environment, with no flag to stop it. The CLI's justification does not carry to
+  a network endpoint — `serve` inherits the permissive path because it calls the
+  same `run_source`, not because anyone decided it should. Verified by running
+  submitted source that wrote a file via `cmd`.
+
 - **#751: one answer to "which VM is the root of this call".**
 
   `_root_vm(vm)` — the walk up the `_caller_vm` chain — was implemented four
