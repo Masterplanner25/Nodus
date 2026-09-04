@@ -214,6 +214,7 @@ class VM:
         allow_subprocess: bool = True,
         allow_network: bool = True,
         allow_env: bool = True,
+        extensions: tuple[str, ...] | list[str] | None = None,
         allowed_commands: list[str] | None = None,
         allowed_hosts: list[str] | None = None,
     ):
@@ -424,7 +425,46 @@ class VM:
         _registry = BuiltinRegistry()
         _registry.register_all(self)
         self.builtins.update(_registry.entries)
+        self._withhold_unselected_extensions(extensions, _registry)
         self._dispatch = self._build_dispatch_table()
+
+    def _withhold_unselected_extensions(self, extensions, registry) -> None:
+        """Replace the domain surfaces this runtime was not given (#167).
+
+        `extensions=None` means **all of them**, so a VM constructed the way
+        every existing caller constructs it is unchanged. That default is the
+        opposite of `GATED_BUILTINS`', and deliberately: denying a capability
+        protects against a program, while omitting a domain narrows what the
+        runtime is for. A runtime that silently lost `run_workflow` on upgrade
+        would be a worse failure than one carrying a surface nobody calls.
+
+        Withheld builtins become refusing stubs rather than disappearing, which
+        is the same treatment a withheld capability gets and is the more useful
+        of the two: a stub says *"workflow orchestration is not granted; pass
+        extensions=["workflow"]"*, where an absent name says `Undefined
+        function` and sends the reader looking for a typo. It also keeps the
+        name occupied — `register_function` refusing to shadow a builtin is a
+        security boundary (#443), and that only holds for names that exist.
+        """
+        from nodus.runtime.capability import DOMAIN_BUILTIN_GROUPS
+
+        if extensions is None:
+            return
+        selected = set(extensions)
+        unknown = selected - set(DOMAIN_BUILTIN_GROUPS)
+        if unknown:
+            # Refused rather than ignored: a typo'd extension name that silently
+            # withheld the surface it meant to grant is the "accepted and
+            # ignored" third state #490 refused for `nodus.toml`.
+            raise ValueError(
+                f"Unknown extension(s): {', '.join(sorted(unknown))}. "
+                f"Known: {', '.join(sorted(DOMAIN_BUILTIN_GROUPS))}."
+            )
+        for name, group in DOMAIN_BUILTIN_GROUPS.items():
+            if name in selected:
+                continue
+            registry.block_group(self, group)
+        self.builtins.update(registry.entries)
 
     def pop(self):
         if not self.stack:

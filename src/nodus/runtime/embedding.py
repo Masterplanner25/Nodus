@@ -265,6 +265,7 @@ class NodusRuntime:
         allow_subprocess: bool = False,
         allow_network: bool = False,
         allow_env: bool = False,
+        extensions: tuple[str, ...] | list[str] | None = None,
         agent_timeout_ms: int | float | None = None,
         memory_store: "MemoryStore | None" = None,
         agent_registry: dict | None = None,
@@ -426,6 +427,7 @@ class NodusRuntime:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        self.extensions = extensions
         # Default deadline for host agent handlers (#424). None = unbounded,
         # which is the pre-existing behaviour. A step's `timeout_ms` still wins
         # when tighter; this covers agent_call() made outside any step.
@@ -1187,6 +1189,7 @@ class NodusRuntime:
             allow_subprocess=self.allow_subprocess,
             allow_network=self.allow_network,
             allow_env=self.allow_env,
+            extensions=self.extensions,
             allowed_commands=self.allowed_commands,
             allowed_hosts=self.allowed_hosts,
             module_globals=initial_globals,

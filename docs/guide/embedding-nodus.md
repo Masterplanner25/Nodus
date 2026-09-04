@@ -333,6 +333,49 @@ calls (`read_file`, `write_file`) and stdlib module calls (`fs.read`, `fs.write`
 > (BUG-046, [#47](https://github.com/Masterplanner25/Nodus/issues/47)).
 > This was fixed in v2.1.1. If you are on v2.1.0, upgrade immediately.
 
+### Choosing which domain surfaces the runtime carries
+
+A different question from the flags above, and worth keeping separate. The flags
+answer *what may this program do* — a security decision, denied by default.
+`extensions` answers *what is this runtime for* — a composition decision, and
+**everything is granted by default**:
+
+```python
+NodusRuntime()                          # unchanged: every surface
+NodusRuntime(extensions=["workflow"])   # orchestration, and nothing else
+NodusRuntime(extensions=[])             # a general-purpose scripting engine
+```
+
+Without it, every runtime carries the whole agentic surface — 33 builtins across
+workflows, goals and graphs, tools, agents, syscalls and memory actions. If you
+are embedding Nodus to evaluate user-supplied expressions or run small scripts,
+none of that is reachable from your host and all of it is reachable from the
+guest.
+
+The five group names are `workflow`, `tool`, `agent`, `syscall` and `memory`;
+`DOMAIN_BUILTIN_GROUPS` in `nodus.runtime.capability` is the published list, with
+each group's exact membership. An unknown name is refused at construction rather
+than ignored:
+
+```python
+NodusRuntime(extensions=["workfow"])
+# ValueError: Unknown extension(s): workfow.
+#             Known: agent, memory, syscall, tool, workflow.
+```
+
+A withheld builtin is a **refusing stub, not an absent name** — the error names
+the grant that would restore it, rather than reading as a typo:
+
+```
+Blocked: workflow, goal and graph orchestration is not granted;
+         pass extensions=["workflow"] to NodusRuntime to allow it
+```
+
+Withholding is enforced, so it does reduce the surface a guest can reach. It is
+not a substitute for the capability flags: those bound what a **granted** surface
+may do, and the two compose — `extensions=["workflow"], allow_network=True` is a
+coherent and common pair.
+
 ---
 
 ## 6. Injecting host functions with register_function

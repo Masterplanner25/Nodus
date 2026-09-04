@@ -303,7 +303,95 @@
   served before the next check. OS-level limits (`ulimit -v`, cgroups, a container
   cap) remain the answer for hard memory safety, not something this replaces.
 
+- **#167: a host can choose which domain surfaces a runtime carries.**
+
+  ```python
+  NodusRuntime(extensions=["workflow"])   # orchestration, and nothing else
+  NodusRuntime(extensions=[])             # a general-purpose scripting engine
+  NodusRuntime()                          # unchanged: everything
+  ```
+
+  Every VM registered the whole agentic surface unconditionally — 33 builtins
+  across workflows/goals/graphs, tools, agents, syscalls and memory actions —
+  whether or not the host wanted any of it. An embedder using Nodus to evaluate
+  user-supplied expressions carried all of it, with no way to omit it short of a
+  fork.
+
+  **`None` means all**, so no runtime that exists today loses a surface. That
+  default is the opposite of `GATED_BUILTINS`' and deliberately so: denying a
+  capability protects against a *program*, and defaults closed; omitting a domain
+  narrows what the runtime is *for*, and is the host's composition decision. A
+  runtime that silently lost `run_workflow` on upgrade would be a far worse
+  failure than one carrying a surface nobody calls.
+
+  Three details, each of which could have gone the other way:
+
+  - **Withheld builtins are refusing stubs, not absent names.** The stub names
+    the grant that would restore it (`pass extensions=["workflow"]`) where an
+    absent name says `Undefined function` and sends the reader hunting a typo.
+    It also keeps the name occupied — `register_function` refusing to shadow a
+    builtin is a security boundary (#443), and it only holds for names that exist.
+  - **An unknown extension name is refused at construction**, listing the known
+    ones. Accepting it would be the silently-ignored third state #490 refused for
+    `nodus.toml`, and in the direction that withholds the surface the typo meant
+    to grant.
+  - **`extensions` is consumed in the constructor, not stored on the VM.** PyPy
+    maps have a hard 80-instance-attribute cliff; #488 crossed it and cost ~9x for
+    three releases (#702). The count is unchanged at 78.
+
+  `DomainBuiltinGroup` is deliberately not a `GatedBuiltinGroup` — one answers
+  *which builtins does capability flag X withhold*, a security question answered
+  by a boolean; the other answers *which builtins make up domain surface Y*, a
+  composition question answered by a list. They share the `grant` property, so
+  one `block_group` and one denial-message builder serve both, and
+  `tests/test_domain_extensions.py` asserts the two name sets stay disjoint: an
+  overlap would be two mechanisms racing to withhold one name.
+
+  `emit` is deliberately in no group — observability a lean runtime still wants.
+  `__action_emit` is in `workflow`, because it is the lowering of an `action`
+  statement, which only exists inside a flow.
+
+  **Writing down a surface's full membership immediately falsified another copy
+  of it.** `nodus_gate --shapes` reported the new group as a species-B instance
+  against `BUILTIN_CAPABILITIES` the first time it ran, and the difference was
+  real: a capability policy denying `agent.call` refuses `agent_call` and permits
+  `agent_describe`, which returns the host's agent names, descriptions and
+  parameter schemas. The same holds for `tool_available` / `tool_describe` and
+  `syscall_list`. Reported (open) as issue 756 — not a regression, present since
+  #473 — and recorded in `tools/shape_manifest.json` as tracked debt rather than
+  silenced. Notable because the detector has usually fired *after* two copies
+  drifted; here it fired the day the second copy was written.
+
 ### Fixes
+
+- **The embedding documents said the capability switches default to permissive.**
+
+  They deny by default since v5.0.0 (issue 405). The runbook's *prose* was corrected
+  at 5.3.0 — and the **configuration table three lines above it** went on saying
+  `True` for the seven releases after that, as did the whole parameter list in
+  `EMBEDDING.md`. Six rows across two documents, each telling an embedder to opt
+  *out* of a capability they must in fact opt *into*: wrong in the direction that
+  costs a reader a guarantee they believe they have.
+
+  One question — *what is this parameter's default* — answered in three places, one
+  of them updated. The 5.3.0 fix was real, correct, and covered one of three copies,
+  which is the shape this codebase keeps finding (see the recurring-shape section of
+  `CLAUDE.md`). Found while adding a row for `extensions`, not by a reader.
+
+  `tests/test_documented_defaults_agree.py` is the part that generalises: it reads
+  the defaults off `NodusRuntime.__init__` and compares them to what each document
+  states, so the next flip cannot leave a copy behind. It fails against the
+  pre-fix documents on all six rows.
+
+  **It found two more on its first run.** `share_process_state` and
+  `persist_workflow_source` were undocumented in *both* files — the tenant-isolation
+  switch (a shared memory store is a channel between tenants, since a guest can
+  write it) and the switch deciding whether a run persists a verbatim copy of the
+  guest's whole module source to `.nodus/graphs/`. Both are now documented in both.
+  `TECH_DEBT.md` had recorded the same gap as closed with *"Both now list all
+  parameters"*; that claim was true when written and had rotted, which is why the
+  scan asserts it matched something rather than passing quietly on an absent
+  parameter.
 
 - **#192: the two execution paths are documented completely, and pinned.**
 

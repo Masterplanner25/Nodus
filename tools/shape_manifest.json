@@ -122,6 +122,12 @@
       "verdict": "intentional",
       "why": "GATED_BUILTINS vs BUILTIN_CAPABILITIES. They differ by exactly this one entry by design -- subprocess_shell_quote is string manipulation that runs nothing -- and tests/test_downstream_contracts.py pins the relationship. Documented in CLAUDE.md. This is the entry that proves the detector finds real pairs."
     },
+    "B:src/nodus/runtime/capability.py|src/nodus/runtime/capability.py|missing=agent_available,agent_describe": {
+      "verdict": "tracked",
+      "issue": 756,
+      "why": "BUILTIN_CAPABILITIES vs DOMAIN_BUILTIN_GROUPS['agent'] (added for #167). The two are genuinely different questions -- what capability does this builtin require at call time, versus what builtins make up this domain surface -- and they would still differ after #756 is fixed, because 20 workflow names are outside the policy's scope by #473's design. But the specific difference the detector named is not a design decision: it is that a policy denying agent.call still permits agent_describe, which discloses the host's agent names, descriptions and parameter schemas. Tracked rather than intentional for that reason. The same gap exists on the tool and syscall surfaces; the detector's name-stem test does not relate those pairs, so they were found by asking whether the finding generalised. This entry is the detector's second real catch in this file, and the first one it found the day the second voice was written rather than after the two had drifted.",
+      "sites": 2
+    },
     "B:src/nodus/lsp/server.py|src/nodus/tooling/formatter.py|missing=&&,||": {
       "verdict": "intentional",
       "why": "False positive: the formatter's bin_prec assigns operator precedence and gives && and || their own tiers, so they are absent from its comparison-operator set. Different question from the LSP's type inference, which asks which operators yield BOOL."

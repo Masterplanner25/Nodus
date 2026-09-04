@@ -486,6 +486,16 @@ drift it was written for.
   meanwhile claimed the constructor surface was stable and documented. Both now
   list all parameters; the checklist covers the capability switches.
 
+  **Re-opened and re-closed on 2026-09-04.** "Both now list all parameters" was
+  true when written and had rotted twice over: `share_process_state` and
+  `persist_workflow_source` were added later and documented in neither file, and
+  the `allow_*` rows in both still said the pre-#405 permissive defaults — the
+  runbook's *prose* was fixed at 5.3.0 and its *table*, three lines above, was
+  not. A claim of the form "both documents now list all X" cannot stay true on
+  its own, which is the actual lesson: `tests/test_documented_defaults_agree.py`
+  now derives the list from `NodusRuntime.__init__` and fails when a document
+  omits a parameter or states a default the constructor contradicts.
+
 - **`max_frames`: root cause found.** The "`None` means `MAX_STACK_DEPTH`" claim
   originated in the **`embedding.py` docstring**, which is why five documents
   carried it — they were copying the source. At the time it was false:

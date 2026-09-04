@@ -4,14 +4,19 @@ from nodus.builtins.nodus_builtins import BuiltinInfo
 from nodus.runtime.capability import GATED_BUILTINS, GatedBuiltinGroup
 
 
-def _denied_reason(what: str, flag: str) -> str:
+def _denied_reason(what: str, grant: str) -> str:
     """Say how to grant the capability, not merely that it is absent.
 
     `NodusRuntime` denies these by default (#405 stage 5), so most readers of
     this message never set the flag to False — it was off before they arrived,
     and the useful thing to tell them is how to turn it on.
+
+    `grant` is the whole phrase rather than a flag name, because a domain
+    extension is granted by a list rather than a boolean (#167) and both kinds of
+    group are withheld through the same stub. One sentence, each group type
+    supplying its own half of it.
     """
-    return f"{what} is not granted; pass {flag}=True to NodusRuntime to allow it"
+    return f"{what} is not granted; pass {grant} to NodusRuntime to allow it"
 
 
 def _make_blocked_stub(vm, reason: str, capability: str | None = None):
@@ -67,7 +72,7 @@ class BuiltinRegistry:
         this and any embedder enumerating the gated builtins read it.
         """
         blocked = _make_blocked_stub(
-            vm, _denied_reason(group.description, group.flag), group.capability
+            vm, _denied_reason(group.description, group.grant), group.capability
         )
         for name in group.names:
             self.add(name, group.arity, blocked)

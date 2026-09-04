@@ -124,16 +124,25 @@ Constructor parameters:
   Through v4.1.1 the default applied no cap at all
   ([#350](https://github.com/Masterplanner25/Nodus/issues/350)).
 
-The following parameters are **capability switches**. All three default to permissive,
-so an embedded script can shell out, open sockets, and read process environment
-variables unless the host turns them off:
+The following parameters are **capability switches**. All three **deny by default** as of
+v5.0.0 ([#405](https://github.com/Masterplanner25/Nodus/issues/405)), so an embedded
+script cannot shell out, open sockets, or read process environment variables unless the
+host grants it:
 
-- `allow_subprocess` (bool, default `True`): when `False`, `subprocess_run` and friends
-  raise a sandbox error.
-- `allow_network` (bool, default `True`): when `False`, `http_*` builtins raise a
+- `allow_subprocess` (bool, default `False`): when `False`, `subprocess_run` and friends
+  raise a sandbox error naming the flag.
+- `allow_network` (bool, default `False`): when `False`, `http_*` builtins raise a
   sandbox error.
-- `allow_env` (bool, default `True`): when `False`, the `env_*` builtins raise a sandbox
-  error. Set `False` to keep scripts away from credentials in the host environment.
+- `allow_env` (bool, default `False`): when `False`, the `env_*` builtins raise a sandbox
+  error. Granting it exposes credentials in the host environment to the script.
+
+> This paragraph said the opposite — "all three default to permissive, so an embedded
+> script can shell out" — from v5.0.0 until it was corrected. That was true through
+> v4.2.0. **Advice written against the old default is backwards**, so treat any
+> instruction to turn these *off* as describing a version before 5.0.0. The CLI is
+> deliberately unaffected: it builds a `VM` directly and never constructs a
+> `NodusRuntime`, because what deny-by-default protects is work you did not fully author.
+> Migration note: [`v5.0-deny-by-default.md`](../migration/v5.0-deny-by-default.md).
 - `allowed_commands` (list[str] | None, default `None`): allowlist of executables for
   `subprocess_run`. `None` means any command (subject to `allow_subprocess`).
 - `allowed_hosts` (list[str] | None, default `None`): allowlist of hosts for network
@@ -145,6 +154,29 @@ Remaining parameters:
   with an uncaught exception — see §9.
 - `coroutine_timeout_ms` (int | None, default `None`): per-coroutine deadline.
 - `event_sinks` (list | None, default `None`): runtime event sinks — see §6.
+- `share_process_state` (bool, default `False`): when `True`, the runtime uses the
+  process-global memory store instead of its own. Isolated by default since 5.0.3
+  ([#185](https://github.com/Masterplanner25/Nodus/issues/185)) — a guest script can
+  *write* memory through `memory_put`, so a shared store is a channel between whatever
+  two runtimes are hosting. Leave `False` in any multi-tenant host; to share on purpose,
+  pass the same `memory_store=` to both rather than turning this on. Agents are
+  deliberately *not* isolated the same way — a guest cannot register one, so the registry
+  holds only what the host put there; scope it with `agent_registry=` if you want to.
+- `persist_workflow_source` (bool, default `True`): whether a workflow run writes a
+  verbatim copy of the whole module source into `.nodus/graphs/`
+  ([#499](https://github.com/Masterplanner25/Nodus/issues/499)). That copy is the
+  cross-process rebuild handle — it is what lets `nodus workflow sweep` or another
+  process resume a parked run. Set `False` when hosting code you did not author and do
+  not want persisted to disk; the trade is that such a run cannot be rebuilt elsewhere,
+  and the run record records that it opted out rather than failing opaquely later.
+- `extensions` (list[str] | None, default `None`): which domain surfaces this runtime
+  carries — `workflow`, `tool`, `agent`, `syscall`, `memory`. `None` means all, so this
+  is not a switch you have to think about to keep working code working. `[]` leaves a
+  general-purpose scripting engine with the whole agentic surface withheld. Unlike the
+  capability switches above it grants by default, because it answers *what is this
+  runtime for* rather than *what may this program do*. `DOMAIN_BUILTIN_GROUPS` in
+  `nodus.runtime.capability` is the published membership; an unknown name is refused at
+  construction.
 
 `NodusRuntime` handles the full pipeline internally:
 
