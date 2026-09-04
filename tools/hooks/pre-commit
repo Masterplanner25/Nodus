@@ -1,0 +1,30 @@
+#!/bin/sh
+# Pre-commit: refuse to commit an unformatted .nd file.
+#
+# Install with:
+#     cp tools/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+# This file is TRACKED, which is the point of it (#741). The hook used to exist
+# only as an untracked `.git/hooks/pre-commit`, so there was nothing to correct
+# once: a fix helped exactly one checkout, and the next clone installed whatever
+# copy it happened to have.
+#
+# It delegates rather than deciding. Which files to check, and whether each one
+# is formatted, are both `tools/check_nd_format.py`'s to answer -- the same
+# module CI runs. The previous hook restated CI's file filter in its own words,
+# claimed in this very header to be running "the same command as CI", and
+# omitted all four of CI's exclusions, so it blocked commits on formatter
+# fixtures that are unformatted on purpose. Two lists that must agree is the
+# thing that went wrong; there is now one.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# Nothing staged means nothing to check, and `--staged` already handles that --
+# but skipping the interpreter startup keeps an unrelated commit instant.
+if [ -z "$(git diff --cached --name-only --diff-filter=ACM | grep '\.nd$' || true)" ]; then
+  exit 0
+fi
+
+# `python` rather than the venv interpreter, matching CI. If a checkout's
+# `python` is not the one with nodus's dependencies, run the module by hand.
+exec python -m tools.check_nd_format --staged

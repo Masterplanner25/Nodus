@@ -68,15 +68,12 @@ jobs:
 
       - name: Check .nd formatting
         run: |
-          # `git ls-files` rather than `find`: the exclusion list only named
-          # `./.venv/`, so running this command locally also swept every other
-          # virtualenv in the tree -- 240 installed stdlib copies next to 61
-          # real files, and roughly half an hour of interpreter startups. The
-          # tracked list is exact, is the same on every machine, and drops
-          # gitignored paths without having to enumerate them.
-          git ls-files '*.nd' \
-            | grep -v '^tests/fixtures/fmt/' \
-            | xargs -I {} python nodus.py fmt --check {}
+          # One module answers both 'which files' and 'is each formatted',
+          # and the pre-commit hook calls the same one -- three different
+          # answers to the first question is what issue 741 was about. It
+          # also runs in a single process: `xargs -I {}` paid an interpreter
+          # startup per file, 5m41s for 61 files against about 4s here.
+          python -m tools.check_nd_format
 
       - name: Static checks
         run: |

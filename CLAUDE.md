@@ -491,16 +491,30 @@ python nodus.py fmt src/nodus/stdlib/hash.nd
 # Format all stdlib .nd files
 python nodus.py fmt src/nodus/stdlib/*.nd
 
-# Verify (verbatim CI check -- `git ls-files`, not `find`: the old exclusion list
-# named `./.venv/` only, so locally it also swept every other virtualenv in the
-# tree -- 240 installed stdlib copies beside 61 real files, and about half an
-# hour of interpreter startups):
-git ls-files '*.nd' | grep -v '^tests/fixtures/fmt/' | xargs -I {} python nodus.py fmt --check {}
+# Verify -- this IS the CI step, not a reconstruction of it:
+python -m tools.check_nd_format
 ```
 
-A pre-commit hook enforces this: if staged `.nd` files fail `python nodus.py fmt --check`,
-the commit is blocked and the exact fix command is printed. Hook lives at `.git/hooks/pre-commit`
-(not tracked by git — reinstall after fresh clone with `chmod +x .git/hooks/pre-commit`).
+`tools/check_nd_format.py` answers both halves -- which files, and whether each is
+formatted -- and CI, the hook and you all call it, so there is nothing to keep in
+step. It delegates the second half to `nodus fmt --check`'s own `_format_file`, so
+the gate cannot disagree with the command it is gating. One process rather than one
+per file: about 4s for the 61 tracked files, against 5m41s for the `xargs` form it
+replaced.
+
+A pre-commit hook enforces it on staged files. **It is tracked now** (#741) -- it
+used to exist only as an untracked `.git/hooks/pre-commit`, so a correction helped
+one checkout and the next clone installed whatever it had. Install after a fresh
+clone:
+
+```powershell
+cp tools/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+The old hook restated CI's file list in its own words and got it wrong -- it omitted
+all four of CI's exclusions while its header claimed to run "the same command as
+CI", so it blocked commits on `tests/fixtures/fmt/`, where an `_input.nd` is
+unformatted on purpose.
 
 ## Lint gate (ruff **and mypy**)
 
