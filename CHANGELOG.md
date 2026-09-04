@@ -364,6 +364,35 @@
 
 ### Fixes
 
+- **The embedding documents said the capability switches default to permissive.**
+
+  They deny by default since v5.0.0 (issue 405). The runbook's *prose* was corrected
+  at 5.3.0 — and the **configuration table three lines above it** went on saying
+  `True` for the seven releases after that, as did the whole parameter list in
+  `EMBEDDING.md`. Six rows across two documents, each telling an embedder to opt
+  *out* of a capability they must in fact opt *into*: wrong in the direction that
+  costs a reader a guarantee they believe they have.
+
+  One question — *what is this parameter's default* — answered in three places, one
+  of them updated. The 5.3.0 fix was real, correct, and covered one of three copies,
+  which is the shape this codebase keeps finding (see the recurring-shape section of
+  `CLAUDE.md`). Found while adding a row for `extensions`, not by a reader.
+
+  `tests/test_documented_defaults_agree.py` is the part that generalises: it reads
+  the defaults off `NodusRuntime.__init__` and compares them to what each document
+  states, so the next flip cannot leave a copy behind. It fails against the
+  pre-fix documents on all six rows.
+
+  **It found two more on its first run.** `share_process_state` and
+  `persist_workflow_source` were undocumented in *both* files — the tenant-isolation
+  switch (a shared memory store is a channel between tenants, since a guest can
+  write it) and the switch deciding whether a run persists a verbatim copy of the
+  guest's whole module source to `.nodus/graphs/`. Both are now documented in both.
+  `TECH_DEBT.md` had recorded the same gap as closed with *"Both now list all
+  parameters"*; that claim was true when written and had rotted, which is why the
+  scan asserts it matched something rather than passing quietly on an absent
+  parameter.
+
 - **#192: the two execution paths are documented completely, and pinned.**
 
   `NodusRuntime` is the documented embedding entry point, but

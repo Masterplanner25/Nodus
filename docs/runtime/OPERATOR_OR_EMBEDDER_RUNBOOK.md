@@ -61,14 +61,17 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | `allowed_paths` | `list[str] \| None` | `[os.getcwd()]` (CWD jail) | Default jails to working directory. Pass `None` to allow unrestricted access. Set explicit paths for untrusted scripts that need access outside CWD. |
 | `allow_input` | `bool` | `False` | Keep `False`; set `True` only for interactive use cases |
 | `max_frames` | `int \| None` | `None` → `MAX_STACK_DEPTH` (10,000) | Tighten to 200–1000 for untrusted code. This is the only limit left when `max_steps` and `timeout_ms` are both `None` |
-| `allow_subprocess` | `bool` | `True` | Set `False` unless scripts must shell out |
-| `allow_network` | `bool` | `True` | Set `False` unless scripts must make HTTP calls |
-| `allow_env` | `bool` | `True` | Set `False` to keep scripts away from host credentials |
+| `allow_subprocess` | `bool` | **`False`** (#405) | Set `True` only if scripts must shell out |
+| `allow_network` | `bool` | **`False`** (#405) | Set `True` only if scripts must make HTTP calls |
+| `allow_env` | `bool` | **`False`** (#405) | Set `True` only if scripts must read host environment variables |
 | `allowed_commands` | `list[str] \| None` | `None` (any command) | Allowlist executables when `allow_subprocess=True` |
 | `allowed_hosts` | `list[str] \| None` | `None` (any host) | Allowlist hosts when `allow_network=True` |
 | `on_error` | `callable \| None` | `None` | Set to observe spawned-coroutine failures as they occur |
 | `coroutine_timeout_ms` | `int \| None` | `None` | Per-coroutine deadline |
 | `event_sinks` | `list \| None` | `None` | Attach runtime event sinks for monitoring |
+| `extensions` | `list[str] \| None` | `None` (every surface) | Name the domain surfaces this runtime carries — `workflow`, `tool`, `agent`, `syscall`, `memory`. See §2a |
+| `share_process_state` | `bool` | `False` (isolated, #185) | Leave `False` in any multi-tenant host: `True` restores the pre-5.0.3 process-global memory store, which a guest can *write* via `memory_put`, so two runtimes become a channel between their tenants. Pass `memory_store=` instead to share deliberately |
+| `persist_workflow_source` | `bool` | `True` (#499) | Set `False` for a runtime running code its host did not author. A workflow run persists a **verbatim copy of the whole module source** under `.nodus/graphs/` as its cross-process rebuild handle; opting out means a run cannot be rebuilt in another process |
 
 > **Event retention is bounded, and VM bookkeeping is off unless observed.** The bus
 > keeps the most recent 50,000 events (`NODUS_EVENT_HISTORY` to change it, `0` to keep
@@ -93,6 +96,49 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 > including "a bare runtime can shell out", which several documents relied on. The CLI is
 > deliberately unaffected: it builds a `VM` directly and never constructs a
 > `NodusRuntime`, because what deny-by-default protects is work you did not fully author.
+>
+> **And the table above still said `True` for the seven releases after that** — the 5.3.0
+> correction fixed this paragraph and left the row a reader actually scans. One question answered in two
+> places, one of them updated, which is this codebase's signature defect shape in
+> documentation form. The defaults were re-read off `NodusRuntime.__init__` rather than
+> either copy.
+
+---
+
+## 2a. Choosing which domain surfaces the runtime carries
+
+A different question from the `allow_*` flags, and it defaults the other way. The flags
+answer *what may this program do* — a security decision, denied by default. `extensions`
+answers *what is this runtime for* — a composition decision, and **everything is granted
+by default**, so no existing runtime loses a surface:
+
+```python
+NodusRuntime()                          # unchanged: every surface
+NodusRuntime(extensions=["workflow"])   # orchestration, and nothing else
+NodusRuntime(extensions=[])             # a general-purpose scripting engine
+```
+
+Without it every runtime carries the whole agentic surface — 33 builtins across
+workflows, goals and graphs, tools, agents, syscalls and memory actions. If you embed
+Nodus to evaluate user-supplied expressions, none of that is reachable from your host and
+all of it is reachable from the guest.
+
+`DOMAIN_BUILTIN_GROUPS` in `nodus.runtime.capability` is the published list, with each
+group's exact membership — read it rather than transcribing names here. An unknown group
+name is refused at construction, listing the known ones, so a typo cannot silently
+withhold the surface it meant to grant.
+
+A withheld builtin is a **refusing stub, not an absent name**, and the refusal names the
+grant that restores it:
+
+```
+Blocked: workflow, goal and graph orchestration is not granted;
+         pass extensions=["workflow"] to NodusRuntime to allow it
+```
+
+Withholding is enforced, so it does narrow what a guest can reach — but it is not a
+substitute for the capability flags, which bound what a *granted* surface may do. The two
+compose: `extensions=["workflow"], allow_network=True` is a coherent and common pair.
 
 > **`max_frames=None` means `MAX_STACK_DEPTH` (10,000)**, the same cap the CLI applies,
 > so runaway recursion raises `Call stack overflow` even with `max_steps=None` and
