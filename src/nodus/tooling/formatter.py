@@ -216,6 +216,20 @@ def format_goal_predicate(node, *, parent: str | None = None) -> str:
     raise TypeError(f"Unknown goal predicate node: {node!r}")
 
 
+def _header_comment_lines(node, prefix: str) -> list[str]:
+    """The comment written on `node`'s own opening brace (#746).
+
+    For the four constructs that open a brace *without* going through
+    `block()`: `workflow`, `goal`, `goal ... over ...`, and `match`.
+    `format_block` renders it for everything else, which is why this has
+    four callers rather than one per statement kind.
+    """
+    return [
+        f"{prefix}{text.rstrip()}"
+        for text in (getattr(node, "_header_comments", None) or [])
+    ]
+
+
 def _body_comment_lines(stmt, prefix: str) -> list[str]:
     """Comments left above a flow body's closing brace (#743).
 
@@ -380,7 +394,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
 
     if isinstance(stmt, WorkflowDef):
         header = f"{prefix}workflow {stmt.name} {{"
-        body_lines = []
+        body_lines = _header_comment_lines(stmt, INDENT * (indent + 1))
         for state in stmt.states:
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
         for wf_step in stmt.steps:
@@ -393,7 +407,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
 
     if isinstance(stmt, GoalDef):
         header = f"{prefix}goal {stmt.name} {{"
-        body_lines = []
+        body_lines = _header_comment_lines(stmt, INDENT * (indent + 1))
         for state in stmt.states:
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
         for goal_step in stmt.steps:
@@ -407,7 +421,8 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
     if isinstance(stmt, GoalPursuit):
         header = f"{prefix}goal {stmt.name} over {stmt.workflow_name} {{"
         inner = "    " * (indent + 1)
-        body_lines = [f"{inner}until {format_goal_predicate(stmt.until)}"]
+        body_lines = _header_comment_lines(stmt, inner)
+        body_lines.append(f"{inner}until {format_goal_predicate(stmt.until)}")
         body_lines.append(f"{inner}budget {_format_goal_budget(stmt.budget)}")
         if stmt.retry_from is not None:
             body_lines.append(f"{inner}retry from {format_expr(stmt.retry_from)}")
@@ -580,7 +595,27 @@ def _format_step_map_clause(stmt) -> tuple[str, str]:
 
 
 def format_block(block: Block, indent: int, keep_trailing_comments: bool = False) -> list[str]:
-    lines: list[str] = []
+    """Render a block's statements, preceded by any comment from its `{` line.
+
+    **The header comment moves to the first line of the body, deliberately**
+    (#746). It was written on the brace line, and putting it back there would
+    mean every branch that builds a header string appending it — nine of them,
+    plus the two arms of `if`/`else` and the three of `try`/`catch`/`finally` —
+    and a branch that forgot would drop the comment silently. Rendering it here
+    costs one place and cannot be forgotten, because every body goes through
+    this function.
+
+    What it buys is that the comment stays with the construct it was written on
+    and reads as being about that body. Before, it was classified as a trailing
+    comment of the `{` and handed to the first statement parsed after it, so
+    `fn f() { // about f` came back as a note under `return 1i`; a workflow's own
+    header comment sank two levels into a step body and stacked against the
+    step's; and on an empty body it left the function altogether.
+    """
+    lines: list[str] = [
+        f"{INDENT * indent}{text.rstrip()}"
+        for text in (getattr(block, "_header_comments", None) or [])
+    ]
     for s in block.stmts:
         lines.extend(format_stmt(s, indent=indent, keep_trailing_comments=keep_trailing_comments))
     return lines
@@ -711,13 +746,23 @@ def format_expr(expr, parent_prec: int = 0) -> str:
         param_text = ", ".join(format_param(param) for param in expr.params)
         return_text = f" -> {expr.return_type}" if expr.return_type else ""
         header = f"fn({param_text}){return_text}"
-        if not expr.body.stmts:
+        # #746: both shortcuts below skip `format_block`, which is where a
+        # block's header comment is rendered — so either would drop it silently.
+        # An empty body with a comment on its brace is the case that made this
+        # concrete: `fn() { // later }` has no statements at all, and collapsing
+        # it to `{}` loses the only thing in it.
+        has_header_comment = bool(getattr(expr.body, "_header_comments", None))
+        if not expr.body.stmts and not has_header_comment:
             return f"{header} {{}}"
         # #737: a body that is *only* a comment must not collapse. `// x` would
         # swallow the closing brace and the file would no longer parse. A
         # statement carrying `_comments` is already safe, because `format_stmt`
         # emits the comment as its own line and the length check below fails.
-        if len(expr.body.stmts) == 1 and not isinstance(expr.body.stmts[0], Comment):
+        if (
+            len(expr.body.stmts) == 1
+            and not isinstance(expr.body.stmts[0], Comment)
+            and not has_header_comment
+        ):
             body_lines = format_stmt(expr.body.stmts[0], indent=0)
             if len(body_lines) == 1:
                 return f"{header} {{ {body_lines[0].strip()} }}"
@@ -819,6 +864,7 @@ def format_match(expr, indent: int, lead: str = "") -> list[str]:
     prefix = INDENT * indent
     arm_prefix = INDENT * (indent + 1)
     out = [f"{prefix}{lead}match {format_expr(expr.scrutinee)} {{"]
+    out.extend(_header_comment_lines(expr, arm_prefix))
     for arm in expr.arms:
         pat = "_" if arm.pattern is None else format_expr(arm.pattern)
         body = arm.body

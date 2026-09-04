@@ -305,6 +305,38 @@
 
 ### Fixes
 
+- **#746: a comment on a `{` line belongs to the brace it opened.**
+
+  It shares a line with the last token consumed — the `{` — so the parser's line
+  rule classified it as a *trailing* comment and handed it to whatever statement
+  was parsed next. `fn f() { // about f` came back as a note under `return 1i`.
+
+  Probing every brace rather than the one in the report found three things the
+  report did not have. It applies to **every** opening brace, not just a
+  function's. A workflow's own header comment **sank two levels**, into the step
+  body, where it stacked against the step's — two comments about different
+  constructs, adjacent, describing neither. And an **empty body let the comment
+  escape the construct entirely**: `fn f() { // only a comment }` rendered it
+  after the function.
+
+  Claimed per *brace*, because one statement can open several — `if`/`else` and
+  `try`/`catch`/`finally` each have their own, and four constructs open one
+  without going through `block()` at all (`workflow`, `goal`, `goal … over …`,
+  `match`), each of which had to claim separately.
+
+  **Both classifications are claimed, and that is what makes it stable.** As
+  written, the comment shares the brace's line and is *trailing*; once rendered
+  it sits on its own line at the top of the body, where the same rule makes it
+  *leading*. Claiming only the first printed a file that reparsed into a
+  different one — #739's failure — so the second pass now reproduces the first.
+
+  **It renders at the top of the body rather than back on the brace line**, and
+  that is a deliberate trade rather than an oversight. Putting it back would mean
+  every branch building a header string appending it — nine, plus the arms of
+  `if`/`else` and `try`/`catch`/`finally` — and a branch that forgot would drop
+  the comment silently. One place that cannot be forgotten beats fifteen that
+  can, and the comment still reads as being about that body.
+
 - **#741: one answer to "which `.nd` files get format-checked", and the hook is
   tracked.**
 
