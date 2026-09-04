@@ -305,6 +305,42 @@
 
 ### Fixes
 
+- **#743: `nodus fmt --keep-trailing` applies to every statement, not just the
+  simple ones.**
+
+  The flag is documented as *"Preserve trailing comments in their original
+  positions"*. It honoured that for `let a = 1 // note` and silently ignored it
+  for every **block-bodied** statement — `fn`, `workflow`, `goal`, `if`, `while`,
+  `for`, `try`, `match` — demoting the comment onto its own line anyway.
+
+  One question, *how is a trailing comment rendered?*, answered in thirty-four
+  places. `_format_stmt` has that many return points: nineteen called
+  `attach_trailing`, which reads the mode; fifteen called `trailing_lines`
+  directly, which does not; two rendered nothing at all. The fifteen were the
+  block-bodied ones, each written by copying a neighbour.
+
+  **Hoisted rather than converted.** `format_stmt` renders the trailing comment
+  once, for every branch, and `_format_stmt` no longer binds `trailing` at all —
+  a branch cannot get this wrong if it cannot reach the comment. Converting
+  fifteen call sites would have left the thirty-fifth branch free to be written
+  like the fifteen.
+
+  **The blocker recorded on the issue did not exist**, which is why this was a
+  fix rather than a design. It claimed a comment on a function's *header* line
+  parses as the `FnDef`'s trailing comment, making it indistinguishable from one
+  on the closing brace. Checked instead of assumed: a header comment never
+  reaches the block statement — it is bound to the body's first statement, which
+  is its own defect (issue 746, filed) and is what makes this one unambiguous. A
+  block statement's trailing comment can only have come from its closing brace.
+
+  Also fixes a dangling comment escaping a workflow. A comment above a flow
+  body's closing brace had nothing to attach to — `steps` and `states` are typed
+  lists, so a `Comment` node cannot be appended the way `block()` does it — so
+  the next *top-level* statement's claim took it, and `nodus fmt` wrote a file
+  `nodus fmt --check` then rejected. That is #739's symptom in the one statement
+  loop #739's fix did not reach, found by probing each construct rather than by
+  reading the code, which is now the third time that has been the difference.
+
 - **#742: `nodus fmt` indents a closure body for where the closure sits.**
 
   A multi-line closure body came out one level from the left margin and its

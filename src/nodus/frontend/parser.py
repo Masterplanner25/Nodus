@@ -923,6 +923,16 @@ class Parser:
             else:
                 self.error(f"{label} body must contain state declarations or steps")
             self.skip_seps()
+        # #743: a comment sitting above the closing brace has no step after it to
+        # attach to, and `steps` / `states` are typed lists a `Comment` node
+        # cannot join — `flow_def` reads `step.name` off every entry. Kept on the
+        # node so the formatter can render it inside the body.
+        #
+        # Left unclaimed it escaped the workflow entirely: nothing in this loop
+        # drained the queue, so the next *top-level* statement's claim took it,
+        # and `nodus fmt` wrote a file `nodus fmt --check` then rejected. That is
+        # #739's symptom, in the one statement loop #739's fix did not reach.
+        body_comments = self.take_pending_comments()
         self.eat("}")
         if label == "workflow":
             self.workflow_depth -= 1
@@ -957,7 +967,10 @@ class Parser:
                     f"named '{param.name}'",
                     start,
                 )
-        return self.mark(def_type(name, states, steps, params=params), start)
+        flow = self.mark(def_type(name, states, steps, params=params), start)
+        if body_comments:
+            setattr(flow, "_body_comments", body_comments)
+        return flow
 
     def flow_state_decl(self, label: str):
         start = self.eat("ID")

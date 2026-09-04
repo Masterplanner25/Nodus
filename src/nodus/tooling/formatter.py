@@ -216,6 +216,20 @@ def format_goal_predicate(node, *, parent: str | None = None) -> str:
     raise TypeError(f"Unknown goal predicate node: {node!r}")
 
 
+def _body_comment_lines(stmt, prefix: str) -> list[str]:
+    """Comments left above a flow body's closing brace (#743).
+
+    A workflow or goal body is a loop over `step` and `state`, both typed
+    lists, so a trailing comment cannot simply be appended as a `Comment`
+    node the way `block()` does it -- `flow_def` reads `.name` off every
+    entry. The parser parks them on the node instead.
+    """
+    return [
+        f"{prefix}{text.rstrip()}"
+        for text in (getattr(stmt, "_body_comments", None) or [])
+    ]
+
+
 def _reindent_embedded(lines: list[str], prefix: str) -> list[str]:
     """Split multi-line entries apart and give the continuation lines `prefix`.
 
@@ -248,8 +262,32 @@ def _reindent_embedded(lines: list[str], prefix: str) -> list[str]:
 
 
 def format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> list[str]:
-    return _reindent_embedded(
-        _format_stmt(stmt, indent, keep_trailing_comments), INDENT * indent
+    """Render one statement, then answer the two questions every branch shares.
+
+    **A statement's trailing comment is rendered here, once, and nowhere else**
+    (#743). `_format_stmt` has thirty-four return points, and each used to decide
+    for itself: nineteen called `attach_trailing`, which reads
+    `keep_trailing_comments`, and fifteen called `trailing_lines` directly, which
+    does not. Those fifteen are every block-bodied statement — `fn`, `workflow`,
+    `if`, `while`, `for`, `try`, `goal`, `match` — so `nodus fmt --keep-trailing`,
+    documented as *"preserve trailing comments in their original positions"*,
+    silently did nothing for any of them. Two more returns rendered no trailing
+    comment at all.
+
+    Hoisting it is the fix rather than converting fifteen call sites, because a
+    thirty-fifth branch would be written the same way as the fifteen. The
+    branches no longer see `trailing` at all.
+
+    Re-indenting first (#742) is deliberate: `attach_trailing` merges onto
+    `lines[-1]` in keep mode, so the last entry has to already be a real line
+    rather than a multi-line blob.
+    """
+    prefix = INDENT * indent
+    lines = _reindent_embedded(
+        _format_stmt(stmt, indent, keep_trailing_comments), prefix
+    )
+    return attach_trailing(
+        lines, prefix, getattr(stmt, "_trailing_comments", None), keep_trailing_comments
     )
 
 
@@ -262,62 +300,64 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         for comment in comments:
             lines.append(f"{prefix}{comment.rstrip()}")
 
-    trailing = getattr(stmt, "_trailing_comments", None)
+    # No `trailing` binding here on purpose (#743): a branch cannot render a
+    # trailing comment if it cannot reach one. `format_stmt` does it once, after
+    # this returns.
 
     # match is an expression, but when it is the whole of a statement we format
     # it multi-line with correct indentation (format_expr has no indent context).
     if isinstance(stmt, ExprStmt) and isinstance(stmt.expr, Match):
-        return lines + format_match(stmt.expr, indent) + trailing_lines(prefix, trailing)
+        return lines + format_match(stmt.expr, indent)
     if isinstance(stmt, Return) and stmt.expr is not None and isinstance(stmt.expr, Match):
-        return lines + format_match(stmt.expr, indent, "return ") + trailing_lines(prefix, trailing)
+        return lines + format_match(stmt.expr, indent, "return ")
     if isinstance(stmt, Let) and isinstance(stmt.expr, Match):
         name = stmt.name if stmt.type_hint is None else f"{stmt.name}: {stmt.type_hint}"
         lead = f"export let {name} = " if stmt.exported else f"let {name} = "
-        return lines + format_match(stmt.expr, indent, lead) + trailing_lines(prefix, trailing)
+        return lines + format_match(stmt.expr, indent, lead)
 
     if isinstance(stmt, Import):
         if stmt.names is not None:
             names = ", ".join(stmt.names)
             lines.append(f"{prefix}import {{ {names} }} from {format_string(stmt.path)}")
-            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+            return lines
         if stmt.alias is not None:
             lines.append(f"{prefix}import {format_string(stmt.path)} as {stmt.alias}")
-            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+            return lines
         lines.append(f"{prefix}import {format_string(stmt.path)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, ExportFrom):
         names = ", ".join(stmt.names)
         lines.append(f"{prefix}export {{ {names} }} from {format_string(stmt.path)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, ExportList):
         names = ", ".join(stmt.names)
         lines.append(f"{prefix}export {{ {names} }}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Let):
         name = stmt.name if stmt.type_hint is None else f"{stmt.name}: {stmt.type_hint}"
         if stmt.exported:
             lines.append(f"{prefix}export let {name} = {format_expr(stmt.expr)}")
-            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+            return lines
         lines.append(f"{prefix}let {name} = {format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Print):
         lines.append(f"{prefix}print({format_expr(stmt.expr)})")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, ExprStmt):
         lines.append(f"{prefix}{format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Return):
         if stmt.expr is None:
             lines.append(f"{prefix}return")
-            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+            return lines
         lines.append(f"{prefix}return {format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, ExternDecl):
         # #489: a declaration, so it has no body and prints on one line. The
@@ -326,7 +366,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         param_text = ", ".join(format_param(param) for param in stmt.params)
         return_text = f" -> {stmt.return_type}" if stmt.return_type else ""
         header = f"{prefix}extern {stmt.name}({param_text}){return_text}"
-        return lines + [header] + trailing_lines(prefix, trailing)
+        return lines + [header]
 
     if isinstance(stmt, FnDef):
         param_text = ", ".join(format_param(param) for param in stmt.params)
@@ -336,7 +376,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         else:
             header = f"{prefix}fn {stmt.name}({param_text}){return_text} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, WorkflowDef):
         header = f"{prefix}workflow {stmt.name} {{"
@@ -345,7 +385,11 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
         for wf_step in stmt.steps:
             body_lines.extend(format_stmt(wf_step, indent + 1, keep_trailing_comments=keep_trailing_comments))
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        # #743: a comment above the closing brace, which has no step to
+        # attach to. Rendered inside the body, where it was written --
+        # unclaimed it escaped the flow entirely on the next parse.
+        body_lines.extend(_body_comment_lines(stmt, INDENT * (indent + 1)))
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, GoalDef):
         header = f"{prefix}goal {stmt.name} {{"
@@ -354,7 +398,11 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             body_lines.extend(format_stmt(state, indent + 1, keep_trailing_comments=keep_trailing_comments))
         for goal_step in stmt.steps:
             body_lines.extend(format_stmt(goal_step, indent + 1, keep_trailing_comments=keep_trailing_comments))
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        # #743: a comment above the closing brace, which has no step to
+        # attach to. Rendered inside the body, where it was written --
+        # unclaimed it escaped the flow entirely on the next parse.
+        body_lines.extend(_body_comment_lines(stmt, INDENT * (indent + 1)))
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, GoalPursuit):
         header = f"{prefix}goal {stmt.name} over {stmt.workflow_name} {{"
@@ -363,14 +411,14 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         body_lines.append(f"{inner}budget {_format_goal_budget(stmt.budget)}")
         if stmt.retry_from is not None:
             body_lines.append(f"{inner}retry from {format_expr(stmt.retry_from)}")
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, WorkflowStateDecl):
         opts = ""
         if getattr(stmt, "options", None) is not None:
             opts = f" with {format_named_map(stmt.options)}"
         lines.append(f"{prefix}state {stmt.name} = {format_expr(stmt.value)}{opts}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, WorkflowStep):
         clauses, deps = _format_step_map_clause(stmt)
@@ -383,7 +431,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             options = f" with {format_named_map(stmt.options)}"
         header = f"{prefix}step {stmt.name}{clauses}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, GoalStep):
         clauses, deps = _format_step_map_clause(stmt)
@@ -396,7 +444,7 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             options = f" with {format_named_map(stmt.options)}"
         header = f"{prefix}step {stmt.name}{clauses}{deps}{guard}{options} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, If):
         header = f"{prefix}if ({format_expr(stmt.cond)}) {{"
@@ -406,12 +454,12 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             else_lines = format_block(stmt.else_branch, indent + 1, keep_trailing_comments=keep_trailing_comments)
             out[-1] = f"{prefix}}} else {{"
             out += else_lines + [f"{prefix}}}"]
-        return lines + out + trailing_lines(prefix, trailing)
+        return lines + out
 
     if isinstance(stmt, While):
         header = f"{prefix}while ({format_expr(stmt.cond)}) {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, For):
         init = format_for_part(stmt.init)
@@ -419,20 +467,20 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         inc = format_for_part(stmt.inc)
         header = f"{prefix}for ({init}; {cond}; {inc}) {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
     
     if isinstance(stmt, ForEach):
         header = f"{prefix}for {stmt.name} in {format_expr(stmt.iterable)} {{"
         body_lines = format_block(stmt.body, indent + 1, keep_trailing_comments=keep_trailing_comments)
-        return lines + [header] + body_lines + [f"{prefix}}}"] + trailing_lines(prefix, trailing)
+        return lines + [header] + body_lines + [f"{prefix}}}"]
 
     if isinstance(stmt, Break):
         lines.append(f"{prefix}break")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Continue):
         lines.append(f"{prefix}continue")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Block):
         return lines + [f"{prefix}{{"] + format_block(stmt, indent + 1, keep_trailing_comments=keep_trailing_comments) + [f"{prefix}}}"]
@@ -442,18 +490,18 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
 
     if isinstance(stmt, CheckpointStmt):
         lines.append(f"{prefix}checkpoint {format_expr(stmt.label)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Yield):
         if stmt.expr is None:
             lines.append(f"{prefix}yield")
-            return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+            return lines
         lines.append(f"{prefix}yield {format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, Throw):
         lines.append(f"{prefix}throw {format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     if isinstance(stmt, TryCatch):
         try_header = f"{prefix}try {{"
@@ -468,12 +516,12 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
             middle.append(f"{prefix}}} finally {{")
             middle.extend(format_block(stmt.finally_block, indent + 1, keep_trailing_comments=keep_trailing_comments))
         out = [try_header] + try_lines + middle + [f"{prefix}}}"]
-        return lines + out + trailing_lines(prefix, trailing)
+        return lines + out
 
     if isinstance(stmt, DestructureLet):
         pat = format_pattern(stmt.pattern)
         lines.append(f"{prefix}let {pat} = {format_expr(stmt.expr)}")
-        return attach_trailing(lines, prefix, trailing, keep_trailing_comments)
+        return lines
 
     raise TypeError(f"Unknown stmt node: {stmt!r}")
 
