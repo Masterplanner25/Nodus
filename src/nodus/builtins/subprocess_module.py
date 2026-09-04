@@ -12,19 +12,9 @@ from nodus.runtime.channel import Channel, ChannelRecvRequest
 from nodus.runtime.runtime_events import RuntimeEvent
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.vm.types import BuiltinMethod, Record
+from nodus.vm.vm_chain import root_vm as _root_vm
 
 _TRUNCATE_LIMIT = 65536  # 64KB per err record field
-
-
-def _root_vm(vm):
-    root = vm
-    while True:
-        parent = getattr(root, "_caller_vm", None)
-        if parent is None:
-            return root
-        root = parent
-
-
 def _get_scheduler(vm):
     return getattr(_root_vm(vm), "scheduler", None)
 

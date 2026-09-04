@@ -12,8 +12,15 @@ trivial body is not evidence of a duplicated question; a trivial body *next to
 two substantial ones* is not evidence of its absence.
 
 It hid three groups in this tree, two of them real: `_root_vm(vm)` byte-identical
-in three builtin modules, and `run()` byte-identical across the DAP and LSP
-servers. Both are recorded in `tools/shape_manifest.json` now.
+in four builtin modules, and `run()` byte-identical across the DAP and LSP
+servers.
+
+`_root_vm` has since been **paid off** rather than recorded — one shared helper
+in `nodus.vm.vm_chain` (#751) — so its manifest entry is gone and
+`tests/test_root_vm_is_one_helper.py` guards it instead. The other two are in
+`tools/shape_manifest.json`. That is the intended lifecycle: the phase reports a
+duplication, the manifest holds it while it is real, and the entry is deleted
+when the debt is paid.
 
 The cost of the veto scales with the number of small same-named functions in the
 tree, so the detector was quietly weakening as the codebase grew — while
@@ -186,8 +193,17 @@ class TheRealFindingsItWasHidingTests(unittest.TestCase):
 
 class TheManifestRecordsThemTests(unittest.TestCase):
     """A finding that is real and unrecorded fails `--strict`; one that is
-    recorded must say *why*. These three were classified by reading all eight
-    bodies, not by their names."""
+    recorded must say *why*. These were classified by reading the bodies, not by
+    their names.
+
+    **`A:_root_vm(vm)` used to be here and is not any more, which is the good
+    outcome.** It was the sharpest of the three the veto hid — four private
+    copies of the `_caller_vm` root walk — and it was paid off in #751 rather
+    than lived with. The gate reported its entry as matching nothing ("the debt
+    was paid or the code moved — delete the entry so it stops claiming something
+    untrue"), and the entry went. `tests/test_root_vm_is_one_helper.py` is what
+    stops a fifth copy now.
+    """
 
     def _entries(self) -> dict:
         import json
@@ -201,7 +217,7 @@ class TheManifestRecordsThemTests(unittest.TestCase):
     # closes: #736
     def test_all_three_are_recorded_with_a_reason(self):
         entries = self._entries()
-        for key in ("A:_root_vm(vm)", "A:run()", "A:_worker()"):
+        for key in ("A:run()", "A:_worker()"):
             with self.subTest(finding=key):
                 self.assertIn(key, entries, "an unrecorded finding fails --strict")
                 entry = entries[key]
@@ -218,9 +234,16 @@ class TheManifestRecordsThemTests(unittest.TestCase):
         same-file bodies are genuine near-duplicates the detector structurally
         cannot report on their own."""
         entries = self._entries()
-        for key in ("A:_root_vm(vm)", "A:run()", "A:_worker()"):
+        for key in ("A:run()", "A:_worker()"):
             with self.subTest(finding=key):
                 self.assertEqual("tracked", entries[key]["verdict"])
+
+    # closes: #736
+    def test_the_root_vm_debt_was_paid_rather_than_recorded_forever(self):
+        """The entry is gone because the duplication is. A manifest that
+        still listed it would be claiming something untrue, which is what the
+        gate's stale-entry report exists to prevent."""
+        self.assertNotIn("A:_root_vm(vm)", self._entries())
 
 
 if __name__ == "__main__":

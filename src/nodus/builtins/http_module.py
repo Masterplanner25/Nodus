@@ -20,6 +20,7 @@ from nodus.runtime.channel import Channel
 from nodus.runtime.runtime_events import RuntimeEvent
 from nodus.runtime.runtime_stats import runtime_time_ms
 from nodus.vm.types import BuiltinMethod, Record
+from nodus.vm.vm_chain import root_vm as _root_vm
 
 _TEXT_CONTENT_TYPES = (
     "text/",
@@ -385,18 +386,6 @@ def _parse_options(method: str, url: str, options, vm) -> dict | Record:
     # Proxy (httpx doesn't support per-request proxy, so we skip)
 
     return kwargs
-
-
-def _root_vm(vm):
-    """Return the root-most VM in the _caller_vm chain."""
-    root = vm
-    while True:
-        parent = getattr(root, "_caller_vm", None)
-        if parent is None:
-            return root
-        root = parent
-
-
 _client_create_lock = threading.Lock()
 
 

@@ -11,6 +11,7 @@ from nodus.runtime.schema_contract import (
 )
 from nodus.vm.types import Closure, Record
 from nodus_lang_schema.contracts import VALID_EFFECTS
+from nodus.vm.vm_chain import root_vm as _root_vm
 
 _TOOL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.\-]*$')
 _TOOL_NAME_MAX_LEN = 200
@@ -124,26 +125,6 @@ def _to_runtime_value(value):
     if isinstance(value, dict):
         return Record({str(k): _to_runtime_value(v) for k, v in value.items()})
     return value
-
-
-def _root_vm(vm):
-    """Follow the _caller_vm chain to the root VM (where tool_registry lives).
-
-    NodusModule.invoke_function() creates a fresh child VM per call and sets
-    child._caller_vm = caller_vm.  Stdlib builtins (tool, test, …) close over
-    whichever VM was current at registration time.  Since stdlib methods are
-    always called via invoke_function, the closing vm is a child VM, not the
-    root.  This traversal ensures builtins always mutate the root VM's shared
-    registry, not a discarded per-call child VM.
-    """
-    root = vm
-    while True:
-        parent = getattr(root, "_caller_vm", None)
-        if parent is None:
-            return root
-        root = parent
-
-
 def _validate_effects(effects_raw):
     """Return (normalized_list, error_msg_or_None)."""
     if effects_raw is None:

@@ -305,6 +305,38 @@
 
 ### Fixes
 
+- **#751: one answer to "which VM is the root of this call".**
+
+  `_root_vm(vm)` — the walk up the `_caller_vm` chain — was implemented four
+  times, privately, in four builtin modules: `http_module`, `subprocess_module`,
+  `test_module` and `tool_module`. Byte-identical, and `test_module`'s copy said
+  so in its own docstring (*"Same pattern as tool_module._root_vm"*). It is one
+  shared helper now, `nodus.vm.vm_chain.root_vm`.
+
+  **This is the `_caller_vm` chain, which is why four copies mattered more than
+  tidiness.** #691 and #696 were both *"which chunk was this closure compiled
+  against"*, and what they left is that `_is_foreign_closure` *implied*
+  `_caller_vm is not None` while two callers leaned on the implication rather
+  than stating it — so one route into the code was invisible to everyone,
+  including the people who wrote the guards. Widening what the walk must handle
+  meant four edits, and the one you miss is silent.
+
+  The explanation moved with it. `tool_module`'s docstring was the only record of
+  *why* the traversal exists — stdlib builtins close over a per-call child VM, so
+  mutating it discards the write — and left behind, the helper reads as
+  defensive `getattr` noise that the next reader deletes or rewrites.
+
+  The helper imports nothing on purpose: `nodus.vm.vm` imports `nodus.builtins`
+  at module level, so a builtin cannot import the VM back without a cycle —
+  `tool_module` already reaches for `VM` inside a function body for that reason.
+
+  Found only because #736 fixed the detector that should have reported it: the
+  size threshold was a whole-group veto, and `subprocess_module`'s copy is the
+  same walk *without* a docstring — seven statements against eight — so that one
+  short copy suppressed the finding for all four. Its manifest entry is deleted
+  rather than kept, which is the lifecycle the gate's stale-entry report exists
+  to prompt.
+
 - **#736: `--shapes` species A filters sites, not whole groups.**
 
   `MIN_BODY_STATEMENTS` keeps trivial functions out — below it a shared name is a

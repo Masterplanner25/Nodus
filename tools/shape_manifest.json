@@ -202,11 +202,6 @@
       "verdict": "intentional",
       "why": "The threading.Event that stops the auto-sweep daemon above. Shared with the runner and the thread by construction; there is nothing per-tenant about a stop signal for a process-wide thread."
     },
-    "A:_root_vm(vm)": {
-      "verdict": "tracked",
-      "why": "BYTE-IDENTICAL in builtins/http_module.py:390, test_module.py:21 and tool_module.py:129 -- the walk up the _caller_vm chain to the root VM. Established by reading all of them, not inferred from the name: the bodies are the same lines, and test_module's docstring says so outright ('Same pattern as tool_module._root_vm'). There is a FOURTH at subprocess_module.py:19, identical except that it has no docstring -- 7 statements against 8 -- and under the old whole-group veto that one short copy hid the other three (#736). `sites` is 3 because that is what the detector reports; the fourth sits below MIN_BODY_STATEMENTS and always will. This is the _caller_vm chain #691/#696 turned on, where two callers have already been bitten leaning on an unstated implication about it, so four private copies of 'which VM is the root of this call' is worth paying down. #751. Settled by one shared helper.",
-      "sites": 3
-    },
     "A:run()": {
       "verdict": "tracked",
       "why": "BYTE-IDENTICAL ASTs in dap/server.py:500 and lsp/server.py:759 -- the read/handle/break message loop. Compared with ast.unparse rather than by eye. Third member of the dap/lsp cluster already recorded here: _read_message is the transport and is tracked, handle_message is intentional because the message sets genuinely differ. The loop that drives them is the transport's half, not the protocol's, so it belongs with _read_message. Settled by lifting both into a shared server base.",
