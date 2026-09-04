@@ -72,7 +72,10 @@ through `NodusRuntime`. This creates an important split:
 | | `NodusRuntime` | CLI / `nodus serve` |
 |--|--|--|
 | Default timeout | `None` (no deadline) | `EXECUTION_TIMEOUT_MS` = 200 ms |
-| `allow_env` / `allow_subprocess` / `allow_network` flags | Honoured | Not wired — VM defaults apply |
+| `allow_env` / `allow_subprocess` / `allow_network` flags | Honoured (deny by default) | Not wired — VM defaults apply, i.e. **all three allowed** |
+| `allowed_commands` / `allowed_hosts` | Honoured | Not wired |
+| `capability_policy`, `approval_channel`, `agent_timeout_ms` | Wired onto the VM | **Never wired**, and no CLI surface to set them |
+| Filesystem confinement | `allowed_paths` = **the cwd** | `fs_root` = **the project root** |
 | Error shape | Consistent `{ok, error, errors}` | Varies by call site |
 
 Consequence: sandbox flags set on a `NodusRuntime` instance in tests or application
@@ -80,6 +83,35 @@ code do **not** apply when the same script is executed via the CLI. If your
 security posture relies on `allow_env=False` or similar controls, enforce them
 through `NodusRuntime` in your host application — never assume the CLI shares
 that configuration. See GitHub #192 for the long-term unification plan (v5 scope).
+
+**The filesystem row is a difference in *mechanism*, not in configuration**, and
+it is the one that surprises. The two answers to *"where may this program read"*
+coincide only while the cwd **is** the project root. Run from a subdirectory,
+the same file and the same program give different answers — measured, not
+inferred:
+
+```
+demo/               <- project root (nodus.toml)
+  sibling.txt
+  sub/              <- cwd
+    read_sibling.nd   reads "../sibling.txt"
+
+nodus run read_sibling.nd   -> READ OK      (confined to the project root)
+NodusRuntime().run_file(..) -> sandbox error (confined to the cwd)
+```
+
+`tests/test_two_execution_paths.py` pins this table. A new difference fails it,
+and so does one that disappears — so unification is deliberate rather than
+accidental.
+
+**`nodus serve` deserves separate thought.** The justification for the CLI being
+permissive is that a developer running a script they wrote is not untrusted
+input. That reasoning does not carry to `POST /execute`, which runs code arriving
+over the network on the same permissive path: submitted source can shell out,
+open sockets and read the environment, and there is no flag to stop it
+(`serve` accepts `--allow-paths`, `--writable-paths`, `--allow-input` and
+`--auth-token`, and nothing for the other three). Bearer auth is optional and
+absent by default. Tracked separately from #192.
 
 ---
 
