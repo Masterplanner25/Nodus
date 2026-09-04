@@ -40,7 +40,10 @@ from nodus_lang_workflow.models import (  # noqa: E402
     RUN_STATUS_PENDING,
     TERMINAL_RUN_STATUSES,
 )
-from nodus_lang_workflow.runner import get_default_workflow_runner  # noqa: E402
+from nodus_lang_workflow.runner import (  # noqa: E402
+    get_default_workflow_runner,
+    reset_default_workflow_runner,
+)
 
 _THIRTY_ONE_DAYS_MS = 31 * 24 * 3600 * 1000
 
@@ -177,6 +180,56 @@ class CleanupRetiresAnAbandonedPendingRunTests(_StoreHarness):
         self.assertEqual(["legacy"], self._ids())
         # `--force` still takes it, because that is what force means.
         self.assertEqual(["legacy"], self._cleanup("--force")["run_records_removed"])
+
+
+class ItWorksOnBothBackendsTests(unittest.TestCase):
+    """The retirement pass uses only `WorkflowStore` methods — `list_runs` and
+    `delete_run` — so it is backend-independent by construction. Pinned anyway,
+    because "by construction" is an argument and this is a measurement, and a
+    store is a host-implementable surface.
+    """
+
+    def setUp(self):
+        self._saved = os.environ.get("NODUS_WORKFLOW_STORE_BACKEND")
+        os.environ["NODUS_WORKFLOW_STORE_BACKEND"] = "sqlite"
+        self._td = tempfile.TemporaryDirectory()
+        self._cwd = os.getcwd()
+        os.chdir(self._td.name)
+        reset_default_workflow_runner()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        if self._saved is None:
+            os.environ.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
+        else:
+            os.environ["NODUS_WORKFLOW_STORE_BACKEND"] = self._saved
+        reset_default_workflow_runner()
+        os.chdir(self._cwd)
+        self._td.cleanup()
+
+    # closes: #734
+    def test_sqlite_retires_the_old_one_and_keeps_the_fresh_one(self):
+        store = get_default_workflow_runner().store
+        self.assertEqual("sqlite", store.store_info().get("backend"))
+        for run_id in ("fresh", "old"):
+            store.create_run(
+                run_id=run_id, graph_id=run_id, workflow_name="w",
+                execution_kind="workflow",
+            )
+        # Backdate through the store rather than the file, since there isn't one.
+        record = store.get_run("old")
+        record.updated_at = time.time() * 1000 - _THIRTY_ONE_DAYS_MS
+        store.restore_run(record)  # #174: writes without re-stamping updated_at
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(0, main(["nodus", "workflow", "cleanup"]))
+        payload = json.loads(out.getvalue().strip())
+
+        self.assertEqual(["old"], payload["run_records_removed"])
+        self.assertEqual(
+            ["fresh"], sorted(r.run_id for r in get_default_workflow_runner().store.list_runs())
+        )
 
 
 class CancellingAPendingRunStillWorksTests(_StoreHarness):
