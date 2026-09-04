@@ -799,6 +799,99 @@ class WorkflowFrameworkRunner:
             "rehydrated_runs": rehydrated,
         }
 
+    def deliver_event(
+        self,
+        vm_factory,
+        event_type: str,
+        *,
+        payload: dict[str, object] | None = None,
+        correlation_key: str | None = None,
+        all_matching: bool = False,
+        now_ms: float | None = None,
+    ) -> dict[str, object]:
+        """Deliver an external event to the run(s) parked on it (#181).
+
+        The step the host could not do for itself. A wait durably records its
+        `event_type`, and `resume_workflow` will *verify* one — but nothing could
+        answer *which run is waiting for this event*, so every delivery path
+        needed a run id the dispatcher did not have. A webhook receiver in
+        another process had to `list_runs()` and reach into `record.wait`.
+
+        **Still an explicit host call**, and deliberately so. #176 settled that
+        the host owns re-invocation: a run record carries the program's whole
+        source (#499), so a runtime that re-entered runs on its own would execute
+        whatever the working directory's store happened to hold. This closes the
+        lookup, not the boundary.
+
+        Everything per-run is `resume_workflow`'s, unchanged — it re-verifies the
+        event type and correlation key, validates the wait's declared payload
+        schema (#472), and claims through `claim_waiting_run_for_resume`, so two
+        dispatchers racing the same event is already handled: the loser's claim
+        returns `None`. Nothing here re-implements any of that.
+        """
+        matched = self.store.list_runs_waiting_for(
+            event_type, correlation_key=correlation_key
+        )
+        run_ids = [record.run_id for record in matched]
+
+        # Ambiguity is refused, not resolved. Returning an arbitrary one of N is
+        # #584's exact failure mode -- the copy that could not answer correctly
+        # returned something *plausible*, and the defect hid for as long as the
+        # substitute looked reasonable. `correlation_key` exists to disambiguate,
+        # so the caller is made to use it (or to say `all_matching` and mean it).
+        if len(matched) > 1 and not all_matching:
+            return {
+                "ok": False,
+                "event_type": event_type,
+                "correlation_key": correlation_key,
+                "matched": run_ids,
+                "delivered": [],
+                "error": (
+                    f"{len(matched)} runs are waiting for '{event_type}'"
+                    + (f" with correlation key '{correlation_key}'" if correlation_key else "")
+                    + f": {', '.join(run_ids)}. Pass a correlation key to name one, "
+                    f"or all_matching to deliver to every one of them."
+                ),
+                "category": "ambiguous_delivery",
+            }
+
+        # Zero matches is an outcome, not an error. A dispatcher does not control
+        # ordering -- the event can arrive before the run parks or after it has
+        # finished -- so this reports the count and lets the host decide whether
+        # to retry, rather than failing a call that did nothing wrong.
+        delivered: list[dict[str, object]] = []
+        for record in matched:
+            vm = vm_factory(record)
+            rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
+            if vm is None or not callable(rebuild_graph):
+                continue
+            result = self.resume_workflow(
+                vm,
+                record.run_id,
+                resume_payload=payload,
+                event_type=event_type,
+                correlation_key=correlation_key,
+                now_ms=now_ms,
+                rebuild_graph=rebuild_graph,
+            )
+            delivered.append(
+                {
+                    "run_id": record.run_id,
+                    "workflow_name": record.workflow_name,
+                    "ok": not (isinstance(result, dict) and result.get("ok") is False),
+                    "result": result,
+                }
+            )
+
+        return {
+            "ok": all(item["ok"] for item in delivered),
+            "event_type": event_type,
+            "correlation_key": correlation_key,
+            "matched": run_ids,
+            "delivered": delivered,
+            "error": None,
+        }
+
     def rehydrate_run(self, vm, run_id: str, *, rebuild_graph):
         # #376: claim before adopting. Rehydration is not read-only — it calls
         # register_graph()/register_graph_vm(), which replace the process-global

@@ -231,6 +231,30 @@ class WorkflowStore(ABC):
     def list_terminal_runs(self) -> list[WorkflowRunRecord]:
         raise NotImplementedError
 
+    def list_runs_waiting_for(
+        self,
+        event_type: str,
+        *,
+        correlation_key: str | None = None,
+    ) -> list[WorkflowRunRecord]:
+        """Runs parked on `event_type`, oldest first (#181).
+
+        The lookup a dispatcher needs and the store did not have.
+
+        **Concrete, not abstract** — the same call `restore_run` and `delete_run`
+        make, for the same reason. A store is a host-implementable surface, and a
+        new abstract method breaks every out-of-tree implementation *at
+        construction*: precisely how 5.0.3 broke `nodus_sdk` (#185). The default
+        below works for any store that can list its runs, which is all of them,
+        so nothing outside this repo has to change to gain the capability.
+
+        It scans, as `list_rehydratable_runs` and `list_due_retry_runs` do —
+        `wait_json` is unindexed. A backend able to push the filter into its
+        query engine should override this; neither in-tree store does yet, and
+        the cost bound for all of them is #380.
+        """
+        return _runs_waiting_for_event(self.list_runs(), event_type, correlation_key)
+
     @abstractmethod
     def store_info(self) -> dict[str, object]:
         raise NotImplementedError
@@ -458,6 +482,35 @@ def _rehydratable_run_records(records: list[WorkflowRunRecord]) -> list[Workflow
 
 def _terminal_run_records(records: list[WorkflowRunRecord]) -> list[WorkflowRunRecord]:
     return [record for record in records if record.status in TERMINAL_RUN_STATUSES]
+
+
+def _runs_waiting_for_event(
+    records: list[WorkflowRunRecord],
+    event_type: str,
+    correlation_key: str | None = None,
+) -> list[WorkflowRunRecord]:
+    """The runs parked on `event_type` — #181's missing half.
+
+    A wait has always recorded its `event_type` durably, and
+    `claim_waiting_run_for_resume` has always been willing to *verify* one. What
+    was missing is the direction a dispatcher actually needs: an event arrives
+    and nothing can say which run it belongs to. Every delivery path therefore
+    required the caller to know the run id already, which is exactly the step a
+    host in another process cannot do.
+
+    `correlation_key=None` means "do not filter on it", not "match runs with no
+    key" — a distinction worth stating because the wrong reading silently widens
+    a delivery. Passing a key matches only runs that declared that same key.
+    """
+    matched = [
+        record
+        for record in records
+        if record.status == RUN_STATUS_WAITING
+        and record.wait is not None
+        and record.wait.event_type == event_type
+        and (correlation_key is None or record.wait.correlation_key == correlation_key)
+    ]
+    return _sorted_run_records(matched)
 
 
 class LocalWorkflowStore(WorkflowStore):

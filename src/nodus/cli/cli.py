@@ -872,6 +872,87 @@ def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
     return 1 if failed else 0
 
 
+def _workflow_deliver(
+    project_root: str | None,
+    event_type: str,
+    *,
+    correlation_key: str | None,
+    payload_json: str | None,
+    all_matching: bool,
+) -> int:
+    """Deliver an external event to the run(s) waiting for it (#181).
+
+    `resume` needs a graph id. A webhook receiver has an event type and no id,
+    and nothing could turn one into the other — a wait records its `event_type`
+    durably, but the only queries taking one already required the run. So the
+    host had to `list_runs()` and reach into `record.wait`, which is not a
+    published surface.
+
+    **Explicit, for the same reason `sweep` is.** A run record carries the whole
+    program source (#499) and `.nodus/` is CWD-relative, so anything that
+    re-entered runs on its own would compile and execute a program somebody else
+    left in a directory. This closes the lookup and leaves the boundary alone.
+    """
+    payload: dict[str, object] | None = None
+    if payload_json is not None:
+        try:
+            parsed = json.loads(payload_json)
+        except json.JSONDecodeError as err:
+            print(f"error: --payload is not valid JSON: {err}", file=sys.stderr)
+            return 2
+        if not isinstance(parsed, dict):
+            # The wait's schema (#472) describes an object, and `resume_payload`
+            # is merged as one. A bare list or string would be accepted here and
+            # fail further in, naming the step rather than the flag.
+            print(
+                f"error: --payload must be a JSON object, got "
+                f"{type(parsed).__name__}",
+                file=sys.stderr,
+            )
+            return 2
+        payload = parsed
+
+    with _project_root_context(project_root):
+        runner = get_default_workflow_runner()
+
+        def _vm_factory(_record):
+            # Same shape as the sweep's (#390): a bare VM carrying *this* runner,
+            # so the resume reads the store the caller meant.
+            vm = VM([], {}, code_locs=[], source_path=None)
+            vm.workflow_runner = runner
+            return vm
+
+        # A delivered run resumes *here*, so its `print`s would land ahead of the
+        # JSON and break the contract with whatever called this. Same capture the
+        # sweep does, and for the same reason.
+        program_output = io.StringIO()
+        with redirect_stdout(program_output):
+            report = runner.deliver_event(
+                _vm_factory,
+                event_type,
+                payload=payload,
+                correlation_key=correlation_key,
+                all_matching=all_matching,
+            )
+    captured = program_output.getvalue()
+    if captured:
+        report["stdout"] = captured
+    _json_print(report)
+
+    # Exit 2 for ambiguity, 1 for a delivery that failed, 0 otherwise --
+    # including "nobody was waiting", which is not a failure: a dispatcher does
+    # not control whether the event beats the run to the store. Distinguished so
+    # a cron can retry a 1 and must not retry a 2.
+    if report.get("category") == "ambiguous_delivery":
+        return 2
+    delivered = report.get("delivered")
+    if isinstance(delivered, list) and any(
+        isinstance(item, dict) and item.get("ok") is False for item in delivered
+    ):
+        return 1
+    return 0
+
+
 def _workflow_migrate_store(
     project_root: str | None,
     *,
@@ -2054,6 +2135,27 @@ def main(argv: list[str] | None = None) -> int:
                     _print_stderr(str(_e))
                     return 1
             return _workflow_sweep(project_root, min_idle_ms=min_idle_ms)
+        if subcommand == "deliver":
+            positional, flags = _parse_flags(sub_args, *flags_for("workflow", "deliver"))
+            if len(positional) != 1:
+                _print_stderr(
+                    "Usage: nodus workflow deliver EVENT_TYPE [--correlation-key K] "
+                    "[--payload JSON] [--all] [--project-root <path>]"
+                )
+                return 1
+            project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
+            if err:
+                _print_stderr(err)
+                return 1
+            correlation_key = flags.get("--correlation-key")
+            payload_json = flags.get("--payload")
+            return _workflow_deliver(
+                project_root,
+                positional[0],
+                correlation_key=str(correlation_key) if correlation_key is not None else None,
+                payload_json=str(payload_json) if payload_json is not None else None,
+                all_matching=bool(flags.get("--all")),
+            )
         if subcommand == "migrate-store":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "migrate-store"))
             if positional or "--to" not in flags:

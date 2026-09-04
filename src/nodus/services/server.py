@@ -794,6 +794,45 @@ class RuntimeService:
             result.update(self._graph_metadata(vm, graph_id))
         return result
 
+    def workflow_deliver(self, payload: dict):
+        """Deliver an external event to the run(s) waiting for it (#181).
+
+        The endpoint a webhook receiver actually needs. `/workflow/resume` and
+        `/workflow/replay` both require a `graph_id` and will *verify* an
+        `event_type`; neither can find a run *from* one, so the dispatcher was
+        left holding an event and no id. This resolves that and then hands each
+        match to the same resume path, so nothing about verification, schema
+        checking (#472) or claiming is re-implemented here.
+        """
+        event_type = payload.get("event_type")
+        if not event_type or not isinstance(event_type, str):
+            err = NodusRuntimeError("Missing event_type", filename=normalize_filename(None))
+            legacy = {"type": "graph", "message": "Missing event_type", "path": None}
+            return Result.failure(
+                stage="deliver_event",
+                filename=normalize_filename(None),
+                stdout="",
+                stderr="",
+                errors=[err.to_dict()],
+                error=legacy,
+            ).to_dict()
+
+        vm = self.last_vm or self._new_vm()
+        self._apply_runtime_policies(vm)
+
+        def _vm_factory(_record):
+            return vm
+
+        report = self.workflow_runner.deliver_event(
+            _vm_factory,
+            event_type,
+            payload=payload.get("resume_payload"),
+            correlation_key=payload.get("correlation_key"),
+            all_matching=bool(payload.get("all_matching")),
+        )
+        self.last_vm = vm
+        return report
+
     def workflow_dead_letters(self):
         runs = [record.to_dict() for record in self.workflow_runner.list_dead_lettered_runs()]
         return {"ok": True, "runs": runs}
@@ -1269,6 +1308,14 @@ def start_http_server(service: RuntimeService, host: str, port: int) -> Threadin
             if self.path == "/workflow/replay":
                 _write_json(self, service.workflow_replay(payload))
                 return
+            # #181. Mirrored here as well as on the FastAPI app on purpose: these
+            # are two route tables for one surface, and a route added to only one
+            # of them is available or not depending on whether FastAPI happens to
+            # be installed -- the recurring shape, with the bypass chosen by an
+            # optional dependency.
+            if self.path == "/workflow/deliver":
+                _write_json(self, service.workflow_deliver(payload))
+                return
             if self.path == "/goal/run":
                 _write_json(self, service.goal_run(payload))
                 return
@@ -1493,6 +1540,11 @@ def create_fastapi_app(service: RuntimeService):
     async def workflow_replay(request: Request):
         payload = await request.json()
         return JSONResponse(service.workflow_replay(payload))
+
+    @app.post("/workflow/deliver")
+    async def workflow_deliver(request: Request):
+        payload = await request.json()
+        return JSONResponse(service.workflow_deliver(payload))
 
     @app.post("/goal/run")
     async def goal_run(request: Request):
