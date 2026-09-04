@@ -926,13 +926,19 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
             if force:
                 should_remove = True
             elif threshold and snapshot.get("status") in ("completed", "failed", "dead_lettered"):
-                # #499: age comes from the state file's mtime, not the stored
-                # `updated_at` -- that field is `runtime_time_ms()`, monotonic
-                # milliseconds since *process start*, so comparing it against
-                # wall-clock `now_ms` made every terminal run look ancient and
-                # any configured retention removed everything regardless of
-                # age. Latent while retention was opt-in-and-unset; load-bearing
-                # now that there is a default.
+                # #499: age comes from the state file's mtime. `updated_at` was
+                # `runtime_time_ms()` then -- monotonic milliseconds since
+                # *process start* -- so comparing it against wall-clock `now_ms`
+                # made every terminal run look ancient and any configured
+                # retention removed everything regardless of age. Latent while
+                # retention was opt-in-and-unset; load-bearing once there was a
+                # default.
+                #
+                # **That field is wall-clock now** (#725), so the reason no
+                # longer holds; the mtime is kept because it is the age of the
+                # thing actually being deleted here, which is the graph state.
+                # The record-driven pass below does read `updated_at`, and has
+                # to check `is_store_time` for records written before #725.
                 try:
                     mtime_ms = os.path.getmtime(_task_graph._graph_state_path(graph_id)) * 1000.0
                 except OSError:
@@ -977,6 +983,26 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
                         if store.delete_run(graph_id):
                             records_removed.append(graph_id)
                     progress = True
+
+        # #734: everything above walks *graphs*, so a run record that never had
+        # one is invisible to it. A run is `pending` between `create_run` and the
+        # flip to `running`, and the graph is written later still — so a process
+        # that dies in that window leaves a record nothing can reach: rehydration
+        # needs graph state to adopt it, and this command needs a snapshot to
+        # find it. It leaked forever, and `LocalWorkflowStore.list_runs()` is
+        # linear in the directory (#380), so leaked records keep costing.
+        #
+        # Retired here rather than by adding `pending` to `TERMINAL_RUN_STATUSES`,
+        # which was the obvious move and does not work: cleanup would still never
+        # iterate the record, and `cancel_run` refuses anything terminal with
+        # "already finished" — which a run that never started plainly has not.
+        # The sets answer "may this be resumed" and "is this finished"; whether
+        # cleanup may retire something is a third question.
+        records_removed.extend(
+            _retire_graphless_pending_runs(
+                store, snapshots, set(removed), now_ms, threshold, force
+            )
+        )
     _json_print(
         {
             "removed": removed,
@@ -986,6 +1012,48 @@ def _workflow_cleanup(project_root: str | None, retention_seconds: int | None, f
         }
     )
     return 0
+
+
+def _retire_graphless_pending_runs(
+    store, snapshots, already_removed: set, now_ms: int, threshold: int | None, force: bool
+) -> list[str]:
+    """Delete `pending` run records that have no graph, once they are old (#734).
+
+    Deliberately narrow. `pending` is the one status where "no graph" is certain
+    rather than inferred — the graph is written after the run starts, and a
+    pending run never did. A `running` or `waiting` record without a graph is the
+    same leak by a different route, but rehydration *attempts* those and records
+    why it failed (#399), so they are visible; these were not visible at all.
+
+    Age comes from the record's own `updated_at`, which is wall-clock since #725
+    — the reason the loop above reads a file mtime instead is a comment written
+    when that field was still monotonic-since-process-start. A record predating
+    that change carries an uncomparable number and is left alone; `--force`
+    still takes it.
+    """
+    from nodus.runtime.runtime_stats import is_store_time
+    from nodus_lang_workflow.models import RUN_STATUS_PENDING
+
+    known_graphs = {
+        snapshot.get("graph_id") for snapshot in snapshots if snapshot.get("graph_id")
+    }
+    retired: list[str] = []
+    for record in store.list_runs():
+        if record.status != RUN_STATUS_PENDING:
+            continue
+        if record.run_id in known_graphs or record.run_id in already_removed:
+            continue
+        if not force:
+            if not threshold:
+                continue
+            updated_at = record.updated_at
+            if not is_store_time(updated_at):
+                continue
+            if now_ms - float(updated_at) < threshold * 1000:
+                continue
+        if store.delete_run(record.run_id):
+            retired.append(record.run_id)
+    return retired
 
 
 def _run_workflow_checkpoints(graph_id: str) -> int:

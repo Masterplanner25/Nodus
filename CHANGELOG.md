@@ -305,6 +305,34 @@
 
 ### Fixes
 
+- **#734: `workflow cleanup` retires a run that never started.**
+
+  `pending` is in neither `REHYDRATABLE_RUN_STATUSES` nor
+  `TERMINAL_RUN_STATUSES`, so such a record was adopted by nothing and retired by
+  nothing. A process that died between `create_run` and the flip to `running`
+  left one behind permanently, and `LocalWorkflowStore.list_runs()` is linear in
+  the directory (#380), so leaked records keep costing.
+
+  **The fix direction filed on the issue does not work**, which is the part worth
+  keeping. It proposed adding `pending` to `TERMINAL_RUN_STATUSES`. Two things
+  defeat that, and neither is visible without checking:
+
+  - `workflow cleanup` iterates **graph snapshots**, not run records — and a run
+    that never started has no graph. It would still never be reached.
+  - `cancel_run` refuses anything terminal with *"already finished"*, which a run
+    that never started plainly has not. The obvious fix trades a leak for a lie.
+
+  The two sets answer *"may this be resumed"* and *"is this finished"*. Whether
+  cleanup may retire something is a third question, and it is answered
+  separately: a record-driven pass retires `pending` records that have no graph
+  and are past retention. Both premises are pinned by test, since the whole
+  design rests on them.
+
+  Deliberately narrow. `running` and `waiting` records without a graph are the
+  same leak by another route and are left alone: rehydration *attempts* those and
+  records why it failed (#399), so they are visible — these were not visible at
+  all.
+
 - **#746: a comment on a `{` line belongs to the brace it opened.**
 
   It shares a line with the last token consumed — the `{` — so the parser's line
