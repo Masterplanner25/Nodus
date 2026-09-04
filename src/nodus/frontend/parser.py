@@ -516,10 +516,48 @@ class Parser:
 
         return ExprStmt(self.expr())
 
+    def take_header_comments(self, brace) -> list[str]:
+        """Comments belonging to the brace `brace` opened (#746).
+
+        **Two classifications, one meaning.** As written by a person the
+        comment shares the brace's line, so the lexer's line rule makes it
+        *trailing*. Once rendered it sits on its own line at the top of the
+        body, where the same rule makes it *leading* for whatever follows.
+        Claiming only the first form printed a file that reparsed into a
+        different one, which is #739's failure -- so both are claimed, and
+        the second pass reproduces the first.
+
+        Must be called after a `peek()` -- `skip_seps()` will do -- because
+        nothing is queued until the token stream is looked at.
+        """
+        return self.take_trailing_on_line(brace.line) + self.take_pending_comments()
+
+    def take_trailing_on_line(self, line: int) -> list[str]:
+        """Claim queued trailing comments written on `line`.
+
+        Used for the comment on a block's opening brace (#746). It is classified
+        as *trailing* because it shares a line with the last token consumed — the
+        `{` — and without this the block loop's first `bind_comments` hands it to
+        whatever statement is parsed next, so `fn f() { // about f` ends up
+        describing the body's first statement.
+        """
+        taken = [tok.val for tok in self.pending_trailing if tok.line == line]
+        if taken:
+            self.pending_trailing = [
+                tok for tok in self.pending_trailing if tok.line != line
+            ]
+        return taken
+
     def block(self):
         start = self.eat("{")
         stmts = []
         self.skip_seps()
+        # #746: a comment on the `{` line belongs to this block. Claimed per
+        # *brace* rather than per statement, because one statement can open
+        # several — `if`/`else` and `try`/`catch`/`finally` each have their own,
+        # and a workflow's own header comment used to sink two levels down and
+        # stack against a step's.
+        header_comments = self.take_trailing_on_line(start.line)
 
         # #489: `extern` is a module-scope declaration, so the parser needs to
         # know it is inside something. Counted rather than inferred from the
@@ -542,7 +580,10 @@ class Parser:
             self._block_depth -= 1
 
         self.eat("}")
-        return self.mark(Block(stmts), start)
+        block = self.mark(Block(stmts), start)
+        if header_comments:
+            setattr(block, "_header_comments", header_comments)
+        return block
 
     def if_stmt(self):
         start = self.eat("IF")
@@ -689,8 +730,11 @@ class Parser:
         self.eat("ID")  # `over` — checked by the caller
         workflow_tok = self.eat("ID")
         workflow_name = workflow_tok.val
-        self.eat("{")
+        # #746: `goal ... over ... {` opens its own brace too. Unclaimed, the
+        # comment on it escaped to *after* the whole goal.
+        pursuit_brace = self.eat("{")
         self.skip_seps()
+        pursuit_header_comments = self.take_header_comments(pursuit_brace)
 
         until = None
         budget = None
@@ -762,6 +806,8 @@ class Parser:
         # about — a comment above the goal is merely coarse, one at the end of
         # the file has left its subject entirely. Caught by trying the shape
         # after the main fix, not before.
+        if pursuit_header_comments:
+            setattr(node, "_header_comments", pursuit_header_comments)
         body_comments = self.take_pending_comments()
         if body_comments:
             setattr(node, "_comments", body_comments)
@@ -899,7 +945,12 @@ class Parser:
                         start,
                     )
                 seen_params.add(param.name)
-        self.eat("{")
+        # #746: a flow body is its own loop, not a `block()`, so it claims the
+        # comment on its own brace. Unclaimed it sank into the *step* body and
+        # stacked against the step's own header comment, two levels from where
+        # either was written.
+        flow_brace = self.eat("{")
+        flow_header_comments: list[str] = []
         steps = []
         states = []
         if label == "workflow":
@@ -907,6 +958,7 @@ class Parser:
         else:
             self.goal_depth += 1
         self.skip_seps()
+        flow_header_comments = self.take_trailing_on_line(flow_brace.line)
         while not self.at("}"):
             if self.at("EOF"):
                 self.error(f"Unterminated {label}")
@@ -968,6 +1020,8 @@ class Parser:
                     start,
                 )
         flow = self.mark(def_type(name, states, steps, params=params), start)
+        if flow_header_comments:
+            setattr(flow, "_header_comments", flow_header_comments)
         if body_comments:
             setattr(flow, "_body_comments", body_comments)
         return flow
@@ -1582,8 +1636,11 @@ class Parser:
                 "match requires arms in braces: match <expr> { pattern => body, ... }",
                 start,
             )
-        self.eat("{")
+        # #746: `match x { // note` opens its own brace too. Unclaimed, the
+        # comment was handed to whatever statement followed the match.
+        match_brace = self.eat("{")
         self.skip_seps()
+        match_header_comments = self.take_header_comments(match_brace)
         arms = []
         seen_wildcard = False
         while not self.at("}"):
@@ -1626,7 +1683,10 @@ class Parser:
         self.eat("}")
         if not arms:
             self.error("match must have at least one arm", start)
-        return self.mark(Match(scrutinee, arms), start)
+        node = self.mark(Match(scrutinee, arms), start)
+        if match_header_comments:
+            setattr(node, "_header_comments", match_header_comments)
+        return node
 
     def parse_action_expr(self):
         start = self.eat("ACTION")

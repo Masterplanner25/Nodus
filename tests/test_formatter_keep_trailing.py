@@ -222,22 +222,20 @@ class AFlowBodyKeepsItsDanglingCommentTests(unittest.TestCase):
 
 
 class TheHeaderLineIsADifferentQuestionTests(unittest.TestCase):
-    """Where a comment on the *opening* line goes — recorded, not fixed.
+    """A comment on the *opening* line is not the statement's trailing comment.
 
-    `fn f() { // about f` is not the `FnDef`'s trailing comment. It is queued
-    while the body is being parsed and bound to the body's **first statement**,
-    so it ends up describing that instead:
+    This distinction is what makes #743's fix unambiguous, which is why it is
+    pinned here rather than only where it was fixed: a block statement's trailing
+    comment can **only** have come from its closing brace, so putting one back on
+    that brace in `--keep-trailing` mode cannot relocate a header comment.
 
-        fn f() {
-            return 1i // about f      (keep mode)
-            // about f                (default mode, below the return)
-        }
-
-    That is a real defect of the same family as #737, and it is not this issue —
-    #743 is about a documented flag being ignored. Pinned here so the fix for it
-    is a deliberate change rather than an accident, and because this behaviour is
-    what makes the #743 fix unambiguous: a block statement's trailing comment can
-    only ever have come from its closing brace.
+    When #743 was filed I had asserted the opposite — that both reach the
+    `FnDef`, making them indistinguishable and the fix a design question.
+    Checking that is what turned up the real defect: the header comment was
+    bound to the body's **first statement**, so `fn f() { // about f` came back
+    as a note under `return 1i`. Filed as issue 746 and fixed separately; it now
+    belongs to the brace it was written on, which
+    `tests/test_formatter_header_comments.py` covers.
     """
 
     # closes: #743
@@ -246,17 +244,33 @@ class TheHeaderLineIsADifferentQuestionTests(unittest.TestCase):
         self.assertIsNone(getattr(stmts[0], "_trailing_comments", None))
 
     # closes: #743
-    def test_it_lands_on_the_first_statement_of_the_body_instead(self):
+    def test_it_belongs_to_the_brace_it_was_written_on(self):
+        """Where it goes instead — and not to the first statement, which is what
+        it used to do."""
         stmts = Parser(tokenize("fn f() { // about f\n    return 1i\n}\n")).parse()
+        self.assertEqual(
+            ["// about f"], getattr(stmts[0].body, "_header_comments", None)
+        )
         first = stmts[0].body.stmts[0]
-        self.assertEqual(["// about f"], getattr(first, "_trailing_comments", None))
+        self.assertIsNone(getattr(first, "_trailing_comments", None))
 
     # closes: #743
     def test_a_brace_comment_does_reach_it(self):
-        """The pair that matters: only the brace line reaches the statement, so
-        putting it back on the brace cannot move a header comment."""
+        """The pair that matters: only the closing brace reaches the statement,
+        so putting it back there cannot move a header comment."""
         stmts = Parser(tokenize("fn f() {\n    return 1i\n} // done\n")).parse()
         self.assertEqual(["// done"], getattr(stmts[0], "_trailing_comments", None))
+
+    # closes: #743
+    def test_the_two_positions_stay_distinct(self):
+        """Both at once. If the two ever merged into one list, `--keep-trailing`
+        would move the header comment down onto the brace — the exact silent
+        relocation the #743 blocker feared."""
+        stmts = Parser(
+            tokenize("fn f() { // header\n    return 1i\n} // brace\n")
+        ).parse()
+        self.assertEqual(["// header"], getattr(stmts[0].body, "_header_comments", None))
+        self.assertEqual(["// brace"], getattr(stmts[0], "_trailing_comments", None))
 
 
 if __name__ == "__main__":

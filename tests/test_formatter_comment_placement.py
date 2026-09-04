@@ -286,19 +286,22 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
         )
 
     # closes: #737
-    def test_exactly_these_four_places_claim_comments(self):
-        """Four claim, for two different reasons, and both are worth naming.
+    def test_exactly_these_places_claim_comments(self):
+        """Who claims, and why. Two reasons, and a construct can have both.
 
-        **Three parse a sequence of statements** and claim so each comment lands
-        on the statement it was written above: `parse`, `block`, and — missed on
-        the first pass — `flow_def`, because a workflow body is its own loop over
-        `step` and `state` rather than a `block()`.
+        **Four parse a sequence of statements** and claim so each comment lands
+        on the statement it was written above: `parse`, `block`, `flow_def` —
+        missed on the first pass, because a workflow body is its own loop over
+        `step` and `state` rather than a `block()` — and `take_header_comments`,
+        which is a helper the last two use rather than a loop of its own.
 
         **`goal_pursuit` claims for the opposite reason.** Its body has no
         statements at all, so there is nowhere to place a comment; it claims so
         the comment does not *travel*, which is what an unclaimed one does.
 
-        A fifth has to add itself here, and say which of the two it is.
+        A construct that opens a brace claims separately again (#746) — that set
+        is asserted below, because opening a brace and looping over statements
+        are different things and two constructs do only one of them.
         """
         import ast
 
@@ -313,7 +316,41 @@ class TheClaimIsMadeWhereTheStatementStartsTests(unittest.TestCase):
                 for node in ast.walk(function)
             )
         }
-        self.assertEqual({"parse", "block", "flow_def", "goal_pursuit"}, claiming)
+        self.assertEqual(
+            {"parse", "block", "flow_def", "goal_pursuit", "take_header_comments"},
+            claiming,
+        )
+
+    # closes: #737
+    def test_every_construct_that_opens_a_brace_claims_its_header(self):
+        """The other axis (#746). A comment on a `{` line belongs to the brace
+        that line opened, and four constructs open one without going through
+        `block()` — so each has to claim, or the comment sinks into whatever is
+        parsed next.
+
+        `block()` covers `fn`, `if`, `else`, `while`, `for`, `try`, `catch`,
+        `finally`, step bodies and closures in one place; these four are the
+        remainder.
+        """
+        import ast
+
+        tree = ast.parse(self._parser_source())
+        claiming = {
+            function.name
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef)
+            and any(
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", None)
+                in {"take_trailing_on_line", "take_header_comments"}
+                for node in ast.walk(function)
+            )
+        }
+        self.assertEqual(
+            {"block", "flow_def", "goal_pursuit", "parse_match", "take_header_comments"},
+            claiming,
+            "a construct opening a brace must claim the comment on that line",
+        )
 
     # closes: #737
     def test_the_claim_precedes_the_parse_in_both_loops(self):
