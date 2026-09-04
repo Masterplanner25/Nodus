@@ -5,6 +5,7 @@ import math
 
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.vm.types import Closure, Record
+from nodus.vm.vm_chain import root_vm as _root_vm
 
 
 # -- Sentinel for zero-duration yield used by test.flush_async() ----------
@@ -14,22 +15,6 @@ class _FlushAsyncRequest:
 
 
 FLUSH_ASYNC_SENTINEL = _FlushAsyncRequest()
-
-
-# -- Root-VM traversal (same pattern as tool_module) ----------------------
-
-def _root_vm(vm):
-    """Follow _caller_vm chain to the root VM (where test_state lives).
-
-    Same pattern as tool_module._root_vm — see that function for the full
-    explanation of why this traversal is required for stdlib builtins.
-    """
-    root = vm
-    while True:
-        parent = getattr(root, "_caller_vm", None)
-        if parent is None:
-            return root
-        root = parent
 
 
 # -- Test state helpers ----------------------------------------------------
