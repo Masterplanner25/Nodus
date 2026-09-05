@@ -492,11 +492,28 @@ every embedder reaches through `run_workflow()` ignored them (#174). An unknown
 backend name is refused rather than falling back to the JSON store, so a
 misspelling cannot quietly cost you the durability you asked for.
 
-> **Switching backends does not move existing runs.** Runs recorded in the JSON
-> store are invisible to a SQLite one and vice versa — an in-flight `waiting` run
-> becomes unresumable rather than relocated, and `nodus workflow migrate-state`
-> migrates graph *snapshots*, not store backends. Switch when nothing is in
-> flight, or drain first.
+> **Switching backends does not move existing runs by itself — migrate them.**
+> Runs recorded in the JSON store are invisible to a SQLite one and vice versa,
+> so an in-flight `waiting` run becomes unresumable rather than relocated:
+>
+> ```bash
+> nodus workflow migrate-store --to sqlite --dry-run   # report the plan
+> nodus workflow migrate-store --to sqlite
+> ```
+>
+> It copies run records between backends and is **non-destructive** — the source
+> store keeps its copy, so a switch is reversible by pointing the environment
+> back. A run parked `waiting` arrives still `waiting`, with its wait intact.
+>
+> Do not confuse it with `nodus workflow migrate-state`, which rewrites graph
+> *snapshots* and is a different job. This note previously said no backend
+> migration existed and advised draining first; that was true when written.
+
+> **The default becomes SQLite at 6.0.0.** Until then an unconfigured local store
+> that already holds runs emits a one-shot `DeprecationWarning` naming the
+> migration command above, because after the flip those runs would be invisible
+> rather than moved. Setting `NODUS_WORKFLOW_STORE_BACKEND=local` explicitly is
+> an answer and silences it — a host that means the JSON store keeps it.
 
 `SQLiteWorkflowStore` uses WAL mode for atomic writes and survives unexpected
 process exits. The default path can be any writable path on a persistent volume.
