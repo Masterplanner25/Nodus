@@ -1809,8 +1809,17 @@ about the same miss happening to `nodus-flow`, which sat outside the drift sweep
 under both its names. **A package published without a row there is invisible twice
 over.**
 
-As of 2026-08-30: **36 standalone companions, 37 PyPI projects** counting
-`nodus-lang`. Re-derive rather than trusting that sentence.
+As of 2026-09-05: **37 standalone companions, 38 PyPI projects** counting
+`nodus-lang`. Re-derive rather than trusting that sentence — this was done by
+probing every `nodus-*` name in `docs/ecosystem/README.md`, not by adding one to
+the previous figure.
+
+Four listed names deliberately do not resolve, and a re-derivation that "fixes"
+them is wrong: `nodus-vscode` (Marketplace), `nodus-run-action` (GitHub Action),
+`nodus-event` (not implemented), and `nodus-scheduler` — which is written **in
+Nodus**, carries a `nodus.toml` rather than a `pyproject.toml`, and has no
+channel to publish to, since the Nodus registry named in `ECOSYSTEM_BOUNDARY.md`
+was never built (#88, closed on that basis).
 
 ### Verify a publish by installing it
 
