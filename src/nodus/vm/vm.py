@@ -446,20 +446,18 @@ class VM:
         name occupied — `register_function` refusing to shadow a builtin is a
         security boundary (#443), and that only holds for names that exist.
         """
-        from nodus.runtime.capability import DOMAIN_BUILTIN_GROUPS
+        from nodus.runtime.capability import (
+            DOMAIN_BUILTIN_GROUPS,
+            validate_extensions,
+        )
 
         if extensions is None:
             return
+        # Shared with `NodusRuntime.__init__` so the two cannot refuse at
+        # different moments -- which is exactly what they did until Gate 10b
+        # caught it against the wheel.
+        validate_extensions(extensions)
         selected = set(extensions)
-        unknown = selected - set(DOMAIN_BUILTIN_GROUPS)
-        if unknown:
-            # Refused rather than ignored: a typo'd extension name that silently
-            # withheld the surface it meant to grant is the "accepted and
-            # ignored" third state #490 refused for `nodus.toml`.
-            raise ValueError(
-                f"Unknown extension(s): {', '.join(sorted(unknown))}. "
-                f"Known: {', '.join(sorted(DOMAIN_BUILTIN_GROUPS))}."
-            )
         for name, group in DOMAIN_BUILTIN_GROUPS.items():
             if name in selected:
                 continue
