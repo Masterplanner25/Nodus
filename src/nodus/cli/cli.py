@@ -148,7 +148,60 @@ def _server_allow_input_from_env() -> bool:
     value = os.environ.get("NODUS_SERVER_ALLOW_INPUT")
     if value is None:
         return False
+    return _truthy_env(value)
+
+
+def _truthy_env(value: object | None) -> bool:
+    """One reading of what a truthy environment variable looks like (#754).
+
+    `_server_allow_input_from_env` spelled this inline, and the three capability
+    switches below needed the same answer. Two spellings of "is this env var on"
+    is a small instance of the shape that keeps costing this repo real bugs, and
+    it is cheapest to refuse at the moment the second one would be written.
+    """
+    if value is None:
+        return False
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _server_capability_from_env(name: str) -> bool:
+    """#754: `NODUS_SERVER_ALLOW_SUBPROCESS` and friends.
+
+    A flag is unavailable to anyone running `nodus serve` from a supervisor,
+    a container image or a systemd unit that owns the command line, which is
+    most of the ways a server is actually started. Env fallbacks exist for
+    `--auth-token`, `--allow-input` and the store flags already; these join them
+    rather than inventing a second convention.
+    """
+    return _truthy_env(os.environ.get(f"NODUS_SERVER_ALLOW_{name.upper()}"))
+
+
+def _split_list_flag(value: object | None) -> list[str] | None:
+    """Comma-separated allowlist entries (#754).
+
+    Comma rather than `os.pathsep`, which `--allow-paths` uses: these are
+    executable names and hostnames, not paths, and `os.pathsep` is `;` on
+    Windows — where a semicolon in a command allowlist reads as a shell
+    separator and invites exactly the wrong mental model.
+
+    An empty value yields `[]`, not `None`. The two mean opposite things at the
+    VM: `None` is "no allowlist, any command permitted (subject to the capability
+    flag)", `[]` is "an allowlist naming nothing". Collapsing them would turn
+    `--allowed-commands ""` into a grant.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _server_list_from_env(name: str) -> list[str] | None:
+    raw = os.environ.get(f"NODUS_SERVER_{name.upper()}")
+    if raw is None:
+        return None
+    items = [part.strip() for part in str(raw).split(",") if part.strip()]
+    return items or None
 
 
 def _resolve_project_root(path: object | None) -> tuple[str | None, str | None]:
@@ -1221,6 +1274,11 @@ def _run_server(
     allowed_paths: list[str] | None = None,
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
+    allow_subprocess: bool = False,
+    allow_network: bool = False,
+    allow_env: bool = False,
+    allowed_commands: list[str] | None = None,
+    allowed_hosts: list[str] | None = None,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
     workflow_store_path: str | None = None,
@@ -1234,6 +1292,11 @@ def _run_server(
             allowed_paths=allowed_paths,
             writable_paths=writable_paths,
             allow_input=allow_input,
+            allow_subprocess=allow_subprocess,
+            allow_network=allow_network,
+            allow_env=allow_env,
+            allowed_commands=allowed_commands,
+            allowed_hosts=allowed_hosts,
             auth_token=auth_token,
             workflow_store_backend=workflow_store_backend,
             workflow_store_path=workflow_store_path,
@@ -1879,6 +1942,20 @@ def main(argv: list[str] | None = None) -> int:
         writable_paths = _resolve_writable_paths(flags.get("--writable-paths"))
         auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
         allow_input = "--allow-input" in flags or _server_allow_input_from_env()
+        # #754: submitted source runs denied unless the operator grants it here.
+        allow_subprocess = "--allow-subprocess" in flags or _server_capability_from_env("subprocess")
+        allow_network = "--allow-network" in flags or _server_capability_from_env("network")
+        allow_env = "--allow-env" in flags or _server_capability_from_env("env")
+        allowed_commands = (
+            _split_list_flag(flags["--allowed-commands"])
+            if "--allowed-commands" in flags
+            else _server_list_from_env("allowed_commands")
+        )
+        allowed_hosts = (
+            _split_list_flag(flags["--allowed-hosts"])
+            if "--allowed-hosts" in flags
+            else _server_list_from_env("allowed_hosts")
+        )
         workflow_store_backend = (
             str(flags["--workflow-store-backend"])
             if "--workflow-store-backend" in flags
@@ -1897,6 +1974,11 @@ def main(argv: list[str] | None = None) -> int:
             allowed_paths=allowed_paths,
             writable_paths=writable_paths,
             allow_input=allow_input,
+            allow_subprocess=allow_subprocess,
+            allow_network=allow_network,
+            allow_env=allow_env,
+            allowed_commands=allowed_commands,
+            allowed_hosts=allowed_hosts,
             auth_token=auth_token,
             workflow_store_backend=workflow_store_backend,
             workflow_store_path=workflow_store_path,

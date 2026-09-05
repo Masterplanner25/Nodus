@@ -100,9 +100,16 @@ class ThreeSettingsAreNeverWiredOnTheRunnerPathTests(unittest.TestCase):
     """These are *not* a decision — they are absent.
 
     A host that configures a capability policy and then shells out to
-    `nodus run`, or serves code over `POST /execute`, gets no policy at all.
-    Unlike the sandbox flags there is no CLI surface for them either, so this
-    cannot be worked around from outside.
+    `nodus run` gets no policy at all, and there is no CLI surface for them, so
+    it cannot be worked around from outside.
+
+    **This used to say "or serves code over `POST /execute`", and #754 closed
+    half of that.** `nodus serve` now denies subprocess, network and environment
+    access by default and has flags to grant them — so the *sandbox flags* are
+    no longer absent there. A `capability_policy`, an `approval_channel` and
+    `agent_timeout_ms` still are, on both paths. The narrower claim is the true
+    one, and the distinction matters: a reader who takes "serve has no policy"
+    to mean "serve is unconfined" would now be wrong.
     """
 
     UNWIRED = ("capability_policy", "approval_channel", "agent_timeout_ms")
@@ -207,6 +214,58 @@ class TheDeadlineDiffersTests(unittest.TestCase):
         embedded = NodusRuntime().run_source(self.BUSY)
         self.assertTrue(embedded.get("ok"), embedded.get("error"))
         self.assertIn("finished", embedded.get("stdout", ""))
+
+
+class TheServiceIsAThirdPositionTests(unittest.TestCase):
+    """`nodus serve` builds VMs through the runner path and confines them anyway.
+
+    Added with #754, and it is why this file is a *register* rather than a
+    two-column table. The service is not "the CLI" and not "an embedded
+    runtime": it shares the CLI's machinery and the embedded runtime's threat
+    model, because the source arrives over a socket. Before #754 it inherited
+    the machinery's defaults, which is the wrong half to inherit.
+
+    Pinned in both directions — a regression to permissive fails, and so does
+    someone "unifying" the CLI to match, which would break `nodus run`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from nodus.services.server import RuntimeService
+
+        cls.service = RuntimeService()
+        cls.vm = cls.service._new_vm()
+
+    # closes: #754
+    def test_the_service_denies_what_the_cli_permits(self):
+        for setting in ("allow_subprocess", "allow_network", "allow_env"):
+            with self.subTest(setting=setting):
+                self.assertFalse(
+                    getattr(self.vm, setting),
+                    "code arriving over a socket is not a script the operator "
+                    "wrote and chose to run",
+                )
+
+    # closes: #754
+    def test_the_cli_is_still_permitted(self):
+        """The other direction. Without this, the assertion above is satisfied
+        by someone denying on the CLI path too — which is a real regression and
+        a decision `CLAUDE.md` and `SECURITY_POSTURE.md` both record."""
+        cli = _built_vm(lambda: runner.run_source(TRIVIAL, filename="probe.nd"))
+        for setting in ("allow_subprocess", "allow_network", "allow_env"):
+            with self.subTest(setting=setting):
+                self.assertTrue(getattr(cli, setting))
+
+    # closes: #754
+    def test_an_operator_can_grant_them_back(self):
+        from nodus.services.server import RuntimeService
+
+        granted = RuntimeService(
+            allow_subprocess=True, allow_network=True, allow_env=True
+        )._new_vm()
+        for setting in ("allow_subprocess", "allow_network", "allow_env"):
+            with self.subTest(setting=setting):
+                self.assertTrue(getattr(granted, setting))
 
 
 class TheRunnerPathHasNoNodusRuntimeTests(unittest.TestCase):

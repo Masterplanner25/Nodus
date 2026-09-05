@@ -38,6 +38,49 @@ Set `NODUS_SERVER_ALLOW_INPUT=1` to allow `input()` without the flag.
 
 Binding to a non-local host requires an auth token; otherwise the server refuses to start.
 
+### Submitted code is confined (#754)
+
+Code sent to `POST /execute` — or to `/graph`, `/workflow/run`, `/goal/run` —
+**cannot run subprocesses, open sockets or read the process environment** unless
+the operator grants it. This matches `NodusRuntime` and deliberately does *not*
+match `nodus run`: what deny-by-default protects is work you did not fully
+author, and a script the developer wrote and chose to run is not that, while
+source arriving over a socket is.
+
+| Flag | Environment variable | Grants |
+|---|---|---|
+| `--allow-subprocess` | `NODUS_SERVER_ALLOW_SUBPROCESS` | `std:subprocess` |
+| `--allow-network` | `NODUS_SERVER_ALLOW_NETWORK` | `std:http` and the network builtins |
+| `--allow-env` | `NODUS_SERVER_ALLOW_ENV` | `std:env` |
+| `--allowed-commands a,b` | `NODUS_SERVER_ALLOWED_COMMANDS` | narrows a subprocess grant to named executables |
+| `--allowed-hosts a,b` | `NODUS_SERVER_ALLOWED_HOSTS` | narrows a network grant to named hosts |
+
+```bash
+# A server whose workflows post to Slack and do nothing else outbound.
+nodus serve --auth-token "$TOKEN" --allow-network --allowed-hosts hooks.slack.com
+```
+
+Grant the narrowest set that works, and prefer the allowlist forms: the
+difference between `--allow-network` and `--allow-network --allowed-hosts …` is
+the difference between "this server may reach the internet" and "this server may
+reach one host".
+
+A refusal has `kind: "sandbox"` and names the capability that would grant it:
+
+```
+Blocked: subprocess execution is not granted; pass allow_subprocess=True to NodusRuntime to allow it
+```
+
+The wording names the **embedding** API because the message is shared with
+`NodusRuntime` and the flag name in it is a published contract downstream matches
+on (#443). On a server, read `allow_subprocess=True` as `--allow-subprocess`;
+the capability being named is the part that matters.
+
+Earlier releases had none of this: submitted code ran with all three permitted
+and no flag could change it. If you are pinned to one, put the server behind a
+proxy that authenticates and treat every caller as able to run arbitrary commands
+as the server's user.
+
 ## Sessions
 The server can create and reuse sessions. Sessions maintain VM state and memory across executions.
 

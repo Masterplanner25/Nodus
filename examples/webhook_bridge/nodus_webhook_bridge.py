@@ -25,6 +25,14 @@ is_authorized() returns True and any caller can POST arbitrary .nd to /execute.
 This bridge requires NODUS_SERVE_TOKEN to be set and refuses to start without it,
 so the executing layer is never left open.
 
+CAPABILITIES (#754): submitted code is confined by default -- no subprocess, no
+network, no environment access -- so the generated workflow below, which posts to
+Slack, needs `nodus serve --allow-network`. Prefer
+`--allowed-hosts hooks.slack.com` over the bare grant: it is the difference
+between "this server may reach the internet" and "this server may reach Slack".
+Before #754 the grant was unnecessary because it was unavoidable, which is the
+part that was wrong.
+
 SRV-001: this FastAPI/uvicorn layer is exactly the untested surface flagged for
 the launch. It is NOT replaced by Nodus and remains yours to test. The
 `build_workflow_code` function below is the highest-value unit-test target
