@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.10.0] - 2026-09-05
+
 ### Changed
 
 - **#718: `spawn()` accepts a zero-argument function, not only a coroutine.**
@@ -35,7 +37,14 @@
   position that is broken (#717), and it would have had to reproduce the wrapping
   logic in the compiler.
 
-- **#754 (BREAKING, `severity:high`): `nodus serve` confines the code it is sent.**
+- **#754 (`severity:high`): `nodus serve` confines the code it is sent.**
+
+  **Behaviour-changing, but not a breaking change under this project's policy.**
+  `docs/release.md` lists *"security patches that restrict previously-permitted
+  behavior — these are fixes, not breaks"* among the non-breaking examples, which
+  is exactly what this is. It still needs reading before upgrading a server, so
+  it leads this section and appears in `CLAUDE.md`'s "what is not additive"
+  table.
 
   Submitted source — `POST /execute`, and also `/graph`, `/workflow/run`,
   `/goal/run` — can no longer run subprocesses, open sockets or read the process

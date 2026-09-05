@@ -14,8 +14,8 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and nine minors wide: `.venv` is at 5.0.0, `src/` is at 5.9.0**
-(re-checked 2026-09-01 with `.venv/Scripts/nodus.exe --version`, after the 5.9.0 cut).
+**The gap is live and ten minors wide: `.venv` is at 5.0.0, `src/` is at 5.10.0**
+(re-checked 2026-09-05 with `.venv/Scripts/nodus.exe --version`, at the 5.10.0 cut).
 Forgetting the prefix gets you a runtime from before the `@exactly_once` forgery fix, the
 call-depth cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the
 file its `filename` happens to name (#521), `nodus graph` no longer executing the file it
@@ -328,7 +328,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,360 tests collected** (`--collect-only`, 2026-09-01, after the 5.9.0 cut). Coverage
+**3,633 tests collected** (`--collect-only`, 2026-09-05, at the 5.10.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -1518,7 +1518,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.9.0** (live on PyPI, published 2026-08-31).
+The current published version is **v5.10.0** (live on PyPI, published 2026-09-05).
 Two files must stay in sync — `src/nodus/support/version.py` and `pyproject.toml`.
 If they disagree, fix that before anything else.
 
@@ -1537,6 +1537,8 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.10.0 | code submitted to `nodus serve` can no longer run subprocesses, open sockets or read the environment (#754) | `--allow-subprocess` / `--allow-network` / `--allow-env`, narrowed with `--allowed-commands` / `--allowed-hosts`. `nodus run` is unchanged |
+| 5.10.0 | an unconfigured local workflow store holding runs warns once per process (#174) | migrate with `nodus workflow migrate-store --to sqlite`, or set `NODUS_WORKFLOW_STORE_BACKEND=local` to mean it |
 | 5.8.0 | a function assigning to a module-top-level `let` now updates it, where the write used to vanish (#671) | intended; nothing can have depended on a write disappearing |
 | 5.8.0 | a named import of a builtin name is refused at load instead of silently ignored (#680) | import the module and qualify — `import "std:async" as async` |
 | 5.7.0 | `nodus check` rejects a dependency read in any file declaring an `extern` (#662) | upgrade to 5.7.1 |
