@@ -489,6 +489,70 @@
   both. One surface behind two tables is the recurring shape with the bypass
   selected by whether an optional dependency happens to be installed.
 
+- **`nodus-container` published to PyPI — 0.1.0** (issue 85).
+
+  ```
+  pip install nodus-container
+  ```
+
+  An adapter over `std:subprocess`, not a container runtime: `build_argv` is pure
+  and `run` takes an injected runner, so the package imports neither a subprocess
+  module nor the runtime. That is what lets a `CapabilityPolicy` inspect the argv
+  a call *would* make rather than pattern-matching a shell string, and it is why
+  the package declares no capability of its own — a `container` capability would
+  be unenforceable, since anything holding `subprocess` can already run `docker`.
+
+  **The first companion published without a repository of its own.** It ships
+  from `packages/nodus-container/`; `nodus-store-sql` was promoted out to a
+  standalone repo before publishing and this was not, so `[project.urls]` points
+  at the monorepo subdirectory rather than naming a repository that does not
+  exist. Registered in `tools/check_publish_drift.py` in this commit — a
+  published first-party package nobody registers there is invisible to Stage 6,
+  which is how one sat outside the sweep under two names — and deliberately *not*
+  in `check_downstream_constraints.py`, whose lists are for companions declaring
+  a `nodus-lang` dependency. This one declares none.
+
+  Verified by installing **from PyPI**, not by reading the JSON API, which serves
+  stale data after an upload. The wheel was also tested in a clean venv from a
+  neutral CWD with the resolved path confirmed to be `site-packages` — the check
+  that exists because validating against the source tree shipped 5.0.3 and
+  recurred twice.
+
+- **`nodus-scheduler` stays in-tree, deliberately** (issue 88, closed).
+
+  It is written **in Nodus** — a `nodus.toml` with `entry = "src/scheduler.nd"`,
+  not a `pyproject.toml` — and there is no channel for that.
+  `ECOSYSTEM_BOUNDARY.md` says Tiers 2 and 3 ship on PyPI and not through a Nodus
+  registry, and the registry it once promised was never built (#713). Publishing
+  would mean wrapping a Nodus package in a Python one purely to have a
+  distribution channel.
+
+  Its stated blocker — *"a scheduling daemon or in-process scheduler (design
+  open)"* — was answered by **#176**, which put the firing in the runtime, so the
+  library reduces to arithmetic. `packages/nodus-scheduler/` stays as the worked
+  example: 26 tests, full 5-field cron parsing, all pure functions answering
+  *"given this schedule, when does it next fire?"*.
+
+- **The three Tier-2 library proposals re-triaged** (issues 85, 87, 88), and the
+  ecosystem package count re-derived.
+
+  Runtime introspection shipped **into the core**, not as the Tier-2 library #87
+  proposed: three of its four scope items are answered by `runtime_capabilities()`,
+  `runtime_tasks()` and `memory_keys()`/`memory_get()`. The one genuinely absent
+  item is now **#761**, re-scoped as the disclosure decision it actually is — run
+  records carry program source (#499), so a guest enumerating runs would see runs
+  it did not create.
+
+  All three Tier-2 library issues described the tree inaccurately in the same way,
+  and `docs/ecosystem/README.md` — which CLAUDE.md names as the authority for what
+  exists in the ecosystem — already carried an accurate status line for every one
+  of them. Reading it first would have answered the whole triage.
+
+  Count re-derived by probing every `nodus-*` name in that file rather than
+  incrementing: **37 companions, 38 PyPI projects**. Four listed names
+  deliberately do not resolve, and CLAUDE.md now says which, so a later
+  re-derivation does not "fix" them.
+
 ### Fixes
 
 - **#756: a capability policy governs invocation and not discovery — now stated

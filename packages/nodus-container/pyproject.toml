@@ -9,11 +9,32 @@ description = "Container execution primitives for Nodus runtimes (Docker, Podman
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "platform-team" }]
+authors = [{ name = "Shawn Knight" }]
+keywords = ["nodus", "container", "docker", "podman", "workflow", "orchestration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Systems Administration",
+]
+
 # No runtime dependencies, and no `nodus-lang` floor: the engine is reached
 # through an injected runner, so nothing here imports a subprocess module or the
 # runtime. Companions do not cap nodus-lang (policy, 2026-08-17) -- see #445.
 dependencies = []
+
+[project.urls]
+# This package is developed inside the nodus-lang repository rather than in one
+# of its own, so both point there. `nodus-store-sql` was promoted out to a
+# separate repo before publishing; that has not been done here, and the URLs say
+# so honestly rather than naming a repository that does not exist.
+Homepage = "https://github.com/Masterplanner25/Nodus/tree/main/packages/nodus-container"
+Repository = "https://github.com/Masterplanner25/Nodus"
+Issues = "https://github.com/Masterplanner25/Nodus/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=9.0"]

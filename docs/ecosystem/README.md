@@ -18,8 +18,8 @@ below.
 | [NODUS_MEMORY.md](./NODUS_MEMORY.md) | [`nodus-memory`](https://github.com/Masterplanner25/nodus-memory) | v0.1.0 — 28 tests (Tier 2 core), **published on PyPI** ✅ |
 | [NODUS_A2A.md](./NODUS_A2A.md) | [`nodus-a2a`](https://github.com/Masterplanner25/nodus-a2a) | Local = AgentCoordinator layer (23 tests); full A2A wire-protocol spec preserved on GitHub |
 | [NODUS_EVENT.md](./NODUS_EVENT.md) | `nodus-event` | **Not yet implemented** — higher-level event framework; `nodus-events` (transport layer) is built |
-| [NODUS_CONTAINER.md](./NODUS_CONTAINER.md) | `nodus-container` | **Scaffold only, not published** (#85) — 17 tests in `packages/nodus-container/`; argv verified against Docker 29.2.1 |
-| [NODUS_SCHEDULER.md](./NODUS_SCHEDULER.md) | `nodus-scheduler` | **Reference implementation, not published** (#88) — 26 tests in `packages/nodus-scheduler/`; **written in Nodus**, not Python |
+| [NODUS_CONTAINER.md](./NODUS_CONTAINER.md) | `nodus-container` | **Published 2026-09-05** (#85), v0.1.0 — 17 tests; argv verified against Docker 29.2.1. Ships from `packages/nodus-container/`, the first companion published without a repository of its own |
+| [NODUS_SCHEDULER.md](./NODUS_SCHEDULER.md) | `nodus-scheduler` | **Reference implementation, deliberately not published** (#88, closed) — 26 tests in `packages/nodus-scheduler/`; **written in Nodus**, so it has a `nodus.toml` and no PyPI channel exists for that. Copy the file, or read it as the worked example of scheduling on `on_timeout: "resume"` |
 
 ## Full ecosystem status
 

@@ -63,6 +63,23 @@ COMPANIONS: dict[str, tuple[str, str]] = {
     # unreleased nodus-lang. Added here in the publishing commit -- the
     # nodus-flow comment above records what happens otherwise.
     "nodus-workflow-ai": (r"C:\dev\nodus-workflow-ai", "nodus_workflow_ai"),
+    # #85: published 2026-09-05, and the first companion that does **not** live in
+    # a repository of its own -- it is developed in `packages/` inside this repo,
+    # so the checkout path points here rather than at `C:\dev\`. `nodus-store-sql`
+    # was promoted out to its own repo before publishing; this one was not, and
+    # the path says so rather than naming a directory that does not exist.
+    #
+    # Added in the publishing commit, per the nodus-flow comment above: a
+    # published first-party package that nobody registered here is invisible to
+    # Stage 6, which is how one sat outside the sweep under two names.
+    #
+    # Deliberately absent from `check_downstream_constraints.py`: both lists there
+    # are for companions that declare a `nodus-lang` dependency, and this one
+    # declares none -- the engine is reached through an injected runner.
+    "nodus-container": (
+        r"C:\dev\Coding Language\packages\nodus-container",
+        "src/nodus_container",
+    ),
 }
 
 PYPI = "https://pypi.org/pypi/{name}/json"

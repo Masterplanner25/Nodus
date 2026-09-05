@@ -36,8 +36,9 @@ allowlist also refuses `subprocess.shell`, so `sh -c "docker …"` cannot step
 around it.
 
 **What is still not bounded:** `-v /:/host` escapes `allowed_paths`, and
-`--privileged` exists. That is not a gap this package opens — `SECURITY_POSTURE.md
-§5` already records that a permitted subprocess's binary and arguments are
+`--privileged` exists. That is not a gap this package opens —
+[SECURITY_POSTURE.md §5](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/SECURITY_POSTURE.md)
+already records that a permitted subprocess's binary and arguments are
 unrestricted — but this package makes it a one-liner, which is worth knowing
 before you grant it. Mounts are read-only by default for that reason.
 
@@ -45,7 +46,32 @@ To restrict *arguments*, use a `CapabilityPolicy`: it receives the call's
 arguments, and `build_argv` is pure so the argv a call would make can be
 inspected before it runs.
 
+### Under `nodus serve`, check which nodus-lang you are on
+
+The server's treatment of submitted code changed in
+[#754](https://github.com/Masterplanner25/Nodus/issues/754), and the two
+behaviours are opposites:
+
+- **Through nodus-lang 5.9.0**, code sent to `POST /execute` ran with subprocess,
+  network and environment access permitted, and **no flag could restrict it**. If
+  you are on one of those releases, anything that can reach the port can run
+  `docker` — put the server behind something that authenticates, and treat this
+  package's presence as incidental to that.
+- **After #754 ships**, submitted code is denied those by default and the
+  operator grants them:
+
+  ```bash
+  nodus serve --auth-token "$TOKEN" --allow-subprocess --allowed-commands docker
+  ```
+
+The allowlist is the part worth typing. `--allow-subprocess` alone permits every
+executable on the host.
+
 ## Status
 
-Spec-first scaffold (#85), not published. Design:
-`docs/ecosystem/NODUS_CONTAINER.md`.
+Published from the [nodus-lang repository](https://github.com/Masterplanner25/Nodus/tree/main/packages/nodus-container),
+where it is developed alongside the runtime rather than in a repository of its own.
+
+Design and the capability argument in full:
+[NODUS_CONTAINER.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/ecosystem/NODUS_CONTAINER.md).
+Issue: [#85](https://github.com/Masterplanner25/Nodus/issues/85).
