@@ -34,9 +34,13 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))  # noqa: E402
 
 from nodus import NodusRuntime  # noqa: E402
 from nodus.runtime.capability import (  # noqa: E402
+    ALL_CAPABILITIES,
+    BUILTIN_CAPABILITIES,
     DOMAIN_BUILTIN_GROUPS,
     DOMAIN_BUILTIN_NAMES,
+    DOMAIN_SURFACE_DIVERGENCES,
     GATED_BUILTIN_NAMES,
+    NO_AUTHORITY_BUILTIN_NAMES,
 )
 from nodus.runtime.diagnostics import LangRuntimeError  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
@@ -228,6 +232,144 @@ class TheGroupDataIsHonestTests(unittest.TestCase):
         inside a flow."""
         self.assertNotIn("emit", DOMAIN_BUILTIN_NAMES)
         self.assertIn("__action_emit", DOMAIN_BUILTIN_GROUPS["workflow"].names)
+
+
+class TheTwoSurfaceMapsAgreeTests(unittest.TestCase):
+    """`BUILTIN_CAPABILITIES` and `DOMAIN_BUILTIN_GROUPS` both partition
+    builtins by surface, and #756 was filed because they disagreed about the
+    agent one. That disagreement was benign — but nothing said so, and nothing
+    would have said so had it been harmful either, which is the actual defect.
+
+    `DOMAIN_SURFACE_DIVERGENCES` records each place they differ, with a reason.
+    These tests make an *unrecorded* difference fail, in both directions, and
+    make a recorded one that no longer differs fail too."""
+
+    @staticmethod
+    def _recorded() -> set[str]:
+        return {n for names in DOMAIN_SURFACE_DIVERGENCES.values() for n in names}
+
+    @staticmethod
+    def _covered(group) -> set[str]:
+        """Which capabilities this surface is the composition of.
+
+        Derived from the group's own members rather than declared, so it cannot
+        become a third voice on the same question. A group carries one
+        `capability` label — used on the `capability_denied` event — while the
+        memory surface spans `memory.read` and `memory.write`; reading the
+        label alone would leave every read builtin outside every surface, which
+        is the hole this exists to close.
+        """
+        covered = {
+            BUILTIN_CAPABILITIES[name]
+            for name in group.names
+            if name in BUILTIN_CAPABILITIES
+        }
+        if group.capability in ALL_CAPABILITIES:
+            covered.add(group.capability)
+        return covered
+
+    @classmethod
+    def _strays(cls) -> dict[str, list[str]]:
+        """Governed by a surface's authority, not withheld with that surface."""
+        out = {}
+        for group in DOMAIN_BUILTIN_GROUPS.values():
+            covered = cls._covered(group)
+            governed = {
+                name for name, cap in BUILTIN_CAPABILITIES.items() if cap in covered
+            }
+            stray = sorted(governed - set(group.names))
+            if stray:
+                out[group.name] = stray
+        return out
+
+    @classmethod
+    def _mis_surfaced(cls) -> dict[str, list[str]]:
+        """Withheld with one surface, governed by another's declared label."""
+        out = {}
+        for group in DOMAIN_BUILTIN_GROUPS.values():
+            wrong = sorted(
+                name for name in group.names
+                if name in BUILTIN_CAPABILITIES
+                and BUILTIN_CAPABILITIES[name] != group.capability
+            )
+            if wrong:
+                out[group.name] = wrong
+        return out
+
+    # closes: #756
+    def test_a_governed_builtin_is_withheld_by_the_surface_it_belongs_to(self):
+        """The direction that can hurt. A builtin requiring `agent.call` that
+        `extensions=[]` does not withhold stays reachable in a runtime whose
+        host believed it had removed the agent surface. Adding one is an
+        ordinary thing to do; this is what says the group must learn about it."""
+        recorded = self._recorded()
+        for extension, stray in self._strays().items():
+            unrecorded = [name for name in stray if name not in recorded]
+            with self.subTest(extension=extension):
+                self.assertEqual(
+                    [], unrecorded,
+                    f"these carry the authority of the {extension!r} surface "
+                    f'but extensions=["{extension}"] does not withhold them, so '
+                    "a host that omitted the surface still carries them: "
+                    f"{', '.join(unrecorded)}. Add them to the group, or record "
+                    "why not in DOMAIN_SURFACE_DIVERGENCES.",
+                )
+
+    # closes: #756
+    def test_a_grouped_builtin_is_governed_by_its_own_surface(self):
+        """The mirror. A member governed by another surface's label means one
+        of the two maps has the builtin on the wrong surface — and which one is
+        wrong is exactly what a later reader cannot recover."""
+        recorded = self._recorded()
+        for extension, wrong in self._mis_surfaced().items():
+            unrecorded = [name for name in wrong if name not in recorded]
+            with self.subTest(extension=extension):
+                self.assertEqual(
+                    [], unrecorded,
+                    f"withheld with {extension!r} but governed by another "
+                    f"surface's capability: {', '.join(unrecorded)}",
+                )
+
+    # closes: #756
+    def test_every_grouped_builtin_is_classified(self):
+        """Stated directly rather than inferred. It follows today from the
+        totality `test_capability_coverage.py` requires over `BUILTIN_NAMES`,
+        but only while every group member is in that set — and #616 was
+        precisely a name the VM dispatched that `BUILTIN_NAMES` did not hold,
+        which made "total" true of the wrong set."""
+        classified = set(BUILTIN_CAPABILITIES) | set(NO_AUTHORITY_BUILTIN_NAMES)
+        unclassified = sorted(DOMAIN_BUILTIN_NAMES - classified)
+        self.assertEqual([], unclassified, ", ".join(unclassified))
+
+    # closes: #756
+    def test_no_recorded_divergence_is_stale(self):
+        """An entry that no longer names a difference reads as a considered
+        decision and covers nothing — the failure mode `INVARIANT_TEST_MAPPING.md`
+        had, where six cited test files did not exist. Deleting the entry is the
+        fix: it means the two maps now agree about that name."""
+        differs = {n for names in self._strays().values() for n in names}
+        differs |= {n for names in self._mis_surfaced().values() for n in names}
+        for reason, names in DOMAIN_SURFACE_DIVERGENCES.items():
+            for name in names:
+                with self.subTest(builtin=name):
+                    self.assertIn(
+                        name, differs,
+                        f"recorded under {reason!r}, but the two maps agree "
+                        "about it now; delete the entry",
+                    )
+
+    # closes: #756
+    def test_every_recorded_divergence_states_a_reason(self):
+        """The dict key *is* the justification, as it is in
+        `NO_AUTHORITY_BUILTINS`. An unnamed or empty bucket hides one."""
+        for reason, names in DOMAIN_SURFACE_DIVERGENCES.items():
+            self.assertTrue(reason.strip(), "a divergence has no stated reason")
+            self.assertTrue(names, f"divergence {reason!r} records nothing")
+
+    # closes: #756
+    def test_a_recorded_divergence_names_a_real_builtin(self):
+        phantom = sorted(self._recorded() - set(_vm().builtins))
+        self.assertEqual([], phantom, ", ".join(phantom))
 
 
 class ItCostsTheVmNoAttributeTests(unittest.TestCase):

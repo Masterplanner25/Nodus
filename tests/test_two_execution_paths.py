@@ -32,6 +32,7 @@ give different answers.
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -55,13 +56,30 @@ EXPECTED = {
 
 
 def _built_vm(construct) -> object:
-    """Run `construct` and return the first VM it built."""
+    """Run `construct` and return the first VM *it* built.
+
+    The thread check is load-bearing. Patching `VM.__init__` patches it for the
+    whole process, so without it this returns the first VM **any** thread built
+    inside the window — and a suite this size always has background threads that
+    build VMs: a `RuntimeService` sweeper on a 500 ms timer, an abandoned agent
+    handler outliving its deadline (#424), a retry sweeper. Those build
+    *confined* VMs, so the failure is `allow_subprocess` reading False on the
+    permissive CLI path: a real regression's signature, produced by a foreign
+    object.
+
+    It failed exactly that way on CI while the same commit passed on the push
+    run of the same workflow. Measured rather than argued: with one thread
+    building VMs alongside, the unguarded version returned the foreign VM in
+    40 of 40 attempts.
+    """
     captured = []
+    caller = threading.get_ident()
     original = vm_module.VM.__init__
 
     def traced(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        captured.append(self)
+        if threading.get_ident() == caller:
+            captured.append(self)
 
     vm_module.VM.__init__ = traced
     try:
@@ -70,6 +88,57 @@ def _built_vm(construct) -> object:
         vm_module.VM.__init__ = original
     assert captured, "nothing constructed a VM"
     return captured[0]
+
+
+class TheHarnessMeasuresItsOwnVmTests(unittest.TestCase):
+    """Every claim in this file is read off a VM `_built_vm` handed back, so the
+    helper picking the wrong object turns the whole file into confident noise
+    (#769).
+
+    Patching `VM.__init__` patches it process-wide. This suite always has
+    threads building VMs in the background — a `RuntimeService` sweeper on a
+    500 ms timer, an abandoned agent handler outliving its deadline (#424), a
+    retry sweeper — and those build *confined* VMs. So the foreign object reads
+    exactly like the regression this file exists to catch: `allow_subprocess`
+    False on the deliberately permissive CLI path.
+
+    It failed that way on CI while the same commit passed on the push run of the
+    same workflow, which is the tell worth keeping. Not load sensitivity, and
+    re-running would not have diagnosed it.
+    """
+
+    # closes: #769
+    def test_a_vm_built_on_another_thread_is_not_captured(self):
+        """Deterministic rather than raced: the foreign VM is built, and joined,
+        before `construct` builds the one under test — so it is unambiguously
+        first inside the window. Before the fix this returned the confined VM
+        every time."""
+        def construct():
+            def build_foreign():
+                vm_module.VM(
+                    [], {}, code_locs=[], source_path=None,
+                    allow_subprocess=False, allow_network=False, allow_env=False,
+                )
+
+            thread = threading.Thread(target=build_foreign)
+            thread.start()
+            thread.join()
+            runner.run_source(TRIVIAL, filename="probe.nd")
+
+        built = _built_vm(construct)
+        self.assertTrue(
+            built.allow_subprocess,
+            "captured a VM another thread built -- every assertion in this file "
+            "is then measuring the wrong object",
+        )
+
+    # closes: #769
+    def test_it_still_captures_the_vm_the_caller_built(self):
+        """The control. Without it the assertion above is satisfied by a helper
+        that captures nothing and raises, or one that never matches a thread."""
+        built = _built_vm(lambda: runner.run_source(TRIVIAL, filename="probe.nd"))
+        self.assertIsInstance(built, vm_module.VM)
+        self.assertTrue(built.allow_subprocess)
 
 
 class TheSandboxFlagsDivergeDeliberatelyTests(unittest.TestCase):
@@ -235,6 +304,14 @@ class TheServiceIsAThirdPositionTests(unittest.TestCase):
 
         cls.service = RuntimeService()
         cls.vm = cls.service._new_vm()
+
+    @classmethod
+    def tearDownClass(cls):
+        """#632: stop the background work rather than letting it outlive the
+        class. The sweeper runs on a timer and builds VMs through
+        `_workflow_vm_factory`, so a service left open is a source of foreign
+        VMs for every test that runs after this one."""
+        cls.service.close()
 
     # closes: #754
     def test_the_service_denies_what_the_cli_permits(self):

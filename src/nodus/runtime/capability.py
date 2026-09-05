@@ -545,6 +545,54 @@ DOMAIN_BUILTIN_NAMES: frozenset[str] = frozenset(
 """Every builtin belonging to some domain extension, flattened."""
 
 
+# Where the two structures name different sets, and why.
+#
+# `BUILTIN_CAPABILITIES` and `DOMAIN_BUILTIN_GROUPS` both partition builtins by
+# surface, and #756 was filed because they disagreed about the agent surface.
+# They answer different questions and are *meant* to disagree in places: one
+# asks what authority a call carries, the other what the runtime is composed of.
+# That makes an unexamined disagreement indistinguishable from drift, which is
+# the whole difficulty -- so the disagreements are listed here with a reason,
+# and `tests/test_domain_extensions.py` fails on one that is not.
+#
+# The direction that matters is `governed but ungrouped`: a builtin that
+# requires `agent.call` and is *not* withheld by `extensions=["..."]` stays
+# reachable in a runtime whose host believed it had removed the agent surface.
+# Every entry below is the benign form of that -- state it, or a later addition
+# is the harmful form and nothing says so.
+DOMAIN_SURFACE_DIVERGENCES: dict[str, tuple[str, ...]] = {
+    # `tool_call` reaches a tool the *host* registered; `tool_invoke` reaches
+    # one the *guest* registered with `tool_register`, which runs guest code and
+    # confers nothing the guest did not already have -- which is why
+    # `tool_register` and `tool_unregister` sit in NO_AUTHORITY_BUILTINS under
+    # "guest-scoped registry mutation". So it is an invocation (authority
+    # governs it) without being part of the host tool surface (composition does
+    # not withhold it). `extensions=[]` leaves it reachable, deliberately.
+    "guest-registered tools: an invocation, but not the host's tool surface": (
+        "tool_invoke",
+    ),
+    # The `memory` group is the two `action memory` lowerings, as its
+    # description ("memory actions") says. The `memory_*` family is the
+    # general-purpose per-runtime store -- isolated per `NodusRuntime` since
+    # #185, reaching nothing outside the process -- and a runtime narrowed to
+    # "a general-purpose scripting engine" still wants it. Authority governs
+    # it via `memory.read` / `memory.write`; a host that wants it gone uses a
+    # `capability_policy`, not `extensions=`.
+    "the general-purpose store, not the `action memory` lowerings": (
+        "memory_get", "memory_has", "memory_keys", "memory_recall_all",
+        "memory_recall_from", "memory_put", "memory_delete", "memory_share",
+    ),
+    # A group carries one `capability` label, used on the `capability_denied`
+    # event when the whole surface is withheld; the memory surface spans two
+    # authorities. The group names the stronger one, so a withheld
+    # `__action_memory_get` reports `memory.write`. Grouping is unaffected --
+    # both lowerings are withheld together, which is the part that matters.
+    "one group label over a surface that spans two authorities": (
+        "__action_memory_get",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class CapabilityRequest:
     """What is being asked for, at the moment of asking."""
