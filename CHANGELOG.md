@@ -4,6 +4,25 @@
 
 ### Tooling
 
+- **#769: a test read a real value off the wrong VM.**
+
+  `_built_vm` in `tests/test_two_execution_paths.py` patched `VM.__init__` for
+  the whole process and returned the first VM *any* thread built in the window.
+  Background threads in this suite build **confined** VMs — a `RuntimeService`
+  sweeper on a 500 ms timer, an abandoned agent handler (#424), a retry sweeper
+  — so the symptom was `allow_subprocess` reading `False` on the deliberately
+  permissive CLI path, which is exactly the regression the test exists to catch.
+
+  It failed that way on CI while the same commit passed on the push run of the
+  same workflow. Not the load-sensitivity class `CLAUDE.md` describes, and
+  re-running would not have diagnosed it.
+
+  Fixed by capturing only VMs built on the calling thread — 40 of 40 attempts
+  returned the foreign VM before, 0 of 40 after, same harness and same load.
+  `TheServiceIsAThirdPositionTests` now closes its service in `tearDownClass`
+  as well: #632's lesson in a second place, since a sweeper left running is a
+  source of foreign VMs for every test after it.
+
 - **#756: the two maps of the agentic surface now have to agree, or say why not.**
 
   `BUILTIN_CAPABILITIES` and `DOMAIN_BUILTIN_GROUPS` both partition builtins by
