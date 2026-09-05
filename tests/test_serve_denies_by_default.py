@@ -37,9 +37,16 @@ from nodus.services.server import RuntimeService  # noqa: E402
 
 CONTROL = 'print("the program ran")\n'
 
+#: Forward slashes so the path needs no escaping inside an `.nd` string literal,
+#: and the interpreter rather than a shell builtin: `cmd /c` is Windows-only and
+#: `echo` is not an executable there, so either makes the *positive* cases fail
+#: on one platform. The first version of this file used `cmd` and went red on
+#: CI — caught by the grant tests, which is exactly what they are for.
+_PY = sys.executable.replace("\\", "/")
+
 SUBPROCESS = (
     'import "std:subprocess" as sp\n'
-    'let r = sp.run(["cmd", "/c", "echo hi"])\n'
+    f'let r = sp.run(["{_PY}", "-c", "print(1)"])\n'
     'print("exit=\\(r.exit_code)")\n'
 )
 NETWORK = (
@@ -147,10 +154,20 @@ class TheOperatorCanGrantTests(ServeCaseMixin, unittest.TestCase):
     def test_an_allowlist_narrows_a_granted_capability(self):
         """`--allowed-commands` is a second bound *inside* the grant, so a
         server that must run one tool need not permit every executable."""
-        svc = self.service(allow_subprocess=True, allowed_commands=["echo"])
+        svc = self.service(allow_subprocess=True, allowed_commands=["some-other-tool"])
         result = svc.execute({"code": SUBPROCESS, "filename": "s.nd"})
         self.assertTrue(_refused(result))
         self.assertIn("allowed_commands", result["error"]["message"])
+
+    # closes: #754
+    def test_a_command_on_the_allowlist_still_runs(self):
+        """The other half. Without it the test above is satisfied by an
+        allowlist that refuses everything, which would be a broken flag rather
+        than a working bound."""
+        svc = self.service(allow_subprocess=True, allowed_commands=[_PY])
+        result = svc.execute({"code": SUBPROCESS, "filename": "s.nd"})
+        self.assertTrue(result["ok"], result.get("error"))
+        self.assertIn("exit=0", result["stdout"])
 
 
 class EveryRouteIsConfinedTests(ServeCaseMixin, unittest.TestCase):
