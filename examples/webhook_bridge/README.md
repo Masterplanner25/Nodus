@@ -25,8 +25,13 @@ lives in a dynamically generated `.nd` workflow that runs inside `nodus serve`.
 # 1. Install dependencies
 pip install nodus-lang fastapi uvicorn httpx sqlalchemy psycopg2-binary
 
-# 2. Start nodus serve with an auth token (SEC-001: required)
-nodus serve --auth-token mysecret --port 8080
+# 2. Start nodus serve with an auth token (SEC-001: required) and the one
+#    capability this workflow needs. Submitted code is denied subprocess,
+#    network and environment access by default (#754); the generated .nd posts
+#    to Slack, so it needs --allow-network. Naming the host with
+#    --allowed-hosts is the tighter grant and is what you want in production.
+nodus serve --auth-token mysecret --port 8080 \
+    --allow-network --allowed-hosts hooks.slack.com
 
 # 3. Configure and start the bridge
 export NODUS_SERVE_TOKEN=mysecret

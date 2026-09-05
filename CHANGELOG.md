@@ -35,6 +35,74 @@
   position that is broken (#717), and it would have had to reproduce the wrapping
   logic in the compiler.
 
+- **#754 (BREAKING, `severity:high`): `nodus serve` confines the code it is sent.**
+
+  Submitted source — `POST /execute`, and also `/graph`, `/workflow/run`,
+  `/goal/run` — can no longer run subprocesses, open sockets or read the process
+  environment unless the operator grants it:
+
+  ```bash
+  nodus serve --auth-token "$TOKEN" --allow-network --allowed-hosts hooks.slack.com
+  ```
+
+  New flags: `--allow-subprocess`, `--allow-network`, `--allow-env`,
+  `--allowed-commands`, `--allowed-hosts`. Each also reads a
+  `NODUS_SERVER_ALLOW_*` / `NODUS_SERVER_ALLOWED_*` environment variable, for a
+  server started by a supervisor that owns the command line.
+
+  **This is the one change here that can break a working setup.** A server whose
+  workflows make outbound calls needs `--allow-network` added. The only such
+  consumer found in this repo or across the fourteen companion repos is
+  `examples/webhook_bridge`, which posts to Slack; its README and module docstring
+  now show the grant. No existing test needed changing.
+
+  `serve` ran submitted code through `tooling/runner.py` — the CLI's path — so it
+  inherited `allow_subprocess`, `allow_network` and `allow_env` all `True`, with
+  no capability policy and **no flag able to change any of it**. The identical
+  source through `NodusRuntime` was refused, because #405 made all three deny by
+  default.
+
+  The CLI's permissiveness is a decision with a stated reason: what
+  deny-by-default protects is work you did not fully author, and a developer
+  running a script they just wrote is not that. That reasoning does not survive
+  the trip to a network endpoint. `serve` was permissive because it happens to
+  call the same runner, not because anyone decided it should be — it shares the
+  CLI's *machinery* and the embedded runtime's *threat model*, and it had
+  inherited the wrong half. `nodus run` is unchanged, and
+  `tests/test_two_execution_paths.py` now pins all three positions so neither a
+  regression to a permissive `serve` nor a "unification" that confines the CLI can
+  land quietly.
+
+  **Finding the doors mattered more than writing the fix.** The confinement is
+  applied in one place, `RuntimeService._apply_runtime_policies`, and
+  `tests/test_server_policy_chokepoint.py` asserts on the source that every
+  code-running route reaches it. Two things that test had to learn:
+
+  - **Per execution path, not per method.** Its first version asked whether a
+    method *mentioned* the guard, and stayed green when the guard was deleted from
+    one of `execute`'s two branches. A method with a guarded branch and an
+    unguarded one is the same defect inside a single function.
+  - Sharpened that way it immediately found a real one: **`graph`'s non-session
+    branch called `run_source(...)` with the path settings passed by hand** — a
+    second implementation of "how is a VM for this service confined", and one that
+    structurally could never learn a capability flag, since `run_source` builds
+    its own VM and takes no such argument. It now uses `_new_vm()` and
+    `run_graph_code`, which is what its own *session* branch already did.
+
+  `_new_vm()` applies the policies itself, so the service cannot hand out an
+  unconfined VM — "every route remembers to call the guard" is a convention, and a
+  convention is what this shape eats.
+
+  Two things this does **not** change. A `capability_policy` still cannot be set
+  on `serve`; the flags are all-or-nothing per category, and per-call decisions
+  remain embedded-only. And bearer auth is still optional on a loopback bind —
+  less exposed than it sounds, since the default bind is `127.0.0.1` and a
+  non-local bind already *refuses to start* without a token, but a tokenless
+  loopback server is reachable by every local process and only warns.
+
+- **The `nodus serve --help` port default was wrong.** It said `7477`; the default
+  is `7331` (`SERVER_PORT`). Found while adding the flags above.
+
 ### Added
 
 - **#176: a wait whose deadline resumes instead of failing — self-scheduling.**

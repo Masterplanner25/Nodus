@@ -27,7 +27,6 @@ from nodus.tooling.runner import (
     memory_get_result,
     memory_keys_result,
     memory_put_result,
-    run_source,
     run_in_vm,
     run_graph_code,
     run_goal_code,
@@ -353,6 +352,23 @@ class RuntimeService:
         allowed_paths: list[str] | None = None,
         writable_paths: list[str] | None = None,
         allow_input: bool = False,
+        # #754. Deny by default, matching `NodusRuntime` and *not* the CLI.
+        #
+        # The CLI's permissiveness is a decision with a stated reason: what
+        # deny-by-default protects is work you did not fully author, and a
+        # developer running a script they just wrote is not that. That reasoning
+        # does not survive the trip to `POST /execute`, where the source arrived
+        # over a socket. `serve` was permissive because it happens to call the
+        # same runner, not because anyone decided a network endpoint should be.
+        #
+        # Keyword-only, and no `**kwargs` on this constructor, for the reason
+        # #444 gives: with a catch-all, a renamed flag is silently swallowed and
+        # the service runs unconfined with every mock-based test still green.
+        allow_subprocess: bool = False,
+        allow_network: bool = False,
+        allow_env: bool = False,
+        allowed_commands: list[str] | None = None,
+        allowed_hosts: list[str] | None = None,
         auth_token: str | None = None,
         workflow_store_backend: str | None = None,
         workflow_store_path: str | None = None,
@@ -380,6 +396,11 @@ class RuntimeService:
         self.allowed_paths = allowed_paths
         self.writable_paths = writable_paths
         self.allow_input = allow_input
+        self.allow_subprocess = allow_subprocess
+        self.allow_network = allow_network
+        self.allow_env = allow_env
+        self.allowed_commands = allowed_commands
+        self.allowed_hosts = allowed_hosts
         self.auth_token = auth_token
         # #392/#393: this service drives `sweep()` on `self.workflow_runner`, so
         # it is what makes deferring a step retry to `retry_scheduled` correct —
@@ -408,6 +429,12 @@ class RuntimeService:
         vm = VM([], {}, code_locs=[], source_path=None, allowed_paths=self.allowed_paths,
                 writable_paths=self.writable_paths)
         vm.workflow_runner = self.workflow_runner
+        # #754: confined here rather than left to each caller. Every route did
+        # call `_apply_runtime_policies` afterwards -- but that is a convention,
+        # and a convention is what the recurring shape eats. Applying it in the
+        # factory means the service cannot hand out an unconfined VM at all;
+        # routes still call it for *session* VMs, which this does not build.
+        self._apply_runtime_policies(vm)
         return vm
 
     def _worker_sweeper_loop(self):
@@ -518,10 +545,28 @@ class RuntimeService:
         return graph_metadata(vm, graph_id)
 
     def _apply_runtime_policies(self, vm: VM | None) -> None:
+        """The one place a VM this service will run code in gets its bounds.
+
+        Its value depends entirely on being the *only* way through: a route that
+        builds a VM and runs submitted source without it gets one carrying the
+        runner path's permissive defaults, and looks exactly like a route that
+        works. That is this codebase's signature defect, and #405 hit it twice in
+        one issue. `tests/test_server_policy_chokepoint.py` asserts on the source
+        that every code-running route passes through here — per *path*, not per
+        method, because a method with a guarded branch and an unguarded one is
+        the same shape occurring inside a single function.
+        """
         if vm is None:
             return
         vm.allowed_paths = self.allowed_paths
         vm.writable_paths = self.writable_paths
+        # #754: the three capability switches, which used to fall through to the
+        # VM's permissive defaults with no flag able to reach them.
+        vm.allow_subprocess = self.allow_subprocess
+        vm.allow_network = self.allow_network
+        vm.allow_env = self.allow_env
+        vm.allowed_commands = self.allowed_commands
+        vm.allowed_hosts = self.allowed_hosts
         if not self.allow_input:
             vm.input_fn = self._blocked_input
 
@@ -604,9 +649,19 @@ class RuntimeService:
             self.sessions.record_execution(session)
             self.last_vm = vm
             return result
-        input_fn = None if self.allow_input else self._blocked_input
-        result, vm = run_source(code, filename, trace=self.trace, allowed_paths=self.allowed_paths,
-                                writable_paths=self.writable_paths, input_fn=input_fn)
+        # #754: was `run_source(...)` with `allowed_paths`, `writable_paths` and
+        # `input_fn` passed by hand -- a second implementation of "how is a VM
+        # for this service confined", which by construction could never learn a
+        # capability flag: `run_source` builds its own VM internally and takes no
+        # such argument. The shape, exactly: two answers to one question, and the
+        # copy nobody thought of when adding a bound.
+        #
+        # Now the same three lines as `execute`'s non-session branch, and the
+        # same runner the session branch above already uses -- so the two halves
+        # of this one method no longer disagree either.
+        vm = self._new_vm()
+        vm.worker_dispatcher = self.workers
+        result, vm = run_graph_code(vm, code, filename, trace=self.trace)
         if vm is not None:
             vm.worker_dispatcher = self.workers
             self.last_vm = vm
@@ -1648,6 +1703,11 @@ def serve(
     allowed_paths: list[str] | None = None,
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
+    allow_subprocess: bool = False,
+    allow_network: bool = False,
+    allow_env: bool = False,
+    allowed_commands: list[str] | None = None,
+    allowed_hosts: list[str] | None = None,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
     workflow_store_path: str | None = None,
@@ -1667,6 +1727,11 @@ def serve(
         allowed_paths=allowed_paths,
         writable_paths=writable_paths,
         allow_input=allow_input,
+        allow_subprocess=allow_subprocess,
+        allow_network=allow_network,
+        allow_env=allow_env,
+        allowed_commands=allowed_commands,
+        allowed_hosts=allowed_hosts,
         auth_token=auth_token,
         workflow_store_backend=workflow_store_backend,
         workflow_store_path=workflow_store_path,
@@ -1690,6 +1755,11 @@ def run_in_thread(
     allowed_paths: list[str] | None = None,
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
+    allow_subprocess: bool = False,
+    allow_network: bool = False,
+    allow_env: bool = False,
+    allowed_commands: list[str] | None = None,
+    allowed_hosts: list[str] | None = None,
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
     workflow_store_path: str | None = None,
@@ -1704,6 +1774,11 @@ def run_in_thread(
         allowed_paths=allowed_paths,
         writable_paths=writable_paths,
         allow_input=allow_input,
+        allow_subprocess=allow_subprocess,
+        allow_network=allow_network,
+        allow_env=allow_env,
+        allowed_commands=allowed_commands,
+        allowed_hosts=allowed_hosts,
         auth_token=auth_token,
         workflow_store_backend=workflow_store_backend,
         workflow_store_path=workflow_store_path,

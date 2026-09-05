@@ -69,14 +69,25 @@ The CLI (`nodus run`) and the HTTP server (`nodus serve`) execute scripts via
 `tooling/runner.py`, which constructs VM instances directly — it does **not** go
 through `NodusRuntime`. This creates an important split:
 
-| | `NodusRuntime` | CLI / `nodus serve` |
-|--|--|--|
-| Default timeout | `None` (no deadline) | `EXECUTION_TIMEOUT_MS` = 200 ms |
-| `allow_env` / `allow_subprocess` / `allow_network` flags | Honoured (deny by default) | Not wired — VM defaults apply, i.e. **all three allowed** |
-| `allowed_commands` / `allowed_hosts` | Honoured | Not wired |
-| `capability_policy`, `approval_channel`, `agent_timeout_ms` | Wired onto the VM | **Never wired**, and no CLI surface to set them |
-| Filesystem confinement | `allowed_paths` = **the cwd** | `fs_root` = **the project root** |
-| Error shape | Consistent `{ok, error, errors}` | Varies by call site |
+**Three positions, not two.** `nodus serve` shares the CLI's machinery and the
+embedded runtime's threat model, and since #754 it is confined like the latter.
+It had been permissive like the former — inheriting the wrong half, because it
+happened to call the same runner.
+
+| | `NodusRuntime` | `nodus serve` | `nodus run` (CLI) |
+|--|--|--|--|
+| Default timeout | `None` (no deadline) | `EXECUTION_TIMEOUT_MS` = 200 ms | `EXECUTION_TIMEOUT_MS` = 200 ms |
+| `allow_env` / `allow_subprocess` / `allow_network` flags | Honoured (deny by default) | **Deny by default** (#754); `--allow-subprocess`, `--allow-network`, `--allow-env` grant | Not wired — VM defaults apply, i.e. **all three allowed** |
+| `allowed_commands` / `allowed_hosts` | Honoured | Honoured — `--allowed-commands`, `--allowed-hosts` | Not wired |
+| `capability_policy`, `approval_channel`, `agent_timeout_ms` | Wired onto the VM | **Never wired**, and no flag to set them | **Never wired**, and no CLI surface to set them |
+| Filesystem confinement | `allowed_paths` = **the cwd** | `allowed_paths` = `--allow-paths` (unset ⇒ unrestricted) | `fs_root` = **the project root** |
+| Error shape | Consistent `{ok, error, errors}` | Consistent `{ok, error, errors}` | Varies by call site |
+
+The CLI row is a **decision**, not a gap: what deny-by-default protects is work
+you did not fully author, and a developer running a script they just wrote is not
+that. `tests/test_two_execution_paths.py` pins every row above in both
+directions, so neither a regression to permissive `serve` nor a "unification"
+that confines the CLI can land quietly.
 
 Consequence: sandbox flags set on a `NodusRuntime` instance in tests or application
 code do **not** apply when the same script is executed via the CLI. If your
@@ -104,14 +115,34 @@ NodusRuntime().run_file(..) -> sandbox error (confined to the cwd)
 and so does one that disappears — so unification is deliberate rather than
 accidental.
 
-**`nodus serve` deserves separate thought.** The justification for the CLI being
-permissive is that a developer running a script they wrote is not untrusted
-input. That reasoning does not carry to `POST /execute`, which runs code arriving
-over the network on the same permissive path: submitted source can shell out,
-open sockets and read the environment, and there is no flag to stop it
-(`serve` accepts `--allow-paths`, `--writable-paths`, `--allow-input` and
-`--auth-token`, and nothing for the other three). Bearer auth is optional and
-absent by default. Tracked separately from #192.
+**`nodus serve` deserved separate thought, and got it in #754.** The
+justification for the CLI being permissive is that a developer running a script
+they wrote is not untrusted input. That reasoning does not carry to
+`POST /execute`, where the source arrived over a socket — and `serve` was
+permissive because it happens to call the same runner, not because anyone decided
+a network endpoint should be.
+
+Submitted code is now denied subprocess, network and environment access by
+default, matching `NodusRuntime`. `--allow-subprocess`, `--allow-network` and
+`--allow-env` grant them, and `--allowed-commands` / `--allowed-hosts` narrow a
+grant further; each also reads a `NODUS_SERVER_ALLOW_*` environment variable, for
+a server started by a supervisor that owns the command line.
+
+Two things this did **not** change, and one worth stating plainly:
+
+- **A `capability_policy` still cannot be set on `serve`.** The three flags are
+  all-or-nothing per category; per-call decisions remain embedded-only.
+- **Bearer auth is still optional on a loopback bind.** `is_authorized` returns
+  `True` when no token is configured. It is less exposed than it sounds — the
+  default bind is `127.0.0.1`, and binding to a non-local host **refuses to
+  start** without a token — but a loopback server with no token is reachable by
+  every local process and every container sharing the namespace, and it prints a
+  warning rather than refusing.
+- The confinement is applied in **one place**, `RuntimeService._apply_runtime_policies`,
+  reached by every route including through `_new_vm`. `tests/test_server_policy_chokepoint.py`
+  asserts that on the source, per execution *path* rather than per method — a
+  method with a guarded branch and an unguarded one is the same defect inside one
+  function, and an earlier version of that test missed exactly that.
 
 ---
 
