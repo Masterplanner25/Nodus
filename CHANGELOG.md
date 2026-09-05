@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#756: the two maps of the agentic surface now have to agree, or say why not.**
+
+  `BUILTIN_CAPABILITIES` and `DOMAIN_BUILTIN_GROUPS` both partition builtins by
+  surface, for different questions — what authority a call carries, and what the
+  runtime is composed of. #756 was filed because they disagreed about the agent
+  surface. That disagreement turned out to be a recorded decision, but nothing
+  related the two structures, so a *harmful* disagreement would have looked
+  identical: a builtin governed by `agent.call` that `extensions=["..."]` does not
+  withhold stays reachable in a runtime whose host believed it had removed the
+  agent surface.
+
+  `DOMAIN_SURFACE_DIVERGENCES` records every place the two name different sets,
+  with a reason each, and `TheTwoSurfaceMapsAgreeTests` fails on an unrecorded
+  difference in **either** direction — plus on a recorded one that no longer
+  differs, which reads as a decision and covers nothing.
+
+  Deriving one map from the other, which the issue offers as the alternative, is
+  not available: their memberships legitimately differ in three places, so a
+  derivation would have to discard a real distinction to produce agreement.
+
+  Each surface's covered capabilities are derived from its own members rather
+  than from its single `capability` label. Reading the label alone put every
+  `memory.read` builtin outside every surface — a hole the first version of the
+  check had, found by its own staleness test.
+
+  No behaviour change. The two divergences a host can observe are now documented
+  in `docs/guide/embedding-nodus.md`: `extensions=[]` leaves the `memory_*`
+  general-purpose store and the guest-side tool registry (`tool_invoke`,
+  `tool_register`) reachable, both deliberately, and both still governed by a
+  `capability_policy`.
+
 ## [5.10.0] - 2026-09-05
 
 ### Changed

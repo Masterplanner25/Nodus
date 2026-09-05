@@ -376,6 +376,31 @@ not a substitute for the capability flags: those bound what a **granted** surfac
 may do, and the two compose — `extensions=["workflow"], allow_network=True` is a
 coherent and common pair.
 
+#### Two things `extensions=[]` leaves behind
+
+Both are deliberate, and both surprise a reader who expects the groups to be the
+whole agentic surface. The group names say what they withhold precisely, and
+these fall outside:
+
+- **`memory_put`, `memory_get` and the rest of the `memory_*` family.** The
+  `memory` group is *memory actions* — the two `action memory` lowerings. The
+  `memory_*` builtins are the general-purpose store, isolated per `NodusRuntime`
+  since #185 and reaching nothing outside the process, so a runtime narrowed to
+  "a general-purpose scripting engine" keeps it.
+- **`tool_invoke`, with `tool_register` and the rest of the guest-side
+  registry.** The `tool` group is the *host's* tool surface: `tool_call` reaches
+  a tool you registered. `tool_invoke` reaches one the guest registered itself,
+  which runs guest code and confers nothing it did not already have.
+
+Both are still governed by a `capability_policy` — `memory.read` / `memory.write`
+and `tool.invoke` respectively — so if you want them gone rather than bounded,
+that is the mechanism, not `extensions=`.
+
+`DOMAIN_SURFACE_DIVERGENCES` in `nodus.runtime.capability` is the published list
+of every such case, each with its reason, and `tests/test_domain_extensions.py`
+fails on one that is not recorded there — so a builtin added to a surface's
+authority without being added to the surface itself cannot pass quietly.
+
 ### Denying a call does not hide the catalogue
 
 Worth knowing before you reach for a `capability_policy`, because the two
