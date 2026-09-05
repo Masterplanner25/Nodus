@@ -211,6 +211,34 @@ runtime = NodusRuntime(
 
 The Nodus sandbox is not a full security sandbox. It does not protect against:
 
+- **Discovery of a surface whose *use* is denied.** A `CapabilityPolicy` governs
+  invocation, not enumeration. `DenyList("agent.call")` stops `agent_call`; it
+  does not stop `agent_available()` or `agent_describe(name)`. This is deliberate
+  (#473) — *"naming what exists is not reaching it"* — and the classification
+  lives in `NO_AUTHORITY_BUILTINS["discovery, not invocation"]`.
+
+  It is a decision about **authority**, so be clear about what it does not claim.
+  A guest refused every call can still read:
+
+  | verb | returns |
+  |---|---|
+  | `agent_available`, `tool_available`, `tool_has`, `tool_list` | names |
+  | `agent_describe`, `tool_describe` | the host-authored description **and parameter schema** |
+  | `syscall_list` | full specs, including which capability each syscall requires |
+
+  So the catalogue, the prose the host wrote about each entry, and part of the
+  authority model itself remain readable. For most embeddings that is fine and
+  is what makes graceful degradation possible — a guest can ask what exists and
+  adapt instead of failing.
+
+  **If it is not fine for yours, the capability policy is the wrong tool.** Use
+  `extensions=` (#167), which withholds the builtins rather than refusing the
+  calls: `NodusRuntime(extensions=[])` leaves a refusing stub with nothing behind
+  it, so there is no catalogue to read. Verified, not assumed —
+  `tests/test_discovery_disclosure.py` pins both halves, and turns red if a
+  discovery verb is ever gated so that the change is a decision rather than a
+  tidy-up.
+
 - **CPU exhaustion via tight computation** — `max_steps` limits instructions but not
   CPU time; a tight loop can consume significant CPU before the step limit fires.
   Use `timeout_ms` in addition to `max_steps`.
