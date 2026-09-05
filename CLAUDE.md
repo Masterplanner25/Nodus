@@ -1556,6 +1556,19 @@ Three of those ask something of you rather than just explaining a symptom.
 - **#609 is staged, not done.** An unrecognised type name warns today and becomes
   an error at **6.0.0**, alongside #547 and #492. A project that is "clean" now can
   still be red at the major, so treat those warnings as a to-do list.
+- **#174 joins that cohort, and it is the one that costs *state* rather than a
+  build.** The default workflow store becomes `SQLiteWorkflowStore` at **6.0.0**.
+  Runs recorded in the JSON store are invisible to a SQLite one, so an in-flight
+  `waiting` run would become unresumable rather than move. Migrate before the
+  major with `nodus workflow migrate-store --to sqlite` — non-destructive, has a
+  `--dry-run`, and preserves a parked run's wait. An unconfigured local store
+  holding runs warns once per process; `NODUS_WORKFLOW_STORE_BACKEND=local`
+  silences it and is the supported way to keep the JSON store.
+
+  Do not repeat the reason this sat blocked. Three places — the runner comment,
+  the test docstring and the runbook — each said *"there is no backend
+  migration"*, all written together and all still saying it after
+  `migrate-store` shipped. One question, three answers, stale in unison.
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 

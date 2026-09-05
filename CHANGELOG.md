@@ -553,6 +553,48 @@
   deliberately do not resolve, and CLAUDE.md now says which, so a later
   re-derivation does not "fix" them.
 
+- **#174: the SQLite default is staged for 6.0.0, and the blocker that deferred
+  it is gone.**
+
+  An unconfigured local store that already holds runs now emits a one-shot
+  `DeprecationWarning`. The default workflow store becomes `SQLiteWorkflowStore`
+  at 6.0.0, and runs recorded in the JSON store are **invisible** to a SQLite one
+  — an in-flight `waiting` run would become unresumable rather than move — so the
+  warning names the migration and the release:
+
+  ```bash
+  nodus workflow migrate-store --to sqlite --dry-run
+  nodus workflow migrate-store --to sqlite
+  ```
+
+  **No default changed.** This is the "warn now, change at the major" treatment
+  #545, #547 and #609 already get.
+
+  **What actually unblocked it.** Three places said *"there is no backend
+  migration today (`nodus workflow migrate-state` migrates graph snapshots, not
+  stores)"* — the runner comment, the test docstring, and the runbook, which went
+  further and advised draining before switching. All were true when written and
+  all were stale: `nodus workflow migrate-store` ships. One question answered in
+  three places, written together and rotted together, and the runbook's copy had
+  become active misdirection. Verified rather than assumed: a run parked
+  `waiting` in the local store arrives in SQLite still `waiting` with its
+  `wait.event_type` intact, the source keeps its copy, and `--dry-run` reports
+  the plan without writing.
+
+  **The warning is deliberately narrow, and the quiet cases are the design.** It
+  requires all three of: the backend was *not* chosen, it resolved to local, and
+  the store already holds runs. A script that has never run a workflow hears
+  nothing — the local store is right for it. Setting
+  `NODUS_WORKFLOW_STORE_BACKEND=local` is a host answering the question and
+  silences it. A warning everyone sees is one everyone filters, so the tests pin
+  the silences as carefully as the sound.
+
+  Also checked, because a default flip needs the backends to be equivalent:
+  `SQLiteWorkflowStore` has no `terminal_max_age_days` or `max_terminal_runs`.
+  Neither is a loss — the first bounds the local store's *scan cost* and carries
+  an edge where a non-terminal run untouched for 30 days drops out of sweeper
+  queries, which SQLite simply does not have; the second is off by default.
+
 ### Fixes
 
 - **#756: a capability policy governs invocation and not discovery — now stated
