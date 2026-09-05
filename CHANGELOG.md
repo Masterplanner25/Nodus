@@ -425,10 +425,13 @@
   real: a capability policy denying `agent.call` refuses `agent_call` and permits
   `agent_describe`, which returns the host's agent names, descriptions and
   parameter schemas. The same holds for `tool_available` / `tool_describe` and
-  `syscall_list`. Reported (open) as issue 756 — not a regression, present since
-  #473 — and recorded in `tools/shape_manifest.json` as tracked debt rather than
-  silenced. Notable because the detector has usually fired *after* two copies
-  drifted; here it fired the day the second copy was written.
+  `syscall_list`. Reported as issue 756. Notable because the detector has usually
+  fired *after* two copies drifted; here it fired the day the second copy was
+  written.
+
+  **That finding was right about the behaviour and wrong about its cause**, and
+  the correction is below under Fixes: the difference is a recorded decision
+  (#473), not drift. The manifest entry is `intentional` now, not tracked debt.
 - **#181: an external event can be delivered by event type, without a run id.**
 
   ```
@@ -487,6 +490,48 @@
   selected by whether an optional dependency happens to be installed.
 
 ### Fixes
+
+- **#756: a capability policy governs invocation and not discovery — now stated
+  where a host will read it, and pinned.**
+
+  `DenyList("agent.call")` stops `agent_call`. It does not stop
+  `agent_available()` or `agent_describe(name)`, and a guest refused every call
+  can still read the host-authored description and parameter schema of each
+  registered agent and tool, plus which capability every syscall requires.
+
+  **No behaviour changed, deliberately.** This is a decision, made in #473 with
+  its reasoning attached — *"Naming what exists is not reaching it. A denied
+  `tool_call` is still denied after `tool_list` names the tool, and hiding the
+  catalogue while leaving the call ungoverned would be the wrong half."* It also
+  buys something real: a guest can ask what exists and degrade gracefully rather
+  than failing.
+
+  What was missing is that the decision lived only in a Python comment. A host
+  configuring a `DenyList` had no statement of what it does and does not cover.
+  It is now in `SECURITY_POSTURE.md` §5, the embedding guide, and `DenyList`'s
+  own docstring, each naming the distinction the #473 rationale is careful about
+  and the one it does not make: the argument is about **authority**, and
+  `agent_describe` returning prose the host wrote is a question about
+  **disclosure**.
+
+  **The answer for a host who needs the catalogue hidden already exists**, and it
+  is not a policy: `extensions=` (#167) withholds the builtin rather than
+  refusing the call, so there is nothing behind the name to describe. Verified
+  both ways rather than asserted.
+
+  `tests/test_discovery_disclosure.py` pins the boundary in both directions —
+  invocation refused, discovery open, `extensions=` closing it — so gating a
+  discovery verb later becomes a decision rather than a tidy-up.
+
+  **The issue itself was wrong and is worth recording as such.** It claimed the
+  behaviour was undecided and undocumented. It was neither: `NO_AUTHORITY_BUILTINS`
+  classifies every ungoverned builtin *with a reason*, and
+  `tests/test_capability_coverage.py` has required that classification to be
+  total since #473 — so a new builtin already fails the suite until somebody
+  decides which side it is on. The issue was filed after searching
+  `BUILTIN_CAPABILITIES`, finding these names absent, and reading absence as
+  "nobody classified it". An empty result from searching one of two structures is
+  not evidence about the other.
 
 - **The embedding documents said the capability switches default to permissive.**
 

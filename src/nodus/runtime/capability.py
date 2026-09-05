@@ -598,6 +598,29 @@ class DenyList(CapabilityPolicy):
 
     A convenience for the common embedding case, not the eventual model — the
     layered, tiered rule sources of the design document are stage 3.
+
+    **It refuses invocation, not discovery, and that is deliberate.** Denying
+    `agent.call` stops `agent_call`; it does not stop `agent_available()` or
+    `agent_describe(name)`, because the discovery verbs carry no authority — see
+    `NO_AUTHORITY_BUILTINS["discovery, not invocation"]`, which states the
+    reasoning and is what `tests/test_capability_coverage.py` measures totality
+    against.
+
+    What that means concretely, because "carries no authority" and "reveals
+    nothing" are not the same claim and only the first is being made:
+
+    - `agent_available()` / `tool_available()` / `tool_has()` return **names**.
+    - `agent_describe()` / `tool_describe()` return the **host-authored
+      description and parameter schema** the host registered.
+    - `syscall_list()` returns full specs, including which capability each
+      syscall requires.
+
+    So a guest that is refused every call can still enumerate the surface and
+    read what the host wrote about it. If that matters for your deployment,
+    the boundary to use is `extensions=` (#167), which withholds the builtins
+    entirely rather than refusing them at call time — a withheld
+    `agent_describe` is a refusing stub with nothing behind it.
+    `tests/test_discovery_disclosure.py` pins exactly what is and is not visible.
     """
 
     denied: frozenset = field(default_factory=frozenset)

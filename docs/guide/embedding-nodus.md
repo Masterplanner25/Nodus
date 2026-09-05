@@ -376,6 +376,38 @@ not a substitute for the capability flags: those bound what a **granted** surfac
 may do, and the two compose — `extensions=["workflow"], allow_network=True` is a
 coherent and common pair.
 
+### Denying a call does not hide the catalogue
+
+Worth knowing before you reach for a `capability_policy`, because the two
+mechanisms differ in a way that is easy to assume away. A policy governs
+**invocation**; it does not govern **discovery**:
+
+```python
+rt = NodusRuntime(capability_policy=DenyList("agent.call"))
+rt.register_agent("billing", charge, description="charges customer cards")
+
+rt.run_source('print(agent_call("billing", "{}"))')   # refused
+rt.run_source('print(agent_describe("billing"))')     # {"name": "billing",
+                                                      #  "description": "charges customer cards", ...}
+```
+
+This is deliberate: naming what exists is not reaching it, and hiding the
+catalogue while leaving the call ungoverned would be the wrong half. It also
+lets a guest degrade gracefully — ask what is available, and adapt.
+
+Be clear on what it does *not* claim, though. `agent_describe` and
+`tool_describe` return the description **you wrote** plus the parameter schema,
+and `syscall_list` returns which capability each syscall requires. A guest that
+can call nothing can still read all of that.
+
+**If that matters, use `extensions=` instead** — it withholds the builtin, so
+there is no catalogue behind the name:
+
+```python
+NodusRuntime(extensions=[])                 # agent_describe refuses; nothing to read
+NodusRuntime(capability_policy=DenyList("agent.call"))   # agent_describe answers
+```
+
 ---
 
 ## 6. Injecting host functions with register_function
