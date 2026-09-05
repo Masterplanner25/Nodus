@@ -328,7 +328,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,633 tests collected** (`--collect-only`, 2026-09-05, at the 5.10.0 cut). Coverage
+**3,636 tests collected** (`--collect-only`, 2026-09-05, after the 5.10.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -379,7 +379,7 @@ on `.nodus/graphs/*.tmp` → `.json` renames, and **a different test failing eac
 This bit twice in one session, and both times the first reading was "the #376 race class is back."
 It was not. With the background run stopped, the same tests passed 17/17. Before blaming timing or
 your own change, check whether anything else is running: `TaskStop` the background job, then
-re-run. The same applies to the doc gate (`nodus_gate --runtime` executes 270 blocks and writes to
+re-run. The same applies to the doc gate (`nodus_gate --runtime` executes every documented block and writes to
 the store) — do not run it alongside the suite.
 
 **How much of the "flaky machine" is actually this is not established**, and concurrency does
@@ -686,11 +686,12 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   -m tools.nodus_gate.cli --all
 ```
 
-- `--static`: verifies documented symbols exist in the codebase (**140 symbols**
-  across 40 documents, as of 2026-08-30)
+- `--static`: verifies documented symbols exist in the codebase. It prints the
+  symbol and document counts every run — read them there rather than from here,
+  which is the same rule `--shapes` below already states and which this line
+  needed twice
 - `--runtime`: runs all ` ```nodus ` and ` ```nodus-expect=output ` blocks
-  in docs (**270 blocks**); expects 0 failures with the `.nodusgate-allow`
-  allowlist in place
+  in docs; expects 0 failures with the `.nodusgate-allow` allowlist in place
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
 - `--consumers`: reports **non-PyPI consumers a release has left behind** —
@@ -952,10 +953,9 @@ These burn time when forgotten:
   pre-checkpoint contributions once per resume).
 - **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
   Skipping either flush or the advance causes the test to pass vacuously.
-- **`spawn()` accepts a zero-argument function directly (#718, unreleased —
-  in `CHANGELOG.md`'s `[Unreleased]`)** — `spawn(fn() { ... })` wraps and spawns, and
-  returns the handle. `spawn(c)` after `let c = coroutine(fn() {...})` is unchanged
-  and still correct.
+- **`spawn()` accepts a zero-argument function directly (#718, shipped in
+  5.10.0)** — `spawn(fn() { ... })` wraps and spawns, and returns the handle.
+  `spawn(c)` after `let c = coroutine(fn() {...})` is unchanged and still correct.
 
   **Through 5.9.0 the two-step form is the only spelling**: `spawn(fn(){...})`
   raises `spawn(coroutine) expects a coroutine`. That footgun is why #336 proposed a
@@ -1044,7 +1044,7 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
 of several paths goes through**. It has surfaced **once per row of the table below** across the
-v5.0.0–5.9.0 cycles — count the rows rather than trusting a word here, which had gone stale by
+v5.0.0–5.10.0 cycles — count the rows rather than trusting a word here, which had gone stale by
 one. That frequency is why it gets its own section: when you find one, the next question is
 always *"what else has this shape?"* — not *"is this fixed?"*
 
@@ -1081,6 +1081,25 @@ Instances, all confirmed by reading the code rather than inferred:
 | #691 | which chunk was this closure compiled against | the detached module VM wrapped caller closures in a `_ClosureProxy`; the in-VM cross-module frame (the path a **step body** always takes) wrapped nothing and checked nothing |
 | #696 | the same question, for a closure going the **other way** | all three of #691's context sources record something a call is still *inside* of; a **returned** closure is called after the frame has popped, so all three are empty |
 | #704 | which program is this cache entry for | #521 fixed the branch, the cache **read** and the cache **write** — and the key itself still answered by path + mtime, so an edit inside the platform's timestamp resolution was invisible to all three |
+| #754 | how is a VM for this service confined | `RuntimeService.graph` passed the path settings to `run_source` by hand instead of using the shared guard — a second implementation that *structurally could not* learn a capability flag, since `run_source` builds its own VM and takes none |
+| #167 | is this a valid extension name | the VM refused at construction and `NodusRuntime` did not refuse until its first `run_source` — the two agreed on the **answer** and disagreed on the **moment**, which is the same shape with a different disguise |
+
+**#167 adds a variant worth naming, because it is not a disagreement.** Its two
+sites agreed completely about which extension names are valid. They disagreed
+about *when* they would say so: the VM refused at construction, `NodusRuntime`
+not until its first `run_source` — where it surfaced as a bare `ValueError`
+instead of the result dict that method promises. Every other row above is two
+places giving different **answers**; this is two places giving the same answer at
+different **moments**, and only one of those moments is the one a caller
+experiences. So "do these agree?" is not the whole question — ask *when* each one
+speaks.
+
+It also shows how the shape survives a full green suite: every test constructed a
+`VM` directly, while the documented entry point is `NodusRuntime`. **The tested
+path and the documented path were different ones**, which is #691's lesson on a
+different construct. Gate 10b caught it against the built wheel, before anything
+immutable existed — which is the argument for writing those probes before the
+tag, not after.
 
 **#696 is the one to read on "did I fix the whole shape?"** It was found by
 probing the neighbourhood of #691's fix on the *day* that fix merged, and it is
@@ -1207,7 +1226,7 @@ call site would have been wrong, because the CLI legitimately passes a file's ow
 must keep its cache. The question is not "did the caller supply source" but "is it the same
 source".
 
-**There is a gate for this now — `nodus_gate --shapes`.** It will not find the shape for you in the sense of telling you what is broken; it finds *places where one question is answered in more than one voice*, which is where every instance above came from. Its first run produced #597 and #598. `tools/shape_manifest.json` holds the ones it already knows about — **39 known, 19 of them tracked as debt** at the 5.7.1 cut — so what it reports is the ones that are new. Do not transcribe that count by hand; the gate prints it every run and an earlier revision of this line was stale by four. When you add a second implementation of anything, expect to justify it there.
+**There is a gate for this now — `nodus_gate --shapes`.** It will not find the shape for you in the sense of telling you what is broken; it finds *places where one question is answered in more than one voice*, which is where every instance above came from. Its first run produced #597 and #598. `tools/shape_manifest.json` holds the ones it already knows about, so what it reports is the ones that are new. The count is deliberately not written here: the gate prints it every run, and the two previous revisions of this sentence each went stale — one by four. When you add a second implementation of anything, expect to justify it there.
 
 **The fix is always the same: move the decision to one place, then assert on the source.** A
 behaviour-only test passes on whichever path is already correct. Working examples to copy:
@@ -1550,7 +1569,9 @@ fast: **is this symptom a release, or is it my change?**
 | 5.3.0 | `nodus.toml` refuses a table or key Nodus does not read (#490) | the error names the word and suggests the match |
 | 5.1.0 | `run_source(filename=)` is a label and no longer selects the program (#521) | `run_file` to run a file — see the embedding section |
 
-Three of those ask something of you rather than just explaining a symptom.
+Some of these ask something of you rather than just explaining a symptom.
+(No count here on purpose — it went stale twice, and one of the entries below
+is not even a row in the table.)
 
 - **#616 is why 5.6.0 should not be skipped by an embedder** (`severity:high`): a
   capability policy could be bypassed by writing the **async form** of a call.
@@ -1571,10 +1592,24 @@ Three of those ask something of you rather than just explaining a symptom.
   the test docstring and the runbook — each said *"there is no backend
   migration"*, all written together and all still saying it after
   `migrate-store` shipped. One question, three answers, stale in unison.
+- **#754 is the one to read before upgrading a server.** Code submitted to
+  `nodus serve` is denied subprocess, network and environment access; grant with
+  `--allow-subprocess` / `--allow-network` / `--allow-env`, narrowed by
+  `--allowed-commands` / `--allowed-hosts`. `nodus run` is unchanged, and that
+  asymmetry is a decision: what deny-by-default protects is work you did not
+  fully author.
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**5.9.0 has no row, and that was checked rather than assumed.** Its four changes
+**5.10.0 has two rows, and 5.9.0 has none — both checked rather than assumed.**
+5.10.0's are `nodus serve` confinement (#754) and the workflow-store warning
+(#174); everything else it ships is additive. #754 is *behaviour-changing but not
+breaking* by this project's own definition — `docs/release.md` lists "security
+patches that restrict previously-permitted behavior" among the non-breaking
+examples — which is why 5.10.0 is a minor. Keep the two ideas apart: the table
+above answers "will this surprise me?", and semver answers "must the major move?".
+
+5.9.0's four changes
 are all repairs or additions: two closure fixes (#691, #696) where the old
 behaviour was a silent truncation nothing could depend on, a bytecode-cache key
 that now includes content (#704) — stale entries simply recompile once — and two
