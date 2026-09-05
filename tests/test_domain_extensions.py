@@ -153,6 +153,51 @@ class TheRefusalIsUsefulTests(unittest.TestCase):
         self.assertIn("workfow", str(caught.exception))
         self.assertIn("workflow", str(caught.exception), "it lists the known names")
 
+    # closes: #167
+    def test_it_is_refused_at_the_documented_entry_point_too(self):
+        """`NodusRuntime`, not just the raw `VM` — which is the gap that shipped.
+
+        Every other test here builds a `VM` directly, so nothing covered the
+        path an embedder actually takes. A `NodusRuntime` does not construct a
+        VM until it runs something, so a misspelled surface was accepted at
+        construction and then raised a bare `ValueError` out of the first
+        `run_source` — breaking that method's contract of always returning a
+        result dict, and falsifying the "refused at construction" claim in both
+        the docstring and the embedding guide.
+
+        Gate 10b caught it against the built wheel. The suite could not, because
+        the tested path and the documented path were different ones.
+        """
+        with self.assertRaises(ValueError) as caught:
+            NodusRuntime(extensions=["workfow"])
+        self.assertIn("workfow", str(caught.exception))
+        self.assertIn("workflow", str(caught.exception))
+
+    # closes: #167
+    def test_the_valid_cases_still_construct(self):
+        """The complement: the guard above must not refuse what it should pass."""
+        for extensions in (None, [], ["workflow"], ["workflow", "agent"]):
+            with self.subTest(extensions=extensions):
+                NodusRuntime(extensions=extensions)
+
+    # closes: #167
+    def test_both_entry_points_share_one_validator(self):
+        """Source assertion. They refused at *different moments* before this —
+        the VM at construction, the runtime at first run — which is one question
+        answered twice, drifted in timing rather than in content."""
+        import inspect
+
+        from nodus.runtime import capability, embedding
+        from nodus.vm import vm as vm_module
+
+        self.assertTrue(hasattr(capability, "validate_extensions"))
+        for module in (embedding, vm_module):
+            with self.subTest(module=module.__name__):
+                self.assertIn(
+                    "validate_extensions(extensions)", inspect.getsource(module),
+                    "must delegate rather than re-implement the check",
+                )
+
 
 class TheGroupDataIsHonestTests(unittest.TestCase):
     """The manifest-shaped half: a group naming a builtin nobody registers, or

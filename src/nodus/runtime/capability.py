@@ -510,6 +510,35 @@ DOMAIN_BUILTIN_GROUPS: dict[str, DomainBuiltinGroup] = {
     ),
 }
 
+def validate_extensions(extensions) -> None:
+    """Refuse an unknown domain-surface name, or return quietly (#167).
+
+    One implementation, two callers — `NodusRuntime.__init__` and
+    `VM._withhold_unselected_extensions` — because "is this a real extension
+    name?" answered in two places is the shape this codebase catalogues, and
+    here the two answered at *different times*: the VM refused at construction
+    and the runtime did not refuse until its first `run_source`.
+
+    That gap was found by Gate 10b against the built wheel, not by the suite,
+    because `tests/test_domain_extensions.py` constructed a `VM` directly. The
+    documented embedding entry point is `NodusRuntime`, so the tested path and
+    the documented path were different ones.
+
+    `None` means every surface and is not an error; only a name that is not a
+    group is. Refused rather than ignored, per #490: a typo that silently
+    withheld the surface it meant to grant is the "accepted and ignored" third
+    state.
+    """
+    if extensions is None:
+        return
+    unknown = set(extensions) - set(DOMAIN_BUILTIN_GROUPS)
+    if unknown:
+        raise ValueError(
+            f"Unknown extension(s): {', '.join(sorted(unknown))}. "
+            f"Known: {', '.join(sorted(DOMAIN_BUILTIN_GROUPS))}."
+        )
+
+
 DOMAIN_BUILTIN_NAMES: frozenset[str] = frozenset(
     name for group in DOMAIN_BUILTIN_GROUPS.values() for name in group.names
 )

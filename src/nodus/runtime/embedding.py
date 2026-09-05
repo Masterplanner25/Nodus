@@ -427,6 +427,19 @@ class NodusRuntime:
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
         self.allow_env = allow_env
+        # #167: refused here, not at the first `run_source`.
+        #
+        # The VM validates too, but a `NodusRuntime` does not build one until it
+        # runs something — so a misspelled surface was accepted at construction
+        # and surfaced later as a raw `ValueError` out of `run_source`, which
+        # also breaks that method's contract of always returning a result dict.
+        # Both the docstring and the embedding guide claimed "refused at
+        # construction", true of the raw `VM` and not of the documented entry
+        # point. Found by Gate 10b against the built wheel; the suite missed it
+        # because its tests construct a `VM` directly.
+        from nodus.runtime.capability import validate_extensions
+
+        validate_extensions(extensions)
         self.extensions = extensions
         # Default deadline for host agent handlers (#424). None = unbounded,
         # which is the pre-existing behaviour. A step's `timeout_ms` still wins
