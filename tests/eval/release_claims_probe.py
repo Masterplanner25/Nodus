@@ -2118,6 +2118,218 @@ def probe_no_stale_580_claim(repo: Path):
     return "no artifact calls 5.8.0 the current release"
 
 
+
+@probe("#754: submitted code cannot shell out on the serve path")
+def probe_serve_denies_submitted_code():
+    """The claim the release leads with, checked against the shipped wheel.
+
+    Paired with a control that must run, because every deny case passes
+    vacuously if the program never executed -- which is how the first probe for
+    this issue read an empty stdout as a refusal.
+    """
+    import os
+    import tempfile
+
+    from nodus.services.server import RuntimeService
+
+    source = (
+        'import "std:subprocess" as sp\n'
+        'let r = sp.run(["%s", "-c", "print(1)"])\n'
+        'print("exit=\\(r.exit_code)")\n' % sys.executable.replace("\\", "/")
+    )
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as td:
+        os.chdir(td)
+        try:
+            control = RuntimeService().execute(
+                {"code": 'print("ran")\n', "filename": "<probe>"}
+            )
+            denied = RuntimeService().execute({"code": source, "filename": "<probe>"})
+            granted = RuntimeService(allow_subprocess=True).execute(
+                {"code": source, "filename": "<probe>"}
+            )
+        finally:
+            os.chdir(cwd)
+
+    assert control.get("ok") and "ran" in (control.get("stdout") or ""), (
+        "the control never ran, so the refusal below proves nothing"
+    )
+    assert not denied.get("ok"), "submitted code shelled out on the default serve path"
+    assert (denied.get("error") or {}).get("kind") == "sandbox", denied.get("error")
+    assert "allow_subprocess" in ((denied.get("error") or {}).get("message") or ""), (
+        "the refusal must name the capability that grants it"
+    )
+    assert granted.get("ok") and "exit=0" in (granted.get("stdout") or ""), (
+        f"--allow-subprocess did not grant it: {granted.get('error')}"
+    )
+    return "denied by default, granted explicitly, and the control still runs"
+
+
+@probe("#167: extensions= withholds a domain surface, None carries it")
+def probe_extensions_select_surfaces():
+    from nodus.runtime.capability import DOMAIN_BUILTIN_GROUPS
+    from nodus.runtime.embedding import NodusRuntime
+
+    src = 'workflow w { step a { return 1i } }\nfn main() { run_workflow(w); print("ran") }\n'
+    full = NodusRuntime(timeout_ms=None).run_source(src, filename="<probe>")
+    lean = NodusRuntime(timeout_ms=None, extensions=[]).run_source(src, filename="<probe>")
+    picked = NodusRuntime(timeout_ms=None, extensions=["workflow"]).run_source(
+        src, filename="<probe>"
+    )
+
+    assert full.get("ok"), f"the default must be unchanged: {full.get('error')}"
+    assert not lean.get("ok"), "extensions=[] still ran a workflow"
+    assert (lean.get("error") or {}).get("kind") == "sandbox", lean.get("error")
+    assert 'extensions=["workflow"]' in ((lean.get("error") or {}).get("message") or ""), (
+        "the refusal must name the grant"
+    )
+    assert picked.get("ok"), f"extensions=['workflow'] must grant it: {picked.get('error')}"
+
+    try:
+        NodusRuntime(extensions=["workfow"])
+    except ValueError as err:
+        assert "workfow" in str(err) and "workflow" in str(err), str(err)
+    else:  # pragma: no cover - the point of the probe
+        raise AssertionError("a misspelled extension was accepted")
+
+    assert set(DOMAIN_BUILTIN_GROUPS) == {"workflow", "tool", "agent", "syscall", "memory"}, (
+        sorted(DOMAIN_BUILTIN_GROUPS)
+    )
+    return "None carries every surface; [] withholds them; a typo is refused"
+
+
+@probe("#181: an event reaches a parked run by type, with no run id")
+def probe_deliver_by_event_type():
+    import os
+    import tempfile
+
+    from nodus.tooling import runner as tooling_runner
+    from nodus_lang_workflow.runner import (
+        get_default_workflow_runner,
+        reset_default_workflow_runner,
+    )
+
+    src = (
+        'workflow order {\n'
+        '    step park { return workflow_wait("order.paid", {correlation_key: "c1"}) }\n'
+        '    step ship after park { return "shipped" }\n'
+        '}\n'
+        'fn main() { print(run_workflow(order)["graph_id"]) }\n'
+    )
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory() as td:
+        os.chdir(td)
+        try:
+            reset_default_workflow_runner()
+            result, vm = tooling_runner.run_source(src, filename="<probe>", timeout_ms=30000)
+            assert result.get("ok"), result.get("error")
+            graph_id = (result.get("stdout") or "").strip()
+
+            wr = get_default_workflow_runner()
+            waiting = wr.store.list_runs_waiting_for("order.paid")
+            assert [r.run_id for r in waiting] == [graph_id], (
+                f"lookup by event type found {[r.run_id for r in waiting]}"
+            )
+            report = wr.deliver_event(lambda _rec: vm, "order.paid", payload={"amount": 1})
+            assert report.get("ok"), report.get("error")
+            statuses = report["delivered"][0]["result"]["statuses"]
+            assert statuses.get("ship") == "completed", statuses
+
+            empty = wr.deliver_event(lambda _rec: vm, "nothing.listens")
+            assert empty.get("ok") and empty["matched"] == [], empty
+        finally:
+            reset_default_workflow_runner()
+            os.chdir(cwd)
+    return "found by event type, carried the run forward, and matching nothing is not an error"
+
+
+@probe("#174: an unconfigured local store holding runs says so, once")
+def probe_store_transition_warning():
+    import os
+    import tempfile
+    import warnings as _warnings
+
+    from nodus_lang_workflow.runner import (
+        get_default_workflow_runner,
+        reset_default_store_warning,
+        reset_default_workflow_runner,
+    )
+    from nodus_lang_workflow.store import WORKFLOW_STORE_BACKEND_ENV
+
+    cwd = os.getcwd()
+    saved = os.environ.pop(WORKFLOW_STORE_BACKEND_ENV, None)
+    with tempfile.TemporaryDirectory() as td:
+        os.chdir(td)
+        try:
+            reset_default_workflow_runner()
+            reset_default_store_warning()
+            with _warnings.catch_warnings(record=True) as quiet:
+                _warnings.simplefilter("always")
+                get_default_workflow_runner()
+            assert not [w for w in quiet if issubclass(w.category, DeprecationWarning)], (
+                "an empty store must stay quiet"
+            )
+
+            get_default_workflow_runner().store.create_run(
+                run_id="g_probe", graph_id="g_probe",
+                workflow_name="probe", execution_kind="workflow",
+            )
+            reset_default_workflow_runner()
+            reset_default_store_warning()
+            with _warnings.catch_warnings(record=True) as loud:
+                _warnings.simplefilter("always")
+                get_default_workflow_runner()
+            found = [w for w in loud if issubclass(w.category, DeprecationWarning)]
+            assert len(found) == 1, [str(w.message) for w in found]
+            assert "migrate-store" in str(found[0].message), str(found[0].message)
+            assert "6.0.0" in str(found[0].message), str(found[0].message)
+        finally:
+            reset_default_workflow_runner()
+            if saved is not None:
+                os.environ[WORKFLOW_STORE_BACKEND_ENV] = saved
+            os.chdir(cwd)
+    return "quiet when empty, one actionable warning when runs are at risk"
+
+
+@probe("prose: nothing still calls 5.9.0 the current release")
+def probe_no_stale_590_claim(repo: Path):
+    pattern = re.compile(
+        r"(current|latest|newest)[^.\n]{0,40}\b5\.9\.0\b"
+        r"|\b5\.9\.0\b[^.\n]{0,40}(current|latest|is live|stable on PyPI)",
+        re.I,
+    )
+    hits = []
+    for path in sorted(repo.rglob("*.md")) + sorted(repo.glob("*.txt")) + \
+            sorted(repo.glob("skills/*")):
+        parts = set(path.parts)
+        if parts & {".git", ".venv", "node_modules", "evals", "dist", "build"}:
+            continue
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                hits.append("{}:{}".format(path.relative_to(repo), n))
+    assert not hits, "still describes 5.9.0 as current: " + ", ".join(hits[:6])
+    return "no artifact calls 5.9.0 the current release"
+
+
+@probe("prose: the README's serve banner matches the shipped behaviour")
+def probe_readme_serve_banner(repo: Path):
+    """`readme = \"README.md\"` makes this the permanent PyPI page, and the
+    banner previously said the CLI never constructs a NodusRuntime -- true, and
+    read as "serve is permissive", which #754 made false."""
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    assert "nodus serve` *is* affected" in text or "nodus serve` **is** affected" in text, (
+        "the capability banner does not mention that serve is now confined"
+    )
+    assert "--allow-subprocess" in text, "the banner must name how to grant it back"
+    return "the banner names serve, and how to grant what it now denies"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -2295,6 +2507,14 @@ def main() -> int:
     probe_cache_notices_content()
     probe_binary_file_io()
     probe_no_stale_580_claim(args.repo)
+
+    # 5.10.0
+    probe_serve_denies_submitted_code()
+    probe_extensions_select_surfaces()
+    probe_deliver_by_event_type()
+    probe_store_transition_warning()
+    probe_no_stale_590_claim(args.repo)
+    probe_readme_serve_banner(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

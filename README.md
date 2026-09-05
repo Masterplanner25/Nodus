@@ -31,6 +31,13 @@
 > threat model; hosting code you did not author is. The CLI never constructs a
 > `NodusRuntime`.
 >
+> **`nodus serve` *is* affected, as of 5.10.0.** Code submitted over HTTP is not
+> a script you wrote either, and it used to run on the CLI's permissive path with
+> no flag able to stop it. `POST /execute` is now denied subprocess, network and
+> environment access unless the operator grants it —
+> `nodus serve --allow-subprocess --allowed-commands docker`. See
+> [#754](https://github.com/Masterplanner25/Nodus/issues/754).
+>
 > Also: a Nodus program can no longer write into `.nodus/` — the workflow store
 > and graph state — because it could previously forge run records.
 >
@@ -40,7 +47,44 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.9.0 is about programs doing what they say. Three defects are fixed
+**Recent:** 5.10.0 is about the boundary between a host and the code it runs —
+who may do what, and who is still around to say so.
+
+Confinement reached the server. Code sent to `nodus serve` ran on the same
+permissive path as a script you typed yourself, so `POST /execute` could shell
+out, open sockets and read the environment, and **no flag could stop it**. It is
+denied by default now, with `--allow-subprocess`, `--allow-network`,
+`--allow-env` and the narrower `--allowed-commands` / `--allowed-hosts` to grant
+what a deployment actually needs. Separately, a host can now choose which domain
+surfaces a runtime carries at all: `NodusRuntime(extensions=["workflow"])` keeps
+orchestration and withholds tools, agents, syscalls and memory actions — 33
+builtins that every runtime used to carry whether or not anything could reach
+them. An embedder can also bound how much a run grows the process
+(`max_memory_mb`), and a program can ask what it is permitted to do before it
+tries, with `runtime.capabilities()`.
+
+Workflows learned to wait across a process boundary. A `workflow_wait` deadline
+declared `on_timeout: "resume"` is a **schedule**: the run parks, the process
+exits, and a later `nodus workflow sweep` — an ordinary system cron is enough —
+carries it on. For events rather than clocks, `nodus workflow deliver order.paid`
+finds the run parked on that event type, which a webhook receiver could not do
+before: every resume path wanted a run id it had no way to obtain.
+
+And `nodus fmt` stopped rewriting programs. Five defects, all found by running
+constructs through it rather than reading it: comments moved to the wrong
+statement or vanished, `--keep-trailing` applied to only some statements, closure
+bodies were indented for where the closure was declared rather than where it sat,
+and formatting a file twice could produce a third result — so a file could pass
+`fmt --check`, be formatted, and then fail it.
+
+The embedding documents also said the capability switches "default to
+permissive". They have denied by default since 5.0.0; the prose was corrected
+three releases ago and the **table above it** was not, so the row a reader scans
+told them to opt out of a capability they must opt into. Both are right now, and
+a test derives the defaults from the constructor so the next flip cannot leave a
+copy behind.
+
+5.9.0 is about programs doing what they say. Three defects are fixed
 that all failed the same way — **silently, while reporting success**. A closure
 handed to an imported module's function, or returned from one, ran at its own
 address in the wrong chunk: inside a workflow step that truncated the step and
