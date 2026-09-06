@@ -289,6 +289,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Staged next-major register | `tools/v6_flips.json` — every promise this tree makes about 6.0.0, each with its issue, the release its warning shipped in, whether that warning reaches a CLI user, and the count of sites it owns. Checked by `nodus_gate --flips`; each site carries a `# v6-flip: <name>` marker. Reasoning and open decisions: `docs/governance/V6_0_PLAN.md` |
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
@@ -822,6 +823,39 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
   the behaviour may be tested, but nothing ties a test to the invariant. Do not
   "fix" the count by guessing which test covers what — an invented mapping is
   worse than a recorded gap. An unreadable manifest is always a failure
+- `--flips`: verifies that **every promise this tree makes about the next major
+  is registered**. A staged flip is a promise made to a user *now* about a
+  release that has not happened — `"This becomes an error in 6.0.0."` is printed
+  on stderr today by code that still allows the thing. `tools/v6_flips.json` is
+  the register; `docs/governance/V6_0_PLAN.md` holds the reasoning and the open
+  decisions.
+
+  **It exists because the register was found two short.** Five promises live in
+  `src/`; `COMPATIBILITY_MODEL.md` §5.3 said *"Three changes are staged"*,
+  `COMPATIBILITY.md` listed one, and a design doc said a fourth had been
+  dropped. The two that went missing were the two whose issues had been
+  **closed** — the staging shipped, the issue closed, and the flip fell out of
+  every register while the code kept promising it. Closing an issue does not
+  retract a promise.
+
+  Each site carries a `# v6-flip: <name>` marker, like a regression test's
+  `# closes: #N`, because attribution is the whole problem: two of these flips
+  live in `task_graph.py` and their text is nearly identical. A marker covers 30
+  lines below it.
+
+  Four checks, all failing — an unregistered promise is wrong *now* and the fix
+  is one manifest entry. **The fourth is the one to understand**: each entry
+  declares `sites`, the number of promise lines it owns, because a new promise
+  landing inside an existing marker's window is silently absorbed. That hole was
+  found by *probing* the detector, not reading it — the same hole, closed the
+  same way, that `shape_manifest.json` records for a third copy of an
+  already-listed function.
+
+  It also reports how many flips have no full CLI signal, because a flip whose
+  warning nobody sees is not a deprecation under `COMPATIBILITY_MODEL.md` §5.1.
+  **Two of the five are in that state today** — #797's notice is a
+  `DeprecationWarning` raised outside `__main__`, which Python's default filter
+  discards, so no CLI user has ever seen it
 
 The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable
 doc blocks (multi-file examples, error demos). New failing blocks go in the

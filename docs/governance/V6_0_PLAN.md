@@ -2,6 +2,8 @@
 
 **Status:** scoping. Nothing here is scheduled and no date is set.
 **Last reviewed:** 2026-09-06, against 5.11.0.
+**The register is `tools/v6_flips.json`**, checked by `nodus_gate --flips`.
+§1 below is a reader's copy; the gate is the authority.
 
 ## What this document is
 
@@ -26,8 +28,8 @@ were reproduced.
 | 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | **`nodus check` only** — `nodus run` is silent | #609 |
 | 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
-| 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | **none** (#492 closed) |
-| 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | **no — nobody has seen it** (§3.2) | **none** (#174 closed) |
+| 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 (**undecided** — D1) |
+| 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | **no — nobody has seen it** (§3.2) | #797 |
 
 Reproductions, all at 5.11.0 from a throwaway project:
 
@@ -137,21 +139,36 @@ Proposed; these are what §3 says must be true before a 6.0.0 is defensible.
 
 | | Gate |
 |---|---|
-| **G1** | Every live 6.0.0 promise in `src/` has an open issue. Two do not. |
+| **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `tools/v6_flips.json` names an issue per flip and `--flips` requires the field. |
 | **G2** | Every flip's warning is visible on the path a user actually runs. #174 and #609 are not. |
 | **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). |
 | **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. |
-| **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. |
+| **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. **Closed** — see below. |
 | **G6** | `check_downstream_constraints` re-run at the cut (see §5). |
 
-**G5 is the one to solve structurally rather than by editing prose.** Every
-enumeration in §3.1 is hand-maintained, and all four drifted. The fix this
-project already uses for exactly this — `tools/version_claims.json`,
-`tools/shape_manifest.json`, `tools/invariant_coverage.json` — is a manifest a
-gate phase reads. A `nodus_gate --flips` that fails when a `6.0.0` promise in
-`src/` is unregistered, or a registered flip has lost its promise, would have
-caught this cohort being two short. **This document is itself a prose
-enumeration and will drift the same way if it stays the register.**
+**G5 was solved structurally rather than by editing prose, because this document
+is itself a prose enumeration and would have drifted the same way.** Every
+enumeration in §3.1 was hand-maintained and all four drifted.
+
+`tools/v6_flips.json` is the register now and `nodus_gate --flips` checks it
+against `src/` in both directions — the same shape as `version_claims.json`,
+`shape_manifest.json` and `invariant_coverage.json`. **This document holds the
+reasoning, the gate conditions and the open decisions; it does not hold the
+list.** §1's table is a reader's copy, and the gate is the authority.
+
+Each promise site carries a `# v6-flip: <name>` marker, like a regression test's
+`# closes: #N`. Attribution needs one: two of these flips live in
+`orchestration/task_graph.py` and their promise text is nearly identical.
+
+Four checks, all failing rather than advisory, because an unregistered promise
+means the register is incomplete the moment it lands. The fourth is worth
+knowing about: each entry declares how many sites it owns, because **a new
+promise landing inside an existing marker's window was silently absorbed** —
+found by probing the detector rather than reading it, and closed the same way
+`shape_manifest.json` closes it for a third copy of an already-listed function.
+
+The phase also reports how many flips have no full CLI signal, so §3.2 is a
+number the gate prints rather than a paragraph someone has to remember.
 
 ---
 
@@ -177,10 +194,12 @@ enumeration and will drift the same way if it stays the register.**
 
 None of these is decided. Each changes what 6.0.0 contains.
 
-- **D1 — Is the `worker:` flip in the cohort?** The code promises it, the design
-  doc says it was dropped. Either honour it and give it an issue, or remove the
-  promise from the warning. Leaving both is the status quo and is the worst of
-  the three.
+- **D1 — Is the `worker:` flip in the cohort?** Filed as **#798**, which
+  recommends honouring it and says why, without taking the decision. The code
+  promises it and the design doc says it was dropped; either honour it or remove
+  the promise from the warning text. Leaving both is the status quo and is the
+  worst of the three. Until it is decided the flip stays registered, because the
+  promise is live in front of users.
 - **D2 — Do the v1.0-era deprecations go?** `.tl` (still accepted, still warns),
   `language.py` / `language.bat`, and `tiny_vm_lang_functions.py` have been
   *"deprecated, no removal date"* since v1.0 — five majors' worth of notice. A
@@ -216,11 +235,13 @@ None of these is decided. Each changes what 6.0.0 contains.
 
 The order §3 implies, not a schedule:
 
-1. **Close G1 and D1** — decide the `worker:` question, and give every surviving
-   flip an open issue. Cheap, and it stops the register rotting further.
-2. **Close G5 structurally** — the manifest and gate phase, so the count cannot
-   go stale again. This should precede the prose edits, not follow them.
-3. **Fix the signals (G2)** — #174's notice must reach a CLI user, and #609's
+1. ~~**Close G1**~~ — **done.** #797 (default store) and #798 (`worker:` / D1)
+   were filed 2026-09-06, so every live promise has a tracker. **D1 itself is
+   still open**: #798 asks whether to honour the `worker:` promise or retract
+   the sentence, and it is a decision, not a defect with an obvious fix.
+2. ~~**Close G5 structurally**~~ — **done.** `tools/v6_flips.json` plus
+   `nodus_gate --flips`.
+3. **Fix the signals (G2)** — the next piece of real work. — #174's notice must reach a CLI user, and #609's
    should reach `nodus run`. Both are 5.x work and both are prerequisites for
    the deprecation clock being honest.
 4. **Build the readiness answer (G3)** — whatever lets a project enumerate its

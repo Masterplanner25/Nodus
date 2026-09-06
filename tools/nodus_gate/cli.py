@@ -26,6 +26,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--opcodes": False,
         "--versions": False,
         "--invariants": False,
+        "--flips": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -137,11 +138,14 @@ def main(argv: list[str] | None = None) -> int:
     run_shapes = args["--shapes"] or args["--all"]
     run_versions = args["--versions"] or args["--all"]
     run_invariants = args["--invariants"] or args["--all"]
+    run_flips = args["--flips"] or args["--all"]
 
     if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
-            or run_consumers or run_versions or run_shapes or run_invariants):
+            or run_consumers or run_versions or run_shapes or run_invariants
+            or run_flips):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
-              "[--opcodes] [--consumers] [--versions] [--shapes] [--invariants] [--all]")
+              "[--opcodes] [--consumers] [--versions] [--shapes] [--invariants] "
+              "[--flips] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
@@ -151,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  --versions       Verify prose still agrees with the version files")
         print("  --shapes         Report new instances of the recurring bug shape")
         print("  --invariants     Verify the invariant-to-test ledger is honest")
-        print("  --all            Run all nine phases")
+        print("  --flips          Verify every staged next-major promise is registered")
+        print("  --all            Run all ten phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -180,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
         format_opcodes, format_consumers, format_versions, format_shapes,
-        format_invariants,
+        format_invariants, format_flips,
         format_json_results,
     )
 
@@ -289,6 +294,19 @@ def main(argv: list[str] | None = None) -> int:
         # exists. The citation-drift sweep stays advisory: it suggests, it does
         # not decide. An unreadable manifest is a failure, never a skip.
         if invariants_result.error or invariants_result.findings:
+            any_failure = True
+
+    if run_flips:
+        from tools.nodus_gate.flips_phase import run_flips_phase
+        flips_result = run_flips_phase(root)
+        if output_fmt != "json":
+            print(format_flips(flips_result, use_color=use_color,
+                               verbose=verbose, quiet=quiet))
+        # Fails by default, for the same reason --versions does. An unregistered
+        # promise means the register is incomplete the moment it lands, and the
+        # fix is one manifest entry. This cohort was found two short precisely
+        # because nothing failed when it drifted.
+        if flips_result.has_failure:
             any_failure = True
 
     if output_fmt == "json":

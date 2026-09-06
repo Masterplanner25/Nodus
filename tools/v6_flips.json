@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "Every behaviour this tree promises to change at the next major.",
+    "",
+    "A staged flip is a promise made to a user now about a release that has not",
+    "happened: `This becomes an error in 6.0.0.` is printed on stderr today by",
+    "code that still allows the thing. This file is the register of those",
+    "promises; `docs/governance/V6_0_PLAN.md` holds the reasoning, the gate",
+    "conditions and the open decisions.",
+    "",
+    "`nodus_gate --flips` checks that this file and `src/` agree, in both",
+    "directions. It exists because they did not: five promises lived in src/",
+    "while COMPATIBILITY_MODEL.md said three, COMPATIBILITY.md said one, and a",
+    "design doc said a fourth had been dropped. The two that went missing were",
+    "the two whose issues had been closed -- the staging shipped, the issue",
+    "closed, and the flip fell out of every register while the code kept",
+    "promising it.",
+    "",
+    "Each site in src/ carries a `# v6-flip: <name>` marker, the same way a",
+    "regression test carries `# closes: #N`. Attribution needs it: two of these",
+    "flips live in one file and their promise text is nearly identical.",
+    "",
+    "`signal` is not decoration. COMPATIBILITY_MODEL.md 5.1 makes a CLI warning",
+    "one of three required deprecation signals, and two entries here do not have",
+    "one -- which is a fact about whether the flip may be taken, so it belongs",
+    "next to the flip."
+  ],
+  "target": "6.0.0",
+  "flips": {
+    "unknown-type-name": {
+      "issue": 609,
+      "summary": "An unrecognised type name becomes an error instead of meaning `any`",
+      "warns_since": "5.6.0",
+      "signal": "partial -- `nodus check` reports it; `nodus run` is silent",
+      "why": "One transposed letter disables checking on that annotation forever, and the name is unrecoverable at runtime. Recorded in the parser, which is the only place that sees both the name and the token, and reported by whoever asks.",
+      "sites": 6
+    },
+    "record-equality": {
+      "issue": 545,
+      "summary": "Record `==` becomes structural instead of identity",
+      "warns_since": "5.4.0",
+      "signal": "ok -- stderr, once per process, when a comparison whose answer will change actually happens",
+      "why": "Records are the only non-structural value, and the exception has exceptions (datetime and duration compare by value). The 6.0.0 semantics already exist as `structural_eq`; the flip is to delegate to it. Design: docs/design/v6/00-record-equality.md.",
+      "sites": 3
+    },
+    "concurrent-write": {
+      "issue": 547,
+      "summary": "A concurrent state write that loses an update becomes an error",
+      "warns_since": "5.2.0",
+      "signal": "ok -- stderr, names both remedies",
+      "why": "Since #544 the warning fires only when an update was actually lost, so the error can only reject a program that is genuinely wrong. The remedies (`merge: \"sum\"` / `\"append\"` to combine, `merge: \"any\"` for deliberate last-write-wins) predate the flip.",
+      "sites": 1
+    },
+    "worker-dispatcher": {
+      "issue": 798,
+      "summary": "A `worker:` declaration with no registered dispatcher becomes an error",
+      "warns_since": "5.3.0",
+      "signal": "ok -- stderr, names both remedies",
+      "why": "UNDECIDED, tracked as D1. The code has promised this since 5.3.0 and docs/design/v6/00-record-equality.md says the flip was dropped when #492 closed. Registered because the promise is live in front of users; the decision is whether to honour it or retract the sentence. Do not delete this entry without doing one of the two.",
+      "sites": 2
+    },
+    "default-store-sqlite": {
+      "issue": 797,
+      "summary": "The default workflow store becomes SQLiteWorkflowStore",
+      "warns_since": "5.10.0",
+      "signal": "NONE on the CLI -- a Python DeprecationWarning raised outside __main__, which the default filter discards",
+      "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. The signal has to become visible before the flip can be taken -- see #797.",
+      "sites": 3
+    }
+  }
+}

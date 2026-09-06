@@ -65,6 +65,26 @@
 
 ### Tooling
 
+- **`nodus_gate --flips`: every promise about the next major is registered.**
+
+  A staged flip is a promise made to a user *now* about a release that has not
+  happened — `"This becomes an error in 6.0.0."` is printed on stderr today by
+  code that still allows the thing. `tools/v6_flips.json` is the register and
+  `docs/governance/V6_0_PLAN.md` holds the reasoning.
+
+  It exists because the register was found **two short**: five promises live in
+  `src/`, `COMPATIBILITY_MODEL.md` said three, `COMPATIBILITY.md` listed one, and
+  a design doc said a fourth had been dropped. The two that went missing were the
+  two whose issues had been *closed* — closing an issue does not retract a
+  promise.
+
+  Each site carries a `# v6-flip: <name>` marker, like a regression test's
+  `# closes: #N`; attribution needs it, because two of these flips live in one
+  file with nearly identical text. Four checks, all failing. The fourth — each
+  entry declaring how many sites it owns — closes a hole found by *probing* the
+  detector rather than reading it: a promise landing inside an existing marker's
+  window was silently absorbed.
+
 - **`nodus.testing.discovery.TEST_FILE_PATTERNS` names the rule once.** What
   counts as a test file was answered in three voices — the matcher, the error
   message, and the help — and one of them was wrong.

@@ -77,6 +77,7 @@ def suggest_type_name(name: str) -> str | None:
     return match[0] if match else None
 
 
+# v6-flip: unknown-type-name
 def parse_type_name(name: str | None) -> NodusType:
     if name is None:
         return ANY
