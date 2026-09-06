@@ -31,9 +31,9 @@
       "issue": 609,
       "summary": "An unrecognised type name becomes an error instead of meaning `any`",
       "warns_since": "5.6.0",
-      "signal": "partial -- `nodus check` reports it; `nodus run` is silent",
+      "signal": "ok as of the G2 work -- `nodus check` reports it and `nodus run` now does too, cold and warm, for the entry file and for imports",
       "why": "One transposed letter disables checking on that annotation forever, and the name is unrecoverable at runtime. Recorded in the parser, which is the only place that sees both the name and the token, and reported by whoever asks.",
-      "sites": 6
+      "sites": 8
     },
     "record-equality": {
       "issue": 545,
@@ -63,7 +63,7 @@
       "issue": 797,
       "summary": "The default workflow store becomes SQLiteWorkflowStore",
       "warns_since": "5.10.0",
-      "signal": "NONE on the CLI -- a Python DeprecationWarning raised outside __main__, which the default filter discards",
+      "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
       "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. The signal has to become visible before the flip can be taken -- see #797.",
       "sites": 3
     }

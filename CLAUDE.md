@@ -289,6 +289,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Staged-flip warnings | `src/nodus/support/staging.py` — `StagedFlipWarning` and `warn_staged_flip()`. A `DeprecationWarning` subclass so an embedder's filters still catch it, and a distinct category so the CLI can unsuppress **only** the warnings a user must act on before the major. Use it for a registered flip; a surface merely going away stays a plain `DeprecationWarning` |
 | Staged next-major register | `tools/v6_flips.json` — every promise this tree makes about 6.0.0, each with its issue, the release its warning shipped in, whether that warning reaches a CLI user, and the count of sites it owns. Checked by `nodus_gate --flips`; each site carries a `# v6-flip: <name>` marker. Reasoning and open decisions: `docs/governance/V6_0_PLAN.md` |
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
@@ -1132,6 +1133,8 @@ Instances, all confirmed by reading the code rather than inferred:
 | #769 | which VM did this construct build | a test helper patched `VM.__init__` process-wide and returned the first VM **any** thread built |
 | #770 | who stops the background work | two tests started a server and two sweepers and stopped none; #632's lesson, in two more places |
 | #791 | is this flag one this command takes | `commands.py` declares every subcommand's flag set correctly and **nothing consulted it at dispatch**, so an unknown flag was dropped in silence — and the flag people type on `workflow cleanup` to avoid destroying state is `--dry-run`, which that command does not have. The fix needed **two** layers, because six commands take no flags and so never reached a parser at all, and `nodus test` parsed in a second module with its own copy of the names |
+| #797 | does a user see this deprecation | the notice was correct, careful, named the exact command to type — and was a `DeprecationWarning` raised outside `__main__`, which Python's default filter **discards**. Not two places disagreeing: one place, and a filter downstream of it that threw the answer away |
+| #609 | which command warns about an annotation that becomes an error | `nodus check` and the LSP both read `parser.unknown_type_names`; the **run** path threw the parser away — so the one command that will start *failing* at 6.0.0 was the one saying nothing |
 | #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
@@ -1213,6 +1216,22 @@ module's own `functions` table). **A resolve-don't-mark fix cannot have a
 cache-shaped sibling path**, because there is nothing to serialize. Worth knowing
 which kind of fix you have written before spending the second run — and worth
 still spending it, since knowing *why* it passed is the point.
+
+**The cache made it five, and this one was caught in the fix rather than after
+it.** #609's first fix warned on a cold compile and went silent on every run
+after, because the loader's parse is skipped on a cache hit — #521, #400, #394
+and #348 are the earlier instances, and #348 is the closest, since
+`--trace-imports` also printed nothing once the cache was warm. **A warning that
+stops on the second run is worse than no warning: it looks like something
+someone fixed.** The diagnostics ride in the cache entry now and are replayed on
+a hit, the way #394's step mark does.
+
+It was found by running the repro three times rather than once, which is the
+rule this file already states. Worth noting *why* it applies here even though
+#691/#696 were exempt: the exemption is for a fix that **resolves** at call time
+from live objects. This one **records** a compile product — and anything
+recorded at compile time has to survive serialization or it is a cold-run-only
+answer.
 
 **#704 shipped in the same release and is the rule holding from the other side.**
 There the cache *was* the whole defect: `cache_key` was `sha256(abspath + mtime_ns)`,

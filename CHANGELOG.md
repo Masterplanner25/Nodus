@@ -4,6 +4,31 @@
 
 ### Changed
 
+- **#797 / #609: the warnings about what breaks at 6.0.0 now reach the person
+  who has to act on them.**
+
+  Two of the five staged flips had a notice nobody saw, and they failed
+  differently.
+
+  **The default-store notice (#797) reached nobody on the CLI.** It was a
+  Python `DeprecationWarning` raised outside `__main__`, which the default
+  filters discard — measured, with runs in the store, `nodus run` printed
+  nothing while the same command under `-W always` printed it in full. It is a
+  `StagedFlipWarning` now (a `DeprecationWarning` subclass), which the CLI
+  unsuppresses by name and prints as `warning: …`. Embedders are unaffected:
+  existing `DeprecationWarning` filters still catch it, and it can still be
+  turned into an error. The narrowing is intact — a project with no runs, or
+  one that set `NODUS_WORKFLOW_STORE_BACKEND=local`, still hears nothing.
+
+  **Unknown type names (#609) reached `nodus check` only.** At 6.0.0 the command
+  that starts *failing* is `nodus run`, so the command that said nothing was the
+  one whose behaviour changes. `nodus run` reports them now, for the entry file
+  and for imported modules, naming the module each came from. `nodus check` is
+  unchanged.
+
+  This is the deprecation signal `COMPATIBILITY_MODEL.md` §5.1 requires, so for
+  these two the clock starts here rather than at the release that staged them.
+
 - **#794: four `nodus test` flags that did nothing are gone.**
 
   `--watch`, `--parallel`, `--seed` and `--coverage-per-test` were declared in

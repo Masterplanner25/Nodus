@@ -6,6 +6,7 @@ import http.client
 from importlib import metadata
 import json
 import os
+import warnings
 import sys
 import time
 import io
@@ -69,6 +70,7 @@ from nodus.cli.commands import (
     render_help as _render_help,
 )
 from nodus.cli.flags import CliUsageError, parse_flags
+from nodus.support.staging import StagedFlipWarning
 from nodus_lang_workflow.runner import get_default_workflow_runner
 from nodus_lang_workflow.store import TERMINAL_RUN_STATUSES
 
@@ -88,6 +90,40 @@ def _write_file(path: str, contents: str) -> None:
 
 def _print_stderr(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+def _show_staged_flip_warnings() -> None:
+    """Make staged-flip notices visible to a CLI user (#797, plan gate G2).
+
+    Two things had to be true and only one was. The notice existed and was
+    carefully written -- and it was a `DeprecationWarning` raised outside
+    `__main__`, which Python's default filters discard. Measured at 5.11.0 with
+    runs in the store: `nodus run` printed nothing about the store; the same
+    command under `python -W always` printed the notice in full. So the flip
+    that costs *state* rather than a build had a notice no CLI user had seen.
+
+    Scoped to `StagedFlipWarning`, not to `DeprecationWarning`, on purpose: the
+    CLI imports plenty of libraries and unsuppressing every deprecation would
+    bury our own notice in theirs -- which is how a warning becomes noise and
+    then becomes ignored.
+
+    Rendered as `warning: ...` to match the CLI's other warnings (the `.tl`
+    notice, the concurrent-write conflict) rather than as Python's
+    `file:line: Category: message`, which reads like a crash to someone who did
+    not ask for a stack trace. Everything else keeps the display it had.
+    """
+    previous = warnings.showwarning
+
+    def show(message, category, filename, lineno, file=None, line=None):
+        if issubclass(category, StagedFlipWarning):
+            print(f"warning: {message}", file=sys.stderr)
+            return
+        previous(message, category, filename, lineno, file, line)
+
+    warnings.showwarning = show
+    # "default" rather than "always": these are one-shot at their source, and a
+    # repeat would mean the source guard failed, which is worth seeing once.
+    warnings.filterwarnings("default", category=StagedFlipWarning)
 
 
 def _project_root_from_env() -> str | None:
@@ -1702,6 +1738,7 @@ def main(argv: list[str] | None = None) -> int:
     caught here, once, rather than by a guard per command.
     """
     args = list(argv) if argv is not None else list(sys.argv)
+    _show_staged_flip_warnings()
     try:
         return _dispatch(args)
     except CliUsageError as exc:

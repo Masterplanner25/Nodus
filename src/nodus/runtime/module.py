@@ -20,6 +20,11 @@ class ModuleBytecode:
     code_locs: list[tuple[str | None, int | None, int | None]] = field(default_factory=list)
     symbol_table: dict[str, object] = field(default_factory=dict)
     module_metadata: dict[str, Any] = field(default_factory=dict)
+    #: #609 diagnostics, carried through the cache for the same reason #394's
+    #: step mark is: a warning that only fires on a cold compile is worse than
+    #: no warning, because it looks fixed on the second run. #348 is the same
+    #: shape again -- `--trace-imports` printed nothing once the cache was warm.
+    unknown_type_names: list[dict[str, Any]] = field(default_factory=list)
 
     def to_cache_payload(self) -> dict[str, object]:
         return {
@@ -52,6 +57,7 @@ class ModuleBytecode:
             "code_locs": [list(loc) for loc in self.code_locs],
             "symbol_table": dict(self.symbol_table),
             "module_metadata": dict(self.module_metadata),
+            "unknown_type_names": [dict(item) for item in self.unknown_type_names],
         }
 
     @classmethod
@@ -112,6 +118,14 @@ class ModuleBytecode:
             code_locs=code_locs,
             symbol_table=dict(payload.get("symbol_table", {})),
             module_metadata=dict(payload.get("module_metadata", {})),
+            # `.get` with a default, so an entry written before this field
+            # existed still loads -- it simply carries no diagnostics, and the
+            # next edit to that file rewrites it.
+            unknown_type_names=[
+                dict(item)
+                for item in (payload.get("unknown_type_names") or [])
+                if isinstance(item, dict)
+            ],
         )
 
 

@@ -121,6 +121,17 @@ class ModuleLoader:
         self._parsed: dict[str, ParsedModule] = {}
         self._loading: set[str] = set()
         self._loading_stack: list[str] = []
+        # v6-flip: unknown-type-name
+        #: `(module_id, UnknownTypeName)` for every unrecognised type annotation
+        #: seen while compiling, entry file and imports alike (#609, plan gate
+        #: G2). The parser has always recorded these -- `nodus check` and the
+        #: LSP both read them -- and the *run* path threw the parser away, so
+        #: the one command that will start failing at 6.0.0 was the one command
+        #: that said nothing.
+        self.unknown_type_names: list[tuple[str, dict]] = []
+        #: What the *current* parse produced, per module, so `_compile_module`
+        #: can put it in the cache entry it writes.
+        self._compiled_type_warnings: dict[str, list[dict]] = {}
         self._metadata_loading: set[str] = set()
         self._metadata_stack: list[str] = []
         self._import_state: dict = {
@@ -145,6 +156,22 @@ class ModuleLoader:
         # filtered compile is not the file's program and would poison the entry
         # (#521's cache-write half).
         self._statement_filter = statement_filter
+
+    def _record_unknown_type_names(self, module_id: str, items: list[dict]) -> None:
+        """The single place diagnostics enter the run's list.
+
+        Called from the parse and from *both* cache-hit paths. A warning that
+        fires only on a cold compile is worse than none -- it looks fixed on the
+        second run -- which is #348's shape (`--trace-imports` went silent once
+        the cache was warm) and #394's before it.
+        """
+        seen = {(mid, item["line"], item["col"]) for mid, item in self.unknown_type_names}
+        for item in items:
+            key = (module_id, item.get("line"), item.get("col"))
+            if key in seen:
+                continue
+            seen.add(key)
+            self.unknown_type_names.append((module_id, dict(item)))
 
     def resolve_import(self, import_path: str, base_dir: str, tok: Tok | None, module_id: str) -> str:
         if "project_root" not in self._import_state:
@@ -340,6 +367,7 @@ class ModuleLoader:
         if can_reuse_cache and source_path is not None:
             cached = load_cached_bytecode(self.project_root, source_path)
             if cached is not None:
+                self._record_unknown_type_names(source_path, cached.unknown_type_names)
                 if not cached.module_metadata:
                     cached.module_metadata = self._serialize_module_metadata(metadata)
                     write_cached_bytecode(self.project_root, source_path, cached)
@@ -356,6 +384,7 @@ class ModuleLoader:
                 "imports": sorted(metadata.import_names),
             },
             module_metadata=self._serialize_module_metadata(metadata),
+            unknown_type_names=self._compiled_type_warnings.get(metadata.module_id, []),
         )
         # Writing is gated on the same question as reading. A cache entry is
         # keyed by path + mtime, so storing the compile of a *different* source
@@ -661,6 +690,7 @@ class ModuleLoader:
             if source_path is not None and self._cache_is_authoritative(source_path, source):
                 cached = load_cached_bytecode(self.project_root, source_path)
                 if cached is not None:
+                    self._record_unknown_type_names(source_path, cached.unknown_type_names)
                     cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
                     if cached_metadata is not None:
                         self._metadata[module_id] = cached_metadata
@@ -827,7 +857,19 @@ class ModuleLoader:
         # plausible in it.
         try:
             toks = tokenize(source)
-            ast = Parser(toks).parse()
+            parser = Parser(toks)
+            ast = parser.parse()
+            self._record_unknown_type_names(
+                module_id,
+                [
+                    {"line": u.line, "col": u.col, "message": u.message()}
+                    for u in parser.unknown_type_names
+                ],
+            )
+            self._compiled_type_warnings[module_id] = [
+                {"line": u.line, "col": u.col, "message": u.message()}
+                for u in parser.unknown_type_names
+            ]
         except LangSyntaxError as err:
             if getattr(err, "path", None) is None:
                 err.path = module_id
