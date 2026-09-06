@@ -8,7 +8,11 @@ from typing import cast
 
 from nodus.cli.commands import flags_for
 from nodus.cli.flags import parse_flags
-from nodus.testing.discovery import discover_test_files, matches_filter
+from nodus.testing.discovery import (
+    describe_test_patterns,
+    discover_test_files,
+    matches_filter,
+)
 from nodus.testing.runner import TestResult, TestRunner
 from nodus.testing.formatter import format_text, format_json, format_junit, _is_tty
 
@@ -62,7 +66,10 @@ def run_test_command(cmd_args: list[str]) -> int:
     # Discover test files
     test_files = discover_test_files(test_path)
     if not test_files:
-        print(f"No *_test.nd files found in: {test_path}", file=sys.stderr)
+        print(
+            f"No {describe_test_patterns()} files found in: {test_path}",
+            file=sys.stderr,
+        )
         return 2
 
     # Determine output format

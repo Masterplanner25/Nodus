@@ -4,6 +4,30 @@
 
 ### Changed
 
+- **#794: four `nodus test` flags that did nothing are gone.**
+
+  `--watch`, `--parallel`, `--seed` and `--coverage-per-test` were declared in
+  the command table, printed by `nodus test --help`, and **read by no code at
+  all**. `--watch` ran the suite once and exited — which looks exactly like a
+  watcher that saw no changes. Each now gets #791's unknown-flag error naming
+  what `test` does take.
+
+  They came from `docs/design/v4/07-test-framework-api.md` and `08-*.md`, which
+  are `Status: Locked` v4 specs: the flags were declared ahead of an
+  implementation that never arrived. Both docs now say which parts did not
+  ship, so the next reader does not re-declare them.
+
+  Removing beats keeping the promise. `--parallel` in particular cannot simply
+  be written: a Nodus test file can run a workflow, and the run store is
+  process-wide and CWD-relative, which is the same hazard that makes two
+  concurrent suites corrupt each other.
+
+- **#794: `nodus test --help` no longer claims `test_*.nd` files are
+  discovered.** They never were — such a file was invisible under a directory
+  scan *and* when named on the command line, while the "no files found" message
+  said `*_test.nd`, contradicting the help two lines above it. Discovery is
+  `*_test.nd` only, and the help says so.
+
 - **#791: an undeclared CLI flag is refused instead of silently dropped.**
 
   No `nodus` command rejected an unknown flag. The token became a *positional*
@@ -41,6 +65,18 @@
 
 ### Tooling
 
+- **`nodus.testing.discovery.TEST_FILE_PATTERNS` names the rule once.** What
+  counts as a test file was answered in three voices — the matcher, the error
+  message, and the help — and one of them was wrong.
+- **The command table now checks the direction that was missing.**
+  `test_documented_flags_are_declared` catches a flag the help promises that the
+  parser would swallow (#532); nothing caught a flag that parses cleanly and
+  reaches no code. `test_every_declared_flag_is_read_by_something` does, as a
+  whole-file union rather than per-branch attribution — per-branch reports
+  false positives for `--host`/`--port` (read in a shared helper) and for
+  `check`'s trace flags (declared deliberately so it can refuse them with a
+  specific message). 78 of 82 declared flags were referenced; the 4 that were
+  not were the defect.
 - **`nodus test` parses its flags from the command table.** It carried a second
   copy of `parse_flags` with its flag names written out beside it -- in
   agreement with the table, with nothing keeping it that way, and the copy that
