@@ -594,8 +594,8 @@ workflow tally {
 Syntax error at tally.nd:5:5: step 'reader' reads state 'counter', declared
 merge: "sum", but does not run after step 'b', which also contributes to it. It
 would read a partial fold, and which one depends on scheduling. Add 'b' to
-'reader's dependencies, or read the cell from the run result after the flow
-completes.
+'reader's dependencies, declare the cell barrier: true so the edges are
+inferred, or read the cell from the run result after the flow completes.
 ```
 
 `after a, b` fixes it. So does anything that orders both transitively — `after
@@ -612,6 +612,64 @@ Three things this does **not** refuse:
   render` sees every instance's contribution.
 * **Reading the final value after the run.** `r["state"]["counter"]` is the
   complete fold; the rule is about reading *from inside a step*.
+
+#### `barrier: true` — let the cell declare the join
+
+`after a, b` is correct and gets stale. Add a third contributor and every reader
+of the cell needs editing; miss one and the failure is a value that depends on
+scheduling.
+
+`barrier: true` says it once, on the cell: **every step that reads it waits for
+every step that writes it**, inferred.
+
+```nd-expect=output
+workflow tally {
+    state counter = 0i with { merge: "sum", barrier: true }
+
+    step a { counter += 1i; return "a" }
+    step b { counter += 1i; return "b" }
+    step c { counter += 1i; return "c" }
+    step reader { print("counter=\(counter)"); return "r" }
+}
+
+fn main() {
+    let r = run_workflow(tally)
+    print("failed=\(len(r["failed"]))")
+}
+```
+
+```
+counter=3
+failed=0
+```
+
+The writers still run concurrently — the barrier orders the *reader*, not them.
+A fourth contributor needs no edit anywhere.
+
+Four things worth knowing before reaching for it:
+
+* **It composes with `merge:`, and with nothing else required.** A plain cell can
+  be a barrier too; the fold is a separate question about how writes combine.
+* **The edges are ordering, not data.** `step d after b, c` also *binds* `b` and
+  `c` as parameters of the step body. A barrier does not: the reader takes its
+  value from the cell, so its body stays zero-parameter.
+* **Writers must write unconditionally.** A write inside an `if`, a loop or a
+  `match` arm — or a step carrying a `when` guard — is refused at declaration:
+
+  ```
+  Syntax error: step 'a' writes state 'x', declared barrier: true, but not on
+  every pass: the write is inside an `if`, a loop or a `match` arm, so it may
+  not happen on a pass the step does run.
+  ```
+
+  The reason is that a barrier's readers wait for every declared writer, so a
+  writer that may not write leaves them waiting for something that never comes.
+  Assign a neutral value on the branch with nothing to say, or drop
+  `barrier: true` and join with `after`.
+* **Two cells cannot wait on each other.** If step `a` reads a barrier cell that
+  `b` writes and `b` reads one that `a` writes, the inferred edges close a cycle
+  and that is refused at compile time, naming both steps — rather than surfacing
+  at run time as a dependency cycle over a join nobody wrote.
 
 #### `union` and what counts as the same element
 

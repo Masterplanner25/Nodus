@@ -74,6 +74,10 @@ GOAL_PURSUIT_MARKER = "__goal_pursuit__"
 STATE_OPTION_KEYS = {
     "merge",
     "durable",
+    # #578: readers of this cell wait for every step that writes it. A join
+    # written on the data rather than on the step side -- `step d after b, c`
+    # says the same thing when the author remembers every writer.
+    "barrier",
 }
 
 
@@ -216,29 +220,134 @@ def _fold_cells(flow) -> dict[str, str]:
     return cells
 
 
+def _barrier_cells(flow) -> set[str]:
+    """Cells declaring `barrier: true`, read out of the `with { ... }` literal.
+
+    A literal for the same reason `merge:` is one: it decides at compile time
+    whether this program's steps gain edges, so it cannot be computed. A
+    computed or non-`true` value is refused where it is written rather than
+    silently read as "not a barrier" -- the #490 rule that an accepted-and-
+    ignored third state is the worst of the three.
+    """
+    cells: set[str] = set()
+    for state in flow.states:
+        options = getattr(state, "options", None)
+        if not isinstance(options, MapLit):
+            continue
+        for key_node, value_node in options.items:
+            if not (isinstance(key_node, Str) and key_node.v == "barrier"):
+                continue
+            if not (isinstance(value_node, Bool) and value_node.v is True):
+                raise LangSyntaxError(
+                    f"state '{state.name}' barrier: must be the literal `true`. "
+                    "It decides at compile time which steps this flow's readers "
+                    "wait for, so it cannot be computed, and a cell that is not "
+                    "a barrier should omit the key rather than say `false`.",
+                    line=_pos(state)[0],
+                    col=_pos(state)[1],
+                )
+            cells.add(state.name)
+    return cells
+
+
+def _writes_unconditionally(step, cell: str) -> bool:
+    """Does *step* write *cell* on every pass it runs?
+
+    Deliberately conservative, and the definition is #500's verbatim: a write
+    that is a direct statement of an unguarded step body. One nested in an `if`,
+    a loop or a `match` arm may not run, and a step carrying `when` may not run
+    at all.
+
+    That conservatism is the decision #578 settled. A barrier whose writer takes
+    the other branch would deadlock its readers, and a may-write analysis that
+    guessed would turn a scheduling accident into a correctness one. Refusing
+    the shape is checkable today and mirrors two shipped precedents -- #500's
+    unconditional-waypoint check and `merge:` policy validation.
+    """
+    if getattr(step, "when", None) is not None:
+        return False
+    body = getattr(step, "body", None)
+    stmts = getattr(body, "stmts", None)
+    if stmts is None and isinstance(body, list):
+        stmts = body
+    for stmt in stmts or []:
+        target = stmt.expr if isinstance(stmt, ExprStmt) else stmt
+        if isinstance(target, (Assign, CompoundAssign)) and getattr(target, "name", None) == cell:
+            return True
+        if isinstance(target, (IndexAssign, FieldAssign)):
+            base = getattr(target, "seq", None) or getattr(target, "obj", None)
+            while isinstance(base, (Index, Attr)):
+                base = getattr(base, "seq", None) or getattr(base, "obj", None)
+            if isinstance(base, Var) and base.name == cell:
+                return True
+    return False
+
+
+def _collect_usage(lower_steps):
+    """Run the lowering once purely to learn what each step body touches.
+
+    The lowered maps are discarded. Any `LangSyntaxError` a body deserves is
+    raised here instead of on the second pass, which changes nothing a caller
+    can see -- it is the same error from the same source position.
+    """
+    usage: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    lower_steps(usage)
+    return usage
+
+
 def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     state_init = _lower_state_init(flow)
     state_names = [state.name for state in flow.states]
     fold_cells = _fold_cells(flow)
+    barrier_cells = _barrier_cells(flow)
     param_names = [param.name for param in getattr(flow, "params", []) or []]
-    fold_usage: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    tracked_cells = set(fold_cells) | barrier_cells
+    cell_usage: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+
+    def lower_steps(usage, inferred=None):
+        return [
+            _lower_step_ast(
+                step, state_names, fold_cells,
+                flow_name=flow.name, param_names=param_names,
+                cell_usage=usage, tracked_cells=tracked_cells,
+                extra_deps=(inferred or {}).get(step.name),
+            )
+            for step in flow.steps
+        ]
+
+    # #578: a barrier adds edges, so `step.deps` must be final *before* the
+    # steps are lowered -- the lowered map carries `deps` as data and nothing
+    # downstream re-reads the AST. Which cells a body touches is only known by
+    # walking it, so a flow declaring a barrier is lowered twice: once to learn,
+    # once for real. The learning pass is this same function rather than a
+    # cheaper bespoke walk, because "what does this step body do with state
+    # cells" answered twice is the shape `--shapes` reports, and a second
+    # implementation would drift from the rewriter it is meant to mirror.
+    #
+    # Only barrier flows pay it. A `merge:`-only flow refuses after lowering and
+    # never mutates deps, so its single pass is unchanged.
+    inferred_edges: dict[str, list[str]] = {}
+    if barrier_cells:
+        inferred_edges = _apply_barriers(flow, _collect_usage(lower_steps), barrier_cells)
+
     items: list[tuple[object, object]] = [
         (Str(marker), Str(execution_kind)),
         (Str("name"), Str(flow.name)),
         (Str("execution_kind"), Str(execution_kind)),
-        (
-            Str("steps"),
-            ListLit([
-                _lower_step_ast(
-                    step, state_names, fold_cells,
-                    flow_name=flow.name, param_names=param_names,
-                    fold_usage=fold_usage,
-                )
-                for step in flow.steps
-            ]),
-        ),
+        (Str("steps"), ListLit(lower_steps(cell_usage, inferred_edges))),
     ]
-    _validate_fold_reads(flow, fold_usage, fold_cells)
+    _validate_fold_reads(flow, cell_usage, fold_cells, inferred_edges)
+    if inferred_edges:
+        # Recorded because an edge nobody wrote should still be visible to
+        # whoever asks why a step waited. `graph_topology` (#470) is the
+        # precedent for derived structure travelling in the flow map.
+        items.append((
+            Str("inferred_edges"),
+            MapLit([
+                (Str(name), ListLit([Str(dep) for dep in deps]))
+                for name, deps in sorted(inferred_edges.items())
+            ]),
+        ))
     # #481: declared, so the runner can refuse an unknown or missing argument
     # rather than leaving a step to read `nil`. Data on the flow map, like
     # `state_keys` -- it has to survive to the runner, which never sees the AST.
@@ -254,7 +363,202 @@ def _lower_flow_ast(flow, *, marker: str, execution_kind: str) -> MapLit:
     return MapLit(items)
 
 
-def _validate_fold_reads(flow, fold_usage, fold_cells) -> None:
+def _cell_relation(flow, cell_usage, inferred=None):
+    """Who writes each cell, and what is already finished before each step.
+
+    The relation both `merge:` and `barrier:` are asking about, computed once.
+    They differ only in the **response** to the answer -- a fold refuses a
+    reader that would see a partial value, a barrier gives it the edges instead
+    -- and answering "which steps must finish before this reader" in two places
+    is the shape `nodus_gate --shapes` reports.
+
+    Two node kinds are deliberately not writers, and the reasoning is #722's:
+
+    - A **compensation** step is excluded from the forward graph by declaration
+      (#577), so no forward reader can name it in `after` and its writes land
+      during unwinding. Counting it would make every read unsatisfiable.
+    - An **`each`-mapped** step needs no special case: `each x in src` implies
+      `after src` and the parser adds it, so the writer set stays a set of step
+      *names* however many instances run.
+    """
+    forward = [s for s in flow.steps if getattr(s, "compensates", None) is None]
+    writers: dict[str, set[str]] = {}
+    for step in forward:
+        _reads, writes = cell_usage.get(step.name, (frozenset(), frozenset()))
+        for cell in writes:
+            writers.setdefault(cell, set()).add(step.name)
+
+    # #578: a barrier's inferred edges count as ordering here. Without them a
+    # cell declaring both `merge:` and `barrier:` is refused by the fold check
+    # for a join that was just inferred -- which is exactly what composing them
+    # is supposed to avoid, and what a stale bytecode cache hid on the first
+    # attempt at this.
+    inferred = inferred or {}
+    direct = {
+        s.name: set(s.deps or []) | set(inferred.get(s.name, ()))
+        for s in forward
+    }
+    finished: dict[str, set[str]] = {}
+
+    def upstream(name: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        if name in finished:
+            return finished[name]
+        if name in seen:      # a cycle is #396's error, not this one's
+            return set()
+        out: set[str] = set()
+        for dep in direct.get(name, ()):  # an unknown dep is reported elsewhere
+            out.add(dep)
+            out |= upstream(dep, seen | {name})
+        finished[name] = out
+        return out
+
+    return forward, writers, upstream
+
+
+def _missing_writers(step, cell, writers, upstream) -> list[str]:
+    """Writers of *cell* that are not already finished when *step* runs.
+
+    Transitive, because `after b` where `b after a` already orders `a`. The
+    reader needs the contributors *finished*, not named directly -- demanding a
+    direct edge would refuse (or redundantly re-edge) correct programs. A step
+    never waits for itself: a `+=` both reads and writes.
+    """
+    return sorted(writers.get(cell, set()) - upstream(step.name) - {step.name})
+
+
+def _apply_barriers(flow, cell_usage, barrier_cells) -> dict[str, list[str]]:
+    """Give every reader of a barrier cell an edge to each of its writers (#578).
+
+    The inference half. `step d after b, c` says this already when the author
+    remembers every writer; a barrier says it once, on the cell, and cannot
+    forget one. Edges are added to `step.deps`, so everything downstream --
+    graph construction, `parallel_groups`, resume validation, `graph_topology`
+    (#470) -- sees ordinary dependencies and needs no barrier concept.
+
+    Returns the inferred edges per step, for the run metadata: an edge nobody
+    wrote should still be visible to someone reading why a step waited.
+    """
+    if not barrier_cells:
+        return {}
+    forward, writers, upstream = _cell_relation(flow, cell_usage)
+
+    # The decided rule (#578): a barrier's writers must write unconditionally,
+    # refused at declaration. A conditional writer makes the writer set
+    # statically unknown, and the two alternatives are worse -- a may-write
+    # analysis that guesses, or a deadlock when the other branch is taken.
+    for cell in sorted(barrier_cells):
+        for name in sorted(writers.get(cell, set())):
+            step = next(s for s in forward if s.name == name)
+            if _writes_unconditionally(step, cell):
+                continue
+            guarded = getattr(step, "when", None) is not None
+            why = (
+                "the step carries a `when` guard, so it may not run at all"
+                if guarded else
+                "the write is inside an `if`, a loop or a `match` arm, so it "
+                "may not happen on a pass the step does run"
+            )
+            raise LangSyntaxError(
+                f"step '{name}' writes state '{cell}', declared barrier: true, "
+                f"but not on every pass: {why}. A barrier's readers wait for "
+                f"every declared writer, so a writer that may not write leaves "
+                f"them waiting for something that never comes. Write '{cell}' "
+                f"as a plain statement of the step body -- assign a neutral "
+                f"value on the branch that has nothing to say -- or drop "
+                f"barrier: true and join the writers with `after`.",
+                line=_pos(step)[0],
+                col=_pos(step)[1],
+            )
+
+    inferred: dict[str, list[str]] = {}
+    for step in forward:
+        reads, _writes = cell_usage.get(step.name, (frozenset(), frozenset()))
+        added: set[str] = set()
+        for cell in sorted(reads & barrier_cells):
+            added |= set(_missing_writers(step, cell, writers, upstream))
+        if not added:
+            continue
+        # Sorted so the lowered program is deterministic: the same source must
+        # produce the same bytecode, which the content-keyed cache (#704) and
+        # the golden bytecode fixtures both depend on.
+        #
+        # Returned rather than written back to `step.deps`. Mutating the AST
+        # made lowering **non-idempotent**: a second lowering of the same tree
+        # saw the edges already present, inferred nothing, and so ran no cycle
+        # check -- the edges survived and the error did not. The CLI lowers
+        # twice, so a barrier cycle reached the runtime as `Dependency cycle
+        # detected` naming a join nobody wrote. The AST is shared; deriving
+        # from it must not change it.
+        inferred[step.name] = sorted(added)
+    _refuse_inferred_cycle(forward, inferred)
+    return inferred
+
+
+def _refuse_inferred_cycle(forward, inferred) -> None:
+    """A cycle an inferred edge created is reported here, not at run time (#578).
+
+    The runtime already detects cycles and says `Dependency cycle detected:
+    a -> b -> a` (#396) -- verified, and a barrier-induced cycle reaches it
+    identically. That message is the problem: it names a join the author never
+    wrote, so the obvious next move is to search the source for `after b` and
+    find nothing.
+
+    Only a cycle **containing an inferred edge** is refused here. One the author
+    wrote is still the runtime's to report, because reporting it earlier would
+    change behaviour for programs this feature has nothing to do with.
+    """
+    if not inferred:
+        return
+    deps = {
+        s.name: list(s.deps or []) + inferred.get(s.name, [])
+        for s in forward
+    }
+    state: dict[str, int] = {}
+    stack: list[str] = []
+
+    def walk(name: str):
+        if state.get(name) == 2:
+            return None
+        if state.get(name) == 1:
+            return stack[stack.index(name):] + [name]
+        state[name] = 1
+        stack.append(name)
+        for dep in deps.get(name, ()):
+            if dep not in deps:      # an unknown dep is reported elsewhere
+                continue
+            found = walk(dep)
+            if found:
+                return found
+        stack.pop()
+        state[name] = 2
+        return None
+
+    for start in sorted(deps):
+        cycle = walk(start)
+        if not cycle:
+            continue
+        culprits = [
+            (b, a) for a, b in zip(cycle, cycle[1:]) if b in inferred.get(a, ())
+        ]
+        if not culprits:
+            return       # the author wrote this one; the runtime reports it
+        writer, reader = culprits[0]
+        step = next(s for s in forward if s.name == reader)
+        chain = " -> ".join(reversed(cycle))
+        raise LangSyntaxError(
+            f"barrier cells make step '{reader}' wait for '{writer}', which "
+            f"closes a dependency cycle: {chain}. '{reader}' reads a barrier "
+            f"cell that '{writer}' writes, and following the same rule back "
+            f"again returns here. Two steps cannot each wait for the other's "
+            f"value: drop barrier: true from one of the cells and order those "
+            f"steps with `after`, or split the cell so each step reads one it "
+            f"does not write into.",
+            line=_pos(step)[0],
+            col=_pos(step)[1],
+        )
+
+
+def _validate_fold_reads(flow, fold_usage, fold_cells, inferred=None) -> None:
     """A reader of a folded cell must join every step that contributes to it (#722).
 
     `merge:` (#485) fixed *lost* writes -- the final value is right. What it did
@@ -270,51 +574,21 @@ def _validate_fold_reads(flow, fold_usage, fold_cells) -> None:
     contributions": there is no ordering that makes a partial fold the intended
     value, so there is nothing to preserve by allowing it.
 
-    **Transitive**, because `after b` where `b after a` already orders `a`. The
-    reader only needs the contributors to be *finished*, not named directly --
-    demanding a direct edge would refuse correct programs.
-
-    Two node kinds are deliberately not writers here:
-
-    - A **compensation** step is excluded from the forward graph by declaration
-      (#577), so no forward reader can name it in `after` and its writes land
-      during unwinding. Counting it would make every read of a cell it touches
-      unsatisfiable.
-    - An **`each`-mapped** step needs no special case: `each x in src` implies
-      `after src` and the parser adds it, and a dependent joins the whole
-      fan-out, so the writer set is a set of step *names* and stays static
-      however many instances run.
+    **This is the refusing response to `_cell_relation`; `_apply_barriers` is
+    the inferring one.** A folded cell that also declares `barrier: true` has
+    had its edges added before this runs, so it has nothing left to refuse --
+    which is the point of composing them (#578).
     """
     if not fold_usage:
         return
-    forward = [s for s in flow.steps if getattr(s, "compensates", None) is None]
-    writers: dict[str, set[str]] = {}
-    for step in forward:
-        _reads, writes = fold_usage.get(step.name, (frozenset(), frozenset()))
-        for cell in writes:
-            writers.setdefault(cell, set()).add(step.name)
+    _forward, writers, upstream = _cell_relation(flow, fold_usage, inferred)
     if not writers:
         return
 
-    direct = {s.name: set(s.deps or []) for s in forward}
-    finished: dict[str, set[str]] = {}
-
-    def _upstream(name: str, seen: frozenset[str] = frozenset()) -> set[str]:
-        if name in finished:
-            return finished[name]
-        if name in seen:      # a cycle is #396's error, not this one's
-            return set()
-        out: set[str] = set()
-        for dep in direct.get(name, ()):  # an unknown dep is reported elsewhere
-            out.add(dep)
-            out |= _upstream(dep, seen | {name})
-        finished[name] = out
-        return out
-
-    for step in forward:
+    for step in (s for s in flow.steps if getattr(s, "compensates", None) is None):
         reads, _writes = fold_usage.get(step.name, (frozenset(), frozenset()))
-        for cell in sorted(reads):
-            missing = sorted(writers.get(cell, set()) - _upstream(step.name) - {step.name})
+        for cell in sorted(reads & set(fold_cells)):
+            missing = _missing_writers(step, cell, writers, upstream)
             if not missing:
                 continue
             joined = ", ".join(f"'{n}'" for n in missing)
@@ -325,8 +599,9 @@ def _validate_fold_reads(flow, fold_usage, fold_cells) -> None:
                 f"merge: \"{fold_cells.get(cell)}\", but does not run after "
                 f"{plural} {joined}, which also {verb} to it. It would read "
                 f"a partial fold, and which one depends on scheduling. Add "
-                f"{joined} to '{step.name}'s dependencies, or read the cell from "
-                f"the run result after the flow completes.",
+                f"{joined} to '{step.name}'s dependencies, declare the cell "
+                f"barrier: true so the edges are inferred, or read the cell "
+                f"from the run result after the flow completes.",
                 line=_pos(step)[0],
                 col=_pos(step)[1],
             )
@@ -370,7 +645,9 @@ def _lower_step_ast(
     *,
     flow_name: str = "",
     param_names: list[str] | None = None,
-    fold_usage: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
+    cell_usage: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
+    tracked_cells: set[str] | None = None,
+    extra_deps: list[str] | None = None,
 ) -> MapLit:
     state_var = "__workflow_state"
     params = list(param_names or [])
@@ -391,13 +668,14 @@ def _lower_step_ast(
             | ({state_var} if state_names else set())
         ),
         fold_cells=fold_cells,
+        tracked_cells=tracked_cells,
     )
     rewritten_body = rewriter.rewrite_stmt(body)
-    if fold_usage is not None:
+    if cell_usage is not None:
         # #722. Collected from the walk that just happened, not a second one.
-        fold_usage[step.name] = (
-            frozenset(rewriter.fold_reads),
-            frozenset(rewriter.fold_writes),
+        cell_usage[step.name] = (
+            frozenset(rewriter.cell_reads),
+            frozenset(rewriter.cell_writes),
         )
     prelude_stmts: list[object] = []
     if state_names:
@@ -443,6 +721,23 @@ def _lower_step_ast(
         ),
         (Str("options"), step.options if step.options is not None else MapLit([])),
     ]
+    if extra_deps:
+        # #578: barrier edges are ordering **only**, and deliberately not `deps`.
+        # A dep is also a parameter -- `step d after b, c` binds b and c as
+        # locals and the arity check requires one per dep -- so an inferred edge
+        # in `deps` would change the step's signature and reject a body the
+        # author wrote correctly. A barrier reader takes its value from the cell,
+        # not from an upstream return, so it needs the edge and nothing else.
+        #
+        # Appended only when there is something to say, like `each` and
+        # `compensates` below. A key on every step would change the lowered
+        # shape -- and the emitted bytecode -- of every workflow ever written,
+        # including the ones with no barrier in them; three golden fixtures said
+        # so. A feature nobody used should cost nothing.
+        items.append((
+            Str("order_after"),
+            ListLit([Str(dep) for dep in extra_deps]),
+        ))
     if each_var is not None:
         # Data on the step map, like `when` and `deps` -- the runner never sees
         # the AST, and `plan_workflow` should be able to show that this node
@@ -699,6 +994,20 @@ def workflow_to_graph(vm, workflow_value, *, init_state: bool = False, task_ids_
             if dep_task is None:
                 vm.runtime_error("runtime", f"Workflow step '{step_name}' references unknown dependency '{dep}'")
             dep_nodes.append(dep_task)
+        # #578: ordering-only edges, appended after the arity-bearing deps so a
+        # step's parameters still line up with `deps` alone.
+        order_after = step.get("order_after", []) or []
+        if not isinstance(order_after, list):
+            vm.runtime_error("type", f"Workflow step '{step_name}' order_after must be a list")
+        for dep in order_after:
+            dep_task = resolved.get(dep) if isinstance(dep, str) else None
+            if dep_task is None:
+                vm.runtime_error(
+                    "runtime",
+                    f"Workflow step '{step_name}' waits on unknown step '{dep}'",
+                )
+            if dep_task not in dep_nodes:
+                dep_nodes.append(dep_task)
         resolved[step_name].dependencies = dep_nodes
 
     # #499: the stored source is the cross-process rebuild handle -- and a
@@ -1007,6 +1316,7 @@ class _StateRewriter:
         state_var: str,
         initial_locals: set[str] | None = None,
         fold_cells: dict[str, str] | None = None,
+        tracked_cells: set[str] | None = None,
     ):
         self.state_names = set(state_names)
         self.state_var = state_var
@@ -1023,11 +1333,38 @@ class _StateRewriter:
         # tells folded cells from plain ones. A separate analysis pass would be
         # two implementations of "what does this step body do with state cells",
         # which is the shape `nodus_gate --shapes` reports.
-        self.fold_reads: set[str] = set()
-        self.fold_writes: set[str] = set()
+        # #578: which cells' accesses are recorded at all. A superset of the
+        # fold cells -- a `barrier:` cell needs the same reader/writer relation
+        # without folding. Kept as one set because "what does this body do with
+        # state cells" is one question; what *differs* is the response to the
+        # answer, which lives in `_relate_cell_access`.
+        self.tracked_cells: set[str] = set(tracked_cells or ()) | set(self.fold_cells)
+        self.cell_reads: set[str] = set()
+        self.cell_writes: set[str] = set()
 
     def _is_fold(self, name: str) -> bool:
         return name in self.fold_cells and not self._is_local(name)
+
+    def _is_tracked(self, name: str) -> bool:
+        return name in self.tracked_cells and not self._is_local(name)
+
+    def _record_container_write(self, target) -> None:
+        """`x["k"] = v` and `x.f = v` mutate the cell `x`, so they are writes.
+
+        #518 is the reason this is a method rather than a line in one branch:
+        that bug was an enumeration of assignment forms missing a member, and
+        `ASSIGNMENT_FORMS` in `ast_nodes` names all four. `Assign` and
+        `CompoundAssign` record at their own sites because they also decide how
+        the write lowers; these two only need recording, and recording them in
+        one place is what keeps a third container form from being forgotten.
+
+        Rewriting the base separately records the *read* -- mutating a map means
+        reading the cell to reach it -- so only the write is added here.
+        """
+        while isinstance(target, (Index, Attr)):
+            target = getattr(target, "seq", None) or getattr(target, "obj", None)
+        if isinstance(target, Var) and self._is_tracked(target.name):
+            self.cell_writes.add(target.name)
 
     def _is_local(self, name: str) -> bool:
         return any(name in scope for scope in self.scopes)
@@ -1125,8 +1462,8 @@ class _StateRewriter:
             return expr
         if isinstance(expr, Var):
             if expr.name in self.state_names and not self._is_local(expr.name):
-                if self._is_fold(expr.name):
-                    self.fold_reads.add(expr.name)
+                if self._is_tracked(expr.name):
+                    self.cell_reads.add(expr.name)
                 return _mark_from(Index(Var(self.state_var), Str(expr.name)), expr)
             return expr
         if isinstance(expr, Assign):
@@ -1147,6 +1484,11 @@ class _StateRewriter:
                         line=_pos(expr)[0],
                         col=_pos(expr)[1],
                     )
+                # #578: a plain `=` is how a barrier cell is written. A fold
+                # cell never reaches here -- the branch above refuses it -- so
+                # this records exactly the non-fold tracked writes.
+                if self._is_tracked(expr.name):
+                    self.cell_writes.add(expr.name)
                 return _mark_from(IndexAssign(Var(self.state_var), Str(expr.name), value), expr)
             return _mark_from(Assign(expr.name, value), expr)
         if isinstance(expr, CompoundAssign):
@@ -1166,7 +1508,7 @@ class _StateRewriter:
                     # window two concurrent branches lose an update through --
                     # and is why this is recorded as a write and not also a read
                     # (#722).
-                    self.fold_writes.add(expr.name)
+                    self.cell_writes.add(expr.name)
                     return _mark_from(
                         builtin_call("state_contribute", [Str(expr.name), value]),
                         expr,
@@ -1175,6 +1517,14 @@ class _StateRewriter:
                 # lowers to the shape the `Assign` case above already produces.
                 # Without this it reached the compiler untouched, resolved as an
                 # undeclared local, and read nil (#518).
+                #
+                # #578: for a tracked cell this is a write *and* a read -- it
+                # reads the cell to fold the operand in. Both are recorded; a
+                # step that reads what it writes is excluded from its own
+                # barrier edges rather than being left out of the sets.
+                if self._is_tracked(expr.name):
+                    self.cell_writes.add(expr.name)
+                    self.cell_reads.add(expr.name)
                 cell = _mark_from(Index(Var(self.state_var), Str(expr.name)), expr)
                 folded = _mark_from(Bin(expr.op, cell, value), expr)
                 return _mark_from(IndexAssign(Var(self.state_var), Str(expr.name), folded), expr)
@@ -1192,10 +1542,12 @@ class _StateRewriter:
         if isinstance(expr, Index):
             return _mark_from(Index(self.rewrite_expr(expr.seq), self.rewrite_expr(expr.index)), expr)
         if isinstance(expr, IndexAssign):
+            self._record_container_write(expr.seq)
             return _mark_from(IndexAssign(self.rewrite_expr(expr.seq), self.rewrite_expr(expr.index), self.rewrite_expr(expr.value)), expr)
         if isinstance(expr, Attr):
             return _mark_from(Attr(self.rewrite_expr(expr.obj), expr.name), expr)
         if isinstance(expr, FieldAssign):
+            self._record_container_write(expr.obj)
             return _mark_from(FieldAssign(self.rewrite_expr(expr.obj), expr.name, self.rewrite_expr(expr.value)), expr)
         if isinstance(expr, Call):
             return _mark_from(Call(self.rewrite_expr(expr.callee), [self.rewrite_expr(arg) for arg in expr.args]), expr)
