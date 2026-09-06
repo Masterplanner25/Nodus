@@ -224,10 +224,14 @@ Checked 2026-09-01 against 5.9.0:
 - `language.py` / `language.bat` launchers (warned; no removal date set)
 - `math.log_base` (removed in 3.0.2 — replaced by `math.log(n, base)`)
 
-**Three changes are staged to become errors at 6.0.0** and warn today, which is a
-deprecation in everything but name: an unrecognised type name (#609), a concurrent
-write that loses an update (#547), and record equality (#545). A project that is
-clean now can still be red at the major, so treat those warnings as a to-do list.
+**Several changes are staged to become errors at 6.0.0** and warn today, which is
+a deprecation in everything but name. A project that is clean now can still be
+red at the major, so treat those warnings as a to-do list.
+
+**The list is in `docs/governance/V6_0_PLAN.md` §1, and deliberately not here.**
+This paragraph used to enumerate three of them and was two short on the day it
+was last checked — the same enumeration-instead-of-pointer failure the docset
+audits keep finding. One register, checked against `src/`.
 
 ---
 
