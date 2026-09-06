@@ -274,6 +274,35 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
     # Naming what exists is not reaching it. A denied `tool_call` is still
     # denied after `tool_list` names the tool, and hiding the catalogue while
     # leaving the call ungoverned would be the wrong half.
+    #
+    # #761: that argument has a limit, and **run enumeration is past it**.
+    # There is deliberately no `runtime_workflows()` — no builtin lists
+    # workflow runs, and run enumeration is the host's job, permanently.
+    # `nodus workflow runs`, `GET /workflow/runs` and
+    # `WorkflowFrameworkRunner.list_runs_filtered()` are the supported ways;
+    # a program that genuinely needs the list should be handed it through
+    # `initial_globals`.
+    #
+    # The rationale above was written about a catalogue the host *registered
+    # deliberately*. A store of run records is not that, and three measured
+    # facts decided it:
+    #
+    #   - every run record carries `workflow_source_code`, so a listing
+    #     discloses other programs' whole source, not merely their names;
+    #   - the store root is CWD-relative and process-global, so "a run this
+    #     guest did not create" is the normal case rather than an edge one;
+    #   - `list_runs()` is an uncached linear scan — 531 ms for 1055 records
+    #     on the developer box — so a guest-callable listing is a cost the
+    #     *guest* controls, over a store that grows unbounded (#380).
+    #
+    # A program can already introspect *itself* completely
+    # (`current_workflow_id`, `workflow_state`, `workflow_checkpoints`,
+    # `runtime_tasks`). What it cannot see is its siblings, and that is the
+    # decision rather than a gap. `tests/test_discovery_disclosure.py` pins it
+    # so a later reader does not "fix" it; if a real use case ever appears,
+    # the shape to build is a family-scoped listing, and the linkage exists
+    # already as `parent_graph_id` / `parent_workflow` in the **graph** store
+    # (not in the run record — they are two stores, per #476).
     "discovery, not invocation": (
         "agent_available", "agent_describe", "cb_available", "cb_create",
         "cb_reset", "cb_state", "retry_available", "syscall_list",

@@ -163,6 +163,99 @@ class ExtensionsCloseItTests(DiscoveryTestCase):
         self.assertIn(AGENT_DESCRIPTION, result["stdout"])
 
 
+class RunEnumerationIsHostOnlyTests(unittest.TestCase):
+    """#761: the limit of "naming what exists is not reaching it".
+
+    That rationale was written about a catalogue the host **registered
+    deliberately**. A store of run records is not that, and three measured
+    facts decided against a guest-reachable listing:
+
+    - every run record carries `workflow_source_code`, so a listing discloses
+      other programs' whole source rather than merely their names;
+    - the store root is CWD-relative and process-global, so "a run this guest
+      did not create" is the normal case, not an edge one;
+    - `list_runs()` is an uncached linear scan (531 ms for 1055 records here),
+      so a guest-callable listing is a cost the *guest* controls, over a store
+      that grows unbounded (#380).
+
+    So run enumeration is the host's job, permanently. These tests exist so a
+    later reader adding `runtime_workflows()` has to argue with a decision
+    rather than fill what looks like a gap.
+    """
+
+    #: Names a future `runtime_workflows()` would plausibly take. A denylist is
+    #: brittle for *finding* a builtin and exactly right for pinning a decision:
+    #: the point is that adding one of these turns this red.
+    CANDIDATES = (
+        "runtime_workflows", "workflow_runs", "workflow_list", "list_workflows",
+        "list_runs", "runtime_runs", "workflow_runs_filtered", "runs",
+    )
+
+    # closes: #761
+    def test_no_builtin_enumerates_runs(self):
+        from nodus.vm.vm import VM
+
+        vm = VM([], {}, code_locs=[], source_path=None)
+        for name in self.CANDIDATES:
+            with self.subTest(builtin=name):
+                self.assertNotIn(
+                    name, vm.builtins,
+                    f"{name} enumerates runs to a guest. #761 decided that is "
+                    "the host's job -- see the rationale beside "
+                    'NO_AUTHORITY_BUILTINS["discovery, not invocation"].',
+                )
+
+    # closes: #761
+    def test_the_host_can_still_enumerate_them(self):
+        """The control, and it must run.
+
+        Without it the assertion above is satisfied by a tree where nothing can
+        list runs at all -- which would make this a missing feature rather than
+        a withheld one. Pairing every refusal with a control is what caught a
+        Windows-only defect during #754.
+        """
+        from nodus_lang_workflow.runner import get_default_workflow_runner
+
+        store = get_default_workflow_runner().store
+        self.assertTrue(
+            callable(getattr(store, "list_runs", None)),
+            "the host lost the ability this test says is deliberately host-only",
+        )
+        self.assertIsInstance(store.list_runs(), list)
+
+    # closes: #761
+    def test_a_program_can_still_introspect_itself(self):
+        """The second control: what was withheld is *siblings*, not
+        self-knowledge. If these ever disappear the decision above stops being
+        narrow, and this file should be revisited rather than left green."""
+        from nodus.vm.vm import VM
+
+        vm = VM([], {}, code_locs=[], source_path=None)
+        for name in ("current_workflow_id", "workflow_state",
+                     "workflow_checkpoints", "runtime_tasks"):
+            with self.subTest(builtin=name):
+                self.assertIn(name, vm.builtins)
+
+    # closes: #761
+    def test_the_decision_carries_its_reasoning(self):
+        """Same guard as the bucket above it. A list with no argument attached
+        is how #756 came to be filed against a decision that already existed."""
+        source = (_REPO_ROOT / "src" / "nodus" / "runtime" / "capability.py").read_text(
+            encoding="utf-8"
+        )
+        marker = source.index(f'"{DISCOVERY}"')
+        preceding = source[:marker].rsplit("\n\n", 1)[-1]
+        self.assertIn("#761", preceding)
+        self.assertIn("runtime_workflows", preceding)
+        for fact in ("workflow_source_code", "process-global", "linear scan"):
+            with self.subTest(fact=fact):
+                self.assertIn(
+                    fact, preceding,
+                    "the reasoning names three measured facts; one is missing, "
+                    "which leaves the next reader a rule without its argument",
+                )
+
+
 class TheDecisionIsRecordedTests(unittest.TestCase):
     """Source assertions: behaviour alone cannot say whether the current state
     was chosen or merely happened, and that distinction is what #756 got wrong."""
