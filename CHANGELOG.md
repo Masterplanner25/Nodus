@@ -141,6 +141,30 @@
 
 ### Fixes
 
+- **#785 and #786: one misplaced line, wearing two faces.**
+
+  #785 was a closure owned by a *sibling* module being unresolvable — `outer`
+  owns it, `inner` is asked to call it, and neither imports the other. #786 was
+  a root-level `let` being invisible to a closure called after the entry frame
+  had popped, leaving the odd asymmetry that such a closure could call a
+  root-level `fn` but not read a root-level `let`.
+
+  Both were `reset_program` recording the base program **before** assigning the
+  new namespaces, so the base carried one program's code with the *previous*
+  one's globals. Recorded after them, the root's namespace is the root's — which
+  binds every module it imports, so seeding `_module_owning`'s reachability walk
+  from it makes a sibling module findable, and root-level bindings resolve.
+
+  The seed had been tried when #783 shipped and reverted as useless, on a
+  measurement showing the root's `module_globals` was empty. The measurement was
+  right; the conclusion was not. An empty collection is evidence about the
+  collection, not about the idea.
+
+  It also makes an earlier choice falsifiable: `base_ctx` records the namespace
+  dicts rather than reading them live, which #783 documented as a distinction no
+  test could see. It can now — a value written before the closure runs is
+  visible to it, where a copy would not be.
+
 - **#783: a closure the root program owns could not be resolved from inside a module.**
 
   A module that wraps a caller's closure and spawns the wrapper failed with
@@ -166,12 +190,8 @@
   a map, or a second closure layer; crossing two module boundaries; and
   suspending inside the wrapped closure.
 
-  **Two neighbouring gaps are filed rather than fixed**, and are pinned by test
-  so the fix is not read as covering them: #785 (a closure owned by a *sibling*
-  module — pre-existing, and it fails with the calling frames still alive) and
-  #786 (a root-level `let` is invisible once the entry frame has popped, which
-  this fix makes reachable). The asymmetry #786 leaves today is that a wrapped
-  closure can call a root-level `fn` but cannot read a root-level `let`.
+  Two neighbouring gaps were filed alongside this and pinned by test as known
+  broken — #785 and #786. Both are fixed below, and those pins are what said so.
 
   The one attribute this needed put `VM` on the PyPy instance-attribute cliff,
   and `tests/test_vm_attribute_budget.py` caught it (#702). `_caller_vm` moved

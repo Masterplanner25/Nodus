@@ -1382,12 +1382,18 @@ class VM:
         self.functions = functions
         self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.source_path = source_path
-        self._record_base_program()  # #783
         if module_globals is not None:
             self.module_globals = module_globals
             self.globals = module_globals
         if host_globals is not None:
             self.host_globals = host_globals
+        # After the namespaces, not before them (#785). Recorded above this
+        # block, the base captured the *previous* module's globals while
+        # carrying the new program's code -- a mismatched context, and one no
+        # test caught because #786 keeps root-level bindings out of reach
+        # anyway. Order matters here for the same reason it does in
+        # `_capture_module_ctx`: a context is code and namespaces together.
+        self._record_base_program()  # #783
         self.ip = 0
         self.stack = []
         self.frames = []
@@ -4247,13 +4253,15 @@ class VM:
         Only reached for a closure already known foreign, which is rare; the
         common path never gets here.
 
-        **A sibling module is not reachable, and that is a known gap.** The walk
-        starts from wherever the VM currently is, and a module binds only what
-        it *imports* -- so `inner`, handed a closure that `outer` owns, cannot
-        see `outer`, because the import runs the other way. Seeding the walk
-        from the root program's namespace does not help: module bindings are not
-        in `module_globals` (measured -- the root's is empty), so there is
-        nothing there to enqueue. Filed with a repro rather than patched around.
+        **A sibling module is reachable through the root program's namespace**
+        (#785). That seed was tried first and reverted as useless, on a
+        measurement showing the root's `module_globals` was empty -- which was
+        true, and was a bug in how the base was recorded rather than a fact
+        about where imports bind. `reset_program` recorded the base *before*
+        assigning the new namespaces, so it held the previous module's. With
+        that corrected the root binds every module it imports, and the seed
+        works. The lesson is the measurement's, not the design's: an empty
+        collection is evidence about the collection, not about the idea.
         """
         seen: set[int] = set()
         queue: list[NodusModule] = []
@@ -4266,6 +4274,20 @@ class VM:
 
         enqueue(self.module_globals)
         enqueue(self.host_globals)
+        # #785: and from the **root program's** namespace. The walk above starts
+        # from wherever the VM currently is, and a module binds only what it
+        # imports -- so `inner`, handed a closure that `outer` owns, could not
+        # see `outer` at all, because the import runs the other way. The root
+        # program imports both, which is what makes it the right second seed:
+        # it is the top of this program's import graph.
+        #
+        # Still reachability, not a registry, so the #185/#390 argument above is
+        # untouched -- these are this program's own imports, and one tenant's VM
+        # still cannot resolve another's chunk.
+        base = getattr(self, "_base_program", None)
+        if base is not None:
+            enqueue(base[2])
+            enqueue(base[3])
         index = 0
         while index < len(queue):
             module = queue[index]
@@ -4325,12 +4347,13 @@ class VM:
         keeps in-place mutation visible, and every site that reassigns them
         re-records.
 
-        **No test currently distinguishes the two, and that is worth knowing
-        rather than hiding.** Swapping this back to a live read leaves the whole
-        suite green. The reason is #786: a root program's top-level bindings are
-        not in `module_globals` at all — the root's is empty, measured — so
-        nothing observable reaches through here yet. Recorded is the coherent
-        definition and matches `module_ctx`; it is simply not yet load-bearing.
+        When #783 shipped, this was documented as a choice no test could
+        distinguish — swapping it to a live read left the suite green. That was
+        true and the reason was a second bug: `reset_program` recorded the base
+        *before* assigning the new namespaces, so nothing could reach through
+        them correctly either way. With that corrected (#785) the choice is
+        load-bearing and pinned:
+        `test_the_recorded_namespace_is_the_live_one_not_a_copy`.
         """
         (code, functions, module_globals, globals_,
          code_locs, source_path, version) = self._base_program

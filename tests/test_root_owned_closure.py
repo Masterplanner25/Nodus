@@ -22,11 +22,12 @@ The call then executed at the right address against the wrong chunk, which
 surfaces as `Stack underflow` — and only from inside a coroutine, because from
 `main` the detached-VM path supplies `_caller_vm`.
 
-**Two neighbouring gaps are deliberately not fixed here and are pinned below**,
-so that a later reader does not mistake this file for covering them: #785 (a
-sibling module's closure) and #786 (a root-level `let`). Both were found by
-probing this fix's neighbourhood, and #785 was verified to fail identically with
-this fix stashed.
+**#785 and #786 were filed beside this as known gaps and are now closed here
+too.** Both were the same defect wearing two faces: `reset_program` recorded the
+base *before* assigning the new namespaces, so it carried one program's code
+with the previous one's globals. They were pinned in this file as known-broken,
+and those pins went red the moment the placement was corrected — which is the
+argument for writing a known gap down as an assertion rather than a comment.
 """
 
 import ast
@@ -205,36 +206,44 @@ class ARootOwnedClosureResolvesFromInsideAModuleTests(unittest.TestCase):
         self.assertEqual("helped", out)
 
 
-class KnownNeighbouringGapsTests(unittest.TestCase):
-    """Pinned as **known broken**, with their issue numbers, so this file cannot
-    be read as covering them. Each asserts the specific failure rather than
-    merely "it errors", so the day one starts working the test says which."""
+class TheNeighbourhoodTheSameContextFixCovers(unittest.TestCase):
+    """#785 and #786, both closed by getting the recorded base *right*.
 
-    # closes: #783
-    def test_a_sibling_modules_closure_is_still_unresolvable(self):
-        """#785. `outer` owns the closure, `inner` is asked to call it, and
-        neither imports the other — so `_module_owning`'s reachability walk
-        cannot find `outer` from inside `inner`.
+    They were filed as known gaps beside #783's fix and pinned here as
+    known-broken. Both turned out to be the same defect wearing two faces:
+    `reset_program` recorded the base **before** assigning the new namespaces,
+    so the base carried one program's code with the previous one's globals.
 
-        Pre-existing: verified to fail identically with the #783 fix stashed,
-        and it fails with the calling frames **still alive**, which is what
-        distinguishes it from #783 and #696.
-        """
-        _out, err = _run(_in_coroutine("m.call_now(o.own_closure());"))
-        self.assertIn(
-            "Stack underflow", err,
-            "#785 appears to be fixed — if so, delete this test and close it "
-            "rather than leaving a passing assertion that a bug exists",
-        )
+    That single misplacement is why a sibling module was unreachable (the root's
+    namespace, which binds every module it imports, was not the one recorded)
+    and why a root-level `let` was invisible (same reason). The tests that
+    asserted both were broken are what said so: they went red the moment the
+    placement was corrected, which is the whole reason to pin a known gap rather
+    than leave it undocumented.
+    """
 
-    # closes: #783
-    def test_a_root_level_let_is_not_visible_once_the_entry_frame_has_popped(self):
-        """#786, and the asymmetry worth not shipping silently: the wrapped
-        closure can call a root-level `fn` (asserted above) but cannot read a
-        root-level `let`. The binding lives in the entry frame rather than in a
-        namespace that outlives it, so #783's context tuple carries the correct
-        — and empty — namespace."""
-        _out, err = _run(
+    # closes: #785
+    def test_a_sibling_modules_closure_resolves(self):
+        """`outer` owns the closure, `inner` is asked to call it, and neither
+        imports the other — the root imports both, and it is the root's
+        namespace that makes `outer` reachable from inside `inner`."""
+        out, err = _run(_in_coroutine("m.call_now(o.own_closure());"))
+        self.assertEqual("", err)
+        self.assertEqual("outer-own", out)
+
+    # closes: #785
+    def test_a_sibling_modules_closure_resolves_when_wrapped_and_spawned(self):
+        """The same closure through #783's shape — the frame is gone as well as
+        the namespace being the wrong one."""
+        out, err = _run(_in_coroutine("m.wrap_and_spawn(o.own_closure());"))
+        self.assertEqual("", err)
+        self.assertEqual("outer-own", out)
+
+    # closes: #786
+    def test_a_root_level_let_is_visible_once_the_entry_frame_has_popped(self):
+        """The asymmetry this removes: before it, a wrapped closure could call a
+        root-level `fn` but not read a root-level `let`."""
+        out, err = _run(
             'import "./inner.nd" as m\n'
             'let TOKEN = "main-let"\n'
             "fn main() {\n"
@@ -242,10 +251,31 @@ class KnownNeighbouringGapsTests(unittest.TestCase):
             "    run_loop()\n"
             "}\n"
         )
-        self.assertIn(
-            "Undefined variable: TOKEN", err,
-            "#786 appears to be fixed — if so, delete this test and close it",
+        self.assertEqual("", err)
+        self.assertEqual("main-let", out)
+
+    # closes: #786
+    def test_the_recorded_namespace_is_the_live_one_not_a_copy(self):
+        """`_record_base_program` stores the dicts themselves, so a write made
+        before the closure runs is visible to it. A copy would read `1`.
+
+        This is also the test that makes the recorded-vs-live choice
+        falsifiable. It was documented as unfalsifiable when #783 shipped —
+        correctly at the time, because the placement bug kept anything from
+        reaching through the base namespaces at all.
+        """
+        out, err = _run(
+            'import "./inner.nd" as m\n'
+            "let N = 1i\n"
+            "fn bump() { N = N + 41i }\n"
+            "fn main() {\n"
+            "    bump()\n"
+            '    spawn(coroutine(fn(){ m.wrap_and_spawn(fn(){ print("\\(N)") }); return 1i }))\n'
+            "    run_loop()\n"
+            "}\n"
         )
+        self.assertEqual("", err)
+        self.assertEqual("42", out)
 
 
 class TheBaseProgramIsRecordedWhereverAProgramIsLoadedTests(unittest.TestCase):
