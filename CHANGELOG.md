@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#578: a `state` cell can declare its own join — `with { barrier: true }`.**
+
+  Every step that reads the cell waits for every step that writes it, inferred.
+  `step d after b, c` says the same thing on the step side and gets stale: add a
+  fourth contributor and every reader needs editing, miss one and the failure is
+  a value that depends on scheduling.
+
+  Composes with `merge:`. #722 refuses a reader that would see a partial fold;
+  a barrier gives it the edges instead. Both are the same question — *which
+  steps must finish before this reader runs* — so they share one computation and
+  differ only in the response, rather than being two implementations of it.
+
+  **The edges are ordering, not data.** `deps` is also a step's parameter list —
+  `step d after b, c` binds `b` and `c` as locals, and the runtime requires one
+  parameter per dep — so inferred edges travel separately as `order_after`. Put
+  in `deps`, they changed the signature of every barrier reader and rejected
+  bodies that were correct. The key is emitted only when a step actually has an
+  inferred edge, so a workflow with no barrier lowers to the same bytecode it
+  always did.
+
+  **Writers must write unconditionally**, which is what #578 decided. A write
+  inside an `if`, a loop or a `match` arm, or a step carrying a `when` guard, is
+  refused at declaration — a barrier's readers wait for every declared writer,
+  so a writer that may not write leaves them waiting for something that never
+  comes. "Unconditional" is #500's definition verbatim: a direct statement of an
+  unguarded step body. The conservative option was chosen over a may-write
+  analysis that guesses and over a deadlock.
+
+  **Two cells cannot wait on each other.** Mutually-inferred edges close a cycle,
+  and that is refused at compile time naming both steps, rather than surfacing at
+  run time as `Dependency cycle detected` over a join nobody wrote. A cycle the
+  author *did* write is still the runtime's to report.
+
+  Inference does not touch the AST. Writing edges onto `step.deps` made lowering
+  non-idempotent: a second lowering saw them already present, inferred nothing,
+  and so ran no cycle check — the edges survived and the error did not. The CLI
+  lowers twice, so that defect was invisible until the bytecode cache was
+  cleared.
+
 ### Tooling
 
 - **#761: run enumeration is the host's job, permanently — decided, not deferred.**
