@@ -49,7 +49,15 @@ from nodus.tooling.runner import (
     tool_call_result,
     workflow_checkpoints,
 )
-from nodus.services.server import serve, snapshot_session, restore_snapshot, list_snapshots
+# `nodus.services.server` is imported lazily, inside the four commands that
+# need it (#173). It pulls in FastAPI, uvicorn and pydantic, and importing it
+# here made every `nodus run`, `nodus fmt` and `nodus check` pay for a server
+# nobody asked for -- measured at roughly 1.1 s of the CLI's ~2.1 s startup on
+# the developer box, and `nodus --version` alone cost 1.6 s.
+#
+# Same shape as CIRC-001 (#103), which made `vm.py`'s workflow-runner imports
+# lazy and carries the same instruction: do not hoist these back to module
+# scope.
 from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
@@ -1284,6 +1292,7 @@ def _run_server(
     workflow_store_path: str | None = None,
 ) -> int:
     try:
+        from nodus.services.server import serve  # lazy: see the note at the top
         serve(
             host=host,
             port=port,
@@ -1308,18 +1317,21 @@ def _run_server(
 
 
 def _run_snapshot(session_id: str, *, host: str, port: int, token: str | None = None) -> int:
+    from nodus.services.server import snapshot_session  # lazy: see the note at the top
     payload = snapshot_session(host, port, session_id, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
 
 
 def _run_snapshots(*, host: str, port: int, token: str | None = None) -> int:
+    from nodus.services.server import list_snapshots  # lazy: see the note at the top
     payload = list_snapshots(host, port, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
 
 
 def _run_restore(snapshot_id: str, *, host: str, port: int, token: str | None = None) -> int:
+    from nodus.services.server import restore_snapshot  # lazy: see the note at the top
     payload = restore_snapshot(host, port, snapshot_id, token=token)
     _json_print(payload)
     return 0 if "error" not in payload else 1
