@@ -34,9 +34,10 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
   structural in 6.0.0**. Design: `docs/design/v6/00-record-equality.md`.
 - **A `worker:` declaration with no registered dispatcher** (#492). The step runs
   in this process with no isolation, which is the opposite of what the
-  declaration asks for. Warns since **5.3.0** and the warning says it becomes an
-  error in 6.0.0 — but whether it is in the cohort is **undecided**, because the
-  v6 design doc says it was dropped. See `V6_0_PLAN.md` D1.
+  declaration asks for. Warns since **5.3.0**, **scheduled to become an error in
+  6.0.0** (decided 2026-09-06; #798). The remedies are in the warning: run under
+  `nodus serve` with a registered worker, or pass `worker_dispatcher=` to
+  `NodusRuntime`.
 - **The default workflow store being `LocalWorkflowStore`** (#174). **Scheduled
   to become SQLite in 6.0.0.** Runs recorded in the JSON store are not visible to
   a SQLite one, so an in-flight `waiting` run would become unresumable rather

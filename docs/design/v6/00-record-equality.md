@@ -6,12 +6,14 @@
 *(Corrected 2026-08-26: this line also named #492 (`worker:`), which closed
 during the 5.4.0 cycle. #609 warns as of 5.6.0 and flips with the rest.)*
 
-*(Re-opened 2026-09-06: the claim that #492 "is not part of the cohort" is
-contradicted by the code — `orchestration/task_graph.py` still prints "This
-becomes an error in 6.0.0." to a user whose `worker:` declaration has no
-dispatcher, and has since 5.3.0. Closing the issue did not retract the promise.
-Tracked as decision **D1** in `docs/governance/V6_0_PLAN.md`; do not treat
-either statement as settled until it is made.)*
+*(Settled 2026-09-06, D1: the 2026-08-26 correction was wrong, and this is the
+useful part of the record. It read a **closed issue** as a dropped flip — but
+`orchestration/task_graph.py` had been printing "This becomes an error in
+6.0.0." since 5.3.0 and still was. **Closing an issue does not retract a
+promise.** The `worker:` flip is in the cohort, tracked by #798, and the
+register that decides this is now `tools/v6_flips.json`, checked by
+`nodus_gate --flips` — precisely so a prose correction cannot quietly drop a
+live promise again.)*
 
 ## The problem
 

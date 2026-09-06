@@ -56,7 +56,7 @@
       "summary": "A `worker:` declaration with no registered dispatcher becomes an error",
       "warns_since": "5.3.0",
       "signal": "ok -- stderr, names both remedies",
-      "why": "UNDECIDED, tracked as D1. The code has promised this since 5.3.0 and docs/design/v6/00-record-equality.md says the flip was dropped when #492 closed. Registered because the promise is live in front of users; the decision is whether to honour it or retract the sentence. Do not delete this entry without doing one of the two.",
+      "why": "DECIDED 2026-09-06 (D1): honour it. The code has promised this since 5.3.0 and docs/design/v6/00-record-equality.md had recorded it as dropped when #492 closed; closing an issue did not retract the promise. A `worker:` declaration is an isolation intent, and running in-process while reporting success is the worst available answer -- the same reasoning that made it a warning rather than a silent no-op. Second-oldest signal in the cohort, so notice is not a blocker.",
       "sites": 2
     },
     "default-store-sqlite": {

@@ -18,6 +18,34 @@ of them agreed, so reading any one of them would have produced a wrong plan
 
 ---
 
+## 0. The shape of the release
+
+**6.0.0 is flip-only. Decided 2026-09-06 (D5).**
+
+It carries the five staged flips in §1 and nothing else. Everything that already
+warns starts failing; no feature lands alongside. Features resume at 6.1.0.
+
+Three things follow from that, and they are the reason it is worth stating
+before the list rather than after it:
+
+- **The major's content is already fixed.** Scope creep has nowhere to enter:
+  anything that is not one of the five is, by definition, 6.1.0. `tools/v6_flips.json`
+  is the whole scope, and `nodus_gate --flips` fails if that stops being true.
+- **Everything blocking it is 5.x work.** G2 (make the signals visible) and G3
+  (let a project enumerate its exposure) both have to ship *before* the major,
+  in ordinary minors — they are not part of it. So the question "when is 6.0.0?"
+  is really "when are G2 and G3 done?", which is a much more tractable one.
+- **The upgrade is small enough to describe on one page.** A user's migration is
+  "fix what the warnings already told you about", with no new surface to learn
+  at the same time. That is the argument for the shape: a major that both
+  breaks things *and* introduces features makes it impossible to tell which
+  half caused a problem.
+
+The cost is that 6.0.0 is unglamorous, and that is fine. It is the release that
+makes eight minors' worth of warnings mean something.
+
+---
+
 ## 1. The committed flips
 
 Five places in `src/` promise a 6.0.0 behaviour change to a user today. All five
@@ -28,7 +56,7 @@ were reproduced.
 | 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | **`nodus check` only** — `nodus run` is silent | #609 |
 | 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
-| 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 (**undecided** — D1) |
+| 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | **no — nobody has seen it** (§3.2) | #797 |
 
 Reproductions, all at 5.11.0 from a throwaway project:
@@ -84,7 +112,14 @@ The last one is the sharpest. The design doc's correction says the `worker:`
 staging was dropped when #492 closed during the 5.4.0 cycle — and
 `task_graph.py` still prints *"This becomes an error in 6.0.0."* to users on
 every unhonoured `worker:` declaration. **One of the two is wrong, and the one
-users act on is the code.** That is decision D1.
+users act on is the code.**
+
+That was decision D1, and it was **decided on 2026-09-06 in favour of the code**:
+the flip is in the cohort. What makes it worth keeping this paragraph after the
+answer is the mechanism — the design doc read a *closed issue* as a dropped
+flip, so **closing an issue silently retracted a promise nobody had retracted.**
+That is what `nodus_gate --flips` now makes impossible, and it is the reason the
+register moved out of prose.
 
 This is the failure the governance sweeps already named: a governing document
 holding an enumeration that something else also holds. `COMPATIBILITY_MODEL.md`
@@ -190,16 +225,19 @@ number the gate prints rather than a paragraph someone has to remember.
 
 ---
 
-## 6. Open decisions
+## 6. Decisions
 
-None of these is decided. Each changes what 6.0.0 contains.
+**D1 and D5 are settled** (2026-09-06); the rest are open. Each of the open
+ones changes what 6.0.0 contains or when it can be cut.
 
-- **D1 — Is the `worker:` flip in the cohort?** Filed as **#798**, which
-  recommends honouring it and says why, without taking the decision. The code
-  promises it and the design doc says it was dropped; either honour it or remove
-  the promise from the warning text. Leaving both is the status quo and is the
-  worst of the three. Until it is decided the flip stays registered, because the
-  promise is live in front of users.
+- ~~**D1 — Is the `worker:` flip in the cohort?**~~ **Decided 2026-09-06:
+  honour it.** It flips with the rest; #798 tracks the work. The design doc's
+  2026-08-26 correction had read a *closed issue* as a dropped flip, and the
+  lesson it leaves is the one the gate now enforces: **closing an issue does not
+  retract a promise.** A `worker:` declaration is an isolation intent, so running
+  in-process while reporting success is the worst available answer — the same
+  reasoning that made it a warning rather than a silent no-op in the first
+  place. Second-oldest signal in the cohort (5.3.0), so notice is not a blocker.
 - **D2 — Do the v1.0-era deprecations go?** `.tl` (still accepted, still warns),
   `language.py` / `language.bat`, and `tiny_vm_lang_functions.py` have been
   *"deprecated, no removal date"* since v1.0 — five majors' worth of notice. A
@@ -214,10 +252,10 @@ None of these is decided. Each changes what 6.0.0 contains.
   alongside the staging cohort"*. Nothing warns today, so it is a deferred
   decision, not a staged flip — it cannot flip at 6.0.0 without a warning
   shipping first.
-- **D5 — Does 6.0.0 carry a feature, or is it flip-only?** A flip-only major is
-  a legitimate and cheap shape: it is entirely "things that already warn now
-  fail". The alternative is to land something substantial alongside, which
-  lengthens the cycle. This decides everything about scheduling.
+- ~~**D5 — Does 6.0.0 carry a feature, or is it flip-only?**~~ **Decided
+  2026-09-06: flip-only, feature after.** See §0. The consequence worth
+  repeating here: G2 and G3 are 5.x work that gates the major rather than
+  content within it.
 
 ---
 
@@ -235,13 +273,15 @@ None of these is decided. Each changes what 6.0.0 contains.
 
 The order §3 implies, not a schedule:
 
-1. ~~**Close G1**~~ — **done.** #797 (default store) and #798 (`worker:` / D1)
-   were filed 2026-09-06, so every live promise has a tracker. **D1 itself is
-   still open**: #798 asks whether to honour the `worker:` promise or retract
-   the sentence, and it is a decision, not a defect with an obvious fix.
+1. ~~**Close G1 and D1**~~ — **done.** #797 (default store) and #798 (`worker:`)
+   were filed 2026-09-06, so every live promise has a tracker; D1 was decided
+   the same day in favour of honouring the `worker:` promise, so #798 now
+   tracks the flip rather than the question.
 2. ~~**Close G5 structurally**~~ — **done.** `tools/v6_flips.json` plus
    `nodus_gate --flips`.
-3. **Fix the signals (G2)** — the next piece of real work. — #174's notice must reach a CLI user, and #609's
+3. **Fix the signals (G2)** — the next piece of real work, and now the critical
+   path: with D5 settled, nothing else competes for the major's scope, so the
+   date is whatever G2 and G3 cost. #797 is the harder half. — #174's notice must reach a CLI user, and #609's
    should reach `nodus run`. Both are 5.x work and both are prerequisites for
    the deprecation clock being honest.
 4. **Build the readiness answer (G3)** — whatever lets a project enumerate its
