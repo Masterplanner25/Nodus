@@ -474,11 +474,23 @@ print(result["error"])
         self.assertEqual(len(dead_events), 1)
         self.assertEqual(dead_events[0].data.get("worker_id"), worker_id)
 
+    # closes: #728
     def test_task_reassignment_after_worker_failure(self):
         from nodus.services.server import WorkerManager
         worker_manager = WorkerManager()
         worker_manager.event_bus = RuntimeEventBus()
-        worker_manager._worker_heartbeat_timeout_ms = 20
+        # #728: this was 20ms, and the death it simulates is the *backdating*
+        # below -- not this timeout. Small in absolute terms it also had to
+        # cover the VM thread reaching `submit()`, which calls
+        # `_expire_workers` first: `wait_for_job` marks worker_a seen, which
+        # cancels the 250ms `_startup_grace_ms`, leaving 20ms for a thread to
+        # start, compile and run. Measured: with the VM thread 200ms late the
+        # worker is evicted and `wait_for_job` returns `{"job_id": None}` --
+        # the reported failure, at the first assertion.
+        #
+        # Large here, backdated far past it below. The margin now runs the way
+        # CLAUDE.md's 5-10x rule asks, and on the side that load stretches.
+        worker_manager._worker_heartbeat_timeout_ms = 2000
         set_default_dispatcher(worker_manager)
         worker_a = worker_manager.register(["cpu"])
         worker_b = worker_manager.register(["cpu"])
@@ -498,7 +510,9 @@ print(result["tasks"]["task_1"])
 
         job_a = self._poll_job(worker_manager, worker_a)
         self.assertIsNotNone(job_a.get("job_id"))
-        worker_manager._worker_last_seen[worker_a] = time.monotonic() - 1.0
+        # 60s against a 2s timeout: the simulated death is decisive
+        # regardless of how long the steps above took under load.
+        worker_manager._worker_last_seen[worker_a] = time.monotonic() - 60.0
         worker_manager.poll(worker_b)
 
         job_b = self._poll_job(worker_manager, worker_b)
