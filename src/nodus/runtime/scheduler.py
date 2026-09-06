@@ -11,6 +11,7 @@ from typing import Any
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.diagnostics import LangRuntimeError, RuntimeLimitExceeded, format_error
 from nodus.runtime.runtime_stats import runtime_time_ms
+from nodus.runtime.time_source import HostTimeSource, TimeSource, _CallableTimeSource
 from nodus.runtime.runtime_events import RuntimeEvent
 
 TASK_STEP_BUDGET = 1000
@@ -24,7 +25,7 @@ class SleepRequest:
 
 
 class Scheduler:
-    def __init__(self, vm, *, trace: bool = False, trace_output=print):
+    def __init__(self, vm, *, trace: bool = False, trace_output=print, time_source: TimeSource | None = None):
         self.vm = vm
         self.ready_queue: deque[Any] = deque()
         self.queue = self.ready_queue
@@ -38,8 +39,30 @@ class Scheduler:
         self.current_task: object | None = None
         self._next_id = 1
         self.trace = trace
-        # clock_fn returns current time in ms; overridden in test mode for virtual time
-        self.clock_fn = runtime_time_ms
+        # #182: where "now" comes from *and* how idling waits, together. The
+        # two were split -- `clock_fn` was injectable and the idle path called
+        # `time.sleep` directly -- and a clock nothing can wait on is not a
+        # seam: installing a virtual one and calling `run_loop()` hangs, because
+        # the idle path waits for a `now` that never moves.
+        self.time_source: TimeSource = time_source or HostTimeSource()
+        # **Two clocks, on purpose, and this is the whole of the distinction.**
+        #
+        # `time_source` is the *scheduling* clock: when is the next timer due,
+        # and how do we get there. Virtualising it makes a run deterministic.
+        #
+        # `runtime_time_ms()` is still called directly for four wall-clock
+        # *facts* -- an event's timestamp, a coroutine's creation time, its last
+        # resume, and the task-timeout comparison. Those answer "when did this
+        # really happen", which a simulated clock would falsify: an event bus
+        # that reported virtual timestamps would make a trace unreadable against
+        # a log.
+        #
+        # The task timeout is the uncomfortable one and is recorded as such
+        # (#778): a task that virtually sleeps past its timeout will not time
+        # out, because `task_started_at` is set from the host clock in
+        # `task_graph.py` as well as here, and moving only one of the two would
+        # compare readings from different clocks. Fixing it means moving both,
+        # which is a change to orchestration rather than to this seam.
         self.trace_output = trace_output
         self._counter = 0
         self.task_ages: dict[int, int] = {}
@@ -137,6 +160,23 @@ class Scheduler:
 
     def run_task_graph(self, graph) -> object:
         return self.vm.builtin_run_graph(graph)
+
+    @property
+    def clock_fn(self):
+        """The reading half, kept as a callable (#182).
+
+        Two places in this tree assign it and downstream code may too, so it
+        stays writable -- but there is one implementation underneath now rather
+        than an attribute each caller sets for itself. Assigning a bare callable
+        says how to read time and nothing about how to wait, so waiting stays on
+        the host: the pre-#182 behaviour, preserved deliberately rather than
+        silently upgraded.
+        """
+        return self.time_source.now_ms
+
+    @clock_fn.setter
+    def clock_fn(self, now_fn) -> None:
+        self.time_source = _CallableTimeSource(now_fn)
 
     def spawn(self, coroutine) -> None:
         if coroutine.state == "finished":
@@ -372,12 +412,15 @@ class Scheduler:
                     if wake_time > now:
                         poll = 0.001 if self._io_channels else (wake_time - now) / 1000.0
                         _t0 = time.monotonic()
-                        time.sleep(min(poll, (wake_time - now) / 1000.0))
+                        self.time_source.wait(min(poll, (wake_time - now) / 1000.0))
                         if self.vm.deadline is not None:
+                            # Real elapsed, deliberately: the execution budget
+                            # is a wall-clock allowance (SCHED-001), so a
+                            # virtual wait costs it nothing and credits nothing.
                             self.vm.deadline += time.monotonic() - _t0
                 elif self._io_channels:
                     _t0 = time.monotonic()
-                    time.sleep(0.001)
+                    self.time_source.wait(0.001)
                     if self.vm.deadline is not None:
                         self.vm.deadline += time.monotonic() - _t0
                 elif self._recv_channels or self._send_channels:

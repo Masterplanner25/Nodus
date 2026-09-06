@@ -4,6 +4,41 @@
 
 ### Changed
 
+- **#182: the scheduler's clock is a seam that can actually be replaced.**
+
+  `clock_fn` was injectable and the test harness overrode it — but the idle path
+  called `time.sleep` directly, so time could be *read* from somewhere else and
+  never *waited* on somewhere else. That half-seam was not merely incomplete: a
+  virtual clock plus `run_loop()` **hangs**, because the idle path waits for a
+  `now` that never moves.
+
+  `scheduler.time_source` supplies both operations. On a virtual clock waiting
+  *is* advancing, so a coroutine sleeping 800 ms under `run_loop()` goes from
+  **926 ms** to **44 ms** and the run stops depending on how fast the box is.
+
+  `HostTimeSource` is the default and byte-for-byte the previous behaviour.
+  `clock_fn` still works and still redirects reads; a bare callable says nothing
+  about waiting, so waiting stays on the host and a frozen `clock_fn` still
+  spins — preserved deliberately, so a caller that only meant to change where
+  time is read is not silently given virtual waiting.
+
+  It also unifies the two installers: `test.advance_clock` was replacing the
+  clock with a *frozen* lambda while `testing/runner.py` installed a *live* read
+  of the same state, and the frozen form silently replaced the live one the
+  first time a case advanced the clock.
+
+  **Two clocks remain, stated rather than emergent.** Event timestamps,
+  `created_time` and `last_resume` still read the host clock — they answer *when
+  did this really happen*, which a simulated clock would falsify. The
+  task-timeout comparison is the uncomfortable member of that group and ships
+  recorded as **#778**: `task_started_at` is written from two places on the host
+  clock, so moving only the scheduler's read would compare readings from
+  different clocks — a worse defect, and silent.
+
+  This is the seam #182 asks for and not the whole issue: a Nodus program
+  driving its own timer additionally wants `sleep_until` and a `std:loop`
+  driver, both of which build on this.
+
 - **#173: every CLI command was paying for a web server. Startup is ~700 ms faster.**
 
   `nodus.cli.cli` imported `nodus.services.server` at module scope for the four
