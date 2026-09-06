@@ -47,7 +47,42 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.10.0 is about the boundary between a host and the code it runs —
+**Recent:** 5.11.0 is about time — reading it, waiting for it, and agreeing on
+which clock is being talked about.
+
+A Nodus program can now drive its own timers. `sleep_until(deadline_ms)` waits
+to an instant rather than for a duration, `spawn_after(ms, fn)` defers a spawn,
+and `std:loop` builds `every` / `until` / `run_after` on top of them **in
+Nodus**, with no host code underneath. The reason to want an absolute form is
+drift: a relative sleep adds whatever happened before it to every period, so
+five iterations of 30 ms of work cost 650 ms with `sleep` and 500 ms with
+`every`, each wake landing on a fixed instant.
+
+Underneath that, the scheduler's clock became a seam that can actually be
+replaced. Reading time and waiting for it were split — one was injectable and
+the other called `time.sleep` directly — which is worse than no seam at all,
+because installing a virtual clock made `run_loop()` hang rather than fail. They
+are one object now, so a host can run a schedule deterministically: a coroutine
+sleeping 800 ms finishes in 44 ms of real time, and the program measures 800 ms,
+because `runtime.time_ms()` reads that same clock. Three defects were fixed by
+asking which clock a value belongs to — a step's `timeout_ms` was compared across
+two of them, so a task that slept past its deadline never timed out.
+
+Closures crossing a module boundary got the same treatment from the other side.
+A closure is an address plus a chunk, and the runtime could name the chunk for
+every case except its own program — so a module that spawned a wrapper around a
+caller's function failed with `Stack underflow`, and only from inside a
+coroutine. Three related cases went with it, including a closure owned by one
+module being called from a sibling.
+
+`state` cells also learned to declare their own join: `state total = 0i with {
+barrier: true }` makes every step that reads the cell wait for every step that
+writes it, inferred rather than restated as `after` clauses that go stale when a
+fourth writer arrives. And every CLI command stopped paying for a web server it
+never used — `nodus run`, `fmt`, `check` and `--version` are about **700 ms**
+faster.
+
+5.10.0 is about the boundary between a host and the code it runs —
 who may do what, and who is still around to say so.
 
 Confinement reached the server. Code sent to `nodus serve` ran on the same
@@ -399,9 +434,11 @@ the one exception; it needs the `[http]` extra above). Full reference:
 | Module | What it does |
 |---|---|
 | `std:async` | `sleep(ms)`, `parallel(tasks)`, `series(tasks)`, `worker_pool(worker, count)`, `pipeline(stages)` |
+| `std:loop` | `now()`, `deadline(ms)`, `at(instant)`, `run_after(ms, fn)`, `every(period, count, fn)`, `until(instant, period, fn)` — timers on fixed instants, so a periodic loop does not drift |
 
-`channel()`, `send()`, `recv()`, `close()`, `spawn()`, and `coroutine()` are VM
-built-ins — always available, no import needed.
+`channel()`, `send()`, `recv()`, `close()`, `spawn()`, `coroutine()`,
+`sleep_until(deadline_ms)` and `spawn_after(ms, fn)` are VM built-ins — always
+available, no import needed.
 
 **AI-native orchestration (v4.0)**
 
