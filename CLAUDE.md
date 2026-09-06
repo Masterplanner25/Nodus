@@ -14,16 +14,14 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and ten minors wide: `.venv` is at 5.0.0, `src/` is at 5.10.0**
-(re-checked 2026-09-05 with `.venv/Scripts/nodus.exe --version`, at the 5.10.0 cut).
-Forgetting the prefix gets you a runtime from before the `@exactly_once` forgery fix, the
-call-depth cap, the doubled-`main()` fix on cached runs, `run_source` no longer running the
-file its `filename` happens to name (#521), `nodus graph` no longer executing the file it
-inspects (#400), the whole resume-durability cluster, the entire workflow-DSL cluster
-(#479, #480, #481, #488), everything in 5.7.x and 5.8.0 — `extern`, `compensates`,
-cancellation and `retry.until` among them — and all of 5.9.0: cross-module closures in
-both directions (#691, #696), the content-keyed bytecode cache (#704) and binary file I/O
-(#170). The symptom is behaviour that contradicts the code you are reading.
+**The gap is live and ten minors wide** — re-checked 2026-09-06: `.venv` says
+**5.0.0**, `src/` says 5.10.0. Forgetting the prefix gets you a runtime from before
+essentially every 5.x fix, and **the symptom is behaviour that contradicts the code you
+are reading** — which is the part worth remembering, because it does not look like a
+stale install, it looks like a bug.
+
+The list of what is missing used to be written out here and grew at every release; read
+`CHANGELOG.md` between the two versions instead.
 
 **Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
 has been wrong in both directions. Do not read "the versions match today" as "the prefix is
@@ -300,6 +298,8 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
 | Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
+| Throughput + startup benchmark | `tools/benchmark_runtime.py` — reports VM instructions/sec (from the VM's own counter, not an estimate per loop iteration) and CLI startup. Neither figure is asserted anywhere; it exists so #173's numbers can be re-derived instead of transcribed, which is how they went stale by 2-4x |
+| Scheduler time source | `src/nodus/runtime/time_source.py` — `TimeSource`, `HostTimeSource`, `VirtualTimeSource` (#182). Reading time and waiting for it are **one** seam; injecting only a clock makes `run_loop()` hang |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
 | Eval results (per-version) | `docs/evals/vX.Y.Z/` — **three documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel), `POSTPUBLISH_EVAL.md` (Stage 5, against the published package), `STAGE6_DOWNSTREAM_SWEEP.md` (companions). See `docs/evals/v5.1.0/` for the current shape |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
@@ -328,7 +328,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,636 tests collected** (`--collect-only`, 2026-09-05, after the 5.10.0 cut). Coverage
+**3,682 tests collected** (`--collect-only`, 2026-09-06). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -898,32 +898,16 @@ These burn time when forgotten:
 - **No `await` keyword.** `test.flush_async()` is synchronous — no `await`.
 - **`+=`, `-=`, `*=`, `/=` work** (added in 4.0.1 pre-release, PR #183), including inside
   closures.
-- **Closures CAN mutate an outer `let`. A module-top-level one silently did nothing
-  from inside a function through 5.7.1; fixed in 5.8.0 (#671).**
+- **Closures CAN mutate an outer `let`**, including a module-top-level one (#671,
+  fixed in 5.8.0). Verified by running each case: `fn make_counter() { let n = 0i;
+  return fn() { n = n + 1i; return n } }` returns 1 then 2; so do two closures
+  sharing one captured variable, two-level nesting, mutation from inside a
+  spawned coroutine, and `n += 5i`.
 
-  This entry said the opposite for a long time ("in closures you still can't assign outer
-  `let` variables at all — use a map with quoted keys"), and that advice sent every session
-  to an unnecessary workaround. Re-verified by running each case:
-
-  ```
-  fn make_counter() { let n = 0i; return fn() { n = n + 1i; return n } }   // 1, then 2
-  ```
-
-  Also working: two closures sharing one captured variable, two-level nesting, mutation
-  from inside a spawned coroutine, and `n += 5i`.
-
-  What was broken through 5.7.1 is **module scope**, and it was silent — `let g = 7i`
-  then `fn setit() { g = 99i }` left `g` at 7 with no error, because the function got a
-  frame slot for `g` and wrote there. If the right-hand side also *read* the variable you
-  got `Cannot add nil and int`: a type error naming arithmetic, not scoping, because the
-  fresh local was uninitialised. Reads of a top-level `let` were always fine, and so was
-  mutating one *at* top level. Mechanism and the lesson it left are in the
-  recurring-bug-shape table.
-
-  **On 5.7.1 and earlier only**, use a quoted-key map mutated via bracket notation:
-  `state["count"] = state["count"] + 1i` (`{"count": 0i}` — quoted-key map — NOT
-  `{count: 0i}`, which is a record). It was never needed for anything scoped inside a
-  function.
+  **This entry asserted the opposite for a long time** and sent every session to
+  an unnecessary quoted-key-map workaround. That is the reason it names its
+  evidence: a quirk entry nobody re-runs becomes a quirk of the file. #671's
+  mechanism is in the recurring-bug-shape table.
 - **Maps vs Records — dot vs bracket notation:**
   - `{"key": val}` (quoted keys) → **map** → access with `state["key"]`
   - `{key: val}` (unquoted keys) → **record** → access with `state.key`
@@ -936,23 +920,13 @@ These burn time when forgotten:
   `recv(ch)`, `close(ch)`. No import needed.
 - **Workflow step dependencies use `after` keyword:**
   `step b after a { ... }` — not `depends_on`, not any other syntax.
-- **Cross-module closures were broken in both directions through 5.8.0; fixed in
-  5.9.0** (#691 `severity:high`, #696). A callback passed *into* an imported
-  module's function did not work from a **step body** — including `std:` modules,
-  so `retry.until` failed in the exact position its own documentation points at.
-  A closure a module *returns* did not work anywhere, so a factory
-  (`let f = m.make_adder(3i)`) was unusable. On 5.8.0 and earlier: call the module
-  function from `fn main()` and pass the result in, and do not use module
-  factories.
-
-  **The worst case was silent** — the step body stopped at the module call, nothing
-  was raised, and the run reported `failed: []` with `steps: {}`. Mechanism and the
-  three lessons it left are in the recurring-bug-shape section; the one that
-  matters when you are writing `.nd` tests is this: every test and probe for
+- **Cross-module closures work in both directions** (#691, #696, fixed in 5.9.0).
+  The lesson they left is the part to carry: every test and probe for
   `retry.until` ran inside `fn main()`, so the full suite, nine gate phases and 83
   release probes were green on a feature that did not work where it is meant to be
-  used. **A construct documented for use inside a step body must be tested inside
-  a step body.**
+  used — inside a step body, which is where its own documentation points. **A
+  construct documented for use inside a step body must be tested inside a step
+  body.** Mechanism in the recurring-bug-shape section.
 
 - **`checkpoint` is valid INSIDE step bodies only**, not at workflow-body level.
   `step a { checkpoint "mid"; return "done" }` — correct.
@@ -965,22 +939,28 @@ These burn time when forgotten:
   pre-checkpoint contributions once per resume).
 - **Async test two-flush pattern:** `spawn → flush (task sleeps) → advance_clock(N) → flush (task wakes)`.
   Skipping either flush or the advance causes the test to pass vacuously.
-- **`spawn()` accepts a zero-argument function directly (#718, shipped in
-  5.10.0)** — `spawn(fn() { ... })` wraps and spawns, and returns the handle.
-  `spawn(c)` after `let c = coroutine(fn() {...})` is unchanged and still correct.
-
-  **Through 5.9.0 the two-step form is the only spelling**: `spawn(fn(){...})`
-  raises `spawn(coroutine) expects a coroutine`. That footgun is why #336 proposed a
-  `spawn { }` keyword; the keyword was rejected (the grammar position it needs is the
-  one `match` occupies, see #717) and the builtin was widened instead. Widening
-  delegates to `coroutine()`'s own path, so the zero-arity check and the
-  ASYNC-MOD-003/#691 origin pinning are not duplicated.
+- **`spawn()` accepts a zero-argument function directly** (#718) —
+  `spawn(fn() { ... })` wraps and spawns, returning the handle; `spawn(c)` after
+  `let c = coroutine(fn() {...})` is unchanged. #336 proposed a `spawn { }`
+  keyword for the same footgun and was rejected: the grammar position it needs is
+  the one `match` occupies (#717). Widening the builtin delegates to
+  `coroutine()`'s own path, so the zero-arity check and the ASYNC-MOD-003/#691
+  origin pinning are not duplicated.
 - **`fn` is a reserved keyword** — can't use as a parameter name in `.nd` files.
 - **`if` conditions with function calls require parentheses.** `if (module.fn(a, b))` works;
   `if module.fn(a, b)` gives "Expected '(', got identifier". Simple field access works without
   parens (`if record.field`), but call expressions need `if (expr)`.
   **A bare `state` variable also needs them** inside a step body: `if approve { ... }` gives
   "Expected '(', got identifier ('approve')"; `if (approve) { ... }` works.
+- **A `state` cell can declare its own join: `with { barrier: true }`** (#578).
+  Every step that *reads* the cell waits for every step that *writes* it,
+  inferred — `step d after b, c` says the same thing but goes stale when a
+  fourth writer is added. Composes with `merge:`. Its writers must write
+  **unconditionally**: a write inside an `if`, a loop or a `match` arm, or a
+  step carrying `when`, is refused at declaration, because a reader waiting for
+  a writer that may not write waits forever. The inferred edges are *ordering*,
+  not data — a barrier reader's body stays zero-parameter, unlike `after`, which
+  binds one parameter per dependency.
 - **A `state` cell cannot hold a record.** The run aborts at persist time with
   `Object of type Record is not JSON serializable`, blamed on the `run_workflow(...)` call
   site rather than the assignment. Records are ordinary data with an obvious JSON shape, so
@@ -1055,9 +1035,10 @@ contexts. See `docs/governance/TECH_DEBT.md § Testing Methodology`.
 ## The recurring bug shape — a check on one path, a sibling path that bypasses it
 
 This codebase's most common defect is not a wrong check. It is a **correct check that only one
-of several paths goes through**. It has surfaced **once per row of the table below** across the
-v5.0.0–5.10.0 cycles — count the rows rather than trusting a word here, which had gone stale by
-one. That frequency is why it gets its own section: when you find one, the next question is
+of several paths goes through**. It has surfaced **once per row of the table below**, from
+v5.0.0 onward — count the rows rather than trusting a word here, which had gone stale by one,
+and note that the range is deliberately open-ended for the same reason. That frequency is why
+it gets its own section: when you find one, the next question is
 always *"what else has this shape?"* — not *"is this fixed?"*
 
 Instances, all confirmed by reading the code rather than inferred:
@@ -1095,6 +1076,32 @@ Instances, all confirmed by reading the code rather than inferred:
 | #704 | which program is this cache entry for | #521 fixed the branch, the cache **read** and the cache **write** — and the key itself still answered by path + mtime, so an edit inside the platform's timestamp resolution was invisible to all three |
 | #754 | how is a VM for this service confined | `RuntimeService.graph` passed the path settings to `run_source` by hand instead of using the shared guard — a second implementation that *structurally could not* learn a capability flag, since `run_source` builds its own VM and takes none |
 | #167 | is this a valid extension name | the VM refused at construction and `NodusRuntime` did not refuse until its first `run_source` — the two agreed on the **answer** and disagreed on the **moment**, which is the same shape with a different disguise |
+| #182 | where does the scheduler get time | `clock_fn` was injectable; the idle path called `time.sleep` directly. Half a seam, and the unsafe half — inject a clock and `run_loop()` **hangs** |
+| #769 | which VM did this construct build | a test helper patched `VM.__init__` process-wide and returned the first VM **any** thread built |
+| #770 | who stops the background work | two tests started a server and two sweepers and stopped none; #632's lesson, in two more places |
+
+**#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
+injectable and the test harness overrode it, so the tree *looked* like it could
+run on a supplied clock. It could not — the idle path waited through
+`time.sleep`, so a supplied clock was read and never waited on, and
+`run_loop()` spun forever on a `now` that never moved. Measured: a coroutine
+sleeping 800 ms finishes in 926 ms on the host clock, **never** on a frozen one,
+and 44 ms once waiting went through the same object.
+
+The lesson generalises past clocks. **A seam that covers the read and not the
+write is worse than no seam**, because the missing half is invisible until
+someone uses the half that exists — and the failure is a hang rather than an
+error. When you make something injectable, ask what else has to move with it;
+here the pair is obvious in hindsight and was split for years. The fix was one
+object with both operations, so an implementation answers both or neither.
+
+**And two clocks legitimately remain, which is the part worth copying.** Event
+timestamps and `created_time` still read the host clock: they answer *when did
+this really happen*, which a simulated clock would falsify. That is a real
+distinction, so it is stated in the code rather than left for a reader to infer
+— and the one member of that group which does **not** fit the reasoning (the
+task-timeout comparison) was filed as #778 rather than quietly left. A split you
+can justify is fine; a split nobody wrote down is the next row of this table.
 
 **#167 adds a variant worth naming, because it is not a disagreement.** Its two
 sites agreed completely about which extension names are valid. They disagreed
@@ -1612,6 +1619,13 @@ is not even a row in the table.)
   fully author.
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
+
+**`[Unreleased]` has no rows, checked rather than assumed.** Everything since
+5.10.0 is additive or a repair: `barrier: true` is a new state-cell option
+(#578), the scheduler's `TimeSource` defaults to the previous behaviour
+byte-for-byte (#182), and the CLI's lazy server imports (#173) change only how
+long startup takes. An absence recorded as checked is worth more than an
+absence.
 
 **5.10.0 has two rows, and 5.9.0 has none — both checked rather than assumed.**
 5.10.0's are `nodus serve` confinement (#754) and the workflow-store warning
