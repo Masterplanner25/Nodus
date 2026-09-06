@@ -141,6 +141,45 @@
 
 ### Fixes
 
+- **#783: a closure the root program owns could not be resolved from inside a module.**
+
+  A module that wraps a caller's closure and spawns the wrapper failed with
+  `Stack underflow` when called from inside a coroutine — and worked from
+  `main`, which is what made it look like a scheduling problem. The fourth
+  direction in the #691/#696 family.
+
+  A `Closure` is an address plus upvalues, and the address means nothing without
+  the chunk it was compiled against. The VM could name that chunk for a
+  `_ClosureProxy`, a live cross-module frame, a detached caller VM, and any
+  **module** it could reach — but not for **its own program**, the one chunk
+  that is not a module. The wrapper runs after its module frame has popped, so
+  all four sources were empty and the call executed at the right address against
+  the wrong chunk.
+
+  `VM.base_ctx()` is the counterpart to `module_ctx()` and answers it, consulted
+  last in `_foreign_closure_origin`. Ownership is identity on the `functions`
+  table, the same test the other sources use, so a base that is momentarily
+  stale — the loader drives `reset_program` once per module on one shared VM —
+  can only fail to help, never mis-resolve.
+
+  Also fixed by the same change: the caller's closure arriving nested in a list,
+  a map, or a second closure layer; crossing two module boundaries; and
+  suspending inside the wrapped closure.
+
+  **Two neighbouring gaps are filed rather than fixed**, and are pinned by test
+  so the fix is not read as covering them: #785 (a closure owned by a *sibling*
+  module — pre-existing, and it fails with the calling frames still alive) and
+  #786 (a root-level `let` is invisible once the entry frame has popped, which
+  this fix makes reachable). The asymmetry #786 leaves today is that a wrapped
+  closure can call a root-level `fn` but cannot read a root-level `let`.
+
+  The one attribute this needed put `VM` on the PyPy instance-attribute cliff,
+  and `tests/test_vm_attribute_budget.py` caught it (#702). `_caller_vm` moved
+  to a class-level default to make room — a *root* VM never writes it, only a
+  detached child does, so the VM the dispatch loop runs now carries one fewer
+  instance attribute than before this change.
+
+
 - **#182: a program could not read the clock its own sleeps run on.**
 
   `runtime.time_ms()` called `runtime_time_ms()` directly, so under an injected

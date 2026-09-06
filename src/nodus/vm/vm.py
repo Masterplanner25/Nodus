@@ -186,6 +186,13 @@ class VM:
     trace_errors: bool = False
     last_graph_plan: dict | None = None
     trace_count: int = 0
+    # #783 needed a slot and this is the one that was free. A *root* VM never
+    # writes `_caller_vm` -- only a detached child does, through `setattr` in
+    # `module.py` and `tool_module.py` -- so as a class default it costs the
+    # hot VM no instance entry at all, which is the one the dispatch loop runs.
+    # Every read is either `self._caller_vm` or `getattr(self, "_caller_vm",
+    # None)`; both resolve through the class.
+    _caller_vm: object | None = None
 
 
     def __init__(
@@ -232,6 +239,7 @@ class VM:
         self.ip = 0
         self.input_fn = input_fn if input_fn is not None else input
         self.source_path = source_path
+        self._record_base_program()  # #783
         # Keep this beside `source_path`: the two are the run's rebuild handle and
         # a resume needs at least one of them. `source_code` used to be
         # assignable only after construction, so an entry point that passed
@@ -260,7 +268,6 @@ class VM:
         # ASYNC-MOD-003: set by NodusModule.invoke_function on a detached module
         # VM. Declared here so the CALL_VALUE hot path is a plain attribute read
         # instead of a missing-attribute getattr on every call.
-        self._caller_vm = None
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
@@ -1299,6 +1306,7 @@ class VM:
         self.functions = state.get("functions", {})
         self.code_locs = state.get("code_locs", [(None, None, None)] * len(self.code))
         self.source_path = state.get("source_path")
+        self._record_base_program()  # #783
         memory_state = state.get("memory_store", {})
         if not isinstance(self.memory_store, MemoryStore):
             self.memory_store = MemoryStore()
@@ -1374,6 +1382,7 @@ class VM:
         self.functions = functions
         self.code_locs = code_locs or [(None, None, None)] * len(self.code)
         self.source_path = source_path
+        self._record_base_program()  # #783
         if module_globals is not None:
             self.module_globals = module_globals
             self.globals = module_globals
@@ -4201,6 +4210,23 @@ class VM:
         module = self._module_owning(fn_info)
         if module is not None:
             return self.module_ctx(module)
+        # #783: ownership covered every chunk **except this VM's own**. A module
+        # that spawns a closure capturing a *caller's* closure runs the wrapper
+        # after its own frame has popped, so all four sources above are empty:
+        # nothing was wrapped (the same-VM #105 path wraps nothing), the frame
+        # carrying `cross_module_ctx` is gone, `_caller_vm` is None, and
+        # `_module_owning` searches modules while the closure was compiled in
+        # the root program. The call then executed at the right address against
+        # the wrong chunk -- `Stack underflow`, from inside a coroutine only.
+        #
+        # Last for reading order, not for correctness: a `FunctionInfo` lives
+        # in exactly one chunk's `functions` table, so this and `_module_owning`
+        # can never both claim the same closure. Verified by moving this above
+        # `_module_owning` -- the suite stays green. The issue that reported
+        # this defect warned the order was load-bearing; it is not, and saying
+        # so is better than leaving a caution nobody can act on.
+        if self._base_program_owns(fn_info):
+            return self.base_ctx()
         return None
 
     def _module_owning(self, fn_info):
@@ -4220,6 +4246,14 @@ class VM:
 
         Only reached for a closure already known foreign, which is rare; the
         common path never gets here.
+
+        **A sibling module is not reachable, and that is a known gap.** The walk
+        starts from wherever the VM currently is, and a module binds only what
+        it *imports* -- so `inner`, handed a closure that `outer` owns, cannot
+        see `outer`, because the import runs the other way. Seeding the walk
+        from the root program's namespace does not help: module bindings are not
+        in `module_globals` (measured -- the root's is empty), so there is
+        nothing there to enqueue. Filed with a repro rather than patched around.
         """
         seen: set[int] = set()
         queue: list[NodusModule] = []
@@ -4240,6 +4274,81 @@ class VM:
                 return module
             enqueue(module.globals)
         return None
+
+    def _record_base_program(self) -> None:
+        """Remember this VM's **own** program (#783).
+
+        `module_ctx` answers "what is it to *be* that module" for every module
+        this VM can see. There was no equivalent for the VM's own chunk, so a
+        closure the root program owns had no context to be resolved to once the
+        VM was executing inside a module — see `base_ctx` for what that cost.
+
+        Called from every site that loads a program into this VM: `__init__`,
+        `reset_program`, and `import_state`. **Construction alone is not
+        enough** — measured, `run_source` constructs the VM and *then* the
+        loader installs the real root chunk through `reset_program`, so a
+        base recorded only at `__init__` names a program the VM never runs, and
+        six of the twelve cases in the #783 probe set go back to failing.
+
+        `ModuleLoader._execute_module` also drives `reset_program` **once per
+        module** on this one shared VM, so between those calls the base names
+        whichever module loaded last. That is deliberately tolerated rather than
+        worked around, because it cannot produce a wrong answer: every consumer
+        goes through `_base_program_owns`, which is an **identity** check on the
+        functions table. A base naming the wrong program simply owns nothing the
+        caller asks about and resolution falls through to `None` — the behaviour
+        from before this existed. A stale base can fail to help; it cannot
+        mis-resolve.
+
+        Modules load depth-first with the root last, so at steady state — which
+        is when spawned work runs — the base is the root program.
+        `tests/test_root_owned_closure.py` pins that, because it is a property
+        of the loader rather than of this method.
+        """
+        self._base_program = (
+            self.code, self.functions, self.module_globals, self.globals,
+            self.code_locs, self.source_path, self.bytecode_version,
+        )
+
+    def base_ctx(self) -> tuple:
+        """This VM's own program's context, in `_capture_module_ctx` layout (#783).
+
+        The counterpart to `module_ctx`, and built the same way: what belongs to
+        the *program* comes from what it was loaded with, while `builtins` and
+        `host_globals` are read live because they belong to the VM rather than
+        to any one chunk.
+
+        The namespaces are recorded with the program rather than read live,
+        because they belong to it: this is consulted precisely *while* a module
+        context is loaded, so a live read would hand the root program's closure
+        the module's namespace. Recording the dicts themselves (not copies)
+        keeps in-place mutation visible, and every site that reassigns them
+        re-records.
+
+        **No test currently distinguishes the two, and that is worth knowing
+        rather than hiding.** Swapping this back to a live read leaves the whole
+        suite green. The reason is #786: a root program's top-level bindings are
+        not in `module_globals` at all — the root's is empty, measured — so
+        nothing observable reaches through here yet. Recorded is the coherent
+        definition and matches `module_ctx`; it is simply not yet load-bearing.
+        """
+        (code, functions, module_globals, globals_,
+         code_locs, source_path, version) = self._base_program
+        return (
+            code, functions, module_globals, globals_,
+            code_locs, source_path, self.builtins, self.host_globals, version,
+        )
+
+    def _base_program_owns(self, fn_info) -> bool:
+        """Whether this VM's own chunk holds ``fn_info`` — identity, not name.
+
+        The same ownership test `_is_foreign_closure` and `_module_owning` use.
+        Two chunks routinely both hold an `__anon_1`.
+        """
+        base = getattr(self, "_base_program", None)
+        if base is None:
+            return False
+        return base[1].get(getattr(fn_info, "name", None)) is fn_info
 
     def module_ctx(self, module) -> tuple:
         """A module's execution context, in `_capture_module_ctx` layout.
