@@ -4,6 +4,39 @@
 
 ### Changed
 
+- **#173: every CLI command was paying for a web server. Startup is ~700 ms faster.**
+
+  `nodus.cli.cli` imported `nodus.services.server` at module scope for the four
+  commands that need it (`serve`, `snapshot`, `snapshots`, `restore`). That
+  module imports FastAPI, uvicorn and pydantic, so `nodus run`, `nodus fmt`,
+  `nodus check` and `nodus --version` all paid for it too. The imports are lazy
+  now, inside those four commands.
+
+  Measured alternating before/after in one window, best of three each, so
+  machine drift shows as noise rather than signal:
+
+  | | before | after | |
+  |---|---|---|---|
+  | `import nodus.cli.cli` | 1435 ms | 652 ms | 2.20x |
+  | `nodus --version` | 1592 ms | 640 ms | 2.49x |
+  | `nodus run hello.nd` | 1711 ms | 1011 ms | 1.69x |
+
+  This is also the standing blocker on #173's PyPy path: PyPy's *interpreter*
+  starts faster than CPython's (104 ms vs 184 ms), and what makes it
+  unadoptable is importing Nodus's own module tree -- run-once code the JIT
+  never warms, against `nodus run`'s 200 ms default deadline.
+
+  `tests/test_cli_import_cost.py` asserts on `sys.modules` in a subprocess,
+  because a behavioural test cannot see this -- the CLI worked either way, only
+  slower -- and by the time any other test runs, something has usually imported
+  FastAPI already.
+
+  **The throughput ceiling itself is unchanged, and its recorded figure was
+  stale.** Measured with the VM's own instruction counter rather than an
+  estimate per loop iteration: **650-850K instr/s**, at 17 instructions per
+  iteration, against the ~200K the issue records. `tools/benchmark_runtime.py`
+  reports both figures so neither has to be transcribed again.
+
 - **#578: a `state` cell can declare its own join — `with { barrier: true }`.**
 
   Every step that reads the cell waits for every step that writes it, inferred.
