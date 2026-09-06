@@ -21,14 +21,12 @@ stops on the second run is worse than none: it looks fixed.
 
 from __future__ import annotations
 
-import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
 import warnings
-from contextlib import redirect_stderr
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))  # noqa: E402
@@ -71,48 +69,6 @@ class CategoryTests(unittest.TestCase):
                 warn_staged_flip("boom")
 
 
-class CliDisplayTests(unittest.TestCase):
-    # closes: #797
-    def test_the_cli_shows_a_staged_flip_warning(self):
-        from nodus.cli.cli import _show_staged_flip_warnings
-
-        with warnings.catch_warnings():
-            warnings.resetwarnings()
-            previous = warnings.showwarning
-            try:
-                _show_staged_flip_warnings()
-                buffer = io.StringIO()
-                with redirect_stderr(buffer):
-                    warn_staged_flip("the default store changes")
-                self.assertIn("warning: the default store changes", buffer.getvalue())
-                self.assertNotIn("StagedFlipWarning", buffer.getvalue())
-            finally:
-                warnings.showwarning = previous
-
-    def test_it_does_not_unsuppress_unrelated_deprecations(self):
-        """Scoped to our category, or our notice drowns in other libraries'.
-
-        The control matters here: raising a `DeprecationWarning` from a test
-        body proves nothing, because `__main__`-attributed deprecations are
-        shown by default anyway. This raises from a module.
-        """
-        from nodus.cli.cli import _show_staged_flip_warnings
-
-        with warnings.catch_warnings():
-            warnings.resetwarnings()
-            previous = warnings.showwarning
-            try:
-                _show_staged_flip_warnings()
-                buffer = io.StringIO()
-                with redirect_stderr(buffer):
-                    # Attributed to this module, not __main__, so the default
-                    # filters genuinely suppress it.
-                    warnings.warn("unrelated library", DeprecationWarning, stacklevel=1)
-                self.assertEqual(buffer.getvalue().strip(), "")
-            finally:
-                warnings.showwarning = previous
-
-
 class _ProjectCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -125,6 +81,103 @@ class _ProjectCase(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
         return path
+
+
+class CliDisplayTests(_ProjectCase):
+    """What the CLI's warning display changes, and what it leaves alone.
+
+    In a **subprocess**, because the property is about Python's *default*
+    warning filters and no in-process version of this test can be trusted: the
+    first attempt called `warnings.resetwarnings()` to get a clean slate, which
+    deletes the very default it was trying to observe. It passed under pytest
+    (which installs filters of its own) and failed under `unittest` -- the split
+    CLAUDE.md warns about, where CI runs both and they are not interchangeable.
+
+    Each case is a **differential**: the same program run with and without the
+    display installed. That asserts what the change does rather than what the
+    harness happens to have configured.
+    """
+
+    PROBE = (
+        "import contextlib\n"
+        "import io\n"
+        "import sys\n"
+        "import warnings\n"
+        "\n"
+        "if sys.argv[1] == 'install':\n"
+        "    from nodus.cli.cli import _show_staged_flip_warnings\n"
+        "    _show_staged_flip_warnings()\n"
+        "\n"
+        "import otherlib\n"
+        "from nodus.support.staging import warn_staged_flip\n"
+        "\n"
+        "buf = io.StringIO()\n"
+        "with contextlib.redirect_stderr(buf):\n"
+        "    otherlib.emit()\n"
+        "unrelated = buf.getvalue()\n"
+        "\n"
+        "buf = io.StringIO()\n"
+        "with contextlib.redirect_stderr(buf):\n"
+        "    warn_staged_flip('the default store changes')\n"
+        "ours = buf.getvalue()\n"
+        "\n"
+        "print(repr({'unrelated': unrelated, 'ours': ours}))\n"
+    )
+
+    # `stacklevel=1` attributes the warning to *this* module rather than to
+    # `__main__`, so Python's default filters genuinely suppress it. With
+    # `stacklevel=2` it would be shown either way and the control would be
+    # vacuous.
+    OTHERLIB = (
+        "import warnings\n"
+        "\n"
+        "\n"
+        "def emit():\n"
+        "    warnings.warn('unrelated library', DeprecationWarning)\n"
+    )
+
+    def _probe(self, mode: str) -> dict:
+        self.write("otherlib.py", self.OTHERLIB)
+        self.write("probe.py", self.PROBE)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join([str(REPO / "src"), self.dir])
+        result = subprocess.run(
+            [PYTHON, "probe.py", mode],
+            cwd=self.dir, capture_output=True, text=True, env=env, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        import ast as _ast
+
+        return _ast.literal_eval(result.stdout.strip())
+
+    # closes: #797
+    def test_installing_the_display_is_what_makes_ours_visible(self):
+        without = self._probe("noinstall")
+        with_it = self._probe("install")
+        self.assertEqual(
+            without["ours"], "",
+            "a staged flip was already visible without the CLI display -- this "
+            "test cannot show the fix does anything",
+        )
+        self.assertIn("warning: the default store changes", with_it["ours"])
+        self.assertNotIn(
+            "StagedFlipWarning", with_it["ours"],
+            "rendered as Python's file:line: Category: message, not as a CLI warning",
+        )
+
+    def test_it_leaves_an_unrelated_deprecation_exactly_as_it_found_it(self):
+        """Scoped to our category, or our notice drowns in other libraries'."""
+        without = self._probe("noinstall")
+        with_it = self._probe("install")
+        self.assertEqual(
+            without["unrelated"], "",
+            "the control is vacuous: this deprecation was not suppressed to begin with",
+        )
+        self.assertEqual(
+            with_it["unrelated"], without["unrelated"],
+            "installing the display changed what happens to an unrelated "
+            "DeprecationWarning",
+        )
 
 
 class UnknownTypeNameOnRunTests(_ProjectCase):
