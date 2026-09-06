@@ -333,7 +333,7 @@ baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
 
-**Two tests were known-flaky here; both are fixed. The reproduction method is the
+**Three tests were known-flaky here; all are fixed. The reproduction method is the
 part worth keeping.** Neither ever failed from repetition — only under *load* — so
 "it passed when I ran it again" was never evidence about either, and an idle box
 passes indefinitely.
@@ -349,6 +349,18 @@ passes indefinitely.
   (#632) — fixed in 5.6.0.** Read as a tempdir race and was not one: the store
   was still open when the directory was removed, and `SQLiteWorkflowStore` had
   no `close()`. `RuntimeService.close()` waits for its sweeper now.
+- **`test_task_graph.py::test_task_reassignment_after_worker_failure` (#728) —
+  fixed 2026-09-06.** The tightest budget in the tree: `_worker_heartbeat_timeout_ms`
+  was **20 ms**, and it had to cover a thread starting, compiling and reaching
+  `submit()` — which calls `_expire_workers` first. `wait_for_job` marks the
+  worker *seen*, which cancels the 250 ms `_startup_grace_ms` that would
+  otherwise have covered it, so the worker was evicted and the first assertion
+  saw `{"job_id": None}`. **The death the test simulates is the backdating, not
+  this timeout**, so the timeout is large now (2 s) and the backdate far past it
+  (60 s) — the margin runs on the side load stretches. Diagnosed by forcing the
+  delay rather than by loading the box: 20 ms fails with the VM thread 200 ms
+  late, 2 s survives 1 s late. Its three siblings in the same file were checked
+  and left alone — two assert a worker *is* expired, which load only makes safer.
 
 **To reproduce this class of failure, load the machine; do not re-run the test.**
 Burn every core but one in a background process, then run the file.

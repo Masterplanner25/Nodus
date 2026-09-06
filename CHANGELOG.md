@@ -4,6 +4,19 @@
 
 ### Tooling
 
+- **#728: a flaky test whose budget was 20 ms.**
+
+  `test_task_reassignment_after_worker_failure` set `_worker_heartbeat_timeout_ms`
+  to 20 ms, and that timeout had to cover a thread starting, compiling and
+  reaching `submit()` — which expires workers first. `wait_for_job` marks the
+  worker seen, cancelling the 250 ms startup grace that would otherwise have
+  covered it.
+
+  The death the test simulates is the *backdating*, not the timeout, so the
+  timeout is large now and the backdate far past it. Falsified rather than
+  re-run: with the VM thread 200 ms late, 20 ms fails with the exact reported
+  symptom and 2 s survives a full second.
+
 - **#770: two tests left a server and a sweeper running for the rest of the suite.**
 
   `test_cli_serve_command_starts` ran `nodus serve` in a daemon thread, slept
