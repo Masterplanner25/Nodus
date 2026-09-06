@@ -203,6 +203,7 @@ class UnknownTypeName:
     line: int
     col: int
 
+    # v6-flip: unknown-type-name
     def message(self) -> str:
         hint = f" — did you mean '{self.suggestion}'?" if self.suggestion else "."
         return (
@@ -1194,6 +1195,7 @@ class Parser:
             return_type = self._extern_type_name(name, "return")
         return self.mark(ExternDecl(name, params, return_type), start)
 
+    # v6-flip: unknown-type-name
     def _extern_type_name(self, extern_name: str, slot: str) -> str:
         """A type in an `extern`, checked as an **error** rather than a warning.
 
@@ -1777,6 +1779,7 @@ class Parser:
             tok = self.eat("ID")
         name = tok.val
         if not is_known_type_name(name):
+            # v6-flip: unknown-type-name
             # #609: an unrecognised name used to become `any` in silence, so one
             # transposed letter disabled checking on that parameter forever. It
             # is recorded here — the only place that sees both the name and the

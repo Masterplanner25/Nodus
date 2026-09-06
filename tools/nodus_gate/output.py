@@ -491,3 +491,97 @@ def format_json_results(
     obj["total_failures"] = total_failures
     obj["passed"] = total_failures == 0
     return json.dumps(obj, indent=2) + "\n"
+
+
+def format_flips(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """Unregistered promises first, then markers naming nothing, then stale entries."""
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        lines.append(
+            "     A manifest that cannot be read is a failure, not a skip -- the "
+            "check may not pass by being unable to run."
+        )
+        return "\n".join(lines)
+
+    for entry in result.malformed:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(f"  {mark} {entry.flip}: {entry.problem}")
+
+    for item in result.unattributed:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(
+            f"  {mark} {item.file}:{item.line} promises {result.target} and no "
+            "flip claims it"
+        )
+        lines.append(f"       {item.text}")
+        lines.append(
+            "       Add a `# v6-flip: <name>` marker above it and an entry in "
+            "tools/v6_flips.json."
+        )
+
+    for item in result.unknown:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(
+            f"  {mark} {item.file}:{item.line} marks flip {item.flip!r}, which "
+            "the manifest does not declare"
+        )
+
+    for item in result.counts:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(
+            f"  {mark} {item.flip} declares {item.declared} site(s) and owns "
+            f"{item.found}"
+        )
+        for site in item.sites:
+            lines.append(f"       {site}")
+        lines.append(
+            "       A promise gained or lost inside an existing marker's window. "
+            "Confirm it belongs to this flip, then update `sites`."
+        )
+
+    for item in result.stale:
+        mark = _c("[FAIL]", _RED, use_color=use_color)
+        lines.append(
+            f"  {mark} {item.flip} (#{item.issue}) is declared and nothing in "
+            "src/ promises it any more"
+        )
+        lines.append(f"       {item.summary}")
+        lines.append(
+            "       Either the flip was honoured -- delete the entry -- or the "
+            "promise was retracted in silence, which is the case worth catching."
+        )
+
+    if verbose and not result.has_failure:
+        for name, sites in sorted(result.marked.items()):
+            entry = result.flips.get(name) or {}
+            mark = _c("[ok]", _GREEN, use_color=use_color)
+            lines.append(
+                f"  {mark} {name} (#{entry.get('issue', '?')}) — {len(sites)} site(s)"
+            )
+            for site in sites:
+                lines.append(f"       {site}")
+
+    if not quiet:
+        if result.has_failure:
+            status = _c("Flips: FAIL", _RED, use_color=use_color)
+        else:
+            status = _c("Flips: PASS", _GREEN, use_color=use_color)
+        # A flip whose warning nobody sees is not a deprecation by this
+        # project's own rule, so the summary says how many are in that state
+        # rather than leaving it to whoever reads the manifest.
+        weak = [
+            name for name, entry in sorted(result.flips.items())
+            if str((entry or {}).get("signal", "")).lower().startswith(("none", "partial"))
+        ]
+        lines.append("")
+        lines.append(
+            f"{status} — {len(result.flips)} flip(s) staged for {result.target}, "
+            f"{result.mentions} site(s) attributed"
+        )
+        if weak and not result.has_failure:
+            lines.append(
+                f"  note: {len(weak)} of them have no full CLI signal "
+                f"({', '.join(weak)}) — see docs/governance/V6_0_PLAN.md G2"
+            )
+    return "\n".join(lines)

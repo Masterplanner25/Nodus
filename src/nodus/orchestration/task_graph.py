@@ -910,6 +910,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     if dispatcher is not None and getattr(dispatcher, "event_bus", None) is None:
         dispatcher.event_bus = vm.event_bus
 
+    # v6-flip: worker-dispatcher
     # #492: `worker:` names where a step runs. With a dispatcher, an unsatisfiable
     # name already fails -- `WorkerPool.submit` waits for a worker advertising the
     # capability and raises "No workers registered with capability: X". Without
@@ -1869,6 +1870,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 cause = (
                     "with different values, so one was lost"
                 )
+            # v6-flip: concurrent-write
             message = (
                 f"warning: steps {' and '.join(names)} both wrote state "
                 f"'{conflict['key']}' while running concurrently and {cause}; "

@@ -78,6 +78,7 @@ class Record:
             return self.fields["total_ms"] == other.fields["total_ms"]
         if self is other:
             return True
+        # v6-flip: record-equality
         # #545 staging: identity today, structural in 6.0.0. The one observable
         # divergence -- two distinct records that field-by-field comparison
         # calls equal -- warns once per process, so a program relying on `==`
@@ -123,6 +124,7 @@ class Record:
 _STRUCTURAL_EQ_CHANGE_WARNED = False
 
 
+# v6-flip: record-equality
 def structural_eq(a, b, _seen: set | None = None) -> bool:
     """What `a == b` returns in 6.0.0 (#545): records compare by `kind` and
     `fields`, recursing with the same equality lists and maps already use.
@@ -170,6 +172,7 @@ def structural_eq(a, b, _seen: set | None = None) -> bool:
     return a == b
 
 
+# v6-flip: record-equality
 def _warn_structural_eq_change() -> None:
     global _STRUCTURAL_EQ_CHANGE_WARNED
     if _STRUCTURAL_EQ_CHANGE_WARNED:

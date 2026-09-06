@@ -1436,6 +1436,7 @@ def default_store_root() -> str:
 _WARNED_DEFAULT_STORE = False
 
 
+# v6-flip: default-store-sqlite
 def _warn_default_store_is_transitional(backend_from_env, store) -> None:
     """Say, once, that an unconfigured local store has records the 6.0.0 flip will not carry (#174).
 
@@ -1467,6 +1468,7 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
         return
     if not has_runs:
         return
+    # v6-flip: default-store-sqlite
     _WARNED_DEFAULT_STORE = True
     warnings.warn(
         "The default workflow store is LocalWorkflowStore (file-backed JSON), "
@@ -1505,6 +1507,7 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # — while `NODUS_WORKFLOW_STORE_BACKEND` sat there working for the
             # server and doing nothing here.
             #
+            # v6-flip: default-store-sqlite
             # The default is still `local`, and flipping it is a 6.0.0 change --
             # not because the file location moves but because runs already
             # recorded in the JSON store are invisible to a SQLite one, so an

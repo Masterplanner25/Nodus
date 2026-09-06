@@ -530,6 +530,7 @@ def check_source(
                 err=extern_err, code=code,
             )
         result = _success_result(stage="check", filename=filename, stdout="", stderr="")
+        # v6-flip: unknown-type-name
         # Warnings, not failures, until 6.0.0 (#609). `ok` stays True so a
         # project that checks clean today keeps its exit code.
         result["warnings"] = [
