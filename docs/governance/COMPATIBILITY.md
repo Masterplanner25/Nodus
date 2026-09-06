@@ -22,6 +22,34 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 
   Concurrent writes that lose nothing — same value, neither branch reading first
   — are silent and are not affected.
+- **An unrecognised type name** (#609). `let x: strng = "hi"` is ignored today,
+  so one transposed letter disables checking on that annotation. Warns since
+  **5.6.0**, **scheduled to become an error in 6.0.0**. The warning names the
+  near miss and the known type names. It currently reaches `nodus check` only —
+  `nodus run` is silent, which `V6_0_PLAN.md` §3.2 records as a gap to close
+  before the major.
+- **Record `==` comparing by identity** (#545). `record {x: 1i} == record {x: 1i}`
+  is `false` where the equivalent map is `true`. Warns since **5.4.0** when a
+  comparison whose answer will change actually happens; **scheduled to become
+  structural in 6.0.0**. Design: `docs/design/v6/00-record-equality.md`.
+- **A `worker:` declaration with no registered dispatcher** (#492). The step runs
+  in this process with no isolation, which is the opposite of what the
+  declaration asks for. Warns since **5.3.0** and the warning says it becomes an
+  error in 6.0.0 — but whether it is in the cohort is **undecided**, because the
+  v6 design doc says it was dropped. See `V6_0_PLAN.md` D1.
+- **The default workflow store being `LocalWorkflowStore`** (#174). **Scheduled
+  to become SQLite in 6.0.0.** Runs recorded in the JSON store are not visible to
+  a SQLite one, so an in-flight `waiting` run would become unresumable rather
+  than move. Migrate with `nodus workflow migrate-store --to sqlite`
+  (non-destructive, has a real `--dry-run`), or set
+  `NODUS_WORKFLOW_STORE_BACKEND=local` to keep the JSON store deliberately.
+  **The notice reaches nobody on the CLI today** — it is a Python
+  `DeprecationWarning` raised outside `__main__`, which the default filter
+  discards (`V6_0_PLAN.md` §3.2). This is the one flip that costs state rather
+  than a build.
+
+> The full register, with what each flip costs and what must be true before the
+> major is cut, is `docs/governance/V6_0_PLAN.md`.
 
 ## Timeline
 
