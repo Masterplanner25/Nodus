@@ -34,6 +34,16 @@ from nodus.cli.commands import (  # noqa: E402
 
 CLI_SOURCE = Path(cli_module.__file__).read_text(encoding="utf-8")
 
+# `nodus test` dispatches out of `cli.py` into this module, which held its own
+# copy of the flag names and its own parser until #791.  The scan below covers
+# both, because a source check aimed at one file cannot see a second voice in
+# another.
+TESTING_CLI = Path(cli_module.__file__).parent.parent / "testing" / "cli.py"
+FLAG_DECLARING_SOURCES = {
+    "cli.py": CLI_SOURCE,
+    "testing/cli.py": TESTING_CLI.read_text(encoding="utf-8"),
+}
+
 # A flag token as it appears at the head of a help "Options:" line.
 _HELP_FLAG = re.compile(r"^\s+(--[a-z0-9-]+)")
 
@@ -43,17 +53,18 @@ class CommandTableSourceTests(unittest.TestCase):
 
     def test_dispatch_declares_no_inline_flag_literals(self):
         offenders = []
-        for lineno, line in enumerate(CLI_SOURCE.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith(("flags_with_values = {", "flags_no_values = {")):
-                offenders.append((lineno, stripped))
-            elif "_parse_flags(" in line and '{"--' in line:
-                offenders.append((lineno, stripped))
+        for name, source in FLAG_DECLARING_SOURCES.items():
+            for lineno, line in enumerate(source.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith(("flags_with_values = {", "flags_no_values = {")):
+                    offenders.append((name, lineno, stripped))
+                elif "parse_flags(" in line and '{"--' in line:
+                    offenders.append((name, lineno, stripped))
         self.assertEqual(
             offenders,
             [],
             "flag sets must come from nodus.cli.commands.flags_for(), not a "
-            f"literal in the dispatch branch: {offenders}",
+            f"literal at the parse site: {offenders}",
         )
 
     def test_help_is_not_reconstructed_by_scraping_prose(self):

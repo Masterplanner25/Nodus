@@ -1097,7 +1097,7 @@ Instances, all confirmed by reading the code rather than inferred:
 | #182 | where does the scheduler get time | `clock_fn` was injectable; the idle path called `time.sleep` directly. Half a seam, and the unsafe half — inject a clock and `run_loop()` **hangs** |
 | #769 | which VM did this construct build | a test helper patched `VM.__init__` process-wide and returned the first VM **any** thread built |
 | #770 | who stops the background work | two tests started a server and two sweepers and stopped none; #632's lesson, in two more places |
-| #791 | is this flag one this command takes | `commands.py` declares every subcommand's flag set correctly and **nothing consults it at dispatch**, so an unknown flag is dropped in silence — and the flag people type on `workflow cleanup` to avoid destroying state is `--dry-run`, which that command does not have |
+| #791 | is this flag one this command takes | `commands.py` declares every subcommand's flag set correctly and **nothing consulted it at dispatch**, so an unknown flag was dropped in silence — and the flag people type on `workflow cleanup` to avoid destroying state is `--dry-run`, which that command does not have. The fix needed **two** layers, because six commands take no flags and so never reached a parser at all, and `nodus test` parsed in a second module with its own copy of the names |
 | #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
@@ -1557,14 +1557,18 @@ guest's `fs.write("../relocated/pwned.txt", "x")` landed in the live run store w
 the identical write to the default location was denied. Any new state directory must go
 through `nodus/runtime/state_paths.py`, or it is unprotected.
 
-**`nodus workflow cleanup --dry-run` DELETES (#791).** `--dry-run` is a flag of
-`workflow migrate-store`, not of `cleanup` — and no `nodus` command rejects an
-unknown flag, so it is dropped in silence and the deletion proceeds while the
-JSON output reads exactly like a preview. Reproduced twice: 4 graphs and 4 run
-records, `--dry-run --force` reports `(4, 4)` "would remove", and they are gone.
+**There is still no dry run of this command**, but asking for one is no longer
+destructive. `nodus workflow cleanup --dry-run --force` **deleted** through
+5.11.0 (#791): `--dry-run` belongs to `workflow migrate-store`, no `nodus`
+command rejected an unknown flag, so it was dropped in silence and the deletion
+proceeded while the JSON output read exactly like a preview. Reproduced twice
+then — 4 graphs and 4 run records, `(4, 4)` "would remove", and they were gone.
 
-There is no dry run of this command. To see what it *would* take without losing
-anything, count first (`ls .nodus/graphs | wc -l`) and compare after.
+Fixed on `main`: an undeclared flag is refused before any command body runs, so
+that exact line now exits 1 and touches nothing (re-verified against a
+throwaway project). **Against 5.11.0 or earlier, the old behaviour is live** —
+and the fix does not give `cleanup` a preview. To see what it would take, count
+first (`ls .nodus/graphs | wc -l`) and compare after.
 
 Measured at the 5.11.0 cut, clearing a checkout: **56M → 7.0M**, 11,851 graph
 files → 5. What it keeps is deliberate — `running` and `failed` records survive
@@ -1663,7 +1667,11 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.11.0 took all thirteen entries.**
+**`[Unreleased]` holds #791, and it is a row for the next release's
+not-additive table.** An undeclared CLI flag is refused rather than dropped, so
+a script passing one that did nothing now exits 1. The restore column is
+*remove the flag, or spell it correctly* — `--help` lists what each command
+takes, and the error suggests a near miss when there is one.
 
 **5.11.0 has exactly one row, checked rather than assumed.** Everything else it
 ships is additive or a repair: `sleep_until` / `spawn_after` / `std:loop` are new

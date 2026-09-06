@@ -64,7 +64,10 @@ class _GraphHarness(unittest.TestCase):
 class GraphDoesNotExecuteItsTargetTests(_GraphHarness):
     def test_graph_plans_without_running_the_file(self):
         path = self._write(PROBE_SOURCE)
-        code, out, _err = self._graph("graph", path, "--allow-paths", ".")
+        # No `--allow-paths` here: `graph` has never declared it, so it was
+        # swallowed as a positional and did nothing (#791). The probe writes
+        # into the CWD, which the default jail already permits.
+        code, out, _err = self._graph("graph", path)
         self.assertEqual(code, 0)
         payload = json.loads(out.strip())
         self.assertEqual(payload["nodes"], ["a", "b"])
@@ -87,7 +90,7 @@ class GraphDoesNotExecuteItsTargetTests(_GraphHarness):
         file, reproduces the old 'No graph plan produced' failure, because it
         calls run_workflow rather than plan_workflow)."""
         path = self._write(PROBE_SOURCE)
-        code, _out, err = self._graph("graph", path, "--execute", "--allow-paths", ".")
+        code, _out, err = self._graph("graph", path, "--execute")
         self.assertNotEqual(code, 0)
         self.assertIn("No graph plan produced", err)
         self.assertTrue(os.path.exists("probe.txt"))

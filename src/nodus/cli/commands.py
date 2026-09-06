@@ -69,11 +69,6 @@ class Command:
     #: (`workflow-run` for `workflow run`, `package-install` for `install`)
     #: kept working but not advertised.  Airflow's `ActionCommand.hide`.
     hidden: bool = False
-    #: The command forwards its argv untouched to another parser, so `cli.py`
-    #: never calls `_parse_flags` for it.  The flags are still declared here --
-    #: they are part of the surface, and completion needs them -- but this says
-    #: plainly that the table is describing them rather than enforcing them.
-    delegates: bool = False
 
     @property
     def flags(self) -> tuple[frozenset[str], frozenset[str]]:
@@ -146,10 +141,9 @@ COMMANDS: dict[str, Command] = {
         "test [path]",
         "Run .nd test files (files matching *_test.nd or test_*.nd)",
         group="Execution",
-        # Parsed by `nodus.testing.cli.run_test_command`, not by `cli.py` --
-        # see `delegates`.  Listed so completion and the doc-vs-parse check
-        # can see the real surface.
-        delegates=True,
+        # Dispatched to `nodus.testing.cli.run_test_command` rather than
+        # parsed in a branch of `cli.py`, but parsed from *this* set all the
+        # same -- it used to carry its own copy of these names (#791).
         with_values=frozenset(
             {
                 "--filter",
@@ -1046,6 +1040,8 @@ _DETAILED_HELP: dict[str, str] = {
         "             (NODUS_WORKFLOW_RETENTION_SECONDS overrides; 0 disables,",
         "             leaving only --force). Children are removed with their",
         "             parent. Snapshots include the run's program source (#499).",
+        "             There is no dry run: --dry-run belongs to migrate-store",
+        "             and is refused here (#791). Count first to preview.",
         "",
         "Examples:",
         "  nodus workflow run pipeline.nd",

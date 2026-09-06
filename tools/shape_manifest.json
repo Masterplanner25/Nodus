@@ -103,11 +103,6 @@
       "why": "The sibling of _json_get, same two modules.",
       "sites": 2
     },
-    "A:_parse_flags(args,flags_with_values,flags_no_values)": {
-      "verdict": "tracked",
-      "why": "cli/cli.py:192 vs testing/cli.py:196. Two flag parsers with the same signature; the test CLI accepting a flag form the real CLI rejects (or vice versa) would be invisible.",
-      "sites": 2
-    },
     "A:cleanup()": {
       "verdict": "intentional",
       "why": "runtime/sessions.py:75 and runtime/snapshots.py:91 -- unrelated resources with a conventional method name and no arguments. Same name, different subjects; nothing shared to keep in step.",

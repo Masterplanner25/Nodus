@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#791: an undeclared CLI flag is refused instead of silently dropped.**
+
+  No `nodus` command rejected an unknown flag. The token became a *positional*
+  and the command ran as though it had not been typed. The consequence that
+  made this `severity:high`: `--dry-run` is a flag of `workflow migrate-store`,
+  not of `workflow cleanup`, so
+
+      nodus workflow cleanup --dry-run --force
+
+  **deleted run state** while printing a body that reads exactly like a
+  preview. There is no dry run of `cleanup`; `--help` now says so.
+
+  The flag sets were already declared correctly in `nodus.cli.commands` --
+  nothing consulted the declaration at dispatch. This is the rule
+  `nodus.toml` has followed since #490: *a declaration the runtime accepts
+  must bind, or be refused at the point of declaration.*
+
+  One check, in two layers, both driven off that table: `main()` refuses before
+  any command body runs -- which is what matters here, since `cleanup` deleted
+  and *then* printed -- and `nodus.cli.flags.parse_flags` refuses again at each
+  parse site. The central one exists because six commands take no flags and so
+  never parsed at all (`status`, `repl`, `lsp`, `dap`, `stability`,
+  `test-examples`), and `nodus test` dispatches out of `cli.py` entirely.
+
+  Behaviour changes for anyone passing a flag that currently does nothing.
+  That is the point: a typo'd `--time-limt 30` left the script on the 200 ms
+  default (SCHED-001), and `--time-limit=30` was taken as the *filename*.
+  Nodus does not accept `--flag=value`; the error now says so, and suggests a
+  near-miss when there is one.
+
+### Fixes
+
+- **#791: a flag missing its value prints an error instead of a traceback.**
+  `nodus run --time-limit` raised `ValueError` straight out of `main()`.
+
+### Tooling
+
+- **`nodus test` parses its flags from the command table.** It carried a second
+  copy of `parse_flags` with its flag names written out beside it -- in
+  agreement with the table, with nothing keeping it that way, and the copy that
+  silently accepted an undeclared flag. `tests/test_cli_command_table.py`'s
+  source scan covers both modules now; aimed at one file it could not see the
+  second voice in the other.
+
 ## [5.11.0] - 2026-09-06
 
 ### Added
