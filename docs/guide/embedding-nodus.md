@@ -433,6 +433,38 @@ NodusRuntime(extensions=[])                 # agent_describe refuses; nothing to
 NodusRuntime(capability_policy=DenyList("agent.call"))   # agent_describe answers
 ```
 
+#### Run enumeration is yours, and stays yours
+
+The limit of *"naming what exists is not reaching it"*. A guest program can
+introspect **itself** completely — `current_workflow_id()`, `workflow_state()`,
+`workflow_checkpoints(id)`, `runtime_tasks()` — but there is deliberately no
+builtin that lists workflow **runs**, and there will not be one.
+
+Three things decided it, and they are properties of the store rather than
+opinions about disclosure:
+
+- every run record carries `workflow_source_code`, so a listing would hand over
+  other programs' whole source, not merely their names;
+- the store root is CWD-relative and process-global, so *"a run this guest did
+  not create"* is the ordinary case, not an exotic one;
+- `list_runs()` is an uncached linear scan — 531 ms for 1055 records on a
+  developer box — so a guest-callable listing would be a cost the guest
+  controls, over a store that grows without bound.
+
+You have three ways to enumerate runs, none of them reachable from a program:
+
+```python
+runner.list_runs_filtered(...)   # WorkflowFrameworkRunner, in-process
+```
+```
+nodus workflow runs              # CLI
+GET /workflow/runs               # HTTP
+```
+
+**If a program of yours needs the list, hand it in** — `initial_globals` puts
+exactly the rows you chose in front of it, which is both narrower and clearer
+than a builtin that returns whatever the store happens to hold.
+
 ---
 
 ## 6. Injecting host functions with register_function

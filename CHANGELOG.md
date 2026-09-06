@@ -4,6 +4,34 @@
 
 ### Tooling
 
+- **#761: run enumeration is the host's job, permanently — decided, not deferred.**
+
+  There is deliberately no `runtime_workflows()`. A guest program can introspect
+  **itself** completely (`current_workflow_id`, `workflow_state`,
+  `workflow_checkpoints`, `runtime_tasks`); what it cannot see is its siblings,
+  and that is the decision rather than a gap.
+
+  The `NO_AUTHORITY_BUILTINS["discovery, not invocation"]` rationale — *"naming
+  what exists is not reaching it"* — was written about a catalogue the host
+  registered deliberately. A store of run records is not that, and three
+  measured facts decided it: every run record carries `workflow_source_code`, so
+  a listing discloses other programs' whole source; the store root is
+  CWD-relative and process-global, so a run the guest did not create is the
+  ordinary case; and `list_runs()` is an uncached linear scan (531 ms for 1055
+  records) over a store that grows without bound (#380), so the cost would be
+  the guest's to choose.
+
+  `nodus workflow runs`, `GET /workflow/runs` and `list_runs_filtered()` remain
+  the supported ways, and a program that needs the list should be handed it via
+  `initial_globals`. Pinned by `RunEnumerationIsHostOnlyTests` so a later reader
+  has to argue with a decision rather than fill an apparent gap — with two
+  controls, since an assertion that nothing lists runs is also satisfied by a
+  tree that has lost the ability entirely.
+
+  If a real use case ever appears, the shape to build is a family-scoped
+  listing; the linkage exists already as `parent_graph_id` / `parent_workflow`
+  in the **graph** store, not in the run record — they are two stores (#476).
+
 - **#728: a flaky test whose budget was 20 ms.**
 
   `test_task_reassignment_after_worker_failure` set `_worker_heartbeat_timeout_ms`
