@@ -62,11 +62,13 @@ from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
 from nodus.cli.commands import (
+    COMMANDS,
     KNOWN_COMMANDS,
     command_help as _command_help,
     flags_for,
     render_help as _render_help,
 )
+from nodus.cli.flags import CliUsageError, parse_flags
 from nodus_lang_workflow.runner import get_default_workflow_runner
 from nodus_lang_workflow.store import TERMINAL_RUN_STATUSES
 
@@ -258,25 +260,12 @@ def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str
     return path, project_root, None
 
 
-def _parse_flags(args: list[str], flags_with_values: set[str], flags_no_values: set[str]) -> tuple[list[str], dict]:
-    positional: list[str] = []
-    parsed: dict[str, object] = {}
-    idx = 0
-    while idx < len(args):
-        arg = args[idx]
-        if arg in flags_no_values:
-            parsed[arg] = True
-            idx += 1
-            continue
-        if arg in flags_with_values:
-            if idx + 1 >= len(args):
-                raise ValueError(f"Missing value for {arg}")
-            parsed[arg] = args[idx + 1]
-            idx += 2
-            continue
-        positional.append(arg)
-        idx += 1
-    return positional, parsed
+#: The parser lives in `nodus.cli.flags` so `nodus test` -- which dispatches
+#: through `nodus.testing.cli` rather than through a branch below -- can use
+#: the same one.  It had its own copy, with its own flag literals beside it
+#: (#791).  Re-bound under the old private name: tests and the release probe
+#: import it from here.
+_parse_flags = parse_flags
 
 
 def _parse_int(value: str, flag: str) -> int:
@@ -1657,7 +1646,73 @@ def _cache_clear(path: str | None) -> int:
     return 0
 
 
+def _reject_undeclared_flags(command: str, cmd_args: list[str]) -> None:
+    """Refuse a flag the table does not give `command`, before its body runs.
+
+    *Before* matters: `workflow cleanup` deleted and then printed, so a check
+    anywhere later would still have destroyed the state it was asked to
+    preview.
+
+    When a subcommand is named this is its exact set; otherwise it is the union
+    over the subcommands, because the branch has not chosen one yet. The union
+    can only be too permissive, never too strict, and the branch's own
+    `parse_flags` call narrows it -- `nodus graph x.nd --execute` is checked
+    here against every `graph` subcommand and there against `graph run`.
+    """
+    entry = COMMANDS.get(command)
+    if entry is None:
+        return
+    with_values, no_values = flags_for(command)
+    if entry.subcommands:
+        named = cmd_args[0] if cmd_args else None
+        if named is not None and named in entry.subcommands:
+            chosen = [entry.subcommands[named]]
+        else:
+            chosen = list(entry.subcommands.values())
+        for sub_with, sub_no in chosen:
+            with_values |= set(sub_with)
+            no_values |= set(sub_no)
+    # Walked rather than scanned, so a value that looks like a flag stays a
+    # value: `nodus test --filter --x` passes `--x` to `--filter`.
+    parse_flags(cmd_args, with_values, no_values)
+
+
+def _command_label(args: list[str]) -> str:
+    """`nodus workflow cleanup` for an argv, for a usage error's message.
+
+    A projection of the table, like everything else that names the surface:
+    the second word is part of the label only when the table says the command
+    has a subcommand by that name.
+    """
+    if not args:
+        return "nodus"
+    entry = COMMANDS.get(args[0])
+    if entry is not None and len(args) > 1 and args[1] in entry.subcommands:
+        return f"nodus {args[0]} {args[1]}"
+    return f"nodus {args[0]}"
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Entry point.  `_dispatch` is the body; this is the usage-error boundary.
+
+    A `ValueError` from flag parsing used to escape `main()` and reach the user
+    as a Python traceback -- `nodus run --time-limit` printed a stack trace.
+    Refusing an undeclared flag (#791) raises through the same path, so it is
+    caught here, once, rather than by a guard per command.
+    """
+    args = list(argv) if argv is not None else list(sys.argv)
+    try:
+        return _dispatch(args)
+    except CliUsageError as exc:
+        label = _command_label(args[1:])
+        message = exc.message_for(label)
+        # A "did you mean ...?" hint already ends the sentence.
+        _print_stderr(f"Error: {message}" + ("" if message.endswith(("?", ".")) else "."))
+        _print_stderr(f"Run '{label} --help' to see the flags it takes.")
+        return 1
+
+
+def _dispatch(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv
     prog = os.path.basename(argv[0]) if argv else "nodus"
     args = argv[1:]
@@ -1704,6 +1759,14 @@ def main(argv: list[str] | None = None) -> int:
     if any(flag in cmd_args for flag in _HELP_FLAGS):
         print(_command_help(command))
         return 0
+
+    # #791: and an undeclared flag is refused here, centrally, for the same
+    # reason. The branches below parse their own flags -- but six of them take
+    # none and so never parse at all (`status`, `repl`, `lsp`, `dap`,
+    # `stability`, `test-examples`), and `nodus test` dispatches out of this
+    # module entirely. A check that lived only in `_parse_flags` would leave
+    # every one of those silently accepting anything.
+    _reject_undeclared_flags(command, cmd_args)
 
     if command == "run":
         flags_with_values, flags_no_values = flags_for("run")

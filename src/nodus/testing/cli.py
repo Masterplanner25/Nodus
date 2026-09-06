@@ -6,6 +6,8 @@ import os
 import sys
 from typing import cast
 
+from nodus.cli.commands import flags_for
+from nodus.cli.flags import parse_flags
 from nodus.testing.discovery import discover_test_files, matches_filter
 from nodus.testing.runner import TestResult, TestRunner
 from nodus.testing.formatter import format_text, format_json, format_junit, _is_tty
@@ -33,18 +35,15 @@ def _find_project_root(start_dir: str) -> str:
 
 
 def run_test_command(cmd_args: list[str]) -> int:
-    """Entry point for 'nodus test [path] [flags]'. Returns exit code."""
-    # Parse flags
-    flags_with_values = {
-        "--filter", "--parallel", "--format", "--seed",
-        "--coverage-output", "--coverage-exclude", "--coverage-include",
-        "--coverage-min", "--coverage-format",
-    }
-    flags_no_values = {
-        "--watch", "--coverage", "--coverage-per-test",
-        "--bail", "--verbose", "--quiet",
-    }
-    positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
+    """Entry point for 'nodus test [path] [flags]'. Returns exit code.
+
+    The flag set comes from `nodus.cli.commands`, and the parser from
+    `nodus.cli.flags`, like every other command.  Both were written out again
+    here -- a second copy of one question, in agreement but with nothing
+    keeping it that way, and the copy that silently accepted an undeclared
+    flag (#791).
+    """
+    positional, flags = parse_flags(cmd_args, *flags_for("test"))
 
     test_path = positional[0] if positional else "tests"
     filter_pattern = flags.get("--filter", "")
@@ -193,31 +192,3 @@ def _run_one_file(
             coverage_collector.detach(vm)
 
 
-def _parse_flags(
-    args: list[str],
-    flags_with_values: set[str],
-    flags_no_values: set[str],
-) -> tuple[list[str], dict[str, str | bool]]:
-    """Simple flag parser (no argparse dependency)."""
-    positional: list[str] = []
-    flags: dict[str, str | bool] = {}
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg in flags_no_values:
-            flags[arg] = True
-        elif arg in flags_with_values:
-            if i + 1 < len(args):
-                flags[arg] = args[i + 1]
-                i += 1
-        elif arg.startswith("--"):
-            # Unknown flag with possible = syntax
-            if "=" in arg:
-                k, v = arg.split("=", 1)
-                flags[k] = v
-            else:
-                flags[arg] = True
-        else:
-            positional.append(arg)
-        i += 1
-    return positional, flags
