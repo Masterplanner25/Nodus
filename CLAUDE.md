@@ -14,8 +14,9 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and ten minors wide** — re-checked 2026-09-06: `.venv` says
-**5.0.0**, `src/` says 5.10.0. Forgetting the prefix gets you a runtime from before
+**The gap is live and eleven minors wide** — re-checked 2026-09-06 after the
+5.11.0 cut: `.venv` says **5.0.0**, `src/` says 5.11.0. It widens at every
+release, because nothing reinstalls it. Forgetting the prefix gets you a runtime from before
 essentially every 5.x fix, and **the symptom is behaviour that contradicts the code you
 are reading** — which is the part worth remembering, because it does not look like a
 stale install, it looks like a bug.
@@ -328,7 +329,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,682 tests collected** (`--collect-only`, 2026-09-06). Coverage
+**3,729 tests collected** (`--collect-only`, 2026-09-06, after the 5.11.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -952,6 +953,23 @@ These burn time when forgotten:
   parens (`if record.field`), but call expressions need `if (expr)`.
   **A bare `state` variable also needs them** inside a step body: `if approve { ... }` gives
   "Expected '(', got identifier ('approve')"; `if (approve) { ... }` works.
+- **`sleep_until(deadline_ms)` waits to an instant; `sleep(ms)` waits for a
+  duration** (#182, 5.11.0). Both are global builtins. Reach for the absolute
+  form in any loop with a period, because a relative sleep adds whatever the body
+  cost to every iteration — measured, five iterations of 30 ms of work: 650 ms
+  with `sleep`, 500 ms against fixed instants.
+
+  **The deadline is on the scheduler's clock, which `runtime.time_ms()` reads.**
+  Not `clock()`, which is epoch *seconds*, and not `std:time`, which is wall
+  clock. Mixing them is not approximate, it is meaningless (#778). A deadline
+  already past yields once rather than returning, so an overdue loop cannot
+  starve its siblings.
+
+  `spawn_after(ms, fn)` defers a spawn. `std:loop` wraps both — `now`, `deadline`,
+  `at`, `run_after`, `every`, `until` — and is written in Nodus with no host code.
+  **`run_after`, not `after`**: `after` is a reserved word, so `loop.after(...)`
+  does not parse. Every *contextual* keyword tried (`each`, `over`, `when`,
+  `state`, `until`) is a legal field name; only the reserved one is out.
 - **A `state` cell can declare its own join: `with { barrier: true }`** (#578).
   Every step that *reads* the cell waits for every step that *writes* it,
   inferred — `step d after b, c` says the same thing but goes stale when a
@@ -1079,6 +1097,7 @@ Instances, all confirmed by reading the code rather than inferred:
 | #182 | where does the scheduler get time | `clock_fn` was injectable; the idle path called `time.sleep` directly. Half a seam, and the unsafe half — inject a clock and `run_loop()` **hangs** |
 | #769 | which VM did this construct build | a test helper patched `VM.__init__` process-wide and returned the first VM **any** thread built |
 | #770 | who stops the background work | two tests started a server and two sweepers and stopped none; #632's lesson, in two more places |
+| #791 | is this flag one this command takes | `commands.py` declares every subcommand's flag set correctly and **nothing consults it at dispatch**, so an unknown flag is dropped in silence — and the flag people type on `workflow cleanup` to avoid destroying state is `--dry-run`, which that command does not have |
 | #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
@@ -1538,6 +1557,19 @@ guest's `fs.write("../relocated/pwned.txt", "x")` landed in the live run store w
 the identical write to the default location was denied. Any new state directory must go
 through `nodus/runtime/state_paths.py`, or it is unprotected.
 
+**`nodus workflow cleanup --dry-run` DELETES (#791).** `--dry-run` is a flag of
+`workflow migrate-store`, not of `cleanup` — and no `nodus` command rejects an
+unknown flag, so it is dropped in silence and the deletion proceeds while the
+JSON output reads exactly like a preview. Reproduced twice: 4 graphs and 4 run
+records, `--dry-run --force` reports `(4, 4)` "would remove", and they are gone.
+
+There is no dry run of this command. To see what it *would* take without losing
+anything, count first (`ls .nodus/graphs | wc -l`) and compare after.
+
+Measured at the 5.11.0 cut, clearing a checkout: **56M → 7.0M**, 11,851 graph
+files → 5. What it keeps is deliberate — `running` and `failed` records survive
+`--force`, so the 273 that remained are not a failure of the command.
+
 `rm -rf .nodus/workflow_framework/runs` is safe **in this repo's root** (test
 artifacts only) — but it is not a general cleanup: a run is split across that
 directory and `.nodus/graphs/`, and deleting only the records makes any live
@@ -1585,6 +1617,7 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.11.0 | `runtime.time_ms()` reads the **scheduler's** clock, not the host clock (#182) | only observable to a host that installs a non-default `TimeSource`; on `HostTimeSource` it *is* `runtime_time_ms()`. It was the incoherence, not the fix: under a virtual clock a program's own 800 ms sleep measured `0.0` |
 | 5.10.0 | code submitted to `nodus serve` can no longer run subprocesses, open sockets or read the environment (#754) | `--allow-subprocess` / `--allow-network` / `--allow-env`, narrowed with `--allowed-commands` / `--allowed-hosts`. `nodus run` is unchanged |
 | 5.10.0 | an unconfigured local workflow store holding runs warns once per process (#174) | migrate with `nodus workflow migrate-store --to sqlite`, or set `NODUS_WORKFLOW_STORE_BACKEND=local` to mean it |
 | 5.8.0 | a function assigning to a module-top-level `let` now updates it, where the write used to vanish (#671) | intended; nothing can have depended on a write disappearing |
@@ -1630,12 +1663,15 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` has no rows, checked rather than assumed.** Everything since
-5.10.0 is additive or a repair: `barrier: true` is a new state-cell option
-(#578), the scheduler's `TimeSource` defaults to the previous behaviour
-byte-for-byte (#182), and the CLI's lazy server imports (#173) change only how
-long startup takes. An absence recorded as checked is worth more than an
-absence.
+**`[Unreleased]` is empty — 5.11.0 took all thirteen entries.**
+
+**5.11.0 has exactly one row, checked rather than assumed.** Everything else it
+ships is additive or a repair: `sleep_until` / `spawn_after` / `std:loop` are new
+and shadowable (verified by defining a user `fn` of each name), `barrier: true`
+is a new state-cell option (#578), the CLI's lazy server imports (#173) change
+only how long startup takes, and the closure fixes (#783, #785, #786) repair
+cases that previously raised `Stack underflow` — nothing could depend on those.
+An absence recorded as checked is worth more than an absence.
 
 **5.10.0 has two rows, and 5.9.0 has none — both checked rather than assumed.**
 5.10.0's are `nodus serve` confinement (#754) and the workflow-store warning
@@ -1645,13 +1681,10 @@ patches that restrict previously-permitted behavior" among the non-breaking
 examples — which is why 5.10.0 is a minor. Keep the two ideas apart: the table
 above answers "will this surprise me?", and semver answers "must the major move?".
 
-5.9.0's four changes
-are all repairs or additions: two closure fixes (#691, #696) where the old
-behaviour was a silent truncation nothing could depend on, a bytecode-cache key
-that now includes content (#704) — stale entries simply recompile once — and two
-new builtins (#170). Guest code may still shadow a builtin name with its own `fn`,
-verified by running it, so the new names cannot collide with an existing program.
-An absence recorded as checked is worth more than an absence.
+**The check that keeps being worth running, for any release adding a builtin:**
+guest code can still shadow a builtin name with its own `fn`, so a new global
+cannot collide with an existing program. Verified by running it at 5.9.0 (#170)
+and again at 5.11.0 (`sleep_until`, `spawn_after`).
 
 ### Two releases to treat as superseded
 
