@@ -31,6 +31,7 @@ from nodus.cli.commands import (  # noqa: E402
     flags_for,
     render_help,
 )
+from nodus.testing.discovery import TEST_FILE_PATTERNS  # noqa: E402
 
 CLI_SOURCE = Path(cli_module.__file__).read_text(encoding="utf-8")
 
@@ -231,6 +232,50 @@ class DocumentedFlagsAreParsedTests(unittest.TestCase):
                 problems.append(f"{name}: documents but does not parse {sorted(missing)}")
         self.assertEqual(problems, [], "\n".join(problems))
 
+    # closes: #794
+    def test_every_declared_flag_is_read_by_something(self):
+        """The other direction, which nothing checked.
+
+        `test_documented_flags_are_declared` catches a flag the help promises
+        that the parser would swallow (#532). It says nothing about a flag that
+        parses cleanly and then reaches no code at all -- and four did, on
+        `nodus test`: `--watch`, `--parallel`, `--seed` and
+        `--coverage-per-test` were declared here, printed by `--help`, and read
+        by nothing. `--watch` ran the suite once and exited, which looks exactly
+        like a watcher that saw no changes.
+
+        Deliberately a whole-file union rather than per-branch attribution. A
+        per-branch version reports `--host`/`--port` as unread, because they are
+        read in the shared `_resolve_server_host_port` helper, and it would
+        report `check`'s trace flags too -- `check` declares those on purpose so
+        it can refuse them with a specific message rather than a generic
+        unknown-flag error. The union has no false positives: 78 of the 82
+        declared flags appear, and the 4 that did not were the defect.
+        """
+        implementation = "".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                Path(cli_module.__file__),
+                TESTING_CLI,
+            )
+        )
+        referenced = set(re.findall(r'"(--[a-z0-9-]+)"', implementation))
+
+        orphans = {}
+        for name, entry in COMMANDS.items():
+            declared = set(entry.with_values) | set(entry.no_values)
+            for sub, (sub_with, sub_no) in entry.subcommands.items():
+                declared |= set(sub_with) | set(sub_no)
+            for flag in sorted(declared - referenced):
+                orphans.setdefault(flag, []).append(name)
+
+        self.assertEqual(
+            orphans,
+            {},
+            "declared, and read by nothing -- implement it or remove it from "
+            f"the table and the help: {orphans}",
+        )
+
     # closes: #532
     def test_publish_parses_the_project_root_it_documents(self):
         """Regression: the flag was documented, unparsed, and published the CWD."""
@@ -241,6 +286,37 @@ class DocumentedFlagsAreParsedTests(unittest.TestCase):
         )
         self.assertEqual(positional, [])
         self.assertEqual(parsed.get("--project-root"), "/tmp/proj")
+
+
+class TestDiscoveryClaimTests(unittest.TestCase):
+    """`nodus test --help` may only advertise patterns discovery implements.
+
+    It advertised `test_*.nd` alongside `*_test.nd` and discovery has never
+    matched it -- such a file was invisible under a directory scan *and* when
+    named on the command line, and the "no files found" message said
+    `*_test.nd`, contradicting the help two lines above it (#794).
+    """
+
+    # closes: #794
+    def test_help_advertises_exactly_the_patterns_discovery_matches(self):
+        help_text = _DETAILED_HELP["test"]
+        advertised = set(re.findall(r"[*\w]+_?\*?[\w*]*\.nd", help_text))
+        globs = {token for token in advertised if "*" in token}
+        self.assertEqual(
+            globs,
+            set(TEST_FILE_PATTERNS),
+            "the help names a .nd glob discovery does not implement (or omits "
+            f"one it does): help={sorted(globs)} discovery="
+            f"{sorted(TEST_FILE_PATTERNS)}",
+        )
+
+    def test_the_summary_names_the_same_patterns(self):
+        signature_summary = command_summary("test")
+        assert signature_summary is not None
+        _, summary = signature_summary
+        for pattern in TEST_FILE_PATTERNS:
+            self.assertIn(pattern, summary)
+        self.assertNotIn("test_*.nd", summary)
 
 
 if __name__ == "__main__":

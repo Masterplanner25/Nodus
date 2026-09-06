@@ -752,6 +752,14 @@ nodus test [path] [flags]
 
 ### Flags
 
+> **Not all of this shipped (#794).** `--parallel`, `--watch` and `--seed` were
+> specified here, declared in the command table, printed by `nodus test --help`
+> — and never implemented. They were removed from the surface rather than left
+> as a promise; this table is the v4 design, not the current CLI. Run
+> `nodus test --help` for what exists. `--parallel` in particular needs the
+> shared-`.nodus/` question answered first: a Nodus test file can run a
+> workflow, and the run store is process-wide and CWD-relative.
+
 | Flag | Default | Description |
 |---|---|---|
 | `--filter <pattern>` | (none) | Run only tests matching pattern (glob or regex) |

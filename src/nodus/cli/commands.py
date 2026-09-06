@@ -139,17 +139,21 @@ COMMANDS: dict[str, Command] = {
     "test": _c(
         "test",
         "test [path]",
-        "Run .nd test files (files matching *_test.nd or test_*.nd)",
+        "Run .nd test files (files matching *_test.nd)",
         group="Execution",
         # Dispatched to `nodus.testing.cli.run_test_command` rather than
         # parsed in a branch of `cli.py`, but parsed from *this* set all the
         # same -- it used to carry its own copy of these names (#791).
+        #
+        # `--watch`, `--parallel`, `--seed` and `--coverage-per-test` were
+        # declared and documented here and read by nothing (#794).  They are
+        # gone rather than kept as a promise: `nodus test --watch` now says it
+        # is not a flag, which is the truth, where before it ran once and
+        # exited looking like a watcher that saw no changes.
         with_values=frozenset(
             {
                 "--filter",
                 "--format",
-                "--seed",
-                "--parallel",
                 "--coverage-output",
                 "--coverage-format",
                 "--coverage-min",
@@ -162,9 +166,7 @@ COMMANDS: dict[str, Command] = {
                 "--bail",
                 "--verbose",
                 "--quiet",
-                "--watch",
                 "--coverage",
-                "--coverage-per-test",
             }
         ),
     ),
@@ -826,8 +828,9 @@ _DETAILED_HELP: dict[str, str] = {
     "test": "\n".join([
         "Usage: nodus test [path] [options]",
         "",
-        "Run .nd test files. Discovers files matching *_test.nd or test_*.nd under",
-        "the given path (default: ./tests).",
+        "Run .nd test files. Discovers files matching *_test.nd under the given",
+        "path (default: ./tests). A file named test_thing.nd is NOT a test file",
+        "and is not discovered, even when named on the command line.",
         "",
         "Options:",
         "  --filter PATTERN           Only run tests whose name contains PATTERN",
@@ -835,11 +838,7 @@ _DETAILED_HELP: dict[str, str] = {
         "  --bail                     Stop after the first failing test",
         "  --verbose                  Show each test as it runs",
         "  --quiet                    Show only the summary line",
-        "  --watch                    Re-run tests when files change",
-        "  --seed N                   Seed for test ordering",
-        "  --parallel N               Run tests across N workers",
         "  --coverage                 Collect coverage while running",
-        "  --coverage-per-test        Attribute coverage per test",
         "  --coverage-output PATH     Coverage output directory (default: ./coverage)",
         "  --coverage-format FMTS     Comma-separated: json,html (default: json,html)",
         "  --coverage-min PCT         Fail if total coverage is below PCT",

@@ -126,7 +126,7 @@ which lines are exercised by the test suite as a whole.
 
 Per-test attribution (which test exercises which lines) is more
 expensive (separate hit count per (test, line) pair) and is OFF by
-default. Enable via `--coverage-per-test`:
+default. It was to be enabled via `--coverage-per-test`, which never shipped (#794):
 
 ```bash
 nodus test --coverage --coverage-per-test
@@ -344,6 +344,10 @@ nodus test --coverage --coverage-include "src/**" --coverage-exclude "src/legacy
 ## CLI integration
 
 ### Flags
+
+> **`--coverage-per-test` never shipped (#794).** It was specified here,
+> declared in the command table and printed by `nodus test --help`, and no
+> code read it. Removed from the surface; the rest of this table is current.
 
 | Flag | Default | Description |
 |---|---|---|
