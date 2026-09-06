@@ -1,6 +1,7 @@
 # Can a project tell whether it is ready for 6.0.0? (gate G3)
 
-**Status: design, not decided. 2026-09-06, against 5.11.0.**
+**Status: R1, R3 and R4 decided 2026-09-06. R2 open. Not yet implemented.**
+**Measured against 5.11.0.**
 **Gate:** G3 in `docs/governance/V6_0_PLAN.md` — *"a project can enumerate its
 own exposure without waiting to hit each path at runtime."*
 **Register:** `tools/v6_flips.json`, checked by `nodus_gate --flips`.
@@ -96,21 +97,46 @@ The report must say **which of the five it actually checked**, per flip, and
 which it cannot. Silence from a check that never looked is the failure this whole
 cohort is about.
 
-## Where the surface should live — open
+## Where the surface lives — `nodus check --staged` (R1, decided 2026-09-06)
 
-Three candidates, none obviously right, which is why this is a design doc.
+**The objection that argued against `check` was wrong, and it was mine.** This
+document first said *"`check` is per-file; readiness is project-wide"*. It is
+not per-file. Measured:
 
-| | Fits because | Does not fit because |
-|---|---|---|
-| **`nodus check --staged`** | `check` is already *the* static-analysis command, and #609's answer is already there | `check` is per-file; readiness is project-wide, and #174 is a filesystem question with no file to check |
-| **`nodus doctor --staged`** | `doctor` is already project-scoped, already aggregates independent `Check`s with a JSON mode, and #174 fits it exactly | `doctor` is about the *environment* — the install, the version gap, the project layout — not about your code |
-| **a new subcommand** | one obvious place, holds both halves, discoverable | a command that exists for one migration window is a real cost, and this project has removed surfaces for less (#794) |
+```
+$ nodus check          # no argument, from anywhere in the project
+.../src/main.nd:1:9: warning: Unknown type name 'itn' ...
+.../src/main.nd: OK (1 warning(s))
 
-**Recommendation: `nodus doctor --staged`.** `doctor` already has the shape this
-needs — project-scoped, a list of independent checks, structured output — and
-the objection to it is about *convention* rather than mechanics. The alternative
-argument is real, though: readiness is a question about your code, and doctor has
-never been.
+$ nodus check .        # the project root, same result
+```
+
+`check` already resolves a project root and checks the entry point. Its usage
+line has said `nodus check [<script.nd | project-dir>]` all along. With that
+gone, nothing argued for `doctor` except that `doctor` also happens to have a
+convenient shape — and `doctor` is about the *environment*: the resolved
+package, the version gap, the interpreter, the optional extras. Readiness is a
+question about your **code**, which is what `check` is for.
+
+So: **`nodus check --staged`**, taking the same target `check` already takes —
+a file, a project directory, or nothing.
+
+### The real limitation, which is not the one I raised
+
+`check` covers **the entry point and its import graph**, not every `.nd` file in
+the project. Measured: a second file in `src/` that nothing imports is not
+checked.
+
+That is arguably *correct* for readiness — what breaks at 6.0.0 is what
+compiles, and an unreachable file does not compile. But it is a real limitation
+for a project with several entry points (a library plus its tests, say), and the
+report has to say which roots it walked rather than implying it read everything.
+Naming a file or directory explicitly is the escape hatch, and it already works.
+
+### #174 inside `check`
+
+The store question needs a project root, and `check` has already resolved one by
+the time the flag is read. No new machinery.
 
 **Name it for the durable question, not the version.** `--staged` (or
 `--next-major`), never `--v6`. `tools/v6_flips.json` is already shaped to be "the
@@ -128,16 +154,25 @@ current"* in prose, which `nodus_gate --versions` exists because of.
 - **Not a replacement for the warnings.** They are the signal for someone who
   never runs this command, which will be most people.
 
-## Open decisions
+## Decisions
 
-- **R1 — Which surface?** See the table. Blocks implementation.
-- **R2 — Does the dynamic half ship with the static half, or after?** The static
-  half is the larger win and can stand alone; #545 is the only flip that needs
-  the dynamic one, and it is the least destructive of the five.
-- **R3 — Does the `worker:` check report every declaration, or try to guess
-  whether a dispatcher will exist?** Reporting every declaration is honest and
-  slightly noisy; guessing is neither.
-- **R4 — Is a clean report allowed to say "ready"?** Given #545 cannot be
-  checked statically, a green static run does not mean ready. The wording has to
-  carry that, or the tool tells a comfortable lie — which is precisely the
-  failure mode of the notice in #797.
+- **R1 — Which surface?** **`nodus check --staged`** (2026-09-06). See above;
+  the objection to it did not survive being measured.
+- **R3 — `worker:` reports every declaration.** **Decided.** It does not try to
+  guess whether a dispatcher will be registered, because that is a deployment
+  fact and a guess would be wrong in the direction that matters: a project that
+  *does* register one gets a line it can ignore, where a project that does not
+  would get silence. The line says which it is — a declaration that is an error
+  at 6.0.0 *if run without a dispatcher* — rather than asserting a failure.
+- **R4 — A clean report may not say "ready".** **Decided.** #545 is not
+  statically checkable, so a green static run means "nothing found in the four
+  that can be checked", and the report says exactly that, per flip, naming #545
+  as unchecked. Anything shorter is the comfortable lie #797 already taught this
+  project to distrust — a notice can be careful, correct, and still leave
+  someone believing something false.
+- **R2 — Does the dynamic half ship with the static half?** *Open, and a scope
+  call rather than a design one.* The static half covers four of five and can
+  stand alone; the dynamic half exists for #545, which is the least destructive
+  flip in the cohort — it changes an answer, where #174 loses a parked run.
+  Recommended: static first, dynamic after, with R4's wording carrying the gap
+  in the meantime.
