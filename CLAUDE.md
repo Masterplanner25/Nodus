@@ -1079,6 +1079,7 @@ Instances, all confirmed by reading the code rather than inferred:
 | #182 | where does the scheduler get time | `clock_fn` was injectable; the idle path called `time.sleep` directly. Half a seam, and the unsafe half — inject a clock and `run_loop()` **hangs** |
 | #769 | which VM did this construct build | a test helper patched `VM.__init__` process-wide and returned the first VM **any** thread built |
 | #770 | who stops the background work | two tests started a server and two sweepers and stopped none; #632's lesson, in two more places |
+| #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
 injectable and the test harness overrode it, so the tree *looked* like it could
@@ -1096,12 +1097,21 @@ here the pair is obvious in hindsight and was split for years. The fix was one
 object with both operations, so an implementation answers both or neither.
 
 **And two clocks legitimately remain, which is the part worth copying.** Event
-timestamps and `created_time` still read the host clock: they answer *when did
-this really happen*, which a simulated clock would falsify. That is a real
-distinction, so it is stated in the code rather than left for a reader to infer
-— and the one member of that group which does **not** fit the reasoning (the
-task-timeout comparison) was filed as #778 rather than quietly left. A split you
-can justify is fine; a split nobody wrote down is the next row of this table.
+timestamps, `created_time` and `last_resume` still read the host clock: they
+answer *when did this really happen*, which a simulated clock would falsify.
+That is a real distinction, so it is stated in the code rather than left for a
+reader to infer — and the one member of that group which did **not** fit the
+reasoning (the task-timeout comparison) was filed as #778 rather than quietly
+left. A split you can justify is fine; a split nobody wrote down is the next row
+of this table.
+
+**#778 then sharpened the criterion, which is the more useful half.** The
+grouping was *scheduling clock vs. wall-clock fact*, and the task timeout was
+inside it and uncomfortable. The line that actually holds is **reported vs.
+compared**: the other three are only ever read out, so a virtual reading merely
+looks odd in a log, while the timeout was *subtracted from* — and a comparison
+across two clocks is not approximate, it is a different question. Anything you
+put on the host clock for good reasons, check whether something subtracts it.
 
 **#167 adds a variant worth naming, because it is not a disagreement.** Its two
 sites agreed completely about which extension names are valid. They disagreed
