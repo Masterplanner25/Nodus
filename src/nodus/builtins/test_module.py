@@ -411,13 +411,31 @@ def register(vm, registry) -> None:
     # Async control
     # -----------------------------------------------------------------
 
+    def _virtual_source(rvm):
+        """The scheduler's virtual clock, installed once per run (#182)."""
+        from nodus.runtime.time_source import VirtualTimeSource
+
+        source = rvm.scheduler.time_source
+        if not isinstance(source, VirtualTimeSource):
+            source = VirtualTimeSource(
+                rvm.test_state.get("virtual_clock_ms", 0.0)
+                if hasattr(rvm, "test_state") else 0.0
+            )
+            rvm.scheduler.time_source = source
+        return source
+
     def builtin_test_advance_clock(duration):
         rvm = _root_vm(vm)
         state = _init_state(rvm)
         ms = _duration_to_ms(duration)
-        state["virtual_clock_ms"] = state.get("virtual_clock_ms", 0.0) + ms
-        new_time = state["virtual_clock_ms"]
-        rvm.scheduler.clock_fn = lambda: new_time
+        # #182: advance the scheduler's own time source rather than replacing
+        # its clock with a frozen lambda. The old spelling installed
+        # `lambda: new_time` -- a constant -- while `testing/runner.py`
+        # installed a live read of this same state dict. Two answers to "how is
+        # virtual time installed", and the constant form silently replaced the
+        # live one the first time a case advanced the clock.
+        source = _virtual_source(rvm)
+        state["virtual_clock_ms"] = source.advance(ms)
         # Drain timers immediately so newly-woken tasks enter ready_queue
         rvm.scheduler._drain_timers()
 

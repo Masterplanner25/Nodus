@@ -192,12 +192,20 @@ class TestRunner:
     def _run_async_case(self, fn: Closure, args: list) -> None:
         """Run an async test case using the scheduler with virtual clock."""
         from nodus.runtime.coroutine import Coroutine
-        from nodus.runtime.runtime_stats import runtime_time_ms
+        from nodus.runtime.time_source import HostTimeSource
         state = self._rvm.test_state
 
-        # Set up virtual clock (starts at t=0)
+        # Set up virtual clock (starts at t=0).
+        # #182: one time source, not a lambda per installer. It also supplies
+        # the *waiting* half, so a case whose coroutine sleeps resolves by
+        # moving the clock rather than blocking the host -- with only the
+        # reading half injected, `run_loop()` waited for a `now` that never
+        # moved and hung.
+        from nodus.runtime.time_source import VirtualTimeSource
+
         state["virtual_clock_ms"] = 0.0
-        self._rvm.scheduler.clock_fn = lambda: state["virtual_clock_ms"]
+        virtual = VirtualTimeSource(0.0)
+        self._rvm.scheduler.time_source = virtual
 
         # Create coroutine in "created" state; set initial args if any
         coro = Coroutine(fn)
@@ -213,8 +221,10 @@ class TestRunner:
         self._rvm.scheduler.spawn(coro)
         self._rvm.scheduler.run_loop(on_error=_on_error)
 
-        # Restore real clock
-        self._rvm.scheduler.clock_fn = runtime_time_ms
+        # Restore the host clock, and publish where virtual time ended up so
+        # `test.advance_clock` and this runner agree on one reading.
+        state["virtual_clock_ms"] = virtual.now_ms()
+        self._rvm.scheduler.time_source = HostTimeSource()
 
         if failure[0] is not None:
             raise failure[0]
