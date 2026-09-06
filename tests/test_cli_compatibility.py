@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.request
 from contextlib import redirect_stdout
 
 import nodus as lang
@@ -46,14 +47,133 @@ let plan = plan_graph([A])
         exit_code = lang.main(["nodus", "test-examples"])
         self.assertEqual(exit_code, 0)
 
-    def test_cli_serve_command_starts(self):
+    # closes: #770
+    def test_cli_serve_command_starts_and_stops(self):
+        """#770: it must also stop, and the branch it takes must be decided.
+
+        This started a real server in a daemon thread, slept 50 ms, asserted the
+        thread was alive, and left it running. Measured over a full suite run:
+        the server thread and the `RuntimeService` sweeper underneath it were
+        still alive **3245 tests later**, and sweepers at that call site built
+        1034 VMs against the shared repo-root `.nodus/` store while unrelated
+        tests were using it -- the documented signature of this box's "flaky
+        machine" (#769, and #591/#632 before it).
+
+        It also depended on the environment without saying so. `serve()` uses
+        uvicorn when FastAPI is installed and the stdlib `ThreadingHTTPServer`
+        otherwise, so which server this exercised depended on whether an extra
+        happened to be present -- and `uvicorn.run()` returns no handle, which
+        is why the leak could not be cleaned up. The branch is pinned here and
+        the uvicorn half is covered by the test below.
+
+        `serve()` hands both the service and the server to `start_http_server`,
+        so wrapping that captures the pair without changing what is under test:
+        the command, its argument parsing and its server construction all still
+        run for real -- and the server now answers a request, which the sleep
+        never established.
+        """
+        from nodus.services import server as server_module
+
+        started = threading.Event()
+        captured = {}
+        original_start = server_module.start_http_server
+        original_fastapi = server_module.FASTAPI_AVAILABLE
+
+        def capturing(service, host, port):
+            server = original_start(service, host, port)
+            captured["service"] = service
+            captured["server"] = server
+            started.set()
+            return server
+
         def run_server():
             lang.main(["nodus", "serve", "--host", "127.0.0.1", "--port", "0", "--allow-paths", "."])
 
+        server_module.start_http_server = capturing
+        server_module.FASTAPI_AVAILABLE = False
         thread = threading.Thread(target=run_server, daemon=True)
-        thread.start()
-        time.sleep(0.05)
-        self.assertTrue(thread.is_alive())
+        try:
+            thread.start()
+            self.assertTrue(
+                started.wait(timeout=10.0), "the CLI never started a server"
+            )
+            self.assertTrue(thread.is_alive())
+            port = captured["server"].server_address[1]
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/health", timeout=10.0
+            ) as response:
+                self.assertEqual("ok", json.loads(response.read())["status"])
+        finally:
+            server_module.start_http_server = original_start
+            server_module.FASTAPI_AVAILABLE = original_fastapi
+            server = captured.get("server")
+            if server is not None:
+                server.shutdown()
+                server.server_close()
+            service = captured.get("service")
+            if service is not None:
+                service.close()
+            thread.join(timeout=10.0)
+
+        self.assertFalse(
+            thread.is_alive(),
+            "the serve thread outlived the test; every test after this one "
+            "would share its sweeper and its store",
+        )
+        self.assertFalse(
+            captured["service"]._sweeper_thread.is_alive(),
+            "the service sweeper outlived the test -- stopping the server is "
+            "not enough, which is #632's lesson",
+        )
+
+    # closes: #770
+    def test_cli_serve_uses_uvicorn_when_fastapi_is_installed(self):
+        """The other half of the branch, and the reason the test above pins it.
+
+        Nothing asserted which server `nodus serve` runs, so the answer moved
+        with the environment. `uvicorn.run` is stubbed rather than called: it
+        blocks and offers no handle, which is exactly what made the leak
+        unfixable in place.
+        """
+        from nodus.services import server as server_module
+
+        if not (server_module.FASTAPI_AVAILABLE and server_module.UVICORN_AVAILABLE):
+            self.skipTest("fastapi/uvicorn not installed")
+
+        captured = {}
+        original_run = server_module.uvicorn.run
+        original_service = server_module.RuntimeService
+
+        def fake_run(app, **kwargs):
+            captured["app"] = app
+            captured["kwargs"] = kwargs
+
+        def capturing_service(*args, **kwargs):
+            service = original_service(*args, **kwargs)
+            captured["service"] = service
+            return service
+
+        # `serve()` never closes its service, and correctly so -- in production
+        # it runs until the process ends. A test that makes it *return* owns
+        # that cleanup, which the first version of this test did not: its
+        # sweeper leaked, and leakwatch caught it.
+        server_module.uvicorn.run = fake_run
+        server_module.RuntimeService = capturing_service
+        try:
+            exit_code = lang.main(
+                ["nodus", "serve", "--host", "127.0.0.1", "--port", "0", "--allow-paths", "."]
+            )
+        finally:
+            server_module.uvicorn.run = original_run
+            server_module.RuntimeService = original_service
+            service = captured.get("service")
+            if service is not None:
+                service.close()
+
+        self.assertEqual(0, exit_code)
+        self.assertIn("app", captured, "the CLI did not reach uvicorn")
+        self.assertEqual("127.0.0.1", captured["kwargs"]["host"])
+        self.assertFalse(captured["service"]._sweeper_thread.is_alive())
 
     def test_cli_snapshot_restore_worker_auth_token(self):
         token = "cli-token"
