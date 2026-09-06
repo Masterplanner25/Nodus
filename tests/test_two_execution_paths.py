@@ -334,12 +334,18 @@ class TheServiceIsAThirdPositionTests(unittest.TestCase):
                 self.assertTrue(getattr(cli, setting))
 
     # closes: #754
+    # closes: #770
     def test_an_operator_can_grant_them_back(self):
         from nodus.services.server import RuntimeService
 
-        granted = RuntimeService(
+        # #770: closed, not just constructed. A `RuntimeService` starts a
+        # sweeper in `__init__`, and this one was measured still running 334
+        # tests later -- building VMs against the shared store the whole way.
+        service = RuntimeService(
             allow_subprocess=True, allow_network=True, allow_env=True
-        )._new_vm()
+        )
+        self.addCleanup(service.close)
+        granted = service._new_vm()
         for setting in ("allow_subprocess", "allow_network", "allow_env"):
             with self.subTest(setting=setting):
                 self.assertTrue(getattr(granted, setting))

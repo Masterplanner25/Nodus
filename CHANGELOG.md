@@ -4,6 +4,32 @@
 
 ### Tooling
 
+- **#770: two tests left a server and a sweeper running for the rest of the suite.**
+
+  `test_cli_serve_command_starts` ran `nodus serve` in a daemon thread, slept
+  50 ms, asserted the thread was alive, and returned. Measured over a full run:
+  that server and the `RuntimeService` sweeper underneath it were still alive
+  **3245 tests later**. A second service, in `test_two_execution_paths`, leaked
+  its sweeper for 334.
+
+  Sweepers at that one call site accounted for **1034 of 1080** off-main-thread
+  VM constructions in a full run, live during 77 distinct unrelated tests and
+  writing to the shared repo-root `.nodus/` store throughout. That is a measured
+  mechanism for part of what `CLAUDE.md` calls the "flaky machine" — and it is
+  what made #769 possible, since `_built_vm` captured one of those VMs.
+
+  The serve test also depended on the environment without saying so: `serve()`
+  uses uvicorn when FastAPI is installed and the stdlib server otherwise, so
+  which one it exercised moved with an optional extra — and `uvicorn.run()`
+  returns no handle, which is why the leak could not be cleaned up in place.
+  The branch is pinned now, the server answers a real `/health` request rather
+  than being slept at, and a second test covers the uvicorn half with
+  `uvicorn.run` stubbed.
+
+  Found by instrumenting `Thread.start` across the suite and asking which
+  threads outlived it, rather than by reading call sites for a matching
+  `close()`.
+
 - **#769: a test read a real value off the wrong VM.**
 
   `_built_vm` in `tests/test_two_execution_paths.py` patched `VM.__init__` for
