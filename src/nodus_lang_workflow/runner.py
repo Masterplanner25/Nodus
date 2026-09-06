@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import threading
-import warnings
 from contextlib import contextmanager
 
 from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
@@ -20,6 +19,7 @@ from nodus.orchestration.task_graph import (
     run_task_graph,
 )
 from nodus.runtime.state_paths import workflow_store_root
+from nodus.support.staging import warn_staged_flip
 
 from .models import (
     REHYDRATABLE_RUN_STATUSES,
@@ -1451,7 +1451,15 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
       nothing to lose and hears nothing; the local store is genuinely appropriate
       there. The warning is for someone with state.
 
-    `DeprecationWarning` and once per process, matching how `_last_vm` is staged.
+    Once per process, and a `StagedFlipWarning` rather than a plain
+    `DeprecationWarning` -- which is what makes it visible. As a
+    `DeprecationWarning` it was raised outside `__main__`, so Python's default
+    filters discarded it and **no CLI user ever saw it** (#797): measured, with
+    runs in the store, `nodus run` printed nothing while the same command under
+    `-W always` printed this in full. The CLI unsuppresses `StagedFlipWarning`
+    specifically; an embedder's existing `DeprecationWarning` filters still
+    catch it, because it subclasses that.
+
     The message names `nodus workflow migrate-store --to sqlite` because a warning
     that does not say what to type is a warning people learn to skip.
     """
@@ -1470,7 +1478,7 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
         return
     # v6-flip: default-store-sqlite
     _WARNED_DEFAULT_STORE = True
-    warnings.warn(
+    warn_staged_flip(
         "The default workflow store is LocalWorkflowStore (file-backed JSON), "
         "which is not crash-safe, and this store already holds runs. The default "
         "becomes SQLite at 6.0.0, and runs recorded in the JSON store are not "
@@ -1479,7 +1487,6 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
         "(non-destructive; supports --dry-run), or set "
         "NODUS_WORKFLOW_STORE_BACKEND=local to keep the JSON store and silence "
         "this.",
-        DeprecationWarning,
         stacklevel=3,
     )
 

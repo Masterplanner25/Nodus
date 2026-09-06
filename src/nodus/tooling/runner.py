@@ -183,6 +183,33 @@ def _success_result(
     ).to_dict()
 
 
+# v6-flip: unknown-type-name
+def _staged_type_warnings(loader) -> str:
+    """Unrecognised type annotations seen while compiling, as stderr lines.
+
+    #609 stages these to become **errors at 6.0.0**, and until this they were
+    reported by `nodus check` and the LSP only. That is the wrong shape for a
+    staged flip: the command that will start failing is `nodus run`, so the
+    command that says nothing was the one whose behaviour changes. A project
+    that never runs `check` got no notice at all (plan gate G2).
+
+    Covers imported modules too -- they fail at the major on the same terms --
+    and names the module each came from, because the entry file's path would be
+    a lie for an annotation inside an import.
+
+    One function, called from each of `run_source`'s returns, so the *decision*
+    lives in one place even though the text is attached in several.
+    """
+    unknowns = getattr(loader, "unknown_type_names", None) or []
+    lines = []
+    for module_id, item in unknowns:
+        where = module_id or "<memory>"
+        lines.append(
+            f"{where}:{item['line']}:{item['col']}: warning: {item['message']}\n"
+        )
+    return "".join(lines)
+
+
 def run_source(
     code: str,
     filename: str | None = None,
@@ -309,7 +336,7 @@ def run_source(
                         stage=stage,
                         filename=filename,
                         stdout=stdout.getvalue(),
-                        stderr=stderr.getvalue(),
+                        stderr=_staged_type_warnings(loader) + stderr.getvalue(),
                         err=err,
                         extras=extras,
                         code=code,
@@ -329,7 +356,11 @@ def run_source(
             stage="execute",
             filename=filename,
             stdout=stdout.getvalue(),
-            stderr=stderr.getvalue() + (vm.scheduler.unrun_task_warning() or ""),
+            stderr=(
+                _staged_type_warnings(loader)
+                + stderr.getvalue()
+                + (vm.scheduler.unrun_task_warning() or "")
+            ),
             result=None,
             extras=extras,
         ),

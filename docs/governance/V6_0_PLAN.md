@@ -35,6 +35,7 @@ before the list rather than after it:
   (let a project enumerate its exposure) both have to ship *before* the major,
   in ordinary minors — they are not part of it. So the question "when is 6.0.0?"
   is really "when are G2 and G3 done?", which is a much more tractable one.
+  **G2 shipped on 2026-09-06**, so it is now just G3.
 - **The upgrade is small enough to describe on one page.** A user's migration is
   "fix what the warnings already told you about", with no new surface to learn
   at the same time. That is the argument for the shape: a major that both
@@ -141,7 +142,7 @@ warning, and an entry in `COMPATIBILITY.md` with a timeline.
   and it is downstream of a filter that discards the result.
 - **#609's warning reaches `nodus check` only.** A project that never runs
   `check` gets no notice before the major.
-- Only **#547** has all three signals.
+- Only **#547** has all three signals. *(Fixed 2026-09-06: all five do now — see G2 below. The finding is kept because the failure mode is the point: a notice can be correct, careful and discarded.)*
 
 The ranking that matters: **the flip with the weakest signal is the one that
 costs state.** #545, #547 and #4 break a *build* — loud, immediate, fixable in
@@ -175,11 +176,39 @@ Proposed; these are what §3 says must be true before a 6.0.0 is defensible.
 | | Gate |
 |---|---|
 | **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `tools/v6_flips.json` names an issue per flip and `--flips` requires the field. |
-| **G2** | Every flip's warning is visible on the path a user actually runs. #174 and #609 are not. |
+| **G2** | Every flip's warning is visible on the path a user actually runs. **Closed** — see below. |
 | **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). |
 | **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. |
 | **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. **Closed** — see below. |
 | **G6** | `check_downstream_constraints` re-run at the cut (see §5). |
+
+**G2 is closed, and the two halves failed differently.**
+
+**#797** — the notice existed, was carefully written, named the exact command to
+type, and was discarded before reaching anyone. It was a plain
+`DeprecationWarning` raised outside `__main__`. `StagedFlipWarning`
+(`nodus/support/staging.py`) is a `DeprecationWarning` subclass the CLI
+unsuppresses by name and renders as `warning: …`; an embedder's existing
+filters still catch it, and an embedder can still turn it into an error. Scoped
+to that category on purpose — unsuppressing every deprecation the CLI's
+dependencies raise would bury our notice in theirs, which is how a warning
+becomes noise and then becomes ignored.
+
+**#609** — the signal was on the wrong command. `nodus check` and the LSP both
+read the parser's `unknown_type_names`; the *run* path threw the parser away.
+That is the wrong shape for a staged flip, because **`nodus run` is what starts
+failing at 6.0.0** — so the command whose behaviour changes was the one saying
+nothing. The loader accumulates them now, entry file and imports alike, and
+`run_source` attaches them to stderr the way #675 attaches the unrun-task
+warning.
+
+**The bytecode cache was a third path, for the fourth time.** The first version
+of #609's fix warned on a cold compile and went silent on every run after, which
+is worse than never warning — it looks like something someone fixed. The
+diagnostics are carried in the cache entry and replayed on a hit, the way #394's
+step mark is and for the same reason. #521, #400, #394 and #348 are the earlier
+instances; #348 is the closest, since `--trace-imports` also printed nothing once
+the cache was warm. **Run the repro a second time, always.**
 
 **G5 was solved structurally rather than by editing prose, because this document
 is itself a prose enumeration and would have drifted the same way.** Every
@@ -279,12 +308,18 @@ The order §3 implies, not a schedule:
    tracks the flip rather than the question.
 2. ~~**Close G5 structurally**~~ — **done.** `tools/v6_flips.json` plus
    `nodus_gate --flips`.
-3. **Fix the signals (G2)** — the next piece of real work, and now the critical
-   path: with D5 settled, nothing else competes for the major's scope, so the
-   date is whatever G2 and G3 cost. #797 is the harder half. — #174's notice must reach a CLI user, and #609's
+3. ~~**Fix the signals (G2)**~~ — **done.** Both halves ship in 5.x, so the
+   deprecation clock is now running on something people can actually see. #797
+   stays open for the flip itself. — #174's notice must reach a CLI user, and #609's
    should reach `nodus run`. Both are 5.x work and both are prerequisites for
    the deprecation clock being honest.
 4. **Build the readiness answer (G3)** — whatever lets a project enumerate its
-   exposure. This is the largest undecided piece and the one most worth
-   designing before committing to a date.
+   exposure. **Now the only thing between here and a datable 6.0.0**, since D5
+   fixed the scope and G1/G2/G5 are closed. It is also the largest undecided
+   piece and the one most worth designing rather than improvising.
+
+   G2 narrowed it usefully, though: #609 is now enumerable by running the
+   program *or* `nodus check`, and #174 announces itself on any run with state.
+   What is left is #545, #547 and the `worker:` flip, all three of which only
+   speak when the situation arises on the path a run happens to take.
 5. **Then decide D5**, with the cost of 1–4 known.
