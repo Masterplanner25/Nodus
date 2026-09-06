@@ -29,11 +29,10 @@
 
   **Two clocks remain, stated rather than emergent.** Event timestamps,
   `created_time` and `last_resume` still read the host clock — they answer *when
-  did this really happen*, which a simulated clock would falsify. The
-  task-timeout comparison is the uncomfortable member of that group and ships
-  recorded as **#778**: `task_started_at` is written from two places on the host
-  clock, so moving only the scheduler's read would compare readings from
-  different clocks — a worse defect, and silent.
+  did this really happen*, which a simulated clock would falsify. None of the
+  three is compared against anything. The task-timeout comparison was the one
+  member of that group that *was*, and it shipped recorded as **#778**, fixed
+  below.
 
   This is the seam #182 asks for and not the whole issue: a Nodus program
   driving its own timer additionally wants `sleep_until` and a `std:loop`
@@ -110,6 +109,33 @@
   and so ran no cycle check — the edges survived and the error did not. The CLI
   lowers twice, so that defect was invisible until the bytecode cache was
   cleared.
+
+### Fixes
+
+- **#778: a task's timeout is measured on the clock its own sleeps advance.**
+
+  `Scheduler` gained a `TimeSource` seam in #182, and a task's sleeps move that
+  clock — but the task-timeout comparison read `runtime_time_ms()` directly, as
+  did both of the places that stamped `task_started_at`. The three agreed with
+  each other and disagreed with the task: they measured *real* elapsed time
+  while the step spent *virtual* time, so a step that virtually slept 5000 ms
+  against a `timeout_ms: 100` had spent about a millisecond by the only
+  reckoning the timeout could see, and completed. A fourth site,
+  `_effective_timeout_ms`, computed a host agent handler's remaining budget the
+  same way.
+
+  All four now go through `Scheduler.mark_task_started` and
+  `Scheduler.task_elapsed_ms`, which read `self.time_source` — so the stamp and
+  the comparison cannot come from different clocks, rather than four callers
+  agreeing that they will not. Moving only some of them is worse than moving
+  none: a virtual `now` minus a host start never fires, and a host `now` minus a
+  virtual start fires immediately.
+
+  **No behaviour change on the default source.** `HostTimeSource.now_ms()` *is*
+  `runtime_time_ms()`, so `nodus run`, `NodusRuntime` and every host-clock
+  embedding are byte-for-byte as before. What changes is that a host installing
+  a `VirtualTimeSource` now gets step timeouts that respect it.
+
 
 ### Tooling
 

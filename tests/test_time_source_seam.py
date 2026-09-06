@@ -26,8 +26,12 @@ clock silently made virtual.
 **Two clocks remain, and the distinction is stated rather than emergent.**
 Event timestamps, `created_time` and `last_resume` still read the host clock:
 they answer *when did this really happen*, which a simulated clock would
-falsify. The task-timeout comparison is the uncomfortable member of that group
-and is recorded as #778 rather than left to be discovered.
+falsify. None of the three is compared against anything.
+
+The task-timeout comparison was briefly counted among them and was the one that
+*was* compared — #778, fixed, with `tests/test_task_timeout_clock.py` as its
+regression. The distinction that survives is reported-vs-compared, not
+scheduling-vs-fact.
 """
 
 import subprocess

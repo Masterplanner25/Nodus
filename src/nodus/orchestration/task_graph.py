@@ -2275,7 +2275,10 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         coroutine.initial_args = args
         coroutine.name = task.task_id
         coroutine.task_timeout_ms = task.timeout_ms
-        coroutine.task_started_at = runtime_time_ms()
+        # #778: stamped by the scheduler that will compare it, on the clock the
+        # step's own sleeps advance. Read directly from `runtime_time_ms()`, this
+        # was a host-clock start compared against a possibly-virtual `now`.
+        vm.scheduler.mark_task_started(coroutine)
         running[id(coroutine)] = task
         if delay_ms > 0.0:
             vm.scheduler.schedule_delay(coroutine, delay_ms)

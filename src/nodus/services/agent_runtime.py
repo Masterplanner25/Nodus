@@ -124,11 +124,13 @@ def _effective_timeout_ms(vm) -> float | None:
     task = getattr(scheduler, "current_task", None) if scheduler is not None else None
     task_timeout = getattr(task, "task_timeout_ms", None) if task is not None else None
     if isinstance(task_timeout, (int, float)) and task_timeout > 0:
-        started = getattr(task, "task_started_at", None)
-        if isinstance(started, (int, float)):
-            from nodus.runtime.runtime_stats import runtime_time_ms
-
-            remaining = float(task_timeout) - (runtime_time_ms() - float(started))
+        # #778: through the scheduler, so this reads the same clock the stamp was
+        # written on. Subtracting a host-clock `now` from a virtual start is not
+        # an approximation -- it is negative, and reports a step as having spent
+        # no time at all.
+        elapsed = scheduler.task_elapsed_ms(task) if scheduler is not None else None
+        if elapsed is not None:
+            remaining = float(task_timeout) - elapsed
             # Clamp rather than pass a negative deadline: an already-overrun step
             # should fail fast, not be treated as unbounded.
             candidates.append(max(remaining, 1.0))

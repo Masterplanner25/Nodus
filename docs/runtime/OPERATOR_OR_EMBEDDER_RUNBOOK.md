@@ -562,10 +562,17 @@ where time is read should not silently get virtual waiting too. Assign
 **Two clocks remain, and the split is intentional.** Event timestamps, a
 coroutine's `created_time` and its `last_resume` still read the host clock —
 they answer *when did this really happen*, and virtual timestamps would make a
-trace unreadable against a log. The task-timeout comparison is in that group
-too and is the uncomfortable member: a task that virtually sleeps past its
-deadline will not time out. That is recorded as **#778** rather than left to be
-discovered.
+trace unreadable against a log. None of the three is compared against anything;
+they are reported.
+
+**A step's `timeout_ms` is on the source you install** (#778). It was briefly in
+the group above and did not belong there, because it is the one reading that is
+*compared*: a step that virtually slept past its deadline measured real elapsed
+time, found about a millisecond, and completed. So a virtual clock gives you
+deterministic step timeouts as well as deterministic sleeps — a step that
+advances the clock past its own deadline fails, with no real time spent. On the
+default `HostTimeSource` nothing changes, since its `now_ms()` is
+`runtime_time_ms()`.
 
 This is the seam #182 asks for, and not the whole of it: it lets a *host* drive
 time. A Nodus program driving its own timer additionally wants `sleep_until` and

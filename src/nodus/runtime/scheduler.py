@@ -50,19 +50,19 @@ class Scheduler:
         # `time_source` is the *scheduling* clock: when is the next timer due,
         # and how do we get there. Virtualising it makes a run deterministic.
         #
-        # `runtime_time_ms()` is still called directly for four wall-clock
-        # *facts* -- an event's timestamp, a coroutine's creation time, its last
-        # resume, and the task-timeout comparison. Those answer "when did this
-        # really happen", which a simulated clock would falsify: an event bus
-        # that reported virtual timestamps would make a trace unreadable against
-        # a log.
+        # `runtime_time_ms()` is still called directly for three wall-clock
+        # *facts* -- an event's timestamp, a coroutine's creation time, and its
+        # last resume. Those answer "when did this really happen", which a
+        # simulated clock would falsify: an event bus that reported virtual
+        # timestamps would make a trace unreadable against a log. None of the
+        # three is compared against anything; they are reported.
         #
-        # The task timeout is the uncomfortable one and is recorded as such
-        # (#778): a task that virtually sleeps past its timeout will not time
-        # out, because `task_started_at` is set from the host clock in
-        # `task_graph.py` as well as here, and moving only one of the two would
-        # compare readings from different clocks. Fixing it means moving both,
-        # which is a change to orchestration rather than to this seam.
+        # The task timeout was a fourth, and did not fit that reasoning -- a
+        # task that virtually slept past its deadline did not time out, because
+        # the comparison read the host clock while the sleep advanced the
+        # virtual one (#778). It is on `time_source` now, stamped and compared
+        # through `mark_task_started` / `task_elapsed_ms` below so that no
+        # caller can supply the other clock.
         self.trace_output = trace_output
         self._counter = 0
         self.task_ages: dict[int, int] = {}
@@ -177,6 +177,43 @@ class Scheduler:
     @clock_fn.setter
     def clock_fn(self, now_fn) -> None:
         self.time_source = _CallableTimeSource(now_fn)
+
+    # -----------------------------------------------------------------
+    # The task-timeout clock (#778)
+    # -----------------------------------------------------------------
+    #
+    # One question -- "how long has this task been running against its
+    # timeout" -- and it used to be answered in four places, two of which
+    # stamped the start and two of which compared against it, all reading
+    # `runtime_time_ms()` directly. That is fine while there is one clock and
+    # wrong the moment there are two: #182 made the *scheduling* clock
+    # injectable, and a task's sleeps advance that one. A stamp from the host
+    # clock compared against a virtual `now` does not merely drift, it goes
+    # negative, so the timeout never fires.
+    #
+    # Both halves live here so nothing outside can pick a different clock:
+    # the stamp and the comparison come from the same `time_source` by
+    # construction rather than by two callers agreeing. `task_started_at` is
+    # therefore a reading on the *scheduling* clock, unlike `last_resume` and
+    # `created_time`, which stay on the host clock because they answer when
+    # something really happened.
+
+    def mark_task_started(self, coroutine) -> float:
+        """Stamp `task_started_at` on the clock its timeout is measured against."""
+        now = self.time_source.now_ms()
+        coroutine.task_started_at = now
+        return now
+
+    def task_elapsed_ms(self, coroutine) -> float | None:
+        """Milliseconds `coroutine` has spent against its timeout, or None.
+
+        None means the task has not been stamped yet — not that it has spent
+        no time — so a caller must not read it as zero.
+        """
+        started = getattr(coroutine, "task_started_at", None)
+        if not isinstance(started, (int, float)):
+            return None
+        return self.time_source.now_ms() - float(started)
 
     def spawn(self, coroutine) -> None:
         if coroutine.state == "finished":
@@ -460,9 +497,9 @@ class Scheduler:
             coroutine = self.ready_queue.popleft()
             if coroutine.state == "finished":
                 continue
-            if coroutine.task_timeout_ms is not None and coroutine.task_started_at is not None:
-                now = runtime_time_ms()
-                if now - coroutine.task_started_at > coroutine.task_timeout_ms:
+            elapsed = self.task_elapsed_ms(coroutine)
+            if coroutine.task_timeout_ms is not None and elapsed is not None:
+                if elapsed > coroutine.task_timeout_ms:
                     err = LangRuntimeError("timeout", "Task timed out")
                     # #502: unwind before dropping. This used to discard the
                     # coroutine where it stood, so its pending `finally` blocks
@@ -507,7 +544,7 @@ class Scheduler:
                 coroutine.last_resume = now
                 coroutine.last_run_time = now
                 if coroutine.task_timeout_ms is not None and coroutine.task_started_at is None:
-                    coroutine.task_started_at = now
+                    self.mark_task_started(coroutine)
                 self._emit_event("coroutine_resume", coroutine)
                 self._trace(f"resume coroutine #{coroutine.id}")
                 owner = self._owner(coroutine)
