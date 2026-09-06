@@ -453,6 +453,9 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   - `describe(name)` returns agent metadata or `nil`
 - `std:async`
   - `sleep(ms)` suspends the current coroutine for the given milliseconds
+  - for an **absolute** deadline, the global builtin `sleep_until(deadline_ms)` waits
+    until the scheduler's clock reaches an instant, and `spawn_after(ms, fn)` defers a
+    spawn. `std:loop` builds `every`/`until`/`run_after` on top of them (#182)
   - `parallel(tasks)` spawns all tasks (functions or coroutines) and runs the event loop
   - `series(tasks)` runs tasks sequentially via the event loop
   - `queue()` returns a new channel
@@ -482,10 +485,11 @@ imported identically; full signatures live in
 | `std:fs` | `read`, `write`, `append`, `exists`, `exists_path`, `listdir`, `mkdir`, `ensure_dir`, `delete` |
 | `std:path` | `join(parts)` (takes a **list**), `dirname`, `basename`, `ext`, `stem`, `relative`, `absolute` |
 | `std:env` | `get`, `get_or`, `set`, `unset`, `delete`, `has`, `list`, `list_keys` |
-| `std:time` | `now`, `now_in`, `from_epoch_ms`, `to_epoch_ms`, `parse`, `format`, ISO-8601 and HTTP-date conversion, duration builders (`ms`/`seconds`/`minutes`/`hours`/`days`/`weeks`), and calendar arithmetic (`add_days`, `start_of_month`, `to_zone`, …). There is no `now_ms()`; `sleep` lives in `std:async`. |
+| `std:time` | `now`, `now_in`, `from_epoch_ms`, `to_epoch_ms`, `parse`, `format`, ISO-8601 and HTTP-date conversion, duration builders (`ms`/`seconds`/`minutes`/`hours`/`days`/`weeks`), and calendar arithmetic (`add_days`, `start_of_month`, `to_zone`, …). There is no `now_ms()`; `sleep` lives in `std:async`. **This module is wall-clock time and is not the scheduler's clock** — for a deadline to hand to `sleep_until`, use `runtime.time_ms()` (#778). |
 | `std:hash` | `sha256`, `sha512`, `blake2b`, `sha1`, `md5` — each with `_builder` and `_file` variants — plus `hmac_*` and `compare`. All return a **hash record**; call `.to_hex()`. |
 | `std:encoding` | `base64_encode`/`_decode`, `base64_url_encode`/`_decode`, `hex_encode`/`_encode_upper`/`_decode`, `url_encode`/`_decode`, `url_encode_form`/`_decode_form` |
 | `std:secrets` | `random_bytes`, `random_int`, `randbelow`, `token_hex`, `token_base64`, `token_urlsafe`, `token_alphanumeric`, `uuid_v4`, `uuid_v7` |
+| `std:loop` | `now`, `deadline`, `at`, `run_after`, `every`, `until` — timers over the scheduler's own clock, written in Nodus (#182). `every`/`until` hold a **fixed period**: a loop of relative `sleep`s drifts by whatever the body cost. `run_after` rather than `after`, which is a reserved word. |
 | `std:utils` | `clamp`, `coalesce`, `get` |
 | `std:bool` | `equal(value, bool_value)` |
 | `std:test` | `suite`, `case`, `case_async`, `skip`, the `assert*` family, `before_all`/`after_all`/`before_each`/`after_each`, `fixture`, `cleanup`, `parameterize`, `advance_clock`, `flush_async`. Run with `nodus test` — `nodus run` on a test file exits 0 without reporting failures. |
