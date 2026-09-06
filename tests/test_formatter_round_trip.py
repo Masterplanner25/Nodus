@@ -18,9 +18,15 @@ re-parses, and compares the two ASTs **structurally** — every field, recursive
 `Base` excludes `_tok` and `_module` from `__eq__`, so node equality is exactly
 the structural comparison this needs.
 
-Any field added to any node from here on is covered by construction: if the
-formatter does not render it, the re-parsed tree differs and this fails, naming
-the case.
+A field is covered **once a case here exercises it**: if the formatter does not
+render it, the re-parsed tree differs and this fails, naming the case.
+
+**The corpus is hand-maintained, so that "once" is the whole cost.** An earlier
+revision of this docstring said any new field was covered "by construction",
+which is not true and is the more dangerous claim: `barrier` (#578) shipped with
+no case here and nobody noticed, because a green run looks the same either way.
+It was found by *formatting a program that used the field*, during Stage 5 of
+5.11.0 -- not by reading this file. Add the case when you add the field.
 """
 import os
 import sys
@@ -35,6 +41,29 @@ from nodus.tooling.formatter import format_source  # noqa: E402
 #: Each entry exercises a *field*, not just a node type. Add to this whenever a
 #: node gains one — that is cheaper than rediscovering #656.
 CORPUS = {
+    # #578 added `barrier` as a field on a state-cell declaration and did not
+    # add a case here -- found by Stage 5 of the 5.11.0 release, by formatting a
+    # program that used it. `fmt` happened to render it correctly, so nothing
+    # was broken; nothing was *pinned* either, which is the state #656 was in
+    # the day before it broke.
+    "state cell with a barrier": """
+workflow w {
+    state total = 0i with { barrier: true }
+    step a { total = 1i
+        return 1i }
+    step reader { return total }
+}
+""",
+    "state cell with barrier and a fold": """
+workflow w {
+    state total = 0i with { barrier: true, merge: "sum" }
+    step a { total += 1i
+        return 1i }
+    step b { total += 1i
+        return 2i }
+    step reader { return total }
+}
+""",
     "mapped step": """
 workflow w {
     step discover { return [1i] }
