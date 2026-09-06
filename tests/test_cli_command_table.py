@@ -61,8 +61,22 @@ class CommandTableSourceTests(unittest.TestCase):
 
         The table carries `signature` and `summary` as fields, so the scrape is
         gone and `re` is no longer needed by cli.py at all.
+
+        Matched as a whole line rather than as a substring. The substring form
+        (`assertNotIn("import re", ...)`) also matches `import restore_snapshot`
+        -- and did, the moment #173 made the server imports lazy. It was
+        reporting a regex scrape that was not there, against a source line that
+        imports a CLI command.
         """
-        self.assertNotIn("import re", CLI_SOURCE)
+        offenders = [
+            line for line in CLI_SOURCE.splitlines()
+            if re.fullmatch(r"\s*(import re|from re import .*)", line)
+        ]
+        self.assertEqual(
+            [], offenders,
+            "cli.py imports `re` again; the command table carries `signature` "
+            f"and `summary` so no scrape is needed: {offenders}",
+        )
 
 
 class CommandTableShapeTests(unittest.TestCase):

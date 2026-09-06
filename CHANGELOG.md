@@ -4,6 +4,74 @@
 
 ### Changed
 
+- **#182: the scheduler's clock is a seam that can actually be replaced.**
+
+  `clock_fn` was injectable and the test harness overrode it — but the idle path
+  called `time.sleep` directly, so time could be *read* from somewhere else and
+  never *waited* on somewhere else. That half-seam was not merely incomplete: a
+  virtual clock plus `run_loop()` **hangs**, because the idle path waits for a
+  `now` that never moves.
+
+  `scheduler.time_source` supplies both operations. On a virtual clock waiting
+  *is* advancing, so a coroutine sleeping 800 ms under `run_loop()` goes from
+  **926 ms** to **44 ms** and the run stops depending on how fast the box is.
+
+  `HostTimeSource` is the default and byte-for-byte the previous behaviour.
+  `clock_fn` still works and still redirects reads; a bare callable says nothing
+  about waiting, so waiting stays on the host and a frozen `clock_fn` still
+  spins — preserved deliberately, so a caller that only meant to change where
+  time is read is not silently given virtual waiting.
+
+  It also unifies the two installers: `test.advance_clock` was replacing the
+  clock with a *frozen* lambda while `testing/runner.py` installed a *live* read
+  of the same state, and the frozen form silently replaced the live one the
+  first time a case advanced the clock.
+
+  **Two clocks remain, stated rather than emergent.** Event timestamps,
+  `created_time` and `last_resume` still read the host clock — they answer *when
+  did this really happen*, which a simulated clock would falsify. The
+  task-timeout comparison is the uncomfortable member of that group and ships
+  recorded as **#778**: `task_started_at` is written from two places on the host
+  clock, so moving only the scheduler's read would compare readings from
+  different clocks — a worse defect, and silent.
+
+  This is the seam #182 asks for and not the whole issue: a Nodus program
+  driving its own timer additionally wants `sleep_until` and a `std:loop`
+  driver, both of which build on this.
+
+- **#173: every CLI command was paying for a web server. Startup is ~700 ms faster.**
+
+  `nodus.cli.cli` imported `nodus.services.server` at module scope for the four
+  commands that need it (`serve`, `snapshot`, `snapshots`, `restore`). That
+  module imports FastAPI, uvicorn and pydantic, so `nodus run`, `nodus fmt`,
+  `nodus check` and `nodus --version` all paid for it too. The imports are lazy
+  now, inside those four commands.
+
+  Measured alternating before/after in one window, best of three each, so
+  machine drift shows as noise rather than signal:
+
+  | | before | after | |
+  |---|---|---|---|
+  | `import nodus.cli.cli` | 1435 ms | 652 ms | 2.20x |
+  | `nodus --version` | 1592 ms | 640 ms | 2.49x |
+  | `nodus run hello.nd` | 1711 ms | 1011 ms | 1.69x |
+
+  This is also the standing blocker on #173's PyPy path: PyPy's *interpreter*
+  starts faster than CPython's (104 ms vs 184 ms), and what makes it
+  unadoptable is importing Nodus's own module tree -- run-once code the JIT
+  never warms, against `nodus run`'s 200 ms default deadline.
+
+  `tests/test_cli_import_cost.py` asserts on `sys.modules` in a subprocess,
+  because a behavioural test cannot see this -- the CLI worked either way, only
+  slower -- and by the time any other test runs, something has usually imported
+  FastAPI already.
+
+  **The throughput ceiling itself is unchanged, and its recorded figure was
+  stale.** Measured with the VM's own instruction counter rather than an
+  estimate per loop iteration: **650-850K instr/s**, at 17 instructions per
+  iteration, against the ~200K the issue records. `tools/benchmark_runtime.py`
+  reports both figures so neither has to be transcribed again.
+
 - **#578: a `state` cell can declare its own join — `with { barrier: true }`.**
 
   Every step that reads the cell waits for every step that writes it, inferred.

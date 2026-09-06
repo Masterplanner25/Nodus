@@ -523,6 +523,56 @@ The HTTP server (`nodus serve`) accepts `--workflow-store-backend sqlite` and
 
 ---
 
+## 6.3 Replacing the scheduler's clock (#182)
+
+The scheduler reads time and waits for timers through one object,
+`scheduler.time_source`. Both operations, deliberately together — a clock
+nothing can wait on is not a seam.
+
+```python
+from nodus.runtime.time_source import HostTimeSource, VirtualTimeSource
+```
+
+| source | `now_ms()` | `wait(seconds)` |
+|---|---|---|
+| `HostTimeSource` (default) | monotonic process time | sleeps |
+| `VirtualTimeSource` | whatever it was last set to | **advances the clock** |
+
+On a virtual clock, waiting *is* advancing: a scheduler with nothing runnable
+and a timer due at T has nothing to do but arrive at T. So a coroutine that
+sleeps 800 ms resolves with no real time passing, and the run is deterministic
+rather than dependent on how fast the box is.
+
+```python
+rt = NodusRuntime(timeout_ms=None, max_steps=None)
+rt.active_vm().scheduler.time_source = VirtualTimeSource(0.0)
+```
+
+Measured on a coroutine sleeping 800 ms under `run_loop()`: **926 ms** on the
+host source, **44 ms** on a virtual one.
+
+**Why you cannot do this by setting `clock_fn` alone.** That older spelling still
+works and still redirects reads, but a bare callable says how to *read* time and
+nothing about how to *wait* — so waiting stays on the host, and a frozen clock
+makes `run_loop()` spin forever waiting for a `now` that never moves. That
+behaviour is preserved on purpose: an existing caller that only meant to change
+where time is read should not silently get virtual waiting too. Assign
+`time_source`, not `clock_fn`.
+
+**Two clocks remain, and the split is intentional.** Event timestamps, a
+coroutine's `created_time` and its `last_resume` still read the host clock —
+they answer *when did this really happen*, and virtual timestamps would make a
+trace unreadable against a log. The task-timeout comparison is in that group
+too and is the uncomfortable member: a task that virtually sleeps past its
+deadline will not time out. That is recorded as **#778** rather than left to be
+discovered.
+
+This is the seam #182 asks for, and not the whole of it: it lets a *host* drive
+time. A Nodus program driving its own timer additionally wants `sleep_until` and
+a `std:loop` driver, both of which build on this rather than change it.
+
+---
+
 ## 6.2 A bare coroutine is transient — only a workflow survives a crash (#180)
 
 Nodus has **two** units of concurrent work, and only one of them is durable. The
