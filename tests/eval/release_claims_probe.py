@@ -2330,6 +2330,274 @@ def probe_readme_serve_banner(repo: Path):
     return "the banner names serve, and how to grant what it now denies"
 
 
+
+# --------------------------------------------------------------------------
+# 5.11.0 -- timers a program drives itself, and closures that resolve
+# --------------------------------------------------------------------------
+
+
+@probe("sleep_until: an absolute deadline removes the drift a relative sleep adds")
+def probe_sleep_until_does_not_drift():
+    """The release's headline number. Five iterations of 30ms of work: relative
+    sleeps total 650ms of *scheduled* time, absolute ones 500ms.
+
+    Asserted on the program's own clock rather than wall time, so it does not
+    measure how fast the box is."""
+    result = run_nd(
+        """
+import "std:runtime" as runtime
+
+fn main() {
+    spawn(coroutine(fn() {
+        let t0 = runtime.time_ms()
+        let i = 0i
+        while (i < 5i) { sleep(30i); sleep(100i); i = i + 1i }
+        print("REL=\\(runtime.time_ms() - t0)")
+        return 1i
+    }))
+    run_loop()
+    spawn(coroutine(fn() {
+        let t0 = runtime.time_ms()
+        let i = 0i
+        while (i < 5i) { sleep(30i); i = i + 1i; sleep_until(t0 + i * 100i) }
+        print("ABS=\\(runtime.time_ms() - t0)")
+        return 1i
+    }))
+    run_loop()
+}
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    out = (result.get("stdout") or "").strip()
+    rel = float(out.split("REL=")[1].split()[0])
+    abs_ = float(out.split("ABS=")[1].split()[0])
+    assert abs_ < rel, f"the absolute form did not save anything: {out!r}"
+    assert rel >= 600.0, f"relative sleeps did not accumulate as claimed: {out!r}"
+    assert abs_ <= 560.0, f"absolute sleeps drifted: {out!r}"
+    return f"relative {rel:.0f}ms vs absolute {abs_:.0f}ms on the program's own clock"
+
+
+@probe("sleep_until: a deadline already past yields instead of starving siblings")
+def probe_sleep_until_past_deadline_yields():
+    result = run_nd(
+        """
+import "std:runtime" as runtime
+
+fn main() {
+    spawn(coroutine(fn() {
+        let i = 0i
+        while (i < 3i) { print("a\\(i)"); sleep_until(runtime.time_ms() - 10000i); i = i + 1i }
+        return 1i
+    }))
+    spawn(coroutine(fn() { print("b"); return 1i }))
+    run_loop()
+}
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    order = (result.get("stdout") or "").split()
+    assert order == ["a0", "b", "a1", "a2"], f"no interleaving: {order}"
+    return "an overdue deadline still gives the scheduler a turn"
+
+
+@probe("spawn_after: the spawn itself is deferred")
+def probe_spawn_after_defers():
+    result = run_nd(
+        """
+import "std:runtime" as runtime
+fn main() {
+    let t0 = runtime.time_ms()
+    spawn_after(120i, fn() { print("D=\\(runtime.time_ms() - t0)") })
+    run_loop()
+}
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    out = (result.get("stdout") or "").strip()
+    elapsed = float(out.split("D=")[1])
+    assert elapsed >= 100.0, f"spawn_after did not wait: {out!r}"
+    return f"the deferred body ran {elapsed:.0f}ms in"
+
+
+@probe("std:loop: importable, and every() holds a fixed period")
+def probe_std_loop_every():
+    result = run_nd(
+        """
+import "std:loop" as loop
+fn main() {
+    spawn(coroutine(fn() {
+        let t0 = loop.now()
+        loop.every(100i, 5i, fn(i) { __sleep(30i) })
+        print("E=\\(loop.now() - t0)")
+        return 1i
+    }))
+    run_loop()
+}
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    out = (result.get("stdout") or "").strip()
+    elapsed = float(out.split("E=")[1])
+    assert elapsed <= 560.0, f"every() drifted: {out!r}"
+    return f"five 100ms periods around 30ms of work cost {elapsed:.0f}ms"
+
+
+@probe("std:loop: `after` is reserved, so the verb is `run_after`")
+def probe_std_loop_run_after_naming():
+    """The README and spec both name `run_after`. If `after` ever became legal as
+    a field name the naming note would be wrong rather than merely cautious."""
+    bad = run_nd('import "std:loop" as loop\nfn main() { loop.after(1i, fn(){}) }')
+    assert not bad.get("ok") or (bad.get("stderr") or ""), "loop.after unexpectedly parsed"
+    good = run_nd(
+        'import "std:loop" as loop\n'
+        'fn main() { loop.run_after(10i, fn() { print("R") }); run_loop() }'
+    )
+    assert good.get("ok"), good.get("errors")
+    assert "R" in (good.get("stdout") or ""), good.get("stdout")
+    return "loop.after does not parse; loop.run_after works"
+
+
+@probe("runtime.time_ms: a program can see its own sleep")
+def probe_program_sees_its_own_sleep():
+    """`runtime.time_ms()` reads the scheduler's clock. On the default host source
+    that is real elapsed time, so a 200ms sleep must be visible to the program --
+    the guarantee the virtual-clock story is built on."""
+    result = run_nd(
+        """
+import "std:runtime" as runtime
+fn main() {
+    spawn(coroutine(fn() {
+        let t0 = runtime.time_ms()
+        sleep(200i)
+        print("S=\\(runtime.time_ms() - t0)")
+        return 1i
+    }))
+    run_loop()
+}
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    measured = float((result.get("stdout") or "").strip().split("S=")[1])
+    assert measured >= 150.0, f"a 200ms sleep measured {measured}ms"
+    return f"a 200ms sleep reads back as {measured:.0f}ms"
+
+
+@probe("state: `with { barrier: true }` makes readers wait for writers")
+def probe_barrier_state_cell():
+    result = run_nd(
+        """
+workflow w {
+    state total = 0i with { barrier: true, merge: "sum" }
+    step a { sleep(30i); total += 1i; return 1i }
+    step b { sleep(10i); total += 1i; return 2i }
+    step reader { return total }
+}
+fn main() { let r = run_workflow(w); print("T=\\(r["state"]["total"])") }
+"""
+    )
+    assert result.get("ok"), result.get("errors")
+    out = (result.get("stdout") or "").strip()
+    assert "T=2" in out, f"the reader did not see both writers: {out!r}"
+    return "the reader ran after both writers without an `after` clause"
+
+
+@probe("state: a barrier writer that may not write is refused at declaration")
+def probe_barrier_conditional_writer_refused():
+    result = run_nd(
+        """
+workflow w {
+    state total = 0i with { barrier: true }
+    step a { if (false) { total = 1i } return 1i }
+    step reader { return total }
+}
+fn main() { run_workflow(w) }
+"""
+    )
+    assert not result.get("ok"), "a conditional barrier writer was accepted"
+    # Not merely `ok is False`: a program can fail for reasons that have nothing
+    # to do with the claim, which is how a probe passes vacuously. Name the
+    # refusal.
+    message = str(result.get("error") or "") + (result.get("stderr") or "")
+    assert "barrier" in message and "not on every pass" in message, message[:200]
+    return "refused at declaration, naming the barrier and the conditional write"
+
+
+@probe("closures: a module can spawn a wrapper around a caller's closure")
+def probe_module_wraps_caller_closure(repo: Path):
+    """#783, and it only ever failed from inside a coroutine."""
+    import tempfile
+    import textwrap as _tw
+
+    workdir = Path(tempfile.mkdtemp(prefix="probe-783-"))
+    (workdir / "inner.nd").write_text(
+        "fn wrap_and_spawn(body) {\n    return spawn(fn() { return body() })\n}\n",
+        encoding="utf-8",
+    )
+    from nodus.runtime.embedding import NodusRuntime
+
+    program = _tw.dedent(
+        """
+        import "./inner.nd" as m
+        let TOKEN = "root-let"
+        fn main() {
+            spawn(coroutine(fn(){ m.wrap_and_spawn(fn(){ print(TOKEN) }); return 1i }))
+            run_loop()
+        }
+        """
+    )
+    result = NodusRuntime(timeout_ms=None, max_steps=None).run_file(
+        str(_write(workdir, "probe.nd", program))
+    )
+    assert result.get("ok"), result.get("errors")
+    err = (result.get("stderr") or "").strip()
+    assert not err, err
+    assert "root-let" in (result.get("stdout") or ""), result.get("stdout")
+    return "the wrapped closure ran and read a root-level `let` (#783, #786)"
+
+
+def _write(directory: Path, name: str, text: str) -> Path:
+    path = directory / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@probe("prose: nothing still calls 5.10.0 the current release")
+def probe_no_stale_5_10_current(repo: Path):
+    stale = []
+    for rel in (
+        "README.md",
+        "llms.txt",
+        "llms-full.txt",
+        "skills/nodus.skill",
+        "skills/project-CLAUDE.md",
+        "skills/project-AGENTS.md",
+        "docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md",
+    ):
+        path = repo / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for marker in ("current stable", "Current version", "nodus-lang 5.10.0"):
+            for line in text.splitlines():
+                if marker in line and "5.10.0" in line:
+                    stale.append(f"{rel}: {line.strip()[:90]}")
+    assert not stale, "still current-claiming 5.10.0:\n  " + "\n  ".join(stale)
+    return "no document still presents 5.10.0 as the current release"
+
+
+@probe("prose: the README names the 5.11.0 surface it introduces")
+def probe_readme_names_new_surface(repo: Path):
+    """The README is the permanent PyPI long description. A feature it does not
+    name is one nobody browsing PyPI can discover."""
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [
+        name for name in ("sleep_until", "spawn_after", "std:loop", "barrier")
+        if name not in text
+    ]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "sleep_until, spawn_after, std:loop and barrier all appear"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -2515,6 +2783,20 @@ def main() -> int:
     probe_store_transition_warning()
     probe_no_stale_590_claim(args.repo)
     probe_readme_serve_banner(args.repo)
+
+
+    # --- 5.11.0 -------------------------------------------------------------
+    probe_sleep_until_does_not_drift()
+    probe_sleep_until_past_deadline_yields()
+    probe_spawn_after_defers()
+    probe_std_loop_every()
+    probe_std_loop_run_after_naming()
+    probe_program_sees_its_own_sleep()
+    probe_barrier_state_cell()
+    probe_barrier_conditional_writer_refused()
+    probe_module_wraps_caller_closure(args.repo)
+    probe_no_stale_5_10_current(args.repo)
+    probe_readme_names_new_surface(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

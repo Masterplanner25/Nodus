@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-09-06
+
 ### Added
 
 - **#182: `sleep_until`, `spawn_after`, and `std:loop` — timers a Nodus program drives itself.**

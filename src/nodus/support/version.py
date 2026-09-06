@@ -1,4 +1,4 @@
 """Version metadata for Nodus."""
 
-__version__ = "5.10.0"
+__version__ = "5.11.0"
 VERSION = f"Nodus {__version__}"

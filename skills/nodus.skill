@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "5.10.0"
+version: "5.11.0"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Package version is 5.10.0. Bytecode version is 4** — unchanged since v1.0, so a major
+**Package version is 5.11.0. Bytecode version is 4** — unchanged since v1.0, so a major
 bump does not imply recompilation. Installed via `pip install nodus-lang`.
 
 Run `nodus docs` for the guide, the machine-readable index and this skill's source,
@@ -39,6 +39,48 @@ pinned to the version you actually have.
 The syntax in this file is unchanged and still correct; 5.x added surface rather
 than breaking it. But one **behaviour** changed, and several things are now
 sayable that used to need a workaround.
+
+### Timers are yours to drive (v5.11.0)
+
+`sleep(ms)` waits for a duration; **`sleep_until(deadline_ms)` waits to an instant**,
+and `spawn_after(ms, fn)` defers a spawn. Both are global builtins — no import.
+
+Reach for the absolute form whenever a loop has a period, because a relative sleep
+adds whatever the body cost to every iteration:
+
+```nd
+import "std:loop" as loop
+
+// drifts: each period is 100ms PLUS the work
+while (i < 5i) { work(); sleep(100i); i = i + 1i }
+
+// does not: each wake lands on a fixed instant
+loop.every(100i, 5i, fn(i) { work() })
+```
+
+`std:loop` gives `now()`, `deadline(ms)`, `at(instant)`, `run_after(ms, fn)`,
+`every(period, count, fn)` and `until(instant, period, fn)`. It is written in Nodus
+over those builtins — there is no host code in it.
+
+**The deadline is on the scheduler's clock, which `runtime.time_ms()` reads — not
+epoch time.** `clock()` is epoch *seconds*; `runtime.time_ms()` is monotonic
+*milliseconds since the process started*. Mixing them is not approximate, it is
+meaningless. `std:time` is wall-clock and is the wrong input to `sleep_until`.
+
+There is no `loop.tick()`, and `run_after` is spelled that way because `after` is a
+reserved word (step dependencies).
+
+### A `state` cell can declare its own join (v5.11.0)
+
+```nd
+state total = 0i with { barrier: true }
+```
+
+Every step that *reads* the cell waits for every step that *writes* it, inferred.
+Prefer it to writing `step d after b, c`, which says the same thing and goes stale
+the moment a fourth writer is added. Writers must write unconditionally — a write
+inside an `if`, a loop, a `match` arm, or a step carrying `when` is refused at
+declaration, because a reader waiting on a writer that may not write waits forever.
 
 ### The one breaking change: embedded runtimes deny by default (v5.0.0)
 
@@ -109,42 +151,33 @@ the compiler refuses it and says exactly that. No type annotation on `state`:
 
 ## Non-negotiable rules
 
-### 1. A **module-top-level** `let` is read-only from inside a function — use a map
+### 1. A `let` is writable from a function at every scope — including module top level
 
-**Scope decides this.** A `let` declared *inside a function* can be captured and mutated
-by a closure normally — escaping closures, nesting, `+=`, and mutation from a spawned
-coroutine all work:
+**Verified by running it, not inferred.** A `let` declared inside a function or at
+module top level can both be read and assigned from a function or closure:
 
 ```nd
-// ✅ Works — n is function-scoped
+let total = 0i
+fn bump() { total = total + 5i }
+fn main() { bump(); bump(); print("\(total)") }   // 10
+```
+
+Escaping closures, two closures sharing one captured variable, two-level nesting,
+mutation from inside a spawned coroutine, and `+=` all work the same way:
+
+```nd
 fn make_counter() { let n = 0i; return fn() { n = n + 1i; return n } }
 ```
 
-A `let` at **module top level** assigned from inside a function or closure was broken
-**through 5.7.1** ([#671](https://github.com/Masterplanner25/Nodus/issues/671)): the
-function got its own frame slot and wrote there, the top-level value never changed, and
-there was no error. If the right-hand side also read the variable it read `nil`,
-producing `Cannot add nil and int` — a message naming arithmetic, not scoping.
+**A module-top-level assignment was silently a no-op through 5.7.1**
+([#671](https://github.com/Masterplanner25/Nodus/issues/671)): the function wrote a
+frame-local, the top-level value never changed, and nothing errored — if the
+right-hand side also read the variable it read `nil`, producing `Cannot add nil and
+int`, a message naming arithmetic rather than scoping. Fixed in 5.8.0.
 
-**Fixed after 5.7.1.** On 5.7.1 and earlier, use a **map with quoted keys** for state
-shared across functions at module scope:
-
-```nd
-// ❌ Silent no-op — top-level count is never updated
-let count = 0i
-let inc = fn() { count = count + 1i }   // writes a frame-local; count reads as nil
-
-// ✅ Correct — map mutation works across closure boundary
-let state = {"count": 0i}
-let inc = fn() { state["count"] = state["count"] + 1i }
-inc()
-inc()
-print(state["count"])   // 2
-```
-
-Why: closures capture the map *reference*, and mutating through it is not an
-assignment to the binding. The binding itself is what a function cannot reach at
-module scope.
+The workaround that entry used to prescribe — a map with quoted keys — is **not
+needed** and should not be written for this reason. It is still the right shape when
+you actually want a shared mutable record of several values.
 
 ### 2. `{"key": val}` is a map; `{key: val}` is a record — never mix
 
@@ -185,14 +218,21 @@ import "std:channel" as ch  // ❌ — Import not found: std:channel
 let ch = channel()          // ✅ — built-in: channel(), send(), recv(), close()
 ```
 
-### 6. `spawn()` takes a coroutine value, not a function
+### 6. `spawn()` accepts a zero-argument function directly
 
 ```nd
-spawn(fn() { print("hi") })           // ❌ — "spawn(coroutine) expects a coroutine"
-let c = coroutine(fn() { ... })       // ✅ — wrap in coroutine() first
+spawn(fn() { print("hi") })           // ✅ — wrapped and spawned for you
+let c = coroutine(fn() { ... })       // ✅ — still works; use it when you need the handle
 spawn(c)
 run_loop()
 ```
+
+Both forms are correct. `spawn(fn)` delegates to `coroutine()`, so the zero-arity
+check and the cross-module origin pinning are the same on either path
+([#718](https://github.com/Masterplanner25/Nodus/issues/718)). Passing a function
+used to be a type error; that is no longer true.
+
+**The function must take no arguments** — that part is still enforced, on both forms.
 
 ### 7. Imports must be at the top level of a file
 
