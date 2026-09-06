@@ -10,6 +10,7 @@ from nodus.runtime.channel import (
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.runtime.scheduler import SleepRequest
 from nodus.vm.types import Closure
+from nodus.vm.vm_chain import root_vm
 
 
 def register(vm, registry) -> None:
@@ -347,6 +348,74 @@ def register(vm, registry) -> None:
             ms = 0.0
         return SleepRequest(ms)
 
+    def builtin_sleep_until(deadline):
+        """Sleep until the scheduler's clock reaches `deadline` (#182).
+
+        The absolute counterpart to `sleep(ms)`, and the reason to have one is
+        **drift**. A loop of relative sleeps accumulates the cost of everything
+        between them, so `while (true) { work(); sleep(100i) }` runs slower than
+        every 100 ms by however long `work()` takes. Sleeping to a computed
+        instant does not accumulate: each wake targets a fixed point, so a slow
+        iteration is absorbed rather than added.
+
+        **The deadline is on the scheduler's clock, which `runtime.time_ms()`
+        reads** — not Unix epoch time, which #182 proposed. That would be a
+        deadline on one clock compared against a `now` on another, which is
+        #778 exactly: `clock()` is epoch **seconds** and the scheduler's clock
+        is monotonic **milliseconds since this process started**, so the
+        comparison is not approximate, it is meaningless. Convert at the edge
+        if a wall-clock instant is what you have.
+
+        A deadline already past yields once rather than returning directly, so
+        a loop that has fallen behind still gives the scheduler a turn instead
+        of starving every other coroutine.
+        """
+        if isinstance(deadline, bool) or not isinstance(deadline, (int, float)):
+            vm.runtime_error("type", "sleep_until(deadline_ms) expects a number")
+        # The scheduler that will hold the timer is the one whose clock the
+        # deadline must be measured against -- `vm` here may be a per-call child
+        # (#751), and its own Scheduler is not the one driving this coroutine.
+        scheduler = root_vm(vm).scheduler
+        remaining = float(deadline) - scheduler.time_source.now_ms()
+        return SleepRequest(remaining if remaining > 0.0 else 0.0)
+
+    def builtin_spawn_after(ms, value):
+        """Spawn `value`, but not until `ms` have passed (#182).
+
+        `Scheduler.schedule_delay` has done this since retries needed it; it
+        simply had no surface, so the only way to defer a spawn from Nodus was
+        to wrap the work in a closure that sleeps first.
+
+        That wrapping is what this exists to avoid, and not merely for tidiness.
+        A module that wraps a **caller's** closure and spawns the wrapper hits a
+        live defect in cross-module closure resolution (#783): the wrapper runs
+        after its module frame has popped, so nothing can say which chunk the
+        captured closure belongs to, and it fails with `Stack underflow` when
+        called from inside a coroutine. Spawning the caller's closure directly -- which is
+        what this does, and what `async.parallel` has always done -- never
+        creates that question.
+        """
+        if isinstance(ms, bool) or not isinstance(ms, (int, float)):
+            vm.runtime_error("type", "spawn_after(ms, fn) expects a number of milliseconds")
+        delay = float(ms)
+        if delay < 0:
+            delay = 0.0
+        # Through `builtin_coroutine_create` rather than `Coroutine(...)`: it
+        # carries the zero-arity check and the ASYNC-MOD-003 / #691 origin
+        # pinning, and a second construction site would be one question answered
+        # in two voices -- the same reason `spawn` delegates to it.
+        if isinstance(value, Closure):
+            value = builtin_coroutine_create(value, "spawn_after(ms, fn)")
+        elif not isinstance(value, Coroutine):
+            vm.runtime_error(
+                "type", "spawn_after(ms, fn) expects a coroutine or a zero-argument function"
+            )
+        scheduler = root_vm(vm).scheduler
+        scheduler._spawned_without_loop += 1
+        scheduler.schedule_delay(value, delay)
+        scheduler._emit_event("coroutine_spawn", value)
+        return value
+
     def builtin_channel(maxsize=0):
         if not (isinstance(maxsize, int) and not isinstance(maxsize, bool)) or maxsize < 0:
             vm.runtime_error("value", "channel() maxsize must be a non-negative integer")
@@ -556,6 +625,10 @@ def register(vm, registry) -> None:
     registry.add("run_loop", 0, builtin_run_loop)
     registry.add("sleep", 1, builtin_sleep)
     registry.add("__sleep", 1, builtin_sleep)
+    registry.add("sleep_until", 1, builtin_sleep_until)
+    registry.add("__sleep_until", 1, builtin_sleep_until)
+    registry.add("spawn_after", 2, builtin_spawn_after)
+    registry.add("__spawn_after", 2, builtin_spawn_after)
     registry.add("channel", (0, 1), builtin_channel)
     registry.add("send", 2, builtin_send)
     registry.add("recv", 1, builtin_recv)

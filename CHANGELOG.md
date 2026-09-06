@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- **#182: `sleep_until`, `spawn_after`, and `std:loop` — timers a Nodus program drives itself.**
+
+  #779 gave the scheduler a replaceable `TimeSource`, which let a *host* drive
+  time. This is the program-facing half, and it builds on that seam rather than
+  changing it.
+
+  - **`sleep_until(deadline_ms)`** waits to an instant instead of for a
+    duration. The reason to have it is drift: a relative sleep adds whatever
+    happened before it to every period. Measured on a virtual clock, five
+    iterations of 30 ms of work — `sleep(30i); sleep(100i)` totals **650 ms**,
+    the same loop written against fixed instants totals **500 ms**.
+  - **`spawn_after(ms, fn)`** defers a spawn. `Scheduler.schedule_delay` has
+    done this since retries needed it and simply had no surface.
+  - **`std:loop`** — `now`, `deadline`, `at`, `run_after`, `every`, `until`,
+    written **entirely in Nodus** over those builtins. Nothing in it calls into
+    the host, which is the Bootstrap-axis claim #182 is actually about.
+
+  The deadline is on the **scheduler's** clock, not Unix epoch time as #182
+  proposed. `clock()` is epoch *seconds* and the scheduler's clock is monotonic
+  *milliseconds since this process started*, so comparing across them is not
+  approximate, it is meaningless (#778).
+
+  There is deliberately no `loop.tick()`. #182 sketched one on the picture of
+  the scheduler stepping Nodus timers forward; the seam inverts that, since the
+  scheduler's *waiting* is the replaceable part.
+
+
 ### Changed
 
 - **#182: the scheduler's clock is a seam that can actually be replaced.**
@@ -111,6 +140,27 @@
   cleared.
 
 ### Fixes
+
+- **#182: a program could not read the clock its own sleeps run on.**
+
+  `runtime.time_ms()` called `runtime_time_ms()` directly, so under an injected
+  `VirtualTimeSource` a coroutine that slept 800 ms and measured it got **0.0**
+  — the scheduler advanced virtual time and the program's own reading did not.
+  That is #778 one level up, in the language surface, and #182's own seam is
+  what made it reachable.
+
+  It now reads `time_source`, by the criterion #778 settled: the split that
+  holds between the two clocks is **reported vs. compared**, and this value
+  exists to be *subtracted*. `created_time`, `last_resume` and event timestamps
+  stay on the host clock because they are only ever read out.
+
+  **Unchanged on the default source** — `HostTimeSource.now_ms()` *is*
+  `runtime_time_ms()`.
+
+  `docs/guide/standard-library.md` described `time_ms()` as "Milliseconds since
+  epoch (same as `clock()`)", which was wrong in both halves: it is monotonic
+  milliseconds since process start, and `clock()` is epoch **seconds**.
+
 
 - **#778: a task's timeout is measured on the clock its own sleeps advance.**
 

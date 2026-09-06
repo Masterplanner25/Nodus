@@ -912,9 +912,21 @@ return `"module"` for runtime module objects, which `type()` cannot.
 
 | Function | Signature | Returns | Description |
 |----------|-----------|---------|-------------|
-| `time_ms` | `()` | `number` | Milliseconds since epoch (same as `clock()`) |
+| `time_ms` | `()` | `number` | Milliseconds on **the scheduler's clock** — see below |
 | `stack_depth` | `()` | `number` | Current call stack depth |
 | `stack_frame` | `(index)` | `map` | Stack frame info at given index |
+
+**`time_ms()` is not epoch time, and is not `clock()`.** It counts milliseconds
+since *this process started*, monotonically, so it cannot go backwards when the
+system clock is adjusted. `clock()` is Unix epoch time in **seconds**. This row
+claimed the opposite of both facts until #182; a duration computed by mixing them
+is not approximate, it is meaningless.
+
+It reads the clock the **scheduler** runs on, which is what makes it the right
+input to `sleep_until` (§ below) — a deadline must be on the clock it will be
+compared against (#778). On the default host clock that is exactly
+`runtime_time_ms()`; under an injected `VirtualTimeSource` it is virtual time, so
+a program that sleeps 800 ms measures 800 ms whether or not any real time passed.
 
 ### Event and task inspection
 
@@ -927,6 +939,7 @@ return `"module"` for runtime module objects, which `type()` cannot.
 | `scheduler` | `()` | `map` | Scheduler statistics |
 
 ---
+
 
 ## 11. Experimental modules
 
@@ -945,6 +958,7 @@ Coroutine and concurrency primitives.
 | Function | Description |
 |----------|-------------|
 | `sleep(ms)` | Suspend current coroutine for `ms` milliseconds. Returns nil. |
+| — | For an *absolute* deadline rather than a relative delay, see `sleep_until` under [std:loop](#stdloop) — a loop of relative sleeps drifts. |
 | `queue()` | Takes **no arguments**; returns a new channel. A thin alias for `channel()`. |
 | `parallel(tasks)` | Spawn every task in `tasks` and drive the scheduler until all finish. Returns nil, *not* a list of results. |
 | `series(tasks)` | Spawn and drain each task in turn, in order. Returns nil, *not* a list of results. |
@@ -1117,6 +1131,58 @@ fan-out (`step … each`) — see
 [workflows-and-tasks.md](workflows-and-tasks.md). The full model is
 `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9`; the gap is
 [#395](https://github.com/Masterplanner25/Nodus/issues/395).
+
+### std:loop
+
+```nd
+import "std:loop" as loop
+```
+
+Timers a Nodus program drives itself (#182). Written entirely in Nodus over
+two global builtins and `runtime.time_ms()` — nothing in it calls into the host.
+
+**The two builtins underneath**, usable without importing anything:
+
+| Builtin | Signature | Description |
+|---|---|---|
+| `sleep_until` | `(deadline_ms)` | Suspend until the scheduler's clock reaches `deadline_ms`. The absolute counterpart to `sleep(ms)`. A deadline already past yields once rather than returning directly, so a loop that has fallen behind cannot starve its siblings. |
+| `spawn_after` | `(ms, fn)` | Spawn `fn` as a coroutine, but not until `ms` have passed. Returns the coroutine. |
+
+**The deadline is on the scheduler's clock — `runtime.time_ms()` — not epoch
+time.** `clock()` is epoch *seconds*; the scheduler's clock is monotonic
+*milliseconds since this process started*. Comparing across the two is not
+approximate, it is meaningless (#778), so convert at the edge if a wall-clock
+instant is what you have.
+
+| Function | Description |
+|----------|-------------|
+| `now()` | The scheduler's clock, in milliseconds. The instant every other function here is relative to. |
+| `deadline(ms)` | `now() + ms` — the instant `ms` from now, to hand to `at`. |
+| `at(instant)` | Suspend until the clock reaches `instant`. Already past means yield once, not block forever. |
+| `run_after(ms, body)` | Spawn `body` to run once, `ms` from now. Returns the coroutine. |
+| `every(period_ms, count, body)` | Call `body(i)` `count` times on a fixed period. Returns `count`. |
+| `until(instant, period_ms, body)` | Call `body(i)` on a fixed period until the clock reaches `instant`. Returns the number of iterations. |
+
+**Why `every` rather than a loop around `sleep`.** A relative sleep adds
+whatever happened before it to every period, so the loop drifts. Measured on a
+virtual clock, five iterations of 30 ms of work:
+
+```
+sleep(30i); sleep(100i)   -> 650 ms total
+every(100i, 5i, ...)      ->  500 ms total
+```
+
+`every` wakes at fixed instants, so a slow iteration is absorbed rather than
+added. That is the only thing here you cannot write in one line with `sleep`.
+
+**`run_after`, not `after`** — `after` is a reserved keyword (step
+dependencies), so `loop.after(...)` does not parse. Contextual keywords such as
+`each`, `over`, `when`, `state` and `until` *are* legal field names.
+
+**There is deliberately no `tick()`.** #182 sketched one, on the picture of the
+scheduler stepping Nodus timers forward. The `TimeSource` seam inverts that: the
+scheduler's *waiting* is the replaceable part, so a program expresses timers over
+it rather than driving it.
 
 ### std:tools
 

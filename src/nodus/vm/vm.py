@@ -72,6 +72,7 @@ _DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pendin
 _FINALLY_GATE = -1         # handler_ip sentinel: RETURN and THROW inside a catch defer to finally
 
 from nodus.vm.types import Cell, Closure, _ClosureProxy, Record, BuiltinMethod, Frame  # noqa: E402
+from nodus.vm.vm_chain import root_vm  # noqa: E402
 
 
 def _dict_to_record(d: dict[str, Any]) -> "Record":
@@ -1250,7 +1251,29 @@ class VM:
         return scheduler_stats(self.scheduler)
 
     def builtin_runtime_time(self):
-        return runtime_time_ms()
+        """Milliseconds on **the scheduler's clock** — the one `sleep` advances.
+
+        #182. This read `runtime_time_ms()` directly, so under a
+        `VirtualTimeSource` a program that slept 800 ms and measured it with
+        `runtime.time_ms()` got **0.0** — the scheduler moved virtual time, the
+        program's own reading did not. That is #778 one level up, in the
+        language surface, and #182's seam is what made it reachable.
+
+        By the criterion #778 settled, this belongs on the scheduling clock:
+        the split that holds is *reported vs. compared*, and this value exists
+        to be **subtracted** — a program reads it twice to measure a duration.
+        Event timestamps and `created_time` stay on the host clock because they
+        are only ever read out.
+
+        `root_vm` because `std:runtime` is itself a module: the VM executing
+        this builtin is the per-call child, whose own `Scheduler` is not the one
+        driving the coroutine. Reading `self.scheduler` here answers a different
+        question than the one the caller asked (#751).
+
+        Unchanged on the default source — `HostTimeSource.now_ms()` *is*
+        `runtime_time_ms()`.
+        """
+        return root_vm(self).scheduler.time_source.now_ms()
 
     def builtin_runtime_events(self):
         return [event.to_dict() for event in self.event_bus.events()]

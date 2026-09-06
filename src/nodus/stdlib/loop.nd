@@ -1,0 +1,66 @@
+// std:loop -- timers a Nodus program drives itself (#182).
+//
+// Written entirely in Nodus over two primitives: `sleep_until`, which waits
+// until an instant on the scheduler's clock, and `runtime_time()`, which reads
+// that same clock. Nothing here calls into the host, which is the point --
+// #182's Bootstrap axis is about how much of its own runtime Nodus can write.
+//
+// `sleep(ms)` alone cannot express a periodic timer, because a relative delay
+// accumulates whatever happened before it. Measured on a virtual clock, five
+// iterations of 30ms of work plus `sleep(100i)` take 650ms; the same loop
+// written with `every` takes 500ms and each wake lands on a fixed instant.
+//
+// There is deliberately no `tick()`. #182 sketched one, imagining the scheduler
+// calling into Nodus timers step by step -- but the TimeSource seam inverts
+// that: the scheduler's *waiting* is the replaceable part, so a program
+// expresses its timers over it rather than driving it. A guest-reachable tick
+// would also mean resuming coroutines from inside a coroutine, which is
+// re-entrant machinery that exists for `nodus test` and is not a public shape.
+//
+// `run_after` rather than `after` because `after` is a **reserved** keyword
+// (step dependencies), not a contextual one, so `loop.after(...)` does not
+// parse -- `Unexpected 'AFTER' in expression`. Checked rather than assumed:
+// every contextual keyword tried (`each`, `over`, `when`, `state`,
+// `checkpoint`, `until`) is a legal field name, so the contextual promise
+// holds and only the reserved word is out. #182 proposes `run_after` anyway.
+fn now() {
+    return runtime_time()
+}
+
+fn deadline(ms) {
+    return runtime_time() + ms
+}
+
+fn at(instant) {
+    return __sleep_until(instant)
+}
+
+// Through the builtin rather than `spawn(fn() { at(t); body() })`: wrapping a
+// caller's closure in one of this module's own and spawning it trips #783,
+// which fails with `Stack underflow` when `run_after` is called from inside a
+// coroutine. `spawn_after` spawns the caller's closure directly.
+fn run_after(ms, body) {
+    return __spawn_after(ms, body)
+}
+
+fn every(period_ms, count, body) {
+    let start = runtime_time()
+    let i = 0i
+    while (i < count) {
+        body(i)
+        i = i + 1i
+        __sleep_until(start + i * period_ms)
+    }
+    return count
+}
+
+fn until(instant, period_ms, body) {
+    let start = runtime_time()
+    let i = 0i
+    while (runtime_time() < instant) {
+        body(i)
+        i = i + 1i
+        __sleep_until(start + i * period_ms)
+    }
+    return i
+}

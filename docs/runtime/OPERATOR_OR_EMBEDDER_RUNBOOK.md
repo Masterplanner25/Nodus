@@ -574,9 +574,18 @@ advances the clock past its own deadline fails, with no real time spent. On the
 default `HostTimeSource` nothing changes, since its `now_ms()` is
 `runtime_time_ms()`.
 
-This is the seam #182 asks for, and not the whole of it: it lets a *host* drive
-time. A Nodus program driving its own timer additionally wants `sleep_until` and
-a `std:loop` driver, both of which build on this rather than change it.
+This is the seam #182 asks for; the program-facing half shipped on top of it and
+did not change it. `sleep_until(deadline_ms)` waits to an instant rather than for
+a duration, `spawn_after(ms, fn)` defers a spawn, and `std:loop` builds
+`every`/`until`/`run_after` out of them **in Nodus**, with no host code.
+
+**One consequence matters to an embedder installing a virtual source.**
+`runtime.time_ms()` reads `time_source` too, so a guest program's own view of
+time follows the one you install — before that it read the host clock, and a
+program that slept 800 ms of virtual time measured `0.0`. Its readings are what
+a guest *subtracts*, so they must come from the clock its sleeps advance;
+`created_time`, `last_resume` and event timestamps stay on the host clock,
+because they are only ever read out (#778).
 
 ---
 

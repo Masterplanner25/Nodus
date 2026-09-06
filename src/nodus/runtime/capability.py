@@ -239,8 +239,11 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
     # in the class CapabilityPolicy exists to bound. The host-facing run-level
     # cancel is a Python API and is not guest-reachable at all.
     "in-process concurrency": (
-        "__sleep", "cancel", "channel", "close", "coroutine", "coroutine_status",
-        "wait", "recv", "resume", "run_loop", "send", "sleep", "spawn",
+        "__sleep", "__sleep_until", "cancel", "channel", "close", "coroutine",
+        "coroutine_status", "wait", "recv", "resume", "run_loop", "send",
+        # #182: `sleep_until` reaches nothing `sleep` does not. It is the same
+        # cooperative yield with the deadline computed rather than supplied.
+        "sleep", "sleep_until", "spawn", "spawn_after", "__spawn_after",
     ),
     "introspection of the running program": (
         "runtime_capabilities", "runtime_clear_events", "runtime_event_count", "runtime_events",
