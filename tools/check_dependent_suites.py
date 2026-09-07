@@ -63,16 +63,21 @@ SRC = os.path.join(REPO_ROOT, "src")
 LOG_DIR = os.path.join(REPO_ROOT, ".dependent-suites")
 FLAKES_MANIFEST = os.path.join(REPO_ROOT, "tools", "dependent_flakes.json")
 
-# Companions that import nodus-lang. Packages with no dependency on it cannot be
-# broken by a nodus-lang change and are deliberately absent.
-DEPENDENTS = {
-    "nodus-mcp": r"C:\dev\nodus-mcp",
-    "nodus-mcp-server": r"C:\dev\nodus-mcp-server",
-    "nodus-extension": r"C:\dev\nodus-extension",
-    "nodus-sdk": r"C:\dev\nodus-sdk",
-    "nodus-native-memory-engine": r"C:\dev\nodus-native-memory-engine",
-    "nodus-jupyter": r"C:\dev\nodus-jupyter",
-}
+# Companions that **declare** a nodus-lang dependency, from the one manifest both
+# this gate and Stage 6's range check read (#810). This file used to keep its own
+# list, and the two drifted: six names here against seven there, where the true
+# set is eight.
+#
+# The criterion changed with the manifest. "Imports nodus-lang" excluded
+# `nodus-workflow-ai` *correctly* -- it imports nothing from it, it emits Nodus
+# source -- and still left a hole, because a generator breaks when the syntax it
+# emits stops parsing, or when a flag it passes is refused. That is #791's shape,
+# and it shipped in 5.12.0.
+from tools.nodus_lang_dependents import (  # noqa: E402
+    checkouts,
+    readable_roots,
+    unregistered_nearby,
+)
 
 # pytest's short summary. `-rfE` is passed explicitly rather than relying on the
 # default, because a companion's own pytest config can set `-r` and this parser
@@ -254,7 +259,8 @@ def main(argv: list[str] | None = None) -> int:
 
     known_flaky = load_known_flaky()
     have_manifest = os.path.isfile(FLAKES_MANIFEST)
-    targets = {k: v for k, v in DEPENDENTS.items() if not args.only or k in args.only}
+    dependents = checkouts()
+    targets = {k: v for k, v in dependents.items() if not args.only or k in args.only}
     print(f"Running {len(targets)} dependent suite(s) against {SRC}\n")
 
     results: list[SuiteResult] = []
@@ -287,6 +293,29 @@ def main(argv: list[str] | None = None) -> int:
         names = ", ".join(r.name for r in unrun)
         print(f"Could not run: {names}. An unrun suite is not a passing one.")
         return 2
+
+    # A dependent nobody registered has no suite here to be red, which is a
+    # quieter failure than a red one and is exactly what #810 was: nodus-a2a-wire
+    # was published, depended on nodus-lang, and was in neither gate's list.
+    # Reading the list could never reveal that; only looking beside it can.
+    unregistered = unregistered_nearby()
+    found_roots, all_roots = readable_roots()
+    if unregistered:
+        print()
+        print(f"{len(unregistered)} checkout(s) declare nodus-lang and are not registered:")
+        for name, path in unregistered:
+            print(f"  {name}  {path}")
+        print("Add each to tools/nodus_lang_dependents.json, or record it under")
+        print("'ignored' with the reason it is not a first-party dependent.")
+        print("An unregistered dependent has no suite here to be red.")
+        return 2
+    if found_roots < all_roots:
+        print()
+        print(
+            f"Checked {found_roots}/{all_roots} checkout root(s) for unregistered "
+            f"dependents; the rest are not on this machine, so that sweep proved nothing."
+        )
+
     print(f"All {len(results)} dependent suites pass.")
     return 0
 

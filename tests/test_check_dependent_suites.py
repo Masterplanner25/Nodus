@@ -21,7 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))  # noqa: E402
 
 from tools.check_dependent_suites import (  # noqa: E402
-    DEPENDENTS,
     FLAKES_MANIFEST,
     SuiteResult,
     classify,
@@ -131,9 +130,17 @@ class ExitCodeTests(unittest.TestCase):
         original = mod.run_suite
         queue = list(results)
         mod.run_suite = lambda name, path, patterns, retry=False: queue.pop(0)
-        original_deps = dict(mod.DEPENDENTS)
-        mod.DEPENDENTS.clear()
-        mod.DEPENDENTS.update({r.name: "." for r in results})
+
+        # The registry and the unregistered-checkout sweep are the real
+        # filesystem's business (#810); these tests are about exit codes, so
+        # both are stubbed. Leaving the sweep live would make the verdict depend
+        # on which companion directories happen to exist on the machine.
+        original_checkouts = mod.checkouts
+        original_sweep = mod.unregistered_nearby
+        original_roots = mod.readable_roots
+        mod.checkouts = lambda: {r.name: "." for r in results}
+        mod.unregistered_nearby = lambda: []
+        mod.readable_roots = lambda: (1, 1)
         try:
             import contextlib
             import io
@@ -142,8 +149,9 @@ class ExitCodeTests(unittest.TestCase):
                 return mod.main([])
         finally:
             mod.run_suite = original
-            mod.DEPENDENTS.clear()
-            mod.DEPENDENTS.update(original_deps)
+            mod.checkouts = original_checkouts
+            mod.unregistered_nearby = original_sweep
+            mod.readable_roots = original_roots
 
     def test_all_passing_exits_zero(self):
         self.assertEqual(self._run([SuiteResult("a", "PASS")]), 0)
@@ -197,9 +205,17 @@ class ManifestTests(unittest.TestCase):
         self.assertIn("known_flaky", payload)
 
     def test_every_entry_names_a_known_companion(self):
+        """A recorded flake for a companion no gate runs classifies nothing.
+
+        Reads the registry (#810) rather than a list in the tool, which is now
+        the only place the set of dependents is written down.
+        """
+        from tools.nodus_lang_dependents import checkouts
+
+        dependents = checkouts()
         payload = json.loads(Path(FLAKES_MANIFEST).read_text(encoding="utf-8"))
         for name in payload["known_flaky"]:
-            self.assertIn(name, DEPENDENTS, f"{name} is not a tracked dependent")
+            self.assertIn(name, dependents, f"{name} is not a tracked dependent")
 
     def test_every_entry_has_a_match_and_a_reason(self):
         """An entry with no stated reason is a way to lose a real break."""

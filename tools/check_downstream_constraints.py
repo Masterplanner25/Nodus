@@ -45,15 +45,14 @@ from packaging.version import Version
 # nodus-store-sql, nodus-flow) cannot be blocked by a range and are omitted.
 # nodus-vscode and nodus-run-action are not on PyPI at all — the VSIX is manual
 # and the action pins a version in YAML — so they stay hand-checked at Gate 3b.
-COMPANIONS = [
-    "nodus-mcp",
-    "nodus-mcp-server",
-    "nodus-extension",
-    "nodus-sdk",
-    "nodus-native-memory-engine",
-    "nodus-jupyter",
-    "nodus-workflow-ai",
-]
+# The published companions that declare a nodus-lang dependency, from the one
+# manifest Gate 10a also reads (#810). This file used to keep its own list; the
+# two drifted, and `nodus-a2a-wire` was missing from both -- published, depending
+# on nodus-lang, and having neither its suite run before an upload nor its range
+# resolved after one.
+from tools.nodus_lang_dependents import published_names  # noqa: E402
+
+COMPANIONS = published_names()
 
 # Companions that declare a `nodus-lang` dependency and are **not published
 # yet**, with the reason.
