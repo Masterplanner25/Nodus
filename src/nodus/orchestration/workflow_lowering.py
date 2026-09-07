@@ -1375,7 +1375,7 @@ class _StateRewriter:
         the cell holds without `TrackedState.__setitem__` ever being called, so
         nothing records that this step wrote the cell. Two concurrent indexed
         writes lost one silently -- no conflict warning, no `merge:` policy, and
-        nothing for #547 to turn into an error at 6.0.0 -- while the plain
+        nothing for #547's staged error to fire on -- while the plain
         `cell = v` spelling one line away had all three.
 
         `_record_container_write` already treats these as writes for #578's

@@ -2533,7 +2533,7 @@ class VM:
         the step that changed the cell was not recorded as having written it:
         two concurrent indexed writes lost one silently, with no conflict
         warning, no `merge:` policy consulted, and nothing for #547's staged
-        6.0.0 error to fire on. The plain `cell = v` spelling had all three.
+        error to fire on. The plain `cell = v` spelling had all three.
 
         Three things happen here, and the order is the point:
 
