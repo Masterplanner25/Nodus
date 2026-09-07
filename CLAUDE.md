@@ -346,7 +346,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,894 tests collected** (`--collect-only`, 2026-09-07, after #817, #818 and #820). Coverage
+**3,935 tests collected** (`--collect-only`, 2026-09-07, after #817-#825). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -1037,6 +1037,15 @@ These burn time when forgotten:
   (#818); **#814 is open** on stating the rule in the guide and deciding whether a copy
   surface is owed, so treat the test as *what the VM does*, not as a ratified contract.
 
+  **`copy(value)` is the deep copy** (#814, 5.13.0) — a global, no import. It preserves
+  shared structure rather than expanding it, terminates on a cycle, and **refuses** a
+  value holding a function, method, channel, coroutine or task, naming where it is.
+
+  **A workflow `state` cell is the one exception: it owns its value** (#822). Writing a
+  container into a cell stores a copy and reading one hands back a copy, so a step cannot
+  change a cell by mutating what it read or what it assigned from. `cell[i] = v` is still
+  a write and is recorded as one — that is the fix, not a side effect.
+
   Two things that mislead in opposite directions. `list_push` **mutates in place** and
   returns the same list, but some examples spell it `xs = list_push(xs, v)`, which reads
   functional (#816). And record `==` becomes **structural** at 6.0.0 (#545) while binding
@@ -1164,6 +1173,7 @@ Instances, all confirmed by reading the code rather than inferred:
 | #797 | does a user see this deprecation | the notice was correct, careful, named the exact command to type — and was a `DeprecationWarning` raised outside `__main__`, which Python's default filter **discards**. Not two places disagreeing: one place, and a filter downstream of it that threw the answer away |
 | #609 | which command warns about an annotation that becomes an error | `nodus check` and the LSP both read `parser.unknown_type_names`; the **run** path threw the parser away — so the one command that will start *failing* at 6.0.0 was the one saying nothing |
 | #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
+| #822 | did this step write this state cell | `cell = v` went through `TrackedState.__setitem__`; `cell[i] = v` lowered to a **read** of the cell plus an in-place mutation, so the tracker never saw it — no conflict warning, no `merge:` policy, no fold-cell refusal. The *documented* spelling for updating one element was the unwatched one |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
 injectable and the test harness overrode it, so the tree *looked* like it could
