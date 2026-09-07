@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **The three `.nd` eval probes run in the suite, not only at a release.**
+  `tests/eval/quirk_probe.nd`, `language_exerciser.nd` and
+  `framework_capabilities.nd` are the Tier 1 language smoke tests — closures,
+  recursion, the numeric tower, strings, containers, records and methods, JSON
+  round-trip, coroutines and channels, and every documented quirk. Nothing ran
+  them except `/release-prep`, so a language regression they would catch stayed
+  invisible until somebody cut a release.
+
+  `tests/test_eval_probes.py` runs all three against dev source in about six
+  seconds. This is the cheap half of #811's problem, in the same directory:
+  those probes validate an *installed* package and need a wheel and a clean
+  venv, while these validate the *language*, so dev source is the right target
+  and no wheel is involved.
+
+  The runner reads each probe's `// SUCCESS CONTRACT:` header rather than
+  restating the sentinel, so the two cannot drift; a new `tests/eval/*.nd` that
+  nothing runs fails the suite; and `HarnessFalsifiabilityTests` proves the
+  runner reports a red probe as red — worth having explicitly, since #815
+  (reported, open) is about probe sections that cannot fail in any arrangement
+  of the language.
+
 ## [5.12.0] - 2026-09-06
 
 ### Added
