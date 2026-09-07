@@ -1585,7 +1585,13 @@ They are **design references / API contracts**, not production implementations.
 
 - **Location:** `src/nodus_lang_workflow/` (in this repo, not a separate package yet)
 - **Status:** Near-runtime-complete. Core semantics complete; production hardening
-  and packaging documented in `plans/nodus-workflow-framework.md`.
+  and packaging documented in `docs/design/workflow-framework/00-framework-plan.md`
+  — moved there from a top-level `plans/` directory that held it alone, and given
+  a `Last reviewed:` header. It was written 2026-05-30 and pointed at
+  `src/nodus_workflow` for three months, a path the NAME-COL-001 rename removed
+  the day after it was written. Its remaining-work items are still open; two have
+  moved underneath it (#174 answered part of the SQLite question, #380 part of
+  the scan-cost one) and the header says which.
 - **Test file:** `tests/test_nodus_workflow_framework.py` (30 tests)
 - **7 run states:** `pending → running → waiting → retry_scheduled → completed / failed / dead_lettered`
 - **Backends:** `LocalWorkflowStore` (file-backed) and `SQLiteWorkflowStore` (cross-process)

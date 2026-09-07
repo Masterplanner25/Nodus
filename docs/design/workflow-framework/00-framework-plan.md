@@ -1,5 +1,31 @@
 # Nodus Workflow Framework Plan
 
+**Last reviewed:** 2026-09-07, against 5.12.0.
+**Status:** live plan — the remaining-work items below are open, spot-checked
+rather than assumed (the offset cursor of §1 is still `_cursor_offset` /
+`_encode_cursor` in `runner.py`).
+
+Written 2026-05-30 and unreviewed until now, so read the sections below with
+three months of context in mind. What moved:
+
+- **The module was renamed the day after this was written.**
+  `src/nodus_workflow` became `src/nodus_lang_workflow` on 2026-05-31
+  (NAME-COL-001), to stop it colliding with the standalone `nodus-workflow`
+  package on PyPI. Every reference here has been corrected; a reader following
+  the original path found nothing for three months.
+- **§2's open question has been partly answered.** SQLite is not an
+  intermediate backend: #174 makes `SQLiteWorkflowStore` the *default* at 6.0.0,
+  `nodus workflow migrate-store --to sqlite` shipped in 5.10.0, and an
+  unconfigured local store holding runs warns once per process. The question of
+  what sits *beyond* SQLite for multi-node coordination is still open.
+- **§4 advanced without closing.** #380 made `LocalWorkflowStore.list_runs()`
+  about 4x cheaper — the cost was never parsing, it was a `mkdir` per record and
+  an `exists` before every `open` — but the scan is still linear in accumulated
+  runs, and bounding it is open.
+
+Nothing else in this document has been re-verified line by line. It is a plan,
+not a record of the tree.
+
 ## Purpose
 
 `nodus-workflow` is the runtime orchestration layer that sits directly on top of Nodus execution semantics and turns lowered workflows into durable, resumable node graphs.
@@ -111,18 +137,18 @@ The framework is already substantially implemented in this repository.
 
 The framework currently lives across these areas:
 
-- [src/nodus_workflow](/abs/path/C:/dev/Coding%20Language/src/nodus_workflow)
-- [src/nodus/orchestration/task_graph.py](/abs/path/C:/dev/Coding%20Language/src/nodus/orchestration/task_graph.py)
-- [src/nodus/vm/vm.py](/abs/path/C:/dev/Coding%20Language/src/nodus/vm/vm.py)
-- [src/nodus/services/server.py](/abs/path/C:/dev/Coding%20Language/src/nodus/services/server.py)
-- [src/nodus/cli/cli.py](/abs/path/C:/dev/Coding%20Language/src/nodus/cli/cli.py)
+- `src/nodus_lang_workflow`
+- `src/nodus/orchestration/task_graph.py`
+- `src/nodus/vm/vm.py`
+- `src/nodus/services/server.py`
+- `src/nodus/cli/cli.py`
 
 Primary tests:
 
-- [tests/test_nodus_workflow_framework.py](/abs/path/C:/dev/Coding%20Language/tests/test_nodus_workflow_framework.py)
-- [tests/test_workflow_persistence.py](/abs/path/C:/dev/Coding%20Language/tests/test_workflow_persistence.py)
-- [tests/test_workflow_dsl.py](/abs/path/C:/dev/Coding%20Language/tests/test_workflow_dsl.py)
-- [tests/test_server.py](/abs/path/C:/dev/Coding%20Language/tests/test_server.py)
+- `tests/test_nodus_workflow_framework.py`
+- `tests/test_workflow_persistence.py`
+- `tests/test_workflow_dsl.py`
+- `tests/test_server.py`
 
 ## Remaining Work To Complete The Framework
 
