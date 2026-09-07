@@ -30,6 +30,27 @@
   and the record case is the one that motivates the surface.
 
 ### Fixes
+- **The wheel's own agent index pointed at 36 files that are not in it.**
+  `llms.txt` ships inside the package and says "start here if you are an agent",
+  and every one of its 36 relative links — `README.md`, `docs/guide/*`,
+  `llms-full.txt` — resolved to nothing from `site-packages/nodus/`. They are
+  absolute `blob/main` URLs now, which work from the wheel, on GitHub, and for a
+  web crawler. A new **Runnable Code** section indexes `demos/` and `examples/`,
+  which had 0 of 4 and 0 of 3 of their documents listed.
+
+- **`nodus test-examples` could not work from an installed wheel, and said so
+  while returning 0.** It resolved `<venv>/Lib/examples`, printed nine "Missing
+  examples" lines and exited successfully. The examples the command runs now
+  ship (`tools/sync_examples.py`, the same generated-copy arrangement `llms.txt`
+  uses), and a missing example is a failure.
+
+  That exit code hid a real gap in the repo, not just in installs:
+  `examples/file_utils_demo.nd` was pruned on **2026-05-25** and stayed in the
+  command's list. CI runs `nodus test-examples` as its "Example suite" step, so
+  for **thirty tagged releases** that step announced a missing example on stderr
+  and passed. The stale entry is gone and `tests/test_examples_shipped.py`
+  fails if the manifest ever names a file that does not exist again.
+
 - **#816: example code no longer spells an in-place push as a reassignment.**
   `list_push` mutates the list and returns the same one — documented, and
   contradicted by `xs = list_push(xs, v)`, which reads like a functional API

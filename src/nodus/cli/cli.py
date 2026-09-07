@@ -1594,19 +1594,43 @@ def _format_file(path: str, *, check_only: bool = False, keep_trailing: bool = F
     return 0
 
 
+#: The examples `nodus test-examples` runs, relative to whichever copy is found.
+#: `file_utils_demo.nd` was listed here until 2026-09-07 and had not existed
+#: since it was pruned on 2026-05-25 -- thirty tagged releases, every one of them
+#: announcing a missing example on stderr and exiting 0, because `_run_examples`
+#: only failed on a *failing* example and never on an absent one.
+EXAMPLE_FILES = (
+    "hello.nd",
+    "features_demo.nd",
+    "import_demo.nd",
+    "namespace_import_demo.nd",
+    "relative_import_demo.nd",
+    "stdlib_demo.nd",
+    "std_selective_import_demo.nd",
+    ("project_layout_demo", "main.nd"),
+)
+
+
+def _examples_dir() -> Path:
+    """The packaged copy if there is one, else the repo's own `examples/`.
+
+    Both have to work. In a checkout the repo copy is the source of truth and is
+    what a contributor edits; from a wheel there is no repo, and until #605's
+    sibling fix there was no packaged copy either -- so `nodus test-examples`
+    looked under `<venv>/Lib/examples`, found nothing, and said so while
+    returning success.
+    """
+    packaged = Path(__file__).resolve().parents[1] / "examples"
+    if packaged.is_dir():
+        return packaged
+    return Path(__file__).resolve().parents[3] / "examples"
+
+
 def _example_paths() -> list[str]:
-    root = Path(__file__).resolve().parents[3]
-    examples_dir = root / "examples"
+    root = _examples_dir()
     return [
-        str(examples_dir / "hello.nd"),
-        str(examples_dir / "features_demo.nd"),
-        str(examples_dir / "import_demo.nd"),
-        str(examples_dir / "namespace_import_demo.nd"),
-        str(examples_dir / "relative_import_demo.nd"),
-        str(examples_dir / "stdlib_demo.nd"),
-        str(examples_dir / "std_selective_import_demo.nd"),
-        str(examples_dir / "file_utils_demo.nd"),
-        str(examples_dir / "project_layout_demo" / "main.nd"),
+        str(root.joinpath(*name) if isinstance(name, tuple) else root / name)
+        for name in EXAMPLE_FILES
     ]
 
 
@@ -1628,6 +1652,10 @@ def _run_examples() -> int:
         _print_stderr("Examples failed:")
         for path in failures:
             _print_stderr(f"  {path}")
+    # An example that is not there is not an example that passed. This returned 0
+    # on `missing` for thirty releases, so the one deleted in 2026-05-25 was
+    # announced by CI on every run and failed nothing.
+    if failures or missing:
         return 1
     return 0
 
