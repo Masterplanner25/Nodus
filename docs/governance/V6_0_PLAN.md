@@ -313,13 +313,20 @@ The order §3 implies, not a schedule:
    stays open for the flip itself. — #174's notice must reach a CLI user, and #609's
    should reach `nodus run`. Both are 5.x work and both are prerequisites for
    the deprecation clock being honest.
-4. **Build the readiness answer (G3)** — whatever lets a project enumerate its
-   exposure. **Now the only thing between here and a datable 6.0.0**, since D5
-   fixed the scope and G1/G2/G5 are closed. It is also the largest undecided
-   piece and the one most worth designing rather than improvising.
+4. **Build the readiness answer (G3)** — **designed, not built**:
+   `docs/design/v6/01-readiness.md`. Now the only thing between here and a
+   datable 6.0.0, since D5 fixed the scope and G1/G2/G5 are closed.
 
-   G2 narrowed it usefully, though: #609 is now enumerable by running the
-   program *or* `nodus check`, and #174 announces itself on any run with state.
-   What is left is #545, #547 and the `worker:` flip, all three of which only
-   speak when the situation arises on the path a run happens to take.
+   What the design established, by probing rather than reading: **four of the
+   five are statically enumerable.** #547 is the surprise — which step writes
+   which cell is known at lowering time, so the static answer is a *superset* of
+   the runtime warning's, and on the probe it found an at-risk pair the run did
+   not hit, because the runtime warning is interleaving-dependent and the static
+   one is not.
+
+   **#545 is inherently dynamic** and the design says so rather than shipping a
+   syntactic approximation that would report zero on a codebase full of them.
+   That splits G3 into a static scan and a way to accumulate what a run finds.
+
+   Blocked on **R1**: which surface it hangs off. See the design doc.
 5. **Then decide D5**, with the cost of 1–4 known.
