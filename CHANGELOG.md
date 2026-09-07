@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-09-06
+
 ### Added
 
 - **`docs/migration/v6.0-staged-flips.md`: how to migrate to 6.0.0.** All five

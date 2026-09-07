@@ -47,7 +47,42 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.11.0 is about time — reading it, waiting for it, and agreeing on
+**Recent:** 5.12.0 is about a promise being kept — every warning that says
+something will break can now be seen, listed, and acted on.
+
+Four behaviours are staged to change at 6.0.0, and each of them warns today. Two
+of those warnings reached nobody. The default workflow store's notice was a
+Python `DeprecationWarning` raised where the default filters discard it, so no
+CLI user had ever seen it — on the one staged change that costs *state* rather
+than a build. Unknown type names reached `nodus check` and not `nodus run`,
+which is the command that will actually start failing. Both are visible now.
+
+`nodus check --staged` reports what in a project breaks at the next major,
+without running anything, and it is careful about what it does not know: four of
+the five can be answered from source, the fifth cannot, and a clean run says
+*"nothing found in the 4 flip(s) checked; 1 could not be checked from source"* —
+never *"ready"*. For that fifth, `NODUS_STAGED_FLIP_REPORT=<path>` collects what
+a run actually hits, so a test suite leaves an exposure list rather than stderr
+that scrolled past.
+
+The concurrent-write check turned out **stronger than the runtime warning it
+supplements**: which step writes which state cell is known at compile time, so it
+reports every pair that could race, where the warning reports the pair that did
+on the interleaving that happened.
+
+Three real defects came out of building it. An unknown CLI flag was silently
+ignored, which meant `nodus workflow cleanup --dry-run` **deleted** — `--dry-run`
+belongs to a neighbouring subcommand and was dropped in silence while the output
+read like a preview. Switching to the SQLite workflow store hid the runs the JSON
+store already had: a run parked at `workflow_wait` simply stopped existing, with
+`0 runs` and exit 0. And four `nodus test` flags — `--watch`, `--parallel`,
+`--seed`, `--coverage-per-test` — were declared, printed by `--help`, and read by
+nothing.
+
+[The migration guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v6.0-staged-flips.md)
+covers all five staged changes, what each costs and how to fix it.
+
+5.11.0 is about time — reading it, waiting for it, and agreeing on
 which clock is being talked about.
 
 A Nodus program can now drive its own timers. `sleep_until(deadline_ms)` waits
