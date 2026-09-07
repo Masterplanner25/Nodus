@@ -82,6 +82,36 @@
   `docs/design/v5/09-container-aliasing.md`.
 
 ### Tooling
+- **#810: one list of nodus-lang dependents, and the gates read it.** Gate 10a
+  (`check_dependent_suites`, run before every PyPI upload) and Stage 6's range
+  check (`check_downstream_constraints`) each kept their own. They drifted — six
+  names against seven — and the true set is **eight**.
+
+  `nodus-workflow-ai` was missing from Gate 10a, which the issue reported. The
+  sweep found a second: **`nodus-a2a-wire` was missing from both**, so a
+  published first-party dependent had neither its suite run before an upload nor
+  its range resolved after one, for every release since it shipped. Both suites
+  pass — 28 and 188 — so nothing shipped broken; the coverage was absent, not the
+  correctness.
+
+  **The criterion is now `declares`, not `imports`.** That is the other half:
+  `nodus-workflow-ai` imports nothing from nodus-lang — it *emits* Nodus source —
+  so the old criterion excluded it correctly and still left a hole. A generator
+  breaks when the syntax it emits stops parsing, or when a flag it passes is
+  refused, which is #791's shape and shipped in 5.12.0.
+
+  `tools/nodus_lang_dependents.json` is the list;
+  `tests/test_dependent_registry.py` asserts on both gates' source that neither
+  keeps a copy, since two lists that happen to agree today pass every behavioural
+  check there is.
+
+  Gate 10a also **sweeps beside the registered checkouts** now and exits 2 on a
+  dependent nobody registered — the check that would have found
+  `nodus-a2a-wire`, because reading a hand-maintained list never reveals the
+  entry nobody added. Non-first-party checkouts are recorded under `ignored`
+  with a stated reason each, and the run says how many roots it could actually
+  read, so a sweep over absent directories is not mistaken for a clean one.
+
 
 - **The three `.nd` eval probes run in the suite, not only at a release.**
   `tests/eval/quirk_probe.nd`, `language_exerciser.nd` and

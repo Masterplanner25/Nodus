@@ -1,0 +1,83 @@
+{
+  "_comment": [
+    "Companions that DECLARE a nodus-lang dependency, with the local checkout.",
+    "",
+    "One list, read by two gates that each used to keep their own (#810):",
+    "  tools/check_dependent_suites.py   -- Gate 10a, runs each suite pre-publish",
+    "  tools/check_downstream_constraints.py -- Stage 6, resolves each range",
+    "",
+    "They disagreed. Gate 10a had 6 names, Stage 6 had 7, and the true set is 8:",
+    "nodus-workflow-ai was missing from the first and nodus-a2a-wire from both, so",
+    "a published first-party dependent had neither its suite run before an upload",
+    "nor its range checked after one.",
+    "",
+    "The criterion is DECLARES, not imports. That distinction is the other half of",
+    "#810: nodus-workflow-ai imports nothing from nodus-lang -- it *emits* Nodus",
+    "source -- and a generator can be broken without importing anything. The syntax",
+    "it emits stops parsing, or a CLI flag it passes is refused, which is #791's",
+    "exact shape and shipped in 5.12.0. A registry keyed on imports cannot see it.",
+    "",
+    "`published` says whether the name resolves on PyPI. An unpublished dependent",
+    "still has its suite run; it is only the range check that has nothing to fetch.",
+    "Register on the day the package is written, not the day it ships.",
+    "",
+    "tools/check_publish_drift.py keeps a separate and LARGER list on purpose --",
+    "every published companion, not only the ones depending on nodus-lang. The",
+    "containment is checked by tests/test_dependent_registry.py rather than assumed."
+  ],
+  "dependents": {
+    "nodus-mcp": {
+      "path": "C:\\dev\\nodus-mcp",
+      "published": true
+    },
+    "nodus-mcp-server": {
+      "path": "C:\\dev\\nodus-mcp-server",
+      "published": true
+    },
+    "nodus-extension": {
+      "path": "C:\\dev\\nodus-extension",
+      "published": true
+    },
+    "nodus-sdk": {
+      "path": "C:\\dev\\nodus-sdk",
+      "published": true
+    },
+    "nodus-native-memory-engine": {
+      "path": "C:\\dev\\nodus-native-memory-engine",
+      "published": true
+    },
+    "nodus-jupyter": {
+      "path": "C:\\dev\\nodus-jupyter",
+      "published": true
+    },
+    "nodus-workflow-ai": {
+      "path": "C:\\dev\\nodus-workflow-ai",
+      "published": true,
+      "note": "#93. Declares nodus-lang>=5.8.0 and imports nothing from it -- it emits Nodus source. Missing from Gate 10a until #810; its suite was run by hand at the 5.12.0 cut and passed."
+    },
+    "nodus-a2a-wire": {
+      "path": "C:\\codev\\a2a-wire-pub",
+      "published": true,
+      "note": "#477. Missing from BOTH registries until #810. The checkout is a2a-wire-pub -- C:\\codev\\nodus-a2a-wire is a worktree of the coordinator repo's old history and is the wrong project, which is a good part of why this one was skipped."
+    }
+  },
+
+  "_ignored_comment": [
+    "Checkouts beside the registered ones that declare nodus-lang and are NOT",
+    "first-party companions of this repo. The sweep in nodus_lang_dependents.py",
+    "reports anything it finds that is neither registered above nor named here,",
+    "so a new dependent shows up rather than being silently absent -- which is",
+    "how nodus-a2a-wire stayed out of both gates.",
+    "",
+    "Every entry states a reason, the way tools/shape_manifest.json and",
+    "tools/dependent_flakes.json do. Silence is what this file exists to remove.",
+    "",
+    "This repo excludes itself by path; it needs no entry."
+  ],
+  "ignored": {
+    "C:\\codev\\nodus-a2a-wire": "Not the wire repo. A worktree of the *coordinator* repo's old history, so it declares the name `nodus-a2a` and pulls and pushes go to the wrong project. The real checkout is C:\\codev\\a2a-wire-pub, registered above. Documented in CLAUDE.md as a standing trap.",
+    "C:\\dev\\aindy-runtime": "Third party, not a first-party companion. It is a real downstream consumer -- it reported #441-#444 and found #445 before we did -- but it is not ours to publish or to keep green, and its checkout here is a convenience copy. This registry is the set whose suites we gate our own uploads on.",
+    "C:\\dev\\masterplan-infiniteweave-monday-node-2025-0411": "A second aindy-runtime checkout, same reason as above.",
+    "C:\\dev\\codexnodus": "Showcase project (`nodus-codex-lab`), not published -- 404 on PyPI -- and not a companion library. docs/projects/PROJECTS.md covers it."
+  }
+}
