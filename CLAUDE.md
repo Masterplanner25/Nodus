@@ -14,8 +14,8 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 Without `PYTHONPATH`, you get the installed package, not the current source.
 Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
 
-**The gap is live and eleven minors wide** — re-checked 2026-09-06 after the
-5.11.0 cut: `.venv` says **5.0.0**, `src/` says 5.11.0. It widens at every
+**The gap is live and twelve minors wide** — re-checked 2026-09-06 after the
+5.12.0 cut: `.venv` says **5.0.0**, `src/` says 5.12.0. It widens at every
 release, because nothing reinstalls it. Forgetting the prefix gets you a runtime from before
 essentially every 5.x fix, and **the symptom is behaviour that contradicts the code you
 are reading** — which is the part worth remembering, because it does not look like a
@@ -218,6 +218,19 @@ directory held two of its three documents and the claim's *version* was the only
 being compared: editing the string would have passed the gate while naming a file that
 did not exist. Stage 5 and Stage 6 are still on you.
 
+**That claim cannot be satisfied during the release, and step 4b is right to
+pass without it.** `points_at` requires the directory to *hold* the document, so
+the claim can only move once the eval record is written — which is step 12's
+commit, after the publish. At the 5.12.0 cut, step 4b reported 13/13 with the
+claim still naming 5.11.0 (correct: 5.12.0's directory did not exist yet), and
+CI then failed the **post-release** PR that created it. That is the mechanism
+working, not a miss: bumping it earlier would have named a file nobody had
+written, which is the exact failure `points_at` was added to refuse.
+
+So expect one `--versions` failure on the eval-record PR, and fix it there. It
+is the only claim in the manifest whose correct value changes *because of* the
+commit that carries it.
+
 **`/release-prep` is a skill** (`.claude/commands/release-prep.md`) and walks this sequence.
 It is **older than the sequence above** — it predates Stage 5, Stage 6, and the
 `--closed-issues --section X.Y.Z` re-run, and its Step 5 pushes to `main` directly, which
@@ -333,7 +346,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,729 tests collected** (`--collect-only`, 2026-09-06, after the 5.11.0 cut). Coverage
+**3,825 tests collected** (`--collect-only`, 2026-09-06, after the 5.12.0 cut). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -1676,6 +1689,8 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.12.0 | an **undeclared CLI flag is refused** instead of silently dropped (#791) | remove it, or spell it correctly. `--help` lists what each command takes and the error suggests a near miss. This is the fix for `workflow cleanup --dry-run` **deleting** — but any script passing a flag that did nothing now exits 1, including `--flag=value`, which was taken as the *filename* |
+| 5.12.0 | four `nodus test` flags are gone: `--watch`, `--parallel`, `--seed`, `--coverage-per-test` (#794) | nothing to restore — they were declared, printed by `--help`, and read by no code. `nodus test --watch` ran once and exited, which looks exactly like a watcher that saw no changes |
 | 5.11.0 | `runtime.time_ms()` reads the **scheduler's** clock, not the host clock (#182) | only observable to a host that installs a non-default `TimeSource`; on `HostTimeSource` it *is* `runtime_time_ms()`. It was the incoherence, not the fix: under a virtual clock a program's own 800 ms sleep measured `0.0` |
 | 5.10.0 | code submitted to `nodus serve` can no longer run subprocesses, open sockets or read the environment (#754) | `--allow-subprocess` / `--allow-network` / `--allow-env`, narrowed with `--allowed-commands` / `--allowed-hosts`. `nodus run` is unchanged |
 | 5.10.0 | an unconfigured local workflow store holding runs warns once per process (#174) | migrate with `nodus workflow migrate-store --to sqlite`, or set `NODUS_WORKFLOW_STORE_BACKEND=local` to mean it |
@@ -1722,11 +1737,18 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` holds #791, and it is a row for the next release's
-not-additive table.** An undeclared CLI flag is refused rather than dropped, so
-a script passing one that did nothing now exits 1. The restore column is
-*remove the flag, or spell it correctly* — `--help` lists what each command
-takes, and the error suggests a near miss when there is one.
+**`[Unreleased]` is empty — 5.12.0 took all eighteen entries.**
+
+**5.12.0 has two rows, and both are the same shape**: something that used to be
+accepted and ignored is now refused. That is the release's whole theme applied
+to its own surface — *a declaration the runtime accepts must bind, or be refused
+at the point of declaration* (#490), which is also why `nodus test` lost four
+flags and why every staged-flip warning had to become visible.
+
+Everything else it ships is additive or a repair. `nodus check --staged` and
+`NODUS_STAGED_FLIP_REPORT` are new surfaces; the #174, #797, #609 and #807 fixes
+each replace silence or a Python errno with a message, and nothing could depend
+on those.
 
 **5.11.0 has exactly one row, checked rather than assumed.** Everything else it
 ships is additive or a repair: `sleep_until` / `spawn_after` / `std:loop` are new
