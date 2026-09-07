@@ -268,15 +268,18 @@ This prevents accidental name leakage.
 
 Memory Model Clarification
 
-Formalize value semantics for:
+**Formalized (#814).** Lists, maps and records are reference values: assignment
+binds, it does not copy. Stated in `docs/guide/types-and-values.md` §6 and pinned
+by `tests/test_container_aliasing.py`; the reasoning, and why the rule is
+documented rather than changed, is in `docs/design/v5/09-container-aliasing.md`.
 
-records
+Still open, and now two separate things rather than one line:
 
-maps
-
-lists
-
-Add helper utilities for cloning workflow state safely.
+- a `copy(value)` surface — recommended in that design doc, not built. A record
+  cannot be copied generically today at all, since `keys()` refuses a record.
+- **#822** — a workflow `state` cell holds a live reference, so a step can change
+  it without writing to it and the write-conflict checks never see it. That is
+  the "cloning workflow state safely" half of this item, and it is a defect.
 
 Sandboxing
 

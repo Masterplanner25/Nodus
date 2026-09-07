@@ -55,6 +55,7 @@ def run_program(src: str, source_path: str | None = None) -> list[str]:
 
 
 class ListAliasingTests(unittest.TestCase):
+    # closes: #814
     def test_a_second_name_for_a_list_shares_its_elements(self):
         src = """
 let a = [1, 2, 3]

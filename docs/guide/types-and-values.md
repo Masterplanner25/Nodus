@@ -545,6 +545,129 @@ silently keeping duplicates (see
 > why this waits for a major version. Decision record:
 > `docs/design/v6/00-record-equality.md`.
 
+### Assignment binds a reference — it does not copy
+
+Lists, maps and records are **reference values**. `let b = a` gives you a second
+name for one container, not a second container, so a change through either name
+is visible through both:
+
+```nd-expect=output
+let a = [1i, 2i, 3i]
+let b = a
+b[0] = 999i
+print(a[0])
+
+let m1 = { "x": 1i }
+let m2 = m1
+m2["x"] = 999i
+print(m1["x"])
+
+let p = record { x: 1i }
+let q = p
+q.x = 999i
+print(p.x)
+```
+
+Output:
+
+```
+999
+999
+999
+```
+
+All three container kinds behave the same way, at any depth, and the rule does
+not change inside a function, a coroutine or a workflow step body.
+
+**The two places it usually bites** are a container handed to a function, and a
+container reached through another one:
+
+```nd-expect=output
+fn add_one(items) {
+    list_push(items, 99i)
+}
+
+let xs = [1i]
+add_one(xs)
+print(len(xs))
+
+let outer = { "inner": [1i, 2i] }
+let ref = outer["inner"]
+ref[0] = 88i
+print(outer["inner"][0])
+```
+
+Output:
+
+```
+2
+88
+```
+
+Neither is a copy. `add_one` appended to the caller's list, and `ref` is the same
+list `outer` holds — not a piece of it that was extracted.
+
+Note that `list_push` mutates in place and returns the same list, so
+`xs = list_push(xs, v)` and a bare `list_push(xs, v)` do the same thing. The
+first spelling reads like a functional API and is not one.
+
+**Equality is a different question from binding, and the two answers differ.**
+Maps and lists compare *structurally* while binding by reference — and records
+join them at 6.0.0 (see the previous section). Structural equality does not make
+a container a value: after that flip two records with equal fields will be `==`,
+and two names for one record will still share every mutation.
+
+#### Copying a container
+
+There is no `copy` builtin. A shallow copy of a list or a map is buildable:
+
+```nd-expect=output
+import "std:collections" as col
+
+let original = [1i, 2i, 3i]
+let snapshot = col.map(original, fn(x) { return x })
+snapshot[0] = 999i
+print(original[0])
+print(snapshot[0])
+
+let m = { "x": 1i, "y": 2i }
+let m_copy = {}
+for k in keys(m) { m_copy[k] = m[k] }
+m_copy["x"] = 999i
+print(m["x"])
+```
+
+Output:
+
+```
+1
+999
+1
+```
+
+Both are shallow: a nested container inside the copy is still shared with the
+original.
+
+**A record cannot be copied generically**, because its fields cannot be
+enumerated — `keys()` accepts a map and refuses a record. You can only rebuild
+one field by field, which means knowing every field:
+
+```nd-no-run
+let clone = record { x: p.x, y: p.y }   // and every other field, by hand
+```
+
+If you need a container you can hand out without it being changed underneath
+you, prefer a map over a record for now, and copy it as above. Whether a copy
+surface is owed is
+[#814](https://github.com/Masterplanner25/Nodus/issues/814).
+
+> **Known issue — workflow state cells**
+> ([#822](https://github.com/Masterplanner25/Nodus/issues/822)): a `state` cell
+> holds a reference too, so a step that reads a cell and mutates what it read
+> changes the recorded state without ever writing to it — and the write-conflict
+> checks, which watch `cell = value`, do not see it. Until that is fixed, copy a
+> cell's value before mutating it inside a step.
+
 ### json.parse always returns a map
 
 ```nd
