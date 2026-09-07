@@ -58,7 +58,7 @@
     "nodus-a2a-wire": {
       "path": "C:\\codev\\a2a-wire-pub",
       "published": true,
-      "note": "#477. Missing from BOTH registries until #810. The checkout is a2a-wire-pub -- C:\\codev\\nodus-a2a-wire is a worktree of the coordinator repo's old history and is the wrong project, which is a good part of why this one was skipped."
+      "note": "#477. Missing from BOTH registries until #810. The checkout is a2a-wire-pub; the worktree once named nodus-a2a-wire was the coordinator's old history and was removed 2026-09-07. IMPORTANT: its nodus-lang link is a DEV EXTRA, not a runtime dependency -- published metadata is 'nodus-lang>=4.0.0; extra == \"dev\"' and its `dependencies` list is empty, because the only import is one test that skips without it. Do not remove this entry on the grounds that the runtime deps are empty: Gate 10a runs suites, that suite imports nodus-lang under PYTHONPATH=src, and a nodus-lang change can turn it red. It is a canary, not a component."
     }
   },
 
@@ -75,7 +75,7 @@
     "This repo excludes itself by path; it needs no entry."
   ],
   "ignored": {
-    "C:\\codev\\nodus-a2a-wire": "Not the wire repo. A worktree of the *coordinator* repo's old history, so it declares the name `nodus-a2a` and pulls and pushes go to the wrong project. The real checkout is C:\\codev\\a2a-wire-pub, registered above. Documented in CLAUDE.md as a standing trap.",
+    "C:\\codev\\nodus-a2a-wire": "Removed 2026-09-07; this path no longer exists. It was a worktree of the *coordinator* repo's old history, declaring the distribution name `nodus-a2a`, so its own name pointed at the wrong project. Kept here as a tripwire rather than deleted: the sweep would report a recreated worktree as an unregistered dependent, and this says what it actually is. The real checkout is C:\\codev\\a2a-wire-pub, registered above.",
     "C:\\dev\\aindy-runtime": "Third party, not a first-party companion. It is a real downstream consumer -- it reported #441-#444 and found #445 before we did -- but it is not ours to publish or to keep green, and its checkout here is a convenience copy. This registry is the set whose suites we gate our own uploads on.",
     "C:\\dev\\masterplan-infiniteweave-monday-node-2025-0411": "A second aindy-runtime checkout, same reason as above.",
     "C:\\dev\\codexnodus": "Showcase project (`nodus-codex-lab`), not published -- 404 on PyPI -- and not a companion library. docs/projects/PROJECTS.md covers it."
