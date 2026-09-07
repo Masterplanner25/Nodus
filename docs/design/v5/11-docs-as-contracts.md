@@ -1,4 +1,15 @@
-# Docs-as-Contracts
+# Docs-as-Contracts — handler declarations the runtime enforces
+
+**Status: partly shipped; one constraint open.** Re-checked 2026-09-07 against
+5.12.0: an unannotated `HandlerContract` still validates clean and reports
+`effects: ["pure"]`, so the third constraint below is open four minors after the
+2026-08-06 note recorded it at 4.1.1.
+
+Moved here 2026-09-07 from a loose ideas folder. The generation half of the same
+question — whether a declaration should produce docs, tests and schemas rather
+than have them maintained beside it — is
+[`10-generated-interface-artifacts.md`](10-generated-interface-artifacts.md),
+and it treats this document's open constraint as its prerequisite.
 
 > **Status check, 2026-08-06: two of the three core constraints already ship.**
 > `HandlerContract` exists in `src/nodus_lang_schema/contracts.py` and the

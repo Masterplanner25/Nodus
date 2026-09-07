@@ -377,6 +377,77 @@ Note for anyone reading `CLAUDE.md`: its statement that the wire adapter is
 "preserved at github.com/Masterplanner25/nodus-a2a" is true only of the history.
 The maintained copy is `nodus-a2a-wire`.
 
+## nodus-ingest — Governed knowledge ingestion (proposed)
+
+**Status:** proposal, nothing built. Condensed 2026-09-07 from a July
+conversation sketch that ranked three candidate pipelines; this is the one it
+ranked first, with the other two recorded below as the same shape at different
+scales.
+
+### The idea
+
+One package that turns external material — web pages and documents — into
+governed, reusable memory. Extraction is a tool call; everything around it is
+the part Nodus is for.
+
+```
+workflow ingest_source:
+  classify → fetch → extract → normalize → chunk → attach_provenance
+           → write_memory_nodes → emit_trace
+```
+
+The distinction the sketch drew, and the reason this is a Nodus showcase rather
+than a script: **a foundation model or a parser does not remove the need for
+pipeline discipline, it raises it.** Once extraction is probabilistic, the
+questions that decide whether the output is usable are provenance, retries,
+partial failure, idempotency and an audit trail — which is the runtime's job,
+not the extractor's.
+
+### Language features it would exercise
+
+The reason this ranks first is coverage. It is the closest fit to features that
+currently have no showcase using them together:
+
+| Feature | Why this project needs it |
+|---|---|
+| `@exactly_once` | Re-running an ingest must not duplicate memory nodes |
+| `workflow_wait` / resume | A large crawl or parse outlives one process |
+| `state` cells with `merge: "append"` | Chunks arrive from concurrent branches |
+| `with { on: [...] }` join policy | A source that fails partially should still yield what parsed |
+| Capability policy | Extraction is `network` + `filesystem`; the sandbox is the point |
+| `std:memory` | The output is memory nodes, not files |
+| Compensation (#577) | A half-written source needs an undo path |
+
+### The three candidates the sketch compared
+
+Same architecture, different input, ranked by fit rather than interest:
+
+1. **Document parsing** — messy files into structured blocks with layout and
+   tables preserved. Strongest fit: real partial failure, real provenance, and
+   the output is directly memory-shaped.
+2. **Web crawling** — pages into a source graph and chunks. Also strong, and
+   closest to the existing `llms.txt` / discoverability work.
+3. **Time-series forecasting** — signals into forecasts, backtests and anomaly
+   flags. Genuinely interesting for runtime observability, and the most niche;
+   it proves Nodus can orchestrate analytical work rather than ingestion.
+
+The sketch's conclusion was to build 1 and 2 together, because a knowledge
+ingestion layer that handles only one input shape is not a layer.
+
+### Open questions before implementation
+
+- **Which extraction libraries, and how sandboxed.** The sketch named specific
+  third-party tools; those claims are unverified here on purpose. The Nodus-side
+  design does not depend on which one wins, and the choice should be made
+  against the extension sandbox (`nodus-extension`) rather than by feature list.
+- **Whether this is a companion package or a showcase repo.** Every other entry
+  on this page is a showcase. A `nodus-ingest` on PyPI is a fourteenth companion
+  to keep in step, with a Stage 6 sweep entry and a floor to maintain — which
+  `docs/ecosystem/COMPANION_LIBRARY_CONTRACT.md` should decide, not this page.
+- **What a chunk is.** `std:memory` stores nodes; nothing in the tree defines a
+  chunk boundary, and inventing one per project is how two of them drift.
+
+
 ## Relationship to the Nodus coding agent
 
 These projects are the early sketch of what a **Nodus-specific AI coding
