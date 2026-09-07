@@ -107,6 +107,27 @@
   invocation sites is asserted so a third spelling cannot slip past unchecked.
 
 ### Tooling
+- **The top-level `plans/` directory is gone; its one document is corrected and
+  filed.** `plans/nodus-workflow-framework.md` was a whole top-level directory
+  holding a single file, written 2026-05-30 and never reviewed. It is
+  `docs/design/workflow-framework/00-framework-plan.md` now, beside
+  `docs/design/workflow-dsl/`.
+
+  It had drifted in ways that made it actively misleading. Its primary code
+  reference was `src/nodus_workflow`, a path the NAME-COL-001 rename removed
+  **the day after the plan was written** — so for three months it pointed readers
+  at a directory that does not exist. Nine of its links were machine-local
+  absolute paths (`/abs/path/C:/dev/Coding%20Language/...`) that resolved for
+  nobody, and which the new link checker does not catch because they are not
+  `.md` targets.
+
+  The roadmap itself is still live and was **not** rewritten — spot-checked
+  rather than assumed: §1's offset cursor is still `_cursor_offset` /
+  `_encode_cursor` in `runner.py`. A `Last reviewed:` header now records the two
+  items that moved underneath it: #174 answered part of §2's SQLite question by
+  making it the 6.0.0 default, and #380 made §4's scan about 4x cheaper without
+  bounding it.
+
 - **`docs/governance/` sorted from 63 documents into three, and markdown links
   are now checked.** An audit prompt is an instrument, not policy: the nine in
   there were reusable and language-agnostic, describing no Nodus rule. They are
