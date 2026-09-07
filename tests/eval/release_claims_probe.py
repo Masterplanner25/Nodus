@@ -2598,6 +2598,170 @@ def probe_readme_names_new_surface(repo: Path):
     return "sleep_until, spawn_after, std:loop and barrier all appear"
 
 
+# --- 5.12.0 -----------------------------------------------------------------
+
+
+@probe("check --staged reports every registered flip, checked or not")
+def probe_staged_reports_all_flips():
+    """R4: a report that omits what it did not look at is the comfortable lie."""
+    import json as _json
+    from nodus.support.staging import REPORT_ENV  # noqa: F401  (surface exists)
+    from nodus.tooling.staged_readiness import load_register, scan
+
+    data, error = load_register()
+    assert error is None, error
+    report = scan(sources=[("probe.nd", 'fn main() {\n    print("ok")\n}\n')])
+    named = sorted(f.name for f in report.flips)
+    assert named == sorted(data["flips"]), (
+        f"the report names {named}, the register names {sorted(data['flips'])}"
+    )
+    unchecked = {f.name for f in report.unchecked}
+    assert "record-equality" in unchecked, (
+        "record-equality is not statically checkable and must be reported as such, "
+        f"got unchecked={unchecked}"
+    )
+    _json.dumps(named)  # the register is data, not prose
+    return f"{len(named)} flips reported, {len(unchecked)} named as unchecked"
+
+
+@probe("a clean project is never told it is 'ready'")
+def probe_clean_staged_report_is_honest():
+    code, out = cli(["nodus", "check", "--staged", "--help"])
+    del code, out
+    from nodus.tooling.staged_readiness import scan
+
+    report = scan(sources=[("clean.nd", 'fn main() {\n    print("ok")\n}\n')])
+    assert report.unchecked, "nothing reported as unchecked, so the wording cannot be honest"
+    return "at least one flip is reported as not checkable from source"
+
+
+@probe("concurrent-write is found statically, and ordered pairs are not")
+def probe_static_concurrent_write():
+    from nodus.tooling.staged_readiness import scan
+
+    source = (
+        "workflow race {\n"
+        "    state total = 0i\n"
+        "    state safe = 0i with { merge: \"any\" }\n"
+        "    step a { total = 1i; safe = 1i; return \"a\" }\n"
+        "    step b { total = 2i; safe = 2i; return \"b\" }\n"
+        "    step c after a { total = 3i; return \"c\" }\n"
+        "}\n"
+    )
+    report = scan(sources=[("race.nd", source)])
+    found = next(f for f in report.flips if f.name == "concurrent-write").findings
+    text = " ".join(f.message for f in found)
+    assert "'a' and 'b'" in text, f"the unordered pair was not found: {text}"
+    assert "'a' and 'c'" not in text, "reported a pair that `after` orders"
+    assert "'safe'" not in text, "a cell declaring merge: \"any\" was still reported"
+    return f"{len(found)} unordered pair(s); ordered and declared cells excluded"
+
+
+@probe("an undeclared CLI flag is refused, not dropped")
+def probe_unknown_flag_refused():
+    """#791: `workflow cleanup --dry-run` deleted, because --dry-run is not
+    a flag of that command and nothing rejected it."""
+    from nodus.cli.flags import UnknownFlagError, parse_flags
+    from nodus.cli.commands import flags_for
+
+    try:
+        parse_flags(["--dry-run", "--force"], *flags_for("workflow", "cleanup"))
+    except UnknownFlagError as exc:
+        assert "--dry-run" in str(exc)
+        return "workflow cleanup refuses --dry-run"
+    raise AssertionError("--dry-run was accepted by workflow cleanup")
+
+
+@probe("the staged-flip warning category is a DeprecationWarning")
+def probe_staged_flip_category():
+    """An embedder's existing filters must keep catching these (#797)."""
+    from nodus.support.staging import StagedFlipWarning
+
+    assert issubclass(StagedFlipWarning, DeprecationWarning), (
+        "StagedFlipWarning no longer subclasses DeprecationWarning; every "
+        "embedder filter written for the general case stops catching it"
+    )
+    return "StagedFlipWarning is a DeprecationWarning subclass"
+
+
+@probe("the staged-flip register ships inside the package")
+def probe_register_ships():
+    """`nodus check --staged` reads it at run time, so it must be in the wheel."""
+    from nodus.tooling.staged_readiness import load_register
+
+    data, error = load_register()
+    assert error is None, error
+    assert data.get("flips"), "the register shipped empty"
+    for name, entry in data["flips"].items():
+        for field in ("issue", "summary", "warns_since", "signal", "why"):
+            assert entry.get(field), f"{name} is missing '{field}' in the shipped register"
+    return f"{len(data['flips'])} flips readable from the installed package"
+
+
+@probe("nodus test no longer advertises flags it does not read")
+def probe_test_flags_are_real():
+    """#794: --watch, --parallel, --seed and --coverage-per-test were declared,
+    printed by --help, and read by nothing."""
+    from nodus.cli.commands import flags_for
+
+    with_values, no_values = flags_for("test")
+    declared = with_values | no_values
+    gone = {"--watch", "--parallel", "--seed", "--coverage-per-test"} & declared
+    assert not gone, f"still declared and unread: {sorted(gone)}"
+    return "the four unread flags are gone from the surface"
+
+
+@probe("a directory that is not a project says so, without an errno")
+def probe_project_dir_message(repo: Path):
+    """#807. The message a user gets for an ordinary mistake."""
+    import tempfile
+
+    from nodus.cli.cli import _no_project_here
+
+    with tempfile.TemporaryDirectory() as tmp:
+        message = _no_project_here(tmp)
+    assert "No Nodus project in" in message, message
+    assert "Errno" not in message, f"still leaking a Python errno: {message}"
+    del repo
+    return "the no-project message is in the CLI's own voice"
+
+
+@probe("README names the new surface")
+def probe_readme_names_512_surface(repo: Path):
+    """The README is the permanent PyPI long description (#605, 5.0.1)."""
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [
+        name for name in ("check --staged", "NODUS_STAGED_FLIP_REPORT")
+        if name not in text
+    ]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "check --staged and NODUS_STAGED_FLIP_REPORT both appear"
+
+
+@probe("no stale '5.11.0 is current' claim survives")
+def probe_no_stale_5_11_current(repo: Path):
+    """The failure this cycle's --versions run exists to catch, asserted from
+    the other side: prose that still calls the previous release current."""
+    import re
+
+    pattern = re.compile(
+        r"5\.11\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.11\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.11.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.11.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -2797,6 +2961,18 @@ def main() -> int:
     probe_module_wraps_caller_closure(args.repo)
     probe_no_stale_5_10_current(args.repo)
     probe_readme_names_new_surface(args.repo)
+
+    # --- 5.12.0 -------------------------------------------------------------
+    probe_staged_reports_all_flips()
+    probe_clean_staged_report_is_honest()
+    probe_static_concurrent_write()
+    probe_unknown_flag_refused()
+    probe_staged_flip_category()
+    probe_register_ships()
+    probe_test_flags_are_real()
+    probe_project_dir_message(args.repo)
+    probe_readme_names_512_surface(args.repo)
+    probe_no_stale_5_11_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
