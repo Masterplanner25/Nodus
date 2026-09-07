@@ -40,8 +40,8 @@ class _Tree:
     def __init__(self, flips: dict, source: str, *, filename: str = "mod.py"):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
-        (self.root / "tools").mkdir()
-        (self.root / "tools" / "v6_flips.json").write_text(
+        (self.root / "src" / "nodus" / "support").mkdir(parents=True)
+        (self.root / "src" / "nodus" / "support" / "staged_flips.json").write_text(
             json.dumps({"target": "6.0.0", "flips": flips}), encoding="utf-8"
         )
         pkg = self.root / "src" / "pkg"
@@ -140,14 +140,14 @@ class ManifestTests(unittest.TestCase):
     def test_an_unreadable_manifest_is_a_failure_not_a_skip(self):
         """The check may not pass by being unable to run."""
         with _Tree({"a-flip": ENTRY}, "X = 1\n") as t:
-            (t.root / "tools" / "v6_flips.json").write_text("{not json", encoding="utf-8")
+            (t.root / "src" / "nodus" / "support" / "staged_flips.json").write_text("{not json", encoding="utf-8")
             result = t.run()
         self.assertTrue(result.has_failure)
         self.assertIsNotNone(result.error)
 
     def test_a_missing_manifest_is_a_failure(self):
         with _Tree({"a-flip": ENTRY}, "X = 1\n") as t:
-            (t.root / "tools" / "v6_flips.json").unlink()
+            (t.root / "src" / "nodus" / "support" / "staged_flips.json").unlink()
             result = t.run()
         self.assertTrue(result.has_failure)
         self.assertIn("not found", result.error or "")

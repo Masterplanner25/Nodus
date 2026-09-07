@@ -49,7 +49,7 @@
       "warns_since": "5.2.0",
       "signal": "ok -- stderr, names both remedies",
       "why": "Since #544 the warning fires only when an update was actually lost, so the error can only reject a program that is genuinely wrong. The remedies (`merge: \"sum\"` / `\"append\"` to combine, `merge: \"any\"` for deliberate last-write-wins) predate the flip.",
-      "sites": 1
+      "sites": 3
     },
     "worker-dispatcher": {
       "issue": 798,
@@ -57,7 +57,7 @@
       "warns_since": "5.3.0",
       "signal": "ok -- stderr, names both remedies",
       "why": "DECIDED 2026-09-06 (D1): honour it. The code has promised this since 5.3.0 and docs/design/v6/00-record-equality.md had recorded it as dropped when #492 closed; closing an issue did not retract the promise. A `worker:` declaration is an isolation intent, and running in-process while reporting success is the worst available answer -- the same reasoning that made it a warning rather than a silent no-op. Second-oldest signal in the cohort, so notice is not a blocker.",
-      "sites": 2
+      "sites": 3
     },
     "default-store-sqlite": {
       "issue": 797,
@@ -65,7 +65,7 @@
       "warns_since": "5.10.0",
       "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
       "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. The signal has to become visible before the flip can be taken -- see #797.",
-      "sites": 3
+      "sites": 4
     }
   }
 }

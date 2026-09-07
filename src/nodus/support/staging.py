@@ -1,7 +1,7 @@
 """Warnings about behaviour that is staged to change at the next major.
 
 A staged flip is a promise made to a user *now* about a release that has not
-happened. `tools/v6_flips.json` is the register and `nodus_gate --flips` keeps it
+happened. `nodus/support/staged_flips.json` is the register and `nodus_gate --flips` keeps it
 honest; this module is how one of those promises reaches the person who has to
 act on it.
 

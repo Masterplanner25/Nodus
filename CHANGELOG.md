@@ -2,7 +2,32 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`nodus check --staged`: what in this project breaks at the next major.**
+
+  Every behaviour staged to change at 6.0.0 warns today, but four of the five
+  only speak when the situation arises at runtime, on the path a particular run
+  happens to take — so "I ran it and saw no warnings" was never an answer.
+  This reports them from source, without executing anything.
+
+  **Four of the five are answerable statically; the fifth is not, and the
+  report says so.** Record equality (#545) depends on the runtime type of both
+  `==` operands, so a clean run prints *"nothing found in the 4 flip(s)
+  checked; 1 could not be checked from source"* — never "ready". Every flip
+  appears with its status, including the one nothing looked at.
+
+  The concurrent-write check (#547) is **more complete than the runtime
+  warning**: which step writes which cell is known at lowering time, so it
+  reports every pair that could race, where the warning reports the pair that
+  did on one interleaving. On a three-step probe it found a pair the run did
+  not, and it correctly excludes pairs that `after` already orders.
+
+  Reports rather than gates — exit 0 either way. A project mid-migration should
+  not have its build broken by the tool that exists to help it migrate.
+
 ### Changed
+
 
 - **#797 / #609: the warnings about what breaks at 6.0.0 now reach the person
   who has to act on them.**
@@ -90,11 +115,21 @@
 
 ### Tooling
 
+- **The staged-flip register moved into the package**, as
+  `nodus/support/staged_flips.json`. It is not only a gate manifest any more —
+  `nodus check --staged` reads the same file to build its report, so the
+  command cannot enumerate a different set of flips than the tree promises.
+  Two copies, one to gate with and one to ship, would be the drift
+  `nodus_gate --flips` exists to catch.
+- **`nodus check` refuses trace flags by name.** It refused "everything
+  valueless `check` declares", which would have made `--staged` refuse itself
+  the moment it was declared.
+
 - **`nodus_gate --flips`: every promise about the next major is registered.**
 
   A staged flip is a promise made to a user *now* about a release that has not
   happened — `"This becomes an error in 6.0.0."` is printed on stderr today by
-  code that still allows the thing. `tools/v6_flips.json` is the register and
+  code that still allows the thing. `nodus/support/staged_flips.json` is the register and
   `docs/governance/V6_0_PLAN.md` holds the reasoning.
 
   It exists because the register was found **two short**: five promises live in

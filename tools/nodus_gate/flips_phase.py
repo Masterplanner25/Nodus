@@ -54,7 +54,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_MANIFEST = Path("tools") / "v6_flips.json"
+#: Inside the package, not under `tools/`, because it is not only a gate
+#: manifest any more: `nodus check --staged` reads the same file to report
+#: a project's exposure, and that command ships. Two copies -- one to gate
+#: with and one to ship -- would be the drift this phase exists to catch.
+_MANIFEST = Path("src") / "nodus" / "support" / "staged_flips.json"
 _SRC = Path("src")
 
 #: How far below a marker its coverage reaches. Long enough for a comment and

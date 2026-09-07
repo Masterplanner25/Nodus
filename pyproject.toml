@@ -75,7 +75,7 @@ where = ["src"]
 # inside a venv. It is copied to `src/nodus/llms.txt` by
 # `tools/sync_llms_txt.py`, which the suite checks stays in step with the
 # repo-root original.
-nodus = ["stdlib/*.nd", "stdlib/*.tl", "llms.txt"]
+nodus = ["stdlib/*.nd", "stdlib/*.tl", "llms.txt", "support/staged_flips.json"]
 
 [tool.ruff]
 exclude = ["Tempnodus-smoke-210"]

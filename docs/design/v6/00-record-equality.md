@@ -11,7 +11,7 @@ useful part of the record. It read a **closed issue** as a dropped flip — but
 `orchestration/task_graph.py` had been printing "This becomes an error in
 6.0.0." since 5.3.0 and still was. **Closing an issue does not retract a
 promise.** The `worker:` flip is in the cohort, tracked by #798, and the
-register that decides this is now `tools/v6_flips.json`, checked by
+register that decides this is now `nodus/support/staged_flips.json`, checked by
 `nodus_gate --flips` — precisely so a prose correction cannot quietly drop a
 live promise again.)*
 

@@ -2,7 +2,7 @@
 
 **Status:** scoping. Nothing here is scheduled and no date is set.
 **Last reviewed:** 2026-09-06, against 5.11.0.
-**The register is `tools/v6_flips.json`**, checked by `nodus_gate --flips`.
+**The register is `nodus/support/staged_flips.json`**, checked by `nodus_gate --flips`.
 §1 below is a reader's copy; the gate is the authority.
 
 ## What this document is
@@ -29,7 +29,7 @@ Three things follow from that, and they are the reason it is worth stating
 before the list rather than after it:
 
 - **The major's content is already fixed.** Scope creep has nowhere to enter:
-  anything that is not one of the five is, by definition, 6.1.0. `tools/v6_flips.json`
+  anything that is not one of the five is, by definition, 6.1.0. `nodus/support/staged_flips.json`
   is the whole scope, and `nodus_gate --flips` fails if that stops being true.
 - **Everything blocking it is 5.x work.** G2 (make the signals visible) and G3
   (let a project enumerate its exposure) both have to ship *before* the major,
@@ -175,9 +175,9 @@ Proposed; these are what §3 says must be true before a 6.0.0 is defensible.
 
 | | Gate |
 |---|---|
-| **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `tools/v6_flips.json` names an issue per flip and `--flips` requires the field. |
+| **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `nodus/support/staged_flips.json` names an issue per flip and `--flips` requires the field. |
 | **G2** | Every flip's warning is visible on the path a user actually runs. **Closed** — see below. |
-| **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). |
+| **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). **Closed for the four flips that can be answered from source** — `nodus check --staged`. #545 cannot be, and the report says so per flip; the dynamic half (R2) is deferred. |
 | **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. |
 | **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. **Closed** — see below. |
 | **G6** | `check_downstream_constraints` re-run at the cut (see §5). |
@@ -214,7 +214,7 @@ the cache was warm. **Run the repro a second time, always.**
 is itself a prose enumeration and would have drifted the same way.** Every
 enumeration in §3.1 was hand-maintained and all four drifted.
 
-`tools/v6_flips.json` is the register now and `nodus_gate --flips` checks it
+`nodus/support/staged_flips.json` is the register now and `nodus_gate --flips` checks it
 against `src/` in both directions — the same shape as `version_claims.json`,
 `shape_manifest.json` and `invariant_coverage.json`. **This document holds the
 reasoning, the gate conditions and the open decisions; it does not hold the
@@ -306,14 +306,15 @@ The order §3 implies, not a schedule:
    were filed 2026-09-06, so every live promise has a tracker; D1 was decided
    the same day in favour of honouring the `worker:` promise, so #798 now
    tracks the flip rather than the question.
-2. ~~**Close G5 structurally**~~ — **done.** `tools/v6_flips.json` plus
+2. ~~**Close G5 structurally**~~ — **done.** `nodus/support/staged_flips.json` plus
    `nodus_gate --flips`.
 3. ~~**Fix the signals (G2)**~~ — **done.** Both halves ship in 5.x, so the
    deprecation clock is now running on something people can actually see. #797
    stays open for the flip itself. — #174's notice must reach a CLI user, and #609's
    should reach `nodus run`. Both are 5.x work and both are prerequisites for
    the deprecation clock being honest.
-4. **Build the readiness answer (G3)** — **designed, not built**:
+4. ~~**Build the readiness answer (G3)**~~ — **built**, static half:
+   `nodus check --staged`. Design and decisions:
    `docs/design/v6/01-readiness.md`. Now the only thing between here and a
    datable 6.0.0, since D5 fixed the scope and G1/G2/G5 are closed.
 
@@ -328,5 +329,7 @@ The order §3 implies, not a schedule:
    syntactic approximation that would report zero on a codebase full of them.
    That splits G3 into a static scan and a way to accumulate what a run finds.
 
-   Blocked on **R1**: which surface it hangs off. See the design doc.
+   R1 resolved to `nodus check` — the objection to it ("`check` is per-file")
+   was mine and did not survive being measured. R2 (the dynamic half, for
+   #545) is deferred by decision.
 5. **Then decide D5**, with the cost of 1–4 known.

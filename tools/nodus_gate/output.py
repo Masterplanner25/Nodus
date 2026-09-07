@@ -517,7 +517,7 @@ def format_flips(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
         lines.append(f"       {item.text}")
         lines.append(
             "       Add a `# v6-flip: <name>` marker above it and an entry in "
-            "tools/v6_flips.json."
+            "nodus/support/staged_flips.json."
         )
 
     for item in result.unknown:
