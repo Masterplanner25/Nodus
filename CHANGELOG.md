@@ -25,6 +25,28 @@
   (reported, open) is about probe sections that cannot fail in any arrangement
   of the language.
 
+- **#815: the eval probes' error quirks are tested instead of commented out, and
+  two stale claims are corrected.** `quirk_probe.nd` asserted that `+=` is a
+  parse error and that a closure cannot assign an outer `let`. Neither has been
+  true since **4.0.1** and **5.8.0** (#671) — the claims survived because each
+  real assertion was a commented `// TRAP:` line and the body asserted the
+  workaround instead, so the probe printed `ALL QUIRKS CONFIRMED` either way.
+
+  Both sections now assert current behaviour. The four quirks that genuinely are
+  errors moved to `tests/test_documented_quirks.py`, which runs each and checks
+  its **message** — they could never be asserted in the probe, since it is one
+  process and any of them aborts it. The division is now: the probe asserts what
+  works, the test asserts what errors, and neither restates the other.
+
+  `language_exerciser.nd` carried the same stale claim in its header and used
+  record-field accumulators to work around it in two places that were not
+  closures at all; `framework_capabilities.nd` P9 was named "closure-encapsulated
+  counter", implemented a record-field counter, and labelled it *"correct Nodus
+  idiom"*. Both now do what they say.
+
+  Verified by mutation: the probe's new sections go red on a wrong expectation,
+  which is precisely what the commented form could not do.
+
 - **Container semantics are pinned by tests rather than left to the object
   model.** Three areas that behaved correctly and had nothing asserting it, so
   an unrelated change to how containers are stored or passed would have been
