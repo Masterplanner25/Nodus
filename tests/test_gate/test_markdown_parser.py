@@ -4,6 +4,7 @@ import sys
 import tempfile
 import os
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, "C:/dev/Coding Language")  # noqa: E402
 sys.path.insert(0, "C:/dev/Coding Language/src")  # noqa: E402
@@ -129,24 +130,56 @@ class ExtractBlocksTests(unittest.TestCase):
 
 
 class CollectDocFilesTests(unittest.TestCase):
+    """Which documents the gate scans.
 
-    def test_collect_from_real_root(self):
-        root = "C:/dev/Coding Language"
-        files = collect_doc_files(root)
-        # Should find some .md files
-        self.assertIsInstance(files, list)
+    These used to hardcode `root = "C:/dev/Coding Language"`, which does not
+    exist on a CI runner -- so `collect_doc_files` returned `[]` there and every
+    assertion held trivially. Measured: `assertIsInstance([], list)`,
+    `[] == sorted([])` and `len([]) >= len([])` are all true, so all three tests
+    passed by checking nothing on the machine that arbitrates.
+
+    The root comes from `__file__` now, and each assertion would fail against an
+    empty result.
+    """
+
+    ROOT = str(Path(__file__).resolve().parents[2])
+
+    def test_collect_finds_the_documents(self):
+        files = collect_doc_files(self.ROOT)
+        self.assertTrue(files, "no documents collected -- is the root right?")
 
     def test_collect_is_sorted(self):
-        root = "C:/dev/Coding Language"
-        files = collect_doc_files(root)
+        files = collect_doc_files(self.ROOT)
+        self.assertTrue(files)
         self.assertEqual(files, sorted(files))
 
     def test_include_design_adds_more(self):
-        root = "C:/dev/Coding Language"
-        without = collect_doc_files(root, include_design=False)
-        with_design = collect_doc_files(root, include_design=True)
-        # design dir should add files
-        self.assertGreaterEqual(len(with_design), len(without))
+        without = collect_doc_files(self.ROOT, include_design=False)
+        with_design = collect_doc_files(self.ROOT, include_design=True)
+        self.assertTrue(without)
+        self.assertGreater(
+            len(with_design), len(without),
+            "--include-design added nothing; the design docs are not being found",
+        )
+
+    def test_migration_docs_are_scanned(self):
+        """The documents people follow *during an upgrade*.
+
+        They were outside the scan until `v6.0-staged-flips.md` was written, so
+        nothing had ever run their examples -- the highest-stakes docs were the
+        unchecked ones. Adding the pattern turned up nine pre-existing
+        fragments, all allowlisted with a reason.
+        """
+        files = collect_doc_files(self.ROOT)
+        migration = [f for f in files if "migration" in Path(f).as_posix()]
+        self.assertTrue(
+            migration,
+            "docs/migration/ is not in the gate's scan; its examples are unchecked",
+        )
+        self.assertTrue(
+            any("v6.0-staged-flips" in f for f in migration),
+            "the 6.0.0 migration guide is not being scanned",
+        )
 
 
 if __name__ == "__main__":

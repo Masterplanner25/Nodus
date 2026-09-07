@@ -168,6 +168,7 @@ def collect_doc_files(
         "docs/guide/*.md",
         "docs/policy/*.md",
         "docs/runtime/*.md",
+        "docs/migration/*.md",
         "llms.txt",
         # llms-full.txt was omitted while llms.txt was listed, so the file 5.5.0
         # ships inside the wheel for agents to read was the one nothing checked.

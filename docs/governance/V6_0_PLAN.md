@@ -178,9 +178,25 @@ Proposed; these are what §3 says must be true before a 6.0.0 is defensible.
 | **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `nodus/support/staged_flips.json` names an issue per flip and `--flips` requires the field. |
 | **G2** | Every flip's warning is visible on the path a user actually runs. **Closed** — see below. |
 | **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). **Closed for the four flips that can be answered from source** — `nodus check --staged`. #545 cannot be, and the report says so per flip; the dynamic half (R2) is deferred. |
-| **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. |
+| **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. **Closed** — `docs/migration/v6.0-staged-flips.md`, with #174 given the procedure rather than a paragraph, verified against a parked run. |
 | **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. **Closed** — see below. |
 | **G6** | `check_downstream_constraints` re-run at the cut (see §5). |
+
+**G4 is closed, and what it took was running the advice.**
+`docs/migration/v6.0-staged-flips.md` covers all five. #174 got the procedure
+rather than a paragraph, and the central claim was **verified rather than
+transcribed**: against a workflow genuinely parked at `workflow_wait`,
+`migrate-store --to sqlite` reported `waiting_migrated`, left the JSON store
+intact, and the run was still `waiting` and resumable under SQLite. One detail
+only turned up by doing it — `--dry-run` creates the target database file,
+empty, which surprises anyone expecting a dry run to touch nothing.
+
+**The migration docs were outside the doc gate's scan.** They are the documents
+people follow *during an upgrade*, and nothing had ever run their examples.
+`docs/migration/*.md` is scanned now; the nine pre-existing fragments it turned
+up are allowlisted with a reason, and the new guide's examples are
+`nodus-expect=output`, so its printed results are compared rather than merely
+run.
 
 **G2 is closed, and the two halves failed differently.**
 
