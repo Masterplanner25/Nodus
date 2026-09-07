@@ -8,6 +8,8 @@ Closure.  vm.py re-exports all names for backward compatibility.
 from __future__ import annotations
 
 import sys
+
+from nodus.support.staging import record_staged_flip
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -178,6 +180,13 @@ def _warn_structural_eq_change() -> None:
     if _STRUCTURAL_EQ_CHANGE_WARNED:
         return
     _STRUCTURAL_EQ_CHANGE_WARNED = True
+    # The only staged flip nothing can find from source, so this record is the
+    # whole of its readiness answer (`nodus check --staged` says so).
+    record_staged_flip(
+        "record-equality",
+        "two distinct records with equal fields compared as not equal; "
+        "`==` becomes structural at 6.0.0 and this comparison returns true",
+    )
     print(
         "warning: two distinct records with equal fields compared as not "
         "equal. Record `==` is identity comparison today; in 6.0.0 it becomes "

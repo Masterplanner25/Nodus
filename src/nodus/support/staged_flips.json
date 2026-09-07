@@ -41,7 +41,7 @@
       "warns_since": "5.4.0",
       "signal": "ok -- stderr, once per process, when a comparison whose answer will change actually happens",
       "why": "Records are the only non-structural value, and the exception has exceptions (datetime and duration compare by value). The 6.0.0 semantics already exist as `structural_eq`; the flip is to delegate to it. Design: docs/design/v6/00-record-equality.md.",
-      "sites": 3
+      "sites": 4
     },
     "concurrent-write": {
       "issue": 547,
@@ -65,7 +65,7 @@
       "warns_since": "5.10.0",
       "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
       "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. The signal has to become visible before the flip can be taken -- see #797.",
-      "sites": 4
+      "sites": 5
     }
   }
 }

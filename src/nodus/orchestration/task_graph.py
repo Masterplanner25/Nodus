@@ -15,6 +15,7 @@ import os
 import threading
 import uuid
 
+from nodus.support.staging import record_staged_flip
 from nodus.runtime.runtime_stats import runtime_time_ms, store_time_ms
 from nodus.runtime.state_paths import graph_root
 from nodus.runtime.coroutine import Coroutine
@@ -937,6 +938,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 f"registered worker, or pass `worker_dispatcher=` to "
                 f"NodusRuntime. This becomes an error in 6.0.0.",
                 file=sys.stderr,
+            )
+            record_staged_flip(
+                "worker-dispatcher",
+                f"{'step declares' if len(_unhonoured) == 1 else 'steps declare'} "
+                f"worker {_names} with no dispatcher registered",
             )
             vm.event_bus.emit_event(
                 "workflow_worker_unhonoured",
@@ -1878,6 +1884,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 f"`with {{ merge: \"sum\" }}` (or \"append\") to combine them, "
                 f"or `merge: \"any\"` if you meant last-write-wins. "
                 f"This becomes an error in 6.0.0."
+            )
+            record_staged_flip(
+                "concurrent-write",
+                f"steps {' and '.join(names)} both wrote state "
+                f"'{conflict['key']}' concurrently and one update was lost",
             )
             print(message, file=sys.stderr)
             vm.event_bus.emit_event(

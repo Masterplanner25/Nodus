@@ -33,6 +33,8 @@ keeps working. Those stay plain `DeprecationWarning`s.
 
 from __future__ import annotations
 
+import json
+import os
 import warnings
 
 
@@ -52,3 +54,79 @@ def warn_staged_flip(message: str, *, stacklevel: int = 2) -> None:
     frame this function adds is accounted for here so callers do not have to.
     """
     warnings.warn(message, StagedFlipWarning, stacklevel=stacklevel + 1)
+
+
+#: Where to accumulate what a run actually hits. Unset means record nothing,
+#: which is the default and costs nothing.
+REPORT_ENV = "NODUS_STAGED_FLIP_REPORT"
+
+
+def report_path() -> str | None:
+    """The report file, or None when nobody asked for one."""
+    value = os.environ.get(REPORT_ENV)
+    return value or None
+
+
+def record_staged_flip(flip: str, message: str, *, where: str | None = None) -> None:
+    """Note that a run hit a staged flip, if a report was asked for.
+
+    **Records; it does not emit.** Each site keeps announcing itself exactly as
+    it did -- some through `warn_staged_flip`, some by printing to stderr, and
+    an embedder reads two of them out of `result["stderr"]`. Routing emission
+    through here as well would change all of that at once for the sake of
+    tidiness, and the warning text is asserted on in several places.
+
+    So this is the one thing the sites share: the *fact* that a flip was hit.
+    `flip` is a key in `nodus/support/staged_flips.json`, which is what lets a
+    report join back to the register.
+
+    Why a file rather than an in-process list: the exposure worth collecting is
+    the one a whole test suite finds, and a suite is many runs -- often many
+    processes. JSON Lines, appended, so concurrent writers interleave whole
+    records rather than corrupting each other's.
+
+    Never raises. A report that cannot be written is not a reason to fail the
+    program being reported on.
+    """
+    path = report_path()
+    if not path:
+        return
+    record = {"flip": flip, "message": message}
+    if where:
+        record["where"] = where
+    try:
+        directory = os.path.dirname(os.path.abspath(path))
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        return
+
+
+def read_staged_flip_report(path: str | None = None) -> list[dict]:
+    """Records written by earlier runs, newest last, malformed lines skipped.
+
+    A half-written line is possible if a process died mid-append, and that is
+    not a reason to refuse the rest of the report.
+    """
+    target = path or report_path()
+    if not target:
+        return []
+    try:
+        with open(target, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("flip"), str):
+            out.append(record)
+    return out

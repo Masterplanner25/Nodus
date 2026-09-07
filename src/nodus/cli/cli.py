@@ -557,6 +557,8 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
         type_warnings=[dict(w, file=os.path.abspath(path)) for w in warnings],
         project_root=project_root,
     )
+    # A report from earlier runs upgrades the flips nothing static can reach.
+    # Nothing to configure when it is absent: the scan is the static half.
     if report.error:
         _print_stderr(f"Error: {report.error}")
         return 1
@@ -570,6 +572,8 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
     total = 0
     for flip in report.flips:
         label = f"{flip.name} (#{flip.issue})"
+        if flip.observed:
+            label += "  [from a run]"
         if not flip.checked:
             print(f"  [not checked] {label}")
             print(f"                {flip.reason}")
@@ -590,6 +594,11 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
     if unchecked:
         summary += f"; {unchecked} could not be checked from source"
     print(summary)
+    if unchecked and not report.observed_report:
+        print(
+            "  For the rest, run your program or tests with "
+            "NODUS_STAGED_FLIP_REPORT=<path> set, then re-run this."
+        )
     # Exit 0 either way. This reports what is coming; it is not a gate, and a
     # project mid-migration should not have its build broken by the tool that
     # exists to help it migrate.
