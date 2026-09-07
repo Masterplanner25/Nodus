@@ -1,14 +1,26 @@
-// Nodus v4 Quirk Confirmation Probe
+// Nodus Quirk Confirmation Probe
 // -------------------------------------------------------
 // SUCCESS CONTRACT: prints "ALL QUIRKS CONFIRMED" and exits 0.
-// TRAP lines are commented — uncomment individually to verify
-// each documented error still fires.
-//
-// NOTE: Q1 reflects v4 behavior (len returns int, not float).
 // If these checks start FAILING, something has changed — investigate.
+//
+// This file asserts what WORKS. The quirks that are errors cannot be
+// asserted here — the probe is one process and each would abort it — so
+// they live in tests/test_documented_quirks.py, which runs each one and
+// checks its message. They used to be commented-out TRAP lines, which
+// meant nothing verified them and two went stale for a year (#815):
+// Q5 claimed += was a parse error (works since 4.0.1) and Q6 claimed a
+// closure could not assign an outer let (works since 5.8.0, #671).
+// Do not reintroduce a commented assertion; a check that cannot fail is
+// worse than no check, because it reads like coverage.
 import "std:tool" as tool
 import "std:hash" as hash
 
+// Deliberately a record, not a plain `let`, even though #671 makes the
+// plain form work — see Q6. A closure-written `let` counter here would
+// make the pass/fail verdict depend on the very thing Q6 asserts: if that
+// regressed, the increment would vanish and the probe would print
+// ALL QUIRKS CONFIRMED while its checks were failing. The harness must not
+// be built out of the thing under test.
 let s = record {failures: 0}
 
 fn check(label, got, want) {
@@ -42,57 +54,89 @@ fn quirk_number_literals_are_floats() {
     check("interp int   shows 3", "\(n_int)", "3")
 }
 
-// TRAP: let bad = "n=" + 5  -- Runtime type error if uncommented
+// The error case is in tests/test_documented_quirks.py.
 fn quirk_no_string_number_coercion() {
     print("[Q3] '+' does NOT coerce number->string — always use str()")
     check("str(5) concat", "n=" + str(5.0), "n=5.0")
     check("str(5i) concat", "n=" + str(5i), "n=5")
-    print("  (trap: str+number is commented — uncomment to verify error)")
 }
 
-// TRAPs: xs.append(4) / xs.length() / m.contains("k") — each errors
+// The three error cases are in tests/test_documented_quirks.py.
 fn quirk_no_method_sugar() {
     print("[Q4] no .append()/.length()/.contains() — use builtins")
     let xs = list_push([1, 2], 3)
     check("list_push works", len(xs), 3i)
     check("has_key works", has_key({"k": 1}, "k"), true)
-    print("  (method-sugar traps commented — uncomment each to verify error)")
 }
 
-// TRAP: x += 1  -- parse error if uncommented
-fn quirk_no_compound_assign() {
-    print("[Q5] no += / -= compound assignment")
+// Compound assignment landed in 4.0.1 (PR #183). This section asserted the
+// opposite until #815 — the claim was in a comment, so nothing tested it.
+fn quirk_compound_assignment() {
+    print("[Q5] compound assignment works: += -= *= /=")
     let x = 10
-    x = x + 5
-    check("manual increment", x, 15)
-    print("  (compound-assign trap commented — uncomment to verify error)")
+    x += 5
+    check("+=", x, 15)
+    let y = 10
+    y -= 3
+    check("-=", y, 7)
+    let z = 4
+    z *= 3
+    check("*=", z, 12)
+    let w = 12
+    w /= 4
+    check("/=", w, 3)
 }
 
-// TRAP: let count = 0; fn bad_inc() { count = count + 1 }
-// -- assignments to outer let variables are silently ignored or error
-fn quirk_closure_cannot_assign_outer_let() {
-    print("[Q6] closures cannot assign outer let — use map field mutation")
-    let st = record {count: 0}
+// #671, fixed in 5.8.0. Before that a closure's write to an outer `let` went
+// to a frame-local and vanished, and the documented workaround was a record
+// field. Both the workaround and the fix are asserted: the workaround still
+// works and plenty of code uses it, but it is no longer required.
+fn quirk_closure_assigns_outer_let() {
+    print("[Q6] a closure assigns an outer let (#671)")
+    let count = 0
     fn inc() {
-        st.count = st.count + 1
+        count = count + 1
     }
     inc()
     inc()
-    check("map-state counter", st.count, 2)
-    print("  (outer-let assignment trap commented — uncomment to verify behavior)")
+    check("closure-written counter", count, 2)
+    let acc = 0
+    fn bump() {
+        acc += 5
+    }
+    bump()
+    check("compound assign from a closure", acc, 5)
+    let c1 = make_counter()
+    let c2 = make_counter()
+    check("escaping counter first call", c1(), 1)
+    check("escaping counter second call", c1(), 2)
+    check("second counter is isolated", c2(), 1)
+    let st = record {count: 0}
+    fn inc_record() {
+        st.count = st.count + 1
+    }
+    inc_record()
+    check("record-field workaround still works", st.count, 1)
+}
+
+fn make_counter() {
+    let n = 0
+    return fn() {
+        n = n + 1
+        return n
+    }
 }
 
 // Stored fn called as method auto-passes self as first arg:
 // r.get_plain(5) would be called as get_plain(r, 5) -> error (expects 1 arg)
 // Correct idiom: extract first
-// TRAP: r.get_plain(5)  -- "expected 1 args, got 2" if uncommented
+// The error case is in tests/test_documented_quirks.py.
 fn quirk_record_method_vs_stored_fn() {
     print("[Q7] record.method(arg) auto-passes self; stored fn needs extraction")
     let r = record {val: 10, get_self: fn(self) { return self.val }, get_plain: fn(x) { return x * 2 }}
     check("method with self", r.get_self(), 10)
     let f = r.get_plain
     check("extracted fn call works", f(5), 10)
-    print("  (method-on-stored-fn trap commented — uncomment to verify error)")
 }
 
 fn quirk_int_float_arithmetic() {
@@ -103,13 +147,11 @@ fn quirk_int_float_arithmetic() {
     check("5.0 == 5.0", 5.0 == 5.0, true)
 }
 
-// TRAP: tool.register({name: "nodot", description: "x", handler: fn(){}})
-// -- "must use dotted namespacing"
+// The undotted-name refusal is in tests/test_documented_quirks.py.
 fn quirk_tool_name_dotted() {
     print("[Q9] std:tool names must use dotted namespace")
     tool.register(record {name: "eval.test", description: "probe", handler: fn(x) { return x }})
     check("dotted name registered", tool.has("eval.test"), true)
-    print("  (undotted-name trap commented — uncomment to verify error)")
 }
 
 fn quirk_hash_returns_record() {
@@ -122,13 +164,13 @@ fn quirk_hash_returns_record() {
 }
 
 fn main() {
-    print("=== Nodus v4 Quirk Confirmation Probe ===")
+    print("=== Nodus Quirk Confirmation Probe ===")
     quirk_len_returns_int()
     quirk_number_literals_are_floats()
     quirk_no_string_number_coercion()
     quirk_no_method_sugar()
-    quirk_no_compound_assign()
-    quirk_closure_cannot_assign_outer_let()
+    quirk_compound_assignment()
+    quirk_closure_assigns_outer_let()
     quirk_record_method_vs_stored_fn()
     quirk_int_float_arithmetic()
     quirk_tool_name_dotted()

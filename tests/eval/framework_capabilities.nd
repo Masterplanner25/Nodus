@@ -162,19 +162,27 @@ fn probe_rule_engine() {
     check("all 3 matched for 200", len(evaluate(200)), 3i)
 }
 
-// P9: Closure-encapsulated counter (correct Nodus idiom)
-// Methods on a record receive self as first arg — declare it even if unused
+// P9: Closure-encapsulated counter
+// The state is a plain `let` captured by the returned methods — this section
+// was named "closure state" while implementing a record-field counter, which
+// was the pre-5.8.0 workaround for #671 and was labelled "correct Nodus idiom"
+// long after the fix (#815). Methods on a record still receive self as the
+// first arg, so declare it even when unused.
 fn probe_closure_state() {
     print("[P9] Closure state")
     fn make_counter(initial) {
-        let s = record {count: initial}
-        return record {inc: fn(self) { s.count = s.count + 1 }, get: fn(self) { return s.count }}
+        let count = initial
+        return record {inc: fn(self) { count = count + 1 }, get: fn(self) { return count }}
     }
     let c = make_counter(10)
     c.inc()
     c.inc()
     c.inc()
     check("counter after 3 increments", c.get(), 13)
+    let d = make_counter(0)
+    d.inc()
+    check("a second counter has its own state", d.get(), 1)
+    check("the first counter is unaffected", c.get(), 13)
 }
 
 // P10: Coroutines + channels
@@ -196,7 +204,7 @@ fn probe_coroutines() {
 }
 
 fn main() {
-    print("=== Nodus v4 Framework Capability Probes ===")
+    print("=== Nodus Framework Capability Probes ===")
     probe_router()
     probe_event_bus()
     probe_middleware()

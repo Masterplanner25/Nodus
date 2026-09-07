@@ -1,14 +1,22 @@
-// Nodus v4 Language Exerciser — core feature smoke test
+// Nodus Language Exerciser — core feature smoke test
 // -------------------------------------------------------
 // SUCCESS CONTRACT: prints "ALL EXERCISES PASSED" and exits 0.
 //
-// KEY v4 IDIOMS USED (not bugs, documented behavior):
+// KEY IDIOMS USED (not bugs, documented behavior):
 //   - len() returns int; use 3i for int literals in comparisons
-//   - closures cannot assign outer let — use map field mutation
 //   - str(42) = "42.0"; str(42i) = "42"
 //   - record.method(arg) passes self; use fn extraction for non-self fns
+//
+// This header claimed "closures cannot assign outer let — use map field
+// mutation" until #815. That stopped being true in 5.8.0 (#671), and the
+// claim outlived the fix because nothing here asserted it either way.
+// Plain `let` accumulators are used below where the record wrapper was
+// only ever working around it.
 import "std:json" as json
 
+// Deliberately still a record: a closure-written `let` counter would tie the
+// pass/fail verdict to #671, so a regression there would silence this file
+// instead of failing it. See the same note in quirk_probe.nd.
 let state = record {failures: 0}
 
 fn check(label, got, want) {
@@ -30,13 +38,13 @@ fn fib(n) {
 fn section_functions() {
     print("[1] functions / recursion / control flow")
     check("fib(10)", fib(10), 55)
-    let loop_state = record {total: 0}
+    let total = 0
     let i = 0
     while (i < 5) {
-        loop_state.total = loop_state.total + i
-        i = i + 1
+        total += i
+        i += 1
     }
-    check("while-loop sum 0..4", loop_state.total, 10)
+    check("while-loop sum 0..4", total, 10)
     let r = range(4)
     check("range(4) len", len(r), 4i)
     check("range(4)[2]", r[2], 2)
@@ -84,13 +92,13 @@ fn section_lists() {
     check("index 2", xs[2], 30)
     list_pop(xs)
     check("len after pop", len(xs), 2i)
-    let loop_s = record {total: 0}
+    let total = 0
     let i = 0
     while (i < len(xs)) {
-        loop_s.total = loop_s.total + xs[i]
-        i = i + 1
+        total += xs[i]
+        i += 1
     }
-    check("iterate-sum", loop_s.total, 30)
+    check("iterate-sum", total, 30)
 }
 
 // Functions stored in maps — extract before calling (non-self fn pattern)
@@ -132,7 +140,7 @@ fn section_json() {
 }
 
 fn main() {
-    print("=== Nodus v4 Language Exerciser ===")
+    print("=== Nodus Language Exerciser ===")
     section_functions()
     section_math()
     section_strings()
