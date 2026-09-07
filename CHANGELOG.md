@@ -81,6 +81,31 @@
   per write. Reasoning and the rejected options are in
   `docs/design/v5/09-container-aliasing.md`.
 
+- **#811: the release-claims probes run in CI, and the flags they pass are
+  checked.** `tests/eval/release_claims_probe.py` is the Gate 10b harness and
+  ran only at a release, so a probe could go stale and nobody learned until the
+  next cut. That happened at 5.12.0: a probe passed `--allow-paths` to
+  `nodus graph`, which has never declared it, and #791 turned that from harmless
+  into an error. **The identical line was fixed in a *test* when #791 landed** —
+  CI runs tests and did not run probes.
+
+  The issue's cost objection was that the probes need a built wheel, a clean
+  venv and a CWD outside the repo. Measured, that is **99 seconds**, and CI
+  already builds a wheel and a venv for the distribution smoke test. A separate
+  `probes` job runs them per-PR against the wheel with `--require-installed`,
+  in parallel, so the 12-minute `test` job's critical path is unchanged. It does
+  not replace Gate 10b, which still validates the artifact that will actually be
+  uploaded; it removes the staleness window.
+
+  `tests/test_release_probe_flags.py` is the static half and the cheaper one:
+  every flag a probe passes must be one the command's table declares, resolving
+  the subcommand — so `workflow migrate-store --dry-run` is fine and
+  `workflow cleanup --dry-run` is not. It fails naming the command and the flag
+  rather than with a probe's assertion error two layers down, and it is the same
+  "a declaration must bind" relationship `DocumentedFlagsAreParsedTests` already
+  checks for help text. Both invocation forms are covered, and the count of
+  invocation sites is asserted so a third spelling cannot slip past unchecked.
+
 ### Tooling
 - **#810: one list of nodus-lang dependents, and the gates read it.** Gate 10a
   (`check_dependent_suites`, run before every PyPI upload) and Stage 6's range
