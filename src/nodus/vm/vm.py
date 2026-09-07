@@ -408,6 +408,7 @@ class VM:
             "workflow_state": BuiltinInfo("workflow_state", 0, self.builtin_workflow_state),
             "workflow_arg": BuiltinInfo("workflow_arg", 1, self.builtin_workflow_arg),
             "state_contribute": BuiltinInfo("state_contribute", 2, self.builtin_state_contribute),
+            "state_open_for_write": BuiltinInfo("state_open_for_write", 1, self.builtin_state_open_for_write),
             "workflow_resume_payload": BuiltinInfo("workflow_resume_payload", 0, self.builtin_workflow_resume_payload),
             "workflow_wait": BuiltinInfo("workflow_wait", (1, 2, 3, 4), self.builtin_workflow_wait),
             "workflow_checkpoints": BuiltinInfo("workflow_checkpoints", 1, self.builtin_workflow_checkpoints),
@@ -2521,6 +2522,56 @@ class VM:
             )
         step.contribute(key, value)
         return None
+
+    def builtin_state_open_for_write(self, key):
+        """Hand a step its own copy of a state cell, recorded as its write (#822).
+
+        Emitted by the workflow lowering for the *base* of `cell[i] = v` and
+        `cell.f = v`. Without it those lowered to `Index(__state, "cell")`
+        followed by an in-place mutation -- a **read**, then a change to the
+        object the cell holds. `TrackedState.__setitem__` was never called, so
+        the step that changed the cell was not recorded as having written it:
+        two concurrent indexed writes lost one silently, with no conflict
+        warning, no `merge:` policy consulted, and nothing for #547's staged
+        error to fire on. The plain `cell = v` spelling had all three.
+
+        Three things happen here, and the order is the point:
+
+        1. **Read the cell through the tracker.** That registers a
+           read-before-write, which is what an indexed update actually is -- so
+           two concurrent ones get #485's lost-update wording rather than the
+           weaker disagreed-on-values one.
+        2. **Copy it.** The step mutates its own object, so a second step that
+           opens the cell afterwards copies a settled value rather than one the
+           first step is halfway through changing.
+        3. **Write the copy back through the tracker**, which records this step
+           as a writer and puts the copy *in* the cell -- so the caller's
+           in-place mutation lands where it is meant to.
+
+        The value returned is therefore the live object the cell now holds, and
+        the mutation the compiler emits next is correct as written.
+
+        Reached only through `builtin_call` (#411), so a program cannot bind the
+        name and intercept its own state writes.
+        """
+        from nodus.orchestration.workflow_state import TrackedState, clone_state
+
+        ctx = self.current_workflow_context()
+        state = ctx.get("state") if isinstance(ctx, dict) else None
+        if not isinstance(state, dict):
+            self.runtime_error(
+                "workflow_error",
+                f"state '{key}' cannot be written outside a workflow step",
+            )
+        if isinstance(state, TrackedState):
+            return state.open_for_write(key)
+        # A plain dict means no graph runner opened a record -- a goal body, or
+        # an embedded call that bypasses the runner. There is no tracking to do,
+        # but the ownership still holds: copy and store, so the step mutates the
+        # cell's object rather than whatever it was assigned from.
+        updated = clone_state(state[key])
+        dict.__setitem__(state, key, updated)
+        return updated
 
     def builtin_workflow_resume_payload(self):
         ctx = self.current_workflow_context()

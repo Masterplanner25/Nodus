@@ -274,6 +274,10 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         # were absent from BUILTIN_NAMES, which is the set this totality is
         # measured against, so "total" was true of the wrong set.
         "effect_get_result", "state_contribute", "__workflow_checkpoint",
+        # #822: same family again. Emitted by the workflow lowering for the base
+        # of `cell[i] = v`, so it reaches exactly the state the step was already
+        # about to mutate -- it makes that mutation *recorded*, not permitted.
+        "state_open_for_write",
     ),
     # Naming what exists is not reaching it. A denied `tool_call` is still
     # denied after `tool_list` names the tool, and hiding the catalogue while
@@ -506,6 +510,7 @@ DOMAIN_BUILTIN_GROUPS: dict[str, DomainBuiltinGroup] = {
             "run_workflow", "plan_workflow", "resume_workflow",
             "run_goal", "plan_goal", "resume_goal",
             "workflow_state", "workflow_arg", "state_contribute",
+            "state_open_for_write",
             "workflow_resume_payload", "workflow_wait", "workflow_checkpoints",
             "current_workflow_id", "__workflow_checkpoint", "__action_emit",
         ),

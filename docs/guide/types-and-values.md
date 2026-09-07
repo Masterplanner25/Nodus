@@ -691,12 +691,14 @@ Note that a record still cannot be *rebuilt* generically — `keys()` accepts a
 map and refuses a record, so its fields cannot be enumerated — which is why
 `copy` is a builtin rather than something you could write in Nodus.
 
-> **Known issue — workflow state cells**
-> ([#822](https://github.com/Masterplanner25/Nodus/issues/822)): a `state` cell
-> holds a reference too, so a step that reads a cell and mutates what it read
-> changes the recorded state without ever writing to it — and the write-conflict
-> checks, which watch `cell = value`, do not see it. Until that is fixed, copy a
-> cell's value before mutating it inside a step.
+> **One exception: a workflow `state` cell owns its value**
+> ([#822](https://github.com/Masterplanner25/Nodus/issues/822)). Writing a
+> container into a cell stores a copy, and reading one hands back a copy, so a
+> step cannot change a cell by mutating something it read or something it
+> assigned from. `cell[i] = v` inside a step still writes the cell — that is a
+> write, and it is recorded as one, so a concurrent write to the same cell is
+> reported like any other. The cell is the boundary between steps; everywhere
+> else the rule above holds.
 
 ### json.parse always returns a map
 

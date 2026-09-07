@@ -29,6 +29,42 @@
   Not in `std:collections`, which #814 suggested: records are not collections,
   and the record case is the one that motivates the surface.
 
+### Fixes
+
+- **#822: a workflow `state` cell now owns its value, and every way of changing
+  one is recorded.** `cell[i] = v` and `m["k"] = v` lowered to a *read* of the
+  cell followed by an in-place mutation, so `TrackedState.__setitem__` was never
+  called and the step that changed the cell was not recorded as writing it.
+  Measured, two concurrent steps writing one cell:
+
+  | spelling | before | now |
+  |---|---|---|
+  | `m = { "k": 1i }` | warns, names both steps | unchanged |
+  | `n += 1i` | warns, folds correctly | unchanged |
+  | `m["k"] = 1i` | **silent**, one write lost | warns, names both steps |
+  | `cell[0] = 1i` | **silent**, one write lost | warns, names both steps |
+
+  So #485's lost-update report, #547's staged 6.0.0 error and the `merge:`
+  policies were all blind to the spelling people reach for when updating one
+  element of a cell. A fold cell also lost its declaration refusal:
+  `acc = [1i]` on a `merge: "append"` cell was refused, `acc[0] = 1i` was not.
+  It is refused now, at compile time, naming `acc += ...` as the fix.
+
+  Two related holes closed by the same ownership rule: a step could read a cell
+  and mutate what it read, and a step could assign an outside container into a
+  cell and then mutate that container — from the same step or a later one — with
+  the cell changing underneath it.
+
+  **#578's barrier inference was never affected** and is pinned by test so it is
+  not "restored": `_record_container_write` already walked an index chain to its
+  root at compile time. It was the runtime half that was missing.
+
+  Cost, measured rather than estimated: a scalar cell is unchanged; growing a
+  list cell in a loop is about +20%; the worst plausible shape — a 200-element
+  cell written by index 200 times — is **+57%**, since the copy is O(cell size)
+  per write. Reasoning and the rejected options are in
+  `docs/design/v5/09-container-aliasing.md`.
+
 ### Tooling
 
 - **The three `.nd` eval probes run in the suite, not only at a release.**

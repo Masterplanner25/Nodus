@@ -267,6 +267,7 @@ BUILTIN_NAMES = {
     "effect_resolve", "effect_pending", "effect_complete", "effect_action_id", "effect_store_size",
     "effect_get_result",
     "state_contribute",
+    "state_open_for_write",
     "chr", "ord",
     "collection_validate_reduce_fn",
     "retry_available", "retry_call",
