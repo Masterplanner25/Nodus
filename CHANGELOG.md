@@ -25,6 +25,37 @@
   (reported, open) is about probe sections that cannot fail in any arrangement
   of the language.
 
+- **#814: container aliasing is documented.** Lists, maps and records are
+  reference values — `let b = a` binds a second name, not a second container.
+  True since forever, stated nowhere, and `ROADMAP.md` still carried *"Formalize
+  value semantics for: records / maps / lists"* as an open item.
+
+  `docs/guide/types-and-values.md` §6 now states the rule next to the equality
+  section, with executed examples, the two places it bites (a container passed
+  to a function; one reached through another), and what can be copied today.
+  Measured rather than assumed: a shallow list copy is expressible via
+  `col.map`, a shallow map copy via `keys()` and a loop, and **a record cannot
+  be copied generically at all** — `keys()` refuses a record, so its fields
+  cannot be enumerated.
+
+  Binding and equality are kept apart deliberately, because #545 makes them look
+  connected: maps and lists compare structurally *and* bind by reference, and
+  records join them at 6.0.0 without becoming value types.
+
+  `docs/design/v5/09-container-aliasing.md` records why the rule is documented
+  rather than changed, and recommends a `copy(value)` surface — deep, refusing a
+  value holding a live handle, as a global rather than in `std:collections`
+  since records are not collections. **Not built**; the design doc says what it
+  would need.
+
+  The write-up turned up a defect, reported as issue 822 and still open: a
+  workflow `state` cell holds a live reference, so a step can change a cell's
+  recorded value without ever writing to it — by mutating the container it read
+  back — and the write-conflict checks, which watch `cell = value`, do not see
+  it. Two declared writers warn and name both steps; one declared writer plus
+  one mutating reader is silent. The guide carries it as a known issue with the
+  workaround.
+
 - **#815: the eval probes' error quirks are tested instead of commented out, and
   two stale claims are corrected.** `quirk_probe.nd` asserted that `+=` is a
   parse error and that a closure cannot assign an outer `let`. Neither has been
