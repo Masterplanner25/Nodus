@@ -11,8 +11,13 @@ files. All eleven were found by writing this check, not by reading the diff.
 
 Scope, and why each bound is where it is:
 
-* **Tracked files only.** `git ls-files`, so a scratch document in an ignored
-  directory cannot fail the suite for a link into something equally local.
+* **Tracked files only, on both sides.** `git ls-files` decides which documents
+  are scanned *and* what counts as a target that exists. Resolving targets
+  against the filesystem instead is not a smaller version of the same check — it
+  is a check that passes on the maintainer's machine and fails in every clone.
+  CI proved that on this test's first run: `docs/history/plans/V3_1_PLAN.md`
+  linked to a gitignored sibling, so the link had been broken for every reader
+  since it was written, and the local run could not see it.
 * **Relative links only.** An `http(s)://` target is a network question and
   would make this test flaky and slow; a link checker that needs the internet
   gets disabled the first week it goes red on someone's train.
@@ -43,7 +48,30 @@ def tracked_markdown() -> list[pathlib.Path]:
     return [REPO / line for line in out.stdout.split("\n") if line.strip()]
 
 
-def broken_links(paths) -> list[str]:
+def tracked_paths() -> set[pathlib.Path]:
+    """Everything git tracks, resolved — what a fresh clone actually has."""
+    out = subprocess.run(
+        ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True
+    )
+    return {(REPO / line).resolve() for line in out.stdout.split("\n") if line.strip()}
+
+
+def broken_links(paths, *, exists=None) -> list[str]:
+    """Report links whose target a reader would not have.
+
+    `exists` decides what "have" means, and the default is **tracked by git**,
+    not present on this disk. Those differ, and the difference is the whole
+    reason this signature exists: `docs/history/plans/V3_1_PLAN.md` linked to a
+    sibling that is gitignored, so the link was broken in every clone and
+    resolved fine on the maintainer's machine. A filesystem check passed locally
+    and CI failed — which is the wrong way round for a check meant to catch this.
+    """
+    if exists is None:
+        tracked = tracked_paths()
+
+        def exists(path: pathlib.Path) -> bool:
+            return path.resolve() in tracked
+
     problems: list[str] = []
     for path in paths:
         if not path.is_file():
@@ -56,7 +84,7 @@ def broken_links(paths) -> list[str]:
             target = match.group(2)
             if target.startswith(("http://", "https://", "mailto:")):
                 continue
-            if not (path.parent / target).resolve().is_file():
+            if not exists(path.parent / target):
                 rel = path.relative_to(REPO) if path.is_relative_to(REPO) else path
                 problems.append(f"{rel}: [{match.group(1)[:40]}]({target})")
     return problems
@@ -97,7 +125,7 @@ class TheCheckCanFireTests(unittest.TestCase):
             doc.write_text(body, encoding="utf-8")
             if alongside:
                 (root / alongside).write_text("x", encoding="utf-8")
-            return broken_links([doc])
+            return broken_links([doc], exists=lambda q: q.is_file())
 
     def test_a_link_to_a_missing_file_is_reported(self):
         problems = self._check("See [the plan](GONE.md).\n")
@@ -119,6 +147,23 @@ class TheCheckCanFireTests(unittest.TestCase):
             self._check("See [it](https://example.invalid/GONE.md).\n"), []
         )
 
+    def test_a_link_to_a_present_but_untracked_file_is_reported(self):
+        """The case CI caught and a local run could not.
+
+        A gitignored sibling is on the maintainer's disk and in nobody's clone,
+        so a filesystem check calls the link fine and every reader finds it
+        broken. Tracked-ness is what a reader has.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            (root / "IGNORED.md").write_text("x", encoding="utf-8")
+            doc = root / "doc.md"
+            doc.write_text("See [it](IGNORED.md).\n", encoding="utf-8")
+            self.assertEqual(broken_links([doc], exists=lambda q: q.is_file()), [])
+            self.assertEqual(len(broken_links([doc], exists=lambda q: False)), 1)
+
     def test_a_relative_parent_path_resolves(self):
         import tempfile
 
@@ -127,10 +172,11 @@ class TheCheckCanFireTests(unittest.TestCase):
             (root / "sub").mkdir()
             (root / "TARGET.md").write_text("x", encoding="utf-8")
             doc = root / "sub" / "doc.md"
+            on_disk = {"exists": lambda q: q.is_file()}
             doc.write_text("See [it](../TARGET.md).\n", encoding="utf-8")
-            self.assertEqual(broken_links([doc]), [])
+            self.assertEqual(broken_links([doc], **on_disk), [])
             doc.write_text("See [it](../MISSING.md).\n", encoding="utf-8")
-            self.assertEqual(len(broken_links([doc])), 1)
+            self.assertEqual(len(broken_links([doc], **on_disk)), 1)
 
 
 if __name__ == "__main__":
