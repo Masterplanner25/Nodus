@@ -25,6 +25,13 @@ below.
 
 All packages are published on PyPI. Organized by build tier.
 
+> **Test counts are point-in-time and nothing checks them.** Verified
+> 2026-09-07: 23 of 24 were still exact; `nodus-mcp` had grown from 280 to 363
+> and is corrected above. For the eight companions that declare a `nodus-lang`
+> dependency, the live number is printed by Gate 10a on every run
+> (`python -m tools.check_dependent_suites`) — prefer that over this table when
+> the number matters.
+
 ### AINDY-derived (Group 1)
 
 | Package | Tests | PyPI status |
@@ -35,7 +42,7 @@ All packages are published on PyPI. Organized by build tier.
 | [`nodus-queue`](https://github.com/Masterplanner25/nodus-queue) | 53 | **published** ✅ |
 | [`nodus-state`](https://github.com/Masterplanner25/nodus-state) | 117 | **published** ✅ |
 | [`nodus-observability-framework`](https://github.com/Masterplanner25/nodus-observability-framework) | 57 | **published** ✅ |
-| [`nodus-mcp`](https://github.com/Masterplanner25/nodus-mcp) | 280 (Phase A–N library + aindy bridge) | **published** ✅ |
+| [`nodus-mcp`](https://github.com/Masterplanner25/nodus-mcp) | 363 | **published** ✅ |
 
 ### OpenClaw-derived (Group 2)
 

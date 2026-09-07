@@ -1,6 +1,10 @@
 # `nodus-container`
 
-**Status:** spec + scaffold (#85). Not published.
+**Status:** **published on PyPI** (#85), v0.1.0 — 2026-09-05. Verified live
+2026-09-07; this header still said "spec + scaffold. Not published" two days
+after the upload, contradicting `README.md`, which had it right.
+This document is the original design spec; the implementation was built
+against it.
 **Tier:** 2 — infrastructure primitives, distributed on PyPI.
 **Depends on:** `std:subprocess` (nodus-lang ≥ 5.0.0).
 
