@@ -84,9 +84,9 @@ fn section_strings() {
 fn section_lists() {
     print("[4] lists")
     let xs = []
-    xs = list_push(xs, 10)
-    xs = list_push(xs, 20)
-    xs = list_push(xs, 30)
+    list_push(xs, 10)
+    list_push(xs, 20)
+    list_push(xs, 30)
     check("push then len", len(xs), 3i)
     check("index 0", xs[0], 10)
     check("index 2", xs[2], 30)

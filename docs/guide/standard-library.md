@@ -151,6 +151,35 @@ Output:
 `list_push` and `list_pop` mutate the list in place. `list_pop` on an empty
 list raises `Index error: Cannot pop from an empty list`.
 
+**`list_push` returns the list it was given, not a new one**, so
+`xs = list_push(xs, v)` and a bare `list_push(xs, v)` do the same thing. Prefer
+the bare form: the reassignment reads like a functional API and there isn't one
+here, which is the wrong model to carry into `let b = a` (see
+[types-and-values.md §6](types-and-values.md)).
+
+The return value is there for chaining, and for reading the length of a list you
+are building in one expression:
+
+```nd-expect=output
+let ys = list_push(list_push([], "a"), "b")
+print(ys)
+
+let zs = [1, 2]
+let same = list_push(zs, 3)
+same[0] = 99
+print(zs[0])
+```
+
+Output:
+
+```
+["a", "b"]
+99.0
+```
+
+The second half is the point: `same` is `zs`, not a copy of it. If you want one,
+use `copy`.
+
 ### Timing
 
 | Function | Returns | Description |
