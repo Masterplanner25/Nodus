@@ -24,7 +24,13 @@ from nodus.lsp.server import run_stdio_server
 from nodus.tooling.formatter import format_source
 from nodus.tooling.repl import run_repl
 from nodus.tooling import package_manager as _package_manager
-from nodus.tooling.project import load_project, load_project_from, project_entry_path
+from nodus.tooling.project import (
+    MANIFEST_NAME,
+    find_project_root,
+    load_project,
+    load_project_from,
+    project_entry_path,
+)
 from nodus.orchestration import task_graph as _task_graph
 from nodus.tooling.runner import (
     agent_call_result,
@@ -288,6 +294,19 @@ def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str
             return None, project_root, str(_e)
         return entry, project_root or project.root, None
     if os.path.isdir(path):
+        # #807: a directory argument is treated as a project root, and
+        # `load_project` opens its manifest unconditionally -- so pointing at a
+        # directory that simply is not one handed the user a raw
+        # `FileNotFoundError` naming a `nodus.toml` that was never there.
+        # Correct exit code, Python internals as the message, for an ordinary
+        # mistake.
+        #
+        # Checked here rather than by catching `FileNotFoundError` below,
+        # because the other things that raise there -- a malformed manifest, a
+        # missing entry point -- already carry messages written for a reader,
+        # and widening the catch would flatten those into one generic sentence.
+        if not os.path.isfile(os.path.join(path, MANIFEST_NAME)):
+            return None, project_root, _no_project_here(path)
         try:
             project = load_project(path)
             entry = project_entry_path(project)
@@ -295,6 +314,28 @@ def _resolve_run_target(path: str | None, project_root: str | None) -> tuple[str
             return None, project_root, str(_e)
         return entry, project_root or project.root, None
     return path, project_root, None
+
+
+def _no_project_here(path: str) -> str:
+    """Why this directory is not a project, and what the caller probably meant.
+
+    The common shape is `nodus check src` typed from inside a real project, so
+    the root is usually a parent and worth naming -- `find_project_root` already
+    walks up, and a message that says where the project *is* saves the guess.
+    """
+    lines = [f"No Nodus project in '{path}': no {MANIFEST_NAME}."]
+    root = find_project_root(path)
+    if root and os.path.abspath(root) != os.path.abspath(path):
+        lines.append(
+            f"The project root is '{root}' — run this from there, or name a "
+            f"file directly."
+        )
+    else:
+        lines.append(
+            f"Name a file directly, or create a {MANIFEST_NAME} to make this a "
+            f"project."
+        )
+    return " ".join(lines)
 
 
 #: The parser lives in `nodus.cli.flags` so `nodus test` -- which dispatches

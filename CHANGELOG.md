@@ -138,6 +138,15 @@
 
 ### Fixes
 
+- **#807: `nodus run`/`check` on a directory that is not a project no longer
+  prints a raw Python errno.** Pointing at `src/` instead of the project root
+  handed back
+  `[Errno 2] No such file or directory: '...nodus.toml'`. It now says what
+  happened and, when the real root is a parent — which is the common shape,
+  someone typing `nodus check src` from inside a project — names it. The other
+  raise sites in that function are deliberately untouched: a malformed manifest
+  and a missing entry point already carry messages written for a reader.
+
 - **#174/#797: switching to SQLite no longer hides the runs you already have.**
 
   Reachable on 5.11.0, not only at the major: park a run at `workflow_wait`
