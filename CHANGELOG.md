@@ -4,6 +4,17 @@
 
 ### Added
 
+- **`docs/migration/v6.0-staged-flips.md`: how to migrate to 6.0.0.** All five
+  staged flips, what each costs and how to fix it, with the examples executed by
+  the doc gate rather than asserted.
+
+  #174 gets the procedure rather than a paragraph, because it is the one that
+  costs *state*: verified against a workflow genuinely parked at
+  `workflow_wait`, `migrate-store --to sqlite` reports the waiting run, leaves
+  the JSON store intact, and the run is still `waiting` and resumable
+  afterwards. One detail only doing it turns up — `--dry-run` creates the target
+  database file, empty.
+
 - **`nodus check --staged`: what in this project breaks at the next major.**
 
   Every behaviour staged to change at 6.0.0 warns today, but four of the five
@@ -115,6 +126,16 @@
 
 ### Tooling
 
+- **The doc gate scans `docs/migration/`.** They are the documents people follow
+  *during an upgrade*, and nothing had ever run their examples — the
+  highest-stakes docs were the unchecked ones. Adding the pattern turned up nine
+  pre-existing illustrative fragments in the v2–v4 guides, allowlisted with a
+  reason; new blocks in migration docs must run.
+- **Three `collect_doc_files` tests were vacuous on CI.** They hardcoded
+  `root = "C:/dev/Coding Language"`, which does not exist on a runner, so the
+  function returned `[]` and `assertIsInstance([], list)`, `[] == sorted([])`
+  and `len([]) >= len([])` all held. They derive the root from `__file__` now
+  and would fail against an empty result.
 - **The staged-flip register moved into the package**, as
   `nodus/support/staged_flips.json`. It is not only a gate manifest any more —
   `nodus check --staged` reads the same file to build its report, so the

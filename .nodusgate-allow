@@ -157,3 +157,23 @@ blockhash:docs/guide/modules-and-imports.md:dd90da2bd2b5
 # STYLE_GUIDE.md §18 — the retry idiom needs an http URL and drives a workflow;
 # shown for shape, not runnable in the gate
 blockhash:docs/language/STYLE_GUIDE.md:c35b85052e78
+
+# --- docs/migration/ ---------------------------------------------------------
+# The migration docs joined the scan when v6.0-staged-flips.md was written: they
+# are the documents people follow *during an upgrade*, and nothing had ever run
+# their examples. Adding the pattern found nine pre-existing blocks, all of them
+# illustrative fragments from v2-v4 -- a bare `my_workflow`, a `lst` with no
+# binding, a `./helper` import that was never a real file. They are prose about
+# a shape, not programs, and rewriting four historical migration guides to make
+# them runnable would be changing the record of what those releases said.
+#
+# New blocks in migration docs are NOT covered by this and must run.
+blockhash:docs/migration/v2-to-v3.md:af0688046a20
+blockhash:docs/migration/v3-to-v4.md:9fb799027ae4
+blockhash:docs/migration/v3-to-v4.md:f73d78a1ab05
+blockhash:docs/migration/v3-to-v4.md:59dea19a0a12
+blockhash:docs/migration/v3-to-v4.md:8983feb04113
+blockhash:docs/migration/v3-to-v4.md:28ac36e3c019
+blockhash:docs/migration/v4.0-patch-notes.md:e78b664637bb
+blockhash:docs/migration/v4.0-patch-notes.md:a855ac0f33ce
+blockhash:docs/migration/v4.0-to-v4.1.md:8979c7948da6

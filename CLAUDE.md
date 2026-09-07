@@ -311,6 +311,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint. **Its staging is not what shipped** — it puts builtins fourth; they had to come first |
 | Capability implementation | `src/nodus/runtime/capability.py` — `CapabilityPolicy`, `CapabilityDecision`, `DenyList`, `Floor`, `DEFAULT_FLOOR`, `inherit_authority()` |
 | v5 design docs | `docs/design/v5/` — numbered, one per design question, each headed with its issue and a **Status:** line saying whether it shipped or is a proposal. Start with `00-domain-statement.md` (what Nodus is for). **Do not enumerate them here**: this cell listed `00`-`04` while the directory held `00`-`08`, stale by four, which is the same enumeration-vs-pointer failure the governance section describes |
+| 6.0.0 migration guide | `docs/migration/v6.0-staged-flips.md` — all five staged flips, what each costs and how to fix it. #174 carries the procedure, verified against a parked run. **`docs/migration/*.md` is in the doc gate's scan**, so its examples run and its `nodus-expect=output` blocks are compared |
 | Deny-by-default migration | `docs/migration/v5.0-deny-by-default.md` — the one breaking change in 5.0.0 |
 | Goal validation | `src/nodus/frontend/goal_validation.py` — compile-time `reached("label")` checking |
 | Maturity checklist + re-score | `docs/governance/MATURITY_CHECKLIST.md` — 72.5 → 82-83 (2026-05-31) |

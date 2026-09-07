@@ -50,7 +50,9 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
   than a build.
 
 > The full register, with what each flip costs and what must be true before the
-> major is cut, is `docs/governance/V6_0_PLAN.md`.
+> major is cut, is `docs/governance/V6_0_PLAN.md`. **How to migrate:**
+> `docs/migration/v6.0-staged-flips.md`, and `nodus check --staged` reports which
+> of these a project is actually exposed to.
 
 ## Timeline
 
