@@ -346,7 +346,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,884 tests collected** (`--collect-only`, 2026-09-07, after #817 and #818). Coverage
+**3,894 tests collected** (`--collect-only`, 2026-09-07, after #817, #818 and #820). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
