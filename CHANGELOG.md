@@ -25,6 +25,32 @@
   (reported, open) is about probe sections that cannot fail in any arrangement
   of the language.
 
+- **Container semantics are pinned by tests rather than left to the object
+  model.** Three areas that behaved correctly and had nothing asserting it, so
+  an unrelated change to how containers are stored or passed would have been
+  silent:
+
+  `tests/test_container_aliasing.py` — assignment binds a reference, it does not
+  copy, for lists, maps and records, at depth and across a call boundary. Also
+  asserted from a coroutine and from a **workflow step body**, which is #691's
+  lesson: a construct used inside a step body has to be tested inside one. This
+  is characterization, not a ratified contract — #814 (reported, open) still
+  asks whether to document the rule as-is and whether a copy surface is owed,
+  and this file is what must change if that decision changes the semantics.
+
+  `tests/test_index_and_dispatch_chains.py` — indexing through mixed
+  map/list/record chains, and calling a function **directly** off an index
+  (`ops["add"](4, 5)`). The two release probes disagreed about whether the
+  direct form works: `language_exerciser.nd` extracts first and says to, while
+  `framework_capabilities.nd` P1 calls straight off the index. It works; the
+  suite now says so once.
+
+  `tests/test_empty_and_growth_boundaries.py` — empty containers, the two string
+  edges that read backwards (`str_split("", ",")` is length **one**;
+  `str_contains("abc", "")` is `true`), the error text for indexing an empty
+  list and for a missing map key, and each container kind grown to size. No
+  timing is asserted anywhere.
+
 ## [5.12.0] - 2026-09-06
 
 ### Added
