@@ -186,6 +186,7 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "bool_equal", "collection_len", "count", "has_key", "index_of",
         "json_parse", "json_parse_int", "json_stringify", "keys",
         "last_index_of", "len", "list_pop", "list_push", "map_has_key", "push",
+        "copy",
         "range", "str", "str_contains", "str_endswith", "str_lower",
         "str_replace", "str_split", "str_startswith", "str_trim", "str_upper",
         "values", "type", "type_eq",

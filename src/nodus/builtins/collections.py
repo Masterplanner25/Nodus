@@ -73,6 +73,87 @@ def register(vm, registry) -> None:
         value.append(item)
         return value
 
+    def builtin_copy(value):
+        """Deep-copy a container so the caller can hand it out safely (#814).
+
+        Assignment binds a reference — `let b = a` gives a second name, not a
+        second container — so without this there is no way to pass a container
+        somewhere and keep it from being changed underneath you. Two of the
+        three container kinds had an awkward workaround (`col.map` over a list,
+        `keys()` and a loop over a map) and records had **none**, because
+        `keys()` refuses a record and its fields cannot be enumerated.
+
+        Deep rather than shallow, deliberately. Shallow is the option that was
+        already expressible, and it is the one that gives false confidence: a
+        shallow copy of `{"inner": [1, 2]}` still shares `inner`, which is
+        precisely the case the caller thinks they have protected against.
+
+        **Shared structure is preserved, not duplicated**, via the memo. Two
+        fields pointing at one list still point at one list afterwards, and a
+        cycle terminates instead of hanging — all three container kinds can
+        hold a reference to themselves (`list_push(a, a)`, `m["self"] = m`,
+        `r.x = r`), so this is a requirement, not a refinement.
+
+        A value holding a live handle is **refused**, naming where it is. That
+        reuses the line the language already draws — a `state` cell refuses a
+        closure or a channel for the same reason (#498) — rather than inventing
+        a second rule. Sharing the uncopyable leaf instead would return a
+        "copy" that is not one, silently.
+
+        Reasoning: `docs/design/v5/09-container-aliasing.md`.
+        """
+        from nodus.vm.types import Record
+
+        memo: dict[int, object] = {}
+
+        def clone(node, path: str):
+            if node is None or isinstance(node, (bool, int, float, str)):
+                return node
+
+            marker = id(node)
+            if marker in memo:
+                return memo[marker]
+
+            if isinstance(node, list):
+                out: list = []
+                memo[marker] = out
+                for index, item in enumerate(node):
+                    out.append(clone(item, f"{path}[{index}]"))
+                return out
+
+            if isinstance(node, dict):
+                out_map: dict = {}
+                memo[marker] = out_map
+                for key, item in node.items():
+                    out_map[key] = clone(item, f'{path}["{key}"]')
+                return out_map
+
+            if isinstance(node, Record):
+                fields: dict = {}
+                out_record = Record(fields, node.kind)
+                memo[marker] = out_record
+                for name, item in node.fields.items():
+                    fields[name] = clone(item, f"{path}.{name}" if path else name)
+                return out_record
+
+            from nodus.vm.types import BuiltinMethod
+
+            # `builtin_type` reports a BuiltinMethod as "unknown", which would
+            # make the message useless for exactly the values people meet it on
+            # -- the method fields of a stdlib record such as `std:hash`'s.
+            # Named here rather than by widening `type()`, which is a separate
+            # surface with the #609 type-name work staged against it.
+            kind = "method" if isinstance(node, BuiltinMethod) else vm.builtin_type(node)
+            where = f"the value at {path}" if path else f"a {kind}"
+            vm.runtime_error(
+                "type",
+                f"copy(x) cannot copy {where}"
+                + (f" ({kind})" if path else "")
+                + "; a function, method, channel, coroutine or task has no meaningful copy",
+            )
+
+        return clone(value, "")
+
     def builtin_list_pop(value):
         if not isinstance(value, list):
             vm.runtime_error("type", "list_pop(list) expects a list")
@@ -240,6 +321,7 @@ def register(vm, registry) -> None:
     registry.add("list_push", 2, builtin_list_push)
     registry.add("push", 2, builtin_list_push)
     registry.add("list_pop", 1, builtin_list_pop)
+    registry.add("copy", 1, builtin_copy)
     registry.add("json_parse", 1, builtin_json_parse)
     registry.add("json_stringify", 1, builtin_json_stringify)
     registry.add("json_parse_int", 1, builtin_json_parse_int)

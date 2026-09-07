@@ -129,6 +129,7 @@ returning `nil`.
 |----------|---------|-------------|
 | `list_push(list, value)` | `list` | Appends `value` to `list` in place; returns the list |
 | `list_pop(list)` | value | Removes and returns the last element; error on empty list |
+| `copy(value)` | same kind | Deep copy of a list, map or record; refuses a value holding a function, method, channel, coroutine or task |
 
 ```nd
 let nums = [1, 2, 3]
