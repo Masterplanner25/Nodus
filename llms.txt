@@ -18,57 +18,70 @@ pip install nodus-lang
 
 ## Core Documentation
 
-- [README.md](README.md): Getting started, install, quick start, stdlib overview, ecosystem
-- [docs/language/LANGUAGE_SPEC.md](docs/language/LANGUAGE_SPEC.md): Full language spec — syntax, types, control flow, coroutines, stdlib, stability labels
-- [docs/runtime/ARCHITECTURE.md](docs/runtime/ARCHITECTURE.md): Runtime architecture, execution pipeline, builtin registry
-- [docs/runtime/EXECUTION_INVARIANTS.md](docs/runtime/EXECUTION_INVARIANTS.md): Documented runtime invariants (VM, scheduler, module, sandbox, coroutine)
-- [docs/governance/LANGUAGE_STABILITY_INDEX.md](docs/governance/LANGUAGE_STABILITY_INDEX.md): Per-surface stability tiers (Stable / Mostly Stable / Experimental)
-- [docs/governance/COMPANION_LIBRARY_CONTRACT.md](docs/governance/COMPANION_LIBRARY_CONTRACT.md): APIs a companion library may depend on; compatibility promises
-- [docs/onboarding/NODUS.md](docs/onboarding/NODUS.md): Project identity, capabilities, ecosystem, embedding API overview
-- [CHANGELOG.md](CHANGELOG.md): Version history
-- [llms-full.txt](llms-full.txt): Full content summaries for AI indexers
+- [README.md](https://github.com/Masterplanner25/Nodus/blob/main/README.md): Getting started, install, quick start, stdlib overview, ecosystem
+- [docs/language/LANGUAGE_SPEC.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/language/LANGUAGE_SPEC.md): Full language spec — syntax, types, control flow, coroutines, stdlib, stability labels
+- [docs/runtime/ARCHITECTURE.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/runtime/ARCHITECTURE.md): Runtime architecture, execution pipeline, builtin registry
+- [docs/runtime/EXECUTION_INVARIANTS.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/runtime/EXECUTION_INVARIANTS.md): Documented runtime invariants (VM, scheduler, module, sandbox, coroutine)
+- [docs/governance/LANGUAGE_STABILITY_INDEX.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/LANGUAGE_STABILITY_INDEX.md): Per-surface stability tiers (Stable / Mostly Stable / Experimental)
+- [docs/governance/COMPANION_LIBRARY_CONTRACT.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/COMPANION_LIBRARY_CONTRACT.md): APIs a companion library may depend on; compatibility promises
+- [docs/onboarding/NODUS.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/onboarding/NODUS.md): Project identity, capabilities, ecosystem, embedding API overview
+- [CHANGELOG.md](https://github.com/Masterplanner25/Nodus/blob/main/CHANGELOG.md): Version history
+- [llms-full.txt](https://github.com/Masterplanner25/Nodus/blob/main/llms-full.txt): Full content summaries for AI indexers
 
 ## User Guide
 
-- [docs/guide/getting-started.md](docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
-- [docs/guide/agent-host-boundary.md](docs/guide/agent-host-boundary.md): agent_call / agent_call_async / agent_available / agent_describe / `action agent`, registering a handler with NodusRuntime.register_agent, the nine-key result envelope, and why an agent failure is soft
-- [docs/guide/ai-primitives.md](docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
-- [docs/guide/ecosystem.md](docs/guide/ecosystem.md): 35 companion packages — roles, install tiers, nodus-sdk unified entry point
-- [docs/guide/embedding-nodus.md](docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
-- [docs/guide/library-entry-points.md](docs/guide/library-entry-points.md): How to publish a Nodus companion library via nodus.nd entry-point
-- [docs/guide/types-and-values.md](docs/guide/types-and-values.md): Numbers, strings, lists, maps, records, nil, functions as values
-- [docs/guide/error-handling.md](docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, err record shape
-- [docs/guide/modules-and-imports.md](docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
-- [docs/guide/standard-library.md](docs/guide/standard-library.md): Complete stdlib function reference
-- [docs/guide/workflows-and-tasks.md](docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
-- [docs/guide/real-world-integration.md](docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
-- [examples/webhook_bridge/](examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
-- [docs/guide/debugging.md](docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
+- [docs/guide/getting-started.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/getting-started.md): Install, first script, REPL, two-file project, error basics
+- [docs/guide/agent-host-boundary.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/agent-host-boundary.md): agent_call / agent_call_async / agent_available / agent_describe / `action agent`, registering a handler with NodusRuntime.register_agent, the nine-key result envelope, and why an agent failure is soft
+- [docs/guide/ai-primitives.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/ai-primitives.md): std:tool (MCP-compatible registry), std:identity, std:effects, std:memory, std:retry, std:circuit_breaker
+- [docs/guide/ecosystem.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/ecosystem.md): 35 companion packages — roles, install tiers, nodus-sdk unified entry point
+- [docs/guide/embedding-nodus.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/embedding-nodus.md): NodusRuntime API, sandboxing, on_error, shutdown, async concurrency, type marshaling
+- [docs/guide/library-entry-points.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/library-entry-points.md): How to publish a Nodus companion library via nodus.nd entry-point
+- [docs/guide/types-and-values.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/types-and-values.md): Numbers, strings, lists, maps, records, nil, functions as values
+- [docs/guide/error-handling.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/error-handling.md): try/catch/finally, throw, err.kind reference, err record shape
+- [docs/guide/modules-and-imports.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
+- [docs/guide/standard-library.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/standard-library.md): Complete stdlib function reference
+- [docs/guide/workflows-and-tasks.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+- [docs/guide/real-world-integration.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
+- [examples/webhook_bridge/](https://github.com/Masterplanner25/Nodus/blob/main/examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
+- [docs/guide/debugging.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
+
+## Runnable Code
+
+Every path here runs as-is from a checkout. `nodus test-examples` runs the first
+group from an installed wheel too — they ship inside the package.
+
+- [examples/](https://github.com/Masterplanner25/Nodus/tree/main/examples): The example suite `nodus test-examples` executes — hello, features, three import forms, stdlib, and a multi-file project layout
+- [examples/project_layout_demo/README.md](https://github.com/Masterplanner25/Nodus/blob/main/examples/project_layout_demo/README.md): How a multi-file Nodus project is laid out — entry point, sibling module, `utils/index.nd`
+- [examples/orchestration/README.md](https://github.com/Masterplanner25/Nodus/blob/main/examples/orchestration/README.md): Workflow and goal orchestration examples
+- [demos/RUNME.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/RUNME.md): Three demos showing what the stack does that others do not — start here to run them
+- [demos/agent_orchestration/DESIGN.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/agent_orchestration/DESIGN.md): Agent orchestration demo — design and walkthrough
+- [demos/embed_worker/README.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/embed_worker/README.md): Embedding Nodus as a worker in a Python host
+- [demos/package_conversion/README.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/package_conversion/README.md): Converting an existing package to run on Nodus
 
 ## AI Assistant Assets
 
-- [skills/nodus.skill](skills/nodus.skill): Claude Code skill for Nodus v4 with language rules, error patterns, stdlib guidance, and verified examples
-- [skills/project-CLAUDE.md](skills/project-CLAUDE.md): Project-root `CLAUDE.md` template for Nodus projects
-- [skills/nodus/SKILL.md](skills/nodus/SKILL.md): Codex skill entrypoint for Nodus v4
-- [skills/project-AGENTS.md](skills/project-AGENTS.md): Project-root `AGENTS.md` template for Codex sessions
+- [skills/nodus.skill](https://github.com/Masterplanner25/Nodus/blob/main/skills/nodus.skill): Claude Code skill for Nodus v4 with language rules, error patterns, stdlib guidance, and verified examples
+- [skills/project-CLAUDE.md](https://github.com/Masterplanner25/Nodus/blob/main/skills/project-CLAUDE.md): Project-root `CLAUDE.md` template for Nodus projects
+- [skills/nodus/SKILL.md](https://github.com/Masterplanner25/Nodus/blob/main/skills/nodus/SKILL.md): Codex skill entrypoint for Nodus v4
+- [skills/project-AGENTS.md](https://github.com/Masterplanner25/Nodus/blob/main/skills/project-AGENTS.md): Project-root `AGENTS.md` template for Codex sessions
 
 ## Runtime Reference
 
-- [docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md](docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md): Failure categories and degradation behavior
-- [docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md](docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md): Production runbook for embedders
-- [docs/architecture/INFINITY_PATTERN_MAPPING.md](docs/architecture/INFINITY_PATTERN_MAPPING.md): How Nodus implements the Infinity Algorithm execution model
+- [docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md): Failure categories and degradation behavior
+- [docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/runtime/OPERATOR_OR_EMBEDDER_RUNBOOK.md): Production runbook for embedders
+- [docs/architecture/INFINITY_PATTERN_MAPPING.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/architecture/INFINITY_PATTERN_MAPPING.md): How Nodus implements the Infinity Algorithm execution model
 
 ## Governance
 
-- [docs/governance/SECURITY_POSTURE.md](docs/governance/SECURITY_POSTURE.md): Security boundaries, enforcement paths, transport-specific trust model
-- [docs/governance/RELEASE_GATES.md](docs/governance/RELEASE_GATES.md): Release gate checklist (10 gates including pre-publish creator validation)
-- [docs/governance/ISSUE_RESPONSE_POLICY.md](docs/governance/ISSUE_RESPONSE_POLICY.md): Bug response timelines and commitments
-- [docs/governance/TECH_DEBT.md](docs/governance/TECH_DEBT.md): Open known issues with fix directions and skills
+- [docs/governance/SECURITY_POSTURE.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/SECURITY_POSTURE.md): Security boundaries, enforcement paths, transport-specific trust model
+- [docs/governance/RELEASE_GATES.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/RELEASE_GATES.md): Release gate checklist (10 gates including pre-publish creator validation)
+- [docs/governance/ISSUE_RESPONSE_POLICY.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/ISSUE_RESPONSE_POLICY.md): Bug response timelines and commitments
+- [docs/governance/TECH_DEBT.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/governance/TECH_DEBT.md): Open known issues with fix directions and skills
 
 ## Migration
 
-- [docs/migration/v3-to-v4.md](docs/migration/v3-to-v4.md): Breaking changes v3.x → v4.0
-- [docs/migration/v2-to-v3.md](docs/migration/v2-to-v3.md): Breaking changes v2.x → v3.0
+- [docs/migration/v3-to-v4.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v3-to-v4.md): Breaking changes v3.x → v4.0
+- [docs/migration/v2-to-v3.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v2-to-v3.md): Breaking changes v2.x → v3.0
 
 ## Wiki
 

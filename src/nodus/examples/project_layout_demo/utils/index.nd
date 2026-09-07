@@ -1,0 +1,5 @@
+import { repeat } from "std:strings"
+
+export fn format_result(label, value) {
+    return repeat("-", 2) + " " + label + ": " + str(value)
+}

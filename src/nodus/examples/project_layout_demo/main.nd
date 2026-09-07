@@ -1,0 +1,8 @@
+import { sum_list, square } from "./math.nd"
+import { format_result } from "./utils"
+import { join } from "std:strings"
+
+let values = [1, 2, 3, 4]
+print(format_result("sum", sum_list(values)))
+print(format_result("square", square(5)))
+print(join(["ready", "set", "run"], " -> "))

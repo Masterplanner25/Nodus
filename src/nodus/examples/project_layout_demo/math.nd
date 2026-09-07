@@ -1,0 +1,11 @@
+export fn square(x) {
+    return x * x
+}
+
+export fn sum_list(values) {
+    let total = 0
+    for (let i = 0; i < len(values); i = i + 1) {
+        total = total + values[i]
+    }
+    return total
+}
