@@ -148,6 +148,15 @@ The ranking that matters: **the flip with the weakest signal is the one that
 costs state.** #545, #547 and #4 break a *build* — loud, immediate, fixable in
 place. #174 loses a parked run.
 
+*(Addressed 2026-09-06, and it changes the timeline argument. #174 needed a long
+deprecation clock because its failure is **silent** — a silent failure needs
+notice in a way a loud one does not. It is loud now: switching to SQLite while
+the JSON store holds unmigrated runs warns and names them, and at 6.0.0 that
+becomes a refusal rather than a silent switch. The harm the clock was protecting
+against no longer exists, so the clock can be short. The hazard was also **not
+6.0.0-only** — it was reachable on 5.11.0 by anyone who opted into SQLite, which
+makes the check a 5.x bug fix rather than pre-work for the major.)*
+
 ### 3.3 Four of five cannot be audited before the fact
 
 Only #609 is detectable statically. #545, #547 and #4 warn only when the

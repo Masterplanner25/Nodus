@@ -215,6 +215,10 @@
     "D:src/nodus_lang_workflow/runner.py::_WARNED_DEFAULT_STORE": {
       "verdict": "intentional",
       "why": "#174's one-shot guard for the transitional store warning. Species D is about state whose *sharing* is the bug -- #185/#390, where a process-global memory store and run registry meant one tenant could see another's. This shares a boolean saying 'the warning has been printed', and the thing it guards is itself process-global: _DEFAULT_RUNNER, three lines above. Making it per-tenant would mean printing the same deprecation notice once per runtime, which is the noise the narrowing was for. Python's own warnings registry is module-global for the same reason; the explicit flag exists because tests use simplefilter('always'), which defeats that registry. One honest edge, accepted rather than hidden: the default runner is rebuilt per working directory, so a process that chdirs into a second project with its own populated local store stays quiet. Fixing that means holding a set of roots -- more module-scope state, not less -- for a warning that is advisory and repeated in the runbook and CLAUDE.md. tests/test_default_store_backend.py::TheTransitionalWarningTests pins the once-per-process behaviour, so changing this mind later is a deliberate edit."
+    },
+    "D:src/nodus_lang_workflow/runner.py::_WARNED_STRANDED_RUNS": {
+      "verdict": "intentional",
+      "why": "The sibling of _WARNED_DEFAULT_STORE, four lines up, and intentional for the same reason: it shares a boolean saying 'this has been printed', not state whose sharing is the defect (#185/#390). Once per process is the behaviour wanted -- the alternative is repeating the same notice per runtime, which is how a warning becomes noise. Worth recording that neutering this flag left the suite green: it is an early-out, not a correctness guard, and the module docstring says so. tests/test_stranded_runs_warning.py::QuietCasesTests pins the once-per-process behaviour."
     }
   }
 }
