@@ -346,7 +346,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,935 tests collected** (`--collect-only`, 2026-09-07, after #817-#825). Coverage
+**3,941 tests collected** (`--collect-only`, 2026-09-07, after #817-#827). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -1047,9 +1047,10 @@ These burn time when forgotten:
   a write and is recorded as one — that is the fix, not a side effect.
 
   Two things that mislead in opposite directions. `list_push` **mutates in place** and
-  returns the same list, but some examples spell it `xs = list_push(xs, v)`, which reads
-  functional (#816). And record `==` becomes **structural** at 6.0.0 (#545) while binding
-  stays by reference — so "records became value types" is the wrong reading of that flip;
+  returns the same list; `xs = list_push(xs, v)` reads functional and is not, so use the
+  bare form — `tests/test_list_push_idiom.py` fails on the reassignment now (#816), and
+  chaining is what the return value is for. And record `==` becomes **structural** at
+  6.0.0 (#545) while binding stays by reference — so "records became value types" is the wrong reading of that flip;
   lists and maps have had that same shape (structural `==`, reference mutation) all along.
 - **A `state` cell cannot hold a record.** The run aborts at persist time with
   `Object of type Record is not JSON serializable`, blamed on the `run_workflow(...)` call
