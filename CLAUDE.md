@@ -314,6 +314,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
 | Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
+| Release-claims probes | `tests/eval/release_claims_probe.py` — the Gate 10b harness. **Also run per-PR by CI's `probes` job** (#811), against the wheel it builds, from `/tmp`, with `--require-installed` — 18s on a runner, and off the `test` job's critical path. That does not replace Gate 10b, which still validates the artifact being uploaded; it removes the window where a probe could go stale unnoticed. `tests/test_release_probe_flags.py` additionally checks that every flag a probe passes is one the command's table declares |
 | Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Throughput + startup benchmark | `tools/benchmark_runtime.py` — reports VM instructions/sec (from the VM's own counter, not an estimate per loop iteration) and CLI startup. Neither figure is asserted anywhere; it exists so #173's numbers can be re-derived instead of transcribed, which is how they went stale by 2-4x |
@@ -347,7 +348,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,941 tests collected** (`--collect-only`, 2026-09-07, after #817-#827). Coverage
+**3,967 tests collected** (`--collect-only`, 2026-09-07, after #817-#830). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
