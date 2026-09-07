@@ -619,7 +619,46 @@ and two names for one record will still share every mutation.
 
 #### Copying a container
 
-There is no `copy` builtin. A shallow copy of a list or a map is buildable:
+`copy(value)` returns a deep copy of a list, map or record. No import — it is a
+global, like `len` and `keys`:
+
+```nd-expect=output
+let original = { "inner": [1i, 2i] }
+let snapshot = copy(original)
+snapshot["inner"][0] = 999i
+print(original["inner"][0])
+print(snapshot["inner"][0])
+```
+
+Output:
+
+```
+1
+999
+```
+
+**Deep, not shallow** — the nested list is copied too, which is the whole point:
+a shallow copy of that map would still share `inner`, and that is exactly the
+case you were trying to protect against.
+
+**Shared structure is preserved rather than expanded.** Two fields pointing at
+one list still point at one list in the copy, and a container that refers to
+itself is copied without hanging.
+
+**A value holding a live handle is refused**, and the error names where it is:
+
+```nd-no-run
+let r = record { name: "job", handler: fn(x) { return x } }
+copy(r)
+// Type error: copy(x) cannot copy the value at handler (function);
+// a function, method, channel, coroutine or task has no meaningful copy
+```
+
+That is the same line the language already draws for a `state` cell, which
+refuses a closure or a channel for the same reason. A function has no meaningful
+copy, and returning one that shared the original would be a copy in name only.
+
+If you want the shallow behaviour instead, both are still buildable by hand:
 
 ```nd-expect=output
 import "std:collections" as col
@@ -648,18 +687,9 @@ Output:
 Both are shallow: a nested container inside the copy is still shared with the
 original.
 
-**A record cannot be copied generically**, because its fields cannot be
-enumerated — `keys()` accepts a map and refuses a record. You can only rebuild
-one field by field, which means knowing every field:
-
-```nd-no-run
-let clone = record { x: p.x, y: p.y }   // and every other field, by hand
-```
-
-If you need a container you can hand out without it being changed underneath
-you, prefer a map over a record for now, and copy it as above. Whether a copy
-surface is owed is
-[#814](https://github.com/Masterplanner25/Nodus/issues/814).
+Note that a record still cannot be *rebuilt* generically — `keys()` accepts a
+map and refuses a record, so its fields cannot be enumerated — which is why
+`copy` is a builtin rather than something you could write in Nodus.
 
 > **Known issue — workflow state cells**
 > ([#822](https://github.com/Masterplanner25/Nodus/issues/822)): a `state` cell

@@ -138,6 +138,7 @@ BUILTIN_NAMES = {
     "list_push",
     "push",
     "list_pop",
+    "copy",
     "json_parse",
     "json_stringify",
     "json_parse_int",

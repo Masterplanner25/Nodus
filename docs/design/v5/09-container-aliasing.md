@@ -1,7 +1,7 @@
 # Container aliasing, and whether a copy surface is owed — #814
 
-**Status: the rule is documented and pinned; the copy surface is a recommendation,
-not yet built.** The aliasing rule is stated in
+**Status: implemented.** The rule is documented and pinned; `copy(value)` shipped
+with all three sub-decisions below taken as recommended. The aliasing rule is stated in
 [`docs/guide/types-and-values.md` §6](../../guide/types-and-values.md) and pinned
 by `tests/test_container_aliasing.py`. This document records why the rule is what
 it is, what a copy surface would have to decide, and the one defect the
@@ -134,12 +134,29 @@ not among those options.
   formalization half is done, the cloning-helper half points here.
 - #822 filed.
 
+## What shipped
+
+`copy(value)` is a global builtin, registered in `builtins/collections.py`,
+classified as pure computation in `capability.py`, covered by
+`tests/test_copy_builtin.py` and documented in both
+`docs/guide/types-and-values.md` §6 and `docs/guide/standard-library.md`.
+
+One thing the implementation added that the design above did not anticipate:
+**shared structure is preserved rather than expanded**, via a memo keyed on
+object identity. That is not a refinement — it is a requirement. All three
+container kinds can hold a reference to themselves (`list_push(a, a)`,
+`m["self"] = m`, `r.x = r`, all verified constructible), so a memo-less deep copy
+hangs. Preserving sharing falls out of the same mechanism, and is the more
+faithful answer anyway: a copy of a shape, not an expansion of it.
+
+A second small thing: `type()` reports a `BuiltinMethod` as `unknown`, which
+would have made the refusal message useless on exactly the values people meet it
+on — the method fields of a stdlib record such as `std:hash`'s. The copy error
+names it `method` itself rather than widening `type()`, which is a separate
+surface with #609's type-name work staged against it.
+
 ## What is not done
 
-- `copy(value)` is not implemented. If the recommendation above is accepted it
-  wants its own issue: the builtin, its entry in `BUILTIN_CAPABILITIES`, the
-  refusal path with a test that the error names the offending field, guide
-  coverage, and a changelog entry.
 - Field enumeration for records is **not** proposed here. It would make a
   generic record copy writable in Nodus, but it is a larger surface with its own
   questions (does it expose method fields? does it order?), and it is not needed

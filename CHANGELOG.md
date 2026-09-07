@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`copy(value)`: a deep copy of a list, map or record (#814).** Assignment
+  binds a reference, so there was no way to hand a container somewhere and keep
+  it from being changed underneath you. Two of the three kinds had an awkward
+  workaround — `col.map` over a list, `keys()` and a loop over a map — and
+  **records had none**, since `keys()` refuses a record and its fields cannot be
+  enumerated. A global, like `len` and `keys`: no import, and it cannot collide,
+  because guest code can shadow a builtin name.
+
+  Three decisions, each recorded in `docs/design/v5/09-container-aliasing.md`:
+
+  - **Deep, not shallow.** Shallow was the option already expressible, and it is
+    the one that gives false confidence — a shallow copy of `{"inner": [1, 2]}`
+    still shares `inner`, which is the case you were protecting against.
+  - **Shared structure is preserved, not expanded**, via a memo on object
+    identity. Not a refinement: all three container kinds can hold a reference to
+    themselves (`list_push(a, a)`, `m["self"] = m`, `r.x = r`), so a memo-less
+    deep copy hangs.
+  - **A value holding a live handle is refused, and the error names where it
+    is** — `copy(x) cannot copy the value at handler (function)`. Same line the
+    language already draws for a `state` cell (#498); sharing the uncopyable leaf
+    would return a copy in name only.
+
+  Not in `std:collections`, which #814 suggested: records are not collections,
+  and the record case is the one that motivates the surface.
+
 ### Tooling
 
 - **The three `.nd` eval probes run in the suite, not only at a release.**
@@ -43,10 +70,7 @@
   records join them at 6.0.0 without becoming value types.
 
   `docs/design/v5/09-container-aliasing.md` records why the rule is documented
-  rather than changed, and recommends a `copy(value)` surface — deep, refusing a
-  value holding a live handle, as a global rather than in `std:collections`
-  since records are not collections. **Not built**; the design doc says what it
-  would need.
+  rather than changed.
 
   The write-up turned up a defect, reported as issue 822 and still open: a
   workflow `state` cell holds a live reference, so a step can change a cell's
