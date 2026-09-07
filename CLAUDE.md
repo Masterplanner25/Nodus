@@ -317,7 +317,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Throughput + startup benchmark | `tools/benchmark_runtime.py` — reports VM instructions/sec (from the VM's own counter, not an estimate per loop iteration) and CLI startup. Neither figure is asserted anywhere; it exists so #173's numbers can be re-derived instead of transcribed, which is how they went stale by 2-4x |
 | Scheduler time source | `src/nodus/runtime/time_source.py` — `TimeSource`, `HostTimeSource`, `VirtualTimeSource` (#182). Reading time and waiting for it are **one** seam; injecting only a clock makes `run_loop()` hang |
-| Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd |
+| Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd. **Run by the suite as of #817** (`tests/test_eval_probes.py`), not only by `/release-prep`; a fourth `.nd` added here that nothing runs fails the suite. The runner reads each probe's `// SUCCESS CONTRACT:` header rather than restating the sentinel |
 | Eval results (per-version) | `docs/evals/vX.Y.Z/` — **three documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel), `POSTPUBLISH_EVAL.md` (Stage 5, against the published package), `STAGE6_DOWNSTREAM_SWEEP.md` (companions). See `docs/evals/v5.1.0/` for the current shape |
 | Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
@@ -346,7 +346,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/ --cov=src/nodus --cov-fail-under=70 --ignore=tests/test_scheduler_fairness.py -q
 ```
 
-**3,825 tests collected** (`--collect-only`, 2026-09-06, after the 5.12.0 cut). Coverage
+**3,884 tests collected** (`--collect-only`, 2026-09-07, after #817 and #818). Coverage
 baseline: **76.82%** overall (20,184 stmts) — that figure was measured 2026-08-07 at 1,878
 tests and has **not** been re-measured since, so treat it as a floor, not a current reading. Gate: 70% (raised from 60% on
 2026-05-31). See `docs/governance/TECH_DEBT.md` for the per-module breakdown.
@@ -1029,6 +1029,19 @@ These burn time when forgotten:
   a writer that may not write waits forever. The inferred edges are *ordering*,
   not data — a barrier reader's body stays zero-parameter, unlike `after`, which
   binds one parameter per dependency.
+- **Containers alias; assignment binds, it does not copy.** `let b = a` gives a second
+  name for one list, map or record — mutating through either is visible through both, at
+  any depth and across a call boundary, and from inside a coroutine or a step body. There
+  is **no copy or clone builtin**, so "hand this container to a step without letting it
+  mutate mine" is currently inexpressible. Pinned by `tests/test_container_aliasing.py`
+  (#818); **#814 is open** on stating the rule in the guide and deciding whether a copy
+  surface is owed, so treat the test as *what the VM does*, not as a ratified contract.
+
+  Two things that mislead in opposite directions. `list_push` **mutates in place** and
+  returns the same list, but some examples spell it `xs = list_push(xs, v)`, which reads
+  functional (#816). And record `==` becomes **structural** at 6.0.0 (#545) while binding
+  stays by reference — so "records became value types" is the wrong reading of that flip;
+  lists and maps have had that same shape (structural `==`, reference mutation) all along.
 - **A `state` cell cannot hold a record.** The run aborts at persist time with
   `Object of type Record is not JSON serializable`, blamed on the `run_workflow(...)` call
   site rather than the assignment. Records are ordinary data with an obvious JSON shape, so
