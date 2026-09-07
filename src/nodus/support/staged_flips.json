@@ -64,8 +64,8 @@
       "summary": "The default workflow store becomes SQLiteWorkflowStore",
       "warns_since": "5.10.0",
       "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
-      "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. The signal has to become visible before the flip can be taken -- see #797.",
-      "sites": 5
+      "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. **The flip lands as a refusal, not a silent switch** -- as of the stranded-runs check, opting into SQLite while the JSON store holds unmigrated runs warns and names them, and at 6.0.0 that becomes an error. That is what makes the switch safe to take: the harm this flip needed a long deprecation clock for was that it failed silently.",
+      "sites": 9
     }
   }
 }

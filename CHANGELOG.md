@@ -138,6 +138,26 @@
 
 ### Fixes
 
+- **#174/#797: switching to SQLite no longer hides the runs you already have.**
+
+  Reachable on 5.11.0, not only at the major: park a run at `workflow_wait`
+  under the default local store, set `NODUS_WORKFLOW_STORE_BACKEND=sqlite`, and
+  `nodus workflow runs` reports **0 runs and exits 0**. The parked run still
+  exists and nothing says so — as far as every `nodus workflow` command is
+  concerned it is gone.
+
+  It now warns once, naming the stranded run ids and `migrate-store`, and goes
+  quiet as soon as they are migrated — so keeping the JSON store as a backup,
+  which the migration guide recommends, does not leave a permanent warning.
+
+  **This is what the 6.0.0 flip becomes**: a refusal rather than a silent
+  switch. The condition is the same either way — "SQLite is in effect and these
+  runs are not in it" — so the flip needs no second implementation. It also
+  changes the timeline argument: #174 needed a long deprecation clock because
+  its failure was *silent*, and a silent failure needs notice in a way a loud
+  one does not.
+
+
 - **#791: a flag missing its value prints an error instead of a traceback.**
   `nodus run --time-limit` raised `ValueError` straight out of `main()`.
 

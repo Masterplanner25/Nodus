@@ -235,10 +235,29 @@ class TheTransitionalWarningTests(unittest.TestCase):
         self.assertEqual([], self._warnings_from_building_the_runner())
 
     # closes: #174
-    def test_choosing_sqlite_silences_it(self):
+    def test_choosing_sqlite_silences_the_transitional_notice(self):
+        """It silences *this* warning, not every warning.
+
+        This asserted `[] == warnings` and meant "the transitional notice is
+        pointless once you have chosen SQLite" -- which is right. But the
+        scenario it sets up (a run recorded in the JSON store, then SQLite
+        selected) is exactly the one where those runs become invisible, and a
+        warning about *that* is not noise, it is the point. The blanket
+        assertion turned the stranded-runs check into a regression the moment
+        it shipped.
+        """
         self._record_a_run()
         os.environ[WORKFLOW_STORE_BACKEND_ENV] = "sqlite"
-        self.assertEqual([], self._warnings_from_building_the_runner())
+        messages = [str(w.message) for w in self._warnings_from_building_the_runner()]
+        self.assertEqual(
+            [], [m for m in messages if "The default workflow store is" in m],
+            f"the transitional notice fired after SQLite was chosen: {messages}",
+        )
+        self.assertTrue(
+            [m for m in messages if "not in the SQLite store" in m],
+            f"the run recorded in the JSON store is now invisible and nothing "
+            f"said so: {messages}",
+        )
 
     # closes: #174
     def test_it_fires_once_per_process(self):
