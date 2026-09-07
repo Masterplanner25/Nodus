@@ -4,7 +4,7 @@
 **Measured against 5.11.0.**
 **Gate:** G3 in `docs/governance/V6_0_PLAN.md` — *"a project can enumerate its
 own exposure without waiting to hit each path at runtime."*
-**Register:** `tools/v6_flips.json`, checked by `nodus_gate --flips`.
+**Register:** `nodus/support/staged_flips.json`, checked by `nodus_gate --flips`.
 
 ## The problem
 
@@ -139,7 +139,7 @@ The store question needs a project root, and `check` has already resolved one by
 the time the flag is read. No new machinery.
 
 **Name it for the durable question, not the version.** `--staged` (or
-`--next-major`), never `--v6`. `tools/v6_flips.json` is already shaped to be "the
+`--next-major`), never `--v6`. `nodus/support/staged_flips.json` is already shaped to be "the
 flips staged for the next major"; a command called `--v6` needs replacing at
 7.0.0, and a version in a flag name is the same class of claim as *"X is
 current"* in prose, which `nodus_gate --versions` exists because of.

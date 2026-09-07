@@ -86,6 +86,11 @@ _PROJECT = frozenset({"--project-root"})
 _PROJECT_OR_PATH = frozenset({"--path", "--project-root"})
 _SERVER_CONN = frozenset({"--host", "--port", "--auth-token"})
 _STORE = frozenset({"--path", "--project-root"})
+#: The trace/optimizer switches. `check` declares these so it can refuse them
+#: with a specific message rather than a generic unknown-flag error (#791), so
+#: the *refusal* has to name this set rather than "everything `check` declares
+#: without a value" -- which is what it used to do, and which would have made
+#: `check --staged` refuse itself.
 _TRACE_NO_VALUE = frozenset(
     {
         "--trace",
@@ -127,7 +132,8 @@ COMMANDS: dict[str, Command] = {
         "Validate syntax and imports without executing",
         group="Execution",
         with_values=_PROJECT,
-        no_values=_TRACE_NO_VALUE,
+        # G3: `--staged` reports what in this project breaks at the next major.
+        no_values=_TRACE_NO_VALUE | frozenset({"--staged"}),
     ),
     "fmt": _c(
         "fmt",
@@ -593,6 +599,10 @@ COMMANDS: dict[str, Command] = {
 # exists cannot fail to be guarded.
 KNOWN_COMMANDS = frozenset(COMMANDS)
 
+#: What `nodus check` refuses, by name. Read by the dispatch branch so the
+#: refusal cannot silently widen to every valueless flag `check` gains.
+CHECK_UNSUPPORTED_FLAGS = _TRACE_NO_VALUE
+
 
 def flags_for(command: str, subcommand: str | None = None) -> tuple[set[str], set[str]]:
     """Flag sets for a dispatch branch.
@@ -705,10 +715,17 @@ _DETAILED_HELP: dict[str, str] = {
         "",
         "Options:",
         "  --project-root PATH    Override the project root directory",
+        "  --staged               Report what breaks at the next major instead",
+        "                         of checking syntax. Every staged change is",
+        "                         listed, including the one that cannot be",
+        "                         answered from source -- so a clean run means",
+        "                         \"nothing found in what was checked\", never",
+        "                         \"ready\". Exits 0; it reports, it does not gate.",
         "",
         "Examples:",
         "  nodus check main.nd",
         "  nodus check            (checks project in current directory)",
+        "  nodus check --staged   (what breaks at the next major)",
     ]),
     "status": "\n".join([
         "Usage: nodus status",

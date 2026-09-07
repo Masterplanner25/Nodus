@@ -63,6 +63,7 @@ from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
 from nodus.cli.commands import (
+    CHECK_UNSUPPORTED_FLAGS,
     COMMANDS,
     KNOWN_COMMANDS,
     command_help as _command_help,
@@ -534,7 +535,70 @@ def profile_file(
     return 0
 
 
-def check_file(path: str, *, project_root: str | None = None) -> int:
+def _report_staged(path: str, *, project_root: str | None, warnings: list) -> int:
+    """`nodus check --staged`: what breaks at the next major (plan gate G3).
+
+    Reports every flip in the register, including the one nothing looked at.
+    That is R4 of `docs/design/v6/01-readiness.md`, and it is the point rather
+    than a caveat: #545 is not answerable from source, so a bare "no issues"
+    would be the comfortable lie #797 already taught this project to distrust.
+    """
+    from nodus.tooling.staged_readiness import scan
+
+    sources = []
+    try:
+        sources.append((os.path.abspath(path), _read_file(path)))
+    except OSError as exc:
+        _print_stderr(f"Could not read {path}: {exc}")
+        return 1
+
+    report = scan(
+        sources=sources,
+        type_warnings=[dict(w, file=os.path.abspath(path)) for w in warnings],
+        project_root=project_root,
+    )
+    if report.error:
+        _print_stderr(f"Error: {report.error}")
+        return 1
+
+    print(f"Staged for {report.target} — checked {', '.join(report.roots)}")
+    print(
+        "  (the entry file and what it imports; a file nothing imports is not "
+        "compiled, so it cannot fail at the major)"
+    )
+    print("")
+    total = 0
+    for flip in report.flips:
+        label = f"{flip.name} (#{flip.issue})"
+        if not flip.checked:
+            print(f"  [not checked] {label}")
+            print(f"                {flip.reason}")
+            continue
+        if not flip.findings:
+            print(f"  [ok]          {label}")
+            continue
+        total += len(flip.findings)
+        print(f"  [{len(flip.findings):>2} found]   {label}")
+        for finding in flip.findings:
+            print(f"                {finding.render()}")
+    print("")
+    unchecked = len(report.unchecked)
+    if total:
+        summary = f"{total} thing(s) to fix before {report.target}"
+    else:
+        summary = f"nothing found in the {len(report.flips) - unchecked} flip(s) checked"
+    if unchecked:
+        summary += f"; {unchecked} could not be checked from source"
+    print(summary)
+    # Exit 0 either way. This reports what is coming; it is not a gate, and a
+    # project mid-migration should not have its build broken by the tool that
+    # exists to help it migrate.
+    return 0
+
+
+def check_file(
+    path: str, *, project_root: str | None = None, staged: bool = False
+) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
         return 1
@@ -554,6 +618,10 @@ def check_file(path: str, *, project_root: str | None = None) -> int:
     # ignored today and becomes an error at 6.0.0, so reporting it now is what
     # gives a project a release to fix it in.
     warnings = result.get("warnings") or []
+    if staged:
+        # Not printed here as well: `--staged` reports them under their flip,
+        # and a line that appears twice reads like two findings.
+        return _report_staged(path, project_root=project_root, warnings=warnings)
     for warning in warnings:
         _print_stderr(
             f"{os.path.abspath(path)}:{warning['line']}:{warning['column']}: "
@@ -1879,7 +1947,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
     if command == "check":
         flags_with_values, flags_no_values = flags_for("check")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
-        if any(flag in flags for flag in flags_no_values):
+        # Named from the table rather than "everything valueless `check`
+        # declares" -- which is what this was, and which would have made
+        # `--staged` refuse itself the moment it was declared.
+        if any(flag in flags for flag in CHECK_UNSUPPORTED_FLAGS):
             _print_stderr("Trace flags and --no-opt are not supported with `nodus check`.")
             return 2
         script = positional[0] if positional else None
@@ -1896,7 +1967,9 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if script is None:
             _print_stderr("Usage: nodus check [<script.nd | project-dir>]")
             return 1
-        return check_file(script, project_root=project_root)
+        return check_file(
+            script, project_root=project_root, staged="--staged" in flags
+        )
 
     if command == "fmt":
         flags_with_values, flags_no_values = flags_for("fmt")

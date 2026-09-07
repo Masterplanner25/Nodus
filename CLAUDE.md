@@ -289,8 +289,9 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Doc-vs-code gate | `tools/nodus_gate/` — run `python -m tools.nodus_gate.cli --all` |
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/` |
+| Staged next-major readiness | `nodus check --staged` — what in a project breaks at the next major, from source. Implementation `src/nodus/tooling/staged_readiness.py`; design `docs/design/v6/01-readiness.md`. **Four of the five flips are answerable statically and the fifth is not**, so the report names every flip with its status and a clean run says *nothing found in what was checked*, never *ready* |
 | Staged-flip warnings | `src/nodus/support/staging.py` — `StagedFlipWarning` and `warn_staged_flip()`. A `DeprecationWarning` subclass so an embedder's filters still catch it, and a distinct category so the CLI can unsuppress **only** the warnings a user must act on before the major. Use it for a registered flip; a surface merely going away stays a plain `DeprecationWarning` |
-| Staged next-major register | `tools/v6_flips.json` — every promise this tree makes about 6.0.0, each with its issue, the release its warning shipped in, whether that warning reaches a CLI user, and the count of sites it owns. Checked by `nodus_gate --flips`; each site carries a `# v6-flip: <name>` marker. Reasoning and open decisions: `docs/governance/V6_0_PLAN.md` |
+| Staged next-major register | `src/nodus/support/staged_flips.json` — every promise this tree makes about 6.0.0, each with its issue, the release its warning shipped in, whether that warning reaches a CLI user, and the count of sites it owns. Checked by `nodus_gate --flips`; each site carries a `# v6-flip: <name>` marker. **In the package, not `tools/`**, because `nodus check --staged` ships and reads the same file. Reasoning and open decisions: `docs/governance/V6_0_PLAN.md` |
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Recorded dependent flakes | `tools/dependent_flakes.json` — diagnosed flakes, used to *classify* a red run, never to pass one. Every entry needs a stated reason |
@@ -827,7 +828,7 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 - `--flips`: verifies that **every promise this tree makes about the next major
   is registered**. A staged flip is a promise made to a user *now* about a
   release that has not happened — `"This becomes an error in 6.0.0."` is printed
-  on stderr today by code that still allows the thing. `tools/v6_flips.json` is
+  on stderr today by code that still allows the thing. `nodus/support/staged_flips.json` is
   the register; `docs/governance/V6_0_PLAN.md` holds the reasoning and the open
   decisions.
 
