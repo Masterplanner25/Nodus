@@ -56,6 +56,15 @@ P0 BLOCKER FIXES.md
 PYPI RELEASE.md
 STRESS-TEST USER EVALUATION*
 
+# Where those documents go once they stop being current. Ignored as a directory
+# rather than relying on the patterns above to follow their files: every one of
+# them happens to be unanchored, so moving the v2.0.0-era audits and task prompts
+# here left them ignored by coincidence rather than by design. The next document
+# dropped in here will match none of those names, and would become committable
+# with no signal at all -- in a public repo, which is not a reversible sort of
+# mistake. This directory is local; nothing in it is part of the repo.
+docs/archive/
+
 # Artifacts written into the repo root by `nodus_gate --runtime` when it executes
 # the file-writing examples in docs/guide/standard-library.md. Regenerated on every
 # gate run; never meant to be committed. (tmp_demo/ is already excluded from the CI
