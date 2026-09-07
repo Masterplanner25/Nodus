@@ -1366,6 +1366,71 @@ class _StateRewriter:
         if isinstance(target, Var) and self._is_tracked(target.name):
             self.cell_writes.add(target.name)
 
+    def _rewrite_mutation_target(self, target):
+        """Rewrite the base of `cell[i] = v` / `cell.f = v` into a tracked write (#822).
+
+        `rewrite_expr` turns a cell reference into `Index(Var(__state), name)`,
+        which is a *read*. For an ordinary reference that is right. For the base
+        of a container mutation it is not: the mutation then changes the object
+        the cell holds without `TrackedState.__setitem__` ever being called, so
+        nothing records that this step wrote the cell. Two concurrent indexed
+        writes lost one silently -- no conflict warning, no `merge:` policy, and
+        nothing for #547 to turn into an error at 6.0.0 -- while the plain
+        `cell = v` spelling one line away had all three.
+
+        `_record_container_write` already treats these as writes for #578's
+        barrier inference, which is compile-time. This is the runtime half.
+
+        The chain is rewritten from the root outwards so `cell["a"][0] = v`
+        works at any depth: only the innermost cell read is replaced, and every
+        index expression along the way is rewritten normally.
+        """
+        if (
+            isinstance(target, Var)
+            and target.name in self.state_names
+            and not self._is_local(target.name)
+        ):
+            return _mark_from(
+                builtin_call("state_open_for_write", [Str(target.name)]), target
+            )
+        if isinstance(target, Index):
+            return _mark_from(
+                Index(
+                    self._rewrite_mutation_target(target.seq),
+                    self.rewrite_expr(target.index),
+                ),
+                target,
+            )
+        if isinstance(target, Attr):
+            return _mark_from(
+                Attr(self._rewrite_mutation_target(target.obj), target.name), target
+            )
+        return self.rewrite_expr(target)
+
+    def _refuse_container_write_to_fold_cell(self, target, expr) -> None:
+        """A fold cell cannot be set, whichever spelling is used.
+
+        `acc = [1i]` on a `merge: "append"` cell is refused at declaration --
+        a final value cannot be combined with another branch's contribution.
+        `acc[0] = 1i` was accepted and silently set it, which is the same hole
+        the rest of this fix closes, one level up.
+        """
+        root = target
+        while isinstance(root, (Index, Attr)):
+            root = getattr(root, "seq", None) or getattr(root, "obj", None)
+        if isinstance(root, Var) and root.name in self.state_names and not self._is_local(root.name):
+            if self._is_fold(root.name):
+                raise LangSyntaxError(
+                    f"state '{root.name}' is declared merge: "
+                    f"\"{self.fold_cells[root.name]}\", so it is written by "
+                    f"contribution, not by mutation. "
+                    f"'{root.name}[...] = ...' would set the cell behind the "
+                    f"fold; use '{root.name} += ...' to contribute a value that "
+                    f"is combined at the join.",
+                    line=_pos(expr)[0],
+                    col=_pos(expr)[1],
+                )
+
     def _is_local(self, name: str) -> bool:
         return any(name in scope for scope in self.scopes)
 
@@ -1542,13 +1607,15 @@ class _StateRewriter:
         if isinstance(expr, Index):
             return _mark_from(Index(self.rewrite_expr(expr.seq), self.rewrite_expr(expr.index)), expr)
         if isinstance(expr, IndexAssign):
+            self._refuse_container_write_to_fold_cell(expr.seq, expr)
             self._record_container_write(expr.seq)
-            return _mark_from(IndexAssign(self.rewrite_expr(expr.seq), self.rewrite_expr(expr.index), self.rewrite_expr(expr.value)), expr)
+            return _mark_from(IndexAssign(self._rewrite_mutation_target(expr.seq), self.rewrite_expr(expr.index), self.rewrite_expr(expr.value)), expr)
         if isinstance(expr, Attr):
             return _mark_from(Attr(self.rewrite_expr(expr.obj), expr.name), expr)
         if isinstance(expr, FieldAssign):
+            self._refuse_container_write_to_fold_cell(expr.obj, expr)
             self._record_container_write(expr.obj)
-            return _mark_from(FieldAssign(self.rewrite_expr(expr.obj), expr.name, self.rewrite_expr(expr.value)), expr)
+            return _mark_from(FieldAssign(self._rewrite_mutation_target(expr.obj), expr.name, self.rewrite_expr(expr.value)), expr)
         if isinstance(expr, Call):
             return _mark_from(Call(self.rewrite_expr(expr.callee), [self.rewrite_expr(arg) for arg in expr.args]), expr)
         if isinstance(expr, FnExpr):

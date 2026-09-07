@@ -120,9 +120,37 @@ one mutating reader is silent.
 That is the recurring shape in the place where it costs most: the declared write
 path is watched, the sibling path is not, and at 6.0.0 the declared path becomes
 an *error* (#547) while the undeclared one stays silent — the wrong pressure to
-put on people. It is filed separately because it is a defect with its own fix
-options, not a documentation gap, and because changing what `let b = a` means is
-not among those options.
+put on people.
+
+**Fixed, and the investigation found it worse than first reported.** The
+headline turned out not to be the mutating reader but the *indexed write*:
+`cell[i] = v` and `m["k"] = v` are ordinary, documented spellings, and both
+bypassed the tracker entirely — no conflict warning, no `merge:` policy, nothing
+for #547 to fire on, and a fold cell's declaration refusal lost as well. One
+correction to the first write-up: **#578's barrier inference was never
+affected**, because `_record_container_write` already walked an index chain to
+its root at compile time. The compile-time half was right; the runtime half was
+absent.
+
+It also eliminated one of the four fix options. **Snapshot-on-read alone is not
+viable**: `cell[i] = v` lowered to a read followed by an in-place mutation, so
+returning a copy from the read would have discarded the write silently — turning
+a working feature into a no-op. The read had to stop being the mutation path
+first.
+
+The fix is *ownership*, and it is the same idea `copy` embodies one level up: a
+cell stores a copy, hands back a copy, and has exactly one deliberate exception,
+`TrackedState.open_for_write`, which records a read and a write and then returns
+the cell's own object so the compiler's in-place mutation lands. Both container
+assignment forms route through it, asserted on the source — #518 was an
+enumeration of assignment forms with a member missing, and a behaviour test only
+covers the forms it knows about.
+
+**It costs something, measured rather than waved at.** A scalar cell is
+unchanged; growing a list cell in a loop is about +20%; the worst plausible
+shape — a 200-element cell written by index 200 times — is **+57%**, because the
+cost is O(cell size) per write rather than constant. That is the price of not
+losing writes silently, and it is worth stating rather than discovering.
 
 ## What was done
 

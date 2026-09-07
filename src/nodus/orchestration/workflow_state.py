@@ -102,7 +102,11 @@ class TrackedState(dict):
                 step = self._steps.get(task_id)
                 if step is not None and not step.closed:
                     step.record(key, value)
-        super().__setitem__(key, value)
+        # #822: the cell owns its value. Without the copy the cell held whatever
+        # object the step assigned from, so mutating that object afterwards --
+        # from a later step, or from the same one -- changed the recorded state
+        # with no write to attribute it to.
+        super().__setitem__(key, clone_state(value))
 
     def __getitem__(self, key):
         """Read a cell, noting when a task reads one it has not yet written.
@@ -123,7 +127,35 @@ class TrackedState(dict):
             task_id = writer()
             if task_id is not None and task_id not in self._written_values.get(name, {}):
                 self._reads_before_write.setdefault(name, set()).add(task_id)
-        return super().__getitem__(key)
+        # #822: a reader gets its own copy, so `let got = cell; got[0] = v`
+        # changes the reader's list and not the cell. Mutating a cell is a
+        # *write*, and a write goes through `open_for_write` below so that it is
+        # recorded; reaching the cell's object through a read was the way to
+        # change it without being recorded at all.
+        return clone_state(super().__getitem__(key))
+
+    def open_for_write(self, key):
+        """Record a write and hand back the cell's own object to mutate (#822).
+
+        The one place a caller is given the object the cell actually holds,
+        rather than a copy. It exists for `cell[i] = v` and `cell.f = v`, which
+        the workflow lowering compiles to a read of the cell followed by an
+        in-place mutation. That mutation has to land in the cell, so a copy will
+        not do -- and it has to be *recorded*, which reading the cell never did.
+
+        Ordering matters and is the whole method:
+
+        1. `self[key]` -- a tracked read, so an indexed update registers as the
+           read-modify-write it is and two concurrent ones get #485's
+           lost-update wording rather than the weaker disagreed-values one.
+        2. `self[key] = ...` -- a tracked write, so the step is recorded as a
+           writer and the `merge:` policy and #547's staged error can see it.
+        3. Return what is now stored. `__setitem__` copies, so the object the
+           caller mutates is the cell's, not the one passed in.
+        """
+        current = self[key]
+        self[key] = current
+        return dict.__getitem__(self, key)
 
     def written_values(self) -> dict[str, dict[str, object]]:
         return {key: dict(by_task) for key, by_task in self._written_values.items()}
