@@ -89,7 +89,10 @@ These items are low-risk and could ship in any v3.x patch:
 
 ## See also
 
-- [ROADMAP.md](ROADMAP.md) — higher-level feature roadmap
-- [COMPATIBILITY.md](COMPATIBILITY.md) — breaking-change policy and deprecation timeline
-- [DEPRECATIONS.md](DEPRECATIONS.md) — active deprecation warnings
-- [V3_0_PLAN.md](V3_0_PLAN.md) — completed v3.0 work
+- [ROADMAP.md](../../governance/ROADMAP.md) — higher-level feature roadmap
+- [COMPATIBILITY.md](../../governance/COMPATIBILITY.md) — breaking-change policy and deprecation timeline
+- [DEPRECATIONS.md](../../governance/DEPRECATIONS.md) — active deprecation warnings
+- `V3_0_PLAN.md` — completed v3.0 work. Not a link: that file is gitignored
+  (`.gitignore`, "working files, not part of the repo"), so it is on the
+  maintainer's disk and in no clone. Its sibling plans here are tracked, which
+  makes this an inconsistency rather than a rule — left as it was found.

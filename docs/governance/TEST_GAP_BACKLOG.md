@@ -7,7 +7,7 @@
 This document tracks known gaps in the test suite. Each item notes the invariant
 or behavior that is not covered, the risk of the gap, and the path to closing it.
 
-See `docs/governance/INVARIANT_TEST_MAPPING.md` for the full invariant-to-test mapping.
+See `docs/history/INVARIANT_TEST_MAPPING.md` for the full invariant-to-test mapping.
 
 ---
 
@@ -222,7 +222,7 @@ detail an issue body would not carry.
 
 ## Related documents
 
-- `docs/governance/INVARIANT_TEST_MAPPING.md` — superseded; the mapping is
+- `docs/history/INVARIANT_TEST_MAPPING.md` — superseded; the mapping is
   `tools/invariant_coverage.json`, checked by `nodus_gate --invariants`
 - `docs/governance/TEST_STRATEGY.md` — test standards and organization
 - `docs/governance/TECH_DEBT.md` — broader open items

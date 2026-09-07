@@ -200,6 +200,6 @@ must appear in prose, register it in `tools/version_claims.json` so
 ## Related documents
 
 - `docs/governance/DOCSET_INDEX.md` — document map and precedence
-- `docs/governance/DOCSET_STATUS_AUDIT.md` — per-document status
-- `docs/governance/DOCSET_CHANGELOG.md` — history of docset changes
-- `docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md` — conflict resolution plan
+- `docs/history/docset-sweep-2026-05-29/DOCSET_STATUS_AUDIT.md` — per-document status
+- `docs/history/docset-sweep-2026-05-29/DOCSET_CHANGELOG.md` — history of docset changes
+- `docs/history/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md` — conflict resolution plan

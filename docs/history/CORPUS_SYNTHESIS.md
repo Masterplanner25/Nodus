@@ -2,7 +2,7 @@
 
 > Synthesis of the 2026-08-17/18 research-corpus sweep: every folder under `C:\codev\*
 > research` cross-checked against **Nodus 5.0.4**, with 30 issues filed (#465–#494).
-> Companion to [EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md), which records
+> Companion to [EXTERNAL_AUDIT_LEDGER.md](../governance/EXTERNAL_AUDIT_LEDGER.md), which records
 > verdicts on audits run *against* Nodus. This file records what the corpus says *about
 > the language* when read as a whole.
 >

@@ -107,6 +107,30 @@
   invocation sites is asserted so a third spelling cannot slip past unchecked.
 
 ### Tooling
+- **`docs/governance/` sorted from 63 documents into three, and markdown links
+  are now checked.** An audit prompt is an instrument, not policy: the nine in
+  there were reusable and language-agnostic, describing no Nodus rule. They are
+  `docs/audits/` now. The dated records and superseded plans — four docset-sweep
+  records carrying "do not update it to match the tree", five old version plans,
+  two release notes, a closed reconciliation plan, three analyses pinned to a
+  released version, and `INVARIANT_TEST_MAPPING.md` (superseded by
+  `tools/invariant_coverage.json`) — are `docs/history/`. The three eval prompts
+  joined the eval results they produce in `docs/evals/`. Governance keeps the 34
+  documents that actually govern.
+
+  **The paths inside the dated records were deliberately not rewritten.** A
+  record is a statement about the tree on a given day, and rewriting it to the
+  current layout would make it claim something that was never true. Markdown
+  links were repointed so they resolve — a link is navigation, not a claim —
+  while prose naming an old location was left alone. `docs/history/README.md`
+  says so; `CHANGELOG.md` was left alone for the same reason.
+
+  `tests/test_doc_links_resolve.py` is the check that was missing. The gate
+  verifies documented symbols, runnable blocks and version claims, and nothing
+  verified that a link went anywhere — so this move broke **eleven** links across
+  six files, every one found by writing the check rather than by reading the
+  diff.
+
 - **#810: one list of nodus-lang dependents, and the gates read it.** Gate 10a
   (`check_dependent_suites`, run before every PyPI upload) and Stage 6's range
   check (`check_downstream_constraints`) each kept their own. They drifted — six

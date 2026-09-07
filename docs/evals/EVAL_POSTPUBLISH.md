@@ -1,6 +1,6 @@
 # Nodus — Post-Publish Eval Prompt
 
-**Canonical template:** `docs/governance/EVAL_STAGE4_TEMPLATE.md`
+**Canonical template:** `docs/evals/EVAL_STAGE4_TEMPLATE.md`
 
 This file is the POST-PUBLISH instance of the generalized Stage 4 eval
 template. To run a post-publish eval:

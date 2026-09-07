@@ -105,8 +105,16 @@ and bytecode. Required reading for contributors and embedders.
 
 ### `governance/` — Governance and Process
 
-Policy, stability, release process, and audit documents. Reader entry point
-and precedence rules: [`governance/DOCSET_INDEX.md`](governance/DOCSET_INDEX.md).
+Policy, stability, and release process — the documents that *govern*. Reader
+entry point and precedence rules:
+[`governance/DOCSET_INDEX.md`](governance/DOCSET_INDEX.md).
+
+It held 63 documents until they were sorted into three (2026-09-07): the audit
+prompts are instruments rather than policy and moved to
+[`audits/`](audits/AUDIT_INDEX.md); the dated records and superseded plans moved
+to [`history/`](history/README.md); the eval prompts joined the eval results in
+[`evals/`](evals/EVAL_STAGE4_TEMPLATE.md). A folder nobody can navigate does not
+govern anything, which made the size a governance problem in its own right.
 
 Key documents:
 
@@ -126,7 +134,6 @@ Key documents:
 | `FREEZE_PROPOSAL.md` | Opcode freeze declaration and post-freeze process |
 | `DEPRECATIONS.md` | Active deprecations and timelines |
 | `COMPANION_LIBRARY_CONTRACT.md` | Contract for companion library integration |
-| `AUDIT_INDEX.md` | Index of 9 reusable audit prompts |
 
 ---
 
@@ -188,11 +195,39 @@ and serves as reference material for a future Nodus coding agent.
 
 ---
 
-### `evals/` — Evaluation Results
+### `evals/` — Evaluation Prompts and Results
 
-Per-version independent evaluation reports (Stage 4/5 process).
-See [`governance/EVAL_STAGE4_TEMPLATE.md`](governance/EVAL_STAGE4_TEMPLATE.md)
-for the eval template.
+Per-version independent evaluation reports (Stage 4/5 process), and the three
+prompts that produce them — the prompt and its output in one place.
+
+| File | Contents |
+|---|---|
+| `EVAL_STAGE4_TEMPLATE.md` | The template; copy and fill Section 0 & 4 each cycle |
+| `EVAL_PREPUBLISH.md` | Gate 10b creator validation, against the built wheel |
+| `EVAL_POSTPUBLISH.md` | Stage 5, against the published package |
+| `vX.Y.Z/` | The results for that release |
+
+---
+
+### `audits/` — Audit Prompts
+
+Nine reusable, **language-agnostic** evaluation prompts, plus their index.
+Instruments rather than policy: you run one, fix what it finds, and re-run it.
+Start at [`audits/AUDIT_INDEX.md`](audits/AUDIT_INDEX.md).
+
+Verdicts on audits run *against* Nodus by outside readers are a governance
+matter and stay there:
+[`governance/EXTERNAL_AUDIT_LEDGER.md`](governance/EXTERNAL_AUDIT_LEDGER.md).
+
+---
+
+### `history/` — Dated Records
+
+Documents that said what was true on a particular day and are not maintained:
+the 2026-05-29 docset sweep, superseded version plans, old release notes, and
+analyses pinned to a released version. See [`history/README.md`](history/README.md)
+— in particular for why the paths *inside* those records were left pointing at
+where files used to be.
 
 ---
 

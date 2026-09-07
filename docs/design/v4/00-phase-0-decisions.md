@@ -486,7 +486,7 @@ for each decision are in `docs/design/v4/00-phase-0-decisions.md`.
 ### Created at Phase 0
 
 - `docs/design/v4/00-phase-0-decisions.md` (this document's companion)
-- `docs/governance/V4_0_PLAN.md` (this document)
+- `docs/history/plans/V4_0_PLAN.md` (this document)
 - `docs/governance/LIBRARY_ECOSYSTEM.md` (three-tier ecosystem
   architecture, protocols-as-adapters commitment, v4.0 launch shape)
 
@@ -563,7 +563,7 @@ when accumulated v4.x work and Tier 4 items justify a new major cycle.
 
 | What | Where |
 |------|-------|
-| This document | `docs/governance/V4_0_PLAN.md` |
+| This document | `docs/history/plans/V4_0_PLAN.md` |
 | Phase 0 decisions | `docs/design/v4/00-phase-0-decisions.md` |
 | Phase 1 design docs | `docs/design/v4/` (01+) |
 | Migration guide | `docs/migration/v3-to-v4.md` (Phase 4 deliverable) |

@@ -42,7 +42,7 @@ and independent eval results. Name them: `docs/evals/vX.Y.Z/AUDIT_<NAME>.md`.
 
 The prompts above are the ones we run ourselves. Audits performed by an outside
 reader are recorded separately in
-**[EXTERNAL_AUDIT_LEDGER.md](EXTERNAL_AUDIT_LEDGER.md)**, which gives every
+**[EXTERNAL_AUDIT_LEDGER.md](../governance/EXTERNAL_AUDIT_LEDGER.md)**, which gives every
 finding a verdict — confirmed, wrong, partly wrong, or reframed — with the
 command or code reference that settled it.
 

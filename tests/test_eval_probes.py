@@ -7,7 +7,7 @@ interpolation, lists, maps, records and methods, JSON round-trip, coroutines and
 channels, and every documented quirk. Each ends by printing a sentinel.
 
 Nothing ran them. `grep` for their names finds `.claude/commands/release-prep.md`
-and `docs/governance/EVAL_PREPUBLISH.md` and nothing else, so a language
+and `docs/evals/EVAL_PREPUBLISH.md` and nothing else, so a language
 regression they would catch stayed invisible until somebody cut a release --
 which is #811's complaint about the *other* release-only harness in this same
 directory, `release_claims_probe.py`.

@@ -313,15 +313,15 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
 | Library entry-point contract | `docs/guide/library-entry-points.md` |
 | Companion library contract | `docs/governance/COMPANION_LIBRARY_CONTRACT.md` |
-| Pre-publish eval prompt | `docs/governance/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
+| Pre-publish eval prompt | `docs/evals/EVAL_PREPUBLISH.md` — Gate 10 creator validation |
 | Release-claims probes | `tests/eval/release_claims_probe.py` — the Gate 10b harness. **Also run per-PR by CI's `probes` job** (#811), against the wheel it builds, from `/tmp`, with `--require-installed` — 18s on a runner, and off the `test` job's critical path. That does not replace Gate 10b, which still validates the artifact being uploaded; it removes the window where a probe could go stale unnoticed. `tests/test_release_probe_flags.py` additionally checks that every flag a probe passes is one the command's table declares |
-| Post-publish eval prompt | `docs/governance/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
-| Stage 4 eval template | `docs/governance/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
+| Post-publish eval prompt | `docs/evals/EVAL_POSTPUBLISH.md` — Stage 5 independent eval (pointer to template) |
+| Stage 4 eval template | `docs/evals/EVAL_STAGE4_TEMPLATE.md` — generalized pre/post-publish template; copy+fill Section 0 & 4 each cycle |
 | Throughput + startup benchmark | `tools/benchmark_runtime.py` — reports VM instructions/sec (from the VM's own counter, not an estimate per loop iteration) and CLI startup. Neither figure is asserted anywhere; it exists so #173's numbers can be re-derived instead of transcribed, which is how they went stale by 2-4x |
 | Scheduler time source | `src/nodus/runtime/time_source.py` — `TimeSource`, `HostTimeSource`, `VirtualTimeSource` (#182). Reading time and waiting for it are **one** seam; injecting only a clock makes `run_loop()` hang |
 | Eval test scripts | `tests/eval/` — quirk_probe.nd, language_exerciser.nd, framework_capabilities.nd. **Run by the suite as of #817** (`tests/test_eval_probes.py`), not only by `/release-prep`; a fourth `.nd` added here that nothing runs fails the suite. The runner reads each probe's `// SUCCESS CONTRACT:` header rather than restating the sentinel |
 | Eval results (per-version) | `docs/evals/vX.Y.Z/` — **three documents per release**: `CREATOR_VALIDATION.md` (Gate 10, pre-publish, against the built wheel), `POSTPUBLISH_EVAL.md` (Stage 5, against the published package), `STAGE6_DOWNSTREAM_SWEEP.md` (companions). See `docs/evals/v5.1.0/` for the current shape |
-| Audit prompt index | `docs/governance/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
+| Audit prompt index | `docs/audits/AUDIT_INDEX.md` — 9 reusable audit prompts (architecture, runtime readiness + bootstrap, boundary integrity, user reality, capability, limits, security model, infinity runtime, real-world capability) |
 | External audit ledger | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus by outside readers. **Verify a finding before acting on it**; Audit 01 was wrong in 5 places, all negative findings |
 | Capability policy design | `docs/governance/CAPABILITY_POLICY_DESIGN.md` — design input for #405, extracted from Codex / Hermes / Claude Code. Read before proposing anything at the host-function chokepoint. **Its staging is not what shipped** — it puts builtins fourth; they had to come first |
 | Capability implementation | `src/nodus/runtime/capability.py` — `CapabilityPolicy`, `CapabilityDecision`, `DenyList`, `Floor`, `DEFAULT_FLOOR`, `inherit_authority()` |
@@ -1399,8 +1399,8 @@ The governing docset layer was established in a 2026-05-29 sweep. Key rules:
 
 - **`docs/governance/DOCSET_INDEX.md`** — the reader entry point and precedence list.
   When docs conflict, DOCSET_INDEX.md defines which wins.
-- **`docs/governance/DOCSET_ALIGNMENT_AUDIT.md`** — 14 findings from that sweep.
-- **`docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — **closed.** All
+- **`docs/history/docset-sweep-2026-05-29/DOCSET_ALIGNMENT_AUDIT.md`** — 14 findings from that sweep.
+- **`docs/history/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md`** — **closed.** All
   seven conflicts were verified resolved on 2026-08-07. Its status flags had said
   "ACTION REQUIRED" for months after the fixes landed, because the tracker was
   maintained by hand separately from the work. Do not use it as a to-do list.
