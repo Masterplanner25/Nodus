@@ -107,6 +107,35 @@
   invocation sites is asserted so a third spelling cannot slip past unchecked.
 
 ### Tooling
+- **`docs/design/Ideas worth a look/` is retired; two conversation transcripts
+  became design documents and one was rehomed.** The folder held raw chat
+  transcript inside `docs/design/`, where every other file is a numbered decision
+  record with a `Status:` line — one of them literally opened *"Thought for a few
+  seconds."*
+
+  Both were checked against 5.12.0 before being rewritten, and the checking
+  changed what they say. The lightweight-IDL sketch proposed six stages from
+  metadata to code generation; **the first three had substantially shipped**
+  under other names (`SyscallSpec`, `HandlerContract`,
+  `validate_input`/`validate_output`), and the sketch omitted `effects` and
+  `capabilities_required`, which those already carry and any replacement would
+  have to keep. What survives is the one unshipped question —
+  `docs/design/v5/10-generated-interface-artifacts.md`, on whether a declaration
+  should *generate* its docs, contract tests and schemas, since every consumer of
+  a contract today is a reader and nothing generates anything.
+
+  The three-project sketch became a `nodus-ingest` entry in
+  `docs/projects/PROJECTS.md`, matching that page's existing shape. Its claims
+  about specific third-party extraction libraries were deliberately not carried
+  over — unverified here — while the Nodus-side workflow shape and the feature
+  coverage that makes it a showcase were.
+
+  `docs-as-contracts.md` was already a real design document and moved intact to
+  `docs/design/v5/11-docs-as-contracts.md`, with its status re-checked: an
+  unannotated handler still validates clean and reports `effects: ["pure"]` at
+  5.12.0, so its one open constraint has been open for four more minors than the
+  document recorded.
+
 - **The top-level `plans/` directory is gone; its one document is corrected and
   filed.** `plans/nodus-workflow-framework.md` was a whole top-level directory
   holding a single file, written 2026-05-30 and never reviewed. It is
