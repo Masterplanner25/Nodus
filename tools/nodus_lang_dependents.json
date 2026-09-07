@@ -75,7 +75,7 @@
     "This repo excludes itself by path; it needs no entry."
   ],
   "ignored": {
-    "C:\\codev\\nodus-a2a-wire": "Not the wire repo. A worktree of the *coordinator* repo's old history, so it declares the name `nodus-a2a` and pulls and pushes go to the wrong project. The real checkout is C:\\codev\\a2a-wire-pub, registered above. Documented in CLAUDE.md as a standing trap.",
+    "C:\\codev\\nodus-a2a-wire": "Removed 2026-09-07; this path no longer exists. It was a worktree of the *coordinator* repo's old history, declaring the distribution name `nodus-a2a`, so its own name pointed at the wrong project. Kept here as a tripwire rather than deleted: the sweep would report a recreated worktree as an unregistered dependent, and this says what it actually is. The real checkout is C:\\codev\\a2a-wire-pub, registered above.",
     "C:\\dev\\aindy-runtime": "Third party, not a first-party companion. It is a real downstream consumer -- it reported #441-#444 and found #445 before we did -- but it is not ours to publish or to keep green, and its checkout here is a convenience copy. This registry is the set whose suites we gate our own uploads on.",
     "C:\\dev\\masterplan-infiniteweave-monday-node-2025-0411": "A second aindy-runtime checkout, same reason as above.",
     "C:\\dev\\codexnodus": "Showcase project (`nodus-codex-lab`), not published -- 404 on PyPI -- and not a companion library. docs/projects/PROJECTS.md covers it."

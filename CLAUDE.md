@@ -931,11 +931,17 @@ cycle. `tools/check_publish_drift.py` prints each companion's published version 
 a side effect of answering the question Stage 6 actually asks; `tools/consumers.json`
 is the authority for the two non-PyPI consumers.
 
-Four traps worth knowing before you open the detail file:
+Four things worth knowing before you open the detail file:
 
-- **`C:\codev\nodus-a2a-wire` is NOT the wire repo** — it is a worktree of the
-  *coordinator* repo's old history, so pulls and pushes go to the wrong project.
-  Use `C:\codev\a2a-wire-pub`.
+- **The wire repo is `C:\codev\a2a-wire-pub`**, and there is only one candidate
+  now. `C:\codev\nodus-a2a-wire` was a worktree of the *coordinator* repo's old
+  history, so its name pointed at the wrong project and pulls and pushes went
+  there; **removed 2026-09-07** with `git worktree remove`, after checking it held
+  no uncommitted or untracked work, that `10746ce` is reachable from
+  `nodus-a2a`'s `origin/main`, and that `a2a-wire-pub` contains that commit at the
+  base of its own 17-commit history. Nothing was lost, and `git worktree add` at
+  that commit recreates it. Recorded because a directory named after the package
+  it is *not* is the kind of thing that comes back.
 - **Renaming a distribution does not fix a module collision.** `nodus-a2a-wire`
   and `nodus-a2a` both shipped `nodus_a2a`; installing one over the other deleted
   the other's classes with pip reporting success both times (NAME-COL-001).

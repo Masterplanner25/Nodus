@@ -78,10 +78,22 @@ named `nodus-a2a-wire` is the one that is *not* the wire repo.**
 
 | Directory | Remote | Branch | What it actually is |
 |---|---|---|---|
-| `C:\codev\nodus-a2a-wire` | **`nodus-a2a`** | detached at `10746ce` | a worktree of the *coordinator* repo's old history — pulls and pushes go to the wrong project |
+| ~~`C:\codev\nodus-a2a-wire`~~ | **`nodus-a2a`** | detached at `10746ce` | a worktree of the *coordinator* repo's old history — pulls and pushes went to the wrong project. **Removed 2026-09-07**; see below |
 | `C:\codev\a2a-wire-pub` | **`nodus-a2a-wire`** | `main` | the one that corresponds to `github.com/Masterplanner25/nodus-a2a-wire` |
 
-Use **`a2a-wire-pub`** for anything touching that GitHub repo.
+Use **`a2a-wire-pub`** for anything touching that GitHub repo. It is now the only
+candidate. The misleading worktree was removed on 2026-09-07 with
+`git worktree remove`, once three things were checked: it held no uncommitted or
+untracked work, `10746ce` is reachable from `nodus-a2a`'s `origin/main`, and
+`a2a-wire-pub` contains that same commit at the base of its own 17-commit
+history — the "preceding 16 commits kept rather than squashed into a single
+import" this section already describes. The objects still live in
+`C:\dev\nodus-a2a/.git`, so `git worktree add` at `10746ce` recreates it exactly
+if it is ever wanted back.
+
+The row above is struck through rather than deleted, because the naming inversion
+is the part worth remembering: **the directory named after the package was the one
+that was not it.**
 
 ### Three things the publish needed, and the middle one is the lesson
 
