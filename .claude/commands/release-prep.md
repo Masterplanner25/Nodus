@@ -20,7 +20,7 @@ Before touching any files:
    content to release
 6. Check `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` exists — Gate 10 must
    be complete before publishing. If it doesn't exist, run the Gate 10
-   protocol from `docs/governance/EVAL_PREPUBLISH.md` first.
+   protocol from `docs/evals/EVAL_PREPUBLISH.md` first.
 
 ## Step 1 — Determine version bump type
 
@@ -103,7 +103,7 @@ python -m venv .venv-validation
 All three must print their success message (`ALL QUIRKS CONFIRMED` etc.).
 Any failure is a regression — stop and investigate before uploading.
 
-See `docs/governance/EVAL_PREPUBLISH.md` for the full 8-category adversarial
+See `docs/evals/EVAL_PREPUBLISH.md` for the full 8-category adversarial
 protocol. Results go in `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md`.
 
 ## Step 8 — Upload to PyPI

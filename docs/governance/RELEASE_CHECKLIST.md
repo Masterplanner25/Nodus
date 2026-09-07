@@ -19,8 +19,8 @@
 | Which playbook a given release follows | `docs/governance/RELEASE_PLAYBOOK.md` |
 | Gate definitions and passing criteria | `docs/governance/RELEASE_GATES.md` |
 | Build and runtime validation detail | `docs/release.md` |
-| Pre-publish eval prompt (Gate 10) | `docs/governance/EVAL_PREPUBLISH.md` |
-| Post-publish eval prompt (Stage 5) | `docs/governance/EVAL_POSTPUBLISH.md` |
+| Pre-publish eval prompt (Gate 10) | `docs/evals/EVAL_PREPUBLISH.md` |
+| Post-publish eval prompt (Stage 5) | `docs/evals/EVAL_POSTPUBLISH.md` |
 | Semver policy | `docs/release.md#semantic-versioning` |
 
 `/release-prep` (`.claude/commands/release-prep.md`) walks the sequence, but it is

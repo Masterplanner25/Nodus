@@ -81,7 +81,7 @@ documents have been found carrying superseded content under their own authority:
 → `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` (honest current state)
 
 ### "I want to audit or evaluate this runtime"
-→ `docs/governance/AUDIT_INDEX.md` — **nine** reusable audit prompts (architecture,
+→ `docs/audits/AUDIT_INDEX.md` — **nine** reusable audit prompts (architecture,
   runtime readiness + bootstrap, boundary integrity, user reality, capability, limits,
   security model, infinity runtime, real-world capability)
 → `docs/governance/EXTERNAL_AUDIT_LEDGER.md` — verdicts on audits run *against* Nodus.
@@ -113,7 +113,7 @@ documents have been found carrying superseded content under their own authority:
 | `docs/governance/LIBRARY_ECOSYSTEM.md` | Ecosystem architecture and tiers |
 | `docs/governance/ECOSYSTEM_MATURITY_RUBRIC.md` | How to assess companion libraries |
 | `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` | Current companion library state |
-| `docs/governance/ECOSYSTEM_COVERAGE_ANALYSIS.md` | Coverage vs. 12 reference systems (strict, gaps + strengths) |
+| `docs/history/ECOSYSTEM_COVERAGE_ANALYSIS.md` | Coverage vs. 12 reference systems (strict, gaps + strengths) |
 | `docs/governance/RELEASE_GATES.md` | What must pass before a release |
 | `docs/governance/TECH_DEBT.md` | Open items and known limitations |
 | `docs/governance/VERSIONING.md` | Semver policy |
@@ -200,7 +200,7 @@ stopping condition (#409) in 5.0.0, cancellation (#395) in 5.7.0. Read them as r
 
 | Document | Role |
 |----------|------|
-| `docs/governance/AUDIT_INDEX.md` + the nine `AUDIT_*.md` | Reusable audit prompts |
+| `docs/audits/AUDIT_INDEX.md` + the nine `AUDIT_*.md` | Reusable audit prompts |
 | `docs/governance/EXTERNAL_AUDIT_LEDGER.md` | Verdicts on audits run against Nodus |
 | `docs/governance/MATURITY_CHECKLIST.md` | Maturity score and re-score |
 | `docs/governance/TEST_STRATEGY.md` | Test suite organisation and standards |
@@ -212,11 +212,11 @@ stopping condition (#409) in 5.0.0, cancellation (#395) in 5.7.0. Read them as r
 
 | Document | State |
 |----------|-------|
-| `docs/governance/DOCSET_ALIGNMENT_AUDIT.md` | Dated record of the 2026-05-29 sweep |
-| `docs/governance/ECOSYSTEM_DOCSET_AUDIT.md` | Dated record of the 2026-05-29 sweep |
-| `docs/governance/DOCSET_STATUS_AUDIT.md` | Dated record of the 2026-05-29 sweep |
-| `docs/governance/DOCSET_CHANGELOG.md` | Dated record; **one entry in nine releases** |
-| `docs/governance/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md` | **Closed** — all seven conflicts verified resolved 2026-08-07. Not a to-do list |
+| `docs/history/docset-sweep-2026-05-29/DOCSET_ALIGNMENT_AUDIT.md` | Dated record of the 2026-05-29 sweep |
+| `docs/history/docset-sweep-2026-05-29/ECOSYSTEM_DOCSET_AUDIT.md` | Dated record of the 2026-05-29 sweep |
+| `docs/history/docset-sweep-2026-05-29/DOCSET_STATUS_AUDIT.md` | Dated record of the 2026-05-29 sweep |
+| `docs/history/docset-sweep-2026-05-29/DOCSET_CHANGELOG.md` | Dated record; **one entry in nine releases** |
+| `docs/history/HIGH_CONFLICT_DOC_RECONCILIATION_PLAN.md` | **Closed** — all seven conflicts verified resolved 2026-08-07. Not a to-do list |
 
 `INVARIANT_TEST_MAPPING.md` is **superseded**: the mapping is
 `tools/invariant_coverage.json`, checked by `nodus_gate --invariants`.
@@ -280,8 +280,8 @@ For the ecosystem-level view (architecture, maturity, scope):
 These documents capture completed work and should not be treated as authoritative for
 the current state. They are preserved for audit trail purposes.
 
-- `docs/governance/V2_1_PLAN.md`, `V3_0_PLAN.md`, `V3_1_PLAN.md`, `V4_0_PLAN.md` — all completed
-- `docs/governance/RELEASE_NOTES_0.2.0.md`, `RELEASE_NOTES_1.0.0.md` — historical
+- `docs/history/plans/V2_1_PLAN.md`, `V3_0_PLAN.md`, `V3_1_PLAN.md`, `V4_0_PLAN.md` — all completed
+- `docs/history/release-notes/RELEASE_NOTES_0.2.0.md`, `RELEASE_NOTES_1.0.0.md` — historical
 - `docs/governance/GENERAL_PURPOSE_TRAJECTORY.md` — a dated v4.0.0 baseline
 - **`docs/evals/` — every directory below the newest is historical.** They are a record
   of what each release was validated against, not a claim about the present. Do not

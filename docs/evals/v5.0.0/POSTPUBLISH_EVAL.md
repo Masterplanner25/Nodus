@@ -1,8 +1,8 @@
 # Stage 5 — post-publish eval, v5.0.0
 
 **Against the published package**, installed fresh from PyPI. Template:
-[`EVAL_STAGE4_TEMPLATE.md`](../../governance/EVAL_STAGE4_TEMPLATE.md); prompt:
-[`EVAL_POSTPUBLISH.md`](../../governance/EVAL_POSTPUBLISH.md).
+[`EVAL_STAGE4_TEMPLATE.md`](../EVAL_STAGE4_TEMPLATE.md); prompt:
+[`EVAL_POSTPUBLISH.md`](../EVAL_POSTPUBLISH.md).
 
 | | |
 |---|---|

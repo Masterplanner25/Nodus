@@ -368,7 +368,7 @@ type with the conceptual operation.
 
 ## Cross-references
 
-- `docs/governance/V4_0_PLAN.md` (original Tier 1 breaking change
+- `docs/history/plans/V4_0_PLAN.md` (original Tier 1 breaking change
   list)
 - `docs/design/v4/09-ieee-754-division.md` (sibling; integer
   arithmetic semantics)

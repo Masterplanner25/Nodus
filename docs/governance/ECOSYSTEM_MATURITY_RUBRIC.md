@@ -145,5 +145,5 @@ manifest a gate reads, or the code itself.
 ## Related documents
 
 - `docs/governance/ECOSYSTEM_READINESS_ASSESSMENT.md` — current-state assessment using this rubric
-- `docs/governance/ECOSYSTEM_90_DAY_CHECKLIST.md` — what needs to happen before production claim
+- `docs/history/ECOSYSTEM_90_DAY_CHECKLIST.md` — what needs to happen before production claim
 - `docs/governance/LIBRARY_ECOSYSTEM.md` — ecosystem architecture

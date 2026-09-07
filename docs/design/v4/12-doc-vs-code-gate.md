@@ -757,7 +757,7 @@ drift, patch closure). It does NOT include:
   gate)
 - `docs/governance/PLAYBOOK_PATCH_MINOR.md` (Stage 3 integration)
 - `docs/governance/PLAYBOOK_MAJOR.md` (Phase 4 and Phase 5 integration)
-- `docs/governance/V4_0_PLAN.md` (Phase 5 release sequence)
+- `docs/history/plans/V4_0_PLAN.md` (Phase 5 release sequence)
 - `docs/design/v4/07-test-framework-api.md` (test framework; closed-
   issues phase uses the test framework or pytest depending on file format)
 - `docs/design/v4/13-err-record-location-fields.md` (sibling; gate

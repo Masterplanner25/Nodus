@@ -155,7 +155,10 @@
       "llms.txt",
       "llms-full.txt",
       "docs/governance/*.md",
-      "docs/runtime/*.md"
+      "docs/runtime/*.md",
+      "docs/audits/*.md",
+      "docs/history/*.md",
+      "docs/history/*/*.md"
     ],
     "currency_markers": [
       "current stable",

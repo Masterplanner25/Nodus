@@ -1,7 +1,7 @@
 # Gate 10 — creator validation, v5.0.0
 
 **Pre-publish.** Run against the **built wheel** in a clean venv, before any
-upload. Protocol: [`EVAL_PREPUBLISH.md`](../../governance/EVAL_PREPUBLISH.md).
+upload. Protocol: [`EVAL_PREPUBLISH.md`](../EVAL_PREPUBLISH.md).
 
 | | |
 |---|---|

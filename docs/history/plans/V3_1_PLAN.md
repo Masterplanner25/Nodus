@@ -89,7 +89,7 @@ These items are low-risk and could ship in any v3.x patch:
 
 ## See also
 
-- [ROADMAP.md](ROADMAP.md) — higher-level feature roadmap
-- [COMPATIBILITY.md](COMPATIBILITY.md) — breaking-change policy and deprecation timeline
-- [DEPRECATIONS.md](DEPRECATIONS.md) — active deprecation warnings
+- [ROADMAP.md](../../governance/ROADMAP.md) — higher-level feature roadmap
+- [COMPATIBILITY.md](../../governance/COMPATIBILITY.md) — breaking-change policy and deprecation timeline
+- [DEPRECATIONS.md](../../governance/DEPRECATIONS.md) — active deprecation warnings
 - [V3_0_PLAN.md](V3_0_PLAN.md) — completed v3.0 work

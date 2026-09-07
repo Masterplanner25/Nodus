@@ -474,7 +474,7 @@ is consistent with all other v4.0 err records.
 ## Cross-references
 
 - BUG-V31E-05 (#79) — original bug surfacing this
-- `docs/governance/V4_0_PLAN.md` (Tier 1 breaking change list)
+- `docs/history/plans/V4_0_PLAN.md` (Tier 1 breaking change list)
 - `docs/design/v4/13-err-record-location-fields.md` (sibling; the
   CALL_BUILTIN wrapping adds location fields to this err record
   automatically)

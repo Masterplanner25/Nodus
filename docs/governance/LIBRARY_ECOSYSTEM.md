@@ -4,7 +4,7 @@
 **Created:** 2026-05-25 (v4.0 cycle, Phase 0)
 **Last reconciled:** 2026-05-30 (v4.0.0 — Phase 6 stdlib additions, nodus-sdk, nodus-store-sql)
 **Companion to:** `docs/design/v4/00-phase-0-decisions.md`,
-`docs/governance/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
+`docs/history/plans/V4_0_PLAN.md`, `docs/governance/STDLIB_PHILOSOPHY.md`
 **Maintainer:** Shawn Knight (Masterplanner25)
 
 > **Current state note (2026-08-05):** nodus-lang is at **4.1.1**, published on PyPI.
@@ -435,7 +435,7 @@ protocols-are-adapters commitment hold.
 |---|---|
 | This document | `docs/governance/LIBRARY_ECOSYSTEM.md` |
 | Phase 0 decisions | `docs/design/v4/00-phase-0-decisions.md` |
-| v4.0 plan | `docs/governance/V4_0_PLAN.md` |
+| v4.0 plan | `docs/history/plans/V4_0_PLAN.md` |
 | Stdlib philosophy | `docs/governance/STDLIB_PHILOSOPHY.md` (Phase 4 deliverable) |
 | nodus-mcp repo | `github.com/Masterplanner25/nodus-mcp` |
 | nodus-a2a repo | `github.com/Masterplanner25/nodus-a2a` |
