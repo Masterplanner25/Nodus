@@ -25,6 +25,7 @@ from nodus.support.config import (
 )
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
+from nodus.support.staging import record_staged_flip
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.result import Result, normalize_filename
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, goal_name_candidates, workflow_name_candidates
@@ -206,6 +207,11 @@ def _staged_type_warnings(loader) -> str:
         where = module_id or "<memory>"
         lines.append(
             f"{where}:{item['line']}:{item['col']}: warning: {item['message']}\n"
+        )
+        record_staged_flip(
+            "unknown-type-name",
+            item["message"],
+            where=f"{where}:{item['line']}:{item['col']}",
         )
     return "".join(lines)
 

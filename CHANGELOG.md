@@ -15,6 +15,23 @@
   afterwards. One detail only doing it turns up — `--dry-run` creates the target
   database file, empty.
 
+- **`NODUS_STAGED_FLIP_REPORT`: collect what a run actually hits.**
+
+  Set it to a path and every staged-flip site appends a JSON Lines record, so a
+  whole test suite leaves an exposure list instead of stderr that scrolled past.
+  `nodus check --staged` merges what it finds, and record equality (#545) — the
+  one flip nothing static can reach — is then reported as **checked, by a run**
+  rather than as unchecked.
+
+  ```
+  NODUS_STAGED_FLIP_REPORT=.nodus/staged.jsonl nodus test
+  NODUS_STAGED_FLIP_REPORT=.nodus/staged.jsonl nodus check --staged
+  ```
+
+  Unset, it records nothing and costs nothing. It **records without emitting**:
+  every warning still prints exactly as it did, byte for byte, including the two
+  an embedder reads out of `result["stderr"]`.
+
 - **`nodus check --staged`: what in this project breaks at the next major.**
 
   Every behaviour staged to change at 6.0.0 warns today, but four of the five

@@ -19,7 +19,7 @@ from nodus.orchestration.task_graph import (
     run_task_graph,
 )
 from nodus.runtime.state_paths import workflow_store_root
-from nodus.support.staging import warn_staged_flip
+from nodus.support.staging import record_staged_flip, warn_staged_flip
 
 from .models import (
     REHYDRATABLE_RUN_STATUSES,
@@ -1478,6 +1478,10 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
         return
     # v6-flip: default-store-sqlite
     _WARNED_DEFAULT_STORE = True
+    record_staged_flip(
+        "default-store-sqlite",
+        "an unconfigured local workflow store holds runs; the default becomes SQLite at 6.0.0",
+    )
     warn_staged_flip(
         "The default workflow store is LocalWorkflowStore (file-backed JSON), "
         "which is not crash-safe, and this store already holds runs. The default "

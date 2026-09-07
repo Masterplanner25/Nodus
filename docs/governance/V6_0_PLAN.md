@@ -177,7 +177,7 @@ Proposed; these are what §3 says must be true before a 6.0.0 is defensible.
 |---|---|
 | **G1** | Every live 6.0.0 promise in `src/` has an open issue. **Closed** — #797 (default store) and #798 (`worker:`) were filed 2026-09-06; `nodus/support/staged_flips.json` names an issue per flip and `--flips` requires the field. |
 | **G2** | Every flip's warning is visible on the path a user actually runs. **Closed** — see below. |
-| **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). **Closed for the four flips that can be answered from source** — `nodus check --staged`. #545 cannot be, and the report says so per flip; the dynamic half (R2) is deferred. |
+| **G3** | A project can enumerate its own exposure without waiting to hit each path at runtime (§3.3). **Closed.** Four answered from source and the fifth by collecting what a run hits — `nodus check --staged`, plus `NODUS_STAGED_FLIP_REPORT` for #545 (R2). |
 | **G4** | Each flip has a migration paragraph; #174 needs more than a paragraph. **Closed** — `docs/migration/v6.0-staged-flips.md`, with #174 given the procedure rather than a paragraph, verified against a parked run. |
 | **G5** | The four documents in §3.1 agree, and cannot silently drift apart again. **Closed** — see below. |
 | **G6** | `check_downstream_constraints` re-run at the cut (see §5). |

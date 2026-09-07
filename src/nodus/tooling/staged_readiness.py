@@ -40,6 +40,7 @@ from nodus.orchestration.workflow_state import (
     DEFAULT_STATE_MERGE,
     FOLD_STATE_MERGE_POLICIES,
 )
+from nodus.support.staging import read_staged_flip_report, report_path
 
 _REGISTER = Path(__file__).resolve().parent.parent / "support" / "staged_flips.json"
 
@@ -90,6 +91,7 @@ class FlipReport:
     summary: str
     checked: bool
     findings: list = field(default_factory=list)
+    observed: int = 0
     reason: str = ""
 
 
@@ -98,6 +100,7 @@ class ReadinessReport:
     target: str = ""
     roots: list = field(default_factory=list)
     flips: list = field(default_factory=list)
+    observed_report: bool = False
     error: str | None = None
 
     @property
@@ -285,11 +288,13 @@ def scan(
     type_warnings: list[dict] | None = None,
     project_root: str | None = None,
     register_path: Path | None = None,
+    dynamic_report: str | None = None,
 ) -> ReadinessReport:
     """Build the readiness report.
 
     `sources` is `(path, code)` for each file walked; `type_warnings` is what
     `check_source` already produced for #609, passed in rather than recomputed.
+    `dynamic_report` overrides `NODUS_STAGED_FLIP_REPORT` for tests.
     """
     report = ReadinessReport()
     data, error = load_register(register_path)
@@ -323,16 +328,37 @@ def scan(
     ]
     collected["default-store-sqlite"] = _local_store_findings(project_root)
 
+    # What earlier runs actually hit, if anyone asked for a report. This is the
+    # only answer #545 has, and it *upgrades* a flip from "not checked" to
+    # "checked by running" rather than being merged into the static findings --
+    # the distinction matters, because a dynamic result covers the paths that
+    # ran and a static one covers the source.
+    observed: dict[str, list] = {}
+    for record in read_staged_flip_report(dynamic_report):
+        observed.setdefault(record["flip"], []).append(
+            Finding(
+                record["flip"],
+                str(record.get("where") or "(observed at run time)"),
+                str(record.get("message", "")),
+            )
+        )
+    report.observed_report = bool(observed) or bool(dynamic_report or report_path())
+
     for name, entry in sorted((data.get("flips") or {}).items()):
         entry = entry or {}
-        checked = name in _STATIC
+        seen = observed.get(name, [])
+        checked = name in _STATIC or bool(seen)
+        findings = list(collected.get(name, []))
+        if name not in _STATIC:
+            findings.extend(seen)
         report.flips.append(
             FlipReport(
                 name=name,
                 issue=entry.get("issue", "?"),
                 summary=str(entry.get("summary", "")),
                 checked=checked,
-                findings=collected.get(name, []),
+                findings=findings,
+                observed=len(seen),
                 reason="" if checked else _unchecked_reason(name),
             )
         )
@@ -344,7 +370,8 @@ def _unchecked_reason(name: str) -> str:
         return (
             "not checkable from source: it depends on the runtime type of both "
             "`==` operands, and annotations are optional and unenforced. Run the "
-            "program or its tests -- the warning fires exactly when a "
-            "comparison's answer will change"
+            "program or its tests with NODUS_STAGED_FLIP_REPORT=<path> set, then "
+            "re-run this -- the warning fires exactly when a comparison's answer "
+            "will change, and what it finds is reported here"
         )
     return "no static check is implemented for this flip"
