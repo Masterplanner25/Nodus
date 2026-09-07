@@ -237,7 +237,7 @@ import "std:retry" as retry
 fn main() {
     let seen = []
     retry.until(
-        fn(previous) { seen = list_push(seen, previous); return len(seen) },
+        fn(previous) { list_push(seen, previous); return len(seen) },
         fn(value) { return value >= 3i },
         {"max_attempts": 5i}
     )

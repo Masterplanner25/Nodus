@@ -30,6 +30,22 @@
   and the record case is the one that motivates the surface.
 
 ### Fixes
+- **#816: example code no longer spells an in-place push as a reassignment.**
+  `list_push` mutates the list and returns the same one — documented, and
+  contradicted by `xs = list_push(xs, v)`, which reads like a functional API
+  returning a new list. A reader who learns lists that way has no reason to
+  expect `let b = a` to alias, which is the rule right next door.
+
+  **The sweep found five times what the issue named.** #816 cited two files; the
+  idiom was in four, at twenty sites — both remaining release probes, and
+  `packages/nodus-scheduler`, which is real Nodus read as a reference for how to
+  write Nodus. `tests/test_list_push_idiom.py` is the guard, because nothing
+  checked and that is why it spread. Chaining and
+  `let xs = list_push([1, 2], 3)` are correct uses of the return value and are
+  not flagged.
+
+  `standard-library.md` now says what the return value is *for* — chaining —
+  with an executed example showing that the returned list is the same list.
 
 - **#822: a workflow `state` cell now owns its value, and every way of changing
   one is recorded.** `cell[i] = v` and `m["k"] = v` lowered to a *read* of the

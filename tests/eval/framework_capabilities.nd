@@ -32,7 +32,7 @@ fn probe_event_bus() {
     let handlers = []
     let received = []
     fn subscribe(h) {
-        handlers = list_push(handlers, h)
+        list_push(handlers, h)
     }
     fn emit(value) {
         let i = 0
@@ -41,8 +41,8 @@ fn probe_event_bus() {
             i = i + 1
         }
     }
-    subscribe(fn(msg) { received = list_push(received, "A:" + msg) })
-    subscribe(fn(msg) { received = list_push(received, "B:" + msg) })
+    subscribe(fn(msg) { list_push(received, "A:" + msg) })
+    subscribe(fn(msg) { list_push(received, "B:" + msg) })
     emit("hello")
     check("two handlers called", len(received), 2i)
     check("first handler", received[0], "A:hello")
@@ -54,9 +54,9 @@ fn probe_middleware() {
     print("[P3] Middleware")
     let log_calls = []
     fn logged(next_fn, value) {
-        log_calls = list_push(log_calls, "before")
+        list_push(log_calls, "before")
         let result = next_fn(value)
-        log_calls = list_push(log_calls, "after")
+        list_push(log_calls, "after")
         return result
     }
     fn double(x) {
@@ -73,7 +73,7 @@ fn probe_service_registry() {
     print("[P4] Service Registry")
     let services = {}
     let calls = []
-    services["logger"] = fn(msg) { calls = list_push(calls, msg) }
+    services["logger"] = fn(msg) { list_push(calls, msg) }
     services["counter"] = fn(n) { return n + 1 }
     services["logger"]("init")
     check("service lookup + call", calls[0], "init")
@@ -123,9 +123,9 @@ fn probe_plugin_registry() {
 fn probe_pipeline() {
     print("[P7] Pipeline")
     let steps = []
-    steps = list_push(steps, fn(x) { return x + 1 })
-    steps = list_push(steps, fn(x) { return x * 2 })
-    steps = list_push(steps, fn(x) { return x - 3 })
+    list_push(steps, fn(x) { return x + 1 })
+    list_push(steps, fn(x) { return x * 2 })
+    list_push(steps, fn(x) { return x - 3 })
     let value = 5
     let i = 0
     while (i < len(steps)) {
@@ -140,16 +140,16 @@ fn probe_pipeline() {
 fn probe_rule_engine() {
     print("[P8] Rule Engine")
     let rules = []
-    rules = list_push(rules, record {name: "positive", pred: fn(x) { return x > 0 }})
-    rules = list_push(rules, record {name: "even", pred: fn(x) { return x % 2 == 0 }})
-    rules = list_push(rules, record {name: "large", pred: fn(x) { return x > 100 }})
+    list_push(rules, record {name: "positive", pred: fn(x) { return x > 0 }})
+    list_push(rules, record {name: "even", pred: fn(x) { return x % 2 == 0 }})
+    list_push(rules, record {name: "large", pred: fn(x) { return x > 100 }})
     fn evaluate(value) {
         let matched = []
         let i = 0
         while (i < len(rules)) {
             let pred_fn = rules[i].pred
             if (pred_fn(value)) {
-                matched = list_push(matched, rules[i].name)
+                list_push(matched, rules[i].name)
             }
             i = i + 1
         }
@@ -193,8 +193,8 @@ fn probe_coroutines() {
     spawn(coroutine(fn() { send(ch, "a") }))
     spawn(coroutine(fn() { send(ch, "b") }))
     spawn(coroutine(fn() {
-        results = list_push(results, recv(ch))
-        results = list_push(results, recv(ch))
+        list_push(results, recv(ch))
+        list_push(results, recv(ch))
     }))
     run_loop()
     check("two messages received", len(results), 2i)

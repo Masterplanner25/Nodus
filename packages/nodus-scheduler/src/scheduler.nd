@@ -52,7 +52,7 @@ fn sorted_unique(items) {
         let key = "\(v)"
         if (has_key(seen, key) == false) {
             seen[key] = true
-            out = push(out, v)
+            push(out, v)
         }
         i = i + 1i
     }
@@ -109,7 +109,7 @@ fn parse_term(term, lo, hi) {
     let out = []
     let v = low
     while (v <= high) {
-        out = push(out, v)
+        push(out, v)
         v = v + by
     }
     return out
@@ -127,7 +127,7 @@ fn parse_field(field, lo, hi) {
         let values = parse_term(piece, lo, hi)
         let j = 0i
         while (j < len(values)) {
-            out = push(out, values[j])
+            push(out, values[j])
             j = j + 1i
         }
         i = i + 1i
@@ -149,7 +149,7 @@ fn parse(expression) {
     let i = 0i
     while (i < len(fields)) {
         if (fields[i] != "") {
-            cleaned = push(cleaned, fields[i])
+            push(cleaned, fields[i])
         }
         i = i + 1i
     }
