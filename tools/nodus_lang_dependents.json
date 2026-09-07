@@ -58,7 +58,7 @@
     "nodus-a2a-wire": {
       "path": "C:\\codev\\a2a-wire-pub",
       "published": true,
-      "note": "#477. Missing from BOTH registries until #810. The checkout is a2a-wire-pub -- C:\\codev\\nodus-a2a-wire is a worktree of the coordinator repo's old history and is the wrong project, which is a good part of why this one was skipped."
+      "note": "#477. Missing from BOTH registries until #810. The checkout is a2a-wire-pub; the worktree once named nodus-a2a-wire was the coordinator's old history and was removed 2026-09-07. IMPORTANT: its nodus-lang link is a DEV EXTRA, not a runtime dependency -- published metadata is 'nodus-lang>=4.0.0; extra == \"dev\"' and its `dependencies` list is empty, because the only import is one test that skips without it. Do not remove this entry on the grounds that the runtime deps are empty: Gate 10a runs suites, that suite imports nodus-lang under PYTHONPATH=src, and a nodus-lang change can turn it red. It is a canary, not a component."
     }
   },
 
