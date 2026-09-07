@@ -30,6 +30,51 @@ jobs:
             tests/test_sandbox_limits.py \
             tests/test_subprocess_sandbox.py
 
+  # #811: the Gate 10b probes ran only at a release, so a probe could go stale
+  # and nobody learned until the next cut. That happened at 5.12.0 --
+  # `probe_graph_does_not_execute` passed `--allow-paths` to `nodus graph`, which
+  # has never declared it, and #791 turned that from harmless into an error. The
+  # identical line was fixed in a *test* when #791 landed, because CI runs tests
+  # and not probes.
+  #
+  # The issue's cost objection was that the probes need a built wheel, a clean
+  # venv, and a CWD outside the repo. That is true, and it is also about ninety
+  # seconds -- CI already builds a wheel and a venv for the distribution smoke
+  # test. A separate job keeps it off the 12-minute `test` job's critical path.
+  #
+  # This does not replace Gate 10b, which still runs at a release against the
+  # artifact that will actually be uploaded. It removes the staleness window.
+  probes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout v4.3.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # actions/setup-python v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        run: |
+          python -m pip install --quiet build wheel
+          python -m build --wheel
+
+      - name: Release-claims probes against the wheel
+        run: |
+          python -m venv /tmp/probe-venv
+          /tmp/probe-venv/bin/python -m pip install --quiet dist/*.whl
+          # From outside the repo, and `--require-installed` to prove it: the
+          # repo-root `nodus.py` shim inserts `src/` on `sys.path`, so ANY
+          # process whose CWD is the checkout resolves `nodus` to the source tree
+          # no matter what is installed. That trap shipped 5.0.3 past 32 green
+          # probes and recurred at 5.5.0 and 5.6.0.
+          cd /tmp
+          /tmp/probe-venv/bin/python \
+            "$GITHUB_WORKSPACE/tests/eval/release_claims_probe.py" \
+            --repo "$GITHUB_WORKSPACE" --require-installed
+
   test:
     runs-on: ubuntu-latest
     permissions:
