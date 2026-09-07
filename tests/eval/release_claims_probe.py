@@ -687,7 +687,12 @@ def probe_graph_does_not_execute(repo: Path):
             "let r = run_workflow(w)\n",
             encoding="utf-8",
         )
-        code, out = cli(["nodus", "graph", str(script), "--allow-paths", td])
+        # No `--allow-paths`: `nodus graph` has never declared it, so it was
+        # swallowed as a positional and did nothing -- and since #791 an
+        # undeclared flag is refused, which turned this probe red. It never
+        # mattered here: the assertion is that the file is *not* executed, so
+        # the write it would have permitted never happens.
+        code, out = cli(["nodus", "graph", str(script)])
         assert code == 0, f"static plan failed: {out[:200]}"
         assert '"nodes": ["a", "b"]' in out, out[:200]
         assert not probe_file.exists(), "inspecting the file executed it"
