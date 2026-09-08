@@ -56,6 +56,16 @@ DOCUMENTS = {
         # - `allow_subprocess` (bool, default `False`): ...
         r"^-\s*`{name}`\s*\([^)]*default\s*`(?P<value>True|False)`",
     ),
+    # Added 2026-09-07. This document is the reason the guard needed widening:
+    # it stated subprocess and network as *allowed and unsandboxed in every
+    # context* from v5.0.0 until the sweep that added this line, while the two
+    # documents above were corrected at 5.3.0. A guard covering two of the three
+    # places that answer one question is the shape this repo keeps hitting -- and
+    # the place it missed was the security matrix.
+    "docs/security/SECURITY_MATRIX.md": (
+        # | `allow_subprocess` | `bool` | **`False`** (#405) | ...
+        r"^\|\s*`{name}`\s*\|[^|]*\|\s*\**`(?P<value>True|False)`",
+    ),
 }
 
 

@@ -390,7 +390,57 @@
   Each new check was confirmed to fail against a deliberately broken copy before
   being trusted.
 
+- **`test_documented_defaults_agree.py` now covers `SECURITY_MATRIX.md`.** The
+  test exists because the `allow_*` switches flipped to deny-by-default at v5.0.0
+  and two documents went on saying `True`. It was pointed at
+  `OPERATOR_OR_EMBEDDER_RUNBOOK.md` and `EMBEDDING.md` — both corrected at 5.3.0 —
+  and not at the security matrix, where the reversal therefore survived until
+  now. A guard covering two of the three places that answer one question is this
+  repo's signature shape; the place it missed was the one where a reversed
+  capability default matters most.
+
+  Both directions were confirmed to fail before being trusted: a flipped default
+  in the matrix names the discrepancy, and a dropped parameter trips `_locate`'s
+  assertion rather than passing by matching nothing.
+
+- **The doc gate scans `docs/security/`.** The static phase checks `std:` module
+  and CLI references in prose, which is most of what a security matrix is made
+  of, and the directory was outside the scan list. It found a nonexistent
+  `std:x` on its first run.
+
 ### Documentation
+
+- **`SECURITY_MATRIX.md` rewritten against the running system.** It was stamped
+  `Version: 4.1.1` and stated that subprocess and network were **allowed and
+  unsandboxed in every context** — true through v4.2.0, and the opposite of the
+  truth for embedded runtimes since v5.0.0 and for `nodus serve` since v5.10.0.
+  Every row is now re-derived by running it. What the previous revision got
+  wrong, beyond that reversal:
+
+  - **"Default step limit: none" and "Default time limit: none"** in all three
+    contexts. The CLI applies both — 10,000,000 steps and a 200 ms wall-clock
+    budget — and `NodusRuntime` defaults `max_steps` to 10,000,000. Only
+    `timeout_ms` is genuinely unbounded.
+  - **"No memory limit — Open, not filed."** `max_memory_mb` exists and enforces;
+    an unenforceable limit is refused at construction rather than accepted and
+    ignored.
+  - **"No URL-level network restriction exists."** `allowed_hosts` is that
+    restriction, with `allowed_commands` as its subprocess counterpart.
+  - **Six security test files it had never heard of** — 102 tests covering the
+    whole v5 capability system, in exactly the areas it reported as untested.
+  - No mention of the capability policy, the Floor, `writable_paths`, or
+    environment access.
+
+  It now also records the call-depth cap as behaviour rather than a field:
+  `NodusRuntime().max_frames` is `None`, which reads as "no cap" and is not.
+
+- **Filed (open): a gap this review found in `nodus serve`.** With no
+  `--allow-paths`, the server applies no filesystem confinement at all —
+  submitted code read a system file and wrote outside the project tree, both
+  verified off disk against a running server. It is the same asymmetry the
+  v5.10.0 server work addressed for subprocess, network and environment, and the
+  filesystem was not part of it. Tracked as [#843](https://github.com/Masterplanner25/Nodus/issues/843); the matrix carries it as
+  an open HIGH row rather than the resolved one the previous revision claimed.
 
 - **The bytecode cache no longer documents a guarantee it stopped making.**
   `BYTECODE.md` §12 and `ARCHITECTURE.md` both said an entry is invalidated by

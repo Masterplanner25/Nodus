@@ -168,6 +168,11 @@ def collect_doc_files(
         "docs/guide/*.md",
         "docs/policy/*.md",
         "docs/runtime/*.md",
+        # Added 2026-09-07. The static phase checks `std:` module and CLI
+        # references in prose, which is most of what a security matrix is made
+        # of -- and this directory was outside the scan while SECURITY_MATRIX.md
+        # named flags and modules nothing verified.
+        "docs/security/*.md",
         "docs/migration/*.md",
         "llms.txt",
         # llms-full.txt was omitted while llms.txt was listed, so the file 5.5.0
