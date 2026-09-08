@@ -436,8 +436,60 @@
   `std:math` and `std:path` were checked the same way and their tables are
   correct: they are explicitly scoped to error-returning functions, and the 21
   math and 5 path functions they omit have no failure mode of their own.
+
+- **`tests/test_doc_python_imports.py`: every `nodus` import in a documentation
+  Python block must resolve.** `TESTING.md` told contributors to start a parser
+  test with `from lexer import tokenize` / `from parser import Parser` /
+  `from ast_nodes import Let, Num`. None of the three resolves, and `parser` is
+  also a Python stdlib module removed in 3.10, so the failure reads as an
+  environment problem rather than a wrong path. Nothing checked it: the doc gate
+  runs `nodus` blocks, never Python ones, and `docs/tooling/` was outside its
+  scan entirely.
+
+  Three checks — the module resolves, the symbol exists, and no document imports
+  an internal module by its **bare** name. The third derives its set of module
+  basenames from `src/nodus/` rather than listing them, and flags a bare name
+  only when it also fails to import, since `nodus` is both an internal basename
+  and a real top-level package. 95 imports across the docset pass; the check was
+  confirmed to name the exact defect when it was reintroduced.
+
+- **The doc gate scans `docs/tooling/`.** It found an unrunnable block on its
+  first pass — a `package:module` import example needing an installed package,
+  now fenced `nd-no-run` rather than left to fail.
 ### Documentation
 
+
+- **`TESTING.md` corrected throughout.** Both Python examples were broken: the
+  parser one by the three imports above, the compiler one by
+  `assert code[0][0] == "PUSH_CONST"` — `code` is a dict, so that raises
+  `KeyError: 0`. The instructions live at `code["instructions"]`, and index 0 is
+  the module prologue `("JUMP", 1)`.
+
+  The CI section described **two** jobs; there are three (`security`, `probes`,
+  `test`) and the test job has fifteen steps, not the ten listed — the omitted
+  ones include the **doc-vs-code gate**. Its `.nd` format-check recipe was a
+  `find … | xargs` form with the exclusions restated by hand, which is both
+  superseded by `python -m tools.check_nd_format` and the exact mistake the old
+  pre-commit hook made when it restated CI's list and got it wrong.
+
+  The formatter section listed 4 of 11 test modules and omitted the two that
+  enforce coverage: the node-level completeness guard, and the round-trip
+  property that exists because a node-level guard does not cover *fields* — the
+  hole 5.6.0 shipped `each` and `budget { limits: … }` through.
+
+  "Known Flaky Tests" listed one test, attributed its fix to a release years
+  back, and recommended re-running in isolation. All three known flakes are
+  fixed; the isolation advice is the one method guaranteed to tell you nothing,
+  because none of them ever failed from repetition — only under load. The
+  section now records how to reproduce the class instead.
+
+- **`EDITOR_SUPPORT.md` said the grammar highlights "all 31" keywords.** There
+  are 42. The page already said the list is not maintained by hand and points at
+  `lexer.ALL_KEYWORDS`; it now declines to state a count at all, which is the
+  same principle applied to the number.
+
+- Every `docs/tooling/` document carries a `Last reviewed:` header. `DAP.md` and
+  `DEBUGGER.md` are deliberate redirect stubs and were correct as they stood.
 
 - **Filed (open): `fs.ensure_dir` reports success when it created nothing.** It
   calls `mkdir` and discards the result, returning the path unconditionally. With

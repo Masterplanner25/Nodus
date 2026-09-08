@@ -173,6 +173,10 @@ def collect_doc_files(
         # of -- and this directory was outside the scan while SECURITY_MATRIX.md
         # named flags and modules nothing verified.
         "docs/security/*.md",
+        # Added 2026-09-07. TESTING.md's two Python examples had three
+        # unresolvable imports and an assertion that raises KeyError; nothing
+        # scanned this directory, so nothing said so.
+        "docs/tooling/*.md",
         "docs/migration/*.md",
         "llms.txt",
         # llms-full.txt was omitted while llms.txt was listed, so the file 5.5.0

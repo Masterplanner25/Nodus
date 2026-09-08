@@ -1,5 +1,7 @@
 # Nodus Language Server
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus includes a Language Server Protocol implementation for editor integration.
 
 ## Capabilities

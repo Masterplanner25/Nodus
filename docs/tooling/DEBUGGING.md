@@ -1,5 +1,7 @@
 # Debugging
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus exposes two debugging entrypoints built on the same runtime debugger:
 
 - `nodus debug <script.nd>` for the built-in interactive debugger

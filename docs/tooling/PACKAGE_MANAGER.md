@@ -1,5 +1,7 @@
 ﻿# Package Manager
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus includes a minimal, local-first package manager intended for small automation projects.
 
 > **`nodus <command> --help` is safe on every command.** It is handled centrally
@@ -120,7 +122,7 @@ Resolution and installation order is:
 ## Import Resolution
 Dependencies are imported using the `package:module` syntax:
 
-```nd
+```nd-no-run
 import "utils:strings"
 ```
 

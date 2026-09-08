@@ -1,5 +1,7 @@
 # Nodus Projects
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus projects are rooted by a `nodus.toml` manifest.
 
 ## Manifest
