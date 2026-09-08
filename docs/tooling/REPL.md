@@ -1,5 +1,7 @@
 # Nodus REPL
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 The Nodus REPL is an interactive shell for quick experiments, bytecode inspection, and small development loops.
 
 Start it with:

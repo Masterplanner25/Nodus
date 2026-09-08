@@ -1,5 +1,7 @@
 # Editor Support
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus ships a small TextMate grammar and VS Code language configuration so `.nd` files get baseline syntax highlighting and file association.
 
 ## VS Code
@@ -19,14 +21,14 @@ odus-vscode`). To install from source:
 
 There used to be a second copy of the grammar in this repository under
 `tools/vscode/`. It had drifted — neither copy was a superset of the other, and
-the in-repo one was missing 17 of the language's 31 keywords — so it was removed
+the in-repo one was missing 17 of the 31 keywords the language had then — so it was removed
 rather than reconciled ([#357](https://github.com/Masterplanner25/Nodus/issues/357)).
 The published repository is the only grammar.
 
 ## Highlighting Coverage
 
-The grammar highlights every keyword the language has — all 31 of them,
-including the contextual `match`, `break` and `continue` — plus:
+The grammar highlights every keyword the language has, including contextual ones
+like `match`, `break`, `continue`, `each` and `when` — plus:
 
 - Literals: `true`, `false`, `nil`
 - Numbers: integers and floats, including the `42i` integer suffix
@@ -34,7 +36,10 @@ including the contextual `match`, `break` and `continue` — plus:
 - Comments: `#` and `//` line comments
 - Operators, punctuation, DSL blocks, built-in functions, and type annotations
 
-The keyword list is not maintained by hand here: `nodus.frontend.lexer.ALL_KEYWORDS`
+**No count appears above on purpose.** The set grows with the language — it was
+31 at the time of #357 and is larger now — and a hardcoded number is exactly the
+hand-maintained copy this section otherwise avoids. Read it from the source:
+`nodus.frontend.lexer.ALL_KEYWORDS`
 is the source of truth, and `tests/test_keyword_coverage.py` fails when the
 published grammar does not highlight every entry. That test needs both
 repositories checked out, so it skips in this repository's CI and runs for
