@@ -727,15 +727,27 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 - `--closed-issues`: runs closed-issue tests for CHANGELOG-referenced issues
 - `--contracts`: verifies `HandlerContract` infrastructure is wired correctly (6 checks)
 - `--consumers`: reports **non-PyPI consumers a release has left behind** —
-  `nodus-vscode` (VSIX) and `nodus-run-action`. Stage 6's sweep hashes published
-  sdists/wheels, so it structurally cannot see either, and both have shipped
-  stale. Each records in `tools/consumers.json` the fingerprint of what it must
+  `nodus-vscode` (VSIX), `nodus-run-action`, and **the GitHub wiki**. Stage 6's
+  sweep hashes published sdists/wheels, so it structurally cannot see any of
+  them, and all three have shipped stale. Each records in `tools/consumers.json`
+  the fingerprint of what it must
   stay in step with, measured **here**; when the live value moves, the consumer
   needs republishing. Reads no sibling checkout on purpose — a gate that needs
   one skips on CI, which is how `when` shipped unhighlighted. **Advisory**: it
   prints and exits 0; `--strict` makes a stale consumer fail. A manifest that
   cannot be read is always a failure. Clear a flag by republishing, then updating
   `fingerprint` and `published` in the same commit.
+
+  **The wiki was registered on 2026-09-07, after it had documented v4.1.1 for
+  twelve minors.** It is the one surface here with no PR and no CI — a push to
+  `Masterplanner25/Nodus.wiki` goes straight live — so nothing could fail on it,
+  and nothing did: 1 of its 26 pages mentioned 5.x, its Embedding-API page listed
+  7 of the constructor's 27 parameters with all three capability flags missing,
+  and its Security page named `v4.0.x` as the latest supported release. Tracking
+  it here is the cheapest thing that turns silence into a line of output at every
+  release. It tracks `nodus_version`, so it goes stale on **every** version bump
+  by construction — that is the point, not a nuisance; a wiki that has not been
+  looked at since the last release is exactly the thing to be told about.
 
   **It can only see what `lexer.ALL_KEYWORDS` names, so a keyword the parser
   matches by bare string literal is invisible to it.** At the 5.6.0 cut it

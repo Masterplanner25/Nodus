@@ -128,6 +128,22 @@
   invocation sites is asserted so a third spelling cannot slip past unchecked.
 
 ### Tooling
+- **The GitHub wiki is a tracked consumer now.** It is the one surface in this
+  project with no pull request and no CI — a push goes straight live — so nothing
+  could fail on it, and nothing did: it documented **v4.1.1 for twelve minors**,
+  across the 5.0.0 major whose deny-by-default change breaks embedders, with 1 of
+  its 26 pages mentioning 5.x at all.
+
+  `nodus_gate --consumers` reports it like the VS Code extension and the GitHub
+  Action, from a fingerprint recorded in `tools/consumers.json` and measured
+  *here*. It reads no wiki checkout on purpose — that manifest's own comment says
+  why: a gate needing a sibling clone skips on CI, and a check that skips where
+  it matters is how a keyword shipped unhighlighted.
+
+  It tracks `nodus_version`, so it goes stale on every version bump by
+  construction. That is the intent rather than a nuisance: a wiki nobody has
+  looked at since the last release is exactly the thing to be told about.
+
 - **`docs/design/Ideas worth a look/` is retired; two conversation transcripts
   became design documents and one was rehomed.** The folder held raw chat
   transcript inside `docs/design/`, where every other file is a numbered decision
