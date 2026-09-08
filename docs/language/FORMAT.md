@@ -1,5 +1,11 @@
 # Nodus Formatting Guide
 
+**Last reviewed:** 2026-09-08, against 5.12.0. Written 2026-03-15 for v1.0 and
+unreviewed until now, so the style rules had not heard of `match`, `break`,
+`continue`, compound assignment or the orchestration blocks, and the node-coverage
+section named 45 of the 66 AST nodes. Both corrected; the rules below were
+checked by running `nodus fmt` rather than by reading it.
+
 This document defines the official formatting style for Nodus and the scope of `nodus fmt`.
 
 ## Style Rules
@@ -8,6 +14,12 @@ This document defines the official formatting style for Nodus and the scope of `
 - Operators: single spaces around binary operators (`+ - * / == != < > <= >= && || =`).
 - Commas: single space after commas.
 - Braces: opening brace on the same line as `if/while/for/fn`; closing brace on its own line.
+- Block bodies are **always expanded**, even for a single statement. `if (x) { return 1i }`
+  formats to three lines. This is deterministic rather than a judgement call, so
+  two people hand-formatting the same code land in the same place.
+- The one exception is a **function expression**: `let g = fn(a) { a + 1i }` keeps
+  its single-statement body inline, because expanding it would break the
+  expression it sits inside out over four lines for no gain.
 - Blank lines: one blank line between top-level function declarations and after import groups.
 - Imports:
   - `import "path"`
@@ -24,6 +36,16 @@ This document defines the official formatting style for Nodus and the scope of `
   - `if (cond) { ... } else { ... }`
   - `while (cond) { ... }`
   - `for (init; cond; inc) { ... }`
+  - `for x in items { ... }`
+  - `break` / `continue` (v4.1.0)
+  - `match value { ... }` — an expression, so it also formats in `let` position (v4.1.0)
+  - `try { ... } catch e { ... } finally { ... }` — the parser accepts
+    `catch (e)` too, and `fmt` normalises both to the unparenthesised form
+- Compound assignment: `x += 1i`, and likewise `-=`, `*=`, `/=` (v4.0.1)
+- Orchestration blocks — `workflow`, `goal`, `step`, `state`, and the goal
+  `until` / `budget` clauses — format as nested blocks like any other. The
+  step-level modifiers `after`, `each … in …`, `when`, `compensates` and
+  `with { … }` stay on the declaration line.
 - Function calls: `name(arg1, arg2)`
 - Anonymous functions (FnExpr):
   - No params, empty body: `fn() {}`
@@ -58,20 +80,40 @@ Nodus protects formatting stability with fixture-based formatter tests. Complex 
 
 ## Formatter Node Coverage
 
-The following AST expression node types are handled by `format_expr()`:
-`Num`, `Bool`, `Str`, `Nil`, `Var`, `Assign`, `Unary`, `Bin`, `Call`, `Attr`,
-`Index`, `IndexAssign`, `ListLit`, `MapLit`, `FnExpr`, `FieldAssign`,
-`RecordLiteral`, `ActionStmt`.
+**This is checked, not listed.** `tests/test_formatter_completeness.py` walks the
+AST node set in `nodus/frontend/ast/ast_nodes.py` and fails when a node type has
+no formatter case, so the coverage question is answered by the suite rather than
+by a paragraph here.
 
-The following statement-level node types are handled by `format_stmt()`:
-`Import`, `ExportFrom`, `ExportList`, `Let`, `Print`, `ExprStmt`, `Return`,
-`FnDef`, `WorkflowDef`, `GoalDef`, `WorkflowStateDecl`, `WorkflowStep`,
-`GoalStep`, `If`, `While`, `For`, `ForEach`, `Block`, `Comment`,
-`CheckpointStmt`, `Yield`, `Throw`, `TryCatch`, `DestructureLet`.
+That is deliberate. A hand-written list of node types is a second copy of
+something the code already knows, and this one rotted exactly as you would
+expect: it named 45 nodes against the 66 the module defines, and the 21 it never
+learned about included `Match`, `Break`, `Continue`, `CompoundAssign`, `Int`,
+`InterpolatedString` and the whole `GoalPursuit` / `Reached` / `budget` family —
+seven releases of language surface. Nothing was wrong with the formatter; the
+list was simply not the thing being maintained.
 
-Pattern nodes (`VarPattern`, `ListPattern`, `RecordPattern`) are handled by the
-`format_pattern()` helper, called from `format_stmt()` when formatting
-`DestructureLet` nodes.
+`GoalPursuit` (#409) is why the test exists: it parsed, compiled and ran
+correctly with a green suite, and `nodus fmt` died on it with a raw traceback,
+because the per-node formatter tests are *examples* and a node with no example
+has no test.
+
+### Node coverage is not field coverage
+
+The completeness test walks node **types**. It cannot see a new **field** on an
+existing node, and 5.6.0 shipped two defects underneath it (#656, #657).
+
+`each_var` / `each_source` were added to `WorkflowStep`, and `budget { limits: … }`
+to a goal. Every node still had a formatter case, so the test stayed green while
+`fmt` rewrote `each page in discover` as `after discover` — dropping the loop
+variable — and lost a goal's budget bounds. Not a refusal and not a parse error:
+valid output, a different program, in a published release.
+
+`tests/test_formatter_round_trip.py` is what covers that. It formats, reparses,
+and compares the AST field by field; it found #657 on its first run.
+
+**When you add a field to an AST node, the round-trip test is what protects it.**
+The node walker cannot.
 
 ### Yield
 
