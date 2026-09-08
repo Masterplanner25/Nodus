@@ -1,4 +1,8 @@
-﻿# LANGUAGE_VISION.md
+﻿# Language Vision
+
+**Last reviewed:** 2026-09-08, against 5.12.0. Direction, not a record of the
+tree — read it for where the language is going and `LANGUAGE_SPEC.md` for where
+it is.
 
 ## Overview
 

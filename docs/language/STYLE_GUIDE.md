@@ -1,5 +1,10 @@
 # Nodus Style Guide
 
+**Last reviewed:** 2026-09-08, against 5.12.0. Recommendations for humans; the
+mechanical rules `nodus fmt` enforces are `FORMAT.md`. §12 deliberately points at
+the formatter rather than restating its rules, which is why the two have not
+drifted.
+
 This document defines the recommended coding style for Nodus programs.
 
 The goals of the style guide are:

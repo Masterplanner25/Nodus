@@ -1,5 +1,10 @@
 # Nodus Design Philosophy
 
+**Last reviewed:** 2026-09-08, against 5.12.0. Rationale rather than reference —
+it explains why decisions were made and is not expected to track the surface.
+For what the language *is* today, read `LANGUAGE_SPEC.md`; for stability tiers,
+`docs/governance/LANGUAGE_STABILITY_INDEX.md`.
+
 This document explains the design motivations and tradeoffs behind Nodus.
 
 While the architecture documentation explains how the system works, this document focuses on why the system was designed this way.

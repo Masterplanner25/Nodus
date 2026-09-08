@@ -128,6 +128,30 @@
   invocation sites is asserted so a third spelling cannot slip past unchecked.
 
 ### Tooling
+- **`docs/language/FORMAT.md` was written for v1.0 and never reviewed.** Its
+  style rules had not heard of `match`, `break`, `continue`, compound assignment
+  or the orchestration blocks, and its hand-written node-coverage list named
+  **45 of the 66** AST nodes — missing `Match`, `Break`, `Continue`,
+  `CompoundAssign`, `Int`, `InterpolatedString` and the whole
+  `GoalPursuit` / `Reached` / `budget` family.
+
+  That list is gone rather than corrected. `tests/test_formatter_completeness.py`
+  already walks the node set and fails on a type with no formatter case, so the
+  document now points at the mechanism and explains the limit that matters:
+  **node coverage is not field coverage.** `each_var` and `budget { limits }`
+  were new *fields*, so every node still had a case while `fmt` silently rewrote
+  `each page in discover` as `after discover` (#656, #657) —
+  `test_formatter_round_trip.py` is what covers that.
+
+  Two rules were added by running `fmt` rather than reading it: block bodies
+  always expand, even single-statement ones, **except** a function expression,
+  which stays inline; and `catch (e)` parses but normalises to `catch e`.
+
+  All five `docs/language/` documents gained a `Last reviewed:` header, the
+  convention #715 established — none had one. `STYLE_GUIDE.md` §12 was checked
+  for overlap with `FORMAT.md` and correctly *points* at the formatter rather
+  than restating its rules, which is why those two had not drifted.
+
 - **The GitHub wiki is a tracked consumer now.** It is the one surface in this
   project with no pull request and no CI — a push goes straight live — so nothing
   could fail on it, and nothing did: it documented **v4.1.1 for twelve minors**,
