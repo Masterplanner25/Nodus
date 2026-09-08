@@ -1,5 +1,7 @@
 # Nodus Runtime Specification
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 This document describes the internal runtime model of Nodus.
 
 While other documents describe language design and architecture, this file defines the execution behavior of the virtual machine, including:
@@ -329,6 +331,7 @@ Relevant modules:
 - `coroutine.py`
 - `scheduler.py`
 - `channel.py`
+- `time_source.py`
 
 These components support:
 
@@ -341,6 +344,18 @@ Coroutines may yield control using the `YIELD` instruction.
 Channel waiting queues (`waiting_receivers`, `waiting_senders`) use `collections.deque` for O(1) enqueue and dequeue. Prior list-based `pop(0)` was O(n).
 
 The scheduler resumes suspended coroutines when work becomes available.
+
+**The scheduler takes its clock from a `TimeSource`** (`time_source.py`), not
+from `time` directly. Reading the current instant and waiting until one are the
+same object -- `HostTimeSource` for real execution, `VirtualTimeSource` for
+tests that need to control the passage of time. The two operations are one seam
+deliberately: an earlier design made only the clock injectable, so supplying one
+was read but never waited on and `run_loop()` spun forever on a `now` that
+never moved ([#182](https://github.com/Masterplanner25/Nodus/issues/182)).
+
+Event timestamps, `created_time` and `last_resume` still read the host clock.
+They answer *when did this really happen*, which a simulated clock would
+falsify, and nothing subtracts them.
 
 ## 16. Event System
 

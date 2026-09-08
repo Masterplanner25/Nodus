@@ -1,137 +1,158 @@
-﻿# Workflows and Goals
+# Workflow Runtime Internals
 
-Workflows and goals are orchestration primitives that compile to task graphs. They provide step dependencies, persistent state, and checkpointing.
+**Last reviewed:** 2026-09-07, against 5.12.0
 
-## Syntax
+Workflows and goals are orchestration primitives that compile to task graphs.
+This document covers the **runtime layer**: how a workflow becomes bytecode, and
+what a run leaves on disk.
+
+> **The language surface is documented elsewhere and is deliberately not
+> repeated here.** `step` / `state` / `checkpoint` syntax, `each` fan-out, `when`
+> guards, `compensates`, barrier and merge cells, and the `goal … over …`
+> stopping condition all live in
+> [`docs/guide/workflows-and-tasks.md`](../guide/workflows-and-tasks.md) and
+> [`LANGUAGE_SPEC.md`](../language/LANGUAGE_SPEC.md). The option vocabularies are
+> `STEP_OPTION_KEYS` and `STATE_OPTION_KEYS` in
+> `src/nodus/orchestration/workflow_lowering.py`; the CLI surface is
+> `nodus workflow --help`.
+>
+> An earlier revision of this file re-listed all four, and every list had
+> drifted: 7 of the 10 step options, 3 of the 12 `workflow` subcommands, and none
+> of the five constructs added since v5.0.0. Enumerating them here a second time
+> is what produced that.
+
+## Compilation pipeline
+
+A `WorkflowDef` or `GoalDef` never reaches the bytecode compiler as itself. It is
+lowered to a plain map literal first:
+
+```
+WorkflowDef / GoalDef AST node
+    ↓  compiler.compile_stmt
+    ↓  lower_workflow_ast / lower_goal_ast   (orchestration/workflow_lowering.py)
+    ↓  _StateRewriter                        (same module)
+    ↓  MapLit AST node
+    ↓  bytecode compiler (compile_expr)
+    ↓  bytecode instructions
+```
+
+`_StateRewriter` walks each step body and rewrites every reference to a `state`
+variable into an index expression on a hidden `__state` map. This happens
+entirely at compile time, so the bytecode emitted for a step function uses
+ordinary map-index opcodes — **the VM has no special awareness of workflow
+state.**
+
+The resulting `MapLit` encodes the whole workflow structure — step functions,
+dependency lists, state initialisers — as a plain map that the VM evaluates into
+a workflow record at run time.
+
+> Because the rewrite is syntactic, `_StateRewriter` has to know every assignment
+> form the language has, and that is where this design has bitten. It knew `=`,
+> `x[i] =` and `x.f =` but not `+=`, so a folded cell read `nil`
+> ([#518](https://github.com/Masterplanner25/Nodus/issues/518)). Adding an
+> assignment form to the language means teaching it here too.
+
+## Persisted state — two files per run
+
+A run writes under `.nodus/graphs/`, resolved relative to the working directory
+unless `NODUS_RUN_STATE_ROOT` is set.
+
+| File | Written | Holds |
+|---|---|---|
+| `<graph_id>.json` | continuously | the graph snapshot |
+| `<graph_id>.checkpoint.json` | on each `checkpoint` | the resume point |
+
+Both writes are atomic: a uuid-suffixed temp file is written and `fsync`ed, then
+`os.replace`d over the target, then the containing directory is `fsync`ed. A
+killed process leaves a readable previous version rather than a truncated file.
+
+### The graph snapshot
+
+Top-level keys, read off a run of the example below:
+
+```
+checkpoints          engine_checkpoints   execution_kind    graph_id
+metadata             pending              results           scheduler_queue
+status               task_outputs         tasks             updated_at
+workflow_name        workflow_state
+```
+
+Each entry under `tasks` carries `step_name`, `state`, `attempts`, `result`,
+`started_at` and `finished_at`.
+
+> **Do not derive an ordering from `started_at` / `finished_at`.** They are host
+> clock readings and the clock ticks in ~15.6 ms steps on Windows, so a task's
+> own two stamps are routinely equal and so are two tasks in a strict causal
+> chain. The ordering does exist — tasks settle one at a time on one scheduler —
+> it is simply not what these fields record. A duration measured across a fast
+> step is `0.0` and means nothing.
+
+### The checkpoint file
+
+The same shape minus the run-level fields, plus `label` and `timestamp`:
+
+```
+checkpoints          engine_checkpoints   graph_id          label
+metadata             pending              results           scheduler_queue
+status               task_outputs         tasks             timestamp
+workflow_state
+```
+
+`engine_checkpoints` is the field that makes resume correct for folded state
+([#486](https://github.com/Masterplanner25/Nodus/issues/486)): each entry records
+the workflow state *as of* that checkpoint, so a resume re-derives folded cells
+instead of adding pre-checkpoint contributions again on every pass.
+
+> **A `checkpoint` is a re-entry label for its whole step, not a position marker
+> within it.** A resume re-enters the step from the top, so effects before the
+> checkpoint run again. Split the step at the checkpoint to skip completed work.
+
+Reproduce both files with:
 
 ```nd
 workflow build {
     state version = "0.1.0"
-
     step compile {
-        print("compile")
+        checkpoint "after-compile"
+        return "compiled"
     }
-
     step package after compile with { retries: 2 } {
-        checkpoint "after-package"
-        print("package")
+        return "packaged"
     }
 }
+print(run_workflow(build)["steps"]["package"])
 ```
 
-Goals use the same syntax:
+## Resume
 
-```nd
-goal release {
-    step tag {
-        print("tag")
-    }
-}
-```
+Resuming loads the latest snapshot, rehydrates task outputs and workflow state,
+and skips already-completed steps before scheduling the remainder. Without an
+explicit label the loader prefers the latest checkpoint file, applies its pending
+queue, and continues from there; `--checkpoint <label>` rolls downstream work
+back to that label first.
 
-## Step Dependencies
-- `step name` defines a step.
-- `step deploy after build, test { ... }` declares dependencies.
+> **A run is both files, and removing one without the other breaks it.** Deleting
+> the run records while the graph state survives leaves a waiting run
+> unresumable — the resume says so now rather than reporting "not found"
+> ([#476](https://github.com/Masterplanner25/Nodus/issues/476)). Use
+> `nodus workflow cleanup`, which removes both halves.
 
-## State
-- `state name = expr` defines workflow state.
-- Inside steps, `workflow_state()` returns the current state map.
-- Workflow state is persisted with the task graph and returned in results.
+## Cleanup
 
-## Checkpoints
-Inside a step, you can record checkpoints:
+`nodus workflow cleanup` removes terminal runs and their snapshots; retention
+defaults to 30 days and `NODUS_WORKFLOW_RETENTION_SECONDS` overrides it (`0`
+disables retention, leaving only `--force`). `running` and `failed` records
+survive `--force` by design.
 
-```nd
-checkpoint "label"
-```
+There is no dry run. `--dry-run` belongs to `migrate-store` and is **refused**
+here — through v5.11.0 it was accepted, ignored, and the deletion proceeded while
+the JSON output read like a preview
+([#791](https://github.com/Masterplanner25/Nodus/issues/791)). To preview, count
+first and compare after.
 
-Checkpoints can be used with `workflow-resume` and `goal-resume`.
+## Related
 
-## Persistent Graph Snapshots
-Workflow and goal runs now persist richer snapshots under `.nodus/graphs/<graph_id>.json`. Each snapshot records the graph status, task metadata (status, attempts, errors, worker hints), completed outputs, the pending task queue, scheduler-ready task ordering, workflow metadata, checkpoint history, and an `updated_at` timestamp. The write path is atomic (temp file -> fsync -> rename), keeping persisted graphs inspectable and crash-resistant.
-
-Snapshots are used whenever a workflow or goal is resumed: the runtime loads the latest snapshot, rehydrates task outputs and workflow state, and skips already completed steps before scheduling remaining work.
-
-## Checkpoint Recovery
-When a step calls `checkpoint`, the runtime writes `.nodus/graphs/<graph_id>.checkpoint.json`, which stores:
-
-- the checkpoint label + timestamp
-- completed tasks + intermediate outputs
-- pending tasks that still need to run
-- the scheduler-ready queue order at the time of the checkpoint
-- workflow state + metadata (workflow/goal names, execution kind)
-
-When `resume_workflow` or `resume_goal` runs without an explicit label, the loader prefers the latest checkpoint file, applies its pending queue, and continues scheduling from the saved state. Passing `--checkpoint <label>` rolls back downstream work to that label before resuming.
-
-Cleanup of completed graphs is controlled by `nodus workflow cleanup` and the `NODUS_WORKFLOW_RETENTION_SECONDS` environment variable. The cleanup command can remove old snapshots/checkpoints while leaving active runs untouched.
-
-## Step Options
-Supported `with { ... }` options:
-- `timeout_ms`
-- `retries`
-- `retry_delay_ms`
-- `cache`
-- `cache_key`
-- `worker`
-- `worker_timeout_ms`
-
-## Action Expressions
-Action expressions are only valid inside steps and are converted into runtime actions:
-
-- `action tool "name" with { ... }`
-- `action agent "name" with { ... }`
-- `action memory_put "key" expr`
-- `action memory_get "key"`
-- `action emit "event" with { ... }`
-
-The last action expression in a step is automatically returned.
-
-## Builtins
-- `run_workflow(workflow)` / `plan_workflow(workflow)` / `resume_workflow(graph_id, checkpoint=nil)`
-- `run_goal(goal)` / `plan_goal(goal)` / `resume_goal(graph_id, checkpoint=nil)`
-- `workflow_state()`
-- `workflow_checkpoints(graph_id)`
-- `current_workflow_id()`
-
-## CLI Commands
-
-- `nodus workflow-run <script.nd> [--workflow <name>]`
-- `nodus workflow-plan <script.nd> [--workflow <name>]`
-- `nodus workflow-resume <graph_id> [--checkpoint <label>]`
-- `nodus workflow-checkpoints <graph_id>`
-- `nodus workflow list [--project-root <path>]`
-- `nodus workflow resume <graph_id> [--checkpoint <label>] [--project-root <path>]`
-- `nodus workflow cleanup [--project-root <path> --retention-seconds N --force]`
-- `nodus goal-run <script.nd> [--goal <name>]`
-- `nodus goal-plan <script.nd> [--goal <name>]`
-- `nodus goal-resume <graph_id> [--checkpoint <label>]`
-
-## Output Shape
-Workflow/goal runs return a task-graph-style payload with `steps`, `tasks`, `timings`, and `graph_id`. Workflow runs also include:
-- `workflow` and/or `goal` names
-- `state` (workflow state map)
-- `checkpoints` (checkpoint metadata)
-
-## Compilation Pipeline: _StateRewriter
-
-Workflows and goals go through an AST-level rewrite before bytecode compilation.
-
-```
-WorkflowDef / GoalDef AST node
-    ↓  compiler.compile_stmt  (compiler/compiler.py:340)
-    ↓  lower_workflow_ast / lower_goal_ast  (orchestration/workflow_lowering.py)
-    ↓  _StateRewriter  (orchestration/workflow_lowering.py)
-    ↓  MapLit AST node
-    ↓  Bytecode compiler (compile_expr)
-    ↓  Bytecode instructions
-```
-
-`_StateRewriter` walks each step body and replaces references to `state`
-variables (declared with `state name = expr`) with index expressions on a
-hidden `__state` map variable.  This rewrite happens entirely at compile time,
-so the emitted bytecode for step functions uses ordinary map-index opcodes —
-the VM has no special awareness of workflow state.
-
-The resulting `MapLit` node encodes the entire workflow structure
-(step functions, dependency lists, state initializers) as a plain map literal
-that the VM evaluates to produce a workflow record at runtime.
+- [`TASK_GRAPHS.md`](TASK_GRAPHS.md) — the task graph runtime underneath
+- [`EXECUTION_INVARIANTS.md`](EXECUTION_INVARIANTS.md) — guarantees the runtime upholds
+- `docs/design/workflow-framework/00-framework-plan.md` — the framework layer
+  (`nodus_lang_workflow`), its 7-state lifecycle and store backends

@@ -1,5 +1,7 @@
 # Nodus Instruction Semantics
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 > The opcode semantics in this document are frozen at v1.0 (2026-03-15).
 > All 49 active opcodes are stable. See `docs/governance/FREEZE_PROPOSAL.md`
 > for the freeze declaration and post-freeze extension process.
@@ -146,6 +148,33 @@ else:
     frame.locals_array[slot] = value
 ```
 
+### RESET_LOCAL_IDX
+
+Detaches any `Cell` at a local slot by replacing it with a plain `None`, so the
+next `MAKE_CLOSURE` boxes a fresh per-iteration `Cell` rather than reusing the
+one from the previous iteration.
+
+```
+[] → []
+```
+
+Operand: `slot` (int) — index into `frame.locals_array`.
+
+Operation:
+
+```
+frame.locals_array[slot] = None
+```
+
+No stack effect. Emitted at the start of each `for`-loop iteration for the loop
+variable, and before each `let` binding for a variable declared inside a loop
+body. This is what makes three closures created in one loop return `0`, `1`, `2`
+rather than three copies of the final value.
+
+**Added post-freeze** (2026-06-10, PR #244) without the extension process
+required by [`FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md) — no
+`BYTECODE_VERSION` bump. See [`BYTECODE_REFERENCE.md`](BYTECODE_REFERENCE.md) §3.1.
+
 ### LOAD
 
 Loads a variable from the current scope (global or module-level lookup).
@@ -168,7 +197,7 @@ stack.push(value)
 > ⛔ Removed in v1.0. The compiler emits `LOAD_LOCAL_IDX` for all local variable
 > accesses inside functions. `LOAD_LOCAL` is no longer in the VM dispatch table;
 > executing it raises a RuntimeError tombstone directing the user to recompile.
-> See `DEPRECATIONS.md`.
+> See [`DEPRECATIONS.md`](../governance/DEPRECATIONS.md).
 
 (No stack semantics — opcode is a tombstone.)
 
@@ -250,6 +279,37 @@ Unary negation.
 ```
 [a] → [-a]
 ```
+
+### MOD
+
+Remainder. Follows `DIV`'s three-branch shape: an int path that excludes `bool`,
+a float path, and a type error for anything else.
+
+```
+[a, b] → [a % b]
+```
+
+Operation:
+
+```
+b = stack.pop()
+a = stack.pop()
+if int(a) and int(b):            // bool excluded from the int path
+    if b == 0: runtime_error("math", "Integer modulo by zero")
+    push(a % b)
+else if not numeric(a) or not numeric(b):
+    binary_type_error("modulo", a, b)
+else:
+    if float(b) == 0.0: runtime_error("math", "Float modulo by zero")
+    push(float(a) % float(b))
+```
+
+The sign follows the host, not C: `-7 % 3` is `2`, not `-1`. A reader arriving
+from another language will assume the other answer.
+
+**Added post-freeze** (2026-05-24, BUG-010) without the extension process
+required by [`FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md) — no
+`BYTECODE_VERSION` bump. See [`BYTECODE_REFERENCE.md`](BYTECODE_REFERENCE.md) §3.1.
 
 ## 6. Comparison Operations
 

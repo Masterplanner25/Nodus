@@ -62,7 +62,6 @@ blockhash:docs/guide/working-with-json.md:91f18cc7e070
 
 # Runtime reference docs — context-dependent examples
 blockhash:docs/runtime/TASK_GRAPHS.md:19cb6560bfc0
-blockhash:docs/runtime/WORKFLOWS.md:b9b0eb0ede24
 
 # FAILURE_AND_DEGRADATION_MODEL.md — intentional non-existent module used as an error example in table
 symbol:std:nonexistent

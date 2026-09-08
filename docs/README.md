@@ -59,14 +59,14 @@ and bytecode. Required reading for contributors and embedders.
 | File | Contents |
 |---|---|
 | `RUNTIME.md` | VM overview: stack, frames, memory model, scheduler |
-| `BYTECODE.md` | Full bytecode specification with all 47 opcodes |
-| `INSTRUCTION_SEMANTICS.md` | Per-opcode stack transitions (frozen at v1.0) |
+| `BYTECODE.md` | Bytecode overview: instruction categories, the cache file format, versioning |
+| `INSTRUCTION_SEMANTICS.md` | Per-opcode stack transitions and operations |
 | `EMBEDDING.md` | `NodusRuntime` API reference |
 | `EXECUTION_INVARIANTS.md` | Runtime guarantees the VM must uphold |
 | `FAILURE_AND_DEGRADATION_MODEL.md` | Failure categories, error shapes, host guidance |
 | `OPERATOR_OR_EMBEDDER_RUNBOOK.md` | Setup, monitoring, troubleshooting, upgrade procedure |
 | `ARCHITECTURE.md` | Full runtime pipeline and component overview |
-| `BYTECODE_REFERENCE.md` | Quick opcode lookup table |
+| `BYTECODE_REFERENCE.md` | **The opcode authority** — one entry per opcode with category, stack effect and edge cases. Checked against the live VM dispatch table by `nodus_gate --opcodes` |
 | `SERVER_MODE.md` | `nodus serve` HTTP server mode |
 | `TASK_GRAPHS.md` | Low-level task graph runtime |
 | `WORKFLOWS.md` | Workflow runtime internals |
