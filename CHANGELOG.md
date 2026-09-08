@@ -450,8 +450,15 @@
   an internal module by its **bare** name. The third derives its set of module
   basenames from `src/nodus/` rather than listing them, and flags a bare name
   only when it also fails to import, since `nodus` is both an internal basename
-  and a real top-level package. 95 imports across the docset pass; the check was
-  confirmed to name the exact defect when it was reintroduced.
+  and a real top-level package. The check was confirmed to name the exact defect
+  when it was reintroduced.
+
+  Scope is **the packages this repository ships**, read off `src/`. A
+  `nodus_`-prefixed name is not enough: `nodus_sdk`, `nodus_retry` and the other
+  companions are separate distributions, present in a developer venv and absent
+  on a clean runner. Scoping by prefix passed locally and failed CI with six
+  `ModuleNotFoundError`s — the optional-extra gap that has bitten this repo
+  before with `nodus-retry` specifically.
 
 - **The doc gate scans `docs/tooling/`.** It found an unrunnable block on its
   first pass — a `package:module` import example needing an installed package,

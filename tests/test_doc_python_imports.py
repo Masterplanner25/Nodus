@@ -12,11 +12,19 @@ than a wrong path. The page had said this since it was written, and nothing
 checked it: `docs/tooling/` was outside the doc gate's scan, and the gate runs
 `nodus` blocks in any case, never Python ones.
 
-Scope is deliberately narrow. Only imports of `nodus*` are checked -- those are
-the ones this repository owns and can therefore be wrong about. A doc importing
-`fastapi` or `httpx` is describing an embedder's environment, not making a claim
-about this tree, and failing on an optional dependency would make the test a
-nuisance that gets deleted.
+Scope is **the packages this repository ships**, read off `src/`: `nodus`,
+`nodus_lang_schema`, `nodus_lang_workflow`. Those are the only imports this tree
+can be wrong about.
+
+A `nodus_`-prefixed name is not enough, and the first version of this file got
+that wrong. `nodus_sdk`, `nodus_retry`, `nodus_channels`, `nodus_llm`,
+`nodus_context` and `nodus_approvals` are separate distributions living in their
+own repositories. They are installed in a developer venv here and absent on a
+clean CI runner, so scoping by prefix passed locally and failed CI with six
+`ModuleNotFoundError`s -- the optional-extra gap `CLAUDE.md` warns about, which
+has bitten this repo before with `nodus-retry` specifically. Deriving the set
+from `src/` means a doc citing a companion package is out of scope by
+construction rather than by an exemption someone has to remember.
 
 Symbols are checked too, not just modules: a module path that resolves while the
 name it is imported for does not is the same defect one level down.
@@ -42,6 +50,24 @@ _PLAIN = re.compile(r"^\s*import\s+(nodus[A-Za-z0-9_.]*)\s*$", re.M)
 
 #: Any `from <word> import ...` where <word> is a bare, unqualified name.
 _BARE = re.compile(r"^\s*from\s+([a-z_][a-z0-9_]*)\s+import\s", re.M)
+
+
+def _shipped_packages() -> frozenset[str]:
+    """Top-level packages this repository ships, read off `src/`.
+
+    A companion distribution (`nodus_sdk`, `nodus_retry`, …) shares the prefix
+    but not the repository, and is absent on a clean runner. Deriving the set
+    keeps those out of scope by construction.
+    """
+    src = _REPO_ROOT / "src"
+    return frozenset(
+        p.name for p in src.iterdir()
+        if p.is_dir() and (p / "__init__.py").is_file()
+    )
+
+
+def _is_ours(module: str) -> bool:
+    return module.split(".", 1)[0] in _shipped_packages()
 
 
 def _internal_module_basenames() -> set[str]:
@@ -93,9 +119,11 @@ def _imports() -> list[tuple[Path, str, tuple[str, ...]]]:
                     for n in names.split(",")
                     if n.strip() and n.strip() not in {"(", ")"}
                 )
-                found.append((doc, module, symbols))
+                if _is_ours(module):
+                    found.append((doc, module, symbols))
             for module in _PLAIN.findall(block):
-                found.append((doc, module, ()))
+                if _is_ours(module):
+                    found.append((doc, module, ()))
     return found
 
 
