@@ -408,7 +408,44 @@
   of, and the directory was outside the scan list. It found a nonexistent
   `std:x` on its first run.
 
+- **`error-surfaces.md` corrected and its examples un-allowlisted.** Both code
+  blocks in the policy were suppressed by `.nodusgate-allow`, so the one document
+  defining the stdlib error contract had zero verified examples. The idiomatic
+  one now runs as `nd-expect=output` with its output compared — confirmed by
+  breaking the expected text and watching the gate fail — and the sandbox
+  demonstration is labelled `nd-no-run`, which is the honest fence for a block
+  that throws on purpose, rather than a block hash that goes stale silently.
+
+  Three corrections, each measured:
+
+  - **The embedding boundary does not raise.** The policy said host code
+    *"calling `NodusRuntime.run()` continues to receive Python exceptions"*.
+    There is no `run()` method, and `run_source()` returns a result dict for both
+    runtime and syntax errors — it has since v2.1.0. A host checks `res["ok"]`;
+    the old text sent them to `try`/`except`.
+  - **"It does not throw" was too absolute, and sandbox is not "the one case".**
+    A wrong-typed argument throws `kind="type"` in `std:fs` and `std:math`
+    (`fs.read(5i)`, `math.sqrt("a")`), because argument validation runs before
+    the I/O boundary Replace wraps. `std:json` is the exception and does return a
+    record. Which class a failure is in decides whether you write
+    `type(r) == "error"` or `try`/`catch`, so the document now separates them.
+  - **The `std:fs` table listed 7 of 11 functions** while the namespace claimed
+    full coverage. `read_bytes` returns `io_error` and belongs in it; the section
+    also now says the function is `listdir`, not `list_dir`.
+
+  `std:math` and `std:path` were checked the same way and their tables are
+  correct: they are explicitly scoped to error-returning functions, and the 21
+  math and 5 path functions they omit have no failure mode of their own.
 ### Documentation
+
+
+- **Filed (open): `fs.ensure_dir` reports success when it created nothing.** It
+  calls `mkdir` and discards the result, returning the path unconditionally. With
+  a file at the target path it returns the path, no directory is created, and the
+  next write in fails with *"parent directory does not exist"* — while
+  `fs.mkdir` on the same path correctly returns `io_error`. Tracked as
+  [#845](https://github.com/Masterplanner25/Nodus/issues/845); the policy document
+  carries it as a contract exception until then.
 
 - **`SECURITY_MATRIX.md` rewritten against the running system.** It was stamped
   `Version: 4.1.1` and stated that subprocess and network were **allowed and

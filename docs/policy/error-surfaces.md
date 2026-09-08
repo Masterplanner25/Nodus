@@ -1,5 +1,7 @@
 # Error Surfaces Policy
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 This document defines which Nodus stdlib surfaces produce Nodus-voice err records,
 what the err record contract guarantees, and how to access the underlying Python
 exception detail when debugging.
@@ -10,7 +12,7 @@ exception detail when debugging.
 
 ## 1. The Replace contract
 
-When a stdlib function fails at an I/O or parsing boundary, it **returns** an
+When a stdlib function fails **at an I/O or parsing boundary**, it *returns* an
 err record rather than throwing. The err record's `err.message` field contains
 only Nodus-voice text — no Python exception class names, no Python stack traces,
 no `[Errno N]` prefixes.
@@ -18,42 +20,67 @@ no `[Errno N]` prefixes.
 This contract has three guarantees:
 
 1. **No Python text in err.message.** Every message follows the style `"<what
-   failed>: <specific detail>"` — e.g. `"file not found: \"/missing/file\""`.
+   failed>: <specific detail>"` — e.g. `"file not found: \"data/missing.json\""`.
 2. **Specific err.kind values.** Each failure category has a dedicated kind value
    (see Section 3). User code can branch on `err.kind` without parsing message text.
 3. **Catchall coverage.** Any unexpected Python exception in a wrapped surface
    produces an `internal_error` err record instead of leaking an exception. The
    original Python detail is available via `--trace-errors` (see Section 5).
 
+**"At an I/O or parsing boundary" is load-bearing.** The contract is about
+failures the *world* causes — a missing file, malformed input, a domain error.
+It is not about calling a function wrongly. See Section 2.1.
+
 ---
 
 ## 2. In-scope surfaces
 
-The following stdlib namespaces are Replace-wrapped. Every function in these
-namespaces either returns data on success or returns an err record on failure —
-it does not throw.
+The following stdlib namespaces are Replace-wrapped: when the operation itself
+fails, they return an err record.
 
 ### `std:json`
 
-| Function | What it returns on success | err.kind on failure |
+| Function | Returns on success | err.kind on failure |
 |----------|---------------------------|---------------------|
 | `json.parse(s)` | map or list | `parse_error`, `type_error` |
 | `json.parse_int(s)` | int | `parse_error` |
 | `json.stringify(v)` | string | `type_error` |
 
+`std:json` is the one namespace here that returns an err record for a
+wrong-typed argument too — `json.parse(5i)` gives `type_error` rather than
+throwing.
+
 ### `std:fs`
 
-| Function | What it returns on success | err.kind on failure |
+All eleven functions, not the seven an earlier revision listed.
+
+| Function | Returns on success | err.kind on failure |
 |----------|---------------------------|---------------------|
 | `fs.read(path)` | string | `io_error` |
+| `fs.read_bytes(path)` | list of ints | `io_error` |
 | `fs.write(path, content)` | nil | `io_error` |
+| `fs.write_bytes(path, bytes)` | nil | `io_error` |
 | `fs.append(path, content)` | nil | `io_error` |
 | `fs.exists(path)` | bool | `io_error` |
+| `fs.exists_path(path)` | bool | — (returns `false`, does not fail) |
 | `fs.listdir(path)` | list of strings | `io_error` |
 | `fs.mkdir(path)` | nil | `io_error` |
+| `fs.ensure_dir(path)` | the path | **none — see below** |
 | `fs.delete(path)` | nil | `io_error` |
 
-### `std:math` (error-returning functions)
+The function is `fs.listdir`, not `fs.list_dir`; the latter is not exported and
+gives *"Missing module export: list_dir"*.
+
+> **`fs.ensure_dir` does not honour the contract
+> ([#845](https://github.com/Masterplanner25/Nodus/issues/845)).** It calls
+> `mkdir` and discards the result, returning the path unconditionally, so a
+> failure is reported as success. With a *file* at the target path it returns the
+> path, creates nothing, and the next write into it fails with *"parent directory
+> does not exist"*. `fs.mkdir` on the same path correctly returns
+> `io_error: path already exists`. Use `fs.mkdir` and check its result where the
+> answer matters.
+
+### `std:math` (error-returning functions only)
 
 | Function | err.kind on failure |
 |----------|---------------------|
@@ -63,50 +90,74 @@ it does not throw.
 | `math.log(n)` | `value_error` |
 | `math.pow(a, b)` | `math_error` |
 
-### `std:path` (error-returning functions)
+`std:math` exports 26 functions. The other 21 are pure — `abs`, `ceil`, `floor`,
+`min`, `max`, `round`, the bit operations, the `is_*` predicates — and have no
+failure mode of their own; given a wrong-typed argument they throw (Section 2.1),
+they do not return err records.
+
+### `std:path` (error-returning functions only)
 
 | Function | err.kind on failure |
 |----------|---------------------|
 | `path.relative(p, base)` | `path_error` |
 | `path.absolute(p)` | `path_error` |
 
-### Sandbox checks take precedence — and they throw
+The other five (`join`, `basename`, `dirname`, `ext`, `stem`) are string
+manipulation with no failure mode.
 
-Sandbox validation fires **before** stdlib error wrapping. If a path argument
-fails the sandbox check (e.g., it escapes the project root or is outside
-`allowed_paths`), the function produces a sandbox error regardless of whether
-the underlying file exists or what kind of I/O error would have occurred.
+---
 
-**This is the one case where an in-scope surface does not return an err record.**
-A sandbox violation **throws**, so it aborts the script at that line rather than
-handing you a value to inspect — the `type(r) == "error"` pattern in Section 6
-never gets a chance to run. Catch it with `try`/`catch` (`err.kind` is
-`"sandbox"`) if a blocked path should be recoverable rather than fatal.
+## 2.1 Two ways an in-scope surface still throws
 
-```nd
+An earlier revision said these namespaces *"do not throw"* and called the sandbox
+*"the one case"*. There are two, and knowing which is which decides whether you
+write `type(r) == "error"` or `try`/`catch`.
+
+**A. A wrong-typed argument throws `kind="type"`.** This is a programmer error,
+caught by argument validation before the I/O boundary is reached, so Replace
+never sees it:
+
+```
+fs.read(5i)       -> throws  type: read_file(path) expects a string path
+fs.mkdir(5i)      -> throws  type: fs.mkdir(path) expects a string path
+math.sqrt("a")    -> throws  type: math_sqrt(x) expects a number
+```
+
+`std:json` is the exception, as noted above.
+
+**B. A sandbox violation throws `kind="sandbox"`.** Sandbox validation fires
+*before* stdlib error wrapping, so a blocked path produces a sandbox error
+regardless of whether the file exists or what I/O error would have occurred. The
+throw aborts the line, so nothing is assigned and the `type(r) == "error"`
+pattern never gets a chance to run.
+
+```nd-no-run
 import "std:fs" as fs
 
-// Absolute paths escape the project root sandbox:
+// Absolute paths escape the sandbox:
 let r = fs.read("/etc/passwd")
-// throws -> Sandbox error at <file>:2:17:
-//           read_file(path) blocked: path '/etc/passwd' escapes the project root
-// (NOT io_error, even though the file exists or doesn't; nothing is assigned
-//  to r, because the throw aborts the line)
+// throws -> Sandbox error: read_file(path) blocked ...
+// (NOT io_error, whether or not the file exists; nothing is assigned to r)
 
-// Relative paths within the project root exercise the io_error path:
+// Relative paths within the root exercise the io_error path:
 let r2 = fs.read("data/missing.json")
 // -> err{kind: "io_error", message: "file not found: \"data/missing.json\""}
 ```
 
-Use relative paths in examples that demonstrate io_error behavior. Absolute
-paths will hit the sandbox before reaching the Replace-wrapped I/O layer.
+The sandbox *message* differs by how the jail was configured — *"escapes the
+project root"* when falling back to the project root, *"blocked for path"* when
+an explicit `allowed_paths` was given. `err.kind` is `"sandbox"` either way,
+which is the reason Section 6 says to branch on kind rather than message.
+
+Catch either class with `try`/`catch` if it should be recoverable rather than
+fatal. Use relative paths in examples meant to demonstrate `io_error`.
 
 ---
 
 ## 3. err.kind values for stdlib errors
 
 These kinds are produced by Replace-wrapped surfaces. They are distinct from
-the VM-level runtime error kinds (`"type"`, `"key"`, `"index"`, etc.).
+the VM-level runtime error kinds (`"type"`, `"key"`, `"index"`, `"sandbox"`, …).
 
 | err.kind | When it fires |
 |----------|---------------|
@@ -133,9 +184,27 @@ because they operate on already-validated Nodus values.
   Nodus state; no I/O boundary to wrap.
 - **Parser and VM** — already produce Nodus-voice errors; not affected by this
   policy.
-- **Embedding boundary** — host Python code calling `NodusRuntime.run()` continues
-  to receive Python exceptions. This policy applies to Nodus scripts, not Python
-  host code.
+
+### The embedding boundary does not raise
+
+An earlier revision said host Python code *"calling `NodusRuntime.run()`
+continues to receive Python exceptions"*. There is no `run()` method — the
+surface is `run_source()` and `run_file()` — and neither raises for a program
+error. Both **return a result dict**, and have since v2.1.0 (BUG-005):
+
+```python
+rt = NodusRuntime()
+res = rt.run_source("fn main() { let x = 1i / 0i }\nmain()")
+# res["ok"] is False, res["error"]["kind"] == "math"   -- no exception raised
+
+res = rt.run_source("fn main( {")
+# res["ok"] is False, res["stage"] == "parse"          -- no exception raised
+```
+
+So a host checks `res["ok"]` rather than wrapping the call in `try`/`except`.
+The parameter *validation* on the constructor still raises — `max_memory_mb=0`
+gives a `ValueError` — because that is the host calling Nodus wrongly, which is
+the same distinction Section 2.1 draws for guest code.
 
 ---
 
@@ -157,19 +226,20 @@ NODUS_TRACE_ERRORS=1 nodus run script.nd
 When set, every err record produced by a Replace-wrapped surface causes Nodus
 to print the original Python exception and traceback to **stderr**. The script's
 behavior is unchanged — `err.message` still contains only the Nodus message, and
-normal output still goes to stdout.
+normal output still goes to stdout. Both forms were verified to produce identical
+output.
 
-Example output when `--trace-errors` is active and `fs.read` fails:
+Example, when `fs.read` fails on a missing file:
 
 ```
 [trace-errors] in fs.read
   underlying Python exception: FileNotFoundError
-  [Errno 2] No such file or directory: 'data/missing.txt'
+  [Errno 2] No such file or directory: 'missing.txt'
   Traceback:
     Traceback (most recent call last):
-      File ".../nodus/builtins/io.py", line 31, in builtin_read_file
+      File ".../nodus/builtins/io.py", in builtin_read_file
         with open(path, "r", encoding="utf-8-sig") as f:
-    FileNotFoundError: [Errno 2] No such file or directory: 'data/missing.txt'
+    FileNotFoundError: [Errno 2] No such file or directory: 'missing.txt'
 ```
 
 The output includes the exception type, the exception message, and the full
@@ -182,21 +252,29 @@ Nodus-voice text.
 
 Check returned err records with `type(x) == "error"`, then branch on `err.kind`:
 
-```nd
+```nd-expect=output
 import "std:fs" as fs
 
-let content = fs.read("config.json")
-if (type(content) == "error") {
-    if (content.kind == "io_error") {
-        print("file error: " + content.message)
+fn load_config() {
+    let content = fs.read("config.json")
+    if (type(content) == "error") {
+        if (content.kind == "io_error") {
+            print("file error: " + content.message)
+        }
+        return nil
     }
-    return nil
+    return content
 }
-// use content
+load_config()
+```
+
+```
+file error: file not found: "config.json"
 ```
 
 Prefer `err.kind` branching over `err.message` string matching — kind values are
-stable across versions; message wording may be refined.
+stable across versions; message wording may be refined, and Section 2.1 gives a
+worked example of the same condition carrying two different messages.
 
 ---
 
