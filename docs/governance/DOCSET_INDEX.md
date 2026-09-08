@@ -246,10 +246,29 @@ Phase plans (`V2_1_PLAN.md`, `V3_0_PLAN.md`, etc.) describe process and intent f
 cycle. They are **not ground truth** for the current state — always prefer the implementation
 and the governing docs above.
 
-**There is no active plan document.** `V4_0_PLAN.md` was listed as the current one
-until 2026-09-01; v4.0 shipped in June and there has been no V5 plan — the cycles since
-have been driven by `CHANGELOG.md`'s `[Unreleased]` section and the issue tracker, which
-is where to look for what is in flight. All four `V*_PLAN.md` files are history.
+**The active plan is [`V6_0_PLAN.md`](V6_0_PLAN.md)** — scoping for the next major,
+with the staged-flip reasoning and the open decisions. It is a reader's copy: the
+register is `nodus/support/staged_flips.json`, checked by `nodus_gate --flips`, and the
+gate is the authority.
+
+This section said *"there is no active plan document"* until 2026-09-08, which was true
+between v4.0 shipping and V6_0_PLAN.md being written, and contradicted
+[`../history/README.md`](../history/README.md) — which already called V6_0_PLAN.md
+"the live one" — once it was. Two indexes, one question.
+
+There was no V5 plan; those cycles were driven by `CHANGELOG.md`'s `[Unreleased]`
+section and the issue tracker, which is still where to look for what is in flight. All
+four `V*_PLAN.md` files under `history/plans/` are history.
+
+### Process documents in this directory
+
+| File | What it is |
+|---|---|
+| [`ROADMAP.md`](ROADMAP.md) | Long-range direction and the record of what each phase delivered |
+| [`EVOLUTION.md`](EVOLUTION.md) | How the language has changed, and the reasoning behind the shape it has |
+| [`PLAYBOOK_PATCH_MINOR.md`](PLAYBOOK_PATCH_MINOR.md) | The step-by-step for a patch or minor release |
+| [`PLAYBOOK_MAJOR.md`](PLAYBOOK_MAJOR.md) | The step-by-step for a major release |
+| [`CAPABILITY_POLICY_DESIGN.md`](CAPABILITY_POLICY_DESIGN.md) | Design input for the capability policy (#405). **Its staging is not what shipped** — it puts builtins fourth; they had to come first |
 
 ---
 

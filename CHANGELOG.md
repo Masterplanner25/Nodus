@@ -463,8 +463,54 @@
 - **The doc gate scans `docs/tooling/`.** It found an unrunnable block on its
   first pass — a `package:module` import example needing an installed package,
   now fenced `nd-no-run` rather than left to fail.
+
+- **`tests/test_docs_are_indexed.py`: every document under `docs/` must be
+  reachable from an index.** Twenty were named by none when this was first
+  measured, including `docs/policy/error-surfaces.md` — unreachable from anywhere
+  the day after it was rewritten — and all three of the migration guides that
+  matter now.
+
+  It checks **reachability, not tabulation**. Several sections deliberately point
+  at a sub-index instead of restating its contents (`governance/` →
+  `DOCSET_INDEX.md`, `audits/` → `AUDIT_INDEX.md`, `history/` → its own README),
+  which is the better design where a directory is large or its membership moves,
+  and a test demanding a table would push against it. An earlier version of the
+  check reported `audits/` as "0 listed / 10 present" because it only looked at
+  `docs/README.md`; the section was right and the measurement was wrong.
 ### Documentation
 
+
+- **`docs/README.md` listed three of six migration guides**, and the three it
+  omitted were the ones a reader needs now: `v5.0-deny-by-default.md` (the only
+  breaking change in v5.0.0) and `v6.0-staged-flips.md` (everything that breaks
+  at the next major), plus `v4.0-to-v4.1.md`. Its Quick Navigation still offered
+  "Migrate from v3 → v4" as *the* migration entry, for a project on 5.12.0
+  heading to 6.0.0.
+
+  `docs/policy/` and `docs/architecture/` had no section at all, and
+  `runtime/ARCHITECTURE_ANALYSIS.md` was missing from the runtime table. Quick
+  Navigation also sent "Security reporting" to `SECURITY_MATRIX.md`, which is an
+  enforcement-and-test map; vulnerability reporting is `SECURITY.md`, and both
+  are now listed for what they are.
+
+- **`v5.0-deny-by-default.md` said `nodus serve` was unaffected.** It listed
+  "any other CLI command" among the things the v5.0.0 change does not touch,
+  which stopped being true at v5.10.0 — submitted code is denied subprocess,
+  network and environment access by default there. The page now says so, and
+  notes that the filesystem is *not* yet covered on that path.
+
+- **`DOCSET_INDEX.md` said "there is no active plan document"** while
+  `V6_0_PLAN.md` exists and `history/README.md` already called it "the live one".
+  Two indexes, one question, and the one that was wrong is the document that
+  defines precedence. It now names the active plan and indexes the five process
+  documents that were in the directory but in no index: `ROADMAP.md`,
+  `EVOLUTION.md`, both release playbooks and `CAPABILITY_POLICY_DESIGN.md`.
+
+- The four historical migration guides carry a `Last reviewed:` line saying what
+  they are — records of a transition, not documents that move with the language.
+  Their examples stay allowlisted for the reason already recorded in
+  `.nodusgate-allow`: rewriting them to run would change the record of what those
+  releases said.
 
 - **`TESTING.md` corrected throughout.** Both Python examples were broken: the
   parser one by the three imports above, the compiler one by
