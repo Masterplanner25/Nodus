@@ -1,5 +1,7 @@
 # Nodus Bytecode Specification
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 This document defines the bytecode instruction set used by the Nodus virtual machine.
 
 Bytecode serves as the intermediate representation between the compiler and the runtime VM. The compiler emits bytecode instructions which are executed sequentially by the virtual machine.
@@ -102,7 +104,8 @@ LOAD_LOCAL_IDX <slot>
 > ⛔ Removed in v1.0. `LOAD_LOCAL_IDX` is the canonical opcode for all local
 > variable loads. The VM dispatch table no longer contains `LOAD_LOCAL`;
 > executing this opcode raises a RuntimeError tombstone directing the user
-> to recompile. `BYTECODE_VERSION` bumped to 3. See `DEPRECATIONS.md`.
+> to recompile. `BYTECODE_VERSION` bumped to 3. See
+> [`DEPRECATIONS.md`](../governance/DEPRECATIONS.md).
 
 ```
 LOAD_LOCAL <name>
@@ -130,6 +133,17 @@ Stores function arguments into local slots. Also syncs to `locals_array` via `lo
 
 ```
 STORE_ARG <slot>
+```
+
+### RESET_LOCAL_IDX
+
+Detaches any `Cell` at a local slot by writing a plain `None` over it, so the
+next `MAKE_CLOSURE` boxes a fresh per-iteration `Cell`. Emitted at the start of
+each `for`-loop iteration for the loop variable, and before each `let` binding
+inside a loop body. No stack effect.
+
+```
+RESET_LOCAL_IDX <slot>
 ```
 
 ### LOAD_UPVALUE
@@ -177,6 +191,16 @@ a b → (a * b)
 ```
 a b → (a / b)
 ```
+
+### MOD
+
+```
+a b → (a % b)
+```
+
+Remainder. Same three-branch shape as `DIV`, including the exclusion of `bool`
+from the int path and two distinct zero errors (`Integer modulo by zero`,
+`Float modulo by zero`). The sign follows the host, not C: `-7 % 3` is `2`.
 
 ### Comparison Instructions
 
@@ -446,22 +470,60 @@ Instructions such as `PUSH_CONST` reference this table by index.
 
 ## 12. Bytecode Versioning
 
-The bytecode format is versioned. `BYTECODE_VERSION` in `src/nodus/compiler/compiler.py` is the
-authoritative constant (currently `4`). The version is embedded in every compiled bytecode dict
-and checked on cache load; a mismatch silently invalidates the cache entry and triggers recompilation.
+Two different version numbers meet in this file, and conflating them is easy.
+
+**`BYTECODE_VERSION` — the bytecode format.** Declared in
+`src/nodus/compiler/compiler.py` (currently `4`), embedded in every compiled
+bytecode dict and checked on load. Frozen at `4` since v1.0 and governed by
+[#366](https://github.com/Masterplanner25/Nodus/issues/366), which is also what
+freezes the opcode set.
+
+> A second constant, `NODUS_BYTECODE_VERSION` in `src/nodus/runtime/module.py`,
+> carries the same number for the disk cache's own check. They agree today and
+> nothing compares them, so a bump to one is not a bump to the other.
+
+**The cache container format** — the byte at offset 4 below — is a property of
+the file on disk and moves independently of `BYTECODE_VERSION`. It is `0x01`
+and has never been bumped.
 
 Disk cache file format (`src/nodus/runtime/bytecode_cache.py`):
 
 ```
 Bytes 0–3   Magic: NDSC
-Byte  4     Format version: 0x02  ← bumped from 0x01 in v0.8.0
+Byte  4     Container format version: 0x01
 Bytes 5–36  SHA-256 of the marshal payload (integrity check)
 Bytes 37+   marshal.dumps() of the payload dict
 ```
 
-The payload uses Python `marshal` (not `pickle`) for serialization: faster for primitive types and avoids arbitrary-code-execution risk. Cache files are invalidated automatically on source mtime change or version mismatch. No user action is needed after an upgrade — stale caches are silently recompiled on next load.
+The payload uses Python `marshal` (not `pickle`) for serialization: faster for
+the primitive types a bytecode payload contains, and it avoids pickle's
+arbitrary-code-execution risk.
 
-Version history:
+### What invalidates a cache entry
+
+A cached entry is reused only when **all five** fields match. Any mismatch is a
+silent miss and the module is recompiled, so no user action is needed after an
+upgrade.
+
+| Field | Guards against |
+|---|---|
+| `cache_version` | a different bytecode format |
+| `compiler_version` | a different nodus-lang — without it, a compiler-level correctness fix silently did not apply to already-cached modules ([#411](https://github.com/Masterplanner25/Nodus/issues/411) follow-up) |
+| `module_path` | an entry written for a different file |
+| `mtime_ns` | an ordinary edit |
+| `source_sha256` | an edit the clock cannot see ([#704](https://github.com/Masterplanner25/Nodus/issues/704)) |
+
+> **An earlier revision of this section said mtime and the format version were
+> the whole check.** They are not, and the gap was a real defect. The entry is
+> *keyed* on path + mtime, so two edits landing inside the platform's timestamp
+> resolution collapse to one key: measured over five rapid rewrites with
+> different content each time, CPython 3.11 and PyPy 7.3.23 each produced **2
+> distinct keys out of 5** on Windows, and the second run executed the first
+> program. Comparing the source hash is what makes the answer depend on the file
+> rather than on the clock.
+
+`BYTECODE_VERSION` history (the container format's own introduction is the
+v0.7.0 row; every row after it records a bytecode change):
 
 ```
 0x01 — v0.7.0: initial marshal + NDSC magic format (replaced pickle)
@@ -477,11 +539,10 @@ Version history:
                 automatically
 ```
 
-Tooling compatibility: compiler, VM, and cache share the same `BYTECODE_VERSION` constant to ensure compatibility between:
-
-- compiler
-- VM
-- tooling
+Tooling compatibility: the compiler, the VM and the disk cache must all agree
+on this number, so that a program compiled by one is only executed by the
+others when they match. Note the caveat above -- that agreement is currently
+maintained by two separate constants holding the same literal, not by one.
 
 ## 13. Tooling Support
 

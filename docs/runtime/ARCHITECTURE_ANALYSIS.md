@@ -1,5 +1,7 @@
 ﻿# Nodus Architecture Analysis
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 ## 1. Executive Summary
 Nodus is a bytecode-compiled, stack-based scripting runtime implemented in Python. It targets automation and orchestration use cases with real language features (control flow, functions, closures, lists/maps/records, imports/exports), plus runtime services (task graphs, workflows/goals, coroutines/channels, event tracing). The system is beyond a toy VM and sits in an early practical runtime stage with strong tooling but a compile-time module model that will limit scale until redesigned.
 
@@ -39,8 +41,8 @@ source.nd
 ## 3. VM / Bytecode Assessment
 Opcode families (from VM dispatch):
 - Constants and stack: `PUSH_CONST`, `POP`
-- Variable access: `LOAD`, `STORE`, `STORE_ARG`, `LOAD_UPVALUE`, `STORE_UPVALUE`
-- Arithmetic/logic: `ADD`, `SUB`, `MUL`, `DIV`, `EQ`, `NE`, `LT`, `GT`, `LE`, `GE`, `NOT`, `NEG`, `TO_BOOL`
+- Variable access: `LOAD`, `STORE`, `STORE_ARG`, `LOAD_UPVALUE`, `STORE_UPVALUE`, `RESET_LOCAL_IDX`
+- Arithmetic/logic: `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `EQ`, `NE`, `LT`, `GT`, `LE`, `GE`, `NOT`, `NEG`, `TO_BOOL`
 - Control flow: `JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`, `HALT`
 - Iteration: `GET_ITER`, `ITER_NEXT`
 - Exceptions: `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW`
@@ -95,7 +97,8 @@ Biggest usability gaps:
 ## 8. Recommended Next Moves (Aligned With Current Code)
 1. Define a runtime module object model and stop flattening imports into a single compile unit.
 2. ✅ Bytecode versioning and stable opcode reference: complete at v1.0. `BYTECODE_VERSION = 4`,
-   47 stable opcodes, `docs/runtime/BYTECODE_REFERENCE.md` is the authoritative reference.
+   47 stable opcodes at the freeze and 49 today, `docs/runtime/BYTECODE_REFERENCE.md`
+   is the authoritative reference.
 3. ✅ Embedding API formalized: `NodusRuntime` in `nodus.__all__` as of v1.0.
 4. Clarify runtime service contracts (tools/agents/memory/events) with structured results.
 5. Expand orchestration tests: workflows/goals, resume, checkpoints, and worker dispatch.
@@ -104,7 +107,7 @@ Biggest usability gaps:
 Nodus is a stable practical scripting runtime (v1.0, 2026-03-15) with a strong automation/orchestration tilt.
 
 Justification:
-- Stable: bytecode VM frozen (47 opcodes, BYTECODE_VERSION=4), embedding API stable (`NodusRuntime`),
+- Stable: bytecode VM frozen (49 active opcodes, BYTECODE_VERSION=4), embedding API stable (`NodusRuntime`),
   package registry with auth/publish, finally blocks, Iterator protocol, LSP/DAP.
 - Still maturing: module isolation (compile-time flattening), runtime service contracts,
   orchestration test coverage.

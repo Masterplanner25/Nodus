@@ -1,5 +1,7 @@
 # Nodus Architecture
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 Nodus is an orchestration DSL and embedded runtime implemented in Python. Its execution model supports coroutines, task graphs, workflows, goals, and namespaced tool dispatch as language-level constructs. The tool registry is MCP-shaped and bridged to the MCP wire protocol by the `nodus-mcp` companion package; the core language ships no MCP protocol code.
 
 The architecture is split into two layers:
@@ -50,11 +52,20 @@ Modules have isolated globals, and named imports bind to live export bindings so
 
 Compiled module bytecode is cached under `.nodus/cache/` in the active project root.
 
-Cache entries are keyed by:
-- absolute module path
-- source file modification time (ns)
+Cache entries are *keyed* by absolute module path and source mtime (ns), but the
+key is not the whole check. A cached entry is reused only when five recorded
+fields all match -- the two above plus the bytecode format version, the
+nodus-lang version that compiled it, and a SHA-256 of the source bytes.
 
-Cache invalidation happens when the source mtime changes or the bytecode version changes.
+The last two are not optional detail. Without the compiler version, a
+compiler-level correctness fix silently did not apply to already-cached modules
+([#411](https://github.com/Masterplanner25/Nodus/issues/411) follow-up); without
+the source hash, two edits landing inside the platform mtime resolution collapse
+to one key and the second run executes the first program
+([#704](https://github.com/Masterplanner25/Nodus/issues/704)).
+
+[`BYTECODE.md`](BYTECODE.md) §12 holds the field-by-field table and the on-disk
+format; this section deliberately does not restate it.
 
 ## Incremental Compilation
 
@@ -131,7 +142,9 @@ This is why workflow lowering does not appear as an explicit pipeline stage betw
 the compiler and VM in the execution pipeline diagram above: it is an internal
 phase of `compile_stmt`, triggered by the node type.
 
-See `docs/runtime/WORKFLOWS.md` for the full workflow language reference.
+See [`WORKFLOWS.md`](WORKFLOWS.md) for what a run persists, and
+[`docs/guide/workflows-and-tasks.md`](../guide/workflows-and-tasks.md) for the
+workflow language surface.
 
 ## VM Dispatch Model
 

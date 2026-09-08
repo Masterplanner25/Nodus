@@ -1,5 +1,7 @@
 ﻿# Nodus Bytecode Reference
 
+**Last reviewed:** 2026-09-07, against 5.12.0
+
 > **The Nodus opcode set was frozen at v1.0 (2026-03-15).**
 > All 49 active opcodes are **stable**. Zero provisional opcodes remain.
 > Post-freeze additions follow the extension process in

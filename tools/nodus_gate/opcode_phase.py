@@ -18,6 +18,25 @@ formatting — and requires every other record of the instruction set to agree:
    runtime)
 5. Removed opcodes (`LOAD_LOCAL`) must stay out of the dispatch table
 6. Declared counts and `BYTECODE_VERSION` values in the two authoritative docs
+7. `INSTRUCTION_SEMANTICS.md` instruction sections (`### NAME` entries)
+8. `BYTECODE.md` and `ARCHITECTURE_ANALYSIS.md` must at least *name* every
+   dispatched opcode
+
+Checks 7 and 8 were added 2026-09-07, and the reason is the sharpest argument
+for this phase existing at all. Four documents under `docs/runtime/` enumerate
+the instruction set; this phase was pointed at one of them. So `MOD` and
+`RESET_LOCAL_IDX` -- the two opcodes it was *built* to catch -- were still
+missing from the other three, three months after it started reporting green.
+`INSTRUCTION_SEMANTICS.md` was meanwhile passing an anchored count check reading
+"All 49 active opcodes are stable" while specifying 47 of them: checking that a
+document states the right number is not the same as checking that it documents
+them.
+
+Check 8 is a mention sweep rather than a structural parse, and reports only the
+missing direction. `BYTECODE.md` documents the six comparisons and the boolean
+operations as grouped code blocks, and `ARCHITECTURE_ANALYSIS.md` groups by
+family, so a structural parser would report a formatting choice as a gap. Being
+named at all is the property that failed, so it is the property enforced.
 
 Check 6 works from a fixed table of anchors rather than a general regex over
 prose, because both documents are full of correct *historical* counts ("47
@@ -107,6 +126,45 @@ def parse_reference_inventory(text: str) -> tuple[set[str], set[str]]:
         end = entries[i + 1].start() if i + 1 < len(entries) else len(body)
         (removed if _REMOVED_MARK in body[m.end():end] else active).add(m.group(1))
     return active, removed
+
+
+def parse_heading_inventory(text: str) -> tuple[set[str], set[str]]:
+    """Parse a document whose opcodes are `### NAME` headings into (active, removed).
+
+    Same tombstone convention as `parse_reference_inventory`: an entry whose body
+    carries the ⛔ marker is removed. Used for `INSTRUCTION_SEMANTICS.md`, which
+    documents one opcode per heading spread across numbered sections rather than
+    under a single inventory heading, so `_section` has nothing to scope to.
+    """
+    entries = list(re.finditer(rf"^### ({_OPCODE_NAME})\s*$", text, re.M))
+    active: set[str] = set()
+    removed: set[str] = set()
+    for i, m in enumerate(entries):
+        end = entries[i + 1].start() if i + 1 < len(entries) else len(text)
+        (removed if _REMOVED_MARK in text[m.end():end] else active).add(m.group(1))
+    return active, removed
+
+
+def parse_mentioned_opcodes(text: str, dispatch: set[str]) -> set[str]:
+    """Every dispatched opcode the document names anywhere in its text.
+
+    Deliberately weaker than `parse_reference_inventory`, and only ever used for
+    the missing direction. `BYTECODE.md` is an overview: it documents the six
+    comparisons, the boolean operations and `NEG` as grouped code blocks rather
+    than one heading each, so a structural parser would report a formatting
+    choice as a gap.
+
+    Being *named at all* is the property worth enforcing there, because it is
+    exactly the one that failed. `MOD` and `RESET_LOCAL_IDX` were added to the
+    dispatch table post-freeze, and this phase was built to catch that — but it
+    was pointed only at `BYTECODE_REFERENCE.md`, so the same two opcodes stayed
+    missing from the other two runtime documents for another three months while
+    the gate reported green.
+    """
+    return {
+        op for op in dispatch
+        if re.search(rf"(?<![A-Z_]){re.escape(op)}(?![A-Z_0-9])", text)
+    }
 
 
 def parse_reference_categories(text: str) -> dict[str, str]:
@@ -258,6 +316,7 @@ _SPEC_TESTS_GLOB = "test_opcode_semantics*.py"
 # category was read from the document: a set maintained in this file is a second
 # thing to keep in step with the first.
 _SEMANTICS = "docs/runtime/INSTRUCTION_SEMANTICS.md"
+_OVERVIEW = "docs/runtime/BYTECODE.md"
 _ARCH = "docs/runtime/ARCHITECTURE_ANALYSIS.md"
 _STABILITY_INDEX = "docs/governance/LANGUAGE_STABILITY_INDEX.md"
 
@@ -302,6 +361,23 @@ CLAIM_ANCHORS: list[tuple[str, str, str, str]] = [
 
 
 # -- Phase --------------------------------------------------------------------
+
+def _compare_named(result: OpcodeResult, label: str, named: set[str],
+                   dispatch: set[str]) -> None:
+    """Require `label` to name every dispatched opcode. One direction only.
+
+    The reverse direction is left to `_compare`, which needs a structured
+    inventory to distinguish an active entry from a tombstoned one. A mention
+    sweep cannot tell those apart, so it must not claim to.
+    """
+    result.checks_run += 1
+    missing = sorted(dispatch - named)
+    if missing:
+        result.findings.append(OpcodeFinding(
+            message=f"{label} does not name every dispatched opcode",
+            detail="never mentioned: " + ", ".join(missing),
+        ))
+
 
 def _compare(result: OpcodeResult, label: str, documented: set[str],
              dispatch: set[str]) -> None:
@@ -442,6 +518,21 @@ def run_opcode_phase(root: str) -> OpcodeResult:
             ))
 
         _check_semantic_specs(result, root, reference, dispatch)
+
+    semantics = _read(_SEMANTICS)
+    if semantics is not None:
+        sem_active, _sem_removed = parse_heading_inventory(semantics)
+        _compare(result, f"{_SEMANTICS} instruction sections", sem_active, dispatch)
+
+    overview = _read(_OVERVIEW)
+    if overview is not None:
+        _compare_named(result, _OVERVIEW,
+                       parse_mentioned_opcodes(overview, dispatch), dispatch)
+
+    analysis = _read(_ARCH)
+    if analysis is not None:
+        _compare_named(result, _ARCH,
+                       parse_mentioned_opcodes(analysis, dispatch), dispatch)
 
     if freeze is not None:
         stable, provisional, freeze_removed = parse_freeze_stability_tables(freeze)

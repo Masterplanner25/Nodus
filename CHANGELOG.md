@@ -370,6 +370,61 @@
   list and for a missing map key, and each container kind grown to size. No
   timing is asserted anywhere.
 
+- **`nodus_gate --opcodes` now checks every document that enumerates the
+  instruction set, not one of four.** The phase exists because `MOD` and
+  `RESET_LOCAL_IDX` were added to the VM dispatch table post-freeze without the
+  extension process (#366) — and it was pointed only at `BYTECODE_REFERENCE.md`,
+  so those same two opcodes were still absent from `BYTECODE.md`,
+  `INSTRUCTION_SEMANTICS.md` and `ARCHITECTURE_ANALYSIS.md` three months after it
+  started reporting green. All three are gated now (32 checks, was 29) and all
+  three have been corrected.
+
+  `INSTRUCTION_SEMANTICS.md` is the one worth reading: it was already passing an
+  anchored count check on the sentence *"All 49 active opcodes are stable"* while
+  specifying 47 of them. Verifying that a document states the right number is not
+  verifying that it documents them. `BYTECODE.md` and `ARCHITECTURE_ANALYSIS.md`
+  get a weaker mention sweep, because both group opcodes into code blocks and a
+  structural parser would report formatting as a gap; being named at all is the
+  property that actually failed.
+
+  Each new check was confirmed to fail against a deliberately broken copy before
+  being trusted.
+
+### Documentation
+
+- **The bytecode cache no longer documents a guarantee it stopped making.**
+  `BYTECODE.md` §12 and `ARCHITECTURE.md` both said an entry is invalidated by
+  source mtime and bytecode version. It is five fields, and the two they omitted
+  are the two that were added because their absence was a real defect: the
+  nodus-lang version (without it a compiler-level fix silently did not apply to
+  already-cached modules, #411) and a SHA-256 of the source (without it two edits
+  inside the platform's mtime resolution collapse to one key and the second run
+  executes the first program, #704). Both documents described exactly the
+  pre-#704 behaviour that was fixed. §12 also gave the on-disk container format
+  byte as `0x02`; it is `0x01` and has never been bumped, and the "version
+  history" beneath it tracks `BYTECODE_VERSION` instead — the two are now
+  separated.
+
+- **`WORKFLOWS.md` rewritten as a runtime document.** It had not been touched
+  since the v1.0 release date and re-enumerated four vocabularies that live
+  elsewhere; every one had drifted — 7 of the 10 entries in `STEP_OPTION_KEYS`,
+  3 of the 12 `nodus workflow` subcommands, and none of the five workflow
+  constructs added since v5.0.0. It now points at the guide and the spec for the
+  language surface and keeps what is genuinely runtime-layer: the lowering
+  pipeline, and the two files a run persists, with their real key lists read off
+  a run rather than described.
+
+- **`docs/README.md` described the two bytecode documents backwards**, billing
+  the ungated overview as the "full specification with all 47 opcodes" and the
+  1030-line gate-checked authority as a "quick opcode lookup table". A reader
+  following the index went to the copy that was wrong.
+
+- `RUNTIME.md` §15 now documents the scheduler's `TimeSource` seam (#182);
+  `ARCHITECTURE_ANALYSIS.md` no longer claims 47 active opcodes in two places
+  while a third line in the same file says 49. Every `docs/runtime/` document
+  reviewed in this sweep carries a `Last reviewed:` header; the nine that were
+  only swept for version claims and file citations deliberately do not.
+
 ## [5.12.0] - 2026-09-06
 
 ### Added
