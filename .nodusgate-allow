@@ -39,7 +39,6 @@ blockhash:docs/guide/debugging.md:984af355e326
 
 
 # error-surfaces.md — illustrative snippet showing return-outside-function pattern
-blockhash:docs/policy/error-surfaces.md:72750155920c
 
 # types-and-values.md — intentional type-error demo and missing-key demo
 blockhash:docs/guide/types-and-values.md:ebd539eeebb8
@@ -109,7 +108,6 @@ blockhash:docs/language/LANGUAGE_SPEC.md:a16a20d9ab88
 blockhash:docs/language/LANGUAGE_SPEC.md:6efd02b93559
 
 # error-surfaces.md — intentional sandbox security demo (blocked path access)
-blockhash:docs/policy/error-surfaces.md:dfc436c08cdd
 
 # --- Re-pointed after doc-reformat PRs #273/#276 shifted line numbers (#293) ---
 
