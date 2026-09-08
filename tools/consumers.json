@@ -40,7 +40,7 @@
       "name": "nodus-wiki",
       "repo": "Masterplanner25/Nodus.wiki",
       "kind": "GitHub wiki (git repo; no pull requests, no CI)",
-      "published": "f4aeb06",
+      "published": "dfe6395",
       "tracks": "nodus_version",
       "fingerprint": "5.12.0",
       "why": "A prominent search result and the first Nodus documentation many people meet, and nothing checked it. It documented v4.1.1 for twelve minors -- across the 5.0.0 major, whose deny-by-default change breaks embedders -- with 1 of its 26 pages mentioning 5.x at all. Its Embedding-API page listed 7 of the constructor's 27 parameters, omitting all three capability flags, and its Security page named v4.0.x as the latest supported release. A wiki has no PR and no CI, so it is the one surface in this project where nothing could fail.",
