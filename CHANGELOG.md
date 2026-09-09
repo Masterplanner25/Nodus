@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-09-08
+
+Six release-claims probes were added for this cycle's surface — `copy()`'s
+three decisions, state-cell ownership, `fs.ensure_dir` refusing a file,
+`nodus serve`'s filesystem default, and the two prose checks every cycle
+carries. 121 probes, run per-PR by CI and again against the built wheel at
+Gate 10b.
+
 ### Added
 
 - **`copy(value)`: a deep copy of a list, map or record (#814).** Assignment
