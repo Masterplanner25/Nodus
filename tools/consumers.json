@@ -30,9 +30,9 @@
       "name": "nodus-run-action",
       "repo": "Masterplanner25/nodus-run-action",
       "kind": "GitHub Action (not packaged)",
-      "published": "v1.0.13",
+      "published": "v1.0.14",
       "tracks": "nodus_version",
-      "fingerprint": "5.12.0",
+      "fingerprint": "5.13.0",
       "why": "Its README documents a pinned `version:` for reproducible CI. The pin is the version new users copy, so it going stale hands them an old runtime.",
       "republish": "Update the pinned `version:` in README.md examples, then tag the action."
     },
@@ -40,9 +40,9 @@
       "name": "nodus-wiki",
       "repo": "Masterplanner25/Nodus.wiki",
       "kind": "GitHub wiki (git repo; no pull requests, no CI)",
-      "published": "dfe6395",
+      "published": "7ffcdd9",
       "tracks": "nodus_version",
-      "fingerprint": "5.12.0",
+      "fingerprint": "5.13.0",
       "why": "A prominent search result and the first Nodus documentation many people meet, and nothing checked it. It documented v4.1.1 for twelve minors -- across the 5.0.0 major, whose deny-by-default change breaks embedders -- with 1 of its 26 pages mentioning 5.x at all. Its Embedding-API page listed 7 of the constructor's 27 parameters, omitting all three capability flags, and its Security page named v4.0.x as the latest supported release. A wiki has no PR and no CI, so it is the one surface in this project where nothing could fail.",
       "republish": "Pull the wiki checkout (remote Masterplanner25/Nodus.wiki, branch master; local clone under 'C:/dev/Nodus Wiki/nodus-wiki'). Correct the version banners on Home, Getting-Started, Roadmap, _Footer, _Sidebar and the two agent-skill pages; check Security.md's supported-versions table and Embedding-API.md against the real constructor signature. Push to master -- it goes live immediately, with nothing between you and the reader. Update `fingerprint` and `published` here in the same commit."
     }
