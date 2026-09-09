@@ -27,8 +27,7 @@ fn append(path, content) {
 }
 
 fn ensure_dir(path) {
-    mkdir(path)
-    return path
+    return fs_ensure_dir(path)
 }
 
 fn exists_path(path) {

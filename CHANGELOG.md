@@ -31,6 +31,39 @@
 
 ### Fixes
 
+- **#845: `fs.ensure_dir` reported success for every failure.** It was written
+  in Nodus as `mkdir(path); return path` with the result discarded, so a failure
+  came back as the path. With a *file* at the target it created nothing, and the
+  next write into that path failed with *"parent directory does not exist"* — at
+  a call site with no visible connection to the one that lied.
+
+  **The repair that looks obvious is wrong**, and it is the reason this took a
+  new builtin rather than a missing `let`. Propagating `mkdir`'s error breaks the
+  function: `fs_mkdir` uses `exist_ok=False` and so fails on an *existing
+  directory* too, which is precisely the case `ensure_dir` exists to absorb.
+  Telling the two apart in Nodus would need an `is_dir` predicate `std:fs` does
+  not have, and would ask the filesystem twice with a window in between.
+
+  `fs.ensure_dir` now delegates to a builtin using `os.makedirs(exist_ok=True)`,
+  which is that distinction made once by the OS: an existing directory succeeds,
+  missing parents are created, and a file at the target is
+  `io_error: path exists and is not a directory`. It still returns the path, so
+  nothing that worked before changes. A wrong-typed argument throws `kind="type"`
+  like every other `std:fs` entry point, and it is confined by `allowed_paths`
+  and classified `FS_WRITE`.
+
+- **A guard for the shape, not the instance.** `tests/test_fs_ensure_dir.py`
+  also checks that **no** `stdlib/*.nd` function calls something that can return
+  an err record and throws the result away. The set is derived, not listed: a
+  Python builtin whose body reaches `vm.make_err` returns err records, and a
+  stdlib `fn` whose body is `return <such a call>` returns them too — the
+  delegation pattern nearly every stdlib function uses. 29 of the 227 registered
+  builtins qualify; `ensure_dir` was the one place a result was dropped.
+
+  Its limit is stated in the file rather than left to be discovered: the
+  transitive step is one level deep, so a wrapper returning an error through a
+  conditional is not recognised. It covers the shape that actually occurred.
+
 - **#843: `nodus serve` confines the filesystem by default.** Code submitted to
   `POST /execute` could read and write anywhere the server process could —
   verified off disk against a running server, reading
