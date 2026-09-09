@@ -65,20 +65,24 @@ All eleven functions, not the seven an earlier revision listed.
 | `fs.exists_path(path)` | bool | — (returns `false`, does not fail) |
 | `fs.listdir(path)` | list of strings | `io_error` |
 | `fs.mkdir(path)` | nil | `io_error` |
-| `fs.ensure_dir(path)` | the path | **none — see below** |
+| `fs.ensure_dir(path)` | the path | `io_error` |
 | `fs.delete(path)` | nil | `io_error` |
 
 The function is `fs.listdir`, not `fs.list_dir`; the latter is not exported and
 gives *"Missing module export: list_dir"*.
 
-> **`fs.ensure_dir` does not honour the contract
-> ([#845](https://github.com/Masterplanner25/Nodus/issues/845)).** It calls
-> `mkdir` and discards the result, returning the path unconditionally, so a
-> failure is reported as success. With a *file* at the target path it returns the
-> path, creates nothing, and the next write into it fails with *"parent directory
-> does not exist"*. `fs.mkdir` on the same path correctly returns
-> `io_error: path already exists`. Use `fs.mkdir` and check its result where the
-> answer matters.
+`fs.ensure_dir` is the idempotent one: an existing **directory** succeeds and
+returns the path, missing parents are created, and an existing **file** at the
+target is `io_error: path exists and is not a directory`. `fs.mkdir` is the
+non-idempotent form and returns `io_error: path already exists` for either.
+
+> **It reported success for every failure until
+> [#845](https://github.com/Masterplanner25/Nodus/issues/845).** It was written
+> as `mkdir(path); return path` with the result discarded, so a file at the
+> target produced the path, no directory, and a later write failing at an
+> unrelated call site. The repair that looks obvious — propagate `mkdir`'s error
+> — is wrong: `fs.mkdir` fails on an existing directory too, which is the case
+> `ensure_dir` exists to absorb.
 
 ### `std:math` (error-returning functions only)
 

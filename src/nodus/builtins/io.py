@@ -263,6 +263,49 @@ def register(vm, registry) -> None:
             return vm.make_err("internal_error", 'unexpected internal error in fs.mkdir')
         return None
 
+    def builtin_fs_ensure_dir(path):
+        """Make `path` a directory, idempotently (#845).
+
+        `fs.ensure_dir` was written in Nodus as `mkdir(path); return path` --
+        the result discarded, so every failure was reported as success. With a
+        *file* at the target it returned the path, created nothing, and the next
+        write in failed with "parent directory does not exist".
+
+        The obvious repair -- propagate `mkdir`'s error -- breaks the function's
+        purpose: `fs_mkdir` uses `exist_ok=False`, so it fails on an existing
+        directory too, and a function named `ensure_dir` that refuses when the
+        directory is already there is not usable. Distinguishing the two cases
+        in Nodus would need an `is_dir` predicate `std:fs` does not have, and
+        would ask the filesystem twice with a window in between.
+
+        `exist_ok=True` is the whole distinction, made once by the OS: an
+        existing directory succeeds, an existing file raises. Returns the path,
+        as the old wrapper did.
+        """
+        if not isinstance(path, str):
+            vm.runtime_error("type", "fs.ensure_dir(path) expects a string path")
+        vm._ensure_path_allowed(path, "fs.ensure_dir(path)", write=True)
+        try:
+            os.makedirs(path, exist_ok=True)
+        except FileExistsError as exc:
+            _trace("fs.ensure_dir", exc)
+            return vm.make_err(
+                "io_error", f'path exists and is not a directory: "{path}"')
+        except PermissionError as exc:
+            _trace("fs.ensure_dir", exc)
+            return vm.make_err("io_error", f'permission denied: "{path}"')
+        except NotADirectoryError as exc:
+            _trace("fs.ensure_dir", exc)
+            return vm.make_err(
+                "io_error", f'a parent path component is not a directory: "{path}"')
+        except OSError as exc:
+            _trace("fs.ensure_dir", exc)
+            return vm.make_err("io_error", f'file system error: "{path}"')
+        except Exception as exc:
+            _trace("fs.ensure_dir", exc)
+            return vm.make_err("internal_error", 'unexpected internal error in fs.ensure_dir')
+        return path
+
     def builtin_fs_delete(path):
         if not isinstance(path, str):
             vm.runtime_error("type", "fs.delete(path) expects a string path")
@@ -375,6 +418,7 @@ def register(vm, registry) -> None:
     registry.add("path_ext", 1, builtin_path_ext)
     registry.add("path_stem", 1, builtin_path_stem)
     registry.add("fs_mkdir", 1, builtin_fs_mkdir)
+    registry.add("fs_ensure_dir", 1, builtin_fs_ensure_dir)
     registry.add("fs_delete", 1, builtin_fs_delete)
     registry.add("path_relative", 2, builtin_path_relative)
     registry.add("path_absolute", 1, builtin_path_absolute)

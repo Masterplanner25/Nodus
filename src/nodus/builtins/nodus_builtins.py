@@ -185,6 +185,7 @@ BUILTIN_NAMES = {
     "path_ext",
     "path_stem",
     "fs_mkdir",
+    "fs_ensure_dir",
     "fs_delete",
     "path_relative",
     "path_absolute",
