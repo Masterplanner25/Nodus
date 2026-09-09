@@ -42,6 +42,7 @@ deny-by-default is a compatibility decision rather than an engineering one.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 
@@ -907,3 +908,62 @@ def emit_denied(event_bus, request: CapabilityRequest, reason: str) -> None:
     except Exception:
         # An audit sink must never be the thing that breaks the run it audits.
         pass
+
+
+# -----------------------------------------------------------------------------
+# The default filesystem jail (#843)
+# -----------------------------------------------------------------------------
+#
+# `allowed_paths` has three states, and collapsing two of them is what #843 was:
+#
+#   SANDBOX_DEFAULT  the caller said nothing  -> jail to the working directory
+#   None             the caller said "no jail" -> unrestricted, explicitly
+#   [..]             the caller named roots    -> those roots
+#
+# A plain `None` default cannot express the first, so `RuntimeService` had a
+# signature that read as "no restriction configured" and behaved as "no
+# restriction at all". Code arriving over `POST /execute` could read and write
+# anywhere the server process could.
+#
+# `NodusRuntime` had the sentinel and the resolution inline; `cli.py` had a
+# second reader of `NODUS_ALLOWED_PATHS` that disagreed about an empty value.
+# One question, three answers, and the one place it was never asked is the one
+# that took submitted source. So it is resolved here, once, and imported.
+#
+# This lives beside the Floor deliberately: both answer *where may guest code
+# touch the filesystem*, and the Floor is the part no `allowed_paths` can widen.
+
+
+class _SandboxDefault:
+    """Sentinel: the caller did not say. Distinct from an explicit `None`."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "SANDBOX_DEFAULT"
+
+
+SANDBOX_DEFAULT = _SandboxDefault()
+
+
+def resolve_allowed_paths(value: object) -> list[str] | None:
+    """Turn the three states above into the VM's `allowed_paths` argument.
+
+    `NODUS_ALLOWED_PATHS` widens the default jail when the caller passed
+    nothing; it is deliberately not consulted for an explicit value, since an
+    environment variable that could *narrow* a jail the caller asked for is how
+    a program works locally and is refused in production with no difference in
+    the code.
+
+    An env var that is set but empty, or only separators, falls through to the
+    working directory rather than producing `[]` -- `[]` means "no path is
+    permitted", which is a jail nobody asked for and reads as a bug.
+    """
+    if value is not SANDBOX_DEFAULT:
+        return value  # type: ignore[return-value]
+    raw = os.environ.get("NODUS_ALLOWED_PATHS")
+    if raw:
+        parts = [part.strip() for part in raw.split(os.pathsep) if part.strip()]
+        if parts:
+            return parts
+    return [os.getcwd()]

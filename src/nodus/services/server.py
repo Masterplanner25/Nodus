@@ -42,6 +42,7 @@ from nodus.tooling.runner import (
     tool_call_result,
 )
 from nodus.result import Result, normalize_filename
+from nodus.runtime.capability import SANDBOX_DEFAULT, resolve_allowed_paths
 from nodus.runtime.errors import NodusRuntimeError
 from nodus.runtime.diagnostics import LangRuntimeError
 from nodus.services.graph_metadata import graph_metadata
@@ -349,7 +350,13 @@ class RuntimeService:
         session_timeout_ms: int = SESSION_TIMEOUT_MS,
         max_sessions: int = MAX_SESSIONS,
         worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
-        allowed_paths: list[str] | None = None,
+        # #843: the sentinel, not `None`. `None` here read as "no restriction
+        # configured" and behaved as "no restriction at all" -- code arriving over
+        # `POST /execute` could read and write anywhere the server process could.
+        # The CLI's permissiveness rests on the developer having authored the
+        # script, which is exactly what a socket removes, and #754 made that
+        # argument for subprocess, network and env while leaving the filesystem.
+        allowed_paths: list[str] | None = SANDBOX_DEFAULT,  # type: ignore[assignment]
         writable_paths: list[str] | None = None,
         allow_input: bool = False,
         # #754. Deny by default, matching `NodusRuntime` and *not* the CLI.
@@ -393,7 +400,7 @@ class RuntimeService:
             "resumed_retries": [],
             "rehydrated_runs": [],
         }
-        self.allowed_paths = allowed_paths
+        self.allowed_paths = resolve_allowed_paths(allowed_paths)
         self.writable_paths = writable_paths
         self.allow_input = allow_input
         self.allow_subprocess = allow_subprocess
@@ -558,8 +565,10 @@ class RuntimeService:
         """
         if vm is None:
             return
-        vm.allowed_paths = self.allowed_paths
-        vm.writable_paths = self.writable_paths
+        # #843: through the VM's own normaliser, not a raw assignment. Setting
+        # these directly skipped `normcase(realpath(...))` and produced roots
+        # that could never match a compared path on Windows.
+        vm.set_path_policy(self.allowed_paths, self.writable_paths)
         # #754: the three capability switches, which used to fall through to the
         # VM's permissive defaults with no flag able to reach them.
         vm.allow_subprocess = self.allow_subprocess
@@ -1700,7 +1709,7 @@ def serve(
     *,
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
-    allowed_paths: list[str] | None = None,
+    allowed_paths: list[str] | None = SANDBOX_DEFAULT,  # type: ignore[assignment]
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
     allow_subprocess: bool = False,
@@ -1752,7 +1761,7 @@ def run_in_thread(
     session_timeout_ms: int = SESSION_TIMEOUT_MS,
     max_sessions: int = MAX_SESSIONS,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
-    allowed_paths: list[str] | None = None,
+    allowed_paths: list[str] | None = SANDBOX_DEFAULT,  # type: ignore[assignment]
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
     allow_subprocess: bool = False,

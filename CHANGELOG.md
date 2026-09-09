@@ -30,6 +30,52 @@
   and the record case is the one that motivates the surface.
 
 ### Fixes
+
+- **#843: `nodus serve` confines the filesystem by default.** Code submitted to
+  `POST /execute` could read and write anywhere the server process could —
+  verified off disk against a running server, reading
+  `/etc/hosts` and writing outside the project tree. `RuntimeService` defaulted
+  `allowed_paths=None`, which the VM reads as "fall back to `fs_root`", while the
+  service builds its VMs with `source_path=None` and therefore no `fs_root`.
+  Both halves of the fallback absent means no restriction at all.
+
+  It is the asymmetry #754 closed for subprocess, network and environment, with
+  the filesystem left out. The reasoning is the same and is stated in that
+  constructor: the CLI's permissiveness rests on the developer having authored
+  the script, and that does not survive the trip to a socket.
+
+  A default `nodus serve` is now jailed to its working directory.
+  `--allow-paths` narrows or widens it; passing `allowed_paths=None`
+  explicitly remains an opt-in escape hatch.
+
+- **A second defect underneath it: `--allow-paths` denied the directory it
+  named.** `_apply_runtime_policies` assigned `vm.allowed_paths` raw, skipping
+  the `normcase(realpath(...))` normalisation `VM.__init__` applies — and
+  `_ensure_path_allowed` compares candidates that way. On Windows a root stayed
+  as the caller spelled it while every compared path was lowercased, so nothing
+  matched and the jail refused **everything**, including files inside the
+  allowed directory. `_new_vm` built the VM correctly and then overwrote it on
+  the next line.
+
+  Worse than the unconfined server in one respect: it is the documented
+  mitigation, so an operator who took the documented step believed they were
+  covered. `normcase` is identity on Linux, which is why CI never saw it.
+
+  `VM.set_path_policy()` is now the only way to install a path policy after
+  construction, and `__init__` uses it too.
+
+- **The sentinel and its resolution moved to `runtime/capability.py`**, beside
+  the Floor — both answer *where may guest code touch the filesystem*. There
+  were already two readers of `NODUS_ALLOWED_PATHS`, in `NodusRuntime.__init__`
+  and `cli.py`, disagreeing about an empty value; `RuntimeService` would have
+  been a third. `capability.py` imports only stdlib, so `services/` can use it
+  without the cycle `embedding.py` would create.
+
+  `nodus run` is untouched. It is confined by *project root* through `fs_root`,
+  a different mechanism on a different branch, and a test pins that it still
+  refuses with the project-root message rather than the `allowed_paths` one, so
+  a later change cannot quietly move the CLI onto the service's jail.
+
 - **The wheel's own agent index pointed at 36 files that are not in it.**
   `llms.txt` ships inside the package and says "start here if you are an agent",
   and every one of its 36 relative links — `README.md`, `docs/guide/*`,
