@@ -65,6 +65,7 @@ from nodus.tooling.runner import (
 # Same shape as CIRC-001 (#103), which made `vm.py`'s workflow-runner imports
 # lazy and carries the same instruction: do not hoist these back to module
 # scope.
+from nodus.runtime.capability import SANDBOX_DEFAULT
 from nodus.support.config import SERVER_HOST, SERVER_PORT, WORKER_SWEEP_INTERVAL_MS, MAX_STEPS, EXECUTION_TIMEOUT_MS, MAX_STDOUT_CHARS
 from nodus.vm.vm import VM
 from nodus.support.version import VERSION
@@ -1423,7 +1424,7 @@ def _run_server(
     port: int = SERVER_PORT,
     trace: bool = False,
     worker_sweep_interval_ms: int = WORKER_SWEEP_INTERVAL_MS,
-    allowed_paths: list[str] | None = None,
+    allowed_paths: list[str] | None = SANDBOX_DEFAULT,  # type: ignore[assignment]
     writable_paths: list[str] | None = None,
     allow_input: bool = False,
     allow_subprocess: bool = False,
@@ -2202,7 +2203,18 @@ def _dispatch(argv: list[str] | None = None) -> int:
             except ValueError as _e:
                 _print_stderr(str(_e))
                 return 1
-        allowed_paths = _resolve_allowed_paths(flags.get("--allow-paths"))
+        # #843: absent means *the operator said nothing*, which for a network
+        # endpoint is a jail, not "no jail". `_resolve_allowed_paths` collapses
+        # absent and unset-env into `None`, and `None` is the explicit "no
+        # restriction" value -- so the sentinel has to be passed through rather
+        # than derived here. `nodus run` and `nodus profile` call the same helper
+        # and are deliberately left alone: their permissiveness rests on the
+        # developer having authored the script.
+        serve_allowed_paths: object = (
+            _resolve_allowed_paths(flags["--allow-paths"])
+            if "--allow-paths" in flags
+            else SANDBOX_DEFAULT
+        )
         writable_paths = _resolve_writable_paths(flags.get("--writable-paths"))
         auth_token = str(flags["--auth-token"]) if "--auth-token" in flags else _server_auth_token_from_env()
         allow_input = "--allow-input" in flags or _server_allow_input_from_env()
@@ -2235,7 +2247,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
             port=port,
             trace="--trace" in flags,
             worker_sweep_interval_ms=sweep_ms,
-            allowed_paths=allowed_paths,
+            allowed_paths=serve_allowed_paths,  # type: ignore[arg-type]
             writable_paths=writable_paths,
             allow_input=allow_input,
             allow_subprocess=allow_subprocess,

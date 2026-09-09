@@ -271,10 +271,9 @@ class VM:
         self.scheduler = Scheduler(self, trace=trace_scheduler, trace_output=scheduler_output)
         self.event_bus = event_bus or RuntimeEventBus()
         self.profiler = profiler
-        self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
         # #467: the writable subset. None means "whatever is readable",
         # which is every prior release's behaviour and keeps this additive.
-        self.writable_paths = self._normalize_allowed_paths(writable_paths)
+        self.set_path_policy(allowed_paths, writable_paths)
         self.fs_root = os.path.normcase(os.path.realpath(fs_root)) if fs_root else None
         self.allow_subprocess = allow_subprocess
         self.allow_network = allow_network
@@ -687,6 +686,30 @@ class VM:
         if not self.frames:
             return None
         return self.frames[-1].locals
+
+    def set_path_policy(
+        self,
+        allowed_paths: list[str] | None,
+        writable_paths: list[str] | None,
+    ) -> None:
+        """Install a filesystem policy on this VM, normalising both halves.
+
+        The one way to set these after construction (#843). They were assigned
+        raw from `RuntimeService._apply_runtime_policies`, which skipped the
+        normalisation `__init__` does -- so a root stayed as the caller spelled
+        it while `_ensure_path_allowed` compares against
+        `normcase(realpath(...))`. On Windows those never match and the jail
+        denies everything, including files inside the directory the operator
+        named. `nodus serve --allow-paths <dir>` was broken that way, which is
+        worse than it sounds: it is the documented mitigation for a server that
+        was otherwise unconfined.
+
+        Normalising in one place rather than at each assignment is the point.
+        `__init__` used to be the only site that got it right, and being right
+        by construction is not a property a second assignment site inherits.
+        """
+        self.allowed_paths = self._normalize_allowed_paths(allowed_paths)
+        self.writable_paths = self._normalize_allowed_paths(writable_paths)
 
     def _normalize_allowed_paths(self, allowed_paths: list[str] | None) -> list[str] | None:
         if allowed_paths is None:

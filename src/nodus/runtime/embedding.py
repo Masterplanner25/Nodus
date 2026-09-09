@@ -21,12 +21,21 @@ from nodus.runtime.schema_contract import (
     validate_args,
     validate_return,
 )
-from nodus.runtime.capability import ALL_CAPABILITIES, ApprovalChannel, CapabilityPolicy
+from nodus.runtime.capability import (
+    ALL_CAPABILITIES,
+    SANDBOX_DEFAULT,
+    ApprovalChannel,
+    CapabilityPolicy,
+    resolve_allowed_paths,
+)
 from nodus.services.memory_runtime import MemoryStore
 from nodus.vm.vm import VM
 from nodus.vm.types import Record, Closure
 
-_SANDBOX_DEFAULT = object()  # sentinel: allowed_paths not explicitly set by caller
+# The sentinel and its resolution live in `capability.py` (#843): `RuntimeService`
+# needs the same three states and cannot import this module, which imports
+# `services`. Kept as an alias because the name is referenced downstream.
+_SANDBOX_DEFAULT = SANDBOX_DEFAULT
 
 
 def _path_within_any(path: str, roots: list[str]) -> bool:
@@ -390,12 +399,7 @@ class NodusRuntime:
             subprocess and network capability use, and VM errors.  Simple
             arithmetic and variable assignments emit no events.
         """
-        if allowed_paths is _SANDBOX_DEFAULT:
-            raw_env = os.environ.get("NODUS_ALLOWED_PATHS")
-            if raw_env:
-                allowed_paths = [p.strip() for p in raw_env.split(os.pathsep) if p.strip()]
-            else:
-                allowed_paths = [os.getcwd()]
+        allowed_paths = resolve_allowed_paths(allowed_paths)
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
         self.max_stdout_chars = max_stdout_chars
