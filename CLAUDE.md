@@ -1720,7 +1720,7 @@ Importing `nodus_lang_workflow` before `nodus` in a fresh process is safe. Do no
 
 ## SemVer policy
 
-The current published version is **v5.12.0** (live on PyPI, published 2026-09-06).
+The current published version is **v5.13.0** (live on PyPI, published 2026-09-08).
 Two files must stay in sync — `src/nodus/support/version.py` and `pyproject.toml`.
 If they disagree, fix that before anything else.
 
@@ -1739,6 +1739,9 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.13.0 | code submitted to `nodus serve` can no longer read or write outside the server's working directory (#843) | `--allow-paths` widens it, as it always could -- except that it did not: the roots were compared unnormalised, so on Windows it refused every path including the ones it was given. That half is a repair, not a restriction |
+| 5.13.0 | a workflow `state` cell **owns** its value (#822) | intended, and the reason the conflict machinery works at all: a step can no longer change a cell by mutating what it read or what it assigned from. `cell[i] = v` is recorded as a write now, so a program relying on the untracked mutation behaves differently |
+| 5.13.0 | `fs.ensure_dir` returns `io_error` where it used to return the path (#845) | it reported success for every failure, so nothing that *worked* breaks -- but code that ignored the result now has a result worth checking. An existing directory still succeeds; a **file** at the target is the case that now refuses |
 | 5.12.0 | an **undeclared CLI flag is refused** instead of silently dropped (#791) | remove it, or spell it correctly. `--help` lists what each command takes and the error suggests a near miss. This is the fix for `workflow cleanup --dry-run` **deleting** — but any script passing a flag that did nothing now exits 1, including `--flag=value`, which was taken as the *filename* |
 | 5.12.0 | four `nodus test` flags are gone: `--watch`, `--parallel`, `--seed`, `--coverage-per-test` (#794) | nothing to restore — they were declared, printed by `--help`, and read by no code. `nodus test --watch` ran once and exited, which looks exactly like a watcher that saw no changes |
 | 5.11.0 | `runtime.time_ms()` reads the **scheduler's** clock, not the host clock (#182) | only observable to a host that installs a non-default `TimeSource`; on `HostTimeSource` it *is* `runtime_time_ms()`. It was the incoherence, not the fix: under a virtual clock a program's own 800 ms sleep measured `0.0` |
@@ -1787,7 +1790,7 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.12.0 took all eighteen entries.**
+**`[Unreleased]` is empty — 5.13.0 took all forty-two entries.**
 
 **5.12.0 has two rows, and both are the same shape**: something that used to be
 accepted and ignored is now refused. That is the release's whole theme applied

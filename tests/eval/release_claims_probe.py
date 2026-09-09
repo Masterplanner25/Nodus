@@ -2767,6 +2767,149 @@ def probe_no_stale_5_11_current(repo: Path):
     return "no document still calls 5.11.0 the current release"
 
 
+
+@probe("copy() is deep, preserves shared structure, and refuses a live handle")
+def probe_copy_builtin():
+    """#814's three decisions, each of which could have gone the other way."""
+    deep = run_nd(
+        'fn main() {\n'
+        '    let inner = [1i, 2i]\n'
+        '    let a = {"x": inner}\n'
+        '    let b = copy(a)\n'
+        '    b["x"][0] = 99i\n'
+        '    print(str(inner[0]))\n'
+        '}\nmain()\n'
+    )
+    assert deep["ok"], f"copy() probe failed to run: {deep.get('error')}"
+    assert deep["stdout"].strip() == "1", (
+        f"copy() was shallow: the original became {deep['stdout'].strip()}"
+    )
+
+    shared = run_nd(
+        'fn main() {\n'
+        '    let leaf = [1i]\n'
+        '    let both = copy([leaf, leaf])\n'
+        '    both[0][0] = 7i\n'
+        '    print(str(both[1][0]))\n'
+        '}\nmain()\n'
+    )
+    assert shared["ok"], f"shared-structure probe failed: {shared.get('error')}"
+    assert shared["stdout"].strip() == "7", (
+        "copy() expanded shared structure into two objects; preserving sharing "
+        f"is the documented decision, got {shared['stdout'].strip()}"
+    )
+
+    refused = run_nd(
+        'fn main() {\n    let c = copy({"f": fn() { return 1i }})\n    print("copied")\n}\nmain()\n'
+    )
+    assert not refused["ok"], "copy() accepted a value holding a function"
+    return "deep, structure-sharing, and refuses a function"
+
+
+@probe("a workflow state cell owns its value")
+def probe_state_cell_ownership():
+    """#822: a step could change a cell without ever writing to it."""
+    result = run_nd(
+        'workflow w {\n'
+        '    state items = ["seed"]\n'
+        '    step a {\n'
+        '        let borrowed = items\n'
+        '        borrowed = push(borrowed, "smuggled")\n'
+        '        return "a"\n'
+        '    }\n'
+        '}\n'
+        'fn main() {\n'
+        '    let r = run_workflow(w)\n'
+        '    print(str(len(r["state"]["items"])))\n'
+        '}\nmain()\n'
+    )
+    assert result["ok"], f"workflow did not run: {result.get('error')}"
+    assert result["stdout"].strip() == "1", (
+        "mutating a container read out of a state cell changed the cell; it "
+        f"must hand back a copy, got {result['stdout'].strip()} items"
+    )
+    return "mutating what a step read does not change the cell"
+
+
+@probe("fs.ensure_dir refuses a path that is a file")
+def probe_ensure_dir_refuses_a_file():
+    """#845: it returned the path whether or not it made a directory."""
+    import tempfile
+
+    work = tempfile.mkdtemp()
+    (Path(work) / "clash").write_text("x", encoding="utf-8")
+    source = (
+        'import "std:fs" as fs\n'
+        'fn main() {\n'
+        f'    let r = fs.ensure_dir("{work.replace(chr(92), "/")}/clash")\n'
+        '    if (type(r) == "error") { print("refused:" + r.kind) }\n'
+        '    else { print("reported success") }\n'
+        '}\nmain()\n'
+    )
+    from nodus.runtime.embedding import NodusRuntime
+    result = NodusRuntime(timeout_ms=None, max_steps=None,
+                          allowed_paths=[work]).run_source(source)
+    assert result["ok"], f"ensure_dir probe failed to run: {result.get('error')}"
+    assert result["stdout"].strip() == "refused:io_error", (
+        f"a file at the target was not refused: {result['stdout'].strip()[:60]}"
+    )
+    assert (Path(work) / "clash").is_file(), "the file was replaced"
+    return "a file at the target is io_error, not a reported success"
+
+
+@probe("nodus serve confines the filesystem by default")
+def probe_serve_filesystem_default():
+    """#843: submitted code could read and write anywhere the server could."""
+    from nodus.runtime.capability import SANDBOX_DEFAULT
+    from nodus.services.server import RuntimeService
+    import inspect
+
+    default = inspect.signature(RuntimeService.__init__).parameters["allowed_paths"].default
+    assert default is SANDBOX_DEFAULT, (
+        "RuntimeService defaults allowed_paths to None again; None reads as "
+        "'no restriction configured' and behaves as 'no restriction at all'"
+    )
+    source = inspect.getsource(RuntimeService._apply_runtime_policies)
+    assert "set_path_policy" in source, (
+        "the path policy is assigned raw again, which skips normalisation and "
+        "made --allow-paths refuse the directory it was given"
+    )
+    return "sentinel default, and roots installed through the normalising setter"
+
+
+@probe("README names the 5.13.0 surface")
+def probe_readme_names_513_surface(repo: Path):
+    """The README is the permanent PyPI long description (#605, 5.0.1)."""
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("copy(value)", "ensure_dir", "nodus serve") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "copy(value), ensure_dir and nodus serve all appear"
+
+
+@probe("no stale '5.12.0 is current' claim survives")
+def probe_no_stale_5_12_current(repo: Path):
+    """The failure this cycle's --versions run exists to catch, asserted from
+    the other side: prose that still calls the previous release current."""
+    import re
+
+    pattern = re.compile(
+        r"5\.12\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.12\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.12.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.12.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -2978,6 +3121,12 @@ def main() -> int:
     probe_project_dir_message(args.repo)
     probe_readme_names_512_surface(args.repo)
     probe_no_stale_5_11_current(args.repo)
+    probe_copy_builtin()
+    probe_state_cell_ownership()
+    probe_ensure_dir_refuses_a_file()
+    probe_serve_filesystem_default()
+    probe_readme_names_513_surface(args.repo)
+    probe_no_stale_5_12_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

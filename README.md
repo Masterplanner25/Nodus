@@ -47,7 +47,39 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.12.0 is about a promise being kept — every warning that says
+**Recent:** 5.13.0 is about the gap between what something reports and what it
+actually did.
+
+`fs.ensure_dir` returned the path whether or not it made a directory — with a
+file already at that path it created nothing, said the path, and the *next*
+write failed somewhere else entirely. `nodus serve` accepted code over a socket
+and let it read and write anywhere the server process could; worse, the
+documented mitigation was broken too, because `--allow-paths` compared roots it
+had not normalised and so refused every path including the ones it was given. A
+workflow `state` cell handed out a live reference, so a step could change a cell
+without ever writing to it, and the conflict detection, the `merge:` policies and
+the staged 6.0.0 error all watched the assignment that never came.
+
+Each of those reported success. None of them was doing the thing it said.
+
+The language half is the same question one level down. Lists, maps and records
+**alias** — assignment binds a second name to one container, at any depth and
+across a call boundary — and nothing said so, nothing tested it, and there was no
+way to opt out. `copy(value)` is the way out: a deep copy that preserves shared
+structure rather than expanding it, terminates on a cycle, and refuses a value
+holding a function, channel or task, naming where it found it. State cells now
+own what they hold, so writing a container into one stores a copy and reading one
+hands a copy back.
+
+The rest of the release is machinery for finding this class again. Several gates
+were checking that a document *stated* the right number rather than that it
+documented the thing — the opcode inventory is now compared against the live VM
+dispatch table in every document that enumerates it, not one of four; a stdlib
+wrapper can no longer call something that returns an error record and drop the
+result; every `nodus` import written in the documentation must resolve; and every
+document under `docs/` must be reachable from an index.
+
+5.12.0 is about a promise being kept — every warning that says
 something will break can now be seen, listed, and acted on.
 
 Four behaviours are staged to change at 6.0.0, and each of them warns today. Two
