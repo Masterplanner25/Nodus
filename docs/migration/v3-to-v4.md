@@ -1,5 +1,7 @@
 # Migrating from Nodus v3.x to v4.0
 
+**Last reviewed:** 2026-09-08. A record of the v3.x → v4.0 transition; it describes those releases and is not updated as the language moves.
+
 v4.0 is a breaking-change release. This guide covers every change that
 requires updates to existing v3.x code.
 

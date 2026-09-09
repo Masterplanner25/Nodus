@@ -19,8 +19,11 @@ This directory contains all technical documentation for Nodus. Start with the
 | AI-native primitives | [`guide/ai-primitives.md`](guide/ai-primitives.md) |
 | Error handling | [`guide/error-handling.md`](guide/error-handling.md) |
 | Versioning and release policy | [`release.md`](release.md) |
-| Security reporting | [`security/SECURITY_MATRIX.md`](security/SECURITY_MATRIX.md) |
-| Migrate from v3 → v4 | [`migration/v3-to-v4.md`](migration/v3-to-v4.md) |
+| Report a vulnerability | [`SECURITY.md`](../SECURITY.md) |
+| What is enforced where, and by which test | [`security/SECURITY_MATRIX.md`](security/SECURITY_MATRIX.md) |
+| Upgrading an embedded runtime to v5 | [`migration/v5.0-deny-by-default.md`](migration/v5.0-deny-by-default.md) |
+| What breaks at 6.0.0, and what to do now | [`migration/v6.0-staged-flips.md`](migration/v6.0-staged-flips.md) |
+| Older migrations (v2→v3, v3→v4) | [`migration/`](#migration--migration-guides) |
 
 ---
 
@@ -66,6 +69,7 @@ and bytecode. Required reading for contributors and embedders.
 | `FAILURE_AND_DEGRADATION_MODEL.md` | Failure categories, error shapes, host guidance |
 | `OPERATOR_OR_EMBEDDER_RUNBOOK.md` | Setup, monitoring, troubleshooting, upgrade procedure |
 | `ARCHITECTURE.md` | Full runtime pipeline and component overview |
+| `ARCHITECTURE_ANALYSIS.md` | Assessment of the architecture: subsystem strengths, the compile-time module model, and lifecycle placement |
 | `BYTECODE_REFERENCE.md` | **The opcode authority** — one entry per opcode with category, stack effect and edge cases. Checked against the live VM dispatch table by `nodus_gate --opcodes` |
 | `SERVER_MODE.md` | `nodus serve` HTTP server mode |
 | `TASK_GRAPHS.md` | Low-level task graph runtime |
@@ -144,6 +148,9 @@ Key documents:
 | `v2-to-v3.md` | Breaking changes from v2.x → v3.0 |
 | `v3-to-v4.md` | Breaking changes from v3.x → v4.0 |
 | `v4.0-patch-notes.md` | Cumulative patch notes within v4.0.x |
+| `v4.0-to-v4.1.md` | v4.0.x → v4.1.x — no breaking changes |
+| `v5.0-deny-by-default.md` | **The one breaking change in v5.0.0**: embedded runtimes deny subprocess, network and env unless granted. Affects `NodusRuntime` hosts; `nodus run` is deliberately unchanged |
+| `v6.0-staged-flips.md` | **All five changes staged for 6.0.0**, what each costs and how to fix it now. Start with `nodus check --staged` |
 
 ---
 
@@ -166,11 +173,34 @@ scaffolds live at [`packages/`](../packages/) in the repo root.
 
 ---
 
+### `policy/` — Behavioural Policy
+
+Contracts about how the runtime behaves that are neither language syntax nor
+governance process.
+
+| File | Contents |
+|---|---|
+| `error-surfaces.md` | Which stdlib surfaces return err records rather than throwing, the `err.kind` vocabulary, and the two cases where an in-scope surface still throws |
+
+---
+
 ### `security/` — Security
 
 | File | Contents |
 |---|---|
 | `SECURITY_MATRIX.md` | Test matrix for sandbox and boundary enforcement |
+
+---
+
+### `architecture/` — Integration Plans
+
+Plans for integrating Nodus with specific host systems. Written against the
+host's needs rather than as general documentation, and dated by nature.
+
+| File | Contents |
+|---|---|
+| `AINDY_INTEGRATION_PLAN.md` | Nodus ↔ runtime ↔ applications, for the AINDY host |
+| `AINDYCLAW_INTEGRATION_PLAN.md` | AindyClaw / NodusClaw integration |
 
 ---
 
@@ -206,6 +236,7 @@ prompts that produce them — the prompt and its output in one place.
 | `EVAL_PREPUBLISH.md` | Gate 10b creator validation, against the built wheel |
 | `EVAL_POSTPUBLISH.md` | Stage 5, against the published package |
 | `vX.Y.Z/` | The results for that release |
+| `Installed Nodus Ecosystem Audit.md` | A one-off audit of the installed ecosystem, dated rather than maintained |
 
 ---
 

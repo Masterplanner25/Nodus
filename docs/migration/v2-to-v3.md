@@ -1,5 +1,7 @@
 # Migrating from Nodus v2.x to v3.0
 
+**Last reviewed:** 2026-09-08. A record of the v2.x → v3.0 transition; it describes those releases and is not updated as the language moves.
+
 ## v2.x end-of-life
 
 **v2.1.1 is the last v2.x release.** With v3.0 published, the v2.x line is
