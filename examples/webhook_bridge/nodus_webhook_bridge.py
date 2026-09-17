@@ -2,10 +2,10 @@
 nodus_webhook_bridge.py
 =======================
 
-The thin FastAPI shell that closes the gap nodus-lang 4.0.0 does NOT cover:
-URL routing, request-body/header access, request-level auth, durable SQL audit
-log, and cron. The orchestration logic (retry, idempotency, replay, outbound
-HTTP) lives in the .nd workflow and runs inside `nodus serve`.
+The thin FastAPI shell that handles what the Nodus DSL deliberately does not:
+URL routing, request-body/header access, request-level auth, a durable SQL
+audit log, and cron. The orchestration logic (retry, outbound HTTP, replay)
+lives in the .nd workflow and runs inside `nodus serve`.
 
 Architecture
 ------------
@@ -16,9 +16,11 @@ Architecture
         |  (this string-injection IS the workaround for "no request_body builtin")
         v
     POST {nodus serve}/workflow/run  with  Authorization: Bearer <token>
-        |  runs the workflow; framework writes .nodus/graphs/<id>.json
+        |  runs the workflow the program DEFINES; framework records the run
         v
-    response {"ok": true, "stdout": "...", "error": null}  ->  update log row
+    response {"ok", "graph_id", "result": {"steps": {...}}, "stdout", "error"}
+        |
+        v  update log row with graph_id, for POST /workflow/replay later
 
 SECURITY (SEC-001): `nodus serve` MUST be started WITH --auth-token. Without it,
 is_authorized() returns True and any caller can POST arbitrary .nd to /execute.
@@ -30,8 +32,33 @@ network, no environment access -- so the generated workflow below, which posts t
 Slack, needs `nodus serve --allow-network`. Prefer
 `--allowed-hosts hooks.slack.com` over the bare grant: it is the difference
 between "this server may reach the internet" and "this server may reach Slack".
-Before #754 the grant was unnecessary because it was unavoidable, which is the
-part that was wrong.
+
+STATUS (re-verified 2026-09-17 against 5.13.0, with a local HTTP server standing
+in for Slack and nodus serve on --port 8093): the generated program runs, posts
+once per webhook, returns the step result and graph_id in the response, and
+`POST /workflow/replay` on a completed run returns its recorded result without
+posting again. Three things it does NOT do, each with an issue:
+
+  * #858 -- `POST /workflow/run` runs the workflow the program *defines*. An
+    earlier revision of build_workflow_code also called `run_workflow(...)`
+    inside the program, which made the endpoint run every step TWICE (two
+    Slack posts per webhook). The program is definition-only now; do not add
+    the call back.
+  * #857 -- every program under `nodus serve` runs at the 200 ms default
+    budget and nothing can raise it. This workflow fits today only because the
+    deadline is checked every 100 instructions and the HTTP post is a blocking
+    host call that the check cannot see; a longer tail after the post (the
+    old revision's two prints) tipped it into "Execution timed out" AFTER the
+    Slack post had gone out. Until #857 lands, keep the program short after
+    its side effect.
+  * `std:effects` idempotency is per request. The effect store is in-memory
+    and per VM (docs/guide/ai-primitives.md), and nodus serve builds a fresh
+    VM per request, so the fx.resolve/pending/complete guard below protects
+    against re-posting inside ONE request (a retry after a partial failure)
+    and not against the same webhook arriving twice. Measured: two identical
+    requests, two posts. Cross-request exactly-once needs a persistent store,
+    which `nodus serve` cannot yet be handed -- dedupe in the AutomationLog
+    here if you need it.
 
 SRV-001: this FastAPI/uvicorn layer is exactly the untested surface flagged for
 the launch. It is NOT replaced by Nodus and remains yours to test. The
@@ -102,11 +129,16 @@ app = FastAPI(title="Nodus Webhook Bridge")
 def build_workflow_code(source: str, payload: dict) -> str:
     """Build the .nd program string injected into POST /workflow/run.
 
-    Because nodus-lang 4.0.0 has no in-language access to the HTTP request body,
-    the caller's data must be embedded in the code string itself. We do that by
-    JSON-encoding the payload and the config, then parsing it back inside the
-    .nd program. json.dumps produces valid Nodus map/list/string literals, so
-    the embedded value is also a safe escaping boundary (no manual quoting).
+    There is no in-language access to the HTTP request body, so the caller's
+    data is embedded in the code string itself: JSON-encode the payload and the
+    config, then parse it back inside the .nd program. json.dumps produces a
+    valid Nodus string literal, so the embedded value is also a safe escaping
+    boundary (no manual quoting).
+
+    The program only DEFINES the workflow. `POST /workflow/run` finds and runs
+    it, and returns the run's `graph_id` and step results in the response --
+    a program that also calls `run_workflow(...)` is run twice by that endpoint
+    (#858).
 
     This is the single most important function to unit-test (SRV-001): the
     escaping correctness here is the security boundary between caller-controlled
@@ -116,8 +148,6 @@ def build_workflow_code(source: str, payload: dict) -> str:
     slack_url_literal = json.dumps(SLACK_WEBHOOK_URL)
     source_literal = json.dumps(source)
 
-    # NOTE: the .nd program below is the workflow from the design discussion,
-    # with retry as a native annotation and std:effects for exactly-once.
     return f"""
 import "std:http" as http
 import "std:effects" as fx
@@ -146,10 +176,6 @@ workflow notify_flow {{
         return "Success"
     }}
 }}
-
-let result = run_workflow(notify_flow)
-print(result["steps"]["execute"])
-print(result["graph_id"])
 """
 
 
@@ -157,8 +183,10 @@ print(result["graph_id"])
 async def run_on_nodus(code: str) -> dict:
     """POST the code string to `nodus serve` with the required bearer token.
 
-    Returns the parsed {"ok", "stdout", "error"} response. Raises on transport
-    or non-2xx so the caller can mark the log row failed.
+    Returns the parsed response. On success it carries `graph_id` (the run
+    the framework recorded -- what /workflow/replay takes) and
+    `result["steps"]` (each step's return value). Raises on transport or
+    non-2xx so the caller can mark the log row failed.
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
@@ -168,13 +196,6 @@ async def run_on_nodus(code: str) -> dict:
         )
         resp.raise_for_status()
         return resp.json()
-
-
-def parse_graph_id(stdout: str) -> str | None:
-    """The workflow prints the graph_id on its last line; pull it out so we can
-    store it for /workflow/replay later."""
-    lines = [ln for ln in stdout.strip().splitlines() if ln.strip()]
-    return lines[-1].strip() if lines else None
 
 
 # --- ENDPOINTS ---
@@ -200,7 +221,7 @@ async def trigger_webhook(source: str, request: Request):
 
         if result.get("ok"):
             log.status = "Success"
-            log.graph_id = parse_graph_id(result.get("stdout", ""))
+            log.graph_id = result.get("graph_id")
         else:
             log.status = f"Failed: {result.get('error')}"
         db.commit()
@@ -209,7 +230,7 @@ async def trigger_webhook(source: str, request: Request):
             "execution_id": log_id,
             "status": log.status,
             "graph_id": log.graph_id,
-            "stdout": result.get("stdout"),
+            "step_result": (result.get("result") or {}).get("steps", {}).get("execute"),
         }
     finally:
         db.close()
@@ -244,10 +265,11 @@ async def replay(log_id: int):
         db.close()
 
 
-# --- CRON (stays external — no in-language timer in 4.0.0) ---
-# Do NOT start an in-process scheduler here. Use OS cron / a systemd timer
-# hitting this endpoint, which keeps scheduling outside the uvicorn workers and
-# sidesteps SCHED-001 (the wall-clock timeout_ms trap) entirely.
+# --- CRON (stays external) ---
+# Nodus has in-language timers now (`std:loop`, `spawn_after`, 5.11.0), but a
+# long-lived scheduler does not belong inside a uvicorn worker, and under
+# `nodus serve` every submitted program is bounded at 200 ms anyway (#857). Use
+# OS cron / a systemd timer hitting this endpoint.
 @app.post("/cron/weekly-report", dependencies=[Depends(validate_key)])
 async def weekly_report():
     code = (

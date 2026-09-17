@@ -1,0 +1,18 @@
+// judge_panel_demo.nd
+// Drives run_panel() from judge_panel.nd. The agents it calls ("solver",
+// "judge", "synthesizer") are registered by the host -- see run_judge_panel.py,
+// which is how to run this file. Under bare `nodus run` every agent call
+// reports "No handler registered" and typed() gives up after its retries.
+import "./judge_panel.nd" as panel
+
+let ANGLES = ["throughput", "fairness", "simplicity"]
+let JUDGES = ["latency", "correctness"]
+let out = panel.run_panel("rate limiter", ANGLES, JUDGES)
+print("winner: " + out["winner_angle"])
+print("final:  " + out["final"]["design"])
+let i = 0
+while (i < len(out["scored"])) {
+    let entry = out["scored"][i]
+    print("  " + entry["candidate"]["angle"] + " avg=" + str(entry["avg"]))
+    i = i + 1
+}

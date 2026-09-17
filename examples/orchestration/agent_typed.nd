@@ -1,14 +1,13 @@
 // agent_typed.nd
 // Schema-forced agent calls + ordered concurrent fan-out for Nodus.
 //
-// STATUS: guard fix #1 is MERGED on Nodus main (PR #290) — the async stdlib
-// wrappers (http.*_async, subprocess.run_async) now genuinely OVERLAP under
-// fan_out() instead of silently falling back to sync. Remaining gap: there is
-// still NO async agent builtin (#2) — `agent_call` is sync-only. So an agent
-// invoked via a SYNC agent.call still runs serially under fan_out(); to overlap
-// TODAY, route the agent through an async transport (http.post_async to the
-// model/host, or subprocess.run_async). invoke() below is the one place that
-// choice is made.
+// STATUS (re-verified 2026-09-17 against 5.13.0): every path here overlaps.
+// `agent.call_async` has existed since 4.1.0 (#294), so a fan_out() over
+// invoke() below runs its agent calls concurrently -- measured by
+// run_judge_panel.py: 10 x 200 ms of stub agents in ~600 ms. The stdlib async
+// wrappers (http.*_async, subprocess.run_async) have overlapped since 4.0.8
+// (#105 / #290). Earlier revisions of this file said agent calls were
+// serial; that was true when written and is not now.
 import "std:agent" as agent
 import "std:json" as json
 
@@ -16,31 +15,35 @@ import "std:json" as json
 // The single agent-execution seam. This is the ONLY place to change the
 // transport; typed() and the judge panel are agnostic to it.
 //
-// As of PR #290 the wrapper->sync bug is gone, so async stdlib wrappers
-// overlap. But `agent.call` is the SYNC builtin and still serializes under
-// fan_out(). Two ways to run agents:
+// `agent.call_async` suspends the calling coroutine while the host handler
+// runs on its own thread, which is what lets fan_out() overlap. Swap the body
+// for `http.post_async(AGENT_HOST + "/run", {...})` to reach a remote model
+// host instead; the orchestration above it does not change.
 //
-//   (A) OVERLAPS TODAY — dispatch through an async transport. Swap the body to,
-//       e.g., a model/host HTTP call:
-//           return http.post_async(AGENT_HOST + "/run",
-//               { "json": { "agent": name, "payload": payload } })
-//       (or subprocess.run_async([...])). Both genuinely overlap post-#290.
-//
-//   (B) SERIAL until agent_async (#2) lands — the direct sync builtin below.
-//       Correct results, but fan_out() over it collapses to a sequential loop.
-//
-// Default is (B) for portability (no host wiring assumed). Flip to (A) once the
-// agent host/model endpoint is known.
+// Either way the value that comes back is the nine-key envelope documented in
+// docs/guide/agent-host-boundary.md §3 -- the handler's return is under
+// `result`, and `ok: false` is a soft failure, not an exception.
 // ─────────────────────────────────────────────────────────────────────────
 export fn invoke(name, payload) {
-    return agent.call(name, payload)
+    return agent.call_async(name, payload)
 }
 
-// Coerce an agent result to a map. Agents may return a JSON string or an
-// already-structured map; normalize so callers can validate keys uniformly.
-fn _as_map(value) {
+// Unwrap the agent envelope to the handler's value, then coerce to a map.
+// Handlers may return a JSON string or an already-structured map; normalize
+// so callers can validate keys uniformly. A failed call (`ok: false`) yields
+// an empty map, so the required-key check below reports every key missing
+// and typed() retries -- an unregistered agent therefore fails cleanly after
+// max_attempts rather than crashing the fan-out.
+fn _as_map(envelope) {
+    if (envelope["ok"] == false) {
+        return {}
+    }
+    let value = envelope["result"]
     if (type(value) == "string") {
         return json.parse(value)
+    }
+    if (value == nil) {
+        return {}
     }
     return value
 }
@@ -80,10 +83,14 @@ export fn typed(name, payload, required_keys, max_attempts) {
         attempts = 3
     }
     let last_missing = nil
+    let last_failure = nil
     let i = 0
     while (i < attempts) {
-        let raw = invoke(name, _augment(payload, last_missing))
-        let result = _as_map(raw)
+        let envelope = invoke(name, _augment(payload, last_missing))
+        if (envelope["ok"] == false) {
+            last_failure = envelope["errors"][0]["message"]
+        }
+        let result = _as_map(envelope)
         let missing = _missing_keys(result, required_keys)
         if (len(missing) == 0) {
             return result
@@ -91,21 +98,25 @@ export fn typed(name, payload, required_keys, max_attempts) {
         last_missing = missing
         i = i + 1
     }
-    return {"ok": false, "error": "schema_validation_failed", "missing": last_missing}
+    // `failure` is the agent's own last error when the call itself failed
+    // (e.g. "No handler registered for agent 'solver'"), nil when the agent
+    // answered but left keys out.
+    return {"ok": false, "error": "schema_validation_failed", "agent": name, "missing": last_missing, "failure": last_failure}
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // fan_out(): run worker(item) for every item concurrently, preserving input
 // order in the returned list.
 //
-// CONCURRENCY NOTE: this spawns one coroutine per item and drives them with a
-// single run_loop(). Whether they actually overlap is decided ENTIRELY by what
-// worker() does inside:
-//   - worker doing sync work or a sync agent call -> serial (today).
-//   - worker doing a properly thread-backed async call on a frame the fixed
-//     guard accepts -> genuine overlap (post fix #1 + #2).
-// The structure does not change between those worlds — only invoke()'s body.
-// Results are collected in a map keyed by index, then rebuilt in order.
+// One coroutine per item, driven by a single run_loop(). Whether they overlap
+// is decided entirely by what worker() does inside: a call that suspends
+// (agent.call_async, http.get_async, sleep) overlaps; synchronous work runs
+// to completion one coroutine at a time. Results are collected in a map keyed
+// by index, then rebuilt in order.
+//
+// run_loop() returns the list of errors raised inside coroutines rather than
+// raising them, so a worker that throws would otherwise vanish and surface
+// later as a missing index. Re-raise here, naming the first one.
 // ─────────────────────────────────────────────────────────────────────────
 export fn fan_out(items, worker) {
     let n = len(items)
@@ -117,7 +128,10 @@ export fn fan_out(items, worker) {
         spawn(coroutine(fn() { bucket[str(idx)] = worker(item) }))
         i = i + 1
     }
-    run_loop()
+    let errors = run_loop()
+    if (errors != nil) {
+        throw "fan_out: " + str(len(errors)) + " worker(s) failed; first: " + errors[0]
+    }
     let results = []
     let k = 0
     while (k < n) {
