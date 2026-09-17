@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#856: a coroutine spawned by a module function reached through a foreign closure ran on the wrong VM and was silently dropped.** `_try_enter_foreign_closure` and `_foreign_closure_origin` restored a context captured on *another* VM wholesale, and that context carries the capturing VM's `builtins` table -- closures over that VM. From that frame on `coroutine()`, `spawn()` and `run_loop()` acted on the caller's VM: the coroutine was owned there, pinned to the caller's own caller's chunk, resumed straight into a `HALT`, and left `running` and never re-queued. No error; the inner `run_loop()` returned at once. Any cross-module fan-out whose worker fanned out again -- `examples/orchestration/judge_panel.nd`, which had never actually run -- lost every inner result. A foreign context is now adopted onto this VM's builtins at the point it is installed (`VM._adopt_foreign_ctx`); the program half stays the caller's. `tests/test_foreign_ctx_keeps_own_builtins.py` pins it with a three-file repro, both entry points. Filed (open) alongside it: #855, #857, #858 -- the first HTTP call's client-construction cost, `nodus serve`'s unraisable 200 ms budget, and `POST /workflow/run` running a self-running program's workflow twice.
+
 ## [5.13.0] - 2026-09-08
 
 Six release-claims probes were added for this cycle's surface — `copy()`'s
