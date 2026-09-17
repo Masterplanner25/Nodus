@@ -414,21 +414,80 @@ your own change, check whether anything else is running: `TaskStop` the backgrou
 re-run. The same applies to the doc gate (`nodus_gate --runtime` executes every documented block and writes to
 the store) — do not run it alongside the suite.
 
-**How much of the "flaky machine" is actually this is not established**, and concurrency does
-not explain all of it: during the v5.0.0 cut, subprocess tests with 10 s timeouts failed
-intermittently with **a different test named each run**, and wall-clock drifted from ~7 to
-~18 minutes with nothing else running. Every such failure passed in isolation, and one
-(`test_len_returns_int.py`) was verified to fail identically **with and without** the change
-under test. CI on a clean runner passed every PR in 5–6 min throughout.
+**The cause is established as of 2026-09-08: this host runs out of physical memory,
+and process creation stalls on hard page faults.** It was recorded as unexplained
+for months; it is not a mystery any more, though it is also not fixed — the
+condition is the machine, not the tree.
 
-**It comes and goes within a single day. Do not record it as "fixed."** An earlier revision
-of this section declared it "environmental and gone" on the strength of one clean 7:46 run —
-hours before the same box produced a 15-minute run with 13 failures and then stopped
-finishing at all. **One clean measurement does not clear this.** A good run is not evidence
-of a good machine, which is the whole reason CI arbitrates.
+Measured on the box during the 5.13.0 cut:
 
-If you see failures that move between runs and a suite that is suddenly 2× slower, do not
-start bisecting your own change. Re-run the failing test alone, then push.
+```
+Physical RAM   : 7.7 GB total, 0.6 GB free (92.2% used)
+Commit charge  : 23.61 GB used / 30.23 GB limit      -> ~16 GB paged to disk
+Page Reads/sec : 142, 311, 253, 1061, 3283           -> climbing, while idle
+Page file      : 4.6 GB in use, 7.5 GB peak
+```
+
+**The mechanism, and why it produces exactly the symptoms above.** A page read is
+a *blocking disk fault*. Spawning a subprocess touches a lot of cold pages, so
+under this pressure a spawn that normally costs 40 ms can cost seconds — which is
+why the tests that break are **the ones with subprocess timeouts**, why a
+different one breaks each run (whichever happened to fault at the wrong moment),
+why they pass in isolation (one test has a small working set and does not
+thrash), and why wall-clock drifts 7 → 19 minutes with "nothing else running".
+Nothing else *has* to be running; the pages are already out.
+
+Confirmed rather than inferred, on 2026-09-08:
+
+- The four `test_cli_completion.py::BashExecutionTests` failed with
+  `TimeoutExpired` in the full suite **and again in isolation** — then passed
+  **4/4 in 3.62 s** an hour later with no code change. Their code is unchanged
+  since v5.12.0.
+- `bash --version` timed out at 15 s during that window. Later, 40 consecutive
+  runs: **0 hangs, median 44 ms, max 76 ms.** The binary is fine; the machine was
+  not.
+- Two background tasks in that session were killed by the OS with *"the system is
+  running low on memory"*.
+
+**So the first question when the suite misbehaves is not "what did I change" but
+"how much memory is free".** One command:
+
+```powershell
+Get-CimInstance Win32_OperatingSystem |
+  ForEach-Object { "{0:N1} GB free of {1:N1} GB" -f ($_.FreePhysicalMemory/1MB), ($_.TotalVisibleMemorySize/1MB) }
+```
+
+Under ~1.5 GB free, treat every timeout-shaped failure as suspect until it
+reproduces on a calmer box or on CI.
+
+**What is consuming it, measured the same day.** WSL2 is *not* the culprit any
+more — `~/.wslconfig` caps it at 3 GB with `autoMemoryReclaim=gradual`, which was
+an earlier fix for this same class on this host, and it was holding. The rest is
+ordinary development: VS Code (11 processes, 1.15 GB), the agent itself
+(3 processes, 1.96 GB), Chrome, two `node` processes at ~1.9 GB combined, and a
+terminal at 0.76 GB. Together they commit roughly the whole of physical RAM
+before a test suite starts.
+
+One outlier worth knowing: **`explorer.exe` had leaked to 1.1 GB private across
+11,941 handles and 15 days of uptime** — roughly ten times normal. Restarting
+Explorer is the cheapest gigabyte available, and Defender real-time protection is
+on with no exclusion for the checkout or the venv, which adds a scan to every file
+the suite touches.
+
+**None of this makes a local full-suite run a gate.** It explains why it never
+was one. The guidance below is unchanged and now has a reason behind it rather
+than a shrug.
+
+**It still comes and goes within a single day. Do not record it as "fixed."** An
+earlier revision of this section declared it "environmental and gone" on the
+strength of one clean 7:46 run — hours before the same box produced a 15-minute
+run with 13 failures and then stopped finishing at all. **One clean measurement
+does not clear this.** A good run is not evidence of a good machine, which is the
+whole reason CI arbitrates. What has changed is that a *bad* run can now be
+attributed instead of puzzled over.
+
+If you see failures that move between runs and a suite that is suddenly 2× slower,
+check free memory, then re-run the failing test alone, then push.
 
 Two practical consequences:
 
