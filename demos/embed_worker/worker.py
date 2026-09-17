@@ -11,7 +11,7 @@ Run
 ---
     pip install nodus-lang
     python worker.py                        # runs the default program
-    python worker.py '{"code": "print(42)"}'  # runs custom code from JSON
+    python worker.py '{"code": "print(42i)"}' # runs custom code from JSON
 """
 
 import json
@@ -24,6 +24,8 @@ TIMEOUT_MS    = 5_000       # wall-clock limit per execution
 MAX_STEPS     = 200_000     # VM instruction budget
 ALLOWED_PATHS = None        # None = no filesystem restriction in this demo
 ALLOW_NETWORK = False       # no outbound HTTP from embedded scripts
+# allow_subprocess and allow_env are left at their default, which is also
+# False (every capability flag denies by default since nodus-lang 5.0.0).
 
 # ── default program ───────────────────────────────────────────────────────────
 DEFAULT_PROGRAM = r"""
