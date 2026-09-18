@@ -35,6 +35,7 @@ NODUS_PY = REPO / "nodus.py"
 sys.path.insert(0, str(SRC))
 
 from nodus.cli.commands import flags_for  # noqa: E402
+from nodus.orchestration import task_graph  # noqa: E402
 from nodus.services.server import RuntimeService  # noqa: E402
 
 # Past 200 ms on any box this suite runs on; well inside 30 s.
@@ -84,10 +85,19 @@ class _ServiceCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="nodus857-")
         os.chdir(self._tmp.name)
         self._services = []
+        # A run killed by the budget is abandoned mid-step: its graph stays in
+        # the process-global registry with its step-write record open, since
+        # nothing reaches `_end_step_writes`. `test_workflow_step_writes`
+        # reads that registry and would count every graph this file leaves
+        # behind -- six of them, under CI's single-process `unittest discover`.
+        # Pop what this test registered, as `test_checkpoints` does.
+        self._graphs_before = set(task_graph._GRAPH_REGISTRY)
 
     def tearDown(self):
         for svc in self._services:
             svc.close()
+        for graph_id in set(task_graph._GRAPH_REGISTRY) - self._graphs_before:
+            task_graph._GRAPH_REGISTRY.pop(graph_id, None)
         os.chdir(self._cwd)
         self._tmp.cleanup()
 
