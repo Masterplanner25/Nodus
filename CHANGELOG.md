@@ -4,6 +4,21 @@
 
 ### Fixes
 
+- **#858: `/workflow/run`, `/goal/run`, `nodus workflow run` and `nodus goal run` ran a self-running program's flow twice.**
+
+  Each executes the program and then runs the flow it defines. A program that
+  also calls `run_workflow(w)` -- the form the guide teaches, and what
+  `examples/webhook_bridge` submitted -- had every step run twice, and the
+  response's `graph_id` named the second run. Two Slack posts per webhook.
+
+  The VM records the last flow the program itself started
+  (`VM.last_run_result`, set in one helper for `run_workflow`, `run_goal` and
+  `goal … over …`), and both runners report that run instead of starting
+  another. A definition-only program is run for exactly as before.
+  `tests/test_workflow_run_single_execution.py` covers both entry points and
+  all three flow kinds, plus the CLI; the contract is now stated in
+  `docs/runtime/SERVER_MODE.md`, which used to say only "see `server.py`".
+
 - **#856: a coroutine spawned by a module function reached through a foreign closure ran on the wrong VM and was silently dropped.**
 
   `_try_enter_foreign_closure` and `_foreign_closure_origin` restored a context captured on *another* VM wholesale, and that context carries the capturing VM's `builtins` table -- closures over that VM. From that frame on `coroutine()`, `spawn()` and `run_loop()` acted on the caller's VM: the coroutine was owned there, pinned to the caller's own caller's chunk, resumed straight into a `HALT`, and left `running` and never re-queued. No error; the inner `run_loop()` returned at once. Any cross-module fan-out whose worker fanned out again -- `examples/orchestration/judge_panel.nd`, which had never actually run -- lost every inner result.

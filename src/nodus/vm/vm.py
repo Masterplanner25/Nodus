@@ -185,6 +185,12 @@ class VM:
     budget_meters: dict | None = None
     trace_errors: bool = False
     last_graph_plan: dict | None = None
+    #: The result of the last workflow or goal *this program* ran (#858). The
+    #: `workflow run` / `goal run` entry points (CLI and server) execute the
+    #: program and then run the flow it defines; a program that already called
+    #: `run_workflow(...)` itself had every step run twice. They consult this
+    #: and report the program's own run instead of starting another.
+    last_run_result: dict | None = None
     trace_count: int = 0
     # #783 needed a slot and this is the one that was free. A *root* VM never
     # writes `_caller_vm` -- only a detached child does, through `setattr` in
@@ -1628,7 +1634,18 @@ class VM:
             # effects), which is the bug this guard fixes. Skip it.
             return self._suppressed_flow_result()
         graph = workflow_to_graph(self, workflow, init_state=True, args=args)
-        return self.resolve_workflow_runner().start_graph(self, graph)
+        return self._record_run(self.resolve_workflow_runner().start_graph(self, graph))
+
+    def _record_run(self, result):
+        """Remember a flow this program ran, for the entry points that run one for it (#858).
+
+        One site for the three ways a program starts a flow -- `run_workflow`,
+        `run_goal`, and `goal … over …` -- so a fourth cannot forget. Only a
+        real result is recorded: an err Record means nothing ran.
+        """
+        if isinstance(result, dict):
+            self.last_run_result = result
+        return result
 
     def builtin_plan_workflow(self, workflow):
         if not is_workflow_value(workflow):
@@ -1887,7 +1904,7 @@ class VM:
                     data={"goal": goal_name, "workflow": flow_name, "graph_id": graph_id,
                           "iterations": float(iterations)},
                 )
-                return payload
+                return self._record_run(payload)
 
             elapsed = runtime_time_ms() - started_at
             # #488: the loop-altitude bound. A single iteration can make many
@@ -1993,7 +2010,7 @@ class VM:
         if getattr(self, "_suppress_flow_execution", False):
             return self._suppressed_flow_result()   # resume-rebuild — see run_workflow (#322)
         graph = workflow_to_graph(self, goal, init_state=True, args=args)
-        return self.resolve_workflow_runner().start_graph(self, graph)
+        return self._record_run(self.resolve_workflow_runner().start_graph(self, graph))
 
     def builtin_plan_goal(self, goal):
         if not is_goal_value(goal):

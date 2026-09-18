@@ -25,10 +25,12 @@ layer itself was import-checked, not driven; it needs Postgres):
 Three things found on that day are filed and worth knowing before you build
 on this:
 
-- **#858** — `POST /workflow/run` runs the workflow the program *defines*. The
-  first revision of this example also called `run_workflow(...)` inside the
-  program, and the endpoint ran every step **twice** — two Slack posts per
-  webhook. The generated program is definition-only now.
+- **#858** (fixed) — `POST /workflow/run` used to run the workflow the
+  program *defines* even when the program had already called
+  `run_workflow(...)` itself, so the first revision of this example posted to
+  Slack **twice** per webhook. The endpoint now reports the program's own run
+  instead of starting another; the generated program is definition-only
+  anyway, which is the clearer shape.
 - **#857** — every program under `nodus serve` runs at the CLI's 200 ms
   default budget and no flag or payload key raises it. This workflow fits
   today because the HTTP post is a blocking host call the deadline check
