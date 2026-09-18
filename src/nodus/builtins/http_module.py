@@ -388,6 +388,26 @@ def _parse_options(method: str, url: str, options, vm) -> dict | Record:
     return kwargs
 _client_create_lock = threading.Lock()
 
+#: One TLS trust store per process (#855). `httpx.Client()` builds a fresh
+#: `SSLContext` and loads the certifi CA bundle from disk every time it is
+#: constructed -- measured 380-995 ms on Windows -- and there is one client
+#: per root VM, so every `NodusRuntime` paid it on its first request and every
+#: `nodus serve` request paid it too (one VM per request). In an async fan-out
+#: the N worker threads all waited on `_client_create_lock` while one of them
+#: paid it, which read as the fan-out serialising. The trust store is identical
+#: for every VM in the process; the per-VM client and its connection pool are
+#: not shared, only this.
+_ssl_context = None
+
+
+def _shared_ssl_context():
+    global _ssl_context
+    if _ssl_context is None:
+        with _client_create_lock:
+            if _ssl_context is None:
+                _ssl_context = _httpx.create_ssl_context()
+    return _ssl_context
+
 
 def _get_or_create_client(vm) -> _httpx.Client:
     # Walk up the _caller_vm chain: module functions run in a fresh sub-VM
@@ -396,6 +416,9 @@ def _get_or_create_client(vm) -> _httpx.Client:
     root = _root_vm(vm)
     client = getattr(root, "_http_client", None)
     if not client:
+        # Before the client lock: the context takes the same lock, and it is
+        # not re-entrant.
+        ssl_context = _shared_ssl_context()
         # Double-checked locking (ASYNC-CAP-001, #295): an async fan-out starts N
         # worker threads that all call this concurrently. Without the lock the
         # check-then-set races and every worker builds its OWN httpx.Client — each
@@ -405,7 +428,7 @@ def _get_or_create_client(vm) -> _httpx.Client:
         with _client_create_lock:
             client = getattr(root, "_http_client", None)
             if not client:
-                client = _httpx.Client(follow_redirects=True, max_redirects=10)
+                client = _httpx.Client(follow_redirects=True, max_redirects=10, verify=ssl_context)
                 root._http_client = client
     if root is not vm:
         vm._http_client = client  # cache on sub-VM for next call

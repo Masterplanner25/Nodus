@@ -71,11 +71,12 @@ Tests: 2 total, 2 passed
   #105 / #290), and so does the raw `http_get_async` builtin — fully, since
   #295 (closed 2026-07-10). Both cases in the wall-time test assert the same
   bar now; the raw case used to be allowed partial overlap.
-- **The first HTTP request of a process is slow** (#855, open): building the
-  shared `httpx` client loads the CA bundle, ~0.4–1 s here, and every worker
-  thread in a cold fan-out waits on it. The wall-time test issues one
-  synchronous request before timing anything for that reason. If your first
-  fan-out looks serial and the second does not, that is what you are seeing.
+- **The first HTTP request of a process is slow** (#855): loading the CA
+  bundle costs ~0.4–1 s here, and every worker thread in a cold fan-out waits
+  on it. It used to be paid once per *VM* — every runtime, every `serve`
+  request; it is once per process now. The wall-time test still issues one
+  synchronous request before timing anything. If your first fan-out looks
+  serial and the second does not, that is what you are seeing.
 
 ## What #856 was
 

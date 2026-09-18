@@ -52,6 +52,22 @@
   all three flow kinds, plus the CLI; the contract is now stated in
   `docs/runtime/SERVER_MODE.md`, which used to say only "see `server.py`".
 
+- **#855: the first HTTP call of every runtime paid ~0.5 s loading the CA bundle.**
+
+  `httpx.Client()` builds a fresh `SSLContext` and loads the certifi bundle
+  from disk each time it is constructed -- 380-995 ms measured on Windows --
+  and there is one client per root VM. So every `NodusRuntime` paid it on its
+  first request, every `nodus serve` request paid it (one VM per request;
+  ~450 ms of a ~500 ms workflow-with-one-post), and in an async fan-out the N
+  worker threads all waited on the client lock while one paid it, which read
+  as the fan-out serialising. The trust store is built once per process now
+  and handed to every client as `verify=`; the per-VM client and its
+  connection pool are unchanged. Measured: a second runtime's two 300 ms
+  requests went from 1045 ms to 618 ms. The *first* request in a process
+  still pays the load once -- a cold first fan-out is 0.76-1.3 s for
+  6 x 300 ms, down from 1.1-1.9 s -- which is why
+  `examples/orchestration/fanout_walltime_test.nd` keeps its warm-up.
+
 - **#856: a coroutine spawned by a module function reached through a foreign closure ran on the wrong VM and was silently dropped.**
 
   `_try_enter_foreign_closure` and `_foreign_closure_origin` restored a context captured on *another* VM wholesale, and that context carries the capturing VM's `builtins` table -- closures over that VM. From that frame on `coroutine()`, `spawn()` and `run_loop()` acted on the caller's VM: the coroutine was owned there, pinned to the caller's own caller's chunk, resumed straight into a `HALT`, and left `running` and never re-queued. No error; the inner `run_loop()` returned at once. Any cross-module fan-out whose worker fanned out again -- `examples/orchestration/judge_panel.nd`, which had never actually run -- lost every inner result.

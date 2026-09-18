@@ -10,13 +10,13 @@
 // used to record the raw path at ~1068 ms partial overlap and assert only that
 // it beat serial. Both cases now assert the same bar.
 //
-// WARM-UP (#855): the very first HTTP request of a process pays ~0.4-1 s to
-// build the shared httpx client (loading the CA bundle), and in a fan-out the
-// N worker threads all wait on it -- so a *cold* first fan-out measured
-// anywhere from 0.76 s to 1.9 s here for 6 x 300 ms, sometimes over the 900 ms
-// bar and sometimes not, for a reason that has nothing to do with overlap. One
-// synchronous request before the timed cases takes that cost outside the
-// measurement. Remove the warm-up to see #855.
+// WARM-UP (#855): the very first HTTP request of a *process* pays ~0.4-1 s to
+// load the CA bundle, and in a fan-out the N worker threads all wait on it --
+// so a cold first fan-out measured 0.76-1.3 s here for 6 x 300 ms (1.1-1.9 s
+// before #855 made the load once-per-process rather than once-per-VM),
+// sometimes over the 900 ms bar and sometimes not, for a reason that has
+// nothing to do with overlap. One synchronous request before the timed cases
+// takes that cost outside the measurement.
 //
 // SETUP: point BASE at a LOCAL server that delays each response ~PER_REQ_MS and
 // serves requests concurrently. Any will do, e.g.:
