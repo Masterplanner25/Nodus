@@ -4158,6 +4158,46 @@ class VM:
         caller = self._caller_vm
         return caller._capture_module_ctx() if caller is not None else None
 
+    def _adopt_foreign_ctx(self, ctx):
+        """A context captured on **another** VM, made safe to restore on this one.
+
+        A context is "code and namespaces together" — and, in
+        `_capture_module_ctx` layout, the capturing VM's `builtins` table as
+        well. Every core builtin is a closure over the VM that registered it
+        (`register(vm, registry)`), which is why a coroutine is resumed on its
+        `owner_vm` rather than on whichever VM holds the scheduler. Restoring a
+        caller's context wholesale therefore swapped this VM's builtins for the
+        caller's, and from that frame on `coroutine()`, `spawn()` and
+        `run_loop()` all acted on the *caller's* VM: a coroutine spawned by a
+        module function reached through a foreign closure was owned by the
+        wrong VM, pinned to that VM's caller's chunk, and resumed straight into
+        a `HALT` at an address that meant something only in the chunk it was
+        compiled in — no error, no output, the inner `run_loop()` returned at
+        once and the coroutine was dropped. Any nested cross-module fan-out
+        (`examples/orchestration/judge_panel.nd`) lost every inner result.
+
+        The program half of the context (code, functions, namespaces, locations,
+        path) is the caller's and stays so; the builtins half is this VM's. Host
+        builtins a module registered are not VM-bound and are kept, so the
+        caller's chunk still sees everything it could call at home. The core set
+        is `BUILTIN_NAMES`, which `test_capability_coverage.py` keeps equal to
+        what `register_all` installs.
+
+        Same-VM contexts — a frame's `cross_module_ctx`, `module_ctx()`,
+        `base_ctx()` — already carry this VM's builtins, so adopting one is the
+        identity and costs a single `is` check.
+        """
+        if ctx is None:
+            return None
+        foreign = ctx[6]
+        if foreign is self.builtins:
+            return ctx
+        from nodus.builtins.nodus_builtins import BUILTIN_NAMES  # noqa: E402
+
+        extra = {name: info for name, info in foreign.items() if name not in BUILTIN_NAMES}
+        builtins = {**self.builtins, **extra} if extra else self.builtins
+        return (*ctx[:6], builtins, *ctx[7:])
+
     def _try_enter_foreign_closure(self, origin_ctx, closure, args: list) -> bool:
         """Run a closure from another chunk IN THIS LOOP, not a nested one.
 
@@ -4191,7 +4231,7 @@ class VM:
         self.guard_step_entry(closure)  # #394: door 3 of 4, never authorized
 
         saved = self._capture_module_ctx()
-        self._restore_module_ctx(origin_ctx)
+        self._restore_module_ctx(self._adopt_foreign_ctx(origin_ctx))
         if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
             self._restore_module_ctx(saved)
             self.runtime_error("sandbox", "Call stack overflow")
@@ -4279,14 +4319,14 @@ class VM:
         # the exact context; prefer it over any inference.
         origin = getattr(callee, "origin_ctx", None)
         if origin is not None:
-            return origin
+            return self._adopt_foreign_ctx(origin)
         fn_info = callee.function
         for frame in reversed(self.frames):
             saved = getattr(frame, "cross_module_ctx", None)
             if saved is not None and self._ctx_functions(saved).get(fn_info.name) is fn_info:
                 return saved
         if self._caller_vm is not None:
-            return self._caller_module_ctx()
+            return self._adopt_foreign_ctx(self._caller_module_ctx())
         module = self._module_owning(fn_info)
         if module is not None:
             return self.module_ctx(module)

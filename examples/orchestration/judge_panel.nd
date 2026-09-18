@@ -1,21 +1,33 @@
 // judge_panel.nd
-// Judge-panel orchestration skeleton: generate N angled solutions concurrently,
-// score each with a small judge panel, synthesize the winner while grafting in
-// the best ideas from the runners-up.
+// Judge-panel orchestration: generate N angled solutions concurrently, score
+// each with a small judge panel, synthesize the winner while grafting in the
+// best ideas from the runners-up.
 //
-// STATUS: guard fix #1 is merged on Nodus main (PR #290). The two fan_out()
-// calls below now OVERLAP whenever invoke() (in agent_typed.nd) routes the agent
-// through an async transport (option A there: http.post_async / subprocess.run_async).
-// With the default SYNC agent.call they still produce correct results serially
-// until a thread-backed agent_async builtin (#2) lands.
+// Both fan_out() calls below overlap -- invoke() in agent_typed.nd goes through
+// `agent.call_async`, so each agent call suspends its coroutine instead of
+// blocking the loop. Verified by run_judge_panel.py, which is also how to run
+// this: the host must register "solver", "judge" and "synthesizer" agents.
 //
-// Run shape (host must register "solver", "judge", "synthesizer" agents):
-//   let out = run_panel("Design a rate limiter", ANGLES, JUDGES)
+// Run shape:
+//   let out = run_panel("rate limiter", ANGLES, JUDGES)
 import "./agent_typed.nd" as ax
 
 // Required keys each agent role must return (the "schema").
 let SOLUTION_KEYS = ["approach", "design"]
 let SCORE_KEYS = ["total", "best_idea"]
+
+// A typed() result that never validated is an error map; stop the panel there
+// with the agent's own reason rather than failing later on a missing key.
+fn _require(result) {
+    if (map_has_key(result, "error")) {
+        let why = result["failure"]
+        if (why == nil) {
+            why = "missing keys " + str(result["missing"])
+        }
+        throw "agent '" + result["agent"] + "' did not validate: " + why
+    }
+    return result
+}
 
 // Index of the highest-avg-score entry.
 fn _argmax_index(scored) {
@@ -67,20 +79,20 @@ fn _avg_total(verdicts) {
 export fn run_panel(task, angles, judges) {
     let candidates = ax.fan_out(angles, fn(angle) {
         let payload = {"task": task, "bias": angle}
-        let sol = ax.typed("solver", payload, SOLUTION_KEYS, 3)
+        let sol = _require(ax.typed("solver", payload, SOLUTION_KEYS, 3))
         sol["angle"] = angle
         return sol
     })
     let scored = ax.fan_out(candidates, fn(candidate) {
         let verdicts = ax.fan_out(judges, fn(judge) {
             let payload = {"judge": judge, "task": task, "candidate": candidate}
-            return ax.typed("judge", payload, SCORE_KEYS, 3)
+            return _require(ax.typed("judge", payload, SCORE_KEYS, 3))
         })
         return {"candidate": candidate, "avg": _avg_total(verdicts), "verdicts": verdicts}
     })
     let winner_idx = _argmax_index(scored)
     let winner = scored[winner_idx]
     let payload = {"task": task, "winner": winner["candidate"], "graft_ideas": _best_ideas_except(scored, winner_idx)}
-    let final = ax.typed("synthesizer", payload, ["design"], 3)
+    let final = _require(ax.typed("synthesizer", payload, ["design"], 3))
     return {"final": final, "winner_angle": winner["candidate"]["angle"], "scored": scored}
 }

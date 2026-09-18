@@ -42,7 +42,7 @@ pip install nodus-lang
 - [docs/guide/standard-library.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/standard-library.md): Complete stdlib function reference
 - [docs/guide/workflows-and-tasks.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
 - [docs/guide/real-world-integration.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
-- [examples/webhook_bridge/](https://github.com/Masterplanner25/Nodus/blob/main/examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, std:effects idempotency, SQL audit log, replay
+- [examples/webhook_bridge/](https://github.com/Masterplanner25/Nodus/blob/main/examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, step retry, SQL audit log, replay; its Status section records what serve cannot yet do (#855, #857, #858)
 - [docs/guide/debugging.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/debugging.md): --trace flags, nodus check, interactive debugger
 
 ## Runnable Code
@@ -52,7 +52,7 @@ group from an installed wheel too — they ship inside the package.
 
 - [examples/](https://github.com/Masterplanner25/Nodus/tree/main/examples): The example suite `nodus test-examples` executes — hello, features, three import forms, stdlib, and a multi-file project layout
 - [examples/project_layout_demo/README.md](https://github.com/Masterplanner25/Nodus/blob/main/examples/project_layout_demo/README.md): How a multi-file Nodus project is laid out — entry point, sibling module, `utils/index.nd`
-- [examples/orchestration/README.md](https://github.com/Masterplanner25/Nodus/blob/main/examples/orchestration/README.md): Workflow and goal orchestration examples
+- [examples/orchestration/README.md](https://github.com/Masterplanner25/Nodus/blob/main/examples/orchestration/README.md): Concurrent agent fan-out — `fan_out`, schema-forced `typed()` calls, a nested judge panel run against stub agents, and a wall-clock overlap test
 - [demos/RUNME.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/RUNME.md): Three demos showing what the stack does that others do not — start here to run them
 - [demos/agent_orchestration/DESIGN.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/agent_orchestration/DESIGN.md): Agent orchestration demo — design and walkthrough
 - [demos/embed_worker/README.md](https://github.com/Masterplanner25/Nodus/blob/main/demos/embed_worker/README.md): Embedding Nodus as a worker in a Python host
