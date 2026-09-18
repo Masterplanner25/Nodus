@@ -64,7 +64,11 @@ jobs:
       - name: Release-claims probes against the wheel
         run: |
           python -m venv /tmp/probe-venv
-          /tmp/probe-venv/bin/python -m pip install --quiet dist/*.whl
+          # With the [http] extra: the #855 probe asserts the trust store is
+          # built once per process, and refuses rather than passing vacuously
+          # when httpx is absent. Gate 10b's validation venv carries it too.
+          WHEEL=$(ls dist/*.whl)
+          /tmp/probe-venv/bin/python -m pip install --quiet "${WHEEL}[http]"
           # From outside the repo, and `--require-installed` to prove it: the
           # repo-root `nodus.py` shim inserts `src/` on `sys.path`, so ANY
           # process whose CWD is the checkout resolves `nodus` to the source tree
