@@ -291,8 +291,10 @@ pip install nodus-jupyter && python -m nodus_jupyter install
 
 `C:\dev\nodus-mcp-server` · on PyPI · `pipx install nodus-mcp-server`
 
-Standalone MCP tool server. **6 tools:** `nodus_run_goal`, `nodus_run_workflow`,
-`nodus_resume_workflow`, `nodus_store_memory`, `nodus_recall`, `nodus_list_graphs`.
+Standalone MCP tool server. **7 tools** as of 0.1.13 -- read them off
+`tools/list` rather than here (this sentence named six, two of which did not
+exist): `nodus_remember`, `nodus_recall`, `nodus_forget`, `nodus_run_goal`,
+`nodus_run_workflow`, `nodus_resume_workflow`, `nodus_exec`.
 
 **Two transports:**
 
@@ -300,16 +302,42 @@ Standalone MCP tool server. **6 tools:** `nodus_run_goal`, `nodus_run_workflow`,
 - **ChatGPT Desktop (HTTP/SSE):** `nodus-mcp-server --http --port 8765`, tunnelled
   via ngrok
 
-**HTTP transport uses `StreamableHTTPSessionManager`** (MCP SDK 1.28.0), single
-endpoint `POST /mcp`. The old `SseServerTransport` (two-endpoint SSE) is **broken
+**HTTP transport uses `StreamableHTTPSessionManager`**, single endpoint
+`POST /mcp`. The old `SseServerTransport` (two-endpoint SSE) is **broken
 — do not use it.**
+
+**`--http` mode had never worked through 0.1.12** (fixed 0.1.13, 2026-09-17).
+0.1.11 mounted the session manager and never entered its `run()`, so the
+process started, printed its URL, and answered every request with a 500 --
+which is what the ngrok tunnel was forwarding for three months. Nothing drove
+the HTTP app; both transport fixes shipped on the strength of the process
+starting. `tests/test_http_transport.py` does a real `initialize` ->
+`tools/list` through the app now. **A server that prints its URL has proved
+it can bind a port, nothing else -- send it an `initialize`.**
+
+**`mcp` is pinned `>=1.8,<2`.** mcp 2.0 removed the low-level decorator API
+(`@app.list_tools()`) the server is written against, so a fresh install
+resolved 2.2.0 and failed at import in **both** modes; an install that
+resolved 1.x earlier kept working, which is why nobody saw it. The 2.x port is
+nodus-mcp-server#3. This is the "cap earned by a known break" case, not a
+prophylactic one.
+
+**`pipx upgrade` can fail on a poisoned pip cache** with a byte-exact
+`IncompleteRead(17281 bytes read, 273 more expected)` every attempt -- same
+numbers each time means the cache, not the network.
+`pipx runpip nodus-mcp-server install --no-cache-dir --upgrade nodus-mcp-server`
+gets past it.
 
 - **ngrok static domain:** `nodusmcpserver.ngrok.io` (paid plan). ChatGPT Desktop
   requires public HTTPS; the server runs plain HTTP and ngrok terminates SSL.
   Point ChatGPT at `https://nodusmcpserver.ngrok.io/mcp`.
 - **Windows auto-startup:** `HKCU:\Software\Microsoft\Windows\CurrentVersion\Run`
   runs `C:\Users\shawn\.nodus-mcp-server\startup.ps1` at login (no admin needed);
-  starts the server plus ngrok.
+  starts the server plus ngrok. **Look here before concluding nothing launches
+  it** -- it is not in the Startup folder or any shell profile, and a search of
+  those said "started by hand" once. If the server is killed, re-run the two
+  `Start-Process` lines from that script (or the script); ngrok survives on its
+  own and re-attaches to whatever is on 8765.
 - **Shared memory:** Claude Desktop and ChatGPT Desktop read/write the same SQLite
   DB at `~/.nodus-mcp-server/data/memory.db`, so memory written in one is readable
   by the other.
