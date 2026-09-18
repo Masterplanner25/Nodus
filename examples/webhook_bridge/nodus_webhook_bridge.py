@@ -44,13 +44,13 @@ posting again. Three things it does NOT do, each with an issue:
     itself, so an earlier revision of build_workflow_code posted to Slack
     TWICE per webhook. The endpoint reports the program's own run now; the
     program here is definition-only regardless, which is the clearer shape.
-  * #857 -- every program under `nodus serve` runs at the 200 ms default
-    budget and nothing can raise it. This workflow fits today only because the
-    deadline is checked every 100 instructions and the HTTP post is a blocking
-    host call that the check cannot see; a longer tail after the post (the
-    old revision's two prints) tipped it into "Execution timed out" AFTER the
-    Slack post had gone out. Until #857 lands, keep the program short after
-    its side effect.
+  * #857 (fixed) -- every program under `nodus serve` used to run at the
+    200 ms default budget with no way to raise it; this workflow fit only
+    because the deadline check cannot see a blocking HTTP call, and an
+    earlier revision with two prints after the post timed out AFTER posting.
+    Start the server with `--time-limit` (the ceiling) and pass `timeout_ms`
+    per request (below); a breach now returns `ok: false` instead of hanging
+    the request (#862).
   * `std:effects` idempotency is per request. The effect store is in-memory
     and per VM (docs/guide/ai-primitives.md), and nodus serve builds a fresh
     VM per request, so the fx.resolve/pending/complete guard below protects
@@ -93,6 +93,10 @@ if not NODUS_SERVE_TOKEN:
 
 # Slack (or other) outbound target passed through into the .nd workflow.
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/REPLACE")
+
+# Wall-clock budget asked of nodus serve per request (#857). The server's
+# --time-limit is the ceiling; asking for more than it gets the ceiling.
+WORKFLOW_TIMEOUT_MS = int(os.getenv("WORKFLOW_TIMEOUT_MS", "30000"))
 
 # --- DATABASE SETUP (the durable AutomationLog .nd cannot provide) ---
 engine = create_engine(DATABASE_URL)
@@ -192,7 +196,7 @@ async def run_on_nodus(code: str) -> dict:
         resp = await client.post(
             f"{NODUS_SERVE_URL}/workflow/run",
             headers={"Authorization": f"Bearer {NODUS_SERVE_TOKEN}"},
-            json={"code": code, "filename": "webhook.nd"},
+            json={"code": code, "filename": "webhook.nd", "timeout_ms": WORKFLOW_TIMEOUT_MS},
         )
         resp.raise_for_status()
         return resp.json()

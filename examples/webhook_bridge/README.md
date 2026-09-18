@@ -31,12 +31,13 @@ on this:
   Slack **twice** per webhook. The endpoint now reports the program's own run
   instead of starting another; the generated program is definition-only
   anyway, which is the clearer shape.
-- **#857** — every program under `nodus serve` runs at the CLI's 200 ms
-  default budget and no flag or payload key raises it. This workflow fits
-  today because the HTTP post is a blocking host call the deadline check
-  cannot see; the first revision, with two `print`s after the post, timed out
-  *after* posting and reported the delivery as failed. Keep the program short
-  after its side effect until #857 lands.
+- **#857** (fixed) — every program under `nodus serve` used to run at the
+  CLI's 200 ms default with no way to raise it; the first revision of this
+  workflow timed out *after* posting and reported the delivery as failed.
+  The quick start now passes `--time-limit 30` to the server and the bridge
+  asks for `timeout_ms` per request (`WORKFLOW_TIMEOUT_MS`, default 30 s,
+  capped by the server). A step past the budget returns `ok: false` now
+  rather than hanging the request, which it did through 5.13.0 (#862).
 - **#855** — each request pays ~0.5 s building the shared HTTP client. It is
   most of the wall time of every webhook.
 
@@ -74,7 +75,7 @@ pip install nodus-lang fastapi uvicorn httpx sqlalchemy psycopg2-binary
 #    to Slack, so it needs --allow-network. Naming the host with
 #    --allowed-hosts is the tighter grant and is what you want in production.
 nodus serve --auth-token mysecret --port 8080 \
-    --allow-network --allowed-hosts hooks.slack.com
+    --allow-network --allowed-hosts hooks.slack.com --time-limit 30
 
 # 3. Configure and start the bridge
 export NODUS_SERVE_TOKEN=mysecret
@@ -107,6 +108,7 @@ local try-out without Postgres.
 | `DATABASE_URL` | `postgresql://...` | SQLAlchemy connection string for the audit log |
 | `API_KEY` | `super-secret-key` | Key callers must send in `X-API-KEY` header |
 | `SLACK_WEBHOOK_URL` | *(placeholder)* | Outbound Slack (or any HTTP) target |
+| `WORKFLOW_TIMEOUT_MS` | `30000` | Budget asked of `nodus serve` per request; the server's `--time-limit` caps it |
 
 ## Security flags
 

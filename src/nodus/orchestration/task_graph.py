@@ -19,6 +19,7 @@ from nodus.support.staging import record_staged_flip
 from nodus.runtime.runtime_stats import runtime_time_ms, store_time_ms
 from nodus.runtime.state_paths import graph_root
 from nodus.runtime.coroutine import Coroutine
+from nodus.runtime.diagnostics import RuntimeLimitExceeded
 from nodus.orchestration.workflow_state import (
     TrackedState,
     is_fold_policy,
@@ -1202,6 +1203,9 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     worker_cond = threading.Condition(worker_lock)
     active_workers = 0
     worker_mode = False
+    # #862: a limit breach raised on a worker thread, carried back to the
+    # request thread so it propagates the way it does on the scheduler path.
+    limit_breach: RuntimeLimitExceeded | None = None
 
     def _dep_satisfied(task: TaskNode, dep: TaskNode) -> bool:
         """Has this dependency finished in a way this task declared it accepts?
@@ -2123,7 +2127,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         return True
 
     def spawn_task(task: TaskNode, delay_ms: float = 0.0) -> None:
-        nonlocal failed, waiting, active_workers, worker_mode
+        nonlocal failed, waiting, active_workers, worker_mode, limit_breach
         with worker_lock:
             if waiting is not None:
                 return
@@ -2208,15 +2212,35 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 active_workers += 1
 
             def _run_worker():
-                nonlocal active_workers
-                result = dispatcher.submit(
-                    task.task_id,
-                    args,
-                    _execute,
-                    delay_ms=delay_ms,
-                    requirement=task.worker,
-                    requirement_timeout_ms=task.worker_timeout_ms,
-                )
+                nonlocal active_workers, limit_breach
+                # #862: `submit` runs the step inline when no worker is required,
+                # so the step's own exceptions come out of *this* call. It used
+                # to sit above the try/finally below: a `RuntimeLimitExceeded`
+                # (the deadline, deliberately allowed to propagate) killed the
+                # thread with `active_workers` still counted, and the request
+                # thread waited on `worker_cond` forever. A step past the budget
+                # under `nodus serve` was a permanent hang, not a timeout.
+                try:
+                    result = dispatcher.submit(
+                        task.task_id,
+                        args,
+                        _execute,
+                        delay_ms=delay_ms,
+                        requirement=task.worker,
+                        requirement_timeout_ms=task.worker_timeout_ms,
+                    )
+                except RuntimeLimitExceeded as breach:
+                    # Not a step failure: the host's budget ran out. Carry it
+                    # to the request thread, which re-raises it after the wait
+                    # -- the same outcome the scheduler path gives (`ok: false`,
+                    # "Execution timed out"), reached from a worker thread.
+                    with worker_lock:
+                        limit_breach = breach
+                        active_workers -= 1
+                        worker_cond.notify_all()
+                    return
+                except Exception as exc:
+                    result = exc
                 with worker_lock:
                     try:
                         if isinstance(result, Exception):
@@ -2613,8 +2637,11 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         with worker_cond:
             # Once a step has failed, no further work is scheduled, so `pending`
             # can never drain -- wait only on what is still in flight.
-            while waiting is None and ((pending and failed is None) or active_workers > 0):
+            while (waiting is None and limit_breach is None
+                   and ((pending and failed is None) or active_workers > 0)):
                 worker_cond.wait(timeout=0.05)
+        if limit_breach is not None:
+            raise limit_breach  # #862: propagate, as the scheduler path does
     else:
         vm.scheduler.run_loop(on_complete=on_complete, on_error=on_error)
 

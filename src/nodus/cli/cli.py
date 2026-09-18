@@ -789,6 +789,23 @@ def _resolve_server_host_port(flags: dict) -> tuple[str, int] | tuple[None, None
         return None, None
 
 
+_BAD_FLAG = object()
+
+
+def _parse_time_limit(flags: dict):
+    """`--time-limit SECS` as milliseconds, None when absent, `_BAD_FLAG` after
+    printing the parse error (#857). One definition of the unit: `serve`,
+    `workflow run`, `goal-run` and the legacy `workflow-run` all read it here,
+    so no command can take seconds while another takes milliseconds again."""
+    if "--time-limit" not in flags:
+        return None
+    try:
+        return _parse_int(str(flags["--time-limit"]), "--time-limit") * 1000
+    except ValueError as exc:
+        _print_stderr(str(exc))
+        return _BAD_FLAG
+
+
 def _run_workflow(
     path: str,
     workflow_name: str | None = None,
@@ -829,12 +846,25 @@ def _plan_workflow(path: str, workflow_name: str | None = None, *, project_root:
     return 0
 
 
-def _run_goal(path: str, goal_name: str | None = None, *, project_root: str | None = None) -> int:
+def _run_goal(
+    path: str,
+    goal_name: str | None = None,
+    *,
+    project_root: str | None = None,
+    time_limit_ms: int | None = None,
+) -> int:
     if not os.path.isfile(path):
         _print_stderr(f"File not found: {path}")
         return 1
     code = _read_file(path)
-    result, _vm = run_goal_code(VM([], {}, code_locs=[], source_path=None), code, filename=path, goal_name=goal_name, project_root=project_root)
+    result, _vm = run_goal_code(
+        VM([], {}, code_locs=[], source_path=None),
+        code,
+        filename=path,
+        goal_name=goal_name,
+        project_root=project_root,
+        timeout_ms=EXECUTION_TIMEOUT_MS if time_limit_ms is None else time_limit_ms,
+    )
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
@@ -1435,6 +1465,7 @@ def _run_server(
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
     workflow_store_path: str | None = None,
+    timeout_ms: int = EXECUTION_TIMEOUT_MS,
 ) -> int:
     try:
         from nodus.services.server import serve  # lazy: see the note at the top
@@ -1442,6 +1473,7 @@ def _run_server(
             host=host,
             port=port,
             trace=trace,
+            timeout_ms=timeout_ms,
             worker_sweep_interval_ms=worker_sweep_interval_ms,
             allowed_paths=allowed_paths,
             writable_paths=writable_paths,
@@ -2242,10 +2274,14 @@ def _dispatch(argv: list[str] | None = None) -> int:
             if "--workflow-store-path" in flags
             else _workflow_store_path_from_env()
         )
+        serve_time_limit = _parse_time_limit(flags)
+        if serve_time_limit is _BAD_FLAG:
+            return 1
         return _run_server(
             host=host,
             port=port,
             trace="--trace" in flags,
+            timeout_ms=EXECUTION_TIMEOUT_MS if serve_time_limit is None else serve_time_limit,
             worker_sweep_interval_ms=sweep_ms,
             allowed_paths=serve_allowed_paths,  # type: ignore[arg-type]
             writable_paths=writable_paths,
@@ -2330,7 +2366,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
             if err:
                 _print_stderr(err)
                 return 1
-            return _run_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root)
+            time_limit = _parse_time_limit(flags)
+            if time_limit is _BAD_FLAG:
+                return 1
+            return _run_workflow(script, workflow_name=flags.get("--workflow"), project_root=project_root, time_limit_ms=time_limit)
         if subcommand == "list":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "list"))
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
@@ -2580,7 +2619,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
             script,
             workflow_name=flags.get("--workflow"),
             project_root=project_root,
-            time_limit_ms=time_limit,
+            # Seconds, like every other `--time-limit` (#857). This passed the
+            # parsed value straight through as milliseconds, so `--time-limit 30`
+            # was a 30 ms budget that timed out every real workflow.
+            time_limit_ms=None if time_limit is None else time_limit * 1000,
         )
 
     if command == "workflow-plan":
@@ -2622,7 +2664,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if err:
             _print_stderr(err)
             return 1
-        return _run_goal(script, goal_name=flags.get("--goal"), project_root=project_root)
+        time_limit = _parse_time_limit(flags)
+        if time_limit is _BAD_FLAG:
+            return 1
+        return _run_goal(script, goal_name=flags.get("--goal"), project_root=project_root, time_limit_ms=time_limit)
 
     if command == "goal-plan":
         flags_with_values, flags_no_values = flags_for("goal-plan")

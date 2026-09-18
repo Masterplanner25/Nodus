@@ -2,7 +2,40 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#857: `nodus serve --time-limit SECS`, and a per-request `timeout_ms`.**
+  Every program submitted to a `RuntimeService` -- `/execute`, `/graph`,
+  `/workflow/run`, `/workflow/plan`, `/goal/run`, `/goal/plan`, sessions or
+  not -- ran at the CLI's 200 ms default, at eight runner call sites, and no
+  flag, payload key or environment variable could raise it. Because the
+  deadline is checked every 100 instructions and a blocking host call is not
+  in the instruction stream, a workflow with one real HTTP call fit or timed
+  out depending on how many instructions followed the call; the
+  `examples/webhook_bridge` workflow timed out *after* posting to Slack and
+  logged the delivery as failed.
+
+  The server's setting is the ceiling; a request may ask for less with
+  `timeout_ms` and never for more, and a malformed value is refused rather
+  than ignored. The budget is computed once (`RuntimeService._budget`) and a
+  source test holds every runner call to it. `nodus workflow run` and
+  `nodus goal-run` gained `--time-limit` too; the hidden legacy
+  `workflow-run --time-limit` took its value as **milliseconds**, so
+  `--time-limit 30` was a 30 ms budget -- seconds now, like every other one.
+
 ### Fixes
+
+- **#862: a step that exceeded the budget under `nodus serve` hung the request forever.**
+  Found while testing #857 -- raising the budget would have turned every
+  timeout into a hang. A service puts the task graph in worker mode, where
+  each step runs on a thread through `dispatcher.submit`; the deadline's
+  `RuntimeLimitExceeded` came out of that call *above* the `try/finally`
+  that decrements `active_workers`, the thread died still counted, and the
+  request thread waited on `worker_cond` indefinitely. `while (true)` in a
+  step was a one-line denial of service against the server. The breach is
+  carried back to the request thread and re-raised there, which is what the
+  scheduler path already did: `ok: false`, `Execution timed out`, and the
+  next request is answered.
 
 - **#858: `/workflow/run`, `/goal/run`, `nodus workflow run` and `nodus goal run` ran a self-running program's flow twice.**
 

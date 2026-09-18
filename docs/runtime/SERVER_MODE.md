@@ -81,6 +81,26 @@ and no flag could change it. If you are pinned to one, put the server behind a
 proxy that authenticates and treat every caller as able to run arbitrary commands
 as the server's user.
 
+## Execution budget
+
+Every submitted program runs under a wall-clock budget. The default is the
+CLI's 200 ms, which suits a REPL and not a workflow that makes a real HTTP
+call; through 5.13.0 nothing could raise it (#857), and a step that exceeded
+it under a service hung the request rather than timing out (#862).
+
+- **`nodus serve --time-limit SECS`** sets the server-wide ceiling, in seconds
+  like `nodus run --time-limit`.
+- A request may pass **`timeout_ms`** in its payload to ask for *less* than
+  the ceiling — a bridge giving a webhook workflow 5 s while `/execute` keeps
+  the default. It can never get more: the operator set the bound. A
+  `timeout_ms` that is not a positive number of milliseconds is refused with
+  `ok: false`, not silently ignored.
+- A breach returns `ok: false` with `"Execution timed out"`, on every route.
+
+The budget is computed in one place (`RuntimeService._budget`) and every
+runner call in the service passes it; a test asserts on the source that none
+is missing.
+
 ## Sessions
 The server can create and reuse sessions. Sessions maintain VM state and memory across executions.
 
