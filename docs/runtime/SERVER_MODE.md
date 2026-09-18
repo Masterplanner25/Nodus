@@ -113,3 +113,12 @@ The server exposes JSON endpoints for:
 - Workers: `/worker/register`, `/worker/poll`, `/worker/heartbeat`, `/worker/result`
 
 Payloads are JSON and typically accept `code`, `filename`, and optional `session` id. See `server.py` for exact request/response shapes.
+
+**`/workflow/run` and `/goal/run` run the flow the program defines — once.**
+The program is executed first; if it already started a flow itself
+(`run_workflow(w)`, `run_goal(g)`, or `goal … over …`), that run is what the
+response reports — `graph_id`, `result.steps` and the rest — and nothing
+further is started. A program that only *defines* a flow is run for it. Before
+#858 a self-running program had every step executed twice, and the response
+named the second run. `nodus workflow run` / `nodus goal run` take the same
+path and behave the same way.

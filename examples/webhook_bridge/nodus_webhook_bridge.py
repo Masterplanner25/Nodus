@@ -39,11 +39,11 @@ once per webhook, returns the step result and graph_id in the response, and
 `POST /workflow/replay` on a completed run returns its recorded result without
 posting again. Three things it does NOT do, each with an issue:
 
-  * #858 -- `POST /workflow/run` runs the workflow the program *defines*. An
-    earlier revision of build_workflow_code also called `run_workflow(...)`
-    inside the program, which made the endpoint run every step TWICE (two
-    Slack posts per webhook). The program is definition-only now; do not add
-    the call back.
+  * #858 (fixed) -- `POST /workflow/run` used to run the workflow the program
+    *defines* even when the program had already called `run_workflow(...)`
+    itself, so an earlier revision of build_workflow_code posted to Slack
+    TWICE per webhook. The endpoint reports the program's own run now; the
+    program here is definition-only regardless, which is the clearer shape.
   * #857 -- every program under `nodus serve` runs at the 200 ms default
     budget and nothing can raise it. This workflow fits today only because the
     deadline is checked every 100 instructions and the HTTP post is a blocking
@@ -136,9 +136,9 @@ def build_workflow_code(source: str, payload: dict) -> str:
     boundary (no manual quoting).
 
     The program only DEFINES the workflow. `POST /workflow/run` finds and runs
-    it, and returns the run's `graph_id` and step results in the response --
-    a program that also calls `run_workflow(...)` is run twice by that endpoint
-    (#858).
+    it, and returns the run's `graph_id` and step results in the response.
+    (A program that also calls `run_workflow(...)` was run twice by that
+    endpoint before #858; it now reports the program's own run instead.)
 
     This is the single most important function to unit-test (SRV-001): the
     escaping correctness here is the security boundary between caller-controlled

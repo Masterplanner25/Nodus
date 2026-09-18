@@ -1210,6 +1210,18 @@ def _resolve_goal_from_vm(vm: VM, goal_name: str | None):
     )
 
 
+def _flow_the_program_ran(vm) -> dict | None:
+    """The run the program started itself, if it did (#858).
+
+    `run_workflow_code` and `run_goal_code` execute the program and then run
+    the flow it defines. A program that also calls `run_workflow(...)` -- the
+    form the guide teaches -- therefore ran every step twice, and the
+    response's `graph_id` named the second run. When the program has run a
+    flow, that run is the answer; nothing further is started.
+    """
+    return getattr(vm, "last_run_result", None)
+
+
 def run_workflow_code(
     vm: VM,
     code: str,
@@ -1229,6 +1241,7 @@ def run_workflow_code(
     project_root: str | None = None,
     event_bus: RuntimeEventBus | None = None,
 ):
+    vm.last_run_result = None  # #858: only a run *this* program starts counts
     result, vm = run_in_vm(
         vm,
         code,
@@ -1248,6 +1261,11 @@ def run_workflow_code(
     )
     if not result["ok"]:
         return result, vm
+    already = _flow_the_program_ran(vm)
+    if already is not None:
+        return _success_result(stage="run_workflow", filename=filename,
+                               stdout=result.get("stdout", ""), stderr=result.get("stderr", ""),
+                               result=already), vm
     # #226 added an `inline_retries=True` loop here that resumed `retry_scheduled`
     # results in-process. It was passed by one caller — `nodus workflow-run` — so
     # every other entry point dropped the retry and returned success (#392). The
@@ -1374,6 +1392,7 @@ def run_goal_code(
     project_root: str | None = None,
     event_bus: RuntimeEventBus | None = None,
 ):
+    vm.last_run_result = None  # #858: only a run *this* program starts counts
     result, vm = run_in_vm(
         vm,
         code,
@@ -1393,6 +1412,11 @@ def run_goal_code(
     )
     if not result["ok"]:
         return result, vm
+    already = _flow_the_program_ran(vm)
+    if already is not None:
+        return _success_result(stage="run_goal", filename=filename,
+                               stdout=result.get("stdout", ""), stderr=result.get("stderr", ""),
+                               result=already), vm
     with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
         try:
             goal = _resolve_goal_from_vm(vm, goal_name)
