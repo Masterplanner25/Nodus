@@ -219,6 +219,10 @@
     "D:src/nodus_lang_workflow/runner.py::_WARNED_STRANDED_RUNS": {
       "verdict": "intentional",
       "why": "The sibling of _WARNED_DEFAULT_STORE, four lines up, and intentional for the same reason: it shares a boolean saying 'this has been printed', not state whose sharing is the defect (#185/#390). Once per process is the behaviour wanted -- the alternative is repeating the same notice per runtime, which is how a warning becomes noise. Worth recording that neutering this flag left the suite green: it is an early-out, not a correctness guard, and the module docstring says so. tests/test_stranded_runs_warning.py::QuietCasesTests pins the once-per-process behaviour."
+    },
+    "D:src/nodus/builtins/http_module.py::_ssl_context": {
+      "verdict": "intentional",
+      "why": "The process-wide TLS trust store (#855). httpx.Client() reloads the certifi CA bundle per construction (380-995 ms) and there is one client per root VM, so every runtime and every serve request paid it. The store is identical for every VM in the process; sharing it is the fix, not a leak -- the per-VM client and its connection pool stay per VM. Read-only after first build, under _client_create_lock."
     }
   }
 }

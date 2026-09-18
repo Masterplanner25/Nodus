@@ -38,8 +38,9 @@ on this:
   asks for `timeout_ms` per request (`WORKFLOW_TIMEOUT_MS`, default 30 s,
   capped by the server). A step past the budget returns `ok: false` now
   rather than hanging the request, which it did through 5.13.0 (#862).
-- **#855** — each request pays ~0.5 s building the shared HTTP client. It is
-  most of the wall time of every webhook.
+- **#855** (fixed) — each request used to pay ~0.5 s building its HTTP
+  client's trust store; the store is per process now, so only the first
+  request after the server starts pays it.
 
 ## What it demonstrates
 
