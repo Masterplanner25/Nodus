@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [5.14.0] - 2026-09-18
+
+Eight release-claims probes were added for this cycle's surface — the `serve`
+budget and its per-request bound, a breach returning rather than hanging,
+`/workflow/run` executing once, the nested cross-module fan-out, the shared
+trust store, `--time-limit` meaning seconds in both `workflow run` forms, and
+the two prose checks every cycle carries. 129 probes, run per-PR by CI and
+again against the built wheel at Gate 10b.
+
+Every fix in this release was found by running something that had never been
+run: the two example directories CI does not cover (`examples/orchestration`,
+`examples/webhook_bridge`), and then the server paths those examples took.
+
 ### Changed
 
 - **#857: `nodus serve --time-limit SECS`, and a per-request `timeout_ms`.**

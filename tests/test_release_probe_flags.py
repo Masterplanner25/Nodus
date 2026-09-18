@@ -156,7 +156,7 @@ class ProbeFlagsAreDeclaredTests(unittest.TestCase):
         self.assertEqual(forms, {"cli", "subprocess"})
         self.assertEqual(
             len(sites),
-            10,
+            13,  # 5.14.0: three literal argv sites in probe_workflow_run_time_limit_units
             "the probe's CLI invocation sites changed; check the new one is a "
             "literal argv this test can read before updating the count",
         )
