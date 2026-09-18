@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from nodus.support.version import VERSION
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from nodus.support.config import SERVER_HOST, SERVER_PORT, SESSION_TIMEOUT_MS, MAX_SESSIONS, WORKER_SWEEP_INTERVAL_MS
+from nodus.support.config import SERVER_HOST, SERVER_PORT, SESSION_TIMEOUT_MS, MAX_SESSIONS, WORKER_SWEEP_INTERVAL_MS, EXECUTION_TIMEOUT_MS
 from nodus.tooling.runner import (
     agent_call_result,
     build_ast,
@@ -379,9 +379,17 @@ class RuntimeService:
         auth_token: str | None = None,
         workflow_store_backend: str | None = None,
         workflow_store_path: str | None = None,
+        # #857: the wall-clock budget every submitted program runs under. It
+        # was the CLI's 200 ms default at all eight runner call sites and
+        # nothing could raise it -- no flag, no payload key, no env -- so a
+        # workflow that made one real HTTP call fit or timed out depending on
+        # how many instructions followed the call (the check runs every 100).
+        # Milliseconds here; `serve --time-limit` takes seconds like `run`.
+        timeout_ms: int = EXECUTION_TIMEOUT_MS,
     ):
         self.trace = trace
         self.last_vm = None
+        self.timeout_ms = timeout_ms
         self.sessions = SessionManager(timeout_ms=session_timeout_ms, max_sessions=max_sessions)
         self.snapshots = SnapshotManager()
         self.workers = WorkerManager()
@@ -551,6 +559,37 @@ class RuntimeService:
         # #584: one implementation, in `services/graph_metadata.py`.
         return graph_metadata(vm, graph_id)
 
+    def _budget(self, payload: dict):
+        """The wall-clock budget this request runs under, in ms (#857).
+
+        The server's setting is the ceiling. A request may ask for less with a
+        `timeout_ms` key -- a bridge giving a webhook workflow 5 s while
+        `/execute` keeps the default -- and never for more: the operator set
+        the bound, and a payload is the thing the bound is for.
+
+        A `timeout_ms` that is not a positive number is refused, not ignored
+        (#490): a declaration the runtime accepts must bind. Returns the error
+        result in that case, so every caller is `if isinstance(..., dict)`.
+        """
+        requested = payload.get("timeout_ms")
+        if requested is None:
+            return self.timeout_ms
+        # `int()` below truncates, so a positive fraction of a millisecond would
+        # become 0 -- which the runner reads as no deadline at all. Refuse it.
+        if isinstance(requested, bool) or not isinstance(requested, (int, float)) or int(requested) < 1:
+            message = f"timeout_ms must be a positive number of milliseconds, got {requested!r}"
+            filename = normalize_filename(payload.get("filename"))
+            err = NodusRuntimeError(message, filename=filename)
+            return Result.failure(
+                stage="budget",
+                filename=filename,
+                stdout="",
+                stderr="",
+                errors=[err.to_dict()],
+                error={"type": "budget", "message": message, "path": filename},
+            ).to_dict()
+        return min(int(requested), self.timeout_ms)
+
     def _apply_runtime_policies(self, vm: VM | None) -> None:
         """The one place a VM this service will run code in gets its bounds.
 
@@ -594,6 +633,9 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         session_id = payload.get("session")
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         if session_id:
             session = self.sessions.get(session_id)
             if session is None:
@@ -604,6 +646,7 @@ class RuntimeService:
                 code,
                 filename,
                 trace=self.trace,
+                timeout_ms=budget,
                 import_state=session.import_state,
             )
             session.vm = vm
@@ -613,7 +656,7 @@ class RuntimeService:
         vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
-        result, vm = run_graph_code(vm, code, filename, trace=self.trace)
+        result, vm = run_graph_code(vm, code, filename, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             self.last_vm = vm
         return result
@@ -641,6 +684,9 @@ class RuntimeService:
         filename = payload.get("filename")
         session_id = payload.get("session")
         set_default_dispatcher(self.workers)
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         if session_id:
             session = self.sessions.get(session_id)
             if session is None:
@@ -652,6 +698,7 @@ class RuntimeService:
                 code,
                 filename,
                 trace=self.trace,
+                timeout_ms=budget,
                 import_state=session.import_state,
             )
             session.vm = vm
@@ -670,7 +717,7 @@ class RuntimeService:
         # of this one method no longer disagree either.
         vm = self._new_vm()
         vm.worker_dispatcher = self.workers
-        result, vm = run_graph_code(vm, code, filename, trace=self.trace)
+        result, vm = run_graph_code(vm, code, filename, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             vm.worker_dispatcher = self.workers
             self.last_vm = vm
@@ -755,10 +802,13 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
-        result, vm = run_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
+        result, vm = run_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -769,9 +819,12 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         workflow_name = payload.get("workflow")
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         vm = self._new_vm()
         self._apply_runtime_policies(vm)
-        result, vm = plan_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace)
+        result, vm = plan_workflow_code(vm, code, filename, workflow_name=workflow_name, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -782,10 +835,13 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         vm = self._new_vm()
         self._apply_runtime_policies(vm)
         vm.worker_dispatcher = self.workers
-        result, vm = run_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
+        result, vm = run_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -796,9 +852,12 @@ class RuntimeService:
         code = payload.get("code", "")
         filename = payload.get("filename")
         goal_name = payload.get("goal")
+        budget = self._budget(payload)
+        if isinstance(budget, dict):
+            return budget
         vm = self._new_vm()
         self._apply_runtime_policies(vm)
-        result, vm = plan_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace)
+        result, vm = plan_goal_code(vm, code, filename, goal_name=goal_name, trace=self.trace, timeout_ms=budget)
         if vm is not None:
             self.last_vm = vm
         if result.get("ok"):
@@ -1720,6 +1779,7 @@ def serve(
     auth_token: str | None = None,
     workflow_store_backend: str | None = None,
     workflow_store_path: str | None = None,
+    timeout_ms: int = EXECUTION_TIMEOUT_MS,
 ) -> None:
     if not _is_local_host(host) and not auth_token:
         raise ValueError("Refusing to bind to non-local host without an auth token.")
@@ -1744,6 +1804,7 @@ def serve(
         auth_token=auth_token,
         workflow_store_backend=workflow_store_backend,
         workflow_store_path=workflow_store_path,
+        timeout_ms=timeout_ms,
     )
     if FASTAPI_AVAILABLE and UVICORN_AVAILABLE:
         app = create_fastapi_app(service)

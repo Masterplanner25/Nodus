@@ -279,7 +279,7 @@ COMMANDS: dict[str, Command] = {
         "Manage workflows (run, list, resume, cleanup)",
         group="Orchestration",
         subcommands={
-            "run": (frozenset({"--workflow", "--project-root"}), frozenset()),
+            "run": (frozenset({"--workflow", "--project-root", "--time-limit"}), frozenset()),
             "list": (_STORE, frozenset()),
             "resume": (_STORE | frozenset({"--checkpoint"}), frozenset()),
             "dead-letters": (_STORE, frozenset()),
@@ -340,7 +340,7 @@ COMMANDS: dict[str, Command] = {
         "goal-run <file>",
         "Run a goal",
         group="Orchestration",
-        with_values=frozenset({"--goal", "--project-root"}),
+        with_values=frozenset({"--goal", "--project-root", "--time-limit"}),
     ),
     "graph": _c(
         "graph",
@@ -372,6 +372,10 @@ COMMANDS: dict[str, Command] = {
                 # #754: submitted source runs denied unless granted here.
                 "--allowed-commands",
                 "--allowed-hosts",
+                # #857: the budget submitted programs run under. Seconds, like
+                # `run`. Without it every request ran at the 200 ms default and
+                # a real HTTP call fit or not by instruction count.
+                "--time-limit",
             }
         ),
         no_values=frozenset({
@@ -798,6 +802,8 @@ _DETAILED_HELP: dict[str, str] = {
         "  --worker-sweep-interval-ms N     How often to sweep for dead workers (default: 500)",
         "  --workflow-store-backend BACKEND Workflow store backend: local or sqlite (default: local)",
         "  --workflow-store-path PATH       Path for the workflow store",
+        "  --time-limit SECS                Wall-clock budget for each submitted program (default: 0.2);",
+        "                                   a request may ask for less with a timeout_ms key, never more",
         "",
         "Each --allow-* flag also reads an environment variable, for a server",
         "started by a supervisor that owns the command line: NODUS_SERVER_ALLOW_SUBPROCESS,",
@@ -1011,8 +1017,9 @@ _DETAILED_HELP: dict[str, str] = {
         "Usage: nodus workflow <subcommand> [options]",
         "",
         "Subcommands:",
-        "  run <file> [--workflow NAME] [--project-root PATH]",
-        "             Run the workflow defined in <file>.",
+        "  run <file> [--workflow NAME] [--project-root PATH] [--time-limit SECS]",
+        "             Run the workflow defined in <file>. --time-limit raises the",
+        "             200 ms default budget, as it does for `nodus run`.",
         "  list [--project-root PATH]",
         "             List saved workflow graph snapshots.",
         "  resume <graph_id> [--checkpoint LABEL] [--project-root PATH]",
