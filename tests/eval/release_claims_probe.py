@@ -2910,6 +2910,232 @@ def probe_no_stale_5_12_current(repo: Path):
     return "no document still calls 5.12.0 the current release"
 
 
+# ---------------------------------------------------------------- 5.14.0
+
+@probe("#857: nodus serve takes --time-limit, and a request may lower but not raise it")
+def probe_serve_budget():
+    """The budget every submitted program runs under was the CLI's 200 ms at
+    eight call sites with nothing able to raise it."""
+    import os
+    import tempfile
+    from nodus.cli.commands import flags_for
+    from nodus.services.server import RuntimeService
+
+    with_values, _ = flags_for("serve")
+    assert "--time-limit" in with_values, "serve does not declare --time-limit"
+    slow = (
+        "workflow w { step a { let n = 0\n while (n < 300000) { n = n + 1 }\n return n } }"
+    )
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="probe514-") as tmp:
+        os.chdir(tmp)
+        try:
+            svc = RuntimeService(timeout_ms=30_000)
+            try:
+                ok = svc.workflow_run({"code": slow, "filename": "w.nd"})
+                assert ok["ok"], f"30 s ceiling still timed out: {ok.get('error')}"
+                lowered = svc.workflow_run({"code": slow, "filename": "w.nd", "timeout_ms": 50})
+                assert not lowered["ok"] and "timed out" in lowered["error"]["message"], (
+                    "a request asking for 50 ms was not held to it"
+                )
+                bad = svc.workflow_run({"code": slow, "filename": "w.nd", "timeout_ms": "x"})
+                assert not bad["ok"] and "timeout_ms must be" in bad["error"]["message"], (
+                    "a malformed timeout_ms was accepted"
+                )
+            finally:
+                svc.close()
+            capped = RuntimeService(timeout_ms=100)
+            try:
+                r = capped.workflow_run({"code": slow, "filename": "w.nd", "timeout_ms": 60_000})
+                assert not r["ok"], "a request raised the budget above the server's ceiling"
+            finally:
+                capped.close()
+        finally:
+            os.chdir(cwd)
+    return "ceiling raises, request lowers, cannot raise, malformed refused"
+
+
+@probe("#862: a step past the budget under a service returns instead of hanging")
+def probe_serve_breach_returns():
+    """A `while (true)` in a step submitted to nodus serve used to hang the
+    request forever -- the deadline's exception escaped the worker thread
+    above the accounting that the request thread waited on."""
+    import os
+    import tempfile
+    import threading
+    from nodus.services.server import RuntimeService
+
+    cwd = os.getcwd()
+    out: dict = {}
+    with tempfile.TemporaryDirectory(prefix="probe514-") as tmp:
+        os.chdir(tmp)
+        try:
+            svc = RuntimeService()
+
+            def run():
+                out["r"] = svc.workflow_run({
+                    "code": "workflow w { step a { while (true) { let x = 1 }\n return 1 } }",
+                    "filename": "w.nd",
+                })
+
+            t = threading.Thread(target=run, daemon=True)
+            t.start()
+            t.join(60)
+            assert not t.is_alive(), "the request did not return within 60 s: it hung"
+            svc.close()
+        finally:
+            os.chdir(cwd)
+    r = out["r"]
+    assert not r["ok"] and "Execution timed out" in r["error"]["message"], r.get("error")
+    return "returned ok=false, Execution timed out"
+
+
+@probe("#858: /workflow/run runs a self-running program's flow once")
+def probe_workflow_run_single_execution():
+    import os
+    import tempfile
+    from nodus.services.server import RuntimeService
+
+    code = (
+        'workflow w { step a { print("step a ran"); return 1i } }\n'
+        'let r = run_workflow(w)\n'
+        'print("program saw " + r["graph_id"])\n'
+    )
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="probe514-") as tmp:
+        os.chdir(tmp)
+        try:
+            svc = RuntimeService()
+            try:
+                r = svc.workflow_run({"code": code, "filename": "w.nd"})
+            finally:
+                svc.close()
+        finally:
+            os.chdir(cwd)
+    assert r["ok"], r.get("error")
+    assert r["stdout"].count("step a ran") == 1, f"the step ran {r['stdout'].count('step a ran')} times"
+    seen = r["stdout"].split("program saw ")[1].strip()
+    assert r["graph_id"] == seen, f"response names {r['graph_id']}, the program saw {seen}"
+    return "one execution, and the response names the program's own run"
+
+
+@probe("#856: a nested cross-module fan-out returns every inner result")
+def probe_nested_cross_module_fan_out():
+    """The judge-panel shape: B.fn -> A.fan_out(B closure) -> A.fan_out again.
+    The inner coroutines used to be owned by the wrong VM and dropped."""
+    import tempfile
+    from pathlib import Path
+    from nodus.runtime.embedding import NodusRuntime
+
+    a = """export fn fan_out(items, worker) {
+    let n = len(items)
+    let bucket = {}
+    let i = 0
+    while (i < n) {
+        let idx = i
+        let item = items[i]
+        spawn(coroutine(fn() { bucket[str(idx)] = worker(item) }))
+        i = i + 1
+    }
+    run_loop()
+    let results = []
+    let k = 0
+    while (k < n) {
+        list_push(results, bucket[str(k)])
+        k = k + 1
+    }
+    return results
+}
+"""
+    b = """import "./a.nd" as a
+export fn nested() {
+    return a.fan_out([1, 2], fn(x) { return a.fan_out([10, 20], fn(y) { return x * y }) })
+}
+"""
+    with tempfile.TemporaryDirectory(prefix="probe514-") as tmp:
+        d = Path(tmp)
+        (d / "a.nd").write_text(a, encoding="utf-8")
+        (d / "b.nd").write_text(b, encoding="utf-8")
+        (d / "main.nd").write_text('import "./b.nd" as b\nprint(b.nested())\n', encoding="utf-8")
+        rt = NodusRuntime(timeout_ms=None, max_steps=None, allowed_paths=[tmp])
+        r = rt.run_file(str(d / "main.nd"))
+    assert r["ok"], r.get("error")
+    assert "[[10.0, 20.0], [20.0, 40.0]]" in r["stdout"], r["stdout"]
+    return "[[10, 20], [20, 40]] across two module boundaries"
+
+
+@probe("#855: the TLS trust store is built once per process")
+def probe_shared_trust_store():
+    from unittest import mock
+    from nodus.builtins import http_module
+    from nodus.vm.vm import VM
+
+    assert http_module._HTTPX_AVAILABLE, "httpx is not installed in this venv -- install nodus-lang[http]"
+    saved = http_module._ssl_context
+    http_module._ssl_context = None
+    calls = []
+    real = http_module._httpx.create_ssl_context
+    try:
+        with mock.patch.object(http_module._httpx, "create_ssl_context", lambda: (calls.append(1), real())[1]):
+            for _ in range(4):
+                http_module._get_or_create_client(VM([], {}))
+    finally:
+        http_module._ssl_context = saved
+    assert len(calls) == 1, f"the CA bundle was loaded {len(calls)} times for 4 VMs"
+    return "one build for four VMs"
+
+
+@probe("#857: workflow run and workflow-run take --time-limit in seconds")
+def probe_workflow_run_time_limit_units():
+    """The hidden legacy form passed the value through as milliseconds, so
+    `--time-limit 30` was a 30 ms budget."""
+    import tempfile
+    from pathlib import Path
+
+    slow = "workflow w {\n    step a {\n        let n = 0\n        while (n < 300000) { n = n + 1 }\n        return n\n    }\n}\n"
+    with tempfile.TemporaryDirectory(prefix="probe514-") as tmp:
+        path = Path(tmp) / "w.nd"
+        path.write_text(slow, encoding="utf-8")
+        # argv[0] is the program name -- see the note on `probe_help_prints`.
+        code_new, _ = cli(["nodus", "workflow", "run", str(path), "--time-limit", "30"])
+        code_legacy, _ = cli(["nodus", "workflow-run", str(path), "--time-limit", "30"])
+        code_default, _ = cli(["nodus", "workflow", "run", str(path)])
+    assert code_new == 0, "workflow run --time-limit 30 did not fit a ~1 s step"
+    assert code_legacy == 0, "workflow-run --time-limit 30 is still 30 milliseconds"
+    assert code_default != 0, "the 200 ms default fit a ~1 s step, so the control proves nothing"
+    return "both forms: seconds; the default still times the step out"
+
+
+@probe("README names the 5.14.0 surface")
+def probe_readme_names_514_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("--time-limit", "timeout_ms", "/workflow/run") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "--time-limit, timeout_ms and /workflow/run all appear"
+
+
+@probe("no stale '5.13.0 is current' claim survives")
+def probe_no_stale_5_13_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.13\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.13\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.13.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.13.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -3127,6 +3353,16 @@ def main() -> int:
     probe_serve_filesystem_default()
     probe_readme_names_513_surface(args.repo)
     probe_no_stale_5_12_current(args.repo)
+
+    # --- 5.14.0 -------------------------------------------------------------
+    probe_serve_budget()
+    probe_serve_breach_returns()
+    probe_workflow_run_single_execution()
+    probe_nested_cross_module_fan_out()
+    probe_shared_trust_store()
+    probe_workflow_run_time_limit_units()
+    probe_readme_names_514_surface(args.repo)
+    probe_no_stale_5_13_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

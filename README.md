@@ -47,7 +47,28 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.13.0 is about the gap between what something reports and what it
+**Recent:** 5.14.0 is about the paths nothing had ever walked.
+
+Two example directories in this repo had not been executed end to end since
+they were written, and each was standing on a runtime defect. A judge-panel
+orchestration could not run because a coroutine spawned by a module function
+reached *through* a closure from another module was handed to the wrong VM and
+dropped without an error. A webhook bridge submitted to `nodus serve` ran its
+workflow **twice**, because `POST /workflow/run` executed the program and then
+ran the workflow it found in it again; it then timed out *after* posting,
+because every program under `serve` ran at the CLI's 200 ms default and no
+flag or payload key could raise it — and, tested one level further, a step that
+exceeded that budget under a service did not time out at all: it hung the
+request forever. `while (true)` in a step was a one-line denial of service.
+
+Each is fixed. `/workflow/run` reports the program's own run instead of starting
+another. `nodus serve --time-limit SECS` is the server's ceiling, a request may
+ask for less with `timeout_ms` and never for more, and a breach returns `ok:
+false`. The one place the trust store was loaded per VM — half a second on every
+runtime's first HTTP call, every server request — is once per process now. And
+the examples run, with their output in their READMEs.
+
+5.13.0 is about the gap between what something reports and what it
 actually did.
 
 `fs.ensure_dir` returned the path whether or not it made a directory — with a
