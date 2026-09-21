@@ -186,7 +186,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 
 ## nodus-sdk
 
-`C:\dev\nodus-sdk` · on PyPI · 99 tests
+`C:\dev\nodus-sdk` · on PyPI · 111 tests (0.1.3)
 
 Unified platform SDK auto-wiring the companion ecosystem.
 `pip install nodus-sdk[agent,sql,fastapi]`.
@@ -206,7 +206,20 @@ cd C:\dev\nodus-sdk && PYTHONPATH="C:/dev/Coding Language/src" python -m pytest 
 
 Its `test_version_string` asserted `0.1.0` from 2026-07-12 until 0.1.2, so the
 suite shipped one guaranteed failure for a month and the v5.0.0 Stage 6 sweep
-recorded it as a known-stale test rather than fixing it.
+recorded it as a known-stale test rather than fixing it. It pins the literal
+version, so **every release bump goes red on it once** -- 0.1.3's did.
+
+**Three bridges reported success and did nothing through 0.1.2** (fixed 0.1.3,
+2026-09-20; nodus-sdk#5, #6, #7). `create_runtime()` passed `allowed_paths=None`
+through, so the SDK's entry point had **no filesystem jail** where a bare
+`NodusRuntime()` has one; `attach_memory` set a name nothing reads and the
+router's `/memory` routes used the process-global store, so the SDK never took
+5.0.3's per-runtime isolation; the scheduler builtins scheduled `lambda: None`.
+None of its 99 tests ran a `.nd` program through a bridge -- `rt.memory_store is
+not None` was the whole memory assertion. **A bridge's test has to drive the
+guest side and assert on the host side, or the reverse**; `tests/test_bridges_
+reach_the_guest.py` is the shape. Gate 10a ran this suite green at every 5.x
+cut and could not have seen any of the three.
 
 ---
 
