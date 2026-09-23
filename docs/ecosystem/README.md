@@ -49,7 +49,7 @@ All packages are published on PyPI. Organized by build tier.
 | Package | Tests | PyPI status |
 |---------|-------|-------------|
 | [`nodus-context`](https://github.com/Masterplanner25/nodus-context) | 29 | **published** ✅ |
-| [`nodus-approvals`](https://github.com/Masterplanner25/nodus-approvals) | 32 | **published** ✅ |
+| [`nodus-approvals`](https://github.com/Masterplanner25/nodus-approvals) | 47 | **published** ✅ |
 | [`nodus-channels`](https://github.com/Masterplanner25/nodus-channels) | 24 | **published** ✅ |
 | [`nodus-llm`](https://github.com/Masterplanner25/nodus-llm) | 24 | **published** ✅ |
 | [`nodus-delivery`](https://github.com/Masterplanner25/nodus-delivery) | 27 | **published** ✅ |
