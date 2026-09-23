@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#868: a VM derived from another now inherits the host state it works for,
+  not just its authority.** A cross-process resume ran on a child VM with an
+  empty `tool_registry`, so `tool.call` inside a resumed step returned an error
+  **value** — `Tool 'x' is not registered` — which a step could return as its
+  result. The run finished `ok` with every step `completed` and the host handler
+  never called. Reported against 5.14.0 by a downstream project whose `publish`
+  step reported `published: true` with no file written.
+
+  The child was also getting a fresh `InMemoryEffectStore` in place of one
+  injected with `set_effect_store()`, so `@exactly_once` lost its durability
+  exactly where it exists to provide it: a resume in a new process.
+
+  Measured with every value set non-default, that child lost **twelve**
+  attributes, not the two reported. `HOST_STATE_ATTRIBUTES` and
+  `inherit_host_state()` now name the set once, beside the
+  `AUTHORITY_ATTRIBUTES` pair they mirror, and all four derivation sites use
+  both. The sites had four different hand-written lists: the tool-handler child
+  copied six of the module VM's seven (`session_id` was missing), the resume
+  child copied two, and the DAP evaluate VM copied none — so the debug console
+  reported a registered tool as unregistered.
+
+  **`input_fn` moved into `AUTHORITY_ATTRIBUTES`**, because `allow_input=False`
+  installs a refusing stub there and a derived VM was getting the real `input`
+  back: a guest that could not read stdin in the program could read it from a
+  resumed step.
+
+  Run budgets (`max_steps`, `deadline`) are deliberately still not inherited —
+  a partly-spent quantity is not a setting, and copying one needs its own
+  decision. Filed (open) as #873.
+
+- **#868: a module function's `agent_call` reached the process-global agent
+  registry instead of its own runtime's.** Found by asking what else had this
+  shape. `agent_registry` is read straight off the VM with no chain walk, so
+  crossing a module boundary undid the per-runtime isolation #185 added —
+  which `services/agent_runtime.py` describes as "a cross-tenant capability leak
+  rather than merely shared state". Measured with two runtimes in one process
+  and agents of the same name: the top-level call answered `TENANT`, the same
+  call inside a module function answered `GLOBAL`.
+
 ## [5.14.0] - 2026-09-18
 
 Eight release-claims probes were added for this cycle's surface — the `serve`

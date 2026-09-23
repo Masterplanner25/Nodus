@@ -867,6 +867,67 @@ AUTHORITY_ATTRIBUTES: tuple[str, ...] = (
     "capability_policy",
     "capability_floor",
     "approval_channel",
+    # #868: confinement, not wiring — `allow_input=False` installs
+    # `NodusRuntime._blocked_input` here, and a derived VM that kept the
+    # constructor default got the real `input` back. A guest that could not read
+    # stdin in the program could read it from a resumed step.
+    "input_fn",
+)
+
+
+# Host state is the other half of the same question, and it was answered
+# separately at every site (#868).
+#
+# `AUTHORITY_ATTRIBUTES` says what a derived VM may *do*. This says who it is
+# working *for*: the tool registry, the effect store, the agent registry, the
+# workflow runner. Losing one does not open the jail, it disconnects the VM from
+# the host that built it — and the failure is silent, because every consumer has
+# a plausible fallback. `tool.call` on an empty registry returns an error
+# **value** that a step can return as success; `agent_call` with no
+# `agent_registry` reaches the process-global one, which
+# `services/agent_runtime.py` calls "a cross-tenant capability leak rather than
+# merely shared state".
+#
+# Measured before the fix, with every value set non-default so an uninherited
+# attribute could not coincidentally match: `_resume_target_vm`'s child lost
+# **twelve** of these, and a module function's child VM resolved `agent_call`
+# against the process-global registry while the top-level VM resolved it against
+# the tenant's.
+#
+# Deliberately NOT here, because they are genuinely per-site rather than
+# forgotten:
+#
+# - `scheduler` — `module.py` shares the caller's (ASYNC-MOD-003, #339) because
+#   its VM is detached and discarded; a resume child drives its own flow.
+# - `builtins` — each site means something different by it: `module.py` installs
+#   the *module's* host builtins, `_resume_target_vm` back-fills the caller's.
+# - `_caller_vm` — sets up the `root_vm()` chain and feeds foreign-closure
+#   detection (#691/#696). It is not a way to inherit state: it rescues exactly
+#   the one attribute read through the chain (`tool_registry`) and none of the
+#   eleven read directly off the VM, which is why it looked like a fix for #868.
+# - run budgets (`max_steps`, `deadline`) — a partly-spent quantity, not a
+#   setting. Copying one needs its own decision; see #873.
+HOST_STATE_ATTRIBUTES: tuple[str, ...] = (
+    "event_bus",
+    "effect_store",
+    "memory_store",
+    "circuit_breakers",
+    "tool_registry",
+    # Shared with `tool_registry` on purpose: one dict guarded by two different
+    # locks is a race, so the pair travels together or neither does.
+    "_tool_registry_lock",
+    "agent_registry",
+    "workflow_runner",
+    "worker_dispatcher",
+    "budget_meters",
+    "on_error",
+    "agent_timeout_ms",
+    "coroutine_timeout_ms",
+    "persist_workflow_source",
+    "trace_errors",
+    "trace_id",
+    "session_id",
+    "execution_unit_id",
 )
 
 
@@ -882,6 +943,29 @@ def inherit_authority(child, parent) -> None:
     for attribute in AUTHORITY_ATTRIBUTES:
         if hasattr(parent, attribute):
             setattr(child, attribute, getattr(parent, attribute))
+
+
+def inherit_host_state(child, parent) -> None:
+    """Copy every host-state attribute from *parent* to *child* (#868).
+
+    The companion to :func:`inherit_authority`, and used at the same sites for
+    the same reason: the failure mode is not getting one wrong, it is forgetting
+    that a new one exists. Before this, four derivation sites carried four
+    different hand-written lists and they had drifted — the tool-handler child
+    copied six of the module VM's seven, and the resume child copied two.
+
+    A ``None`` on the parent is skipped rather than assigned. Every attribute
+    here is one whose own constructor default is either ``None`` or a usable
+    fresh object, so assigning a parent's ``None`` would at best be a no-op and
+    at worst replace a working default with one — a bare ``VM`` has no
+    ``workflow_runner`` and is *meant* to fall through to the process-global one.
+    """
+    if parent is None or child is None:
+        return
+    for attribute in HOST_STATE_ATTRIBUTES:
+        value = getattr(parent, attribute, None)
+        if value is not None:
+            setattr(child, attribute, value)
 
 
 def emit_denied(event_bus, request: CapabilityRequest, reason: str) -> None:

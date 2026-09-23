@@ -59,7 +59,7 @@ from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, dele
 from nodus.runtime.memory import rss_bytes
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
-from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority
+from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority, inherit_host_state
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
@@ -1693,9 +1693,13 @@ class VM:
         # — and none of the sandbox: `allowed_paths` went from a jail to None and
         # `allow_subprocess` from False to True.
         inherit_authority(child, self)
-        child.memory_store = self.memory_store
-        if getattr(self, "worker_dispatcher", None) is not None:
-            child.worker_dispatcher = self.worker_dispatcher
+        # #868: and the other half. This site used to copy `memory_store` and
+        # `worker_dispatcher` by hand and stop there, so the child ran with an
+        # empty `tool_registry`, a fresh `InMemoryEffectStore` in place of an
+        # injected one, and no `agent_registry` — the resumed step's
+        # `tool.call` returned an error *value* while the run reported every
+        # step completed.
+        inherit_host_state(child, self)
         for name, info in self.builtins.items():
             child.builtins.setdefault(name, info)   # carry host builtins; core already bound to child
         return child

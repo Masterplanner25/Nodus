@@ -60,7 +60,17 @@ def _jailed_parent(**overrides) -> VM:
         **overrides,
     )
     vm.capability_policy = DenyList(SUBPROCESS)
+    # #868: `input_fn` is confinement — `allow_input=False` installs a refusing
+    # stub here, and a derived VM keeping the constructor default gets the real
+    # `input` back. It has to differ from the default or the comparison below
+    # passes by both sides being `input`, which is how the six default-valued
+    # rows in the survey that found this read as "inherited".
+    vm.input_fn = _refuse_input
     return vm
+
+
+def _refuse_input(_prompt=""):
+    raise AssertionError("input is blocked on this VM")
 
 
 def _authority(vm) -> dict:
@@ -104,6 +114,19 @@ class TheAttributeListIsComplete(unittest.TestCase):
 
     def test_the_policy_itself_is_named(self):
         self.assertIn("capability_policy", AUTHORITY_ATTRIBUTES)
+
+    # closes: #868
+    def test_the_input_gate_is_named(self):
+        # Named here as well as compared in `_assert_inherited`, because that
+        # helper iterates AUTHORITY_ATTRIBUTES: deleting a name removes the
+        # propagation AND the assertion together, so the comparison alone cannot
+        # fail. Verified by deleting it — the suite stayed green until this test
+        # existed.
+        self.assertIn(
+            "input_fn", AUTHORITY_ATTRIBUTES,
+            "allow_input=False installs a refusing stub in `input_fn`; a derived "
+            "VM that does not inherit it gets the real `input` back",
+        )
 
 
 # closes: #405

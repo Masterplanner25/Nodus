@@ -328,20 +328,12 @@ def register(vm, registry) -> None:
                 )
                 # #405: see module.py — authority is not shed by crossing into
                 # a tool handler.
-                from nodus.runtime.capability import inherit_authority  # noqa: E402
+                from nodus.runtime.capability import inherit_authority, inherit_host_state  # noqa: E402
 
                 inherit_authority(child_vm, rvm)
-                child_vm.trace_errors = getattr(rvm, "trace_errors", False)
-                child_vm.trace_id = getattr(rvm, "trace_id", None)
-                child_vm.execution_unit_id = getattr(rvm, "execution_unit_id", child_vm.execution_unit_id)
-                if getattr(rvm, "event_bus", None) is not None:
-                    child_vm.event_bus = rvm.event_bus
-                if getattr(rvm, "effect_store", None) is not None:
-                    child_vm.effect_store = rvm.effect_store
-                if getattr(rvm, "memory_store", None) is not None:
-                    child_vm.memory_store = rvm.memory_store
-                if getattr(rvm, "circuit_breakers", None) is not None:
-                    child_vm.circuit_breakers = rvm.circuit_breakers
+                # #868: was six of `module.py`'s seven — `session_id` had been
+                # left off, which is the drift a shared list removes.
+                inherit_host_state(child_vm, rvm)
                 setattr(child_vm, "_caller_vm", rvm)
                 result = child_vm.run_closure(handler, [args])
             else:

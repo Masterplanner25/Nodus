@@ -234,22 +234,17 @@ class NodusModule:
         # #405: authority must not be shed by crossing into a module or a tool
         # handler. A policy that applied only to the top-level VM would be
         # bypassed by `import "std:subprocess"`, which is how everyone calls it.
-        from nodus.runtime.capability import inherit_authority  # noqa: E402
+        from nodus.runtime.capability import inherit_authority, inherit_host_state  # noqa: E402
 
         inherit_authority(vm, caller_vm)
-        if caller_vm is not None:
-            vm.trace_errors = getattr(caller_vm, "trace_errors", False)
-            vm.trace_id = getattr(caller_vm, "trace_id", None)
-            vm.session_id = getattr(caller_vm, "session_id", None)
-            vm.execution_unit_id = getattr(caller_vm, "execution_unit_id", vm.execution_unit_id)
-            if getattr(caller_vm, "event_bus", None) is not None:
-                vm.event_bus = caller_vm.event_bus
-            if getattr(caller_vm, "effect_store", None) is not None:
-                vm.effect_store = caller_vm.effect_store
-            if getattr(caller_vm, "memory_store", None) is not None:
-                vm.memory_store = caller_vm.memory_store
-            if getattr(caller_vm, "circuit_breakers", None) is not None:
-                vm.circuit_breakers = caller_vm.circuit_breakers
+        # #868: this was seven attributes copied by hand, and the set it belongs
+        # to had grown past it. `agent_registry` was the one that mattered: a
+        # module function's `agent_call` resolved against the **process-global**
+        # registry while the same call at top level resolved against the
+        # runtime's own — #185's tenant isolation, undone by crossing a module
+        # boundary. Measured, two runtimes in one process, agents of the same
+        # name: top level answered TENANT, the module function answered GLOBAL.
+        inherit_host_state(vm, caller_vm)
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
 

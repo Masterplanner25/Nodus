@@ -15,7 +15,7 @@ from nodus.runtime.debugger import Debugger, DebuggerQuit, PauseState
 from nodus.runtime.debugger import get_locals as debugger_locals
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.module_loader import ModuleLoader
-from nodus.runtime.capability import inherit_authority
+from nodus.runtime.capability import inherit_authority, inherit_host_state
 from nodus.vm.vm import VM
 
 
@@ -440,6 +440,11 @@ class DebugSession:
         # must not carry more authority than the program being debugged. It was
         # inheriting `allowed_paths` and nothing else.
         inherit_authority(child_vm, vm)
+        # #868: and not *different wiring* either, or the console answers a
+        # question about a program other than the one at the breakpoint. This
+        # site carried no host state at all, so evaluating `tool.call("x", {})`
+        # reported the tool unregistered however the program was configured.
+        inherit_host_state(child_vm, vm)
         try:
             child_vm.run()
             result_val = child_vm.globals.get("__eval_result__")
