@@ -1219,13 +1219,29 @@ class WorkflowFrameworkRunner:
             # re-enters the waiting step, which hits its `workflow_wait` again --
             # the run goes straight back to `waiting` and the result looks
             # healthy, so a caller checking for an error sees success while
-            # nothing happened. With a payload it is worse: the rollback re-arms
-            # the wait and the payload is silently discarded (a wait is a
-            # sentinel the engine pauses on; nothing consults the pending payload
-            # when a re-run step re-arms it). The call that advances a waiting
-            # run delivers a payload *without* a checkpoint. Refuse both no-op
-            # combinations with the real reason, the way #399 and #425 replaced
-            # misleading answers on this same path.
+            # nothing happened. That is a real no-op and is still refused.
+            #
+            # #870: but the same refusal covered `checkpoint` **with** a payload,
+            # on the stated grounds that "the payload is silently discarded". It
+            # is not, and was not: the payload reaches
+            # `workflow_resume_payload()` in the replayed step. What it does not
+            # do is *satisfy the wait* -- the replay re-arms it -- which is a
+            # different thing and is exactly what a reviewer rejecting a draft
+            # wants: replay from before the draft with the feedback, then park
+            # for approval again.
+            #
+            # Measured on 4.0.8, where the spelling worked, and on 5.14.0 through
+            # `event_type=` (which skips this branch and always has), the run
+            # replays with the payload visible, post-wait steps do NOT fire, and
+            # the run re-parks. So #482 removed a spelling and left the
+            # capability reachable only by passing a *verification* argument --
+            # an accident, not a design. The two-phase workaround people found
+            # instead is worse: it takes two calls and runs every post-wait step,
+            # so a side-effecting step fires on a rejection unless it gates.
+            #
+            # The neighbouring mistakes are already refused elsewhere and do not
+            # need this branch: a checkpoint the run has not reached, and a
+            # typo'd one, both fail with "Checkpoint not found".
             #
             # "Genuinely" is the persisted graph state agreeing the run is
             # waiting. A record marked waiting administratively
@@ -1234,6 +1250,7 @@ class WorkflowFrameworkRunner:
             # doing so.
             if (
                 checkpoint is not None
+                and resume_payload is None
                 and event_type is None
                 and record is not None
                 and record.status == RUN_STATUS_WAITING
@@ -1241,22 +1258,15 @@ class WorkflowFrameworkRunner:
                 and state.get("status") == "waiting"
             ):
                 wait_event = record.wait.event_type if record.wait is not None else None
-                if resume_payload is None:
-                    detail = (
-                        f"pass a payload to satisfy it -- "
-                        f"resume_workflow(graph_id, {{...}}) -- and the run "
-                        f"will advance. Resuming from checkpoint "
-                        f"'{checkpoint}' alone re-enters the waiting step, "
-                        f"which waits again."
-                    )
-                else:
-                    detail = (
-                        f"drop the checkpoint argument -- "
-                        f"resume_workflow(graph_id, {{...}}) -- and the payload "
-                        f"will satisfy it. Rolling back to checkpoint "
-                        f"'{checkpoint}' re-enters the waiting step, which "
-                        f"re-arms the wait and discards the payload."
-                    )
+                detail = (
+                    f"pass a payload to satisfy it -- "
+                    f"resume_workflow(graph_id, {{...}}) -- and the run "
+                    f"will advance. Resuming from checkpoint "
+                    f"'{checkpoint}' alone re-enters the waiting step, "
+                    f"which waits again. To reject and replay instead, pass "
+                    f"the feedback with the checkpoint -- "
+                    f"resume_workflow(graph_id, '{checkpoint}', {{...}})."
+                )
                 return {
                     "ok": False,
                     "error": (
