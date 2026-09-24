@@ -734,18 +734,72 @@ def probe_topology_validation():
     return "matching shape passes; a drifted one names the real cause, not a cycle"
 
 
-@probe("5.4.0: a checkpoint resume of a waiting run is refused")
+@probe("5.4.0: a checkpoint resume of a waiting run is refused when it would no-op")
 def probe_waiting_resume_refused():
     from nodus_lang_workflow import runner as runner_module
 
     source = inspect_source(runner_module.WorkflowFrameworkRunner.resume_workflow)
     assert "waiting_run_checkpoint_resume" in source, "the refusal is gone"
-    assert "discards the payload" in source, "the payload-eating case is unguarded"
     assert 'state.get("status") == "waiting"' in source, (
         "the refusal no longer consults the persisted state, so a stale "
         "administrative wait would be refused"
     )
-    return "refused on genuinely-waiting runs only, both argument shapes"
+    # #870: the refusal is scoped to the argument shape that really does
+    # nothing. It used to cover `checkpoint + payload` too, on the stated
+    # grounds that the rollback "discards the payload" -- which it does not: the
+    # payload reaches the replayed step, it simply does not satisfy the wait.
+    # This probe asserted that false sentence was PRESENT in the source, so the
+    # premise was pinned in three places at once (changelog, error message,
+    # here).
+    assert "and resume_payload is None" in source, (
+        "the refusal is not scoped to the no-payload case, so reject-and-revise "
+        "is blocked again (#870)"
+    )
+    assert "discards the payload" not in source, (
+        "the refusal still claims the rollback discards the payload; it reaches "
+        "the replayed step (#870)"
+    )
+    return "refused only with no payload; checkpoint+payload replays (#870)"
+
+
+@probe("5.15.0: rejecting a draft replays it with the feedback (#870)")
+def probe_reject_and_revise():
+    # The behavioural half. The probe above reads the source, and a source
+    # assertion cannot tell you the capability works -- which is how the false
+    # "discards the payload" premise survived: it was asserted as a *string*.
+    source = (
+        "workflow w {\n"
+        '    step draft { checkpoint "before_draft"; '
+        "let p = workflow_resume_payload(); return {\"fb\": str(p)} }\n"
+        '    step gate after draft { return workflow_wait("approve", "k1", {}) }\n'
+        '    step publish after gate { return {"published": true} }\n'
+        "}\n"
+        "fn main() {\n"
+        "    let r = run_workflow(w)\n"
+        "    let g = r[\"graph_id\"]\n"
+        '    let back = resume_workflow(g, "before_draft", {"feedback": "redo"})\n'
+        '    let st = back["status"]\n'
+        '    let steps = back["steps"]\n'
+        '    let d = steps["draft"]\n'
+        '    print("STATUS=\\(st) DRAFT=\\(d)")\n'
+        '    let done = resume_workflow(g, {"approved": true})\n'
+        '    let ds = done["steps"]\n'
+        '    let pub = ds["publish"]\n'
+        '    print("PUB=\\(pub)")\n'
+        "}"
+    )
+    out = run_nd(source)
+    assert out.get("ok"), f"reject-and-revise failed: {out.get('error')}"
+    text = out.get("stdout") or ""
+    assert "STATUS=waiting" in text, f"the run did not park again: {text[:200]}"
+    assert "redo" in text, (
+        f"the replayed step did not see the feedback -- the exact claim #482 "
+        f"was refused on: {text[:200]}"
+    )
+    assert "PUB=" in text and "published" in text, (
+        f"the run could not be approved after a rejection: {text[:200]}"
+    )
+    return "replays with the feedback, parks again, then approves"
 
 
 @probe("5.4.0: a persist failure names the cell, and durable:false protects it")
@@ -3243,6 +3297,7 @@ def main() -> int:
     probe_graph_does_not_execute(args.repo)
     probe_topology_validation()
     probe_waiting_resume_refused()
+    probe_reject_and_revise()
     probe_persist_naming()
     probe_goal_waypoint()
     probe_check_enters_steps()
