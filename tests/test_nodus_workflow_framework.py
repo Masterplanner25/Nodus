@@ -167,31 +167,90 @@ class SQLiteWorkflowStoreTests(unittest.TestCase):
 class LocalWorkflowStoreScanTests(unittest.TestCase):
     """#102: LocalWorkflowStore.list_runs() must skip files older than terminal_max_age_days."""
 
-    def test_old_files_are_excluded_from_list_runs(self):
-        """Files not modified within terminal_max_age_days must not appear in list_runs."""
+    def _age(self, store, run_id, days=2):
+        path = store._run_path(run_id)
+        when = time.time() - days * 86_400
+        os.utime(path, (when, when))
+
+    # closes: #869
+    def test_old_finished_runs_are_excluded_from_list_runs(self):
+        """An old **terminal** run is trimmed from list_runs. #102's intent.
+
+        This test used to create the old run with `create_run`, which leaves it
+        `pending`, and assert it was skipped — so it pinned the #869 defect
+        rather than #102's feature. The bound is on finished history; a run that
+        has not finished is live state at any age.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            store = LocalWorkflowStore(root=td, terminal_max_age_days=1)
+            for run_id in ("new-run", "old-run"):
+                store.create_run(
+                    run_id=run_id,
+                    graph_id=run_id,
+                    workflow_name="demo",
+                    execution_kind="workflow",
+                )
+            record = store.get_run("old-run")
+            record.status = "completed"
+            store.restore_run(record)
+            self._age(store, "old-run")
+
+            run_ids = {r.run_id for r in store.list_runs()}
+            self.assertIn("new-run", run_ids)
+            self.assertNotIn(
+                "old-run", run_ids,
+                "a finished run older than terminal_max_age_days must be trimmed",
+            )
+
+    # closes: #869
+    def test_an_old_waiting_run_is_never_excluded(self):
+        """The defect: a parked run aged out of existence.
+
+        `get_run` still returned it the whole time, so the run was there — it had
+        simply stopped being *findable*, including by the sweep that would have
+        resumed it and the migration that would have carried it.
+        """
         with tempfile.TemporaryDirectory() as td:
             store = LocalWorkflowStore(root=td, terminal_max_age_days=1)
             store.create_run(
-                run_id="new-run",
-                graph_id="new-run",
+                run_id="parked",
+                graph_id="parked",
                 workflow_name="demo",
                 execution_kind="workflow",
             )
-            store.create_run(
-                run_id="old-run",
-                graph_id="old-run",
-                workflow_name="demo",
-                execution_kind="workflow",
-            )
-            # Backdate the old-run file to 2+ days ago
-            old_path = store._run_path("old-run")
-            old_mtime = time.time() - 2 * 86_400
-            os.utime(old_path, (old_mtime, old_mtime))
+            record = store.get_run("parked")
+            record.status = "waiting"
+            store.restore_run(record)
+            self._age(store, "parked", days=40)
 
-            runs = store.list_runs()
-            run_ids = {r.run_id for r in runs}
-            self.assertIn("new-run", run_ids)
-            self.assertNotIn("old-run", run_ids, "Files older than terminal_max_age_days must be skipped")
+            self.assertIn(
+                "parked", {r.run_id for r in store.list_runs()},
+                "a waiting run aged out of list_runs",
+            )
+            self.assertIn(
+                "parked", {r.run_id for r in store.list_rehydratable_runs()},
+                "a waiting run aged out of the adoption sweep's view",
+            )
+            self.assertEqual(store.get_run("parked").status, "waiting")
+
+    # closes: #869
+    def test_list_all_runs_ignores_the_age_bound_entirely(self):
+        """What a migration enumerates: everything, finished or not."""
+        with tempfile.TemporaryDirectory() as td:
+            store = LocalWorkflowStore(root=td, terminal_max_age_days=1)
+            store.create_run(
+                run_id="done",
+                graph_id="done",
+                workflow_name="demo",
+                execution_kind="workflow",
+            )
+            record = store.get_run("done")
+            record.status = "completed"
+            store.restore_run(record)
+            self._age(store, "done")
+
+            self.assertNotIn("done", {r.run_id for r in store.list_runs()})
+            self.assertIn("done", {r.run_id for r in store.list_all_runs()})
 
     def test_zero_max_age_disables_filtering(self):
         """terminal_max_age_days=0 must disable mtime filtering (all files returned)."""
