@@ -4,6 +4,33 @@
 
 ### Fixes
 
+- **#870: rejecting a draft and replaying it with feedback works again.**
+  `resume_workflow(id, "before_draft", {"feedback": "..."})` on a waiting run
+  replays from that checkpoint with the payload visible to
+  `workflow_resume_payload()`, and parks at the wait again. Post-wait steps do
+  **not** run, so a side-effecting `publish` cannot fire on a rejection.
+
+  #482 (5.5.0) refused it, on the stated grounds that *"the rollback re-armed
+  the wait and the payload was silently discarded"*. The payload was not
+  discarded — measured on 4.0.8, where the spelling worked, it reached the
+  replayed step. What it did not do was **satisfy the wait**, which is a
+  different thing and is exactly what a reviewer rejecting a draft wants. The
+  5.5.0 entry is annotated rather than rewritten, since it is what that release
+  shipped.
+
+  The capability was never actually removed, only its spelling: the refusal's
+  condition includes `event_type is None`, so passing that **verification**
+  argument to the Python runner has skipped it the whole time. Relying on an
+  accident was the state of the art here, and the two-phase workaround people
+  found instead is worse — two calls, and it runs every post-wait step.
+
+  **`resume_workflow(id, "checkpoint")` with no payload is still refused**, and
+  that refusal is what #482 earned: a rollback re-enters the waiting step, which
+  waits again, so nothing changes behind a healthy-looking result. Its message
+  now names both recipes rather than only the advancing one. A checkpoint the
+  run has not reached, and a typo'd one, already failed with `Checkpoint not
+  found` and still do.
+
 - **#869: a run parked at `workflow_wait` no longer ages out of existence.**
   `LocalWorkflowStore` skipped any file whose mtime was older than
   `terminal_max_age_days` (default 30) *before opening it* — the only way to
@@ -5034,6 +5061,14 @@ odus-a2a-wire` "the local worktree" of the wire repo. That directory's
   waiting" means the persisted graph state agrees: a record marked waiting
   administratively over a graph that ran past the wait (a stale registration)
   still resumes and clears the mark.
+
+  > **Corrected by #870.** "The payload was silently discarded" is wrong, and
+  > the error message repeated it. The payload *did* reach
+  > `workflow_resume_payload()` in the replayed step; what it did not do was
+  > **satisfy the wait**. On that false premise the refusal also covered
+  > `checkpoint + payload`, which is reject-and-revise and works — so this
+  > entry describes removing a no-op and in fact removed a working pattern too.
+  > Left as written, with this note, because it is what 5.5.0 shipped.
 
 - **#486: resuming from a mid-step checkpoint no longer double-counts folded
   state, and the re-entry rule is documented.** A resume re-enters the step

@@ -176,12 +176,45 @@ already written changes. Declaring no schema accepts anything, as before.
 
 > **A waiting run is advanced by a payload, not by a checkpoint.**
 > `resume_workflow(id, {payload})` satisfies the wait and the run moves on.
-> `resume_workflow(id, "checkpoint")` on a waiting run is **refused** with an
-> error naming the event the run is waiting on (#482) — a checkpoint rollback
-> re-enters the waiting step from the top, which re-arms the wait, so it could
-> only ever no-op (and with a payload alongside, discard it). Before the
-> refusal existed, that call returned a healthy-looking `"status": "waiting"`
-> result and silently did nothing.
+> `resume_workflow(id, "checkpoint")` — a checkpoint *alone* — is **refused**
+> (#482): a rollback re-enters the waiting step from the top, which re-arms the
+> wait, so the call could only ever no-op. Before the refusal existed it
+> returned a healthy-looking `"status": "waiting"` result and silently did
+> nothing.
+
+### Rejecting a draft: replay with feedback
+
+The other thing a reviewer wants is not "advance" but **"go back and try
+again"**. Pass the checkpoint *and* a payload:
+
+```python
+resume_nd(graph_id, "before_draft", {"feedback": "too formal, try again"})
+```
+
+The run replays from that checkpoint, the replayed step reads the feedback
+through `workflow_resume_payload()`, and the flow parks at its wait again ready
+for the next review. Post-wait steps do **not** run, so a side-effecting
+`publish` cannot fire on a rejection.
+
+The two calls answer different questions, and the checkpoint argument is what
+distinguishes them:
+
+| Call | Meaning |
+|---|---|
+| `resume_workflow(id, {...})` | approve: satisfy the wait, run the rest |
+| `resume_workflow(id, "cp", {...})` | reject: replay from `cp` with feedback, park again |
+| `resume_workflow(id, "cp")` | refused — nothing would change |
+
+A checkpoint the run has not reached yet, or a typo, fails with
+`Checkpoint not found` rather than doing something surprising.
+
+> This was refused between 5.5.0 and 5.14.0 (#870). The refusal's stated reason
+> was that the payload would be "silently discarded", which was not what
+> happened — the payload reached the replayed step; what it did not do was
+> satisfy the wait. If you are on one of those versions, the workaround is two
+> calls: satisfy the wait with a payload your post-wait steps gate on, then roll
+> back. Note that this runs every post-wait step, which is why it is a
+> workaround and not the recipe.
 
 The `gate` step is a pure orchestration step — it does nothing except park the
 flow until the external signal arrives. The `execute` step reads the payload

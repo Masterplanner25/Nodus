@@ -3,12 +3,19 @@
 `resume_workflow(id, "checkpoint")` on a waiting run used to re-enter the
 waiting step, which hit its `workflow_wait` again -- the run went straight back
 to `waiting` behind a healthy-looking result map (`ok` not false, nothing in
-`failed`, one more duplicate checkpoint entry as the only trace). With a
-payload alongside the checkpoint it was worse: the rollback re-armed the wait
-and the payload was silently discarded.
+`failed`, one more duplicate checkpoint entry as the only trace).
 
-Both combinations are refused now, naming the event the run is waiting on and
-the call that advances it. "Genuinely waiting" means the persisted graph state
+That call — a checkpoint with **no payload** — is refused now, naming the event
+the run is waiting on and both the calls that do something.
+
+**#482 also refused `checkpoint + payload`, and #870 undid that.** Its stated
+reason was that the rollback "silently discarded" the payload; it does not. The
+payload reaches `workflow_resume_payload()` in the replayed step, and what it
+does not do is *satisfy the wait* — which is precisely what rejecting a draft
+means. `test_reject_and_revise.py` covers that behaviour; this file keeps the
+refusal that earned its place.
+
+"Genuinely waiting" means the persisted graph state
 agrees -- a record marked waiting administratively over a graph that ran past
 the wait (a stale registration) still resumes and clears the mark, which
 `test_nodus_workflow_framework.py::test_resume_clears_wait_registration` pins.
@@ -78,12 +85,22 @@ class WaitingRunCheckpointResumeTests(unittest.TestCase):
         # duplicated checkpoint entry was the trace of each no-op attempt.
         self.assertNotIn("asking human...", stdout)
 
-    def test_checkpoint_with_payload_is_refused_naming_the_discard(self):
+    # closes: #870
+    def test_checkpoint_with_payload_replays_instead_of_being_refused(self):
+        """This asserted the refusal until #870, on a false premise.
+
+        #482 refused `checkpoint + payload` because it believed the rollback
+        discarded the payload. It did not — the payload reaches the replayed
+        step; what it does not do is *satisfy the wait*. That is
+        reject-and-revise, and refusing it removed a working pattern.
+        `test_reject_and_revise.py` covers the behaviour in full.
+        """
         stdout = self._resume('"started", {"reply": "eaten"}')
-        self.assertIn('"ok": false', stdout)
-        self.assertIn("discards the payload", stdout)
-        self.assertIn("drop the checkpoint argument", stdout)
-        self.assertNotIn("asking human...", stdout)
+        self.assertNotIn('"ok": false', stdout)
+        self.assertIn('"status": "waiting"', stdout)
+        # The replay really re-enters the step, so the pre-wait effect fires —
+        # unlike the refused case below, where it must not.
+        self.assertIn("asking human...", stdout)
 
     def test_payload_resume_still_advances_the_run(self):
         """Falsifiability control: the refusal must not catch the call that
