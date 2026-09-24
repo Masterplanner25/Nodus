@@ -276,7 +276,23 @@ def _atomic_write_json(path: str, data: dict) -> None:
     dirpath = os.path.dirname(path) or "."
     try:
         with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+            # #871: NOT `sort_keys=True`. This snapshot carries step results and
+            # state cells -- guest data -- and a rehydrated run has to behave
+            # like the live one it is continuing. Sorting on the way out meant a
+            # map the program built as `{web, code, data}` came back
+            # `{code, data, web}`, so anything derived from it changed across a
+            # restart: a draft, a hash, an `@exactly_once` key. That last one is
+            # how it was found -- an idempotent publish re-fired on a rehydrated
+            # replay of an identical draft.
+            #
+            # JSON objects preserve order and `json.load` round-trips it into a
+            # dict, so insertion order survives for free; sorting was the only
+            # thing destroying it. Canonical form still belongs where an
+            # *identity* is computed -- `compute_action_id` and the bytecode
+            # cache key both hash sorted payloads on purpose, and must keep
+            # doing so, because there the order of two equal maps must not
+            # change the answer.
+            json.dump(data, handle, separators=(",", ":"))
             handle.flush()
             os.fsync(handle.fileno())
     except TypeError as err:

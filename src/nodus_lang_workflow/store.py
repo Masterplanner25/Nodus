@@ -64,6 +64,30 @@ REHYDRATABLE_RUN_STATUSES = _REHYDRATABLE_RUN_STATUSES
 TERMINAL_RUN_STATUSES = _TERMINAL_RUN_STATUSES
 
 
+def _state_json(value) -> str:
+    """Serialize persisted run state. **Not** canonical form (#871).
+
+    Deliberately no `sort_keys`. These columns carry guest data -- a wait's
+    payload, and `metadata["workflow_state"]`, which is every `state` cell the
+    program wrote -- and a rehydrated run has to behave like the live one it is
+    continuing. Sorting on the way out meant a map the program built as
+    `{web, code, data}` came back `{code, data, web}`, so anything derived from
+    it differed across a restart. JSON objects preserve order and `json.load`
+    round-trips it, so nothing but the sort was destroying it.
+
+    One rule for the whole record rather than a guest-data field list: `claim`
+    and `wait` are mostly bookkeeping, but `wait` carries the guest's payload,
+    and a hand-maintained split between "may reorder" and "may not" is the kind
+    that drifts. Nothing here is content-addressed, compared as a string, or
+    indexed on, so there is nothing to trade away.
+
+    Canonical form still belongs where an **identity** is computed:
+    `compute_action_id` and the bytecode cache key both hash sorted payloads on
+    purpose, because there two equal maps must produce one answer.
+    """
+    return json.dumps(value, separators=(",", ":"))
+
+
 class WorkflowStore(ABC):
     @abstractmethod
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
@@ -291,9 +315,9 @@ def _serialize_record(record: WorkflowRunRecord) -> tuple:
         record.current_checkpoint,
         record.resume_count,
         record.last_error,
-        json.dumps(record.metadata, sort_keys=True, separators=(",", ":")),
-        json.dumps(record.claim.to_dict() if record.claim is not None else None, sort_keys=True, separators=(",", ":")),
-        json.dumps(record.wait.to_dict() if record.wait is not None else None, sort_keys=True, separators=(",", ":")),
+        _state_json(record.metadata),
+        _state_json(record.claim.to_dict() if record.claim is not None else None),
+        _state_json(record.wait.to_dict() if record.wait is not None else None),
     )
 
 
@@ -631,7 +655,8 @@ class LocalWorkflowStore(WorkflowStore):
     def _atomic_write_json(self, path: str, data: dict) -> None:
         tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
         with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, sort_keys=True, separators=(",", ":"))
+            # #871: no `sort_keys` -- see `_state_json`.
+            handle.write(_state_json(data))
             handle.flush()
             os.fsync(handle.fileno())
         self._replace_with_retry(tmp_path, path)
@@ -1299,7 +1324,7 @@ class SQLiteWorkflowStore(WorkflowStore):
                 "UPDATE workflow_runs SET updated_at = ?, claim_json = ? WHERE run_id = ?",
                 (
                     record.updated_at,
-                    json.dumps(fresh.to_dict(), sort_keys=True, separators=(",", ":")),
+                    _state_json(fresh.to_dict()),
                     run_id,
                 ),
             )

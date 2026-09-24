@@ -4,6 +4,31 @@
 
 ### Fixes
 
+- **#871: a rehydrated run sees its data in the order the live run built it.**
+  The graph snapshot and both stores persisted state with `sort_keys=True`, so a
+  map a program built as `{web, code, data}` came back `{code, data, web}` after
+  a cross-process resume. Same content, different string — so anything derived
+  from it differed across a restart: a draft, a hash, an `@exactly_once` key.
+  That last one is how it was found, an idempotent publish re-firing on a
+  rehydrated replay of an identical draft.
+
+  JSON objects preserve order and `json.load` round-trips it, so nothing but the
+  sort was destroying it. Step results and `state` cells both round-trip now, on
+  both backends.
+
+  **Canonical form is unchanged where an identity is computed.**
+  `compute_action_id` and the bytecode cache key still hash sorted payloads, and
+  must: there two equal maps built in different orders have to produce one
+  answer. The distinction is *reported* vs *compared* — persisted state is read
+  back and handed to a program, an identity is hashed — and the regression test
+  asserts both directions, so removing the sort where it is load-bearing fails
+  too.
+
+  No canonical mode was added to `std:json`. It was the alternative fix, and with
+  order round-tripping it is no longer needed for this: `@exactly_once` already
+  canonicalises internally, so a key derived from a step result is stable across
+  a restart without the caller doing anything.
+
 - **#870: rejecting a draft and replaying it with feedback works again.**
   `resume_workflow(id, "before_draft", {"feedback": "..."})` on a waiting run
   replays from that checkpoint with the payload visible to
