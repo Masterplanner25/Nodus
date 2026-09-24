@@ -999,6 +999,7 @@ class LocalWorkflowStore(WorkflowStore):
         # concerned. `nodus workflow runs` reported `waiting: 0`,
         # `list_rehydratable_runs()` never offered it to the adoption sweep,
         # `migrate-store` neither carried nor skipped it, and the #174 warning
+        # v6-flip: default-store-sqlite
         # that exists to say "these runs will be stranded at 6.0.0" went silent
         # for the one store whose runs were about to be stranded. `get_run(id)`
         # still returned it, `waiting`, the whole time.
@@ -1553,6 +1554,7 @@ def migrate_workflow_store(
     # neither carried NOR reported as skipped (`migrated=0 skipped=0 failed=0`),
     # while `_unmigrated_local_runs` counts raw files and went on naming it. That
     # is how a downstream store reached 549 warned / 114 migrated / 435
+    # v6-flip: default-store-sqlite
     # permanently stranded, with a warning that could never be cleared and
     # becomes an error at 6.0.0.
     for record in source.list_all_runs():
