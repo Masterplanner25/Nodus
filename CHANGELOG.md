@@ -4,6 +4,35 @@
 
 ### Fixes
 
+- **#869: a run parked at `workflow_wait` no longer ages out of existence.**
+  `LocalWorkflowStore` skipped any file whose mtime was older than
+  `terminal_max_age_days` (default 30) *before opening it* — the only way to
+  bound the scan, and one that cannot tell a finished run from one waiting on a
+  human. A run parked longer than the bound stopped being findable by
+  everything that could have rescued it, while `get_run(id)` returned it,
+  `waiting`, the whole time: `nodus workflow runs` reported `waiting: 0`, the
+  adoption sweep never saw it, `migrate-store` neither carried it nor reported
+  it as skipped (`migrated=0 skipped=0 failed=0`), and the #174 warning that
+  exists to say *"these runs will be stranded at 6.0.0"* went silent for
+  precisely the store whose runs were about to be stranded.
+
+  The bound now applies only to runs established as **terminal**, which means
+  reading each file: measured with every record aged out, `list_runs()` goes
+  from 1.0 ms to 53 ms at 300 runs and 34 ms to 2.2 s at 10,000 — about a 7%
+  duty cycle against the 30 s sweep at ten thousand accumulated runs.
+  `SQLiteWorkflowStore` has never filtered and has always paid the equivalent.
+
+  **`migrate_workflow_store` now enumerates `list_all_runs()`**, new and
+  concrete on `WorkflowStore` so no out-of-tree store breaks at construction
+  (#185's lesson). A migration is the one operation that must be exhaustive, and
+  it disagreed with the stranded-runs warning, which counts raw files — which is
+  how a downstream store reached 549 warned / 114 migrated / 435 permanently
+  stranded, with a warning that could never be cleared.
+
+  `AUDIT_LIMITS.md` already claimed *"a workflow that `workflow_wait()`s for
+  months will remain in waiting status indefinitely as long as the store is
+  intact and the sweeper runs."* That is true now; nothing had been checking it.
+
 - **#868: a VM derived from another now inherits the host state it works for,
   not just its authority.** A cross-process resume ran on a child VM with an
   empty `tool_registry`, so `tool.call` inside a resumed step returned an error

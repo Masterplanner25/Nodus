@@ -231,6 +231,25 @@ class WorkflowStore(ABC):
     def list_terminal_runs(self) -> list[WorkflowRunRecord]:
         raise NotImplementedError
 
+    def list_all_runs(self) -> list[WorkflowRunRecord]:
+        """Every record this store holds, with no bound applied (#869).
+
+        `list_runs()` may legitimately trim finished history — `LocalWorkflowStore`
+        drops terminal runs older than `terminal_max_age_days`. That is fine for a
+        sweep and wrong for a **migration**, which is the one operation that has to
+        be exhaustive: a run the migration does not carry is a run that does not
+        exist after the backend switch, and `_unmigrated_local_runs` counts raw
+        files, so anything skipped here is warned about forever and can never be
+        cleared.
+
+        **Concrete, not abstract**, per `list_runs_waiting_for` above: a new
+        abstract method breaks every out-of-tree store at construction, which is
+        exactly how 5.0.3 broke `nodus_sdk` (#185). The default is right for any
+        store whose `list_runs()` is already complete — which is every store here
+        except the local one.
+        """
+        return self.list_runs()
+
     def list_runs_waiting_for(
         self,
         event_type: str,
@@ -524,14 +543,37 @@ class LocalWorkflowStore(WorkflowStore):
 
     Two knobs bound it:
 
-    - ``terminal_max_age_days`` (default 30) skips files not modified in that
-      many days without parsing them. It bounds the *scan*, not the directory.
-      Note the edge: a non-terminal run left un-updated for longer is skipped
-      too, so it drops out of sweeper queries.
+    - ``terminal_max_age_days`` (default 30) drops **finished** runs not modified
+      in that many days from ``list_runs()``. It bounds the returned history, not
+      the directory and — since #869 — not the scan: a run's status is only
+      knowable by reading it, so every file is read.
+
+      Until #869 it skipped on mtime alone, before opening the file. That was the
+      scan bound, and the price was live state: a run parked at ``workflow_wait``
+      for longer than the bound vanished from every query, including the ones
+      that exist to rescue it. ``list_all_runs()`` ignores this bound entirely
+      and is what a migration uses.
     - ``max_terminal_runs`` (default ``None``, off) caps how many finished runs
       are kept, deleting the oldest first as new ones complete. Off by default
       because run records are history a host may rely on. Live runs are never
       pruned.
+
+    Measured on one Windows box with every record aged out — the worst case for
+    the change, since nothing could be skipped unread:
+
+    ===========  ==================  ==============
+    records      mtime-only (5.14)   status-aware
+    ===========  ==================  ==============
+    300          1.0 ms              53 ms
+    1,000        3.9 ms              165 ms
+    3,000        9.3 ms              627 ms
+    10,000       33.6 ms             2,194 ms
+    ===========  ==================  ==============
+
+    The auto-sweep runs every 30 s, so ten thousand accumulated runs cost roughly
+    a 7% duty cycle. ``SQLiteWorkflowStore`` has never filtered and has always
+    paid the equivalent; a store that has grown that large wants it, or wants
+    ``nodus workflow cleanup``.
 
     Use ``SQLiteWorkflowStore`` for long-lived or production deployments.
     """
@@ -679,9 +721,9 @@ class LocalWorkflowStore(WorkflowStore):
         Opt-in, and off by default: run records are a history a host may be
         relying on, and silently deleting them is not a decision this store
         should make on anyone's behalf. Age-based retention
-        (``terminal_max_age_days``) bounds the *scan* cost but not the directory,
-        so a host that keeps a store for years and wants a hard ceiling sets this
-        (#380).
+        (``terminal_max_age_days``) bounds the returned history but not the
+        directory, so a host that keeps a store for years and wants a hard
+        ceiling sets this (#380).
 
         Only terminal runs are ever removed — a waiting or retrying run is live
         state, whatever the count.
@@ -949,22 +991,48 @@ class LocalWorkflowStore(WorkflowStore):
         with self._lock:
             return self._list_runs_unlocked()
 
-    def _list_runs_unlocked(self) -> list[WorkflowRunRecord]:
+    def _list_runs_unlocked(self, *, include_aged_terminal: bool = False) -> list[WorkflowRunRecord]:
+        # #869: the age bound may only drop a run this has established is
+        # TERMINAL. It used to skip on mtime alone, before opening the file —
+        # cheaper, and it hid live state: a run parked at `workflow_wait` for
+        # longer than the bound stopped existing as far as every caller was
+        # concerned. `nodus workflow runs` reported `waiting: 0`,
+        # `list_rehydratable_runs()` never offered it to the adoption sweep,
+        # `migrate-store` neither carried nor skipped it, and the #174 warning
+        # that exists to say "these runs will be stranded at 6.0.0" went silent
+        # for the one store whose runs were about to be stranded. `get_run(id)`
+        # still returned it, `waiting`, the whole time.
+        #
+        # The status is only knowable by reading the file, so this is the cost:
+        # measured on this box with every record aged out, list_runs() goes from
+        # 1.0ms to 53ms at 300 records and 34ms to 2.2s at 10,000. Against the
+        # 30s sweep interval that is a 7% duty cycle at ten thousand runs, and
+        # `SQLiteWorkflowStore` — which never filtered, and is what the class
+        # docstring already tells a long-lived deployment to use — has always
+        # paid it. Correctness on a dev store is worth 50ms per 300 runs.
         root = self._runs_root()
         records: list[WorkflowRunRecord] = []
         cutoff_s: float | None = None
-        if self.terminal_max_age_days > 0:
+        if not include_aged_terminal and self.terminal_max_age_days > 0:
             cutoff_s = time.time() - self.terminal_max_age_days * 86_400.0
         for entry in os.scandir(root):
             if not entry.name.endswith(".json") or entry.name.endswith(".tmp"):
                 continue
-            if cutoff_s is not None and entry.stat().st_mtime < cutoff_s:
-                continue  # skip files not touched in terminal_max_age_days (old completed runs)
-            run_id = entry.name[:-5]
-            record = self._load_run_unlocked(run_id)
-            if record is not None:
-                records.append(record)
+            record = self._load_run_unlocked(entry.name[:-5])
+            if record is None:
+                continue
+            if (
+                cutoff_s is not None
+                and record.status in TERMINAL_RUN_STATUSES
+                and entry.stat().st_mtime < cutoff_s
+            ):
+                continue  # finished, and older than terminal_max_age_days
+            records.append(record)
         return _sorted_run_records(records)
+
+    def list_all_runs(self) -> list[WorkflowRunRecord]:
+        with self._lock:
+            return self._list_runs_unlocked(include_aged_terminal=True)
 
     def list_rehydratable_runs(self) -> list[WorkflowRunRecord]:
         return _rehydratable_run_records(self.list_runs())
@@ -1479,7 +1547,15 @@ def migrate_workflow_store(
     waiting: list[str] = []
     failed: list[dict[str, str]] = []
 
-    for record in source.list_runs():
+    # #869: `list_all_runs()`, not `list_runs()`. A migration is the one
+    # operation that must be exhaustive, and the local store's `list_runs()`
+    # trims finished history — so a run older than `terminal_max_age_days` was
+    # neither carried NOR reported as skipped (`migrated=0 skipped=0 failed=0`),
+    # while `_unmigrated_local_runs` counts raw files and went on naming it. That
+    # is how a downstream store reached 549 warned / 114 migrated / 435
+    # permanently stranded, with a warning that could never be cleared and
+    # becomes an error at 6.0.0.
+    for record in source.list_all_runs():
         run_id = record.run_id
         try:
             existing = target.get_run(run_id)
