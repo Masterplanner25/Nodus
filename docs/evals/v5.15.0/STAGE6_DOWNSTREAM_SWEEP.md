@@ -91,8 +91,8 @@ python -m tools.nodus_gate.cli --consumers
 | consumer | tracks | state |
 |---|---|---|
 | nodus-vscode (0.1.5) | `keywords` | **in step** — this release adds no keyword |
-| nodus-run-action (v1.0.15) | `nodus_version` | **needs republish** — 5.14.0 → 5.15.0 |
-| nodus-wiki (69300aa) | `nodus_version` | **needs republish** — 5.14.0 → 5.15.0 |
+| nodus-run-action (**v1.0.16**) | `nodus_version` | **republished** |
+| nodus-wiki (**b9550c2**) | `nodus_version` | **republished** |
 
 Both stale consumers track `nodus_version`, so they go stale at *every* bump by
 construction. That is the design and not a nuisance: a wiki nobody has looked at
@@ -103,9 +103,52 @@ breaks embedders — with 1 of its 26 pages mentioning 5.x at all.
 `nodus-vscode` is genuinely in step: it tracks the keyword set, and 5.15.0 adds
 no keyword. Its fingerprint is unchanged, so no VSIX is owed.
 
-**Both republishes are still owed.** Their flags stay set until the work is done
-— *a flag cleared before the work is done is worse than no flag* — and
-`fingerprint`/`published` move in the same commit as the republish.
+**Both are republished, and the flags were cleared only afterwards** —
+`fingerprint` and `published` move in this same commit, because a flag cleared
+before the work is done is worse than no flag. `--consumers --strict` now reports
+**3/3 in step**.
+
+### nodus-run-action v1.0.16
+
+The two pinned `version:` examples moved to 5.15.0 — the pin is what a new user
+copies, so a stale one hands them an old runtime.
+
+It also surfaced something the fingerprint does not track: **the floating `v1`
+tag had not moved since the 5.9.0 cycle**, six releases, while the README tells
+everyone to use `@v1`. Checked before moving it rather than assumed —
+`git diff v1 HEAD` touches `README.md` only and `action.yml` is byte-identical,
+so no consumer's behaviour changes and what `@v1` was shipping was a README
+pinning 5.9.0. Moved to the new commit.
+
+### nodus-wiki b9550c2
+
+Four currency banners, plus two the version fingerprint caught only indirectly:
+
+- **`_Sidebar.md` said `## Nodus v5.12`** — stale by three releases, and
+  invisible to a grep for the *current* version, which is exactly why the gate
+  tracks a fingerprint rather than scanning for a string.
+- **`Security.md`'s supported-versions table named v5.13.x as latest** — stale by
+  two. On a security page that is the kind of staleness that actively misinforms.
+
+Content, per the convention that each release's wiki commit carries the thing a
+production reader needs: a Security paragraph on #873 (a resume inheriting no
+bounds) and #868 (the cross-tenant agent-registry leak through module
+functions), and the **reject-and-revise recipe** on the Workflows page, which had
+documented `resume_workflow(id, "checkpoint")` as though #482 had never refused
+the payload form.
+
+**The two `Since v5.14.0 …` sentences on Security were deliberately left alone.**
+They are *as of* claims — they say when something arrived and stay true — and
+bumping them would make the page lie about which release introduced the serve
+budget. Same distinction `tools/version_claims.json` encodes upstream.
+
+`Embedding-API.md` was checked against the real constructor rather than trusted:
+**27 documented, 27 in the signature**, all three capability flags present. No
+change needed.
+
+Every claim and the code example on the Workflows page were run against the
+**published** 5.15.0 before the push. That wiki has no PR and no CI — a push goes
+straight to the reader — so nothing else would have checked them.
 
 ## 4. Work left behind in a checkout
 
@@ -121,7 +164,7 @@ decision above.
 |---|---|
 | ranges admit 5.15.0 | **8/8 yes** |
 | companions drifted | **1 — nodus-mcp, intended, needs 0.1.5** |
-| non-PyPI consumers stale | **2 — nodus-run-action, nodus-wiki** |
+| non-PyPI consumers stale | **0 — both republished, 3/3 in step** |
 | work left in a checkout | none uncommitted |
 
 Two tooling fixes landed as part of this sweep: the `nodus-a2a-wire` path in
