@@ -57,7 +57,13 @@ COMPANIONS: dict[str, tuple[str, str]] = {
     # #477: published 2026-08-26. Module is `nodus_a2a_wire`, deliberately NOT
     # `nodus_a2a` — the coordinator above ships that one, and both distributions
     # writing it clobbered each other.
-    "nodus-a2a-wire": (r"C:\codev\a2a-wire-pub", "src/nodus_a2a_wire"),
+    # Moved from `C:\codev` to `C:\dev` on 2026-09-25. This path is a SECOND
+    # copy of a question `tools/nodus_lang_dependents.json` also answers, and the
+    # two drifted the moment the directory moved: Gate 10a exited 2 on the stale
+    # path there and was fixed, and this sweep still skipped. #810 unified the
+    # *membership* lists and left the paths duplicated -- so a checkout that
+    # moves still has to be corrected twice.
+    "nodus-a2a-wire": (r"C:\dev\a2a-wire-pub", "src/nodus_a2a_wire"),
     "nodus-flow": (r"C:\dev\nodus-workflow", "nodus_flow"),
     # #93: published 2026-08-30, the first companion whose floor required an
     # unreleased nodus-lang. Added here in the publishing commit -- the
