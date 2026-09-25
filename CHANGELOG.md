@@ -4,6 +4,34 @@
 
 ### Changed
 
+- **#875: `max_terminal_runs` deletes the runs it was always documented to
+  delete.** It is described as the hard ceiling on a store's size — *"a host
+  that keeps a store for years and wants a hard ceiling sets this"* — and it was
+  not one. `_prune_terminal_runs` chose what to remove from the age-bounded
+  listing, which drops terminal runs older than `terminal_max_age_days`, and
+  terminal is exactly what it deletes. So the only records it could see were the
+  ones it was least meant to remove. Measured: a ceiling of 2, six finished runs
+  with four aged past the bound, left **6** files on disk and the four survivors
+  were the four oldest — the exact inverse of the intent.
+
+  **This deletes strictly more, so read it as a behaviour change and give it a
+  "not additive" row at release.** It is opt-in — `max_terminal_runs` defaults
+  to `None` and an unset cap still deletes nothing — so only a host that asked
+  for a ceiling is affected, and it now gets the ceiling it asked for. A host
+  relying on the accidental retention of old records should unset the cap.
+
+  **Live runs are untouched, at any age.** That guarantee is the
+  `status in TERMINAL_RUN_STATUSES` filter and does not depend on which listing
+  feeds it; `waiting`, `running`, `pending` and `retry_scheduled` all survive
+  being the oldest records in the store, which the regression test asserts with
+  a control proving finished runs are pruned in the same call.
+
+  Costs no extra I/O: since #869 the listing reads every file anyway, because a
+  run's status is only knowable by loading it. What it adds is materialising the
+  records the bound used to discard after paying for them — 53 ms to 65 ms at
+  400 aged records — and pruning shrinks the directory, so it is self-limiting
+  in a way the un-pruned case never was.
+
 - **#873: a resume can no longer exceed the budget the host set on the caller.**
   `_resume_target_vm` builds a child VM when a resume needs a rebuild (#328), and
   that child was given no bounds at all. Measured with every bound set

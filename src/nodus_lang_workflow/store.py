@@ -751,14 +751,36 @@ class LocalWorkflowStore(WorkflowStore):
         ceiling sets this (#380).
 
         Only terminal runs are ever removed — a waiting or retrying run is live
-        state, whatever the count.
+        state, whatever the count. That guarantee is the `status in
+        TERMINAL_RUN_STATUSES` filter below and holds regardless of which
+        listing feeds it.
+
+        **`include_aged_terminal=True`, or the ceiling is not a ceiling (#875).**
+        This drew from the age-bounded listing, which drops terminal runs older
+        than `terminal_max_age_days` — and terminal is exactly what this
+        deletes. So the runs it could see were the ones it was least meant to
+        remove, and the oldest history accumulated forever: measured, a ceiling
+        of 2 left **6** files on disk after six finished runs, and the four
+        survivors were the four oldest.
+
+        It costs little, and not what it looks like. Since #869
+        `_list_runs_unlocked` reads every file anyway — a run's status is only
+        knowable by loading it — so the flag adds **no I/O**; what it adds is
+        materialising and sorting the records the age bound used to discard
+        after paying for them. Measured at 400 aged terminal records: 53 ms
+        without, 65 ms with. And pruning shrinks the directory, so it is
+        self-limiting after the first pass, which the un-pruned case never was.
         """
         limit = self.max_terminal_runs
         if limit is None or limit < 0:
             return
         with self._lock:
             terminal = sorted(
-                (r for r in self._list_runs_unlocked() if r.status in TERMINAL_RUN_STATUSES),
+                (
+                    r
+                    for r in self._list_runs_unlocked(include_aged_terminal=True)
+                    if r.status in TERMINAL_RUN_STATUSES
+                ),
                 key=lambda r: (r.updated_at or 0, r.run_id),
             )
             for stale in terminal[: max(0, len(terminal) - limit)]:
