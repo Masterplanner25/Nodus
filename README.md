@@ -47,7 +47,37 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.14.0 is about the paths nothing had ever walked.
+**Recent:** 5.15.0 is about what a run loses when it stops and starts again.
+
+A workflow that parks at `workflow_wait` and resumes in another process crosses a
+boundary, and on the far side of it the runtime had been quietly dropping things.
+The resumed steps ran on a VM that had not been given the host's tool registry,
+so `tool.call` returned an error *value* a step could hand back as its result —
+a run finished reporting every step complete while the handler was never called.
+Twelve attributes were being lost there, not one: the injected effect store, so
+`@exactly_once` lost durability exactly where it exists to provide it; the
+tenant's agent registry; and every bound the host had set, so a guest escaped its
+instruction budget and its deadline by parking and resuming. Data came back
+reordered, because state was persisted with sorted keys, and anything derived
+from a step's result — a draft, a hash, an idempotency key — differed after a
+restart.
+
+The run could also stop existing. A record parked longer than the store's
+30-day scan bound was skipped before the file was opened, and the bound could not
+tell a finished run from one waiting on a human. It vanished from `nodus workflow
+runs`, from the sweep that would have resumed it, from the migration that would
+have carried it, and from the warning whose entire job is to say *these runs will
+be stranded*. And `resume_workflow(id, "checkpoint", {feedback})` — reject a
+draft, replay it with a comment — had been refused since 5.5.0 on the stated
+grounds that the payload was discarded. It was not; it reached the replayed step.
+
+Each is fixed, and what a derived VM inherits is now named once rather than
+hand-copied at four sites. Every one of these was reported by a project building
+on Nodus, which is the part worth saying out loud: they were invisible here
+because the suite, the gates and the release probes all exercise a program that
+runs start to finish.
+
+5.14.0 is about the paths nothing had ever walked.
 
 Two example directories in this repo had not been executed end to end since
 they were written, and each was standing on a runtime defect. A judge-panel

@@ -3190,6 +3190,196 @@ def probe_no_stale_5_13_current(repo: Path):
     return "no document still calls 5.13.0 the current release"
 
 
+
+@probe("5.15.0: a resumed step reaches the host's tool handler")
+def probe_resume_reaches_host_tool():
+    # The reported symptom: `tool.call` in a resumed step returned an error
+    # VALUE that a step could hand back as its result, so the run finished
+    # reporting every step complete while the handler was never called.
+    from nodus.runtime.embedding import NodusRuntime
+
+    source = (
+        'import "std:tool" as tool\n'
+        "workflow w {\n"
+        '    step a { return workflow_wait("go", "k1", {}) }\n'
+        "    step b after a {\n"
+        '        let r = tool.call("host.echo", {"x": "hi"})\n'
+        '        return {"kind": type(r)}\n'
+        "    }\n"
+        "}\n"
+    )
+    calls: list = []
+
+    def runtime():
+        rt = NodusRuntime(timeout_ms=None, max_steps=None)
+        rt.tool_registry.register({
+            "name": "host.echo", "description": "echo", "schema": {},
+            "handler": lambda args: calls.append(args) or {"echo": args},
+        })
+        return rt
+
+    started = runtime()
+    out = started.run_source(source + (
+        'fn main() {\n'
+        '    let r = run_workflow(w)\n'
+        '    let g = r["graph_id"]\n'
+        '    print("GID=\\(g)")\n'
+        "}\n"
+    ))
+    assert out.get("ok"), f"park failed: {out.get('error')}"
+    graph_id = (out.get("stdout") or "").split("GID=")[1].split()[0]
+
+    resumer = runtime()
+    resumer.run_source(source)
+    vm = resumer._get_active_vm()
+    result = resumer._to_host_value(
+        vm.builtin_resume_workflow(graph_id, None, {"ok": True}))
+    kind = result["steps"]["b"]["kind"]
+    assert kind == "record", f"tool.call in a resumed step returned {kind!r}"
+    assert len(calls) == 1, f"the host handler ran {len(calls)} times, expected 1"
+    return "the resumed step's tool.call reached the handler and returned a record"
+
+
+@probe("5.15.0: a parked run older than the store's scan bound is still findable")
+def probe_parked_run_survives_age_bound():
+    import tempfile
+    import time as _time
+
+    from nodus_lang_workflow.store import LocalWorkflowStore
+
+    with tempfile.TemporaryDirectory() as root:
+        store = LocalWorkflowStore(root=root)
+        store.create_run(run_id="parked", graph_id="parked",
+                         workflow_name="demo", execution_kind="workflow")
+        record = store.get_run("parked")
+        record.status = "waiting"
+        store.restore_run(record)
+        old = _time.time() - 40 * 86400
+        os.utime(store._run_path("parked"), (old, old))
+
+        listed = {r.run_id for r in store.list_runs()}
+        assert "parked" in listed, "a waiting run aged out of list_runs"
+        sweepable = {r.run_id for r in store.list_rehydratable_runs()}
+        assert "parked" in sweepable, "a waiting run aged out of the adoption sweep"
+        assert "parked" in {r.run_id for r in store.list_all_runs()}
+    return "a 40-day-old waiting run is listed, sweepable and migratable"
+
+
+@probe("5.15.0: a resume inherits the caller's bounds")
+def probe_resume_inherits_bounds():
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.vm.vm import VM
+
+    source = (
+        "workflow w {\n"
+        '    step a { return workflow_wait("go", "k1", {}) }\n'
+        '    step b after a { return {"ok": true} }\n'
+        "}\n"
+    )
+    rt = NodusRuntime(timeout_ms=None, max_steps=None)
+    out = rt.run_source(source + (
+        'fn main() {\n'
+        '    let r = run_workflow(w)\n'
+        '    let g = r["graph_id"]\n'
+        '    print("GID=\\(g)")\n'
+        "}\n"
+    ))
+    assert out.get("ok"), f"park failed: {out.get('error')}"
+    graph_id = (out.get("stdout") or "").split("GID=")[1].split()[0]
+
+    parent = NodusRuntime(timeout_ms=None, max_steps=None)
+    parent.run_source(source)
+    vm = parent._get_active_vm()
+    vm.max_steps = 1_000_000
+    vm.deadline = 1e18
+    vm.max_frames = 4321
+    vm.max_memory_bytes = 999_999_999
+    child = vm._resume_target_vm(graph_id)
+    assert child is not vm, "expected a derived VM for this case"
+
+    assert child.deadline == 1e18, "the caller's deadline was not inherited"
+    assert child.max_frames == 4321, (
+        f"the frame cap reverted to {child.max_frames} (default is "
+        f"{VM([], {}).max_frames})"
+    )
+    assert child.max_memory_bytes == 999_999_999, "the memory ceiling was dropped"
+    assert child.max_steps == 1_000_000 - vm.instructions_executed, (
+        f"the step budget is {child.max_steps}, not the caller's remainder"
+    )
+    return "deadline, frame cap and memory ceiling carried; steps are the remainder"
+
+
+@probe("5.15.0: the terminal record cap can see the records it deletes")
+def probe_terminal_cap_sees_aged_records():
+    import tempfile
+    import time as _time
+
+    from nodus_lang_workflow.store import LocalWorkflowStore
+
+    with tempfile.TemporaryDirectory() as root:
+        store = LocalWorkflowStore(root=root, max_terminal_runs=2)
+        for i in range(6):
+            rid = f"r{i}"
+            store.create_run(run_id=rid, graph_id=rid, workflow_name="demo",
+                             execution_kind="workflow")
+            rec = store.get_run(rid)
+            rec.status = "completed"
+            store.restore_run(rec)
+            store.save_run(store.get_run(rid))
+        # Aged only now: `save_run` rewrites the file and would reset the mtime.
+        old = _time.time() - 40 * 86400
+        runs_dir = os.path.join(root, "runs")
+        for name in os.listdir(runs_dir):
+            os.utime(os.path.join(runs_dir, name), (old, old))
+        # A fresh record triggers the prune without un-ageing the six.
+        store.create_run(run_id="trigger", graph_id="trigger",
+                         workflow_name="demo", execution_kind="workflow")
+        rec = store.get_run("trigger")
+        rec.status = "completed"
+        store.restore_run(rec)
+        store.save_run(store.get_run("trigger"))
+
+        remaining = [n for n in os.listdir(runs_dir) if n.endswith(".json")]
+        assert len(remaining) == 2, (
+            f"max_terminal_runs=2 left {len(remaining)} files: {sorted(remaining)}"
+        )
+    return "a cap of 2 leaves 2 files, aged records included"
+
+
+@probe("README names the 5.15.0 surface")
+def probe_readme_names_515_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [
+        n for n in ("tool registry", "@exactly_once", "agent registry",
+                    "workflow_wait", "nodus workflow")
+        if n not in text
+    ]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the resume-boundary surface appears in the README"
+
+
+@probe("no stale '5.14.0 is current' claim survives")
+def probe_no_stale_5_14_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.14\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.14\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.14.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.14.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -3418,6 +3608,12 @@ def main() -> int:
     probe_workflow_run_time_limit_units()
     probe_readme_names_514_surface(args.repo)
     probe_no_stale_5_13_current(args.repo)
+    probe_resume_reaches_host_tool()
+    probe_parked_run_survives_age_bound()
+    probe_resume_inherits_bounds()
+    probe_terminal_cap_sees_aged_records()
+    probe_readme_names_515_surface(args.repo)
+    probe_no_stale_5_14_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

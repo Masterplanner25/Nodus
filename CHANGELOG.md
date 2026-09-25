@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-09-25
+
 ### Changed
 
 - **#875: `max_terminal_runs` deletes the runs it was always documented to
