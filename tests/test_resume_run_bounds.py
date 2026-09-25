@@ -60,12 +60,38 @@ workflow w {
 
 
 class _Harness(unittest.TestCase):
+    """Cleans the process-global graph registry, per the `test_checkpoints` convention.
+
+    These tests stop steps mid-body by design — that is what a budget doing its
+    job looks like — and a step killed before it returns never reaches
+    `_end_step_writes`, so it leaves an **open step-write record** in
+    `task_graph._GRAPH_REGISTRY`.
+
+    `test_workflow_step_writes.ExitPathTests` scans *every* graph in that registry
+    and fails if any record is left open. Under `pytest` per-file that never
+    shows; under CI's single-process `unittest discover` this file sorts before
+    `test_workflow_step_writes`, so it ran first and failed two of its tests.
+    Exactly the trap `CLAUDE.md` records from the 5.14.0 cut, on a new file.
+
+    Popping by *difference* rather than by tracking ids: a resume registers its
+    graph on the child VM, so the ids this file creates are not all ones it ever
+    sees.
+    """
+
     def setUp(self):
+        from nodus.orchestration import task_graph
+
         self._previous = os.environ.get("NODUS_WORKFLOW_STORE_BACKEND")
         os.environ["NODUS_WORKFLOW_STORE_BACKEND"] = "sqlite"
         self.captured: dict = {}
+        self._graphs_before = set(task_graph._GRAPH_REGISTRY)
 
     def tearDown(self):
+        from nodus.orchestration import task_graph
+
+        for graph_id in set(task_graph._GRAPH_REGISTRY) - self._graphs_before:
+            task_graph._GRAPH_REGISTRY.pop(graph_id, None)
+            task_graph._GRAPH_VMS.pop(graph_id, None)
         if self._previous is None:
             os.environ.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
         else:
