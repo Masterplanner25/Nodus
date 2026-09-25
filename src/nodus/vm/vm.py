@@ -59,7 +59,7 @@ from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, dele
 from nodus.runtime.memory import rss_bytes
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
-from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, emit_denied, inherit_authority, inherit_host_state
+from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, charge_run_bounds, emit_denied, inherit_authority, inherit_host_state, inherit_run_bounds
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
 from nodus.runtime.profiler import Profiler
@@ -1700,9 +1700,38 @@ class VM:
         # `tool.call` returned an error *value* while the run reported every
         # step completed.
         inherit_host_state(child, self)
+        # #873: and the third thing -- how much it may consume. Without this the
+        # child ran with no deadline, no step budget, no memory ceiling and the
+        # *default* frame cap even where the host had set a tighter one, so a
+        # guest escaped every bound by parking and resuming. The caller's usage
+        # is charged back in `builtin_resume_workflow`, which is the only site
+        # that knows when the resume has finished.
+        inherit_run_bounds(child, self)
         for name, info in self.builtins.items():
             child.builtins.setdefault(name, info)   # carry host builtins; core already bound to child
         return child
+
+    def _dispatch_resume(self, graph_id, checkpoint, *, resume_payload=None):
+        """Run a resume on the right VM and charge what it spent (#873).
+
+        One site for both `resume_workflow` and `resume_goal`. They had the same
+        four lines each, and the budget charge-back would have been added to one
+        of them -- which is the shape this file's own history is made of.
+
+        `finally`, so a resume that raises is still charged: an uncharged failure
+        is a free retry, and a guest that can fail cheaply has no budget at all.
+        """
+        target = self._resume_target_vm(graph_id)
+        try:
+            return self.resolve_workflow_runner().resume_workflow(
+                target,
+                graph_id,
+                checkpoint,
+                resume_payload=resume_payload,
+                rebuild_graph=target._rebuild_workflow_graph,
+            )
+        finally:
+            charge_run_bounds(target, self)
 
     def builtin_resume_workflow(self, graph_id, checkpoint=None, resume_payload=None):
         if not isinstance(graph_id, str):
@@ -1719,14 +1748,7 @@ class VM:
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects checkpoint as string or nil")
         if resume_payload is not None and not isinstance(resume_payload, dict):
             self.runtime_error("type", "resume_workflow(graph_id, checkpoint, payload) expects payload as map or nil")
-        target = self._resume_target_vm(graph_id)
-        return self.resolve_workflow_runner().resume_workflow(
-            target,
-            graph_id,
-            checkpoint,
-            resume_payload=resume_payload,
-            rebuild_graph=target._rebuild_workflow_graph,
-        )
+        return self._dispatch_resume(graph_id, checkpoint, resume_payload=resume_payload)
 
     # --- goal as a stopping condition (#409 Part A) -----------------------
 
@@ -2033,13 +2055,7 @@ class VM:
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects graph_id as string")
         if checkpoint is not None and not isinstance(checkpoint, str):
             self.runtime_error("type", "resume_goal(graph_id, checkpoint) expects checkpoint as string")
-        target = self._resume_target_vm(graph_id)
-        return self.resolve_workflow_runner().resume_workflow(
-            target,
-            graph_id,
-            checkpoint,
-            rebuild_graph=target._rebuild_workflow_graph,
-        )
+        return self._dispatch_resume(graph_id, checkpoint)
 
     @staticmethod
     def _relabel_plan(plan: dict, step_labels: dict) -> dict:
