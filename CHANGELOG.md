@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#873: a resume can no longer exceed the budget the host set on the caller.**
+  `_resume_target_vm` builds a child VM when a resume needs a rebuild (#328), and
+  that child was given no bounds at all. Measured with every bound set
+  non-default, **five** were lost: `max_steps`, `deadline` and `max_memory_bytes`
+  to `None`, and `max_frames` from a host's tighter cap back to the 10,000
+  default. So a guest escaped every bound by parking and resuming:
+
+  ```
+  300 ms budget  -> 8 resumes, ~800 ms of work, PASSED
+  5,000 steps    -> ~270,000 instructions,      PASSED
+  ```
+
+  **The caller's own deadline did not rescue it.** A `deadline` is absolute, so it
+  looks as though time spent in the child is already charged — but it is only
+  consulted every 100 instructions, and a program doing eight `resume_workflow`
+  calls never executes 100 more, so it is never re-checked.
+
+  Ceilings now copy across; `max_steps` is a counter, so the child gets the
+  remainder and its usage is charged back to the caller when the resume returns.
+  Without the charge-back every resume would be handed a fresh allowance and the
+  split would be decorative. `task_step_budget` is deliberately not inherited —
+  it is the scheduler's per-slice fairness allowance, not a host bound.
+
+  **This is behaviour-changing, and needs a "not additive" row at release.** A
+  resume costs roughly 99 ms and the `nodus run` default is 200 ms
+  (`EXECUTION_TIMEOUT_MS`), so a script doing two or more resumes under the
+  default now times out where it previously overran in silence.
+  `nodus run --time-limit N` (seconds) is the fix, as it already is for anything
+  else that needs more than 200 ms. A single resume still fits.
+
+  `resume_workflow` and `resume_goal` dispatch through one helper now
+  (`VM._dispatch_resume`) rather than four duplicated lines each — the
+  charge-back would otherwise have been added to one of them.
+
 ### Fixes
 
 - **#871: a rehydrated run sees its data in the order the live run built it.**

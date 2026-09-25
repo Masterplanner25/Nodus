@@ -945,6 +945,85 @@ def inherit_authority(child, parent) -> None:
             setattr(child, attribute, getattr(parent, attribute))
 
 
+# The third thing a derived VM inherits, and the third time it was forgotten
+# (#873).
+#
+# `AUTHORITY_ATTRIBUTES` says what it may *do*; `HOST_STATE_ATTRIBUTES` says who
+# it works *for*; this says *how much* it may consume. #868 fixed the first two
+# at every derivation site and deliberately left this one, because a budget is a
+# quantity rather than a setting and copying one needed its own decision.
+#
+# Measured on a resume child before this: **five** bounds lost. `max_steps` and
+# `deadline` to `None`, `max_memory_bytes` to `None`, and `max_frames` from a
+# host's tighter cap back to the 10,000 default. So a guest escaped every bound
+# by parking and resuming -- not partially, and not bounded by the caller's own
+# deadline firing afterwards, which is what I assumed until I ran it:
+#
+#     300 ms budget  -> 8 resumes, ~800 ms of work, PASSED
+#     5,000 steps    -> ~270,000 instructions,      PASSED
+#
+# The parent's deadline is only consulted every 100 instructions, and a program
+# doing eight `resume_workflow` calls never executes 100 more, so it is never
+# re-checked. Nothing self-limits.
+#
+# **Two kinds of bound, and only one is consumable.** A ceiling is a property of
+# the run -- an absolute instant, a stack depth, an RSS figure -- and copies
+# straight across. `max_steps` is a *counter* measured against
+# `instructions_executed`, so the child gets what is left and its usage is
+# charged back to the parent when the call returns; otherwise every resume hands
+# out a fresh full budget.
+#
+# `task_step_budget` is deliberately absent. It is the scheduler's per-slice
+# fairness allowance (`scheduler.py` sets and clears it around a coroutine
+# resume), not a host bound, and a VM starting fresh work is not inside a slice.
+RUN_BOUND_ATTRIBUTES: tuple[str, ...] = (
+    "deadline",
+    "max_frames",
+    "max_memory_bytes",
+)
+
+#: The one bound that is spent rather than merely set. Named separately because
+#: it needs the remainder and the charge-back, and a reader has to be able to see
+#: which of the two kinds each bound is.
+CONSUMABLE_BOUND_ATTRIBUTE = "max_steps"
+
+
+def inherit_run_bounds(child, parent) -> None:
+    """Give *child* what is left of *parent*'s budget (#873).
+
+    Ceilings copy; the step counter is split. Pair every call with
+    :func:`charge_run_bounds` on the way out, or repeated derivations each get a
+    fresh allowance and the split is decorative.
+    """
+    if parent is None or child is None or child is parent:
+        return
+    for attribute in RUN_BOUND_ATTRIBUTES:
+        if hasattr(parent, attribute):
+            setattr(child, attribute, getattr(parent, attribute))
+    budget = getattr(parent, CONSUMABLE_BOUND_ATTRIBUTE, None)
+    if budget is not None:
+        spent = getattr(parent, "instructions_executed", 0) or 0
+        # `max(0, ...)` and not `or None`: an exhausted parent must hand down a
+        # budget of zero, which `VM.record_instruction` treats as already
+        # exceeded. Collapsing it to `None` would turn "no budget left" into
+        # "unbounded", which is the bug.
+        setattr(child, CONSUMABLE_BOUND_ATTRIBUTE, max(0, budget - spent))
+
+
+def charge_run_bounds(child, parent) -> None:
+    """Charge *child*'s consumption to *parent* (#873).
+
+    Without this the split is per-call rather than cumulative: ten resumes would
+    each be handed the same remainder, so a guest bounded at 5,000 instructions
+    could run 50,000. Wall clock needs no equivalent -- `deadline` is an absolute
+    instant, so time spent in the child has already passed for the parent.
+    """
+    if parent is None or child is None or child is parent:
+        return
+    spent = getattr(child, "instructions_executed", 0) or 0
+    parent.instructions_executed = getattr(parent, "instructions_executed", 0) + spent
+
+
 def inherit_host_state(child, parent) -> None:
     """Copy every host-state attribute from *parent* to *child* (#868).
 
