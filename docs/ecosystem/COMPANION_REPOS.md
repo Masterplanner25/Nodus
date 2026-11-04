@@ -186,7 +186,7 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/py
 
 ## nodus-sdk
 
-`C:\dev\nodus-sdk` · on PyPI · 111 tests (0.1.3)
+`C:\dev\nodus-sdk` · on PyPI · 134 tests (0.2.0)
 
 Unified platform SDK auto-wiring the companion ecosystem.
 `pip install nodus-sdk[agent,sql,fastapi]`.
@@ -220,6 +220,21 @@ not None` was the whole memory assertion. **A bridge's test has to drive the
 guest side and assert on the host side, or the reverse**; `tests/test_bridges_
 reach_the_guest.py` is the shape. Gate 10a ran this suite green at every 5.x
 cut and could not have seen any of the three.
+
+**Three more through 0.1.3** (fixed 0.2.0, 2026-10-09; nodus-sdk#9).
+`attach_auth()` and `attach_events()` imported names their packages do not
+export, inside an `except (ImportError, AttributeError): pass` that also handles
+an absent optional dependency, so a wrong import looked like a package nobody
+installed. `attach_auth()` now raises unless `SECRET_KEY` is configured, rather
+than inventing a signing key.
+
+`nodus-sdk[http]` had never worked, and **only a clean venv could show it**: the
+bridge imported `NodusHttpClient`, which is the incubator scaffold's class at
+`packages/nodus-http/`, where a dev checkout resolves `nodus_http`. The published
+package exports `HttpClient`. **A local suite tests optional dependencies against
+whatever the checkout resolves**, so run the built wheel against the published
+ones before trusting a bridge: 2 of the 134 tests skip in a checkout and none
+skip there.
 
 ---
 
