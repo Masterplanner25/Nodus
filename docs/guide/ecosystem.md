@@ -1,12 +1,13 @@
 # Nodus Ecosystem
 
 `nodus-lang` is the core language and runtime. The surrounding ecosystem is
-**32 standalone Python packages** that extend it for specific domains: MCP
+**36 standalone packages** that extend it for specific domains: MCP
 integration, agent coordination, memory, observability, circuit breaking, auth,
 queuing, SQL persistence, and more.
 
-All packages are at `github.com/Masterplanner25` and published on PyPI — 33
-projects counting `nodus-lang` itself. Two further artifacts ship outside PyPI:
+All packages are at `github.com/Masterplanner25` and published on PyPI — 37
+projects counting `nodus-lang` itself. `nodus-workflow` is also on PyPI, but as a
+deprecated alias for `nodus-flow`, so it is not counted. Two further artifacts ship outside PyPI:
 the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=MasterplanInfiniteWeave.nodus-lang)
 and the [`nodus-run` GitHub Action](https://github.com/Masterplanner25/nodus-run-action).
 
@@ -95,6 +96,7 @@ with `NodusRuntime` or work standalone.
 | Package | What it does |
 |---------|-------------|
 | `nodus-a2a` | AgentCoordinator — local/delegate mode, dead-letter service, watchdog |
+| `nodus-a2a-wire` | A2A wire protocol adapter (`A2AHttpServer`); distinct from the `nodus-a2a` coordinator. Module: `nodus_a2a_wire` |
 | `nodus-native-memory-engine` | PyO3/Maturin Rust extension — 9 native memory operations with Python fallback |
 
 ### Memory and Storage
@@ -109,7 +111,8 @@ with `NodusRuntime` or work standalone.
 | Package | What it does |
 |---------|-------------|
 | `nodus-agent` | AgentRun, CapabilityToken (HMAC-SHA256), LocalPlanner/LLMPlanner |
-| `nodus-workflow` | FlowDefinition, SchedulerEngine, FlowExecutor (standalone, no server wiring) |
+| `nodus-flow` | FlowDefinition, SchedulerEngine, FlowExecutor (standalone, no server wiring). Was `nodus-workflow` until 0.2.0 |
+| `nodus-workflow-ai` | Runs a generated plan as a Nodus graph: validated before it runs, under a grant narrowed to what it declared |
 | `nodus-state` | FlowStatus, UnitStatus, AgentStatus, WaitCondition, ResumeSpec |
 | `nodus-session` | SessionEntry, InMemorySessionStore, SessionPruningPolicy |
 
@@ -161,6 +164,7 @@ with `NodusRuntime` or work standalone.
 | `nodus-context` | ContextBudget, ContextWindow (add/compact/guard_tool_results) |
 | `nodus-router` | RouteBinding, RoutingTable, RouteResolver |
 | `nodus-llm` | CredentialStore, FailoverClient (5m→10m→20m→40m→1h backoff) |
+| `nodus-extensions` | Extension loading: manifest, hooks, provenance, sandbox. Distinct from the `nodus-extension` plugin framework |
 
 ### Developer Tooling
 
@@ -168,6 +172,7 @@ with `NodusRuntime` or work standalone.
 |---------|-------------|
 | `nodus-jupyter` | Jupyter kernel for `.nd` files — JupyterLab, Notebook, VS Code notebooks. Install: `pip install nodus-jupyter && python -m nodus_jupyter install` |
 | `nodus-mcp-server` | Standalone MCP server exposing Nodus to Claude Desktop (stdio) and ChatGPT Desktop (HTTP/SSE). Six tools: run_goal, run_workflow, resume_workflow, store_memory, recall, list_graphs. Install: `pipx install nodus-mcp-server` |
+| `nodus-container` | Orchestrates container execution with Docker, Podman or any CLI-compatible engine, through the `std:subprocess.run` its Nodus caller passes in |
 
 ---
 
@@ -181,7 +186,7 @@ Tier 0: nodus-lang (core — all other packages depend on this)
 Tier 1: Zero-dep standalone
   nodus-circuit-breaker, nodus-retry, nodus-channels, nodus-protocol,
   nodus-schema, nodus-approvals, nodus-context, nodus-state, nodus-session,
-  nodus-governance, nodus-agent, nodus-workflow, nodus-a2a, nodus-store-sql
+  nodus-governance, nodus-agent, nodus-flow, nodus-a2a, nodus-store-sql
 
 Tier 2: Requires Tier 1
   nodus-auth (python-jose, passlib, bcrypt<5.0)

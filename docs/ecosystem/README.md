@@ -116,13 +116,18 @@ per row.
 > the gotchas that have cost time — are in
 > [`COMPANION_REPOS.md`](./COMPANION_REPOS.md).
 
-> **This table is the source for the PyPI project count.** CLAUDE.md says to
+> **This table is the source for the PyPI project count.** The release process says to
 > re-derive that count by probing every first-party name listed here, rather than
 > adjusting it by arithmetic. That only works if the list is complete: at the
 > 5.8.0 cut it was missing `nodus-a2a-wire` (published 2026-08-26) and
 > `nodus-workflow-ai`, so the re-derivation returned 35 where the answer was 37.
 > A package published without a row here is invisible to the count *and* to
 > anyone reading this file for what exists.
+>
+> **The probe returns one more name than the prose counts.** As of 2026-11-05 it
+> finds 37 names besides `nodus-lang`, and one is `nodus-workflow`, a deprecated
+> alias for `nodus-flow`. So the docs say **36 companion packages**, or 37 projects
+> counting `nodus-lang`; PyPI itself holds 38 names.
 
 ### Naming note: `nodus-extension` vs `nodus-extensions`
 

@@ -27,7 +27,7 @@ Open milestones:
 
 Language now includes: coroutines, channels, goals/workflows/steps, AI-native stdlib
 (std:identity, std:effects, std:memory, std:sys, std:retry, std:circuit_breaker), full
-sandbox, embedding API (NodusRuntime), and 35 published ecosystem packages. See CHANGELOG.md.
+sandbox, embedding API (NodusRuntime), and 36 published ecosystem packages. See CHANGELOG.md.
 
 ## Released Versions
 
