@@ -1471,7 +1471,7 @@ def probe_package_count(repo: Path):
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"\b32[- ](?:package|standalone)\b", line):
                 wrong.append(f"{rel}:{n}")
-    assert not wrong, "stale package count (should be 35): " + ", ".join(wrong)
+    assert not wrong, "stale package count (should be 36): " + ", ".join(wrong)
     return "no artifact still says 32"
 
 

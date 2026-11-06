@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide said 32 and had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`. It also still called `nodus-flow` by its old name.
+
 ## [5.15.0] - 2026-09-25
 
 ### Changed
