@@ -152,6 +152,8 @@
     "files": [
       "README.md",
       "CLAUDE.md",
+      ".claude/commands/release-sequence.md",
+      ".claude/commands/nodus-embedding.md",
       "llms.txt",
       "llms-full.txt",
       "docs/governance/*.md",
