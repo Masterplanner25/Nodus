@@ -1,6 +1,9 @@
 Prepare and execute a Nodus release. Walks through every step in order,
 verifying state before proceeding.
 
+**This skill is older than the release sequence. `.claude/commands/release-sequence.md` is
+the authority; use this as a prompt, not a script.**
+
 Arguments: $ARGUMENTS
 (Pass the target version, e.g. `4.0.0`. If omitted, determine
 from context or ask.)
