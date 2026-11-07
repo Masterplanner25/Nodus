@@ -47,7 +47,26 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.15.0 is about what a run loses when it stops and starts again.
+**Recent:** 5.15.1 closes a path out of the run-state directory and makes the declared Python 3.10 floor real.
+
+A run-state id — a `graph_id`, a snapshot id, a workflow `run_id` — named a
+`<id>.json` file under a state root with nothing checking it, so an id like
+`../../x` escaped the directory. Guest `.nd` code reached the graph case through
+`resume_workflow(id)`, reading or deleting a file outside the state dir; the
+snapshot case arrived over the server's `/restore`. A single validator in
+`state_paths.py` now gates every run-state path builder, and read and delete
+treat a bad id as "not found", so a traversing id is indistinguishable from an
+unknown one. Filesystem, network and subprocess access were already denied; this
+was confined to `.json`/`.pkl` state.
+
+And `nodus-lang` now installs on the Python 3.10 it has always claimed to
+support. One TOML loader did a bare `import tomllib` — standard library only from
+3.11 — while its sibling had the `tomli` fallback, and `tomli` was not a
+dependency, so an import failed by either path. Both loaders share the guard now,
+`tomli` is pulled in below 3.11, and a CI job installs the wheel on 3.10 and runs
+it, so the floor is tested rather than merely asserted.
+
+5.15.0 is about what a run loses when it stops and starts again.
 
 A workflow that parks at `workflow_wait` and resumes in another process crosses a
 boundary, and on the far side of it the runtime had been quietly dropping things.

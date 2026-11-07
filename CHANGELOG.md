@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.15.1] - 2026-11-07
+
 ### Security
 
 - **#891: run-state file paths are now built from a validated id.** `graph_id`,
