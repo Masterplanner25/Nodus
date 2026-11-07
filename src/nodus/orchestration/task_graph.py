@@ -17,7 +17,7 @@ import uuid
 
 from nodus.support.staging import record_staged_flip
 from nodus.runtime.runtime_stats import runtime_time_ms, store_time_ms
-from nodus.runtime.state_paths import graph_root
+from nodus.runtime.state_paths import InvalidStateId, graph_root, safe_state_id
 from nodus.runtime.coroutine import Coroutine
 from nodus.runtime.diagnostics import RuntimeLimitExceeded
 from nodus.orchestration.workflow_state import (
@@ -242,13 +242,15 @@ def set_default_dispatcher(dispatcher) -> None:
 
 
 def _graph_state_path(graph_id: str) -> str:
+    # safe_state_id first: a traversing id (`../x`) must never reach os.path.join,
+    # and `resume_workflow(id)` passes this straight from guest code (#891).
     root = _ensure_graph_root()
-    return os.path.join(root, f"{graph_id}.json")
+    return os.path.join(root, f"{safe_state_id(graph_id)}.json")
 
 
 def _checkpoint_path(graph_id: str) -> str:
     root = _ensure_graph_root()
-    return os.path.join(root, f"{graph_id}.checkpoint.json")
+    return os.path.join(root, f"{safe_state_id(graph_id)}.checkpoint.json")
 
 
 def _ensure_graph_root() -> str:
@@ -533,7 +535,12 @@ def _persist_graph_state(
 
 
 def _load_graph_state(graph_id: str) -> dict | None:
-    path = _graph_state_path(graph_id)
+    # An id that cannot name a file names no run: "not found", not an error, so a
+    # traversing id is indistinguishable from an unknown one and leaks nothing.
+    try:
+        path = _graph_state_path(graph_id)
+    except InvalidStateId:
+        return None
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -541,7 +548,10 @@ def _load_graph_state(graph_id: str) -> dict | None:
 
 
 def load_checkpoint(graph_id: str) -> dict | None:
-    path = _checkpoint_path(graph_id)
+    try:
+        path = _checkpoint_path(graph_id)
+    except InvalidStateId:
+        return None
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -606,7 +616,10 @@ def _load_raw_json(path: str) -> dict | None:
 
 
 def delete_checkpoint(graph_id: str) -> None:
-    path = _checkpoint_path(graph_id)
+    try:
+        path = _checkpoint_path(graph_id)
+    except InvalidStateId:
+        return
     try:
         os.remove(path)
     except OSError:
@@ -614,7 +627,10 @@ def delete_checkpoint(graph_id: str) -> None:
 
 
 def delete_graph_state(graph_id: str) -> None:
-    path = _graph_state_path(graph_id)
+    try:
+        path = _graph_state_path(graph_id)
+    except InvalidStateId:
+        return
     try:
         os.remove(path)
     except OSError:

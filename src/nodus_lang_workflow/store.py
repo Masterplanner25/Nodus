@@ -13,7 +13,12 @@ import time
 import uuid
 from contextlib import contextmanager
 
-from nodus.runtime.state_paths import workflow_sqlite_path, workflow_store_root
+from nodus.runtime.state_paths import (
+    InvalidStateId,
+    safe_state_id,
+    workflow_sqlite_path,
+    workflow_store_root,
+)
 
 from .models import (
     REHYDRATABLE_RUN_STATUSES as _REHYDRATABLE_RUN_STATUSES,
@@ -650,7 +655,9 @@ class LocalWorkflowStore(WorkflowStore):
         return root
 
     def _run_path(self, run_id: str) -> str:
-        return os.path.join(self._runs_root(), f"{run_id}.json")
+        # Validated so a traversing run_id cannot read, overwrite or delete a
+        # `.json` outside the runs directory via get_run/save_run/delete_run.
+        return os.path.join(self._runs_root(), f"{safe_state_id(run_id)}.json")
 
     def _atomic_write_json(self, path: str, data: dict) -> None:
         tmp_path = f"{path}.{uuid.uuid4().hex}.tmp"
@@ -708,7 +715,8 @@ class LocalWorkflowStore(WorkflowStore):
         try:
             with open(self._run_path(run_id), "r", encoding="utf-8") as handle:
                 return WorkflowRunRecord.from_dict(json.load(handle))
-        except FileNotFoundError:
+        except (FileNotFoundError, InvalidStateId):
+            # An id that cannot name a file names no run.
             return None
 
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
@@ -720,7 +728,7 @@ class LocalWorkflowStore(WorkflowStore):
             try:
                 os.remove(self._run_path(run_id))
                 return True
-            except OSError:
+            except (OSError, InvalidStateId):
                 return False
 
     def save_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:

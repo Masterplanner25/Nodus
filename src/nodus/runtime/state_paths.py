@@ -44,6 +44,45 @@ WORKFLOW_SQLITE_FILENAME = "workflow_framework.sqlite3"
 RUN_STATE_ROOT_ENV = "NODUS_RUN_STATE_ROOT"
 WORKFLOW_STORE_ROOT_ENV = "NODUS_WORKFLOW_STORE_ROOT"
 
+#: Longest id we will turn into a filename. Real ids are a short prefix plus
+#: 8–12 hex; 128 is slack, not a target.
+_MAX_STATE_ID_LEN = 128
+
+
+class InvalidStateId(ValueError):
+    """A run/graph/snapshot id that must not be built into a filesystem path.
+
+    These ids name a `<id>.json`/`.pkl` file under a run-state root, and several
+    reach that path builder straight from a caller the runtime did not author: a
+    guest `resume_workflow(id)`, an HTTP `graph_id`, a restored `snapshot`. An id
+    with a path separator or `..` then escapes the state directory. Every path
+    builder for run state validates through `safe_state_id`, so the check lives in
+    one place rather than at each of the four sites (see `safe_state_id`).
+    """
+
+
+def safe_state_id(value: str) -> str:
+    """Return *value* if it is a usable id, else raise `InvalidStateId`.
+
+    Deliberately an allowlist, not a `..`/separator blocklist: a real id is a
+    prefix (`g_`, `snap_`, `run_`, `task_`) plus an ASCII-alnum body, so letters,
+    digits, `_` and `-` are all one ever needs, and anything else — a separator,
+    a drive letter's `:`, a `.`, a NUL — cannot name a run and is refused. ASCII
+    only on purpose: `str.isalnum` would admit Unicode digits and letters that a
+    filesystem may fold onto `.` or a separator.
+    """
+    if not isinstance(value, str) or not value:
+        raise InvalidStateId("state id must be a non-empty string")
+    if len(value) > _MAX_STATE_ID_LEN:
+        raise InvalidStateId(f"state id longer than {_MAX_STATE_ID_LEN} characters")
+    for char in value:
+        if not (("a" <= char <= "z") or ("A" <= char <= "Z")
+                or ("0" <= char <= "9") or char in "_-"):
+            raise InvalidStateId(
+                f"state id {value!r} has a character that cannot be in a filename id"
+            )
+    return value
+
 
 def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
