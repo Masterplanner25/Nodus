@@ -189,7 +189,7 @@ Tier 1: Zero-dep standalone
   nodus-governance, nodus-agent, nodus-flow, nodus-a2a, nodus-store-sql
 
 Tier 2: Requires Tier 1
-  nodus-auth (python-jose, passlib, bcrypt<5.0)
+  nodus-auth (PyJWT, passlib, bcrypt<5.0)
   nodus-observability (python-json-logger optional)
   nodus-queue (tenacity; redis optional)
   nodus-events (redis optional)

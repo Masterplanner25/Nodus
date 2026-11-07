@@ -19,7 +19,7 @@ live on the host side.** It is a deliberate staging decision, not an accident.
    circular. So every runtime-integrating library is Python by definition.
 
 2. **Their actual job is interop with things Nodus cannot reach.** Look at what
-   they wrap: `bcrypt` / `python-jose` (auth), `sqlalchemy` (store-sql), `fastapi`
+   they wrap: `bcrypt` / `PyJWT` (auth), `sqlalchemy` (store-sql), `fastapi`
    (sdk), the MCP protocol SDK, Redis, PyO3/Rust (native-memory-engine). Nodus has
    no FFI to arbitrary Python/C libraries. The package *is* the glue that makes
    `bcrypt` callable from a Nodus program. Rewriting that glue in Nodus would first
