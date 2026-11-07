@@ -3358,13 +3358,24 @@ def probe_readme_names_515_surface(repo: Path):
     return "the resume-boundary surface appears in the README"
 
 
-@probe("no stale '5.14.0 is current' claim survives")
-def probe_no_stale_5_14_current(repo: Path):
+@probe("README names the 5.15.1 surface")
+def probe_readme_names_5151_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [
+        n for n in ("run-state", "state_paths", "/restore", "tomli", "3.10")
+        if n not in text
+    ]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the path-traversal / 3.10-floor surface appears in the README"
+
+
+@probe("no stale '5.15.0 is current' claim survives")
+def probe_no_stale_5_15_0_current(repo: Path):
     import re
 
     pattern = re.compile(
-        r"5\.14\.0[^.\n]{0,60}(current|latest|live on PyPI)"
-        r"|(current|latest)[^.\n]{0,40}5\.14\.0"
+        r"5\.15\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.15\.0"
     )
     offenders = []
     for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
@@ -3376,8 +3387,8 @@ def probe_no_stale_5_14_current(repo: Path):
         for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if pattern.search(line):
                 offenders.append(f"{name}:{i}")
-    assert not offenders, f"still calls 5.14.0 current: {', '.join(offenders)}"
-    return "no document still calls 5.14.0 the current release"
+    assert not offenders, f"still calls 5.15.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.15.0 the current release"
 
 
 def main() -> int:
@@ -3613,7 +3624,10 @@ def main() -> int:
     probe_resume_inherits_bounds()
     probe_terminal_cap_sees_aged_records()
     probe_readme_names_515_surface(args.repo)
-    probe_no_stale_5_14_current(args.repo)
+
+    # --- 5.15.1 -------------------------------------------------------------
+    probe_readme_names_5151_surface(args.repo)
+    probe_no_stale_5_15_0_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

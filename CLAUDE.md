@@ -680,7 +680,7 @@ which loads when you work under that directory. Three rules apply from anywhere:
 
 ## SemVer policy
 
-The current published version is **v5.15.0** (live on PyPI, published 2026-09-25).
+The current published version is **v5.15.1** (live on PyPI, published 2026-11-07).
 Two files must stay in sync — `src/nodus/support/version.py` and `pyproject.toml`.
 If they disagree, fix that before anything else.
 
