@@ -8,6 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from nodus.runtime.state_paths import InvalidStateId, safe_state_id
 from nodus.support.config import SNAPSHOT_DIR, MAX_SNAPSHOTS
 
 
@@ -26,7 +27,9 @@ class SnapshotManager:
         os.makedirs(self.snapshot_dir, exist_ok=True)
 
     def _path(self, snapshot_id: str) -> str:
-        return os.path.join(self.snapshot_dir, f"{snapshot_id}.pkl")
+        # The id reaches here from `/restore` and `DELETE /snapshot/{id}`; without
+        # this a traversing id selects an arbitrary `.pkl` for pickle.load/remove.
+        return os.path.join(self.snapshot_dir, f"{safe_state_id(snapshot_id)}.pkl")
 
     def create(self, session_id: str, state_blob: dict) -> Snapshot:
         self.cleanup()
@@ -46,7 +49,10 @@ class SnapshotManager:
         return snapshot
 
     def get(self, snapshot_id: str) -> Snapshot | None:
-        path = self._path(snapshot_id)
+        try:
+            path = self._path(snapshot_id)
+        except InvalidStateId:
+            return None
         if not os.path.exists(path):
             return None
         with open(path, "rb") as f:
@@ -59,7 +65,10 @@ class SnapshotManager:
         )
 
     def delete(self, snapshot_id: str) -> bool:
-        path = self._path(snapshot_id)
+        try:
+            path = self._path(snapshot_id)
+        except InvalidStateId:
+            return False
         if not os.path.exists(path):
             return False
         os.remove(path)

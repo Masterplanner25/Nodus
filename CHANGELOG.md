@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Security
+
+- **#891: run-state file paths are now built from a validated id.** `graph_id`,
+  `snapshot_id` and a workflow `run_id` named a `<id>.json`/`.pkl` file under a
+  run-state root with no validation, so a traversing id (`../x`) escaped the
+  directory. `graph_id` reaches this from **guest `.nd` code** via
+  `resume_workflow(id)` — reading or deleting a `.json` outside the state dir; the
+  snapshot id arrives over the server's `/restore` and `DELETE /snapshot/{id}`.
+  A single `safe_state_id` in `state_paths.py` now gates every run-state path
+  builder, and read/delete entry points treat an invalid id as "not found", so a
+  traversing id is indistinguishable from an unknown one. Filesystem, network and
+  subprocess access were already denied; this was confined to `.json`/`.pkl` state.
+
 ### Fixes
 
 - **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide, `LIBRARY_ECOSYSTEM.md` and the onboarding guide said 32. The ecosystem guide also had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`, and still called `nodus-flow` by its old name.
