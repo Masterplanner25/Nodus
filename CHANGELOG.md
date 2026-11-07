@@ -17,6 +17,13 @@
 
 ### Fixes
 
+- **#893: nodus-lang works on its declared Python 3.10 floor.** `project.py` did a
+  bare `import tomllib` (stdlib only from 3.11) while its sibling `user_config.py`
+  had the `tomli` fallback, and `tomli` was not even a dependency — so importing
+  nodus failed on 3.10 by either path, though `requires-python` claims `>=3.10`.
+  `project.py` now shares the guard, `tomli` is a dependency for `python_version <
+  "3.11"`, and a `py310-floor` CI job imports and runs on 3.10 so the floor is
+  tested. Surfaced by a downstream package's CI; nodus-lang's own tests 3.11 only.
 - **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide, `LIBRARY_ECOSYSTEM.md` and the onboarding guide said 32. The ecosystem guide also had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`, and still called `nodus-flow` by its old name.
 - **The docs now name `PyJWT` as `nodus-auth`'s JWT dependency.** The ecosystem guide, the package quick reference and `WHY_PYTHON_NOT_NODUS.md` still said `python-jose`, which `nodus-auth` dropped in 0.2.0.
 

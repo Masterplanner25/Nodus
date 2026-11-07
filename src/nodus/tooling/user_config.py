@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# tomllib is stdlib in Python 3.11+; tomli is the backport for 3.10
+# tomllib is stdlib in Python 3.11+; tomli is the backport for 3.10 (#893).
 try:
     import tomllib
-except ImportError:
+except ModuleNotFoundError:  # pragma: no cover - exercised only on 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
 
