@@ -4,8 +4,12 @@
 
 ### Fixes
 
-- **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide said 32 and had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`. It also still called `nodus-flow` by its old name.
+- **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide, `LIBRARY_ECOSYSTEM.md` and the onboarding guide said 32. The ecosystem guide also had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`, and still called `nodus-flow` by its old name.
 - **The docs now name `PyJWT` as `nodus-auth`'s JWT dependency.** The ecosystem guide, the package quick reference and `WHY_PYTHON_NOT_NODUS.md` still said `python-jose`, which `nodus-auth` dropped in 0.2.0.
+
+### Tooling
+
+- **Plain `pytest` now runs `tests/closed_issues/`.** Its `issue_*.py` files did not match pytest's default pattern, so each ran only when `nodus_gate --closed-issues` was asked about that issue's CHANGELOG section. Two had rotted unseen and are repaired: one no longer imported, and one rejected `nodus-workflow-ai`. The companion-count check also now reads all of `docs/` instead of a fixed list of files.
 
 ## [5.15.0] - 2026-09-25
 
