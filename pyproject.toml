@@ -40,6 +40,9 @@ classifiers = [
 
 dependencies = [
     "tzdata>=2024.1",
+    # #893: tomllib is stdlib only from 3.11, and requires-python allows 3.10.
+    # Without this the backport is absent and importing nodus fails on 3.10.
+    "tomli>=2.0.1; python_version < '3.11'",
 ]
 
 [project.scripts]

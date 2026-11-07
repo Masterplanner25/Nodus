@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import os
-import tomllib
 from dataclasses import dataclass
+
+# tomllib is stdlib in Python 3.11+; tomli is the backport for 3.10 (#893).
+# Same guard as user_config.py — its sibling importer, which had it already.
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised only on 3.10
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 MANIFEST_NAME = "nodus.toml"
