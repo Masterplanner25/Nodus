@@ -5,6 +5,7 @@
 ### Fixes
 
 - **The docs now agree on 36 companion packages.** `llms.txt` (which ships in the wheel), the getting-started guide and the roadmap said 35, while the ecosystem guide said 32 and had no rows for `nodus-a2a-wire`, `nodus-container`, `nodus-extensions` or `nodus-workflow-ai`. It also still called `nodus-flow` by its old name.
+- **The docs now name `PyJWT` as `nodus-auth`'s JWT dependency.** The ecosystem guide, the package quick reference and `WHY_PYTHON_NOT_NODUS.md` still said `python-jose`, which `nodus-auth` dropped in 0.2.0.
 
 ## [5.15.0] - 2026-09-25
 

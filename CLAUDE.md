@@ -195,6 +195,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 | Embedding, `NodusRuntime`, capabilities | `.claude/commands/nodus-embedding.md` |
 | Governance docs, and the longer notes on files listed above | `.claude/commands/docset-governance.md` |
 | Work under `tests/`, `tools/` or `src/nodus_lang_workflow/` | that directory's `CLAUDE.md`, loaded automatically |
+| Editing public positioning text (README, `llms.txt`, wiki, ecosystem docs) | the `aindy` MCP tool `nodus_work_facts` (`work: "Nodus"`): the user's confirmed claims and the ones they denied. Needs the `aindy-apps-monolith-api-1` container. Its content is private, so do not paste it into this repo |
 
 ## Test suite
 

@@ -8,7 +8,7 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 | Package | Key deps | Key abstraction |
 |---------|----------|----------------|
 | nodus-circuit-breaker | none | Three-state CB, sync+async, optional Prometheus |
-| nodus-auth | python-jose, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
+| nodus-auth | PyJWT, passlib, **bcrypt<5.0**, pydantic | JWT/API-key/bcrypt; **bcrypt must be <5.0** (passlib 1.7.4 incompatible with 5.x) |
 | nodus-observability | python-json-logger (otel/prometheus optional) | Trace ContextVars, init_otel(), create_registry(), configure_logging() |
 | nodus-queue | tenacity (redis optional) | RedisQueueBackend LPUSH/BRPOP+Lua, DLQ, delayed jobs; Redis tests need live Redis — skip with `--ignore=tests/test_redis_backend.py` |
 | nodus-state | none | FlowStatus/UnitStatus/AgentStatus, WaitCondition, ResumeSpec, ExecutionContext, SessionKey |
