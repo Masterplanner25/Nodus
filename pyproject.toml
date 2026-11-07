@@ -105,6 +105,8 @@ strict = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `issue_*.py` is tests/closed_issues/. Without it plain pytest skips the whole directory.
+python_files = ["test_*.py", "issue_*.py"]
 filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",

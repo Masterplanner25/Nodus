@@ -71,9 +71,9 @@ def test_no_language_construct_name_is_presented_as_a_current_package():
             if _HISTORICAL.search(line):
                 continue
             for keyword in sorted(KEYWORDS):
-                # Word-boundary on the right so `nodus-workflow` does not match
-                # inside `nodus-workflow-ai`, which is a different package.
-                if re.search(rf"\bnodus-{re.escape(keyword)}\b", line):
+                # Not `\b` on the right: `-` is a word boundary, so that matches
+                # `nodus-workflow` inside `nodus-workflow-ai`, a different package.
+                if re.search(rf"\bnodus-{re.escape(keyword)}(?![\w-])", line):
                     offenders.append(
                         f"{doc.relative_to(_REPO_ROOT).as_posix()}:{lineno} "
                         f"-> nodus-{keyword}"

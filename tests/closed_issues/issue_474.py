@@ -72,6 +72,29 @@ def test_the_pypi_summary_carries_it():
     ), f"PyPI summary drifted from the D1 decision: {match.group(1)!r}"
 
 
+# Records of what was true at the time, not claims about now.
+_COUNT_RECORD_DIRS = {"evals", "history"}
+_COUNT_RECORD_FILES = {"EXTERNAL_AUDIT_LEDGER.md"}
+# A count on the same line as the 4.0.0 launch is that launch's count.
+_COUNT_RECORD_LINE = re.compile(r"\bv?4\.0\.0\b")
+_COUNT = re.compile(r"(\d+)[- ](?:package companion|companion package)")
+
+
+def _count_sites() -> list[Path]:
+    """Every document that could state the count, found rather than listed.
+
+    A named list is what let `docs/guide/ecosystem.md` say 32 while this test
+    passed, and two more files kept saying it after that was corrected.
+    """
+    named = [_REPO_ROOT / site for site in _SITES + ["CLAUDE.md"]]
+    docs = [
+        path for path in sorted((_REPO_ROOT / "docs").rglob("*.md"))
+        if path.name not in _COUNT_RECORD_FILES
+        and not _COUNT_RECORD_DIRS.intersection(path.relative_to(_REPO_ROOT).parts)
+    ]
+    return named + docs
+
+
 def test_the_companion_count_agrees_across_the_prose():
     """A hand-maintained count in prose is the version-string failure again.
 
@@ -81,12 +104,15 @@ def test_the_companion_count_agrees_across_the_prose():
     silently diverged.
     """
     counts: dict[str, set[str]] = {}
-    for site in _SITES + ["docs/guide/getting-started.md", "CLAUDE.md"]:
-        text = (_REPO_ROOT / site).read_text(encoding="utf-8")
-        found = set(re.findall(r"(\d+)[- ](?:package companion|companion package)", text))
+    for path in _count_sites():
+        found: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not _COUNT_RECORD_LINE.search(line):
+                found.update(_COUNT.findall(line))
         if found:
-            counts[site] = found
-    distinct = set().union(*counts.values()) if counts else set()
+            counts[path.relative_to(_REPO_ROOT).as_posix()] = found
+    assert counts, "found no companion count anywhere, so this checked nothing"
+    distinct = set().union(*counts.values())
     assert len(distinct) <= 1, (
         "the companion-package count disagrees between files: "
         + "; ".join(f"{k}={sorted(v)}" for k, v in sorted(counts.items()))

@@ -32,14 +32,14 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))  # noqa: E402
 
 from nodus import NodusRuntime  # noqa: E402
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES  # noqa: E402
-from nodus.builtins.tool_module import (  # noqa: E402
-    _NODUS_TO_JSON_TYPE,
-    _UNSCHEMABLE_TYPES,
-)
 from nodus.compiler.compiler import Compiler  # noqa: E402
 from nodus.frontend.lexer import tokenize  # noqa: E402
 from nodus.frontend.parser import Parser  # noqa: E402
 from nodus.frontend.type_system import TYPE_NAMES  # noqa: E402
+from nodus.runtime.schema_contract import (  # noqa: E402
+    NODUS_TO_JSON_TYPE,
+    UNSCHEMABLE_TYPES,
+)
 
 
 def _register(handler_params: str, extra: str = "") -> dict:
@@ -119,19 +119,19 @@ def test_the_tool_schema_vocabulary_covers_every_type_name():
     Driven off `TYPE_NAMES` so a tenth type cannot be added in one place and
     missed here — the same reason #609 put the parser on `is_known_type_name`.
     """
-    covered = set(_NODUS_TO_JSON_TYPE) | set(_UNSCHEMABLE_TYPES) | {"any"}
+    covered = set(NODUS_TO_JSON_TYPE) | set(UNSCHEMABLE_TYPES) | {"any"}
     missing = sorted(set(TYPE_NAMES) - covered)
     assert not missing, (
         f"type name(s) {missing} exist in the language but have no answer in a "
-        "tool schema — map them, or name them in _UNSCHEMABLE_TYPES with a reason"
+        "tool schema — map them, or name them in UNSCHEMABLE_TYPES with a reason"
     )
     unknown = sorted(covered - set(TYPE_NAMES))
     assert not unknown, f"tool schema names type(s) the language does not have: {unknown}"
 
 
 def test_record_is_schemable_and_function_is_refused_with_a_reason():
-    assert _NODUS_TO_JSON_TYPE["record"] == "object"
-    assert "function" in _UNSCHEMABLE_TYPES
+    assert NODUS_TO_JSON_TYPE["record"] == "object"
+    assert "function" in UNSCHEMABLE_TYPES
     out = _register("args", extra=', schema: {cb: "function"}')
     assert out["status"] == "REFUSED"
     assert "cannot appear in a tool schema" in out["detail"], out["detail"]
