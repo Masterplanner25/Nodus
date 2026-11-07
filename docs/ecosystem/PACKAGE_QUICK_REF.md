@@ -69,7 +69,7 @@ Test command: `cd C:\dev\<pkg> && python -m pytest -q`.
 | nodus-store-sql | sqlalchemy, aiosqlite (optional) | `RunStore` (optimistic locking), `EventStore` (append-only), `JobStore` (atomic claiming); `AsyncSqlStore`; tables: `nodus_runs/events/jobs`; **aiosqlite needed for async tests** |
 | nodus-sdk | nodus-lang + 9 bridge deps | `NodusSDKRuntime`, `create_runtime()`, `detect_available()`; 9 bridges: redis/http/llm/observability/sql/vector/scheduler/webhook/api; `create_nodus_router(rt)` FastAPI router; bridge host functions return **maps** (use `r["key"]` not `r.key`) |
 | nodus-mcp | nodus-lang, mcp>=1.0.0 | Full MCP protocol library (Phase A–N) at `src/nodus_mcp/`; aindy-derived bridge adapter at `nodus_mcp_aindy/`; `McpServer.dispatch()` never raises; tool names must be dotted |
-| nodus-mcp-server | nodus-lang, nodus-mcp | Standalone MCP server process; 6 tools; stdio (Claude Desktop) + HTTP/SSE (ChatGPT); `StreamableHTTPSessionManager` at `POST /mcp`; ngrok static domain; shared SQLite memory DB |
+| nodus-mcp-server | nodus-lang, mcp | Standalone MCP server process; 7 tools; stdio (Claude Desktop) + HTTP; `StreamableHTTPSessionManager` at `POST /mcp`; **no authentication**, local by default; shared SQLite memory DB |
 | nodus-jupyter | nodus-lang, ipykernel | Jupyter kernel for `.nd` files; cross-cell state via source accumulation; `python -m nodus_jupyter install` |
 
 ## Group 8 — Non-Python published artifacts

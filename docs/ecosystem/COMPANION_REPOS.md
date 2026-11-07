@@ -327,8 +327,12 @@ exist): `nodus_remember`, `nodus_recall`, `nodus_forget`, `nodus_run_goal`,
 **Two transports:**
 
 - **Claude Desktop (stdio):** add to `claude_desktop_config.json` under `mcpServers`
-- **ChatGPT Desktop (HTTP/SSE):** `nodus-mcp-server --http --port 8765`, tunnelled
-  via ngrok
+- **HTTP:** `nodus-mcp-server --http --port 8765`, on `127.0.0.1` by default.
+  ChatGPT Desktop needs this behind a public HTTPS tunnel
+
+**The server has no authentication.** Anyone who can reach `--http` can use every
+tool, so a public tunnel exposes all of them. Ours ran until 2026-11-06, was unused,
+and is gone: the listener is local only. Do not put one back without adding auth.
 
 **HTTP transport uses `StreamableHTTPSessionManager`**, single endpoint
 `POST /mcp`. The old `SseServerTransport` (two-endpoint SSE) is **broken
@@ -343,12 +347,16 @@ starting. `tests/test_http_transport.py` does a real `initialize` ->
 `tools/list` through the app now. **A server that prints its URL has proved
 it can bind a port, nothing else -- send it an `initialize`.**
 
-**`mcp` is pinned `>=1.8,<2`.** mcp 2.0 removed the low-level decorator API
-(`@app.list_tools()`) the server is written against, so a fresh install
-resolved 2.2.0 and failed at import in **both** modes; an install that
-resolved 1.x earlier kept working, which is why nobody saw it. The 2.x port is
-nodus-mcp-server#3. This is the "cap earned by a known break" case, not a
-prophylactic one.
+**Both `mcp` majors are supported since 0.1.14** (nodus-mcp-server#3). mcp 2.0
+removed the low-level decorator API (`@app.list_tools()`), so `server.py` picks a
+branch once at import, and CI runs both.
+
+**An old install keeps its old `nodus-lang`.** Upgrading the server changes a
+dependency only when the floor forces it. The floor stayed at `>=4.0.5` through
+0.1.14, so a live install ran 4.0.5 and `nodus_exec` could reach the environment,
+which is why 0.1.15 denies `allow_env` by name and requires `>=5.15.0`. `pipx list`
+also went stale here, reporting 0.1.11 over an installed 0.1.14; ask `pipx runpip
+nodus-mcp-server list` instead.
 
 **`pipx upgrade` can fail on a poisoned pip cache** with a byte-exact
 `IncompleteRead(17281 bytes read, 273 more expected)` every attempt -- same
@@ -356,19 +364,14 @@ numbers each time means the cache, not the network.
 `pipx runpip nodus-mcp-server install --no-cache-dir --upgrade nodus-mcp-server`
 gets past it.
 
-- **ngrok static domain:** `nodusmcpserver.ngrok.io` (paid plan). ChatGPT Desktop
-  requires public HTTPS; the server runs plain HTTP and ngrok terminates SSL.
-  Point ChatGPT at `https://nodusmcpserver.ngrok.io/mcp`.
 - **Windows auto-startup:** `HKCU:\Software\Microsoft\Windows\CurrentVersion\Run`
   runs `C:\Users\shawn\.nodus-mcp-server\startup.ps1` at login (no admin needed);
-  starts the server plus ngrok. **Look here before concluding nothing launches
+  it starts the local server. **Look here before concluding nothing launches
   it** -- it is not in the Startup folder or any shell profile, and a search of
-  those said "started by hand" once. If the server is killed, re-run the two
-  `Start-Process` lines from that script (or the script); ngrok survives on its
-  own and re-attaches to whatever is on 8765.
-- **Shared memory:** Claude Desktop and ChatGPT Desktop read/write the same SQLite
-  DB at `~/.nodus-mcp-server/data/memory.db`, so memory written in one is readable
-  by the other.
+  those said "started by hand" once. If the server is killed, re-run the script.
+- **Shared memory:** every client reads and writes the same SQLite DB at
+  `~/.nodus-mcp-server/data/memory.db`, so memory written in one is readable by
+  the others.
 
 **`goal` vs `workflow` naming:** `goal` is outcome-oriented and single-shot (steps
 are implementation details); `workflow` is process-oriented and resumable (the
