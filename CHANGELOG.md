@@ -26,6 +26,22 @@
   it did is lost. Pinned by `tests/test_checkpoint_outside_step.py`, which also
   checks that every allowed use of the name still runs.
 
+- **A coroutine's continuation can be checked for durability, with reasons.**
+  `nodus.runtime.durability.assess_coroutine(co)` reads a live coroutine and
+  lists everything that would stop it being written down and resumed in another
+  process, each with where it is: ``frame 0 (`holds`), local `ch`: a channel,
+  whose other end does not survive the process``. Nothing is persisted and the
+  coroutine is not changed. This is stage 2 of durable coroutines (#180, which
+  stays open); it is the reasoning a durable `checkpoint` will refuse with, and
+  it is provisional Python API, not yet a promise to embedders.
+
+  It found something the design had wrong. **Inside a `for` body the operand
+  stack is not empty**: the loop's iterator sits there for the whole body and
+  keeps its position in host state. The design assumed an empty stack at every
+  statement boundary, and its premises test never measured a loop. That is now
+  corrected in `docs/design/v5/08-durable-coroutines.md` §3.2. Pinned by
+  `tests/test_durability_predicate.py`.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security
