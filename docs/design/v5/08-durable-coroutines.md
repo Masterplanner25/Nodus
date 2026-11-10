@@ -58,6 +58,10 @@ fn main() {
 Name error at cp_outside.nd:3:9: Undefined variable: checkpoint
 ```
 
+*(That was the error before stage 1, §8. It is now a compile-time syntax error
+naming the rule and pointing here; `tests/test_checkpoint_outside_step.py` pins
+it.)*
+
 `parser.py` recognises the word only when `self.workflow_step_depth > 0`, so
 outside a step it parses as a variable reference. The word *is* named in
 `lexer.WORKFLOW_BODY_KEYWORDS`, so #480's coupling is intact and the editor
@@ -345,8 +349,15 @@ because the obvious implementation of stage 1 breaks it. The shape that is safe
 to diagnose is narrower: an identifier `checkpoint` **immediately followed by a
 string literal**, in statement position, outside a step. Today that parses as two
 consecutive expression statements — a bare variable reference and a discarded
-string — which is never meaningful code, which is why the current error is
-`Undefined variable: checkpoint` rather than a syntax error.
+string — which is never meaningful code, which is why the error before stage 1
+was `Undefined variable: checkpoint` rather than a syntax error.
+
+**Stage 1 shipped** (2026-11-09) in exactly that shape, in `parser.py` beside the
+step-body `checkpoint` branch. The interpolated form `checkpoint "a \(x)"` is
+refused too. No same-line check is needed, because a newline between the name
+and a string is a `SEP` token, so the string is no longer the next token. The
+one program it newly refuses is `let checkpoint = 1i; checkpoint "x"` on one
+line, which evaluated a variable and discarded a string.
 
 | 2 | a durability predicate over a live coroutine — frames, locals, upvalues, entry identity — reporting *why* not just *whether* | reusable by any later persistence work; testable with no store |
 | 3 | serialise and restore a continuation **in-process** (checkpoint, discard, rebuild, continue) | proves §3's claim end-to-end before any store schema exists |
@@ -357,7 +368,7 @@ plumbing that would survive being wrong; if a continuation cannot be rebuilt
 in-process from its own serialised form, §4 is wrong and no amount of store work
 would have saved it.
 
-**Stage 0 ships with this document.**
+**Stage 0 ships with this document. Stage 1 shipped 2026-11-09.**
 
 ---
 
