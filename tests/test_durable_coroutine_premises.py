@@ -12,7 +12,7 @@ rather than merely inconvenience it:
 | premise | §  | falsifies |
 |---|---|---|
 | the continuation capture is exactly seven pieces of state | 3.1 | the inventory a serialiser would be written against |
-| the operand stack is empty at a statement boundary | 3.2 | that a checkpoint can capture at all |
+| the operand stack is empty at a statement boundary (outside a `for` body, whose iterator stays on it: `test_durability_predicate.py`) | 3.2 | that a checkpoint can capture at all |
 | identical source compiles identically across processes | 3.3 | that a saved `ip` means anything after a restart |
 | a coroutine's entry point is often anonymous, and locals may be non-durable | 3.4 | that identity and durability need declaring, not inferring |
 

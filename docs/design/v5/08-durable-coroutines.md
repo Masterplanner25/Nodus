@@ -162,6 +162,16 @@ reliably empty. That is a property of where the construct sits, not luck, but it
 must be **asserted rather than assumed** — a future expression-position
 `checkpoint(...)` would silently break it.
 
+**Correction, found by stage 2 (2026-11-10): not inside a `for` body.** The three
+shapes measured above had no loop. Inside a `for` body the stack holds the loop's
+iterator for the whole body, one per enclosing `for` (`GET_ITER` leaves it there
+and `break` pops it). The iterator keeps its position in a host closure, so it
+has no written form today. `match` arms, `if`, `while` and `try` leave nothing.
+A checkpoint in a batch loop is the case this feature is most wanted for, so
+stage 3 must either give the iterator a written form (the list and an index are
+enough for a list) or refuse. Stage 2 reports it rather than assuming it away:
+`tests/test_durability_predicate.py`, `AFor_LoopHoldsItsIteratorOnTheStackTests`.
+
 ### 3.3 Compilation is deterministic across processes
 
 A saved `ip` is an index into a compiled chunk, so it is meaningful in a fresh
@@ -342,6 +352,9 @@ Each stage is independently useful and independently abandonable.
 |---|---|---|
 | 0 | `tests/test_durable_coroutine_premises.py` — pin §3's four facts | the design's premises stop being folklore |
 | 1 | `checkpoint` in a coroutine is a *diagnosed* error, not `Undefined variable` | the current dead end names itself and points here |
+| 2 | a durability predicate over a live coroutine — frames, locals, upvalues, entry identity — reporting *why* not just *whether* | reusable by any later persistence work; testable with no store |
+| 3 | serialise and restore a continuation **in-process** (checkpoint, discard, rebuild, continue) | proves §3's claim end-to-end before any store schema exists |
+| 4 | the store schema, `durable spawn`, sweeper, CLI | the feature |
 
 **Stage 1 must not reserve the word.** `checkpoint` is contextual on purpose, and
 `let checkpoint = 42i` outside a step body compiles and runs today — verified,
@@ -359,16 +372,33 @@ and a string is a `SEP` token, so the string is no longer the next token. The
 one program it newly refuses is `let checkpoint = 1i; checkpoint "x"` on one
 line, which evaluated a variable and discarded a string.
 
-| 2 | a durability predicate over a live coroutine — frames, locals, upvalues, entry identity — reporting *why* not just *whether* | reusable by any later persistence work; testable with no store |
-| 3 | serialise and restore a continuation **in-process** (checkpoint, discard, rebuild, continue) | proves §3's claim end-to-end before any store schema exists |
-| 4 | the store schema, `durable spawn`, sweeper, CLI | the feature |
-
 Stage 3 is the one that falsifies this document. Everything before it is
 plumbing that would survive being wrong; if a continuation cannot be rebuilt
 in-process from its own serialised form, §4 is wrong and no amount of store work
 would have saved it.
 
-**Stage 0 ships with this document. Stage 1 shipped 2026-11-09.**
+**Stage 2 shipped** (2026-11-10) as `nodus.runtime.durability.assess_coroutine`.
+It reads a live coroutine and returns every obstacle with where it is, in seven
+kinds named once in `OBSTACLE_KINDS`: `not_resumable`, `workflow_step`,
+`blocked`, `unnamed_entry`, `captured_cell`, `live_value`,
+`shared_with_module`. Three of them go past §3.4's inventory:
+
+- **`shared_with_module`.** A local that holds a container module-level state
+  also holds. A resume rebuilds module state from source, so the two would come
+  back as separate containers. It is the captured-cell split through a
+  different door, and no frame or upvalue check sees it.
+- **`captured_cell` from the owning side.** The frame that owns a captured
+  variable holds a `Cell`, not the value, so a check of closures alone misses a
+  coroutine whose closure has already returned to it.
+- **The `for` iterator** (see the §3.2 correction).
+
+A named top-level function of an *imported* module passes as an entry: the
+module loader gives it its plain name and `Coroutine.module` records the module.
+Sleeping is not assessed, because the wake time lives in the scheduler, not on
+the coroutine (§7, question 3). Pinned by `tests/test_durability_predicate.py`.
+
+**Stage 0 ships with this document. Stage 1 shipped 2026-11-09. Stage 2 shipped
+2026-11-10.**
 
 ---
 
