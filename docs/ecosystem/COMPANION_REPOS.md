@@ -26,6 +26,10 @@ also the list the PyPI project count is re-derived from.
 
 `C:\dev\nodus-mcp` · `github.com/Masterplanner25/nodus-mcp` · on PyPI
 
+**The repo's own `CLAUDE.md` is the authority for working in it.** It covers its place in
+the ecosystem, testing under both mcp SDK majors on this box, the release sequence, and
+the transport gotchas. This section is the summary.
+
 MCP protocol library. `nodus-lang` cap is floated. BYTECODE_VERSION 4, no new
 opcodes.
 
@@ -318,6 +322,10 @@ pip install nodus-jupyter && python -m nodus_jupyter install
 ## nodus-mcp-server
 
 `C:\dev\nodus-mcp-server` · on PyPI · `pipx install nodus-mcp-server`
+
+**The repo's own `CLAUDE.md` is the authority for working in it.** It covers CI, the
+`mcp` and `nodus-lang` floors, the release sequence, and the gotchas. This section is the
+summary.
 
 Standalone MCP tool server. **7 tools** as of 0.1.13 -- read them off
 `tools/list` rather than here (this sentence named six, two of which did not
