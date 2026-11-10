@@ -1,6 +1,8 @@
 # Durable coroutines — design for #180
 
-**Status: proposal.** No code has been built. This document answers the one
+**Status: proposal.** Stages 0–3 of §8 are built; stage 4's decisions are in
+[`08a-durable-coroutines-stage4.md`](08a-durable-coroutines-stage4.md), which
+answers §7. This document answers the one
 question #180 has been open on since it was filed, and which every re-baseline
 of it has restated rather than resolved:
 
@@ -325,6 +327,10 @@ must be settled before it earns that.
 ---
 
 ## 7. Open questions this document does not settle
+
+> **Answered in [`08a-durable-coroutines-stage4.md`](08a-durable-coroutines-stage4.md)**
+> (2026-11-10): question 1 by D1, 2 and 3 by D6, 4 by D4, 5 by its staging table.
+> It also raises one this list missed: a durable spawn needs a key (D5).
 
 1. **Does `durable spawn` earn surface syntax?** #336 proposed a `spawn { }`
    keyword and was rejected because the grammar position it needs is the one
