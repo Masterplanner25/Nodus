@@ -61,6 +61,7 @@ Instances, all confirmed by reading the code rather than inferred:
 | #609 | which command warns about an annotation that becomes an error | `nodus check` and the LSP both read `parser.unknown_type_names`; the **run** path threw the parser away — so the one command that will start *failing* at 6.0.0 was the one saying nothing |
 | #778 | how long has this task run against its timeout | one question, **four** sites — two stamping `task_started_at`, two comparing against it — each reading `runtime_time_ms()` for itself, so #182's seam could not reach any of them |
 | #822 | did this step write this state cell | `cell = v` went through `TrackedState.__setitem__`; `cell[i] = v` lowered to a **read** of the cell plus an in-place mutation, so the tracker never saw it — no conflict warning, no `merge:` policy, no fold-cell refusal. The *documented* spelling for updating one element was the unwatched one |
+| #394 / #180 | may this function's body run outside its workflow (`guard_step_entry`) | stage 3's `restore_continuation` rebuilt frames from data, a **fifth door** into a function; the resume re-checks only the entry closure, so a deeper frame naming a step body would have run it. Caught before merge by `test_step_entry_guard`'s Frame-construction enumeration, not by reading the code |
 
 **#182 adds the variant that is worst to inherit: half a seam.** `clock_fn` was
 injectable and the test harness overrode it, so the tree *looked* like it could

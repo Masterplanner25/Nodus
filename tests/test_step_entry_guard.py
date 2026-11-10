@@ -224,6 +224,8 @@ CLOSURE_ENTRY_SITES = {
     ("src/nodus/builtins/coroutine.py", "builtin_coroutine_resume"): "guarded",
     ("src/nodus/vm/vm.py", "_try_enter_module_call"): "builds-its-own",
     ("src/nodus/vm/vm.py", "_op_call"): "no-closure",
+    # #180 stage 3: rebuilding a coroutine's frames from written-down data.
+    ("src/nodus/runtime/continuation.py", "restore_continuation"): "guarded",
 }
 
 

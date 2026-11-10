@@ -397,8 +397,45 @@ module loader gives it its plain name and `Coroutine.module` records the module.
 Sleeping is not assessed, because the wake time lives in the scheduler, not on
 the coroutine (§7, question 3). Pinned by `tests/test_durability_predicate.py`.
 
-**Stage 0 ships with this document. Stage 1 shipped 2026-11-09. Stage 2 shipped
-2026-11-10.**
+**Stage 3 shipped** (2026-11-10) as `nodus.runtime.continuation`, and §4 survived
+it. `capture_continuation` writes a suspended coroutine down as JSON-safe data;
+`restore_continuation` rebuilds it against a VM running the same program. A
+worker suspended inside a nested call, holding shared and cyclic containers
+and a pending `finally`, was captured in one **process**, discarded, and
+resumed in another with a different hash seed. Its effects before the suspend
+ran once, and everything after ran in the second process, values and sharing
+intact. Pinned by `tests/test_continuation_roundtrip.py`.
+
+What it settled, and what it handed to stage 4:
+
+- **Capture happens at a suspend, not at a running instruction.** While a
+  coroutine runs, its `ip` lives in the VM's registers; only a suspend writes it
+  onto the coroutine. So stage 4's `checkpoint "label"` in a coroutine should
+  compile to a suspend, with the capture taken by the scheduler while the
+  coroutine is parked. The tests use `sleep(0i)` as that suspend.
+- **Program identity is a fingerprint of the compiled chunk** plus each
+  function's address. A restore into a different program is refused, not run.
+  The fingerprint is stable across hash seeds; the two-process test is what
+  would show it if it stopped being.
+- **Sharing and cycles are a heap table**, `copy()`'s memo (#814) as a format.
+- **Module globals are not written down.** They are the target VM's, from
+  source, which is §3.1's "reconstructable". That is only safe because stage 2
+  refuses a local that aliases one (`shared_with_module`).
+- **Restore is a door into a function** (#394). Rebuilding a frame enters its
+  function as surely as a call does, and the resume re-checks only the entry
+  closure. So restore runs `guard_step_entry` on every frame's function, and a
+  continuation naming a workflow step body is refused. `test_step_entry_guard`
+  enumerates `Frame` construction sites and caught this before it merged.
+- **A continuation is executable and must be trusted like code.** Its `ip` and
+  every `return_ip` are jump targets. Restore checks the program, the functions
+  and the step guard, but cannot tell a tampered `ip` from a genuine one, so
+  stage 4's store must be one the host controls, as the workflow store is.
+- **Still refused, for stage 4:** a frame running in another module's
+  context, and anything stage 2 reports. A remaining sleep is dropped (§7,
+  question 3): the restored coroutine is unscheduled and the caller decides.
+
+**Stage 0 ships with this document. Stage 1 shipped 2026-11-09. Stages 2 and 3
+shipped 2026-11-10.**
 
 ---
 
