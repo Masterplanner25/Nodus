@@ -2,8 +2,10 @@
 
 ## Running code during development
 
-The project `.venv` has a PyPI install of nodus-lang that takes precedence over
-`src/` in `sys.path`. Always prefix with `PYTHONPATH` to get the dev source:
+**`.venv` has nodus-lang installed editable from `src/`**, since 2026-11-09
+(`pip install -e . --no-deps`). `python`, `nodus.exe` and `import nodus` in `.venv` all run
+the working tree, so they cannot fall behind it. Keep the `PYTHONPATH` prefix anyway: it
+costs nothing, the gates set it themselves, and it is correct in any venv:
 
 ```powershell
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" ...
@@ -11,22 +13,34 @@ PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/no
 PYTHONPATH="C:/dev/Coding Language/src" "C:/dev/Coding Language/.venv/Scripts/python.exe" -m pytest tests/
 ```
 
-Without `PYTHONPATH`, you get the installed package, not the current source.
-Verify with: `nodus --version` — should match `src/nodus/support/version.py`.
+**Before that, `.venv` held a PyPI install, and it drifted fifteen minors behind** (5.0.0
+against 5.15.1), because nothing reinstalls a venv at release. The symptom is worth
+remembering in case the install is ever replaced with a regular one: **behaviour that
+contradicts the code you are reading.** It does not look like a stale install. It looks like
+a bug.
 
-**The gap is live and twelve minors wide** — re-checked 2026-09-06 after the
-5.12.0 cut: `.venv` says **5.0.0**, `src/` says 5.12.0. It widens at every
-release, because nothing reinstalls it. Forgetting the prefix gets you a runtime from before
-essentially every 5.x fix, and **the symptom is behaviour that contradicts the code you
-are reading** — which is the part worth remembering, because it does not look like a
-stale install, it looks like a bug.
+**Check it rather than trusting this paragraph.** `.venv/Scripts/python.exe -m pip show
+nodus-lang` should list `Editable project location: C:\dev\Coding Language`. A
+`pip install nodus-lang` or `pip install <companion>` that pulls nodus-lang from PyPI into
+`.venv` replaces the editable install silently. If that happens, re-run the editable install.
 
-The list of what is missing used to be written out here and grew at every release; read
-`CHANGELOG.md` between the two versions instead.
+### The venvs in this directory
 
-**Re-check with `.venv/Scripts/nodus.exe --version` rather than trusting this paragraph** — it
-has been wrong in both directions. Do not read "the versions match today" as "the prefix is
-optional" either; the moment `src/` moves ahead the gap is silent again.
+Four, all gitignored (`.venv-*/`). Six one-off venvs were removed on 2026-11-09.
+
+| Venv | Holds | Used by |
+|---|---|---|
+| `.venv` | nodus-lang editable from `src/`, plus the companions editable | everything day to day; Gate 10a runs dependent suites with it |
+| `.venv-validation` | nodus-lang from the **built wheel** | Gate 10b (`release_claims_probe.py --require-installed`), `test_stdlib_contracts.py` |
+| `.venv-postpublish` | nodus-lang **from PyPI** | Stage 5, the post-publish eval (`RELEASE_GATES.md`) |
+| `.venv-pypy` | a PyPy 3.11 interpreter | the PyPy throughput work (#702) |
+
+**Upgrade the release venvs in place. Do not delete and recreate them.** Windows Application
+Control on this machine blocks native DLLs it has not seen before: a fresh venv's
+pydantic-core 2.50.4 failed with `DLL load failed ... An Application Control policy has
+blocked this file`, and every test needing it **skipped** while pytest reported success. An
+existing venv's binaries are already allowed. If a fresh venv is unavoidable, check that a
+native import works before trusting a run, and pin to a build the policy already allows.
 
 ## GitHub API
 
@@ -254,15 +268,14 @@ flake or writing a test that races a timeout.**
 
 **Always use `python nodus.py fmt` — never `nodus.exe` or bare `nodus fmt`.**
 
-`nodus.exe` in `.venv` is whatever release was last installed there. CI runs
-`python nodus.py fmt --check {}` which loads from `src/` (the dev source). Using
-`nodus.exe` writes a format that diverges from what CI checks → commits pass locally
-but fail CI. This is the writer-vs-checker split that broke the stdlib format gate
-repeatedly across multiple pushes.
+CI runs `python nodus.py fmt --check {}`, which loads from `src/`. When `nodus.exe` was a
+PyPI install, it wrote a format that diverged from what CI checks, so commits passed
+locally and failed CI. That writer-vs-checker split broke the stdlib format gate across
+multiple pushes.
 
-**The rule holds even when the two happen to be the same version** — it is about which tree is
-loaded, not which number is printed. `.venv` matched `src/` as of 2026-08-17 and will drift again
-at the next bump.
+**The rule still holds now that `.venv`'s `nodus.exe` runs `src/`** (editable since
+2026-11-09). It is about which tree is loaded, not which number is printed, and any
+other venv's `nodus.exe` is still whatever release that venv was given.
 
 `nodus fmt` also **used to corrupt files it did not fully understand** — writing output that no
 longer parsed, for `GoalPursuit` nodes and `with { }` blocks (#427, fixed in 5.0.0). It now
@@ -325,21 +338,25 @@ unformatted on purpose.
 That is CI's invocation verbatim. It is clean today; ignore the `annotation-unchecked`
 notes, which are informational and not failures.
 
-**Verbatim is not equivalent: locally it does not check `src/nodus_lang_workflow/` at
-all.** `nodus_lang_workflow` resolves to the **installed** nodus-lang in `.venv`
-(`site-packages/nodus_lang_workflow/`), so mypy follows imports into that copy and never
-reads the working tree's. CI has no install shadowing `src/`, so it does. This is the
-`.venv`-shadows-`src` gap the top of this file warns about, in a place it is not
-obvious — and it costs a red CI on a change that type-checked clean locally.
+**Verbatim is not equivalent: locally, CI's command reports nothing from
+`src/nodus_lang_workflow/`.** mypy reads that package (since the editable install it reads
+the copy in `src/`), but it reaches it through a path registered in site-packages, and mypy
+**silences errors in installed packages**. CI has no such install, so it reports them.
+Before 2026-11-09 the cause was different and the symptom the same: mypy read a stale
+installed copy instead. **Either way, a change can type-check clean locally and fail CI.**
 
-Established by falsification, not inference: a deliberate `_deliberate: int = "nope"`
-inserted into `src/nodus_lang_workflow/runner.py` produced **no local output** and CI
-failed on the real error in the same file. **Passing the directory explicitly does not
-fix it** — `mypy src/nodus/ src/nodus_lang_workflow/` is also silent, because the
-installed package still wins module resolution.
+**Locally, add `--no-site-packages`:**
 
-So for anything under `src/nodus_lang_workflow/`, **CI is the only type check**. Push and
-let it arbitrate rather than trusting a clean local run.
+```powershell
+& "C:/dev/Coding Language/.venv/Scripts/python.exe" -m mypy src/nodus/ --ignore-missing-imports --no-error-summary --no-site-packages
+```
+
+It is clean on the current tree, with exit 0. Established by falsification on 2026-11-09:
+a deliberate `_deliberate: int = "nope"` appended to `src/nodus_lang_workflow/runner.py`
+produced **no output** from CI's command and was reported by this one, as
+`runner.py:1698: error: Incompatible types in assignment`. CI's command, without the
+flag, stays the authority, so push and let CI arbitrate. This is a closer local check, not
+a substitute.
 
 The way this bites: **extracting a condition into a helper drops mypy's type narrowing.**
 Replacing `if source_path is not None and self._can_skip(...)` with
