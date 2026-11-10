@@ -182,6 +182,20 @@ _PREDICATE_HINT = (
 )
 
 
+#: #180 stage 1. `checkpoint "label"` outside a step body used to fail at run
+#: time as `Undefined variable: checkpoint` -- the word is contextual, so
+#: outside a step it parsed as a variable reference followed by a discarded
+#: string. That error names neither the rule nor the way forward, and the place
+#: people most often write it is a bare coroutine, which cannot checkpoint yet.
+CHECKPOINT_OUTSIDE_STEP = (
+    "`checkpoint` is only valid inside a workflow step body. "
+    "Outside a step there is nothing to resume, so it would record nothing. "
+    "A bare coroutine cannot checkpoint yet: durable coroutines are #180 "
+    "(docs/design/v5/08-durable-coroutines.md). To make work resumable today, "
+    "run it as a step of a `workflow`."
+)
+
+
 def _predicate_help(clause: str) -> str:
     message = f"{clause} supports {_PREDICATE_GRAMMAR}"
     if clause == STEP_WHEN_CLAUSE:
@@ -503,6 +517,21 @@ class Parser:
             label_tok = self.eat("STR")
             label = self.mark(Str(label_tok.val), label_tok)
             return self.mark(CheckpointStmt(label), start)
+
+        # #180 stage 1: the same spelling outside a step is diagnosed, without
+        # reserving the word. Only `checkpoint` whose *next token* is a string
+        # literal is refused -- the one shape that is never meaningful as two
+        # expression statements. `let checkpoint = ...`, `checkpoint("x")`,
+        # `r.checkpoint` and a parameter of that name all still parse as
+        # before. So do the name and a string on separate lines: the newline
+        # between them is a SEP token, so the next token is not the string.
+        # (A same-line check was tried and removed: no input could tell it
+        # apart, because the SEP already decides.)
+        if self.at("ID") and self.peek().val == "checkpoint":
+            # STRING_START: an interpolated string lexes as a sequence, and
+            # `checkpoint "a \(x)"` is the same never-meaningful shape.
+            if self.peek_ahead(1).kind in ("STR", "STRING_START"):
+                self.error(CHECKPOINT_OUTSIDE_STEP, self.peek())
 
         if self.at("{"):
             return self.block()

@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`checkpoint "label"` outside a workflow step body is now a compile-time error
+  that names the rule.** It used to fail at run time with `Undefined variable:
+  checkpoint`. That told you neither that `checkpoint` only works inside a step nor
+  what to do instead. The place people most often write it is a bare coroutine,
+  which cannot checkpoint yet. The new error points at durable coroutines (#180,
+  `docs/design/v5/08-durable-coroutines.md`) and at running the work as a
+  workflow step. `nodus check` reports it now too.
+
+  This is stage 1 of #180's five-stage plan; the issue stays open.
+
+  **`checkpoint` is still not a reserved word.** Only the identifier
+  `checkpoint` followed immediately by a string literal, at the start of a
+  statement, is refused. That shape can never mean anything outside a step: it
+  is a variable reference followed by a discarded string. `let checkpoint = ...`,
+  `checkpoint("x")`, a record field or parameter named `checkpoint`, and the name
+  and a string on separate lines all still work.
+
+  One program that ran before is now refused: `let checkpoint = 1i; checkpoint
+  "x"` on one line. It evaluated a variable and threw away a string, so nothing
+  it did is lost. Pinned by `tests/test_checkpoint_outside_step.py`, which also
+  checks that every allowed use of the name still runs.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security
