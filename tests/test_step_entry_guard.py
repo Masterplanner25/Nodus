@@ -334,9 +334,12 @@ class ClosureEntrySitesAreEnumeratedTests(unittest.TestCase):
             "src/nodus/compiler/optimizer.py",       # two address remappers
             "src/nodus/runtime/module.py",           # the bytecode cache round-trip
         }
-        # Neither originates nor carries: one declares the field, one reads it.
+        # Neither originates nor carries: one declares the field, the rest read it.
         DECLARES = {"src/nodus/frontend/ast/ast_nodes.py"}
-        READS = {"src/nodus/vm/vm.py"}
+        READS = {
+            "src/nodus/vm/vm.py",                    # the entry guard
+            "src/nodus/runtime/durability.py",       # reports a step coroutine (#180)
+        }
 
         sites: dict[str, list[int]] = {}
         for path in sorted(REPO.joinpath("src").rglob("*.py")):
