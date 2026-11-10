@@ -42,6 +42,26 @@
   corrected in `docs/design/v5/08-durable-coroutines.md` §3.2. Pinned by
   `tests/test_durability_predicate.py`.
 
+- **A suspended coroutine can be written down as data and resumed elsewhere.**
+  `nodus.runtime.continuation.capture_continuation(co)` turns a suspended
+  coroutine into JSON-safe data, and `restore_continuation(vm, data)` rebuilds it
+  against a VM running the same program, in this process or another. The rebuilt
+  coroutine continues from where it stopped, and the work before that point does
+  not run again. Shared and cyclic containers keep their shape. Capture refuses
+  anything the durability check above reports, and restore refuses a different
+  program rather than jumping into unrelated code. This is stage 3 of durable
+  coroutines (#180, which stays open for stage 4: the `checkpoint` statement in a
+  coroutine, the store, and resuming after a crash). Provisional Python API; the
+  data format is versioned and not yet a stable contract. Pinned by
+  `tests/test_continuation_roundtrip.py`, including a round trip between two
+  processes.
+
+  **Only restore data your host wrote.** A continuation's saved positions are
+  jump targets in the program. Restore refuses a different program, a function
+  that has moved, and any frame naming a workflow step body (the #394 guard
+  applies to rebuilt frames as it does to calls). It cannot tell a tampered
+  position from a genuine one.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security
