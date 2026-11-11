@@ -243,6 +243,7 @@ def run_source(
     writable_paths: list[str] | None = None,
     input_fn=None,
     fs_root: str | None = None,
+    stream_output: bool = False,
 ):
     import sys as _sys
     _import_stderr = _sys.stderr
@@ -327,7 +328,10 @@ def run_source(
         extras["disassembly_lines"] = disassembly_lines
 
     try:
-        with capture_output(max_stdout_chars=max_stdout_chars) as (stdout, stderr):
+        # #907: `stream_output` sends the program's output out as it is written
+        # instead of collecting it; `nodus run` asks for it.
+        with capture_output(max_stdout_chars=max_stdout_chars,
+                            stream=stream_output) as (stdout, stderr):
             try:
                 vm.source_code = code
                 module_name = os.path.abspath(filename) if filename is not None else "<memory>"

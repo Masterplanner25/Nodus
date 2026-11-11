@@ -103,12 +103,12 @@ and before `uploaded`:
 ```
 $ nodus run --time-limit 60 ingest.nd &
 $ sleep 4; kill -9 $!
+fetching batch-7
+uploading batch-7
 ```
 
-The killed run prints nothing, not even `fetching batch-7`, which it did print.
-`nodus run` holds a program's output until the program exits, so a process that
-dies loses what it printed (#907). The store shows where it got to. An excerpt
-from `nodus workflow runs --execution-kind coroutine`:
+It printed both lines and died before `done`. The store shows where it got to.
+An excerpt from `nodus workflow runs --execution-kind coroutine`:
 
 ```
 "workflow_name": "ingest", "execution_kind": "coroutine", "status": "running", "current_checkpoint": "fetched", ...
@@ -243,16 +243,12 @@ run_loop()
 
 ```
 $ nodus run --time-limit 60 custom.nd
+fetching page 1
 Runtime error at /abs/path/custom.nd:13:9: checkpoint 'fetched' cannot be made durable:
 not durable (1 obstacle):
   - [live_value] operand stack slot 0: a `for` loop over a user-defined iterator (`__next__`), whose position is kept by its own code and cannot be written down
 A checkpoint inside a `for` over a list is fine; one over a user-defined iterator is not. Iterate a list of its items instead.
-
-fetching page 1
 ```
-
-(`fetching page 1` appears after the error, though it was printed first. That
-is the same output holding as §3.1, #907.)
 
 ### 4.2 `checkpoint` outside a durable coroutine
 
@@ -391,7 +387,6 @@ stopped:
 
 ```
 durable coroutine 'export-2026-11' (run co_e07100b12c29fdf0b79b29b4419bc199) was cancelled; its finally blocks ran and it has stopped
-
 closing export after 5 batches
 ```
 
@@ -466,7 +461,6 @@ instead).
 - **A cancel takes effect at the next checkpoint or claim renewal**, not
   instantly (§6.1).
 - **A failed run is not retried under its key.** Start it again with a new key.
-- **Output is held until exit** under `nodus run` (#907).
 
 <!-- TESTED
 Every example above was run on 2026-11-10 against main, with
@@ -482,8 +476,10 @@ tests/test_durable_spawn.py, test_durable_clock.py and test_durable_sweep.py,
 each of which kills a real process.
 
 Findings:
-F1 `nodus run` holds all program output until exit: a killed run shows nothing,
-   and stdout appears after stderr regardless of order. Filed as #907.
+F1 `nodus run` held all program output until exit: a killed run showed
+   nothing, and stdout appeared after stderr regardless of order. Filed as #907
+   and fixed: §3.1, §4.1 and §6.1 were re-run on 2026-11-11 after the fix and
+   their outputs replaced verbatim.
 F2 The for-loop refusal carried no line:col (it is raised by the scheduler, not
    by an instruction). Fixed in the PR that added this guide.
 F3 The "checkpoint outside a durable coroutine" error pointed at the label

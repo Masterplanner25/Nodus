@@ -465,6 +465,10 @@ def run_file(
         max_stdout_chars=MAX_STDOUT_CHARS if max_stdout_chars is None else max_stdout_chars,
         allowed_paths=allowed_paths,
         writable_paths=writable_paths,
+        # #907: output appears as the program writes it. Not with
+        # --dump-bytecode, which prints its disassembly before the program's
+        # output and would otherwise print it after.
+        stream_output=not dump_bytecode,
     )
     if dump_bytecode and result.get("disassembly"):
         print(result["disassembly"])
