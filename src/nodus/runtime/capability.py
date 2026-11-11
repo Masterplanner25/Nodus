@@ -263,6 +263,9 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "__action_emit", "current_workflow_id", "emit", "graph", "plan_goal",
         "plan_graph", "plan_workflow", "resume_goal", "resume_graph",
         "resume_workflow", "run_goal", "run_graph", "run_workflow", "task",
+        # #180: starts a coroutine backed by a run record. What it runs passes
+        # the same chokepoint as any other code; the record is the store run_workflow writes.
+        "durable_spawn",
         "workflow_checkpoints", "workflow_resume_payload", "workflow_state",
         # #481: reads an argument the *caller* bound at run_workflow. It
         # reaches nothing the step could not already reach.
@@ -508,7 +511,7 @@ DOMAIN_BUILTIN_GROUPS: dict[str, DomainBuiltinGroup] = {
         arity=(0, 1, 2, 3, 4),
         names=(
             "task", "graph", "run_graph", "plan_graph", "resume_graph",
-            "run_workflow", "plan_workflow", "resume_workflow",
+            "run_workflow", "plan_workflow", "resume_workflow", "durable_spawn",
             "run_goal", "plan_goal", "resume_goal",
             "workflow_state", "workflow_arg", "state_contribute",
             "state_open_for_write",

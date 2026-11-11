@@ -100,6 +100,10 @@ class Coroutine:
     # It rides on the coroutine for the same reason `workflow_context` does --
     # the runner creates it here and the scheduler enters the closure later.
     step_authorized: bool = False
+    # #180 stage 4b: the run record this coroutine is durable against
+    # (`nodus.runtime.durable.DurableBinding`), set by `durable_spawn` and by
+    # nothing else. None for every ordinary coroutine.
+    durable: object | None = None
     # ASYNC-MOD-001 (#105): the module execution context (code/functions/globals/
     # ...) this coroutine should run in. Captured at spawn and on every suspend,
     # restored on resume — so a coroutine suspended inside a cross-module call

@@ -80,6 +80,7 @@ BUILTIN_NAMES = {
     "plan_graph",
     "resume_graph",
     "run_workflow",
+    "durable_spawn",
     "plan_workflow",
     "resume_workflow",
     "run_goal",

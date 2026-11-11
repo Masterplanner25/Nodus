@@ -188,11 +188,10 @@ _PREDICATE_HINT = (
 #: string. That error names neither the rule nor the way forward, and the place
 #: people most often write it is a bare coroutine, which cannot checkpoint yet.
 CHECKPOINT_OUTSIDE_STEP = (
-    "`checkpoint` is only valid inside a workflow step body. "
-    "Outside a step there is nothing to resume, so it would record nothing. "
-    "A bare coroutine cannot checkpoint yet: durable coroutines are #180 "
-    "(docs/design/v5/08-durable-coroutines.md). To make work resumable today, "
-    "run it as a step of a `workflow`."
+    "`checkpoint` at module level records nothing: it is valid inside a workflow "
+    "step body, or inside a function started with `durable_spawn` (a durable "
+    "coroutine, #180; docs/design/v5/08a-durable-coroutines-stage4.md). Module "
+    "level is neither, so this can never mean anything."
 )
 
 
@@ -238,6 +237,10 @@ class Parser:
         self.last_token: Tok | None = None
         self.workflow_depth = 0
         self.workflow_step_depth = 0
+        # #180 stage 4b: inside any function body, `checkpoint "label"` is a
+        # statement. Whether it means a step's re-entry label or a durable
+        # coroutine's position is decided when it runs.
+        self.function_depth = 0
         self._block_depth = 0
         self.goal_depth = 0
         self._parse_depth = 0
@@ -530,8 +533,18 @@ class Parser:
         if self.at("ID") and self.peek().val == "checkpoint":
             # STRING_START: an interpolated string lexes as a sequence, and
             # `checkpoint "a \(x)"` is the same never-meaningful shape.
-            if self.peek_ahead(1).kind in ("STR", "STRING_START"):
-                self.error(CHECKPOINT_OUTSIDE_STEP, self.peek())
+            following = self.peek_ahead(1).kind
+            if following in ("STR", "STRING_START"):
+                if self.function_depth == 0:
+                    self.error(CHECKPOINT_OUTSIDE_STEP, self.peek())
+                # #180 stage 4b: inside a function it is a checkpoint, with the
+                # label rule a step uses -- a plain string literal.
+                start = self.eat("ID")
+                if following != "STR":
+                    self.error("checkpoint label must be a string", start)
+                label_tok = self.eat("STR")
+                label = self.mark(Str(label_tok.val), label_tok)
+                return self.mark(CheckpointStmt(label), start)
 
         if self.at("{"):
             return self.block()
@@ -739,7 +752,11 @@ class Parser:
         if self.at("->"):
             self.eat("->")
             return_type = self.parse_type_name()
-        body = self.block()
+        self.function_depth += 1
+        try:
+            body = self.block()
+        finally:
+            self.function_depth -= 1
         return self.mark(FnDef(name, params, body, return_type=return_type, exported=exported), start)
 
     def workflow_def(self):
@@ -1598,7 +1615,11 @@ class Parser:
             if self.at("->"):
                 self.eat("->")
                 return_type = self.parse_type_name()
-            body = self.block()
+            self.function_depth += 1
+            try:
+                body = self.block()
+            finally:
+                self.function_depth -= 1
             return self.mark(FnExpr(params, body, return_type=return_type), start)
 
         if self.at("["):
