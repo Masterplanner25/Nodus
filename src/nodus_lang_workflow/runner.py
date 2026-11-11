@@ -6,7 +6,11 @@ import os
 import threading
 from contextlib import contextmanager
 
-from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES, is_graph_execution_kind
+from nodus.orchestration.workflow_state import (
+    EXECUTION_KIND_COROUTINE,
+    WAIT_TIMEOUT_POLICIES,
+    is_graph_execution_kind,
+)
 from nodus.runtime.runtime_stats import is_store_time, store_time_ms
 from nodus.orchestration.task_graph import (
     TaskGraph,
@@ -780,11 +784,26 @@ class WorkflowFrameworkRunner:
             if not is_store_time(updated_at):
                 return True
             return float(updated_at) <= idle_before
+        resumed_coroutines: list[dict[str, object]] = []
         for record in self.list_rehydratable_runs():
             if record.run_id in skip_ids:
                 continue
             if min_idle_ms > 0 and not _idle_enough(record):
                 continue  # recently touched: someone is probably still on it
+            if record.execution_kind == EXECUTION_KIND_COROUTINE:
+                # #180 stage 4c: a durable coroutine is resumed, not adopted. A
+                # graph adopted here waits for something to carry it on; for a
+                # durable coroutine carrying on *is* the whole of its meaning,
+                # and the sweep is the explicit act that may run stored code,
+                # as it already is for a due retry or a released schedule.
+                vm = vm_factory(record)
+                if vm is None:
+                    continue
+                from nodus.runtime.durable import resume_durable_run
+                resumed_coroutines.append(resume_durable_run(vm, self.store, record))
+                continue
+            if not is_graph_execution_kind(record.execution_kind):
+                continue
             vm = vm_factory(record)
             rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
             if vm is None or not callable(rebuild_graph):
@@ -798,6 +817,7 @@ class WorkflowFrameworkRunner:
             "released_schedules": released_schedules,
             "resumed_retries": resumed_retries,
             "rehydrated_runs": rehydrated,
+            "resumed_coroutines": resumed_coroutines,
         }
 
     def deliver_event(
@@ -900,6 +920,14 @@ class WorkflowFrameworkRunner:
         # another participant is working on hands them a graph pointed at
         # someone else's VM, and the resume that follows returns ok:true with
         # empty steps. `resume_workflow` has always claimed; this path did not.
+        # #180 stage 4c: only a task graph is adopted here, decided by kind
+        # before the claim -- a claim is a write, and this path must leave a
+        # run of another kind exactly as it found it. A coroutine run used to be
+        # turned away only later, because it has no graph-state file, which was
+        # right by accident and still claimed and released it on the way.
+        kind_check = self.store.get_run(run_id)
+        if kind_check is not None and not is_graph_execution_kind(kind_check.execution_kind):
+            return None
         owner = f"rehydrate:{id(vm)}"
         claim = self.store.claim_run(run_id, owner=owner)
         if claim is None:
@@ -1126,6 +1154,22 @@ class WorkflowFrameworkRunner:
         owner = f"vm:{id(vm)}"
         # #733: releasing a due schedule is safe here -- this method resumes the
         # run a few lines down, which is the whole condition on releasing one.
+        # #180 stage 4c: `nodus workflow resume <id>` on a durable coroutine.
+        # Answered by kind, before anything is written, with where it *is*
+        # resumed -- not with whatever the graph path happens to say about a
+        # run that has no graph.
+        kind_check = self.store.get_run(graph_id)
+        if kind_check is not None and not is_graph_execution_kind(kind_check.execution_kind):
+            return {
+                "ok": False,
+                "error": (
+                    f"run '{graph_id}' is a durable coroutine, not a workflow. It "
+                    "resumes when its program runs `durable_spawn` with its key "
+                    "again, or from `nodus workflow sweep`."
+                ),
+                "graph_id": graph_id,
+                "category": "not_a_graph_run",
+            }
         expired = self.store.expire_wait_timeout(graph_id, release_schedules=True)
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": expired.last_error or f"Wait timeout expired for '{graph_id}'"}

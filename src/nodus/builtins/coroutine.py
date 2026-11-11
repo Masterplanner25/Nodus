@@ -375,8 +375,10 @@ def register(vm, registry) -> None:
         # The scheduler that will hold the timer is the one whose clock the
         # deadline must be measured against -- `vm` here may be a per-call child
         # (#751), and its own Scheduler is not the one driving this coroutine.
-        scheduler = root_vm(vm).scheduler
-        remaining = float(deadline) - scheduler.time_source.now_ms()
+        # Measured against the running coroutine's view of that clock, which
+        # differs from the scheduler's own only for a resumed durable coroutine
+        # (#180 stage 4c). The timer itself is relative, so it needs no offset.
+        remaining = float(deadline) - vm.guest_clock_ms()
         return SleepRequest(remaining if remaining > 0.0 else 0.0)
 
     def builtin_spawn_after(ms, value):

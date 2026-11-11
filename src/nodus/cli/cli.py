@@ -1104,7 +1104,10 @@ def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
 
     # A run that was adopted and then failed to resume is the case an operator
     # must not miss: it is no longer waiting, and nothing else will pick it up.
-    failed = _failures(report.get("rehydrated_runs")) + _failures(report.get("resumed_retries"))
+    failed = (_failures(report.get("rehydrated_runs")) + _failures(report.get("resumed_retries"))
+              # #180 stage 4c: a durable coroutine that could not be resumed is
+              # the same case -- unfinished, and nothing else will pick it up.
+              + _failures(report.get("resumed_coroutines")))
     return 1 if failed else 0
 
 
