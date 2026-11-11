@@ -54,9 +54,9 @@ needed. Without it, `durable_spawn` refuses to start and says how to fix it:
 
 ```
 $ nodus run --time-limit 60 ingest.nd
-Runtime error at /abs/path/ingest.nd:13:55: durable_spawn needs a workflow store whose claims are exclusive across processes, so that two processes cannot both resume the same run. LocalWorkflowStore is not: its claims are exclusive only within one process. Set NODUS_WORKFLOW_STORE_BACKEND=sqlite (and move existing runs with `nodus workflow migrate-store --to sqlite`).
+Runtime error at /abs/path/ingest.nd:13:14: durable_spawn needs a workflow store whose claims are exclusive across processes, so that two processes cannot both resume the same run. LocalWorkflowStore is not: its claims are exclusive only within one process. Set NODUS_WORKFLOW_STORE_BACKEND=sqlite (and move existing runs with `nodus workflow migrate-store --to sqlite`).
 Stack trace:
-  at <main> (/abs/path/ingest.nd:13:55)
+  at <main> (/abs/path/ingest.nd:13:14)
 ```
 
 If you already have workflow runs in the JSON store, move them with `nodus
@@ -169,9 +169,9 @@ stored copy, so a first run and a resumed run see the same thing.
 
 ```
 $ nodus run --time-limit 60 rekey.nd
-Runtime error at /abs/path/rekey.nd:3:42: durable_spawn(key, fn, args): a run with key 'ingest-batch-7' was started as `ingest` with different arguments. A key names one run; use a new key for different work.
+Runtime error at /abs/path/rekey.nd:3:1: durable_spawn(key, fn, args): a run with key 'ingest-batch-7' was started as `ingest` with different arguments. A key names one run; use a new key for different work.
 Stack trace:
-  at <main> (/abs/path/rekey.nd:3:42)
+  at <main> (/abs/path/rekey.nd:3:1)
 ```
 
 ### 4.1 What a checkpoint can save
@@ -261,7 +261,7 @@ $ nodus run plain.nd
 Runtime error at /abs/path/plain.nd:2:5: `checkpoint` ran outside a workflow step and outside a durable coroutine, so there is nothing to record it in. Start the function with `durable_spawn(key, fn, args)` to make its checkpoints persist (docs/design/v5/08a-durable-coroutines-stage4.md), or run the work as a step of a `workflow`.
 Stack trace:
   at summarize (/abs/path/plain.nd:2:5)
-  called from <main> (/abs/path/plain.nd:6:24)
+  called from <main> (/abs/path/plain.nd:6:7)
 ```
 
 At module level, outside any function, it is a syntax error, because it can
@@ -565,6 +565,10 @@ F5 A rebuild re-ran a top-level spawn + run_loop and top-level host calls.
    Older than durable coroutines (workflow rebuilds since #322). Filed as #909;
    main() and the scheduling builtins are now skipped, and the remaining
    top-level effects are #917.
+
+Revised 2026-11-11 for #921: an error raised by a call now points at the start of
+the callee, so ingest.nd 13:55 -> 13:14, rekey.nd 3:42 -> 3:1 and plain.nd's
+"called from" 6:24 -> 6:7 (each re-run on main and with the fix).
 
 Revised 2026-11-11 for #912: §6.1 is new. export.nd was started with `nodus run`,
 cancelled by key from a second shell 4.5 s in, and both outputs pasted verbatim.

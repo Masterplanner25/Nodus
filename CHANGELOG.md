@@ -196,6 +196,17 @@
 
 ### Fixes
 
+- **#921: an error raised by a call points at the call.** A call is compiled after
+  its arguments, and the position it was reported at was the last argument's:
+  `len(     42i     )` said column 18, where `len` is at column 9. A frame's call
+  site is the same position, so every "called from" line in a stack trace was off
+  the same way. A no-argument call reported its `(` instead. Now each call points
+  at the start of what is called: `len` in `len(...)`, `fs` in `fs.read(...)`,
+  `xs` in `xs[0](...)`. A `print` statement points at `print`. **Columns in
+  error messages and stack traces change** wherever an error was raised by a
+  call, so anything that parses them will see new numbers. Lines are unchanged.
+  The documented outputs that quoted the old columns were re-run and updated.
+
 - **#920: `nodus workflow resume` / `replay` and `goal-resume` exit 1 when they
   fail.** These commands print the workflow runner's answer, and a run that does
   not exist, could not be rebuilt, or is not a workflow comes back as

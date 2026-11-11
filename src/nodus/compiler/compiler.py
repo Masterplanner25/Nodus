@@ -412,6 +412,32 @@ class Compiler:
         if tok is not None:
             self.current_loc = (self.current_module, tok.line, tok.col)
 
+    def set_call_loc(self, call) -> None:
+        """Point the call instruction at the start of what is being called (#921).
+
+        The instruction is emitted after the arguments are compiled, and each of
+        those moved `current_loc`, so an error the call raised -- a builtin
+        refusing its argument, say -- was reported at the *last argument*:
+        `len(     42i     )` said column 18, not 9. Every call site sets this
+        just before it emits, so none of them can be missed by the next.
+
+        The start of the callee, not the `Call` node's own token, which is its
+        `(`: walking left through `a.b` and `f()` lands on `fs` in
+        `fs.write(...)`, which is where a reader's eye starts the call.
+        """
+        node = call.callee
+        while isinstance(node, (Attr, Call, Index)):
+            if isinstance(node, Attr):
+                node = node.obj
+            elif isinstance(node, Index):
+                node = node.seq
+            else:
+                node = node.callee
+        if getattr(node, "_tok", None) is not None:
+            self.set_current_loc(node)
+        else:
+            self.set_current_loc(call)
+
     def emit(self, *instr):
         self.code.append(instr)
         self.code_locs.append(self.current_loc)
@@ -666,6 +692,9 @@ class Compiler:
 
         if isinstance(stmt, Print):
             self.compile_expr(stmt.expr)
+            # #921: the statement is the call; an error it raises (an output
+            # limit, say) belongs to `print`, not to its argument.
+            self.set_current_loc(stmt)
             self.emit("CALL", "print", 1)
             self.emit("POP")
             return
@@ -1144,11 +1173,13 @@ class Compiler:
                             self.emit("LOAD", self.resolve_name(expr.callee.name))
                         for arg in expr.args:
                             self.compile_expr(arg)
+                        self.set_call_loc(expr)
                         self.emit("CALL_VALUE", len(expr.args))
                         return
                 for arg in expr.args:
                     self.compile_expr(arg)
                 self.ensure_name_access(expr.callee.name, node=expr)
+                self.set_call_loc(expr)
                 self.emit("CALL", self.resolve_name(expr.callee.name), len(expr.args))
                 return
             if isinstance(expr.callee, Attr) and isinstance(expr.callee.obj, Var):
@@ -1158,17 +1189,20 @@ class Compiler:
                     for arg in expr.args:
                         self.compile_expr(arg)
                     resolved = self.resolve_module_name(expr.callee.obj.name, expr.callee.name, node=expr)
+                    self.set_call_loc(expr)
                     self.emit("CALL", resolved, len(expr.args))
                     return
             if isinstance(expr.callee, Attr):
                 self.compile_expr(expr.callee.obj)
                 for arg in expr.args:
                     self.compile_expr(arg)
+                self.set_call_loc(expr)
                 self.emit("CALL_METHOD", expr.callee.name, len(expr.args))
                 return
             self.compile_expr(expr.callee)
             for arg in expr.args:
                 self.compile_expr(arg)
+            self.set_call_loc(expr)
             self.emit("CALL_VALUE", len(expr.args))
             return
 
