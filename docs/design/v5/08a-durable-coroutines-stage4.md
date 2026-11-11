@@ -312,7 +312,11 @@ can be separate PRs, but not separate releases.
   (through the heap table, so a list a local also holds stays one list) and an
   index, in continuation format `/2`. A user-defined `__next__` iterator holds a
   closure and is still refused.
-- **Cancelling a durable coroutine** from outside: #912.
+- ~~**Cancelling a durable coroutine** from outside.~~ Done in #912:
+  `nodus workflow cancel --key`, cooperative. A live holder notices at its next
+  checkpoint or claim renewal and unwinds through `cancel(task)`'s path. Every
+  durable write goes through `update_claimed_run`, so a cancel cannot be
+  overwritten.
 - **Retention.** Finished coroutine runs accumulate like finished workflow runs,
   and `nodus workflow cleanup` is where that already lives. That only works once
   4a has given `cleanup` the new kind.

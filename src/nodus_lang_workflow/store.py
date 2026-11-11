@@ -210,6 +210,18 @@ class WorkflowStore(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} cannot renew a claim")
 
+    def update_claimed_run(self, run_id: str, token: str, mutate) -> WorkflowRunRecord | None:
+        """Apply `mutate(record)` and save, only while `token` still holds the run.
+
+        Atomic: the claim check and the write cannot be separated by another
+        writer. Returns the saved record, or None -- and writes nothing -- if
+        the claim is gone (released, taken over, or cleared by `cancel_run`) or
+        the run has reached a terminal status. A durable coroutine writes only
+        through this (#912): a read-then-`save_run` let a cancel or a takeover
+        landing between the two be overwritten, so the run came back `running`.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot update under a claim")
+
     @abstractmethod
     def register_wait(
         self,
@@ -937,12 +949,26 @@ class LocalWorkflowStore(WorkflowStore):
             record = self._load_run_unlocked(run_id)
             if record is None or record.claim is None or record.claim.token != token:
                 return None
+            if record.status in TERMINAL_RUN_STATUSES:
+                return None  # #912: a cancelled run's claim is void
             record.claim = WorkflowClaim(token=token, owner=record.claim.owner,
                                          claimed_at=record.claim.claimed_at,
                                          expires_at=now + self.claim_ttl_ms)
             record.updated_at = now
             self._atomic_write_json(self._run_path(run_id), record.to_dict())
             return record.claim
+
+    def update_claimed_run(self, run_id: str, token: str, mutate) -> WorkflowRunRecord | None:
+        # Exclusive within this process only, like the rest of this store.
+        with self._lock:
+            record = self._load_run_unlocked(run_id)
+            if (record is None or record.claim is None or record.claim.token != token
+                    or record.status in TERMINAL_RUN_STATUSES):
+                return None
+            mutate(record)
+            record.updated_at = store_time_ms()
+            self._atomic_write_json(self._run_path(run_id), record.to_dict())
+            return record
 
     def register_wait(
         self,
@@ -1317,30 +1343,35 @@ class SQLiteWorkflowStore(WorkflowStore):
 
     def _write_run(self, record: WorkflowRunRecord) -> WorkflowRunRecord:
         with self._managed_conn() as conn:
-            _exec(
-                conn,
-                """
-                INSERT INTO workflow_runs (
-                    run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
-                    current_checkpoint, resume_count, last_error, metadata_json, claim_json, wait_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id) DO UPDATE SET
-                    graph_id=excluded.graph_id,
-                    workflow_name=excluded.workflow_name,
-                    execution_kind=excluded.execution_kind,
-                    status=excluded.status,
-                    created_at=excluded.created_at,
-                    updated_at=excluded.updated_at,
-                    current_checkpoint=excluded.current_checkpoint,
-                    resume_count=excluded.resume_count,
-                    last_error=excluded.last_error,
-                    metadata_json=excluded.metadata_json,
-                    claim_json=excluded.claim_json,
-                    wait_json=excluded.wait_json
-                """,
-                _serialize_record(record),
-            )
+            self._write_run_with_conn(conn, record)
         return record
+
+    def _write_run_with_conn(self, conn, record: WorkflowRunRecord) -> None:
+        """The upsert, on a connection the caller owns -- so a check and a
+        write can share one transaction (`update_claimed_run`)."""
+        _exec(
+            conn,
+            """
+            INSERT INTO workflow_runs (
+                run_id, graph_id, workflow_name, execution_kind, status, created_at, updated_at,
+                current_checkpoint, resume_count, last_error, metadata_json, claim_json, wait_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id) DO UPDATE SET
+                graph_id=excluded.graph_id,
+                workflow_name=excluded.workflow_name,
+                execution_kind=excluded.execution_kind,
+                status=excluded.status,
+                created_at=excluded.created_at,
+                updated_at=excluded.updated_at,
+                current_checkpoint=excluded.current_checkpoint,
+                resume_count=excluded.resume_count,
+                last_error=excluded.last_error,
+                metadata_json=excluded.metadata_json,
+                claim_json=excluded.claim_json,
+                wait_json=excluded.wait_json
+            """,
+            _serialize_record(record),
+        )
 
     def create_run(
         self,
@@ -1453,7 +1484,10 @@ class SQLiteWorkflowStore(WorkflowStore):
         with self._lock, self._managed_conn() as conn:
             _exec(conn, "BEGIN IMMEDIATE")
             record = self._get_run_with_conn(conn, run_id)
-            if record is None or record.claim is None or record.claim.token != token:
+            if (record is None or record.claim is None or record.claim.token != token
+                    or record.status in TERMINAL_RUN_STATUSES):
+                # #912: a cancelled run's claim is void, so a holder renewing it
+                # learns it is no longer the run's to continue.
                 conn.rollback()
                 return None
             renewed = WorkflowClaim(token=token, owner=record.claim.owner,
@@ -1466,6 +1500,20 @@ class SQLiteWorkflowStore(WorkflowStore):
             )
             conn.commit()
             return renewed
+
+    def update_claimed_run(self, run_id: str, token: str, mutate) -> WorkflowRunRecord | None:
+        with self._lock, self._managed_conn() as conn:
+            _exec(conn, "BEGIN IMMEDIATE")
+            record = self._get_run_with_conn(conn, run_id)
+            if (record is None or record.claim is None or record.claim.token != token
+                    or record.status in TERMINAL_RUN_STATUSES):
+                conn.rollback()
+                return None
+            mutate(record)
+            record.updated_at = store_time_ms()
+            self._write_run_with_conn(conn, record)
+            conn.commit()
+            return record
 
     def register_wait(
         self,

@@ -39,6 +39,17 @@
     a catchable error that says so. The continuation format is now
     `nodus-continuation/2`, and `/1` data is still read.
   - **The same key with different arguments** is refused: a key names one run.
+  - **Cancelling one from outside** (#912): `nodus workflow cancel --key <key>`
+    (or a run id; `runner.cancel_run(run_id_for(key))` from Python). The run
+    becomes `cancelled`, and neither a re-run nor a sweep resumes it. A live
+    holder notices at its next checkpoint or claim renewal and unwinds the way
+    `cancel(task)` does: `finally` runs, `catch` cannot swallow it, and a
+    `checkpoint` inside `finally` does nothing. Every durable write now goes
+    through the store's new `update_claimed_run`, which checks the claim and the
+    status and writes in one transaction, and `renew_claim` refuses a terminal
+    run. Together they close a race in which a cancel, or a takeover, landing
+    between a holder's read and its save was overwritten and the run came back
+    `running`.
   - **A run held by a live process** is left alone, and the caller is told so on
     stderr, with how long the claim has left. A process that loses its claim
     to another stops its copy at once and never writes to the record again.

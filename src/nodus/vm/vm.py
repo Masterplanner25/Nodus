@@ -2886,7 +2886,13 @@ class VM:
             # durable coroutine it is a position, persisted by the scheduler
             # while the coroutine is suspended (design 08a, D2).
             coroutine = self.current_coroutine
-            if coroutine is not None and getattr(coroutine, "durable", None) is not None:
+            binding = getattr(coroutine, "durable", None) if coroutine is not None else None
+            if binding is not None:
+                # #912: a run that was cancelled, or lost to another process, is
+                # being unwound or stopped. A checkpoint reached on the way out
+                # (in a `finally`) has nothing to record and must not suspend.
+                if binding.lost:
+                    return None
                 return CheckpointRequest(label)
             self.runtime_error("runtime", CHECKPOINT_NOT_DURABLE)
         handler = ctx.get("checkpoint")

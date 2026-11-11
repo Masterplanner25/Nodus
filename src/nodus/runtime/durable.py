@@ -172,10 +172,7 @@ def durable_spawn(vm, key, fn, args) -> str:
     try:
         _launch(vm, store, record, claim, closure)
     except ContinuationRefused as exc:
-        vm.runtime_error(
-            "runtime",
-            f"{_CALLED_AS}: run {key!r} cannot be resumed: {exc}. Its last "
-            "checkpoint belongs to a different version of this program.")
+        vm.runtime_error("runtime", f"{_CALLED_AS}: run {key!r} cannot be resumed: {exc}")
     return run_id
 
 
@@ -216,12 +213,14 @@ def _launch(vm, store, record, claim, closure=None):
         store.release_claim(run_id, claim.token)
         raise
 
-    record = store.get_run(run_id)
-    record.status = RUN_STATUS_RUNNING
-    record.claim = claim
-    if continuation is not None:
-        record.resume_count = (record.resume_count or 0) + 1
-    store.save_run(record)
+    def _mark_running(rec):
+        rec.status = RUN_STATUS_RUNNING
+        if continuation is not None:
+            rec.resume_count = (rec.resume_count or 0) + 1
+
+    if store.update_claimed_run(run_id, claim.token, _mark_running) is None:
+        # Cancelled (or taken) between our claim and this write: not ours to run.
+        raise ContinuationRefused(f"run {run_id} was cancelled or taken over before it started")
 
     coroutine.durable = DurableBinding(
         run_id=run_id, key=record.metadata.get("durable_key"), store=store,
@@ -322,14 +321,42 @@ def keep_claim(scheduler, coroutine) -> bool:
 def _renew(scheduler, coroutine, binding) -> bool:
     claim = binding.store.renew_claim(binding.run_id, binding.token)
     if claim is None:
-        _lose(scheduler, coroutine, binding)
+        _stop(scheduler, coroutine, binding)
         return False
     binding.renewed_at = time.monotonic()
     return True
 
 
-def _lose(scheduler, coroutine, binding) -> None:
+def _stop(scheduler, coroutine, binding) -> None:
+    """This copy may no longer act on its run. Find out why, and stop accordingly.
+
+    Two causes, which look identical from the claim and mean different things:
+
+    - **cancelled** (`nodus workflow cancel`, `runner.cancel_run`): the run is
+      over. The coroutine is unwound through `cancel(task)`'s path, so its
+      `finally` blocks run and no `catch` can swallow it (#912);
+    - **taken over** by another process after the claim expired: the run is
+      alive elsewhere. This copy stops at once and leaves it to that process.
+
+    Either way nothing more is written to the record: a cancelled run's status
+    must stay `cancelled`, and a taken-over run is someone else's.
+    """
+    from nodus_lang_workflow.models import RUN_STATUS_CANCELLED
+
     binding.lost = True
+    record = binding.store.get_run(binding.run_id)
+    if record is not None and record.status == RUN_STATUS_CANCELLED:
+        from nodus.builtins.coroutine import cancel_coroutine
+        from nodus.runtime.diagnostics import LangRuntimeError
+        print(
+            f"durable coroutine {binding.key!r} (run {binding.run_id}) was cancelled; "
+            "its finally blocks ran and it has stopped",
+            file=sys.stderr,
+        )
+        owner = getattr(coroutine, "owner_vm", None) or scheduler.vm
+        cancel_coroutine(owner, scheduler, coroutine, LangRuntimeError(
+            "cancelled", f"durable run {binding.key!r} was cancelled"))
+        return
     coroutine.state = "finished"
     print(
         f"durable coroutine {binding.key!r} lost its claim on run {binding.run_id}: "
@@ -366,21 +393,25 @@ def on_checkpoint(scheduler, coroutine, label: str) -> None:
             "runtime", f"checkpoint {label!r} cannot be made durable:\n{exc}{hint}",
             line=line, col=col, path=path)
         return
-    store = binding.store
-    record = store.get_run(binding.run_id)
-    metadata = dict(record.metadata)
-    metadata["continuation"] = data
     # D6: where this coroutine's clock stood, on both clocks, so a resume in a
     # process whose clock started later can continue its timeline.
     from nodus.vm.vm_chain import root_vm
     owner = getattr(coroutine, "owner_vm", None) or scheduler.vm
     guest_ms = (root_vm(owner).scheduler.time_source.now_ms()
                 + float(coroutine.clock_offset_ms or 0.0))
-    metadata["clock"] = {"guest_ms": guest_ms, "wall_ms": time.time() * 1000.0}
-    metadata["checkpoints_reached"] = int(metadata.get("checkpoints_reached") or 0) + 1
-    record.metadata = metadata
-    record.current_checkpoint = label
-    store.save_run(record)
+
+    def _record_checkpoint(rec):
+        metadata = dict(rec.metadata)
+        metadata["continuation"] = data
+        metadata["clock"] = {"guest_ms": guest_ms, "wall_ms": time.time() * 1000.0}
+        metadata["checkpoints_reached"] = int(metadata.get("checkpoints_reached") or 0) + 1
+        rec.metadata = metadata
+        rec.current_checkpoint = label
+
+    # Under the claim, atomically (#912): a cancel or a takeover landing after
+    # the renewal above is seen here instead of being overwritten.
+    if binding.store.update_claimed_run(binding.run_id, binding.token, _record_checkpoint) is None:
+        _stop(scheduler, coroutine, binding)
 
 
 def _checkpoint_loc(coroutine):
@@ -407,24 +438,25 @@ def on_settled(coroutine) -> None:
     if binding is None or binding.lost:
         return
     binding.lost = True  # settled: nothing further may write, including a second call
-    store = binding.store
-    if store.renew_claim(binding.run_id, binding.token) is None:
-        return
-    record = store.get_run(binding.run_id)
-    metadata = dict(record.metadata)
-    metadata.pop("continuation", None)
     failure = getattr(coroutine, "failure", None)
-    if failure is not None:
-        record.status = RUN_STATUS_FAILED
-        record.last_error = str(failure)
-    else:
-        record.status = RUN_STATUS_COMPLETED
-        result = coroutine.last_result
-        if assess_values({"result": result}).durable:
-            from nodus.runtime.continuation import encode_values
-            metadata["result"] = encode_values([result])
+    result = coroutine.last_result
+
+    def _record_outcome(rec):
+        metadata = dict(rec.metadata)
+        metadata.pop("continuation", None)
+        if failure is not None:
+            rec.status = RUN_STATUS_FAILED
+            rec.last_error = str(failure)
         else:
-            metadata["result_unrecorded"] = type(result).__name__
-    record.metadata = metadata
-    record.claim = None
-    store.save_run(record)
+            rec.status = RUN_STATUS_COMPLETED
+            if assess_values({"result": result}).durable:
+                from nodus.runtime.continuation import encode_values
+                metadata["result"] = encode_values([result])
+            else:
+                metadata["result_unrecorded"] = type(result).__name__
+        rec.metadata = metadata
+        rec.claim = None
+
+    # Under the claim (#912): a run cancelled while this copy was finishing
+    # keeps `cancelled`, the one fact the operator asked for.
+    binding.store.update_claimed_run(binding.run_id, binding.token, _record_outcome)

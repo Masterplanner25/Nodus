@@ -1003,7 +1003,9 @@ def _workflow_cancel_cli(run_id: str, project_root: str | None) -> int:
     nothing until a long agent call returns is worse than one that admits it.
     """
     with _project_root_context(project_root):
-        result = get_default_workflow_runner().cancel_run(run_id)
+        runner = get_default_workflow_runner()
+        before = runner.get_run(run_id)
+        result = runner.cancel_run(run_id)
     if not result.get("ok"):
         reason = result.get("reason", "could not cancel")
         if result.get("status"):
@@ -1011,7 +1013,13 @@ def _workflow_cancel_cli(run_id: str, project_root: str | None) -> int:
         _print_stderr(f"Not cancelled: {run_id} -- {reason}")
         return 1
     print(f"Cancelled {run_id} (was {result.get('cancelled_from')})")
-    print("A run owned by another process stops at its next step boundary.")
+    from nodus.orchestration.workflow_state import EXECUTION_KIND_COROUTINE
+    if before is not None and before.execution_kind == EXECUTION_KIND_COROUTINE:
+        # #912: where a durable coroutine notices is not a step boundary.
+        print("A durable coroutine running in another process stops at its next "
+              "checkpoint or claim renewal, after running its finally blocks.")
+    else:
+        print("A run owned by another process stops at its next step boundary.")
     return 0
 
 
@@ -2484,13 +2492,17 @@ def _dispatch(argv: list[str] | None = None) -> int:
             return _workflow_inspect(positional[0], project_root)
         if subcommand == "cancel":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "cancel"))
-            if not positional:
-                _print_stderr("Usage: nodus workflow cancel <graph_id> [--project-root <path>]")
+            key = flags.get("--key")
+            if bool(positional) == bool(key):
+                _print_stderr("Usage: nodus workflow cancel <graph_id> | --key <durable key> [--project-root <path>]")
                 return 1
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
                 _print_stderr(err)
                 return 1
+            if key:
+                from nodus.runtime.durable import run_id_for
+                return _workflow_cancel_cli(run_id_for(str(key)), project_root)
             return _workflow_cancel_cli(positional[0], project_root)
         if subcommand == "replay":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "replay"))

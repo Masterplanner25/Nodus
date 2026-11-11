@@ -615,7 +615,9 @@ find afterwards, because none was ever written.
   continues from the last checkpoint. **At-least-once between checkpoints:** the
   work after the last checkpoint may run again. It needs a store whose claims are
   exclusive across processes, which today means `NODUS_WORKFLOW_STORE_BACKEND=sqlite`
-  (see §6.1); it refuses the JSON store. Experimental. Guide:
+  (see §6.1); it refuses the JSON store. Cancel one with `nodus workflow cancel
+  --key <key>`: cooperative, at its next checkpoint or claim renewal, `finally`
+  blocks run. Experimental. Guide:
   [docs/guide/durable-coroutines.md](../guide/durable-coroutines.md).
 - **A workflow**, when the work has named steps with dependencies between them. Its
   step state is persisted as it goes, and an interrupted run is picked up by the
