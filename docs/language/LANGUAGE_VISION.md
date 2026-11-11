@@ -1,6 +1,6 @@
 ﻿# Language Vision
 
-**Last reviewed:** 2026-09-08, against 5.12.0. Direction, not a record of the
+**Last reviewed:** 2026-11-11, against 5.15.1 (bootstrapping section). Direction, not a record of the
 tree — read it for where the language is going and `LANGUAGE_SPEC.md` for where
 it is.
 
@@ -145,49 +145,54 @@ wrong — that is a rule with teeth, not a preference.
 recursive-descent parser and evaluator written entirely in Nodus, so the shape
 of the task is already expressible. What is not yet in place:
 
-- **Throughput.** Roughly **400K instructions/sec** on CPython 3.11 for a hot
-  arithmetic loop (1,000,000 iterations = 17,000,021 instructions; best of three
-  trials), and about **320K/sec on a compiler workload** — `expr_compiler.nd`
-  driven over many expressions, which is the shape that actually matters here.
-  Self-hosting means the compiler compiling itself, and the pipeline is ~2,300
-  lines of lexer/parser/AST plus ~1,900 lines of compiler.
-
-  **Nodus runs on PyPy unmodified** (its only dependency is `tzdata`), and that is
-  worth having — but *how much* faster depends heavily on the workload, so the two
-  figures need keeping apart:
+- **Throughput.** Self-hosting means the compiler compiling itself, and the
+  pipeline is ~2,300 lines of lexer/parser/AST plus ~1,900 lines of compiler.
+  Measured 2026-11-11 on CPython 3.11 and PyPy 7.3 (3.11), best of three, with
+  instruction counts from the VM's own counter:
 
   | workload | CPython | PyPy | ratio |
   |---|---:|---:|---:|
-  | hot arithmetic loop | ~400K/s | ~9.4M/s | **~23×** |
-  | `expr_compiler.nd` | ~320K/s | ~1.7M/s | **~4–5×** |
+  | hot arithmetic loop (1M iterations, 17M instructions) | ~1.4M/s | ~23M/s | **~16×** |
+  | `expr_compiler.nd`, 1,600 expressions (13M instructions) | ~0.7M/s | ~11M/s | **~16×** |
+  | `expr_compiler.nd`, 25 expressions (0.2M instructions) | ~0.5M/s | ~0.6M/s | ~1.2× |
 
-  A JIT is at its best on a tight loop, so the 23× is an upper bound rather than a
-  promise. A recursive-descent parser is many cold-ish paths and warms slowly: at
-  small inputs PyPy has no advantage at all, and it is still climbing at 3M
-  instructions. Measurements on
+  **Do not quote these; re-derive them** with `python -m tools.benchmark_runtime`,
+  under both interpreters. Every earlier figure in this section went stale, in
+  both directions, and the history is on
   [#173](https://github.com/Masterplanner25/Nodus/issues/173).
 
-  There is also a **1.5× available with no new runtime at all**: the VM retains an
-  event object per function call and return, unbounded and unread, costing a third
-  of throughput and ~23 bytes per instruction of live memory
-  ([#522](https://github.com/Masterplanner25/Nodus/issues/522)). For a compiler
-  compiling itself the memory side is the harder wall of the two.
+  **Nodus runs on PyPy unmodified**, and on a long run it is worth ~16× on the
+  compiler workload as well as the hot loop. This section used to say only ~4–5×
+  on the compiler workload. That figure was measured while a PyPy-only
+  regression was live: the VM had crossed PyPy's 80-instance-attribute cliff,
+  costing ~9× for three releases
+  ([#702](https://github.com/Masterplanner25/Nodus/issues/702)).
+  `tests/test_vm_attribute_budget.py` now holds the line.
 
-  So throughput is still the blocker, and the honest statement of the question is
-  *how much of it comes back from the runtime, and how much from the runtime we
-  already have*. CPython 3.14 is within noise of 3.11 — there is no free win from
-  upgrading. One bug that blocked the suite on PyPy turned out to be a latent
-  CPython defect rather than an incompatibility, and is fixed: the SQLite workflow
-  store relied on refcounting to close cursors
+  What PyPy does not help is a *short* run. Its JIT needs a few million
+  instructions to pay off, and importing Nodus's own modules makes `nodus run`
+  start ~1.6× slower than on CPython. So the shape that fits is CPython for the
+  CLI and PyPy for long runs, which is exactly what a compiler compiling itself
+  is. One blocker remains before that: files held open past their scope, which
+  CPython's refcounting closes and PyPy's GC does not
+  ([#701](https://github.com/Masterplanner25/Nodus/issues/701)). The first of
+  that class, in the SQLite workflow store, is fixed
   ([#516](https://github.com/Masterplanner25/Nodus/issues/516)).
+
+  Two things already recovered on CPython: the VM no longer retains an event
+  per call and return that nothing read, which was a third of throughput and
+  ~23 bytes of live memory per instruction
+  ([#522](https://github.com/Masterplanner25/Nodus/issues/522)), and the CLI no
+  longer imports a web server on every command (#777). CPython 3.14 is within
+  noise of 3.11; upgrading is not a free win.
 - **String slicing.** `std:strings` has no substring or slice, so a lexer must
   index character by character. `expr_compiler.nd` does exactly that and says so.
-- **Closure upvalue mutation** ([#156](https://github.com/Masterplanner25/Nodus/issues/156)).
-  Compiler state threads through the map-mutation workaround instead of being
-  written directly.
-- **Module privacy** ([#158](https://github.com/Masterplanner25/Nodus/issues/158)).
-  Every top-level function is public, so a self-hosted compiler cannot keep
-  helpers internal.
+
+Two gaps this list used to name are closed. **Closure mutation** of an outer
+`let` works, at function scope always and at module scope since 5.8.0
+([#671](https://github.com/Masterplanner25/Nodus/issues/671); #156 had claimed
+otherwise). **Module privacy** exists: `export { … }` restricts what a module
+exposes ([#158](https://github.com/Masterplanner25/Nodus/issues/158)).
 
 What *is* in place is the part usually hardest to retrofit: the semantics are
 stable, and the 49-opcode instruction set has been frozen at

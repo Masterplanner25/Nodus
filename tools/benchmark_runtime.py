@@ -1,9 +1,12 @@
 """Measure what #173 is about, rather than quoting a number that goes stale.
 
-Two figures, and they are different questions:
+Three figures, and they are different questions:
 
 - **Throughput** -- how fast the VM executes instructions once running. This is
   the ceiling #173 names, and it is bounded by CPython's own dispatch loop.
+- **Compiler workload** -- the same, on `examples/expr_compiler.nd`. A tight
+  loop is a JIT's best case; this is closer to what self-hosting would run, and
+  the two have been confused on #173 more than once.
 - **Startup** -- how long before a program executes at all. This is what blocks
   #173's PyPy path: PyPy's interpreter starts *faster* than CPython's, and the
   adoption cost is importing Nodus's own module tree, which is run-once code the
@@ -78,6 +81,45 @@ def throughput(sizes, reps: int) -> None:
         )
 
 
+#: The expression `compiler` drives, chosen to exercise every precedence level.
+COMPILER_EXPR = "((1 + 2) * (3 + 4)) - -5 / 2 + 3.5 * 2 * (10 - 4 / 2)"
+
+
+def compiler(sizes, reps: int) -> None:
+    """Throughput on the workload bootstrapping cares about.
+
+    `examples/expr_compiler.nd` is a lexer, recursive-descent parser and
+    evaluator written in Nodus. A hot arithmetic loop is a JIT's best case, so
+    its figure alone flatters PyPy -- or, while #702's regression was live, did
+    the opposite. This one is many cold-ish paths, closer to what a self-hosted
+    compiler compiling itself would run.
+    """
+    NodusRuntime = _runtime()
+    source = (_REPO_ROOT / "examples" / "expr_compiler.nd").read_text(encoding="utf-8")
+    definitions = source[: source.index('print("Nodus expression compiler")')]
+    driver = definitions + (
+        "let i = 0i\nlet last = nil\n"
+        "while (i < %di) { last = compile_and_eval(\"" + COMPILER_EXPR + "\"); i = i + 1i }\n"
+        "print(fmt(last))\n"
+    )
+
+    print(f"\ncompiler workload -- {sys.implementation.name} {sys.version.split()[0]}, "
+          "examples/expr_compiler.nd")
+    for n in sizes:
+        best, instructions = None, 0
+        for _ in range(reps):
+            rt = NodusRuntime(timeout_ms=None, max_steps=None)
+            start = time.perf_counter()
+            result = rt.run_source(driver % n)
+            elapsed = time.perf_counter() - start
+            if not result.get("ok") or (result.get("stdout") or "").strip() != "79.5":
+                raise SystemExit(f"compiler workload went wrong: {result}")
+            instructions = rt.get_execution_stats()["instructions_executed"]
+            best = elapsed if best is None else min(best, elapsed)
+        print(f"  n={n:>5,}  {instructions:>11,} instr  {best:6.3f}s  "
+              f"{instructions / best / 1000:9.1f}K instr/s")
+
+
 def startup(reps: int) -> None:
     """Cost before a program runs. Subprocesses, because that is the real cost."""
     env = dict(os.environ, PYTHONPATH=str(_SRC))
@@ -109,11 +151,14 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--quick", action="store_true",
                         help="one small size, fewer repetitions")
+    parser.add_argument("--skip-compiler", action="store_true")
     parser.add_argument("--skip-startup", action="store_true")
     args = parser.parse_args(argv)
 
     sizes = (50_000,) if args.quick else (50_000, 200_000, 1_000_000)
     throughput(sizes, reps=1 if args.quick else 3)
+    if not args.skip_compiler:
+        compiler((100,) if args.quick else (25, 100, 400, 1600), reps=1 if args.quick else 3)
     if not args.skip_startup:
         startup(reps=2 if args.quick else 3)
     return 0
