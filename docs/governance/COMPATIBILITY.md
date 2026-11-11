@@ -38,6 +38,13 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
   6.0.0** (decided 2026-09-06; #798). The remedies are in the warning: run under
   `nodus serve` with a registered worker, or pass `worker_dispatcher=` to
   `NodusRuntime`.
+- **A rebuild re-running a top-level effect** (#917). When a stored run is
+  resumed, its program is rebuilt from the stored source, and a top-level call
+  that reaches outside the program (a write, a request, a subprocess, a host
+  function not registered `rebuild_safe=True`) happens again. Warns from the next
+  minor after 5.15.1, with the call and its line; **scheduled to be refused in
+  6.0.0**. Fix: move the work into `fn main()`. Override for runs stored before
+  the fix: `rebuild_effects="allow"`. Guide: `docs/migration/v6.0-staged-flips.md` §6.
 - **The default workflow store being `LocalWorkflowStore`** (#174). **Scheduled
   to become SQLite in 6.0.0.** Runs recorded in the JSON store are not visible to
   a SQLite one, so an in-flight `waiting` run would become unresumable rather

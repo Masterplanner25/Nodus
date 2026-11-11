@@ -563,6 +563,20 @@ print(u["user"] + " is " + u["role"])
 print(r["stdout"])   # alice is admin
 ```
 
+### Host functions a rebuild may call again: `rebuild_safe=True`
+
+When a stored workflow run or durable coroutine is resumed, its program is
+rebuilt by re-running its top level, and a host function called there runs
+again. Each such call is reported now and refused at 6.0.0 (#917), unless the
+function is declared safe to repeat:
+
+```python
+runtime.register_function("load_config", read_config, rebuild_safe=True)
+```
+
+Mark only functions that change nothing: a lookup, a config read. A function that
+records, sends or writes belongs in `fn main()`, which a rebuild skips.
+
 ### Validation
 
 `register_function` raises `ValueError` on misuse:

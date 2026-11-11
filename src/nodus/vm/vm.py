@@ -63,6 +63,7 @@ from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_F
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY, CHECKPOINT_KEY, CheckpointRequest
 from nodus.runtime.durable import CHECKPOINT_NOT_DURABLE
+from nodus.runtime.rebuild_effects import handle_rebuild_effect, is_rebuild_effect
 from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
@@ -3396,6 +3397,9 @@ class VM:
         _cap = BUILTIN_CAPABILITIES.get(fn_name)
         if _cap is not None:
             self.check_capability(_cap, fn_name, "builtin", args)
+            # #917: re-run by a rebuild? Reported, refused or allowed in one place.
+            if is_rebuild_effect(fn_name):
+                handle_rebuild_effect(self, fn_name, "builtin")
         profiler = self.profiler
         if profiler is not None and profiler.enabled:
             profiler.enter_function(fn_name)

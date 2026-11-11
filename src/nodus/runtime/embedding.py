@@ -21,6 +21,7 @@ from nodus.runtime.schema_contract import (
     validate_args,
     validate_return,
 )
+from nodus.runtime.rebuild_effects import handle_rebuild_effect
 from nodus.runtime.capability import (
     ALL_CAPABILITIES,
     SANDBOX_DEFAULT,
@@ -74,6 +75,13 @@ def _drain_spawned(vm: "VM | None", join_timeout_s: float = 0.5) -> None:
         t_err.join(timeout=join_timeout_s)
     handles.clear()
 
+
+
+def _check_rebuild_effects(mode: str) -> str:
+    from nodus.runtime.rebuild_effects import REBUILD_EFFECT_MODES
+    if mode not in REBUILD_EFFECT_MODES:
+        raise ValueError(f"rebuild_effects must be one of {REBUILD_EFFECT_MODES}, not {mode!r}")
+    return mode
 
 class ToolRegistry:
     """Python-side view of the Nodus tool registry for a ``NodusRuntime`` instance.
@@ -542,6 +550,8 @@ class NodusRuntime:
         self._event_sinks: list = list(event_sinks) if event_sinks else []
         self._host_functions: dict[str, BuiltinInfo] = {}
         self._host_capabilities: dict[str, str | None] = {}
+        #: #917: host functions declared safe to call again during a rebuild.
+        self._host_rebuild_safe: set[str] = set()
         # #493: (argument schema, return schema) per host function, normalised
         # at registration. Kept beside the capability map because both are the
         # same thing -- per-registration metadata enforced at the one chokepoint.
@@ -566,8 +576,16 @@ class NodusRuntime:
         requires: str | None = None,
         schema: dict | None = None,
         returns_schema: dict | None = None,
+        rebuild_safe: bool = False,
     ) -> None:
         """Register a Python callable as a host function available to Nodus scripts.
+
+        ``rebuild_safe=True`` declares the function safe to call again when a
+        stored run's program is rebuilt to resume it (a workflow resume, a
+        sweep, a durable coroutine). A rebuild re-runs the program's top level,
+        so a host function called there runs again. Mark a pure lookup -- a
+        config read -- safe. An unmarked one is reported, and refused once
+        rebuild effects are refused (#917).
 
         The function will be available in every subsequent ``run_source`` /
         ``run_file`` call on this runtime instance.
@@ -668,6 +686,10 @@ class NodusRuntime:
         ret_schema = self._resolve_host_schema(name, returns_schema, None, kind="returns_schema")
         self._host_functions[name] = BuiltinInfo(name, resolved_arity, fn)
         self._host_capabilities[name] = requires
+        if rebuild_safe:
+            self._host_rebuild_safe.add(name)
+        else:
+            self._host_rebuild_safe.discard(name)
         self._host_schemas[name] = (arg_schema, ret_schema)
 
     def _unregistered_externs(self, source: str) -> list[str]:
@@ -922,6 +944,7 @@ class NodusRuntime:
         self.__last_vm = None
         self._host_functions.clear()
         self._host_capabilities.clear()
+        self._host_rebuild_safe.clear()
         self._host_schemas.clear()
         self._python_registered_tools.clear()
 
@@ -1135,7 +1158,7 @@ class NodusRuntime:
                 on_error=on_error,
             )
 
-    def new_vm(self) -> "VM":
+    def new_vm(self, *, rebuild_effects: str | None = None) -> "VM":
         """A fresh VM configured exactly as this runtime runs programs (#908).
 
         Same confinement (`allowed_paths`, `allow_subprocess`, `allow_network`,
@@ -1150,9 +1173,14 @@ class NodusRuntime:
         denied a capability under this runtime is not.
         """
         vm, _host_builtins = self._build_vm()
+        if rebuild_effects is not None:
+            # #917: set only when asked, so an ordinary VM carries no extra
+            # attribute (the VM sits near PyPy's attribute-map limit, #702).
+            setattr(vm, "rebuild_effects", _check_rebuild_effects(rebuild_effects))
         return vm
 
-    def sweep(self, *, min_idle_ms: float = 0.0, now_ms: float | None = None) -> dict:
+    def sweep(self, *, min_idle_ms: float = 0.0, now_ms: float | None = None,
+              rebuild_effects: str | None = None) -> dict:
         """Resume what this runtime's workflow store holds, on VMs it configures (#908).
 
         `WorkflowFrameworkRunner.sweep` -- expired waits, due retries, released
@@ -1169,6 +1197,11 @@ class NodusRuntime:
 
         Explicit, never automatic. A run record carries a whole program's
         source, so resuming stored runs is a decision the host makes (#176).
+
+        ``rebuild_effects`` sets what a rebuild does with a top-level effect in
+        the stored program (#917): ``"warn"`` (the default), ``"refuse"``, or
+        ``"allow"``. "allow" is the override for a run stored before its program
+        was fixed: a rebuild uses the stored source, so the fix does not reach it.
         """
         runner = self.workflow_runner
         if runner is None:
@@ -1178,7 +1211,7 @@ class NodusRuntime:
             # Unbounded here: one sweep may resume many runs, and each is held
             # to this runtime's step and time limits by its own VM.
             with capture_output(max_stdout_chars=None) as (stdout, stderr):
-                report = dict(runner.sweep(lambda _record: self.new_vm(),
+                report = dict(runner.sweep(lambda _record: self.new_vm(rebuild_effects=rebuild_effects),
                                            now_ms=now_ms, min_idle_ms=min_idle_ms))
         if stdout.getvalue():
             report["stdout"] = stdout.getvalue()
@@ -1460,6 +1493,10 @@ class NodusRuntime:
         return len(params)
 
     def _invoke_host_function(self, vm: VM, fn, *args, name: str | None = None):
+        # #917: a host function called while a rebuild re-runs the top level runs
+        # again unless it was declared `rebuild_safe`. Decided in one place.
+        if name is not None and name not in self._host_rebuild_safe:
+            handle_rebuild_effect(vm, name, "host function")
         host_args = [self._to_host_value(arg) for arg in args]
         # #405: the other of the two chokepoints a guest cannot route around.
         # A host function declares its capability via `register_function(...,

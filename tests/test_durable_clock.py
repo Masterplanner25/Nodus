@@ -242,8 +242,14 @@ class AfterARealCrashTests(unittest.TestCase):
             self.assertTrue(result.get("ok"), result)
         self.assertEqual(1, len(woke_at))
         after_checkpoint = woke_at[0] - checkpoint_wall
+        # The lower bound is the discriminating one: without the clock offset
+        # this long-running test process's clock is far past the old deadline,
+        # so the coroutine wakes at once, well under 900 ms. The upper bound only
+        # catches "absurdly late", so it is generous: a loaded box can take
+        # seconds to restart and rebuild, and that is not what this measures
+        # (a 2.5 s bound failed once in a 12-minute run under load).
         self.assertGreaterEqual(after_checkpoint, 900.0)
-        self.assertLess(after_checkpoint, 2_500.0)
+        self.assertLess(after_checkpoint, 15_000.0)
 
 
 if __name__ == "__main__":

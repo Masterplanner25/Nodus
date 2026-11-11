@@ -333,8 +333,12 @@ Two things to know when a sweep rebuilds a program:
   runs automatically or the program calls `main()` itself), `print`,
   `run_workflow`, `run_goal`, `durable_spawn`, and the scheduling builtins
   `spawn`, `spawn_after`, `run_loop` and `wait`. Anything else at the top level
-  outside `main`, such as a host-function call or a file write, runs again, because it
-  may compute a value a definition needs (#909; refusing it instead is #917).
+  outside `main` that reaches outside the program, such as a file write, a
+  request or a host function, runs again and is reported with its line. At
+  6.0.0 it is refused (#917). Reads (`read_file`, `env_get`) are fine at the top
+  level, and so is a host function registered `rebuild_safe=True`. A run stored
+  before you fixed its program is resumed with `rebuild_effects="allow"`
+  (migration guide §6).
 - **Host functions are not in the stored source.** `nodus workflow sweep` has
   none of your registered functions. A durable coroutine that calls one is
   resumed by a host that registers it, with `runtime.sweep()` (§7.1), or by

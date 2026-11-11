@@ -263,7 +263,15 @@ class CheckStagedMergesTests(_Env):
         self.assertIn("record-equality", result.stdout)
         self.assertIn("[from a run]", result.stdout)
         self.assertNotIn("[not checked] record-equality", result.stdout)
-        self.assertNotIn("could not be checked from source", result.stdout)
+        # The run upgrades *this* flip. Another one may still be unchecked from
+        # source -- `rebuild-effect` (#917) is, in every project -- so the
+        # summary's count is the number of `[not checked]` lines, which no
+        # longer includes record-equality.
+        unchecked = result.stdout.count("[not checked]")
+        if unchecked:
+            self.assertIn(f"{unchecked} could not be checked from source", result.stdout)
+        else:
+            self.assertNotIn("could not be checked from source", result.stdout)
 
     def test_the_hint_is_not_printed_once_a_report_exists(self):
         self.write("eq.nd", RECORDS)
