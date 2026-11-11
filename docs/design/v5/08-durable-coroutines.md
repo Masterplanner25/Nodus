@@ -314,6 +314,9 @@ must be settled before it earns that.
   that does not is a documented promise the default cannot keep — and the failure
   mode is the one this feature exists to prevent. **A durable coroutine must
   refuse a non-crash-safe store, or land after #174's step 2.**
+  *(Corrected in [08a](08a-durable-coroutines-stage4.md), D3: both stores write
+  records atomically; the property that matters is that a claim is exclusive
+  across processes, and only SQLite's is.)*
 - **#486** decided the workflow checkpoint's meaning; §4 deliberately diverges
   from it and must say so wherever `checkpoint` is documented.
 - **#704** supplies content-addressed program identity (§3.3).

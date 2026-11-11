@@ -66,7 +66,12 @@ from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, graph_topology, is_goal_pursuit_value, is_goal_value, is_workflow_value, workflow_to_graph
-from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES, checkpoints_public
+from nodus.orchestration.workflow_state import (
+    EXECUTION_KIND_GOAL,
+    WAIT_TIMEOUT_POLICIES,
+    checkpoints_public,
+    is_graph_execution_kind,
+)
 
 _DEFERRED_NONE = DEFERRED_NONE  # sentinel: no deferred return / re-raise pending
 _FINALLY_GATE = -1         # handler_ip sentinel: RETURN and THROW inside a catch defer to finally
@@ -2285,6 +2290,14 @@ class VM:
         workflow_name = metadata.get("workflow_name")
         goal_name = metadata.get("goal_name")
         execution_kind = metadata.get("execution_kind")
+        # #180 stage 4a: only a task-graph run can be rebuilt as one. Refuse a
+        # run of another kind here, by name, instead of letting the branches
+        # below treat it as a workflow and fail with "workflow not defined".
+        if not is_graph_execution_kind(execution_kind):
+            raise WorkflowRebuildError(
+                f"run is a {execution_kind!r} run, not a workflow or goal, so it "
+                f"cannot be rebuilt as a task graph"
+            )
         flow_name = goal_name if isinstance(goal_name, str) and goal_name else workflow_name
         if not isinstance(flow_name, str) or not flow_name:
             raise WorkflowRebuildError(
@@ -2390,9 +2403,9 @@ class VM:
         self.source_code = source_code
         if worker_dispatcher is not None:
             self.worker_dispatcher = worker_dispatcher
-        workflow = find_goal_value(self.globals, flow_name) if execution_kind == "goal" else find_workflow_value(self.globals, flow_name)
+        workflow = find_goal_value(self.globals, flow_name) if execution_kind == EXECUTION_KIND_GOAL else find_workflow_value(self.globals, flow_name)
         if workflow is None:
-            kind_word = "goal" if execution_kind == "goal" else "workflow"
+            kind_word = "goal" if execution_kind == EXECUTION_KIND_GOAL else "workflow"
             raise WorkflowRebuildError(
                 f"{kind_word} '{flow_name}' is not defined by the rebuilt module — "
                 f"it may have been renamed or removed since the run started"
@@ -2413,7 +2426,7 @@ class VM:
         _prior_children = metadata.get("child_graph_ids")
         if isinstance(_prior_children, list) and _prior_children and isinstance(graph.metadata, dict):
             graph.metadata["child_graph_ids"] = list(_prior_children)
-        kind_word = "goal" if execution_kind == "goal" else "workflow"
+        kind_word = "goal" if execution_kind == EXECUTION_KIND_GOAL else "workflow"
         self._validate_rebuilt_topology(graph, metadata, flow_name, kind_word, graph_id)
         return graph
 

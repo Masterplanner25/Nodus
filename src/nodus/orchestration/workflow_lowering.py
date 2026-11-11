@@ -54,6 +54,8 @@ from nodus.frontend.ast.ast_nodes import (
     WorkflowStep,
 )
 from nodus.orchestration.workflow_state import (
+    EXECUTION_KIND_GOAL,
+    EXECUTION_KIND_WORKFLOW,
     FOLD_STATE_MERGE_POLICIES,
     STATE_MERGE_POLICIES,
 )
@@ -101,11 +103,11 @@ STEP_OPTION_KEYS = {
 
 
 def lower_workflow_ast(workflow: WorkflowDef) -> MapLit:
-    return _lower_flow_ast(workflow, marker=WORKFLOW_MARKER, execution_kind="workflow")
+    return _lower_flow_ast(workflow, marker=WORKFLOW_MARKER, execution_kind=EXECUTION_KIND_WORKFLOW)
 
 
 def lower_goal_ast(goal: GoalDef) -> MapLit:
-    return _lower_flow_ast(goal, marker=GOAL_MARKER, execution_kind="goal")
+    return _lower_flow_ast(goal, marker=GOAL_MARKER, execution_kind=EXECUTION_KIND_GOAL)
 
 
 def lower_goal_pursuit_ast(pursuit) -> MapLit:
@@ -119,7 +121,7 @@ def lower_goal_pursuit_ast(pursuit) -> MapLit:
     items: list[tuple[object, object]] = [
         (Str(GOAL_PURSUIT_MARKER), Str("goal_pursuit")),
         (Str("name"), Str(pursuit.name)),
-        (Str("execution_kind"), Str("goal")),
+        (Str("execution_kind"), Str(EXECUTION_KIND_GOAL)),
         (Str("workflow"), Str(pursuit.workflow_name)),
         (Str("until"), _lower_predicate(pursuit.until)),
         (

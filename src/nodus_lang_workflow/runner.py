@@ -6,7 +6,7 @@ import os
 import threading
 from contextlib import contextmanager
 
-from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
+from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES, is_graph_execution_kind
 from nodus.runtime.runtime_stats import is_store_time, store_time_ms
 from nodus.orchestration.task_graph import (
     TaskGraph,
@@ -965,6 +965,12 @@ class WorkflowFrameworkRunner:
     def rehydrate_runs(self, vm_factory) -> list[dict[str, object]]:
         rehydrated: list[dict[str, object]] = []
         for record in self.list_rehydratable_runs():
+            # #180 stage 4a: this sweep rebuilds task graphs. A run of another
+            # kind (a durable coroutine) is resumed by its own path, and sending
+            # it here would only write a misleading rebuild error onto its record
+            # every sweep. Skipped before a VM is built for it.
+            if not is_graph_execution_kind(record.execution_kind):
+                continue
             vm = vm_factory(record)
             rebuild_graph = getattr(vm, "_rebuild_workflow_graph", None)
             if vm is None or not callable(rebuild_graph):
