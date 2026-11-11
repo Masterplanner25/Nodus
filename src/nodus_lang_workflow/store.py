@@ -55,8 +55,10 @@ __all__ = [
     "TERMINAL_RUN_STATUSES",
     "LocalWorkflowStore",
     "SQLiteWorkflowStore",
+    "StoreUnsuitableError",
     "WorkflowStore",
     "create_workflow_store",
+    "require_exclusive_claims",
     "workflow_store_backend_from_env",
     "workflow_store_path_from_env",
 ]
@@ -93,7 +95,41 @@ def _state_json(value) -> str:
     return json.dumps(value, separators=(",", ":"))
 
 
+class StoreUnsuitableError(ValueError):
+    """The configured store cannot honour what a feature needs from it."""
+
+
+def require_exclusive_claims(store: "WorkflowStore", *, feature: str) -> None:
+    """Refuse `store` for `feature` unless its claims are exclusive across processes.
+
+    Durable coroutines (#180, design 08a D3-D5) need this: a program restarted
+    after a crash and a host rehydrating runs must not both resume one
+    coroutine, and `claim_run` is what decides between them. Asked of the
+    store's declaration, so a third-party store can opt in.
+    """
+    if getattr(store, "EXCLUSIVE_CLAIMS_ACROSS_PROCESSES", False) is True:
+        return
+    raise StoreUnsuitableError(
+        f"{feature} needs a workflow store whose claims are exclusive across "
+        f"processes, so that two processes cannot both resume the same run. "
+        f"{type(store).__name__} is not: its claims are exclusive only within one "
+        f"process. Set NODUS_WORKFLOW_STORE_BACKEND=sqlite (and move existing runs "
+        f"with `nodus workflow migrate-store --to sqlite`)."
+    )
+
+
 class WorkflowStore(ABC):
+    #: Whether `claim_run` is exclusive across *processes*, not only threads:
+    #: two claimants in different processes racing for one run can never both
+    #: win. False unless a store says otherwise, because the cost of a wrong
+    #: True is a run resumed twice. `tests/test_store_claim_exclusivity.py`
+    #: checks each store's declaration against an interleaved race.
+    #:
+    #: Not "crash-safe": both built-in stores write each record atomically
+    #: (`LocalWorkflowStore` by fsync and rename, SQLite by transaction). The
+    #: difference that matters to a durable coroutine is this one.
+    EXCLUSIVE_CLAIMS_ACROSS_PROCESSES: bool = False
+
     @abstractmethod
     def get_run(self, run_id: str) -> WorkflowRunRecord | None:
         raise NotImplementedError
@@ -1160,6 +1196,10 @@ def _run(conn: sqlite3.Connection, sql: str, params, fetch):
 
 class SQLiteWorkflowStore(WorkflowStore):
     """SQLite-backed workflow store for cross-process coordination."""
+
+    # `claim_run` reads and writes inside one `BEGIN IMMEDIATE` transaction,
+    # which holds SQLite's write lock across processes for the whole check.
+    EXCLUSIVE_CLAIMS_ACROSS_PROCESSES = True
 
     def __init__(self, path: str | None = None, *, claim_ttl_ms: float = 30_000.0) -> None:
         resolved = path or workflow_sqlite_path()  # #585

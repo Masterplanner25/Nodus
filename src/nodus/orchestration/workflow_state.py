@@ -452,6 +452,42 @@ def writers_agree(by_task: dict, tasks: list[str]) -> bool:
 #: direction CIRC-001 (#103) was fixed to remove.
 WAIT_TIMEOUT_POLICIES = frozenset({"fail", "resume"})
 
+
+# The run-kind vocabulary, named once (#180, stage 4a).
+#
+# A run record's `execution_kind` says what kind of run it is, and code branches
+# on it in three packages. Before this it was a literal at every site, and some
+# sites were binary -- `find_goal_value(...) if kind == "goal" else
+# find_workflow_value(...)` -- so a third kind would have fallen silently into
+# the workflow branch and failed far from the cause. Stage 4 of durable
+# coroutines adds that third kind, so the vocabulary is named here first and
+# every site is made to say which kinds it handles.
+#
+# `tests/test_execution_kind_vocabulary.py` fails on a kind literal compared
+# against `execution_kind` anywhere else in `src/`.
+EXECUTION_KIND_WORKFLOW = "workflow"
+EXECUTION_KIND_GOAL = "goal"
+# A durable coroutine (docs/design/v5/08a-durable-coroutines-stage4.md, D4).
+# Nothing creates one yet; it is named before the feature so that every site
+# below has already decided what to do with it.
+EXECUTION_KIND_COROUTINE = "coroutine"
+
+EXECUTION_KINDS: tuple[str, ...] = (
+    EXECUTION_KIND_WORKFLOW,
+    EXECUTION_KIND_GOAL,
+    EXECUTION_KIND_COROUTINE,
+)
+
+#: Kinds that run as a task graph: registered in the workflow store by
+#: `start_graph`, and rebuilt on resume by `VM._rebuild_workflow_graph`. A
+#: record with no kind at all predates the field and is treated as a workflow.
+GRAPH_EXECUTION_KINDS = frozenset({EXECUTION_KIND_WORKFLOW, EXECUTION_KIND_GOAL})
+
+
+def is_graph_execution_kind(kind) -> bool:
+    """Whether a run of this kind is a task graph (a missing kind is legacy, and is)."""
+    return kind is None or kind in GRAPH_EXECUTION_KINDS
+
 FOLD_STATE_MERGE_POLICIES = ("sum", "append", "union")
 STATE_MERGE_POLICIES = ("any", "once", *FOLD_STATE_MERGE_POLICIES)
 DEFAULT_STATE_MERGE = "any"

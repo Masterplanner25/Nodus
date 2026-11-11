@@ -62,6 +62,26 @@
   applies to rebuilt frames as it does to calls). It cannot tell a tampered
   position from a genuine one.
 
+- **A workflow store now declares whether its claims are exclusive across
+  processes.** `WorkflowStore.EXCLUSIVE_CLAIMS_ACROSS_PROCESSES` is True for
+  `SQLiteWorkflowStore` and False for `LocalWorkflowStore`, whose claim is
+  guarded by an in-process lock only. `require_exclusive_claims(store,
+  feature=...)` refuses a store without the property and names the fix. Durable
+  coroutines will require it, so that a restarted program and a resuming host
+  cannot both resume one run. A third-party store says False unless it opts
+  in. Each built-in store's declaration is checked against an interleaved race
+  in `tests/test_store_claim_exclusivity.py`. This is stage 4a of durable
+  coroutines (#180, still open).
+
+  Both stores write each record atomically, so this is not a crash-safety
+  distinction, despite how the JSON store has been described.
+
+  Run kinds (`workflow`, `goal`, and the coming `coroutine`) are now named once,
+  in `nodus.orchestration.workflow_state`, and no other site may compare against
+  a literal kind. The resume path used to treat any kind that is not `goal` as a
+  workflow. A run of another kind is now refused by name, and the rehydrate sweep
+  skips it rather than writing a rebuild error onto it.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security

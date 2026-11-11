@@ -110,15 +110,31 @@ everything after the last checkpoint. That is the same contract a workflow step
 has between its re-entries, at a finer grain. "Exactly once" is not on offer and
 must not be implied.
 
-## D3. The store must be crash-safe, and that does not wait for 6.0.0
+## D3. The store's claims must be exclusive across processes, and that does not wait for 6.0.0
 
-**`durable_spawn` refuses a store that is not crash-safe.** §6 required it: the
-feature exists to survive a crash, and `LocalWorkflowStore` (file-backed JSON)
-is documented as not crash-safe. The refusal names the fix:
-`NODUS_WORKFLOW_STORE_BACKEND=sqlite`, or `nodus workflow migrate-store --to
-sqlite`. Crash-safety becomes a property the store declares, a class attribute
-that `SQLiteWorkflowStore` sets and `LocalWorkflowStore` does not. It is not
-inferred from the class name, so a third-party store can opt in.
+**`durable_spawn` refuses a store whose claims are not exclusive across
+processes.** The refusal names the fix: `NODUS_WORKFLOW_STORE_BACKEND=sqlite`,
+or `nodus workflow migrate-store --to sqlite`. The store declares the property
+(`EXCLUSIVE_CLAIMS_ACROSS_PROCESSES`), so a third-party store can opt in. The
+base class says False, because a wrong True costs a run resumed twice.
+
+**Corrected by stage 4a: the property is not "crash safety".** This section
+first said `LocalWorkflowStore` is refused because it is "documented as not
+crash-safe", following #174, which says a process kill mid-cycle can corrupt run
+state. On reading the code, that is not the difference. Both stores write each
+record atomically: the JSON store with fsync and rename, SQLite with a
+transaction. The real difference is the one D4 and D5 depend on.
+`LocalWorkflowStore.claim_run` guards its check-then-write with a
+`threading.Lock`, which is invisible to another process. SQLite's runs inside
+`BEGIN IMMEDIATE`, which is not.
+
+`tests/test_store_claim_exclusivity.py` races two handles on one backing, the
+second inside the first's window. Two claimants win on the JSON store and one on
+SQLite, and each store's declaration is checked against that result.
+
+SQLite here runs WAL with `synchronous=NORMAL`. A power loss can lose the newest
+commits, but it cannot tear a record. Under D2's at-least-once contract, losing
+the newest checkpoint means re-running more work, never skipping any.
 
 **The 6.0.0 question.** The maintainer offered to bring 6.0.0 forward if this
 needs it. **It does not need it to be correct.** The refusal makes durable
@@ -245,7 +261,7 @@ Consequences, stated so they are not rediscovered:
 
 | step | what | worth having if the next step never ships |
 |---|---|---|
-| 4a | the `execution_kind` vocabulary, named once and pinned; then `"coroutine"` added to it. Crash-safe store declaration and refusal | the enumeration guard is useful on its own; the refusal is the foundation |
+| 4a | the `execution_kind` vocabulary, named once and pinned; then `"coroutine"` added to it. the store's cross-process claim declaration and refusal | the enumeration guard is useful on its own; the refusal is the foundation |
 | 4b | `durable_spawn(key, fn, args)` with entry and argument checks, adoption by key; `checkpoint` lowering, capture to the store, refusal raised at the checkpoint | the feature, resumable by re-running the program |
 | 4c | clock continuity (D6); `rehydrate_runs` for the coroutine kind; `nodus workflow list/resume/cleanup` | resumable by a long-lived host, and deadlines that survive |
 | 4d | guide chapter; `OPERATOR_OR_EMBEDDER_RUNBOOK.md` §6.2, whose title *"A bare coroutine is transient — only a workflow survives a crash"* stops being true; stability index entry as experimental; `llms.txt` | the claim is published |

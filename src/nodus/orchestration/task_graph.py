@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from nodus.orchestration.workflow_state import WAIT_TIMEOUT_POLICIES
+from nodus.orchestration.workflow_state import (
+    EXECUTION_KIND_GOAL,
+    GRAPH_EXECUTION_KINDS,
+    WAIT_TIMEOUT_POLICIES,
+)
 
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -1001,7 +1005,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     # store; a bare `run_graph([...])` is registered nowhere, so deferring one
     # loses it outright. This asks whether the run is durable, NOT which keyword
     # was written — the two flow kinds are treated alike (#392, #393).
-    run_is_durable = execution_kind in ("workflow", "goal")
+    run_is_durable = execution_kind in GRAPH_EXECUTION_KINDS
 
     # ENH-323 (#323): reject dependency cycles up front, before the scheduler runs.
     # A cyclic `after` graph used to be caught only after the run loop drained with
@@ -1100,7 +1104,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
             scheduler_order_map = {tid: idx for idx, tid in enumerate(filtered_hint)}
     if workflow_name is not None:
         vm.event_bus.emit_event("workflow_start", data={"workflow": workflow_name, "graph_id": graph.graph_id})
-    if execution_kind == "goal" and isinstance(goal_name, str):
+    if execution_kind == EXECUTION_KIND_GOAL and isinstance(goal_name, str):
         vm.event_bus.emit_event("goal_start", data={"goal": goal_name, "workflow": workflow_name, "graph_id": graph.graph_id})
 
     def step_results() -> dict[str, object]:
@@ -1146,7 +1150,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
 
     def goal_event_payload(task: TaskNode | None = None) -> dict | None:
-        if execution_kind != "goal" or not isinstance(goal_name, str):
+        if execution_kind != EXECUTION_KIND_GOAL or not isinstance(goal_name, str):
             return None
         payload = {
             "goal": goal_name,
@@ -1165,7 +1169,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         }
         if workflow_name is not None:
             payload["workflow"] = workflow_name
-        if execution_kind == "goal" and isinstance(goal_name, str):
+        if execution_kind == EXECUTION_KIND_GOAL and isinstance(goal_name, str):
             payload["goal"] = goal_name
         return payload
 
@@ -2109,7 +2113,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 if isinstance(graph.metadata, dict) else None
             ),
         }
-        if execution_kind == "goal" and isinstance(goal_name, str):
+        if execution_kind == EXECUTION_KIND_GOAL and isinstance(goal_name, str):
             context["goal"] = goal_name
         _begin_step_writes(task)
         return context
@@ -2282,7 +2286,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                             if wait_info is not None:
                                 _pause_for_wait(task, wait_info)
                                 return
-                            if execution_kind in ("workflow", "goal") and getattr(result, "kind", None) == "error":
+                            if execution_kind in GRAPH_EXECUTION_KINDS and getattr(result, "kind", None) == "error":
                                 err_fields = getattr(result, "fields", {})
                                 err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
                                 _fail_task(task, Exception(err_msg))
@@ -2362,7 +2366,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
         wait_info = _workflow_wait_info(coroutine.last_result)
         if wait_info is not None:
             return _pause_for_wait(task, wait_info)
-        if execution_kind in ("workflow", "goal") and getattr(coroutine.last_result, "kind", None) == "error":
+        if execution_kind in GRAPH_EXECUTION_KINDS and getattr(coroutine.last_result, "kind", None) == "error":
             err_fields = getattr(coroutine.last_result, "fields", {})
             err_msg = err_fields.get("message", "step returned an error value") if isinstance(err_fields, dict) else "step returned an error value"
             return _fail_task(task, Exception(err_msg))
@@ -2584,7 +2588,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 "workflow_fail",
                 data={"workflow": workflow_name, "graph_id": graph.graph_id, "failed": failed["failed"]},
             )
-        if execution_kind == "goal" and isinstance(goal_name, str):
+        if execution_kind == EXECUTION_KIND_GOAL and isinstance(goal_name, str):
             vm.event_bus.emit_event(
                 "goal_fail",
                 data={"goal": goal_name, "workflow": workflow_name, "graph_id": graph.graph_id, "failed": failed["failed"]},
@@ -2735,7 +2739,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     vm.event_bus.emit_event("graph_persist", data={"graph_id": graph.graph_id})
     if workflow_name is not None:
         vm.event_bus.emit_event("workflow_complete", data={"workflow": workflow_name, "graph_id": graph.graph_id})
-    if execution_kind == "goal" and isinstance(goal_name, str):
+    if execution_kind == EXECUTION_KIND_GOAL and isinstance(goal_name, str):
         vm.event_bus.emit_event("goal_complete", data={"goal": goal_name, "workflow": workflow_name, "graph_id": graph.graph_id})
     payload = {
         "tasks": task_values,
