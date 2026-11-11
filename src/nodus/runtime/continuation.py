@@ -213,17 +213,7 @@ def restore_continuation(vm, data: dict):
                 f"function {ref['name']!r} is missing or has moved in this program")
         return fn
 
-    heap = _decode_heap(data["heap"])
-
-    def decode(value):
-        if isinstance(value, dict):
-            if "ref" in value:
-                return heap[value["ref"]]
-            if "bytes" in value:
-                return base64.b64decode(value["bytes"])
-        return value
-
-    _fill_heap(data["heap"], heap, decode)
+    decode = _heap_decoder(data["heap"])
 
     entry = Closure(function(data["entry"]), [])
     # #394: rebuilding a frame is a way into a function, so it is a door into a
@@ -279,6 +269,36 @@ def restore_continuation(vm, data: dict):
     coroutine.owner_vm = vm
     coroutine.module = data.get("module")
     return coroutine
+
+
+def encode_values(values: list) -> dict:
+    """Plain values as JSON-safe data, sharing and cycles kept (`_Heap`)."""
+    heap = _Heap()
+    encoded = [heap.encode(value) for value in values]
+    return {"values": encoded, "heap": heap.entries}
+
+
+def decode_values(data: dict) -> list:
+    """The inverse of `encode_values`: fresh containers, none shared with the original."""
+    decode = _heap_decoder(data["heap"])
+    return [decode(value) for value in data["values"]]
+
+
+def _heap_decoder(entries: list[dict]):
+    """A decoder over a filled heap. Containers are created empty first, so a
+    reference to any of them -- including one to itself -- resolves."""
+    heap = _decode_heap(entries)
+
+    def decode(value):
+        if isinstance(value, dict):
+            if "ref" in value:
+                return heap[value["ref"]]
+            if "bytes" in value:
+                return base64.b64decode(value["bytes"])
+        return value
+
+    _fill_heap(entries, heap, decode)
+    return decode
 
 
 def _decode_heap(entries: list[dict]) -> list:

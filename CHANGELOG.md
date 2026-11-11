@@ -4,6 +4,57 @@
 
 ### Changed
 
+- **Durable coroutines: `durable_spawn(key, fn, args)`, and `checkpoint` inside
+  a function.** `durable_spawn` runs `fn(args...)` as a coroutine backed by a run
+  record in the workflow store. Each `checkpoint "label"` it reaches is written
+  to the store before the coroutine goes on. If the process dies, calling
+  `durable_spawn` again with the same key (typically by running the program
+  again) resumes the run from its last checkpoint: the work before it does not
+  run again. A finished key does nothing and returns the run id. The contract
+  is **at-least-once between checkpoints**: work after the last checkpoint is
+  re-run after a crash.
+
+  ```
+  fn worker(job) {
+      let rows = fetch(job)
+      checkpoint "fetched"
+      upload(rows)
+      return len(rows)
+  }
+  durable_spawn("ingest-42", worker, ["job-42"])
+  run_loop()
+  ```
+
+  Requirements and refusals:
+
+  - **Needs a store whose claims are exclusive across processes**:
+    `NODUS_WORKFLOW_STORE_BACKEND=sqlite` today; the default from 6.0.0.
+  - **Checked at the `durable_spawn` call:** the entry must be a named top-level
+    function with no captured variables, and the arguments must be plain data.
+    They are copied, and the coroutine sees the stored copy.
+  - **A checkpoint inside a `for` body** raises a catchable error naming the
+    workaround (a `while` loop over an index), because the loop's iterator
+    cannot be written down yet.
+  - **The same key with different arguments** is refused: a key names one run.
+  - **A run held by a live process** is left alone, and the caller is told so on
+    stderr, with how long the claim has left. A process that loses its claim
+    to another stops its copy at once and never writes to the record again.
+
+  **`checkpoint` changed where it is accepted.** Inside any function body it now
+  compiles, because whether a function runs durably is decided at run time.
+  Outside a step and outside a durable coroutine it fails at run time with a
+  message naming `durable_spawn`. At module level it is still a parse error,
+  with a new message. Inside a step it is unchanged. The word is still not
+  reserved.
+
+  **Not releasable on its own.** Stage 4c (in the same release) must land
+  first. It makes deadlines held in locals survive a resume (design 08a, D6),
+  and resumes runs from a long-lived host. Without it, a `sleep_until` deadline
+  saved before a crash means something else after it. This is stage 4b of
+  durable coroutines (#180, still open). Experimental.
+  Pinned by `tests/test_durable_spawn.py`, including a real process kill
+  between checkpoints.
+
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:
   checkpoint`. That told you neither that `checkpoint` only works inside a step nor

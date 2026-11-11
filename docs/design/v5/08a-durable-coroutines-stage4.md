@@ -266,6 +266,11 @@ Consequences, stated so they are not rediscovered:
 | 4c | clock continuity (D6); `rehydrate_runs` for the coroutine kind; `nodus workflow list/resume/cleanup` | resumable by a long-lived host, and deadlines that survive |
 | 4d | guide chapter; `OPERATOR_OR_EMBEDDER_RUNBOOK.md` §6.2, whose title *"A bare coroutine is transient — only a workflow survives a crash"* stops being true; stability index entry as experimental; `llms.txt` | the claim is published |
 
+**Progress:** 4a shipped 2026-11-10 (#904). 4b is built (`nodus.runtime.durable`,
+`tests/test_durable_spawn.py`); its one addition beyond this file is an atomic
+`renew_claim` on the stores, because nothing renewed a claim before and a
+durable coroutine outlives the 30 s default.
+
 **4b and 4c are not separable in a release.** A release with 4b and without the
 clock continuity in 4c would let a deadline loop misbehave after a resume. They
 can be separate PRs, but not separate releases.

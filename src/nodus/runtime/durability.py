@@ -185,6 +185,43 @@ def assess_coroutine(coroutine) -> DurabilityReport:
     return DurabilityReport(tuple(found))
 
 
+def assess_values(values: dict) -> DurabilityReport:
+    """Obstacles to writing down plain values, such as a durable spawn's arguments.
+
+    The same value rules as a frame's locals, keyed by name. Module sharing is
+    not checked: the caller hands these over to be copied, so sharing with
+    module state ends at the copy.
+    """
+    found: list[Obstacle] = []
+    walker = _ValueWalker(found, {})
+    for name, value in values.items():
+        walker.check(value, f"argument `{name}`", root=name)
+    return DurabilityReport(tuple(found))
+
+
+def entry_problem(closure) -> str | None:
+    """Why `closure` cannot be the entry of a durable coroutine, or None.
+
+    Stage 2's `unnamed_entry` and `captured_cell` rules, applied to the entry
+    alone, so `durable_spawn` can refuse at the call rather than at a checkpoint.
+    """
+    fn = getattr(closure, "function", None)
+    if fn is None:
+        return "it is not a Nodus function"
+    problem = _entry_identity_problem(fn)
+    if problem:
+        return problem
+    upvalues = getattr(closure, "upvalues", None) or []
+    if upvalues:
+        names = _upvalue_names(closure)
+        return (f"`{getattr(fn, 'display_name', fn.name)}` captures "
+                f"{_name_list(names, len(upvalues))} from an enclosing function, "
+                "and a resume could not rebuild that sharing")
+    if getattr(fn, "step_owner", None):
+        return "it is the body of a workflow step"
+    return None
+
+
 # --------------------------------------------------------------------------
 # entry identity
 

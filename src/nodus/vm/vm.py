@@ -61,7 +61,8 @@ from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_s
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, charge_run_bounds, emit_denied, inherit_authority, inherit_host_state, inherit_run_bounds
 from nodus.vm.runtime_values import is_json_safe, payload_keys
-from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY
+from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY, CHECKPOINT_KEY, CheckpointRequest
+from nodus.runtime.durable import CHECKPOINT_NOT_DURABLE
 from nodus.runtime.profiler import Profiler
 from nodus.runtime.module import LiveBinding, ModuleFunction, NodusModule
 from nodus.services.tool_runtime import available_tools, call_tool, describe_tool
@@ -410,6 +411,7 @@ class VM:
             "plan_graph": BuiltinInfo("plan_graph", 1, self.builtin_plan_graph),
             "resume_graph": BuiltinInfo("resume_graph", 1, self.builtin_resume_graph),
             "run_workflow": BuiltinInfo("run_workflow", (1, 2), self.builtin_run_workflow),
+            "durable_spawn": BuiltinInfo("durable_spawn", 3, self.builtin_durable_spawn),
             "plan_workflow": BuiltinInfo("plan_workflow", 1, self.builtin_plan_workflow),
             "resume_workflow": BuiltinInfo("resume_workflow", (1, 2, 3), self.builtin_resume_workflow),
             "run_goal": BuiltinInfo("run_goal", (1, 2), self.builtin_run_goal),
@@ -2828,12 +2830,23 @@ class VM:
             self.runtime_error("type", "checkpoint label must be a string")
         ctx = self.current_workflow_context()
         if ctx is None:
-            self.runtime_error("runtime", "checkpoint used outside workflow execution")
+            # #180 stage 4b: one statement, two meanings, decided here by what
+            # is running. In a step it records a re-entry label (#486); in a
+            # durable coroutine it is a position, persisted by the scheduler
+            # while the coroutine is suspended (design 08a, D2).
+            coroutine = self.current_coroutine
+            if coroutine is not None and getattr(coroutine, "durable", None) is not None:
+                return CheckpointRequest(label)
+            self.runtime_error("runtime", CHECKPOINT_NOT_DURABLE)
         handler = ctx.get("checkpoint")
         if not callable(handler):
             self.runtime_error("runtime", "checkpoint handler unavailable")
         handler(label)
         return None
+
+    def builtin_durable_spawn(self, key, fn, args):
+        from nodus.runtime.durable import durable_spawn
+        return durable_spawn(self, key, fn, args)
 
     def current_workflow_context(self):
         if self.current_coroutine is not None:
@@ -3346,6 +3359,16 @@ class VM:
             return ("yield", {SLEEP_KEY: result.ms})
         if isinstance(result, ChannelRecvRequest):
             return ("yield", {CHANNEL_WAIT_KEY: True})
+        if isinstance(result, CheckpointRequest):
+            # Suspend exactly as a sleep does: the checkpoint's own value (nil)
+            # is pushed, and the state is saved past the call, so a resume --
+            # in this process or, from the store, in another -- continues at
+            # the statement after the checkpoint.
+            self.stack.append(None)
+            assert self.current_coroutine is not None
+            self.current_coroutine.state = "suspended"
+            self.save_current_coroutine_state(self.ip + 1)
+            return ("yield", {CHECKPOINT_KEY: result.label})
         if isinstance(result, Record) and result.kind == "error":
             result = self._augment_stdlib_err(result)
         self.stack.append(result)

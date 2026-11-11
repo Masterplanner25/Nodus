@@ -17,11 +17,24 @@ from nodus.runtime.runtime_events import RuntimeEvent
 TASK_STEP_BUDGET = 1000
 SLEEP_KEY = "__sleep_ms"
 CHANNEL_WAIT_KEY = "__channel_wait"
+# #180 stage 4b: a durable coroutine suspended at `checkpoint "label"`.
+CHECKPOINT_KEY = "__durable_checkpoint"
 
 
 class SleepRequest:
     def __init__(self, ms: float):
         self.ms = ms
+
+
+class CheckpointRequest:
+    """Returned by the checkpoint builtin inside a durable coroutine (#180).
+
+    It suspends the coroutine so that its continuation is on the coroutine,
+    not in the VM's registers, which is the only point stage 3 can capture.
+    """
+
+    def __init__(self, label: str):
+        self.label = label
 
 
 class Scheduler:
@@ -273,6 +286,11 @@ class Scheduler:
             return
         self._completed_ids.add(coroutine.id)
         self.completed_tasks.append(coroutine)
+        # #180: a durable coroutine records how it settled, here, because
+        # this is the one place every settling path passes through.
+        if getattr(coroutine, "durable", None) is not None:
+            from nodus.runtime.durable import on_settled
+            on_settled(coroutine)
         # Every path that settles a task goes through here, so this is the one
         # place a waiter has to be released from (#157/#395).
         self.release_waiters(coroutine)
@@ -536,6 +554,10 @@ class Scheduler:
                     if stop:
                         break
                     continue
+            if getattr(coroutine, "durable", None) is not None:
+                from nodus.runtime.durable import keep_claim
+                if not keep_claim(self, coroutine):
+                    continue
             try:
                 self.current_task = coroutine
                 self.total_resumes += 1
@@ -592,6 +614,14 @@ class Scheduler:
                     self._trace(f"complete coroutine #{coroutine.id}")
                     if on_complete is not None:
                         stop = bool(on_complete(coroutine)) or stop
+                continue
+
+            if isinstance(result, dict) and CHECKPOINT_KEY in result:
+                from nodus.runtime.durable import on_checkpoint
+                self._trace(f"checkpoint coroutine #{coroutine.id} {result[CHECKPOINT_KEY]!r}")
+                on_checkpoint(self, coroutine, result[CHECKPOINT_KEY])
+                if coroutine.state != "finished":
+                    self.ready_queue.append(coroutine)
                 continue
 
             channel_wait = self._extract_channel_wait(result)

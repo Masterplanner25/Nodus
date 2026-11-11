@@ -198,6 +198,18 @@ class WorkflowStore(ABC):
     def release_claim(self, run_id: str, token: str | None) -> WorkflowRunRecord | None:
         raise NotImplementedError
 
+    def renew_claim(self, run_id: str, token: str) -> WorkflowClaim | None:
+        """Extend the claim `token` holds on `run_id`, atomically, or return None.
+
+        None means the claim is no longer this holder's: it was released, or it
+        expired and someone else took it. A holder that gets None must stop
+        acting on the run, because another process now owns it (#180, durable
+        coroutines). Not abstract, so an existing third-party store keeps
+        working; it simply cannot be renewed, and durable coroutines refuse a
+        store that does not declare `EXCLUSIVE_CLAIMS_ACROSS_PROCESSES` anyway.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot renew a claim")
+
     @abstractmethod
     def register_wait(
         self,
@@ -918,6 +930,20 @@ class LocalWorkflowStore(WorkflowStore):
                 self._atomic_write_json(self._run_path(run_id), record.to_dict())
             return record
 
+    def renew_claim(self, run_id: str, token: str) -> WorkflowClaim | None:
+        # Exclusive within this process only, like `claim_run` here.
+        now = store_time_ms()
+        with self._lock:
+            record = self._load_run_unlocked(run_id)
+            if record is None or record.claim is None or record.claim.token != token:
+                return None
+            record.claim = WorkflowClaim(token=token, owner=record.claim.owner,
+                                         claimed_at=record.claim.claimed_at,
+                                         expires_at=now + self.claim_ttl_ms)
+            record.updated_at = now
+            self._atomic_write_json(self._run_path(run_id), record.to_dict())
+            return record.claim
+
     def register_wait(
         self,
         run_id: str,
@@ -1418,6 +1444,28 @@ class SQLiteWorkflowStore(WorkflowStore):
                 )
             conn.commit()
             return record
+
+    def renew_claim(self, run_id: str, token: str) -> WorkflowClaim | None:
+        # Read and write inside one BEGIN IMMEDIATE, as `claim_run` does, so a
+        # claimant in another process cannot take the run between the check
+        # and the extension.
+        now = store_time_ms()
+        with self._lock, self._managed_conn() as conn:
+            _exec(conn, "BEGIN IMMEDIATE")
+            record = self._get_run_with_conn(conn, run_id)
+            if record is None or record.claim is None or record.claim.token != token:
+                conn.rollback()
+                return None
+            renewed = WorkflowClaim(token=token, owner=record.claim.owner,
+                                    claimed_at=record.claim.claimed_at,
+                                    expires_at=now + self.claim_ttl_ms)
+            _exec(
+                conn,
+                "UPDATE workflow_runs SET updated_at = ?, claim_json = ? WHERE run_id = ?",
+                (now, _state_json(renewed.to_dict()), run_id),
+            )
+            conn.commit()
+            return renewed
 
     def register_wait(
         self,
