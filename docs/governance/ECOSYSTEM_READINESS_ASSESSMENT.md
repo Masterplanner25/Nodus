@@ -203,7 +203,7 @@ language features rather than optional library wiring.
    two consecutive minor releases with clean evals (policy in `docs/release.md`)
 3. **OAuth in nodus-mcp** — deferred to v0.2; limits use against production MCP servers
 4. **nodus-a2a Task lifecycle** — deferred to v0.2; limits multi-turn A2A use cases
-5. **Performance at scale** — Python interpreter ceiling (~200K instr/sec, no JIT);
+5. **Performance at scale** — Python interpreter ceiling (on the order of 1M instr/sec on CPython, no JIT; PyPy ~16× on long runs; re-derive with `tools/benchmark_runtime.py`);
    acceptable for orchestration use cases, not for high-throughput compute (LIMITS-001)
 
 ---

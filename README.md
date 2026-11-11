@@ -609,13 +609,14 @@ evidence the abstraction level is wrong.
 The proof-of-concept exists — [`examples/expr_compiler.nd`](https://github.com/Masterplanner25/Nodus/blob/main/examples/expr_compiler.nd)
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
 semantics are there and the 49-opcode instruction set has been frozen since v1.0.
-Runtime throughput is the honest blocker: roughly **400K instructions/sec** on
-CPython for a hot arithmetic loop, **~320K on a compiler workload**. Nodus runs on
-**PyPy** unmodified, which is worth ~23× on that arithmetic loop but **~4–5× on the
-compiler workload** — a JIT is at its best on a tight loop, so the larger number is
-an upper bound rather than a promise. A further **1.5× is available with no new
-runtime at all**: the VM retains an event per function call and return, unbounded
-and unread ([#522](https://github.com/Masterplanner25/Nodus/issues/522)). See
+Runtime throughput is the honest blocker: on the order of **1M instructions/sec**
+on CPython, a little less on a compiler workload. Nodus runs on **PyPy** unmodified,
+and once its JIT is warm that is roughly **16× on both** a hot loop and
+`expr_compiler.nd` — though PyPy is slower to start and no faster for short
+programs, so it suits a long run like a compiler compiling itself rather than
+`nodus run`. Measured 2026-11-11
+([#173](https://github.com/Masterplanner25/Nodus/issues/173)); re-derive with
+`python -m tools.benchmark_runtime` rather than quoting these. See
 [Language Vision §Bootstrapping](https://github.com/Masterplanner25/Nodus/blob/main/docs/language/LANGUAGE_VISION.md#bootstrapping-long-term-goal).
 
 ## Documentation

@@ -50,13 +50,13 @@ as evidence the abstraction level is wrong.
 Status: `examples/expr_compiler.nd` is a character-level lexer, recursive-descent parser and
 evaluator written entirely in Nodus, so the shape of the task is already expressible. The
 semantics are stable and the 49-opcode instruction set has been frozen at `BYTECODE_VERSION` 4
-since v1.0. The blocker is runtime throughput — roughly 400K instructions/sec on CPython for a hot
-arithmetic loop and ~320K on a compiler workload. PyPy runs Nodus with no changes and is worth
-~23x on the loop but ~4-5x on the compiler workload, a JIT's best case being an upper bound
-rather than a promise; a further 1.5x needs no new runtime at all, since the VM retains an
-event per function call and return, unbounded and unread (#522) —
-plus three expressiveness gaps: no string slice, no closure upvalue mutation (#156), and no
-module privacy (#158). See `docs/language/LANGUAGE_VISION.md`.
+since v1.0. The blocker is runtime throughput — on the order of 1M instructions/sec on CPython
+(measured 2026-11-11; re-derive with `tools/benchmark_runtime.py` rather than quoting it). PyPy
+runs Nodus with no changes and, once its JIT is warm, is ~16x on both a hot loop and the
+compiler workload; it starts slower and does not help short programs, so it fits a long run
+such as a compiler compiling itself rather than `nodus run` — plus one expressiveness gap: no
+string slice. (Closure mutation and module privacy, once listed here, both work.) See
+`docs/language/LANGUAGE_VISION.md`.
 
 ---
 

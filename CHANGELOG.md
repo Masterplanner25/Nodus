@@ -270,6 +270,23 @@
   `nodus run` streams. An embedded `NodusRuntime` and `nodus serve` still return
   stdout as a value, and `--dump-bytecode` keeps its disassembly first.
 
+### Tooling
+
+- **`tools/benchmark_runtime.py` measures the compiler workload too.** Besides the
+  hot loop and startup, it now drives `examples/expr_compiler.nd` over 25 to 1,600
+  expressions and checks the answer, so the throughput question LIMITS-001 (#173)
+  asks can be re-derived with one command. A tight loop is a JIT's best case, and
+  the two workloads had been confused on that issue more than once.
+
+  Re-measured with it on 2026-11-11, the throughput figures in the README,
+  `LANGUAGE_VISION.md`, `llms.txt`, `llms-full.txt` and the ecosystem readiness
+  assessment were stale: CPython is on the order of 1M instr/sec (they said 200K
+  or 400K), and PyPy is ~16x on the compiler workload, not ~4-5x -- that figure
+  was taken during the PyPy-only regression fixed in #702. They now give the
+  order of magnitude and point at the tool. The same passages listed closure
+  mutation and module privacy as missing; both work (#671, `export { ... }`),
+  and only string slicing remains.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security
