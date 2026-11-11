@@ -22,14 +22,14 @@ of them agreed, so reading any one of them would have produced a wrong plan
 
 **6.0.0 is flip-only. Decided 2026-09-06 (D5).**
 
-It carries the five staged flips in §1 and nothing else. Everything that already
+It carries the six staged flips in §1 and nothing else (five when D5 was decided; #917 was added by decision on 2026-11-11, below). Everything that already
 warns starts failing; no feature lands alongside. Features resume at 6.1.0.
 
 Three things follow from that, and they are the reason it is worth stating
 before the list rather than after it:
 
 - **The major's content is already fixed.** Scope creep has nowhere to enter:
-  anything that is not one of the five is, by definition, 6.1.0. `nodus/support/staged_flips.json`
+  anything that is not one of the six is, by definition, 6.1.0. `nodus/support/staged_flips.json`
   is the whole scope, and `nodus_gate --flips` fails if that stops being true.
 - **Everything blocking it is 5.x work.** G2 (make the signals visible) and G3
   (let a project enumerate its exposure) both have to ship *before* the major,
@@ -59,6 +59,15 @@ were reproduced.
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | **no — nobody has seen it** (§3.2) | #797 |
+| 6 | A rebuild that re-runs a top-level effect refuses it | `runtime/rebuild_effects.py` | the next minor after 5.15.1 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
+
+**#917 was added on 2026-11-11, by decision.** D5 fixed the content at five and
+sent anything new to 6.1.0. This one was added because it is the same kind of
+change as the rest (a warning today, refused at the major), and because waiting
+for 6.1.0 would mean breaking it in a minor. The decision record is in #917: what
+counts as an effect (by capability; reads allowed, network included), the
+`rebuild_safe=True` opt-out for host functions, and the `rebuild_effects="allow"`
+override for runs stored before their program was fixed.
 
 Reproductions, all at 5.11.0 from a throwaway project:
 
@@ -88,6 +97,9 @@ Four of the five are small; the fifth is not.
 - **#609** — the parser records `UnknownTypeName` and lets whoever asks report
   it; the flip is to raise instead. The static machinery is already there.
 - **#4 (worker)** — same shape: warn becomes raise, one site.
+- **#917 (rebuild effects)** — one line: `DEFAULT_REBUILD_EFFECTS` in
+  `runtime/rebuild_effects.py` goes from `"warn"` to `"refuse"`. The refusal
+  path, the override and the opt-out already ship and are tested in refuse mode.
 - **#174 is the outlier.** It changes a *default that owns state*, not a
   behaviour. Runs recorded in the JSON store are invisible to a SQLite one, so
   an in-flight `waiting` run becomes unresumable rather than moving.

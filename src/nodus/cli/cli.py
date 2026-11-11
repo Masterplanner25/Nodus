@@ -1054,7 +1054,8 @@ def _workflow_migrate_state(project_root: str | None, graph_id: str | None = Non
     return 0
 
 
-def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
+def _workflow_sweep(project_root: str | None, *, min_idle_ms: float,
+                    rebuild_effects: str | None = None) -> int:
     """Drive one sweep without a server: expire waits, resume retries, adopt orphans (#176).
 
     `WorkflowFrameworkRunner.sweep()` has always done all three, and until now the
@@ -1089,6 +1090,8 @@ def _workflow_sweep(project_root: str | None, *, min_idle_ms: float) -> int:
             # not whatever module state happened to be set.
             vm = VM([], {}, code_locs=[], source_path=None)
             vm.workflow_runner = runner
+            if rebuild_effects is not None:
+                vm.rebuild_effects = rebuild_effects  # #917, set only when asked
             return vm
 
         # A resumed workflow runs *here*, so its `print`s land on this process's
@@ -2537,7 +2540,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if subcommand == "sweep":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "sweep"))
             if positional:
-                _print_stderr("Usage: nodus workflow sweep [--min-idle-ms N] [--project-root <path>]")
+                _print_stderr("Usage: nodus workflow sweep [--min-idle-ms N] [--rebuild-effects warn|refuse|allow] [--project-root <path>]")
                 return 1
             project_root, err = _resolve_project_root(flags.get("--project-root") or flags.get("--path"))
             if err:
@@ -2550,7 +2553,14 @@ def _dispatch(argv: list[str] | None = None) -> int:
                 except ValueError as _e:
                     _print_stderr(str(_e))
                     return 1
-            return _workflow_sweep(project_root, min_idle_ms=min_idle_ms)
+            rebuild_effects = flags.get("--rebuild-effects")
+            if rebuild_effects is not None:
+                from nodus.runtime.rebuild_effects import REBUILD_EFFECT_MODES
+                if rebuild_effects not in REBUILD_EFFECT_MODES:
+                    _print_stderr(f"--rebuild-effects must be one of {', '.join(REBUILD_EFFECT_MODES)}")
+                    return 1
+            return _workflow_sweep(project_root, min_idle_ms=min_idle_ms,
+                                   rebuild_effects=rebuild_effects)
         if subcommand == "deliver":
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "deliver"))
             if len(positional) != 1:

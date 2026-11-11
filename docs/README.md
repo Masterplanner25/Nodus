@@ -150,7 +150,7 @@ Key documents:
 | `v4.0-patch-notes.md` | Cumulative patch notes within v4.0.x |
 | `v4.0-to-v4.1.md` | v4.0.x → v4.1.x — no breaking changes |
 | `v5.0-deny-by-default.md` | **The one breaking change in v5.0.0**: embedded runtimes deny subprocess, network and env unless granted. Affects `NodusRuntime` hosts; `nodus run` is deliberately unchanged |
-| `v6.0-staged-flips.md` | **All five changes staged for 6.0.0**, what each costs and how to fix it now. Start with `nodus check --staged` |
+| `v6.0-staged-flips.md` | **All six changes staged for 6.0.0**, what each costs and how to fix it now. Start with `nodus check --staged` |
 
 ---
 

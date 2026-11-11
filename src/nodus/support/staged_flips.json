@@ -66,6 +66,14 @@
       "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
       "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. **The flip lands as a refusal, not a silent switch** -- as of the stranded-runs check, opting into SQLite while the JSON store holds unmigrated runs warns and names them, and at 6.0.0 that becomes an error. That is what makes the switch safe to take: the harm this flip needed a long deprecation clock for was that it failed silently.",
       "sites": 11
+    },
+    "rebuild-effect": {
+      "issue": 917,
+      "summary": "A rebuild that re-runs a top-level effect (a write, a request, a subprocess, an unmarked host function) refuses it instead of repeating it",
+      "warns_since": "5.16.0",
+      "signal": "ok -- a StagedFlipWarning per effect, naming the call and its line, and recorded in the staged-flip report; `nodus check --staged` lists it as unchecked from source",
+      "why": "DECIDED 2026-11-11 (#917): a rebuild exists to re-bind definitions, and an effect it re-runs happens again on every resume, silently. Refusing loudly is the house rule (refuse rather than lie). Staged because it makes some resumable runs unresumable; `rebuild_effects=\"allow\"` (runtime.sweep, nodus workflow sweep --rebuild-effects allow) is the override for runs whose stored source predates the fix. Reads stay allowed; network counts as an effect; host functions opt out with register_function(..., rebuild_safe=True).",
+      "sites": 2
     }
   }
 }

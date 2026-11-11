@@ -182,7 +182,7 @@ store already had: a run parked at `workflow_wait` simply stopped existing, with
 nothing.
 
 [The migration guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v6.0-staged-flips.md)
-covers all five staged changes, what each costs and how to fix it.
+covers all six staged changes, what each costs and how to fix it.
 
 5.11.0 is about time — reading it, waiting for it, and agreeing on
 which clock is being talked about.

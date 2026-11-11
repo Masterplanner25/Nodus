@@ -4,6 +4,27 @@
 
 ### Changed
 
+- **#917: a rebuild that re-runs a top-level effect now says so, and 6.0.0 will
+  refuse it.** Resuming a stored run rebuilds its program by re-running its top
+  level (a workflow resume, `nodus workflow sweep`, a durable coroutine). Since
+  #909 that skips `main()` and the scheduling builtins. Any other top-level call
+  that reaches outside the program happened again on every resume, silently.
+  Now each one raises a `StagedFlipWarning` naming the call and its line, and is
+  recorded for `nodus check --staged` when `NODUS_STAGED_FLIP_REPORT` is set.
+  The behaviour is unchanged until 6.0.0, when it is refused (staged flip
+  `rebuild-effect`).
+  - **What counts as an effect** is decided by capability: writes, network
+    (GET included), subprocess, `env_set`/`env_unset`, agent, tool and syscall
+    calls, and memory writes. Reads (`read_file`, `env_get`, memory reads) do
+    not count.
+  - **Host functions** count unless registered with
+    `register_function(..., rebuild_safe=True)`.
+  - **Override** for a run whose stored source predates the fix:
+    `runtime.sweep(rebuild_effects="allow")` or `nodus workflow sweep
+    --rebuild-effects allow`. `"refuse"` opts into the 6.0.0 behaviour early.
+
+  Guide: `docs/migration/v6.0-staged-flips.md` §6.
+
 - **Durable coroutines: `durable_spawn(key, fn, args)`, and `checkpoint` inside
   a function.** `durable_spawn` runs `fn(args...)` as a coroutine backed by a run
   record in the workflow store. Each `checkpoint "label"` it reaches is written
@@ -91,8 +112,9 @@
   which said only a workflow survives a crash, is rewritten. Pinned by
   `tests/test_durable_spawn.py`, `tests/test_durable_clock.py` and
   `tests/test_durable_sweep.py`, each including a real process kill. Known
-  limit, filed: a rebuild re-runs a top-level host call or effectful builtin
-  outside `main` (#917).
+  limit: a rebuild re-runs a top-level host call or effectful builtin outside
+  `main`. It is reported now and refused at 6.0.0 (see the rebuild-effect entry
+  below).
 
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:

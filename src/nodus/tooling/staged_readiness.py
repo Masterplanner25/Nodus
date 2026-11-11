@@ -18,6 +18,7 @@ including the one nothing looked at.
 | `worker-dispatcher` | `worker:` declarations, reported rather than judged |
 | `default-store-sqlite` | a filesystem question: does the local store hold runs |
 | `record-equality` | **not checkable from source** -- needs both `==` operands' runtime types |
+| `rebuild-effect` | **not checked from source yet** -- the run-time warning names the call; a static check would look for effects at top level outside `main` |
 
 The concurrent-write check is worth understanding, because its answer is
 *stronger* than the runtime warning's. Which step writes which cell is known at
@@ -373,5 +374,12 @@ def _unchecked_reason(name: str) -> str:
             "program or its tests with NODUS_STAGED_FLIP_REPORT=<path> set, then "
             "re-run this -- the warning fires exactly when a comparison's answer "
             "will change, and what it finds is reported here"
+        )
+    if name == "rebuild-effect":
+        return (
+            "not checked from source yet: it fires when a stored run's program is "
+            "rebuilt (a resume or a sweep) and its top level reaches outside the "
+            "program. Resume or sweep with NODUS_STAGED_FLIP_REPORT=<path> set, "
+            "then re-run this -- each effect is reported with its line"
         )
     return "no static check is implemented for this flip"

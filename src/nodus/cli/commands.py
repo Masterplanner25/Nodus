@@ -318,7 +318,9 @@ COMMANDS: dict[str, Command] = {
             # making SQLite the default.
             # #176: one shot of the sweep `nodus serve` runs in the background,
             # so an external cron can drive resumption without host code.
-            "sweep": (_STORE | frozenset({"--min-idle-ms"}), frozenset()),
+            # #917: --rebuild-effects warn|refuse|allow, for a run whose stored
+            # program has a top-level effect.
+            "sweep": (_STORE | frozenset({"--min-idle-ms", "--rebuild-effects"}), frozenset()),
             # #181: the lookup a dispatcher could not do. `resume` needs a
             # graph_id; a webhook receiver has an event type. Same explicit-call
             # boundary as `sweep` -- this closes the lookup, not the boundary.
