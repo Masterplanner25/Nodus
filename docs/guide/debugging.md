@@ -88,7 +88,7 @@ key
 Missing map key: "missing"
 7
 at inner (err_fields.nd:7:7)
-called from outer (err_fields.nd:2:10)
+called from outer (err_fields.nd:2:5)
 ```
 
 `err.line`, `err.column`, `err.path`, and `err.stack` are always present on
@@ -398,11 +398,11 @@ Infinite recursion produces a stack trace capped at the innermost 20 frames,
 followed by a count of the rest:
 
 ```
-Sandbox error at /abs/path/deep.nd:1:36: Call stack overflow
+Sandbox error at /abs/path/deep.nd:1:24: Call stack overflow
 Stack trace:
-  at recurse (/abs/path/deep.nd:1:36)
-  called from recurse (/abs/path/deep.nd:1:36)
-  called from recurse (/abs/path/deep.nd:1:36)
+  at recurse (/abs/path/deep.nd:1:24)
+  called from recurse (/abs/path/deep.nd:1:24)
+  called from recurse (/abs/path/deep.nd:1:24)
   ... (9981 more frames)
 ```
 
@@ -446,6 +446,12 @@ deep nesting — 9,981 elided frames is a runaway, 12 is not.
 ---
 
 <!--
+Revised 2026-11-11 for #921: an error raised by a call, and a "called from" frame,
+now report the start of the callee rather than the last argument (or the `(`).
+§2's "called from outer" 2:10 -> 2:5 and the stack-overflow trace's deep.nd 1:36
+-> 1:24 (`fn recurse(n) { return recurse(n + 1) }`), each re-run on main and
+with the fix.
+
 TESTED COMMANDS (originally run against nodus-lang v2.1.1; reviewed for v3.0):
 
 01: nodus check hello.nd                 → "OK"
