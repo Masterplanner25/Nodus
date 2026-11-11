@@ -328,11 +328,13 @@ run. `nodus serve` runs the same `sweep()` in the background.
 
 Two things to know when a sweep rebuilds a program:
 
-- **Keep the top level to definitions and the `durable_spawn` call.** The sweep
-  re-runs the module's top level to rebind its functions. `print`,
-  `run_workflow`, `run_goal` and `durable_spawn` are skipped while it does, but
-  a top-level `spawn(...)` with `run_loop()`, or a top-level call to a host
-  function, runs again (#909).
+- **Put the program's work in `fn main()`.** The sweep re-runs the module's top
+  level to rebind its functions. While it does, it skips `main` (whether it
+  runs automatically or the program calls `main()` itself), `print`,
+  `run_workflow`, `run_goal`, `durable_spawn`, and the scheduling builtins
+  `spawn`, `spawn_after`, `run_loop` and `wait`. Anything else at the top level
+  outside `main`, such as a host-function call or a file write, runs again, because it
+  may compute a value a definition needs (#909; refusing it instead is #917).
 - **Host functions are not in the stored source.** `nodus workflow sweep` has
   none of your registered functions. A durable coroutine that calls one is
   resumed by a host that registers it, with `runtime.sweep()` (§7.1), or by
@@ -555,8 +557,10 @@ F3 The "checkpoint outside a durable coroutine" error pointed at the label
 F4 An embedder could not build a sweep VM that carries its registered host
    functions, or its confinement. Filed as #908 and fixed: NodusRuntime.sweep()
    and new_vm(). §7.1 (worker.py then sweeper.py, 31 s apart) run 2026-11-11.
-F5 A rebuild re-runs a top-level spawn + run_loop and top-level host calls.
-   Older than durable coroutines (workflow rebuilds since #322). Filed as #909.
+F5 A rebuild re-ran a top-level spawn + run_loop and top-level host calls.
+   Older than durable coroutines (workflow rebuilds since #322). Filed as #909;
+   main() and the scheduling builtins are now skipped, and the remaining
+   top-level effects are #917.
 
 Revised 2026-11-11 for #912: §6.1 is new. export.nd was started with `nodus run`,
 cancelled by key from a second shell 4.5 s in, and both outputs pasted verbatim.

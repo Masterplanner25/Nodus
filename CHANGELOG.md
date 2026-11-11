@@ -91,8 +91,8 @@
   which said only a workflow survives a crash, is rewritten. Pinned by
   `tests/test_durable_spawn.py`, `tests/test_durable_clock.py` and
   `tests/test_durable_sweep.py`, each including a real process kill. Known
-  limit, filed: a rebuild re-runs top-level `spawn`/`run_loop` and host calls
-  (#909, older than this feature).
+  limit, filed: a rebuild re-runs a top-level host call or effectful builtin
+  outside `main` (#917).
 
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:
@@ -173,6 +173,22 @@
   skips it rather than writing a rebuild error onto it.
 
 ### Fixes
+
+- **#909: a rebuild no longer re-runs `main()` or restarts spawned work.** A
+  workflow resume, a sweep, or a durable coroutine's resume rebuilds the program
+  by re-running its stored source, only to re-bind definitions. Two more things
+  are now skipped during that re-run:
+  - the scheduling builtins (`spawn`, `spawn_after`, `run_loop`, `wait`).
+    `spawn` returns the coroutine unscheduled, so the rest of the top level can
+    still pass it around;
+  - a top-level call to `main()`. The loader already did not auto-run `main`
+    during a rebuild, but a program that called it itself ran its work again.
+    It is skipped at run time, not compile time, so a durable coroutine's
+    program fingerprint still matches.
+
+  A top-level host-function call or effectful builtin outside `main` still runs
+  again, because it may compute a value a definition needs. Put a program's work
+  in `fn main()`. Refusing those calls instead is proposed in #917.
 
 - **#908: an embedder can sweep on VMs configured like its own runtime.**
   `NodusRuntime.sweep(min_idle_ms=..., now_ms=...)` runs the workflow sweep

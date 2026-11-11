@@ -13,6 +13,14 @@ from nodus.vm.types import Closure
 from nodus.vm.vm_chain import root_vm
 
 
+#: Builtins that do nothing that runs while a rebuild re-executes a module's
+#: top level (#909). Everything here starts or drives work; nothing here
+#: defines anything a resumed run could need.
+REBUILD_INERT_BUILTINS: tuple[str, ...] = (
+    "spawn", "spawn_after", "__spawn_after", "run_loop", "wait",
+)
+
+
 def cancel_coroutine(vm, scheduler, coroutine, err) -> bool:
     """Stop `coroutine`, running its `finally` blocks and no `catch` (#395).
 
@@ -624,6 +632,44 @@ def register(vm, registry) -> None:
         getattr(vm.scheduler, "_recv_channels", set()).discard(ch)
         return None
 
+    # #909: a rebuild re-runs a module's top level only to re-bind its
+    # definitions, and starting work is never a definition. So while one is in
+    # progress these do nothing that runs: `spawn`/`spawn_after` return the
+    # coroutine unscheduled (a handle the rest of the top level may still pass
+    # to `cancel` or `coroutine_status`), and `run_loop`/`wait` return nil.
+    # Named once in REBUILD_INERT_BUILTINS; `tests/test_rebuild_is_inert.py`
+    # checks that each name is wrapped here.
+    def _unscheduled(value, _called_as):
+        if isinstance(value, Closure):
+            return builtin_coroutine_create(value, _called_as)
+        return value
+
+    rebuild_stand_ins = {
+        "spawn": lambda value: _unscheduled(value, "spawn(fn)"),
+        "spawn_after": lambda ms, value: _unscheduled(value, "spawn_after(ms, fn)"),
+        "__spawn_after": lambda ms, value: _unscheduled(value, "spawn_after(ms, fn)"),
+        "run_loop": lambda: None,
+        "wait": lambda value: None,
+    }
+    assert set(rebuild_stand_ins) == set(REBUILD_INERT_BUILTINS)
+
+    def _inert_during_rebuild(name, fn):
+        stand_in = rebuild_stand_ins[name]
+
+        def guarded(*args):
+            if getattr(vm, "_suppress_flow_execution", False):
+                return stand_in(*args)
+            return fn(*args)
+        guarded.__name__ = getattr(fn, "__name__", name)
+        guarded.__doc__ = fn.__doc__
+        return guarded
+
+    builtin_spawn = _inert_during_rebuild("spawn", builtin_spawn)
+    builtin_wait = _inert_during_rebuild("wait", builtin_wait)
+    builtin_run_loop = _inert_during_rebuild("run_loop", builtin_run_loop)
+    _spawn_after_inert = _inert_during_rebuild("spawn_after", builtin_spawn_after)
+    _dunder_spawn_after_inert = _inert_during_rebuild("__spawn_after", builtin_spawn_after)
+
     registry.add("coroutine", 1, builtin_coroutine_create)
     registry.add("resume", 1, builtin_coroutine_resume)
     registry.add("coroutine_status", 1, builtin_coroutine_status)
@@ -638,8 +684,8 @@ def register(vm, registry) -> None:
     registry.add("__sleep", 1, builtin_sleep)
     registry.add("sleep_until", 1, builtin_sleep_until)
     registry.add("__sleep_until", 1, builtin_sleep_until)
-    registry.add("spawn_after", 2, builtin_spawn_after)
-    registry.add("__spawn_after", 2, builtin_spawn_after)
+    registry.add("spawn_after", 2, _spawn_after_inert)
+    registry.add("__spawn_after", 2, _dunder_spawn_after_inert)
     registry.add("channel", (0, 1), builtin_channel)
     registry.add("send", 2, builtin_send)
     registry.add("recv", 1, builtin_recv)

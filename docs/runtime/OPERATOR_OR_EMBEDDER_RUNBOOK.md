@@ -636,9 +636,11 @@ which builds each VM the way the runtime builds every VM: with its registered ho
 functions, and held to its confinement and capability policy (#908). A bare
 `VM([], {})` has neither, and is permissive by default, so resuming on one lets a
 program do what the runtime would refuse. `runtime.new_vm()` gives that VM for
-the other calls that take a VM factory. A rebuild also re-runs a module's top-level `spawn`/`run_loop` and
-top-level host calls (#909), so keep the top level of a durable program to
-definitions and the `durable_spawn` call.
+the other calls that take a VM factory. A rebuild re-runs a module's top level to
+rebind its definitions. It skips `main` and the scheduling builtins (`spawn`,
+`spawn_after`, `run_loop`, `wait`), but a top-level host call or effectful builtin
+outside `main` runs again (#909; #917 proposes refusing it), so put a program's work
+in `fn main()`.
 
 Pair this with §6.1: rehydration can only replay what the store durably holds, so
 `LocalWorkflowStore` weakens the guarantee this section is about.
