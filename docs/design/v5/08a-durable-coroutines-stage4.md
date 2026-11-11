@@ -284,10 +284,11 @@ entry and the `llms` files. Three points settled in building 4c:
 - **One rebuild from stored source** (`VM.reexecute_source_for_resume`), shared
   by the workflow graph rebuild and the coroutine resume, so the two cannot
   drift. It suppresses `print`, `run_workflow`, `run_goal` and `durable_spawn`.
-  It does **not** suppress a top-level `spawn` + `run_loop` or a top-level host
-  call, which run again during any rebuild. That was already true of workflow
-  rebuilds before this (measured 2026-11-10), and is reported separately rather
-  than changed here.
+  It did not suppress a top-level `spawn` + `run_loop` or a top-level host
+  call, which ran again during any rebuild. That was already true of workflow
+  rebuilds (measured 2026-11-10). #909 now skips `main` and the scheduling
+  builtins; a top-level host call outside `main` still runs, and #917 proposes
+  refusing it.
 
 **4b and 4c are not separable in a release.** A release with 4b and without the
 clock continuity in 4c would let a deadline loop misbehave after a resume. They

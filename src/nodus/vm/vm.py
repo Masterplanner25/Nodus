@@ -2332,7 +2332,10 @@ class VM:
         The one rebuild of a program from its stored source, shared by a
         workflow's graph rebuild and a durable coroutine's resume (#180 stage
         4c), so the two cannot drift. Top-level `run_workflow`, `run_goal`,
-        `durable_spawn` and `print` are suppressed while it runs (#322, #328).
+        `durable_spawn` and `print` are suppressed while it runs (#322, #328),
+        and so are the scheduling builtins (`REBUILD_INERT_BUILTINS`) and a
+        top-level call to `main()` (#909). Other top-level effects still run
+        again; refusing them is #917.
         Raises `WorkflowRebuildError` naming `what` if the re-run fails.
         """
         rebuild_path = source_path if isinstance(source_path, str) and source_path else None
@@ -4188,6 +4191,20 @@ class VM:
         self.record_vm_call(self.display_name(fn_name), "call")
 
         if fn_name in self.functions:
+            if (fn_name == "main" and not self.frames
+                    and getattr(self, "_suppress_flow_execution", False)):
+                # #909: a rebuild re-runs the top level to re-bind definitions;
+                # `main` is where a program's work goes, and the loader does not
+                # auto-run it during a rebuild. A program that calls `main()`
+                # itself at top level would otherwise have its work run again.
+                # Skipped at run time, not removed at compile time: the rebuilt
+                # chunk must stay byte-identical, or a durable coroutine's
+                # program fingerprint would refuse every resume.
+                for _ in range(arg_count):
+                    self.pop()
+                self.stack.append(None)
+                self.ip += 1
+                return None
             fn = self.functions[fn_name]
             if arg_count != len(fn.params):
                 self.runtime_error("call", f"{fn_name} expected {len(fn.params)} args, got {arg_count}")
