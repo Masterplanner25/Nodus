@@ -319,6 +319,12 @@ print(result["error"])   # error dict if ok=False
 rt.set_trace_id("req-abc123")
 
 # Lifecycle
+# Resume stored workflow runs and durable coroutines on VMs configured like this
+# runtime (host functions, confinement, policy, limits). Never a bare VM([], {}):
+# it lacks the host functions and is permissive by default (#908).
+report = rt.sweep(min_idle_ms=30_000)   # report["resumed_coroutines"], report["stdout"]
+vm = rt.new_vm()                         # for other calls that take a VM factory
+
 rt.shutdown()  # clears last_vm, host functions, registered tools
 ```
 

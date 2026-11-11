@@ -1135,6 +1135,57 @@ class NodusRuntime:
                 on_error=on_error,
             )
 
+    def new_vm(self) -> "VM":
+        """A fresh VM configured exactly as this runtime runs programs (#908).
+
+        Same confinement (`allowed_paths`, `allow_subprocess`, `allow_network`,
+        `allow_env` and the rest), the same capability policy and approval
+        channel, the same agents, memory store and workflow runner, the same
+        limits, and every function registered with `register_function`. Use it
+        wherever workflow machinery asks for a VM factory -- `deliver_event`,
+        `resume_workflow` -- or call :meth:`sweep`, which does.
+
+        A bare ``VM([], {})`` has none of that: a resumed run that calls a host
+        function fails with ``Undefined function``, and one that would have been
+        denied a capability under this runtime is not.
+        """
+        vm, _host_builtins = self._build_vm()
+        return vm
+
+    def sweep(self, *, min_idle_ms: float = 0.0, now_ms: float | None = None) -> dict:
+        """Resume what this runtime's workflow store holds, on VMs it configures (#908).
+
+        `WorkflowFrameworkRunner.sweep` -- expired waits, due retries, released
+        schedules, orphaned workflow runs and durable coroutines -- with
+        :meth:`new_vm` as the VM factory, so the resumed code has this runtime's
+        host functions and is held to its policy. Returns the sweep's report.
+        Output the resumed programs print is collected into ``report["stdout"]``
+        (and ``"stderr"``), as `run_source` returns it, rather than written to
+        the host's own streams.
+
+        ``min_idle_ms`` gates adoption as it does on the runner: a background
+        loop cannot tell an orphan from a run another process is in the middle
+        of, so it should pass one (the server passes the store's claim TTL).
+
+        Explicit, never automatic. A run record carries a whole program's
+        source, so resuming stored runs is a decision the host makes (#176).
+        """
+        runner = self.workflow_runner
+        if runner is None:
+            from nodus_lang_workflow.runner import get_default_workflow_runner  # CIRC-001: lazy
+            runner = get_default_workflow_runner()
+        with self._run_lock:
+            # Unbounded here: one sweep may resume many runs, and each is held
+            # to this runtime's step and time limits by its own VM.
+            with capture_output(max_stdout_chars=None) as (stdout, stderr):
+                report = dict(runner.sweep(lambda _record: self.new_vm(),
+                                           now_ms=now_ms, min_idle_ms=min_idle_ms))
+        if stdout.getvalue():
+            report["stdout"] = stdout.getvalue()
+        if stderr.getvalue():
+            report["stderr"] = stderr.getvalue()
+        return report
+
     def _run_source_locked(
         self,
         source: str,
@@ -1190,95 +1241,19 @@ class NodusRuntime:
         elif import_state is not None and self.project_root is not None:
             import_state["project_root"] = self.project_root
 
-        vm = VM(
-            [],
-            {},
-            code_locs=[],
-            source_path=filename,
-            # #469: the run's rebuild handle. Without this, an embedded run
-            # persisted `workflow_source_code: None` and could not be resumed in
-            # another process -- `run_source` not at all, `run_file` only by
-            # re-reading whatever was on disk at resume time. Passed here rather
-            # than assigned afterwards so it stays beside `source_path`.
-            source_code=source,
-            allowed_paths=self.allowed_paths,
-            writable_paths=self.writable_paths,
-            allow_subprocess=self.allow_subprocess,
-            allow_network=self.allow_network,
-            allow_env=self.allow_env,
-            extensions=self.extensions,
-            allowed_commands=self.allowed_commands,
-            allowed_hosts=self.allowed_hosts,
-            module_globals=initial_globals,
+        vm, host_builtins = self._build_vm(
+            filename=filename,
+            source=source,
+            initial_globals=initial_globals,
             host_globals=host_globals,
+            debugger=debugger,
+            on_error=on_error,
+            max_steps=max_steps,
+            timeout_ms=timeout_ms,
+            max_frames=max_frames,
         )
-        # #405: the policy rides on the VM, so the builtin dispatch site can
-        # consult it without reaching back into the embedding layer.
-        vm.capability_policy = self.capability_policy
-        vm.approval_channel = self.approval_channel
-        # #424: the default agent deadline rides on the VM for the same reason —
-        # `call_agent` is handed the VM and nothing else.
-        vm.agent_timeout_ms = self.agent_timeout_ms
-        vm.persist_workflow_source = self.persist_workflow_source
-        vm.memory_store = self._memory_store
-        vm.agent_registry = self.agent_registry
-        vm.budget_meters = self._budget_meters
-        vm.workflow_runner = self.workflow_runner
-        if self.worker_dispatcher is not None:
-            vm.worker_dispatcher = self.worker_dispatcher
-        if not self.allow_input:
-            vm.input_fn = self._blocked_input
-        if debugger is not None:
-            vm.debugger = debugger
-            vm.debug = True
-        if self._python_registered_tools:
-            vm.tool_registry.update(self._python_registered_tools)
-        pending_trace = getattr(self, "_pending_trace_id", None)
-        if pending_trace is not None:
-            vm.trace_id = pending_trace
-        pending_effect_store = getattr(self, "_pending_effect_store", None)
-        if pending_effect_store is not None:
-            vm.effect_store = pending_effect_store
-        resolved_on_error = on_error if on_error is not None else self.on_error
-        if resolved_on_error is not None:
-            vm.on_error = resolved_on_error
-        if self.coroutine_timeout_ms is not None:
-            vm.coroutine_timeout_ms = self.coroutine_timeout_ms
         self.__last_vm = vm
-        for sink in self._event_sinks:
-            vm.event_bus.add_sink(sink)
-        host_builtins = {
-            name: BuiltinInfo(
-                info.name,
-                info.arity,
-                lambda *args, _fn=info.fn, _vm=vm, _name=name: self._invoke_host_function(_vm, _fn, *args, name=_name),
-            )
-            for name, info in self._host_functions.items()
-        }
-
-        resolved_steps = self.max_steps if max_steps is None else max_steps
-        resolved_timeout = self.timeout_ms if timeout_ms is None else timeout_ms
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
-        configure_vm_limits(vm, max_steps=resolved_steps, timeout_ms=resolved_timeout)
-        # #350: configure_vm_limits installs MAX_STACK_DEPTH. Only overwrite it
-        # when the caller asked for a different cap — this assignment used to be
-        # unconditional, so the default `None` replaced the guard with no guard
-        # and embedded runs had no recursion limit at all. Keeping the default in
-        # configure_vm_limits keeps CLI and embedded from drifting apart again.
-        resolved_frames = self.max_frames if max_frames is None else max_frames
-        if resolved_frames is not None:
-            vm.max_frames = resolved_frames
-        if self.max_memory_mb is not None:
-            # The baseline is read **here**, at the start of the run, so the VM
-            # carries a single absolute ceiling instead of a limit plus a
-            # baseline plus a counter -- four instance attributes where one will
-            # do, and PyPy's 80-attribute map limit made that difference matter
-            # (#702). Reading it now rather than at construction also means the
-            # budget covers what *this call* grows, not whatever the host
-            # allocated in between.
-            baseline = rss_bytes()
-            if baseline is not None:
-                vm.max_memory_bytes = baseline + int(self.max_memory_mb * 1048576)
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
             try:
@@ -1347,13 +1322,121 @@ class NodusRuntime:
             extras={"spawned_errors": spawned_errors} if spawned_errors else {},
         ).to_dict()
 
-    def _install_host_functions(self, vm: VM) -> None:
-        for name, info in self._host_functions.items():
-            vm.builtins[name] = BuiltinInfo(
+    def _build_vm(
+        self,
+        *,
+        filename: str | None = None,
+        source: str | None = None,
+        initial_globals: dict | None = None,
+        host_globals: dict | None = None,
+        debugger=None,
+        on_error=None,
+        max_steps: int | None = None,
+        timeout_ms: int | None = None,
+        max_frames: int | None = None,
+    ) -> "tuple[VM, dict[str, BuiltinInfo]]":
+        """A VM configured as this runtime configures every VM it runs on.
+
+        The one place that answers "what does a VM of this runtime carry": its
+        confinement, capability policy, agent and memory wiring, workflow
+        runner, host functions and limits. `run_source` builds its VM here, and
+        so does `new_vm` (#908) -- so a sweep VM cannot be built with the host
+        functions and without the policy, or the other way round.
+
+        Returns the VM and its host builtins, which are also installed in
+        `vm.builtins`: a rebuild re-runs the program through a loader that has
+        no host functions of its own, and finds them there.
+        """
+        vm = VM(
+            [],
+            {},
+            code_locs=[],
+            source_path=filename,
+            # #469: the run's rebuild handle. Without this, an embedded run
+            # persisted `workflow_source_code: None` and could not be resumed in
+            # another process -- `run_source` not at all, `run_file` only by
+            # re-reading whatever was on disk at resume time. Passed here rather
+            # than assigned afterwards so it stays beside `source_path`.
+            source_code=source,
+            allowed_paths=self.allowed_paths,
+            writable_paths=self.writable_paths,
+            allow_subprocess=self.allow_subprocess,
+            allow_network=self.allow_network,
+            allow_env=self.allow_env,
+            extensions=self.extensions,
+            allowed_commands=self.allowed_commands,
+            allowed_hosts=self.allowed_hosts,
+            module_globals=initial_globals,
+            host_globals=host_globals,
+        )
+        # #405: the policy rides on the VM, so the builtin dispatch site can
+        # consult it without reaching back into the embedding layer.
+        vm.capability_policy = self.capability_policy
+        vm.approval_channel = self.approval_channel
+        # #424: the default agent deadline rides on the VM for the same reason —
+        # `call_agent` is handed the VM and nothing else.
+        vm.agent_timeout_ms = self.agent_timeout_ms
+        vm.persist_workflow_source = self.persist_workflow_source
+        vm.memory_store = self._memory_store
+        vm.agent_registry = self.agent_registry
+        vm.budget_meters = self._budget_meters
+        vm.workflow_runner = self.workflow_runner
+        if self.worker_dispatcher is not None:
+            vm.worker_dispatcher = self.worker_dispatcher
+        if not self.allow_input:
+            vm.input_fn = self._blocked_input
+        if debugger is not None:
+            vm.debugger = debugger
+            vm.debug = True
+        if self._python_registered_tools:
+            vm.tool_registry.update(self._python_registered_tools)
+        pending_trace = getattr(self, "_pending_trace_id", None)
+        if pending_trace is not None:
+            vm.trace_id = pending_trace
+        pending_effect_store = getattr(self, "_pending_effect_store", None)
+        if pending_effect_store is not None:
+            vm.effect_store = pending_effect_store
+        resolved_on_error = on_error if on_error is not None else self.on_error
+        if resolved_on_error is not None:
+            vm.on_error = resolved_on_error
+        if self.coroutine_timeout_ms is not None:
+            vm.coroutine_timeout_ms = self.coroutine_timeout_ms
+        for sink in self._event_sinks:
+            vm.event_bus.add_sink(sink)
+        host_builtins = {
+            name: BuiltinInfo(
                 info.name,
                 info.arity,
                 lambda *args, _fn=info.fn, _vm=vm, _name=name: self._invoke_host_function(_vm, _fn, *args, name=_name),
             )
+            for name, info in self._host_functions.items()
+        }
+
+        resolved_steps = self.max_steps if max_steps is None else max_steps
+        resolved_timeout = self.timeout_ms if timeout_ms is None else timeout_ms
+        configure_vm_limits(vm, max_steps=resolved_steps, timeout_ms=resolved_timeout)
+        # #350: configure_vm_limits installs MAX_STACK_DEPTH. Only overwrite it
+        # when the caller asked for a different cap — this assignment used to be
+        # unconditional, so the default `None` replaced the guard with no guard
+        # and embedded runs had no recursion limit at all. Keeping the default in
+        # configure_vm_limits keeps CLI and embedded from drifting apart again.
+        resolved_frames = self.max_frames if max_frames is None else max_frames
+        if resolved_frames is not None:
+            vm.max_frames = resolved_frames
+        if self.max_memory_mb is not None:
+            # The baseline is read **here**, at the start of the run, so the VM
+            # carries a single absolute ceiling instead of a limit plus a
+            # baseline plus a counter -- four instance attributes where one will
+            # do, and PyPy's 80-attribute map limit made that difference matter
+            # (#702). Reading it now rather than at construction also means the
+            # budget covers what *this call* grows, not whatever the host
+            # allocated in between.
+            baseline = rss_bytes()
+            if baseline is not None:
+                vm.max_memory_bytes = baseline + int(self.max_memory_mb * 1048576)
+
+        vm.builtins.update(host_builtins)
+        return vm, host_builtins
 
     def _resolve_arity(self, fn, arity: int | tuple[int, ...] | None) -> int | tuple[int, ...]:
         if arity is not None:

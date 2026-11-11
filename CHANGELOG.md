@@ -91,9 +91,8 @@
   which said only a workflow survives a crash, is rewritten. Pinned by
   `tests/test_durable_spawn.py`, `tests/test_durable_clock.py` and
   `tests/test_durable_sweep.py`, each including a real process kill. Known
-  limits, filed: an embedder cannot yet build a sweep VM carrying its host
-  functions (#908), and a rebuild re-runs top-level `spawn`/`run_loop` and host
-  calls (#909, older than this feature).
+  limit, filed: a rebuild re-runs top-level `spawn`/`run_loop` and host calls
+  (#909, older than this feature).
 
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:
@@ -174,6 +173,23 @@
   skips it rather than writing a rebuild error onto it.
 
 ### Fixes
+
+- **#908: an embedder can sweep on VMs configured like its own runtime.**
+  `NodusRuntime.sweep(min_idle_ms=..., now_ms=...)` runs the workflow sweep
+  (expired waits, due retries, released schedules, orphaned workflow runs,
+  durable coroutines) on VMs from the new `NodusRuntime.new_vm()`. Each one is
+  built the way `run_source` builds its VM, through one shared builder: the
+  runtime's registered host functions, its confinement flags, capability policy
+  and approval channel, agents, memory store and limits. Resumed programs'
+  output is collected into the report's `stdout`/`stderr`.
+
+  The documented alternative was a bare `VM([], {})`. That missed the host's
+  functions, so resumed code failed with `Undefined function`. Worse, it is
+  permissive by default, so a program an embedded runtime would refuse (reading
+  the environment, a subprocess, the network) ran unconfined once it was
+  resumed. Both are pinned by `tests/test_runtime_sweep_vm.py`, which keeps the
+  bare-VM escape visible as a contrast. The unused `_install_host_functions` is
+  gone.
 
 - **#907: `nodus run` shows a program's output as it is written.** It used to
   collect stdout until the program ended (the buffer that enforces

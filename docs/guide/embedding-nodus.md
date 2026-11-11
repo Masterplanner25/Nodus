@@ -916,6 +916,29 @@ rt.set_effect_store(store)
 
 ---
 
+### Resuming stored runs with `sweep()` and `new_vm()`
+
+Workflows and durable coroutines can outlive the process that started them, and
+resuming one means rebuilding its program on a VM. Let the runtime build that VM:
+
+```python
+report = runtime.sweep(min_idle_ms=30_000)   # e.g. from a background loop
+vm = runtime.new_vm()                        # for calls that take a VM factory
+```
+
+`new_vm()` returns a VM configured as `run_source` configures its own: your
+registered functions, `allowed_paths` and the other confinement flags, the
+capability policy and approval channel, agents, memory and limits.
+`sweep()` runs the workflow runner's sweep with it and returns the report, with
+resumed programs' output collected into `report["stdout"]`. Resuming stored
+runs is never automatic: you call it.
+
+A bare `VM([], {})` is not a substitute. It has none of your functions, so
+resumed code that calls one fails with `Undefined function`, and it is
+**permissive by default**, so code your runtime would refuse (reading the
+environment, starting a subprocess) runs once it is resumed (#908). Guide for
+durable coroutines: [durable-coroutines.md](durable-coroutines.md) §7.1.
+
 ## 12. See also
 
 - [EMBEDDING.md](../runtime/EMBEDDING.md) — full constructor and method reference
