@@ -358,9 +358,9 @@ def on_checkpoint(scheduler, coroutine, label: str) -> None:
     except ContinuationRefused as exc:
         hint = ""
         if exc.report is not None and any(
-                "iterator" in o.detail for o in exc.report.obstacles):
-            hint = ("\nA checkpoint inside a `for` body cannot be captured yet; loop "
-                    "with `while` over an index instead.")
+                "user-defined iterator" in o.detail for o in exc.report.obstacles):
+            hint = ("\nA checkpoint inside a `for` over a list is fine; one over a "
+                    "user-defined iterator is not. Iterate a list of its items instead.")
         path, line, col = _checkpoint_loc(coroutine)
         coroutine.pending_wait_error = LangRuntimeError(
             "runtime", f"checkpoint {label!r} cannot be made durable:\n{exc}{hint}",

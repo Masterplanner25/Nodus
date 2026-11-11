@@ -42,7 +42,10 @@ import hashlib
 
 from nodus.runtime.durability import DurabilityReport, assess_coroutine
 
-FORMAT = "nodus-continuation/1"
+# /2 (#911) adds a `for` loop's list iterator. /1 data has none, so it is
+# still read; nothing writes /1 any more.
+FORMAT = "nodus-continuation/2"
+READABLE_FORMATS = frozenset({"nodus-continuation/1", FORMAT})
 
 
 class ContinuationRefused(Exception):
@@ -157,6 +160,14 @@ class _Heap:
             return value
         if isinstance(value, bytes):
             return {"bytes": base64.b64encode(value).decode("ascii")}
+        from nodus.vm.vm import Iterator
+        if isinstance(value, Iterator) and value.list_state is not None:
+            # #911: written inline, not as a heap entry -- an iterator lives in
+            # one operand-stack slot and nothing else refers to it. Its list
+            # goes through the heap, so a list a local also holds stays one list.
+            return {"iter": {"list": self.encode(value.list_state.values),
+                             "index": value.list_state.index,
+                             "exhausted": value.exhausted}}
         if not isinstance(value, (list, dict, Record)):
             # The stage-2 check has already refused every such value; reaching
             # here means the two disagree, which must not pass silently.
@@ -194,7 +205,7 @@ def restore_continuation(vm, data: dict):
     from nodus.runtime.coroutine import DEFERRED_NONE, Coroutine
     from nodus.vm.types import Closure, Frame
 
-    if not isinstance(data, dict) or data.get("format") != FORMAT:
+    if not isinstance(data, dict) or data.get("format") not in READABLE_FORMATS:
         raise ContinuationRefused(
             f"not a continuation in format {FORMAT!r}: {data.get('format') if isinstance(data, dict) else type(data).__name__!r}")
 
@@ -295,6 +306,12 @@ def _heap_decoder(entries: list[dict]):
                 return heap[value["ref"]]
             if "bytes" in value:
                 return base64.b64decode(value["bytes"])
+            if "iter" in value:
+                from nodus.vm.vm import Iterator
+                raw = value["iter"]
+                iterator = Iterator.over_list(decode(raw["list"]), int(raw["index"]))
+                iterator._exhausted = bool(raw.get("exhausted", False))
+                return iterator
         return value
 
     _fill_heap(entries, heap, decode)

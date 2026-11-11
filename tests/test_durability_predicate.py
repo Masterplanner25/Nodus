@@ -232,8 +232,9 @@ class WhyNotJustWhetherTests(unittest.TestCase):
             {"unnamed_entry", "captured_cell", "live_value", "shared_with_module"},
             report.kinds(), report.explain())
         live = sorted(o.where for o in report.obstacles if o.kind == "live_value")
-        self.assertEqual(
-            ["frame 0 (`__anon_1`), local `ch`", "operand stack slot 0"], live)
+        # The `for` loop's list iterator is data since #911, so the channel is
+        # the only live value here.
+        self.assertEqual(["frame 0 (`__anon_1`), local `ch`"], live)
 
     def test_a_captured_variable_is_reported_from_both_sides(self):
         """The frame that owns a captured variable holds a Cell, and the closure
@@ -280,14 +281,28 @@ class WhyNotJustWhetherTests(unittest.TestCase):
             SimpleNamespace(name="work", display_name="work")))
 
 
-class AFor_LoopHoldsItsIteratorOnTheStackTests(unittest.TestCase):
+# A user-defined iterator: a record whose `__next__` closure keeps the position.
+_COUNTDOWN = """
+fn countdown(n) {
+    let state = {left: n}
+    return {__next__: fn(r) {
+        if (state.left <= 0i) { return nil }
+        state.left = state.left - 1i
+        return state.left
+    }}
+}
+"""
+
+
+class AFor_LoopOverAListIsDataTests(unittest.TestCase):
     """Design §3.2 said the operand stack is empty at every statement boundary.
     Inside a `for` body it is not: GET_ITER leaves the loop's iterator there for
-    the whole body, and that iterator keeps its position in a host closure. A
-    checkpoint in a batch loop is the case durable coroutines are for, so this is
-    reported rather than assumed away."""
+    the whole body. Stage 2 found that and refused it. #911 gave the iterator
+    over a list a written form -- the list and an index -- so it is walked like
+    any other value. An iterator driven by a user-defined `__next__` keeps its
+    position in user code and is still refused, by name."""
 
-    def test_the_iterator_is_a_live_value_on_the_stack(self):
+    def test_a_loop_over_a_list_is_durable(self):
         report = _assess("""
             fn batch() {
                 for job in [1i, 2i] { probe("in-for") }
@@ -296,9 +311,53 @@ class AFor_LoopHoldsItsIteratorOnTheStackTests(unittest.TestCase):
             spawn(coroutine(batch))
             run_loop()
             """)["in-for"]
-        obstacle = _only(report, "live_value")
+        self.assertTrue(report.durable, report.explain())
+
+    def test_nested_loops_and_a_list_from_iter_are_durable(self):
+        report = _assess("""
+            fn batch() {
+                let grid = {__iter__: fn(r) { return [[1i, 2i], [3i]] }}
+                for row in grid { for cell in row { probe("nested") } }
+                return 1i
+            }
+            spawn(coroutine(batch))
+            run_loop()
+            """)["nested"]
+        # The record holding `__iter__` is a local with a function in it, which
+        # is a live value of its own. The two iterators on the stack are not.
+        self.assertEqual(
+            ["frame 0 (`batch`), local `grid`, at `grid.__iter__`"],
+            [o.where for o in report.obstacles], report.explain())
+
+    def test_a_loop_over_a_module_level_list_is_sharing_and_is_caught(self):
+        """The iterator holds the list it walks. If that list is module state,
+        a resume would walk a copy, so the module-sharing rule applies to it."""
+        report = _assess("""
+            let jobs = [1i, 2i]
+            fn batch() {
+                for job in jobs { probe("module-list") }
+                return 1i
+            }
+            spawn(coroutine(batch))
+            run_loop()
+            """)["module-list"]
+        obstacle = _only(report, "shared_with_module")
         self.assertEqual("operand stack slot 0", obstacle.where)
-        self.assertIn("`for` loop's iterator", obstacle.detail)
+        self.assertIn("module-level `jobs`", obstacle.detail)
+
+    def test_a_loop_over_a_user_defined_iterator_is_refused_by_name(self):
+        report = _assess(_COUNTDOWN + """
+            fn batch() {
+                for n in countdown(2i) { probe("custom") }
+                return 1i
+            }
+            spawn(coroutine(batch))
+            run_loop()
+            """)["custom"]
+        stack = [o for o in report.obstacles if o.where == "operand stack slot 0"]
+        self.assertEqual(1, len(stack), report.explain())
+        self.assertEqual("live_value", stack[0].kind)
+        self.assertIn("user-defined iterator", stack[0].detail)
 
     def test_after_the_loop_the_stack_is_clear_again(self):
         report = _assess("""

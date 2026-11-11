@@ -188,7 +188,8 @@ run_loop()
 - The function must be a named top-level function with no captured variables;
   arguments must be data (they are copied). One key names one run.
 - A finished or failed run never runs again under its key.
-- A checkpoint inside a `for` body is refused; loop with `while` over an index.
+- A checkpoint inside a `for` over a list is saved with the loop's position; one
+  over a user-defined (`__next__`) iterator is refused.
 - Deadlines from `runtime.time_ms()` / `sleep_until` survive the restart.
 - Guide: docs/guide/durable-coroutines.md
 

@@ -168,6 +168,46 @@ class ItContinuesFromThePositionTests(unittest.TestCase):
             """)
         self.assertEqual("int float nil float false\n", after)
 
+    def test_a_suspend_inside_nested_for_loops_continues_at_the_next_elements(self):
+        """#911. The suspend is on the first cell of the first row; the restored
+        coroutine must carry on with the second cell, then the second row,
+        without repeating the first. The inner loop walks a list the outer loop
+        also holds, so the heap table has to keep them one list."""
+        before, after = _round_trip("""
+            fn worker() {
+                let grid = [["a", "b"], ["c"]]
+                for row in grid {
+                    for cell in row {
+                        print("cell \\(cell)")
+                        if (cell == "a") { sleep(0i) }
+                    }
+                }
+                print("rows \\(len(grid))")
+                return 1i
+            }
+            """)
+        self.assertEqual("cell a\n", before)
+        self.assertEqual("cell b\ncell c\nrows 2\n", after)
+
+    def test_the_restored_loop_walks_the_same_list_the_locals_hold(self):
+        """The iterator's list goes through the heap table with the locals, so a
+        list the loop is walking and a local that names it are still one list.
+        Written as a copy, the append below would be invisible to the loop."""
+        _, after = _round_trip("""
+            fn worker() {
+                let xs = [1i, 2i]
+                for x in xs {
+                    if (x == 1i) {
+                        sleep(0i)
+                        list_push(xs, 3i)
+                    }
+                    print("x=\\(x)")
+                }
+                return 1i
+            }
+            """)
+        self.assertEqual("x=1\nx=2\nx=3\n", after)
+
     def test_a_pending_finally_runs_after_the_restore_and_not_before(self):
         before, after = _round_trip("""
             fn worker() {
@@ -249,7 +289,13 @@ class ItRefusesRatherThanLiesTests(unittest.TestCase):
     def test_a_non_durable_coroutine_is_refused_with_the_stage_two_reasons(self):
         for name, body, phrase in (
             ("a channel local", "let ch = channel()\n    sleep(0i)", "local `ch`: a channel"),
-            ("inside a for loop", "for x in [1i] { sleep(0i) }", "`for` loop's iterator"),
+            # A `for` over a list is data since #911; one over a user-defined
+            # iterator keeps its position in a closure and is still refused.
+            ("inside a for over a user-defined iterator",
+             "let st = {done: false}\n"
+             "    for x in {__next__: fn(r) { if (st.done) { return nil }\n"
+             "        st.done = true\n        return 1i }} { sleep(0i) }",
+             "user-defined iterator"),
         ):
             with self.subTest(name):
                 runtime = NodusRuntime(timeout_ms=None, max_steps=None)
@@ -388,6 +434,15 @@ class ItRefusesRatherThanLiesTests(unittest.TestCase):
         data["frames"][0]["function"] = None
         data["frames"][0]["fn_name"] = "no_such_fn"
         self.assertIn("not a function of this program", self._restore_error(self._SIMPLE, data))
+
+    def test_a_format_1_continuation_is_still_read(self):
+        """/2 only added the list iterator (#911). Data written as /1 holds
+        none, so it means the same thing and is restored, not refused."""
+        _, data = _run(self._SIMPLE, "fresh")
+        self.assertEqual(FORMAT, data["format"])
+        data["format"] = "nodus-continuation/1"
+        result, _ = _run(self._SIMPLE, "resume", data)
+        self.assertEqual("after\n", result["stdout"])
 
     def test_an_unknown_format_is_refused(self):
         _, data = _run(self._SIMPLE, "fresh")

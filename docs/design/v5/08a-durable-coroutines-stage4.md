@@ -101,9 +101,9 @@ that checkpoint is in the store.
 **If capture refuses**, the refusal is raised into the coroutine *at the
 checkpoint*, as a catchable error carrying stage 2's report: §4.1, "fails loudly
 at the moment it cannot honour its promise". A `checkpoint` inside a `for` body
-is the case users will hit first (stage 2's §3.2 correction). Until the loop
-iterator has a written form, the error has to say so plainly and suggest the
-workaround: a `while` loop over an index, which holds plain data.
+was the case users would hit first (stage 2's §3.2 correction). Since #911 a
+`for` over a list has a written form (the list and an index), so only a `for`
+over a user-defined iterator is refused, and the error says so.
 
 **Semantics to document: at-least-once between checkpoints.** A crash re-runs
 everything after the last checkpoint. That is the same contract a workflow step
@@ -308,11 +308,11 @@ can be separate PRs, but not separate releases.
 
 ## What stays open
 
-- **The `for` iterator's written form.** A list and an index would cover
-  iteration over a list; a user-defined `__next__` iterator holds a closure and
-  may never have one. Until then a checkpoint in a `for` body is refused (D2).
-- **Cancelling a durable coroutine** from outside, and what its record says.
-  #395's `cancel` covers the in-process half only.
+- ~~**The `for` iterator's written form.**~~ Done for lists in #911: the list
+  (through the heap table, so a list a local also holds stays one list) and an
+  index, in continuation format `/2`. A user-defined `__next__` iterator holds a
+  closure and is still refused.
+- **Cancelling a durable coroutine** from outside: #912.
 - **Retention.** Finished coroutine runs accumulate like finished workflow runs,
   and `nodus workflow cleanup` is where that already lives. That only works once
   4a has given `cleanup` the new kind.

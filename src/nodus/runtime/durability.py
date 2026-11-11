@@ -52,7 +52,8 @@ OBSTACLE_KINDS: tuple[str, ...] = (
     # would come back holding two (§3.4, obstacle 2).
     "captured_cell",
     # A value that cannot be written down: a function, channel, coroutine,
-    # task, method, host object, or a `for` loop's iterator (§3.4, obstacle 3).
+    # task, method, host object, or a `for` loop over a user-defined iterator
+    # (§3.4, obstacle 3; a loop over a list is data since #911).
     "live_value",
     # A container the continuation holds that module-level state also holds.
     # A resume rebuilds module state from source, so the two would come back as
@@ -365,6 +366,14 @@ class _ValueWalker:
             node, path = stack.pop()
             if node is None or isinstance(node, (bool, int, float, str, bytes)):
                 continue
+            state = _list_iterator_state(node)
+            if state is not None:
+                # #911: a `for` over a list keeps the list and an index, both
+                # data. The list is walked like any other value -- including
+                # the module-sharing check, since a loop over a module-level
+                # list holds that list.
+                stack.append((state.values, path))
+                continue
             if not isinstance(node, (list, dict, Record)):
                 self._found.append(Obstacle(
                     "live_value", _at(where, path, root), _live_description(node)))
@@ -401,6 +410,14 @@ def _at(where: str, path: str | None, root: str | None) -> str:
     return f"{where}, at `{path}`"
 
 
+def _list_iterator_state(node):
+    """The list and index behind a `for` loop over a list, or None (#911)."""
+    from nodus.vm.vm import Iterator
+    if isinstance(node, Iterator):
+        return node.list_state
+    return None
+
+
 def _container_word(node) -> str:
     if isinstance(node, list):
         return "list"
@@ -417,8 +434,9 @@ def _live_description(node) -> str:
     from nodus.vm.vm import Iterator
 
     if isinstance(node, Iterator):
-        return ("a `for` loop's iterator, which keeps its position in host state; "
-                "the operand stack is not empty inside a `for` body")
+        # A list iterator never reaches here (#911); this one runs user code.
+        return ("a `for` loop over a user-defined iterator (`__next__`), whose "
+                "position is kept by its own code and cannot be written down")
     if isinstance(node, Closure):
         return f"a function ({_fn_label(getattr(node, 'function', None))}), which has no written form"
     if isinstance(node, Channel):

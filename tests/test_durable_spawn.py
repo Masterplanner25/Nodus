@@ -218,11 +218,50 @@ class TheCheckpointTests(unittest.TestCase):
             """)
         self.assertIn(CHECKPOINT_NOT_DURABLE, _text(result))
 
-    def test_inside_a_for_loop_the_refusal_is_catchable_and_names_the_workaround(self):
+    def test_inside_a_for_loop_over_a_list_it_is_durable(self):
+        """#911: the loop's list and position are written down, so the
+        checkpoint holds and the record carries a continuation inside the loop."""
+        seen = []
         with _store() as store:
+            def look():
+                record = store.get_run(run_id_for("kf"))
+                seen.append((record.current_checkpoint, "continuation" in record.metadata))
             result = _run("""
+                fn worker(items) {
+                    let total = 0i
+                    for x in items {
+                        total += x
+                        checkpoint "item"
+                        look()
+                    }
+                    return total
+                }
+                durable_spawn("kf", worker, [[1i, 2i, 3i]])
+                run_loop()
+                """, look=look)
+            record = store.get_run(run_id_for("kf"))
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual([("item", True)] * 3, seen)
+        self.assertEqual(RUN_STATUS_COMPLETED, record.status)
+        self.assertEqual([6], decode_values(record.metadata["result"]))
+
+    # A user-defined iterator: its position lives in a closure.
+    _TWO = """
+        fn two() {
+            let st = {left: 2i}
+            return {__next__: fn(r) {
+                if (st.left <= 0i) { return nil }
+                st.left = st.left - 1i
+                return st.left
+            }}
+        }
+        """
+
+    def test_inside_a_for_over_a_user_defined_iterator_the_refusal_is_catchable(self):
+        with _store() as store:
+            result = _run(self._TWO + """
                 fn worker() {
-                    for x in [1i, 2i] {
+                    for x in two() {
                         try {
                             checkpoint "in-loop"
                         } catch e {
@@ -231,14 +270,14 @@ class TheCheckpointTests(unittest.TestCase):
                     }
                     return 1i
                 }
-                durable_spawn("kf", worker, [])
+                durable_spawn("ku", worker, [])
                 run_loop()
                 """)
-            record = store.get_run(run_id_for("kf"))
+            record = store.get_run(run_id_for("ku"))
         self.assertTrue(result.get("ok"), result)
         self.assertEqual(2, result["stdout"].count("caught:"))
-        self.assertIn("`for` loop's iterator", result["stdout"])
-        self.assertIn("with `while` over an index", result["stdout"])
+        self.assertIn("user-defined iterator", result["stdout"])
+        self.assertIn("Iterate a list of its items instead", result["stdout"])
         self.assertEqual(RUN_STATUS_COMPLETED, record.status, "the coroutine carried on")
 
     def test_the_refusal_says_where_the_checkpoint_is(self):
@@ -247,7 +286,7 @@ class TheCheckpointTests(unittest.TestCase):
         with _store():
             result = _run("""
                 fn worker() {
-                    for x in [1i] {
+                    for x in {__next__: fn(r) { return 1i }} {
                         checkpoint "in-loop"
                     }
                     return 1i
@@ -371,8 +410,8 @@ run_loop()
 class AfterARealCrashTests(unittest.TestCase):
     """The design's testing bar for stage 4: kill a process, not a coroutine."""
 
-    def _process(self, tmp: Path, crash_at: str | None) -> int:
-        script = _SIDE.format(src=str(_REPO_ROOT / "src"), program=_CRASHING_PROGRAM)
+    def _process(self, tmp: Path, crash_at: str | None, program: str = _CRASHING_PROGRAM) -> int:
+        script = _SIDE.format(src=str(_REPO_ROOT / "src"), program=program)
         env = dict(os.environ, DURABLE_DB=str(tmp / "runs.db"), DURABLE_LOG=str(tmp / "log.txt"))
         env.pop("CRASH_AT", None)
         if crash_at:
@@ -419,6 +458,37 @@ class AfterARealCrashTests(unittest.TestCase):
             self.assertEqual(0, self._process(tmp, None))
             self.assertEqual(["start", "start", "after fetched, total=10",
                               "finished, total=15"], self._log(tmp))
+
+    _LOOP_PROGRAM = """
+fn worker(items) {
+    let done = 0i
+    for item in items {
+        note("start \\(item)")
+        maybe_crash(item)
+        done += 1i
+        checkpoint "item-done"
+    }
+    note("finished, done=\\(done)")
+    return done
+}
+durable_spawn("loop-1", worker, [["a", "b", "c"]])
+run_loop()
+"""
+
+    # closes: #911
+    def test_a_crash_inside_a_for_loop_resumes_at_the_next_element(self):
+        """#911. The process dies part-way through item "b", before its
+        checkpoint. The resume continues the loop from the last checkpoint,
+        which was after "a": "a" is not redone, "b" is (at-least-once), and the
+        count of finished items comes back with the loop."""
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            self.assertEqual(3, self._process(tmp, "b", self._LOOP_PROGRAM))
+            self.assertEqual(["start a", "start b"], self._log(tmp))
+            self._after_claim_expiry()
+            self.assertEqual(0, self._process(tmp, None, self._LOOP_PROGRAM))
+            self.assertEqual(["start a", "start b", "start b", "start c",
+                              "finished, done=3"], self._log(tmp))
 
     def test_the_record_is_plain_json_between_processes(self):
         """What the second process reads is what the first wrote, as data."""
