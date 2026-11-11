@@ -41,6 +41,7 @@ pip install nodus-lang
 - [docs/guide/modules-and-imports.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/modules-and-imports.md): Import syntax, exports, stdlib modules, resolution order
 - [docs/guide/standard-library.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/standard-library.md): Complete stdlib function reference
 - [docs/guide/workflows-and-tasks.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/workflows-and-tasks.md): Workflow/goal DSL, step dependencies, state, checkpoints, retries
+- [docs/guide/durable-coroutines.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/durable-coroutines.md): durable_spawn(key, fn, args) and checkpoint — a coroutine that resumes at its last checkpoint after a crash; at-least-once between checkpoints; needs the SQLite store; Experimental
 - [docs/guide/real-world-integration.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/real-world-integration.md): Production-shaped integration — embedded runtime + WAIT/RESUME gates, event routing, dynamic .nd generation
 - [examples/webhook_bridge/](https://github.com/Masterplanner25/Nodus/blob/main/examples/webhook_bridge/): FastAPI + nodus serve bridge — dynamic .nd generation, step retry, SQL audit log, replay; its Status section records what serve cannot yet do (#855, #857, #858)
 - [docs/guide/debugging.md](https://github.com/Masterplanner25/Nodus/blob/main/docs/guide/debugging.md): --trace flags, nodus check, interactive debugger

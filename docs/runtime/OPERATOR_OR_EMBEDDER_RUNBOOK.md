@@ -456,7 +456,7 @@ Before deploying a Nodus-embedded application to production:
 - [ ] Upgrade procedure has been tested (at minimum, a version bump smoke test)
 - [ ] Workflow persistence directory (`.nodus/`) is on a persistent volume if workflows are used
 - [ ] If workflows are used in production, `SQLiteWorkflowStore` is configured (see §6.1)
-- [ ] Work that must survive a crash runs inside a workflow, not a bare `spawn()` (see §6.2)
+- [ ] Work that must survive a crash runs inside a workflow or a durable coroutine (`durable_spawn`), not a bare `spawn()` (see §6.2)
 - [ ] Every callable passed to `register_function()` is host-authored and trusted (see §6.3)
 
 ---
@@ -589,26 +589,37 @@ because they are only ever read out (#778).
 
 ---
 
-## 6.2 A bare coroutine is transient — only a workflow survives a crash (#180)
+## 6.2 A bare coroutine is transient — make crash-surviving work durable (#180)
 
-Nodus has **two** units of concurrent work, and only one of them is durable. The
-distinction is invisible in the API and costs in-flight work when it is discovered
-by a crash rather than by reading this.
+Nodus has **three** units of concurrent work, and only two of them survive the
+process. The difference is invisible until a crash shows it, and by then the
+in-flight work is gone.
 
-| | Bare coroutine | Workflow step |
-|---|---|---|
-| Started by | `spawn(coroutine(fn))` | `run_workflow(...)` |
-| State lives in | process memory only | `.nodus/graphs/` + the workflow store |
-| After a `SIGKILL` / OOM / power loss | **gone, with no record that it ran** | replayable |
-| Recovery API | none | `rehydrate_runs(vm_factory)` |
+| | Bare coroutine | Durable coroutine | Workflow step |
+|---|---|---|---|
+| Started by | `spawn(fn)` / `spawn(coroutine(fn))` | `durable_spawn(key, fn, args)` | `run_workflow(...)` |
+| State lives in | process memory only | the workflow store, at each `checkpoint` | `.nodus/graphs/` + the workflow store |
+| After a `SIGKILL` / OOM / power loss | **gone, with no record that it ran** | resumes at its last checkpoint | resumes, re-entering the interrupted step from its top |
+| Resumed by | nothing | re-running the program (same key), or `sweep()` | `sweep()` / `rehydrate_runs(vm_factory)` |
 
 So an embedder building a job-processing service on `spawn()` loses every in-flight
-job on an unclean exit, and nothing reports the loss — there is no partial record to
+job on an unclean exit, and nothing reports the loss. There is no partial record to
 find afterwards, because none was ever written.
 
-**What to do:** if the work must survive a restart, make it a workflow step. A
-workflow's step state is persisted as it goes, and `rehydrate_runs()` replays runs
-that were interrupted:
+**What to do:** make work that must survive a restart durable, in one of two ways.
+
+- **A durable coroutine**, when the work is one function with a few points worth
+  saving. `durable_spawn("job-42", worker, [args])` runs it against a run record;
+  each `checkpoint "label"` is written to the store before the function continues;
+  after a crash, running the program again with the same key, or a `sweep()`,
+  continues from the last checkpoint. **At-least-once between checkpoints:** the
+  work after the last checkpoint may run again. It needs a store whose claims are
+  exclusive across processes, which today means `NODUS_WORKFLOW_STORE_BACKEND=sqlite`
+  (see §6.1); it refuses the JSON store. Experimental. Guide:
+  [docs/guide/durable-coroutines.md](../guide/durable-coroutines.md).
+- **A workflow**, when the work has named steps with dependencies between them. Its
+  step state is persisted as it goes, and an interrupted run is picked up by the
+  sweep:
 
 ```python
 from nodus_lang_workflow.runner import get_default_workflow_runner
@@ -617,10 +628,17 @@ runner = get_default_workflow_runner()
 resumed = runner.rehydrate_runs(vm_factory=my_vm_factory)   # call at startup
 ```
 
+`rehydrate_runs` adopts interrupted workflow runs. It skips durable coroutines,
+which `runner.sweep(vm_factory)` resumes instead. A sweep VM must carry any host
+functions the resumed code calls, and there is not yet a public way to build one
+that does (#908). A rebuild also re-runs a module's top-level `spawn`/`run_loop` and
+top-level host calls (#909), so keep the top level of a durable program to
+definitions and the `durable_spawn` call.
+
 Pair this with §6.1: rehydration can only replay what the store durably holds, so
 `LocalWorkflowStore` weakens the guarantee this section is about.
 
-`spawn()` remains the right tool for concurrency *within* a run — fan-out, overlapping
+`spawn()` remains the right tool for concurrency *within* a run: fan-out, overlapping
 I/O, anything whose lifetime is bounded by the call that started it. The rule is about
 what must outlive the process, not about which primitive is better.
 

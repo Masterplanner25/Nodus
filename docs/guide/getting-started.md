@@ -440,6 +440,9 @@ Start with the foundation guides, then pick the topic you need:
 
 - **[workflows-and-tasks.md](workflows-and-tasks.md)** — workflow/goal DSL,
   step dependencies, state, checkpoints, retries, print visibility.
+- **[durable-coroutines.md](durable-coroutines.md)** — `durable_spawn` and
+  `checkpoint`: a coroutine that resumes at its last checkpoint after a crash.
+  Experimental.
 - **[real-world-integration.md](real-world-integration.md)** — embedding +
   workflows together in a production-shaped app: WAIT/RESUME approval gates,
   host-side event routing, dynamic `.nd` generation, sweep loop, SEC-001/SCHED-001.

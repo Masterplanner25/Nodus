@@ -361,8 +361,10 @@ def on_checkpoint(scheduler, coroutine, label: str) -> None:
                 "iterator" in o.detail for o in exc.report.obstacles):
             hint = ("\nA checkpoint inside a `for` body cannot be captured yet; loop "
                     "with `while` over an index instead.")
+        path, line, col = _checkpoint_loc(coroutine)
         coroutine.pending_wait_error = LangRuntimeError(
-            "runtime", f"checkpoint {label!r} cannot be made durable:\n{exc}{hint}")
+            "runtime", f"checkpoint {label!r} cannot be made durable:\n{exc}{hint}",
+            line=line, col=col, path=path)
         return
     store = binding.store
     record = store.get_run(binding.run_id)
@@ -379,6 +381,21 @@ def on_checkpoint(scheduler, coroutine, label: str) -> None:
     record.metadata = metadata
     record.current_checkpoint = label
     store.save_run(record)
+
+
+def _checkpoint_loc(coroutine):
+    """Where the checkpoint this coroutine is suspended at was written.
+
+    The refusal is built here, by the scheduler, so nothing put a position on
+    it: the error read `loop.nd:` with no line. The saved `ip` is one past the
+    checkpoint's call, and the module's `code_locs` say where that call came from.
+    """
+    ctx = getattr(coroutine, "module_ctx", None)
+    code_locs = ctx[4] if isinstance(ctx, tuple) and len(ctx) > 4 else None
+    index = (coroutine.ip or 0) - 1
+    if isinstance(code_locs, list) and 0 <= index < len(code_locs):
+        return code_locs[index]
+    return (None, None, None)
 
 
 def on_settled(coroutine) -> None:

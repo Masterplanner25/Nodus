@@ -269,7 +269,9 @@ Consequences, stated so they are not rediscovered:
 **Progress:** 4a shipped 2026-11-10 (#904). 4b shipped 2026-11-10 (#905); its one
 addition beyond this file is an atomic `renew_claim` on the stores, because
 nothing renewed a claim before and a durable coroutine outlives the 30 s
-default. 4c is built. Three points settled in building it:
+default. 4c shipped 2026-11-10 (#906). 4d is the guide
+(`docs/guide/durable-coroutines.md`), the runbook §6.2 rewrite, the stability index
+entry and the `llms` files. Three points settled in building 4c:
 
 - **The clock offset is per coroutine, applied at one reader** (`VM.guest_clock_ms`,
   which `runtime.time_ms()` and `sleep_until` both use, with a source test

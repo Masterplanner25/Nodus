@@ -67,10 +67,19 @@
   resume <id>` on a durable coroutine now says where it is resumed instead of
   failing as if it were a broken workflow.
 
-  This is stages 4b and 4c of durable coroutines (#180, still open). Still to
-  come is the user guide and runbook (4d). Experimental. Pinned by
+  **Errors point at the checkpoint.** A `checkpoint` that fails, inside or
+  outside a durable coroutine, reports the line and column of the `checkpoint`
+  word. Before this, one pointed at its label and the `for`-loop refusal carried
+  no position at all. Both were found writing the guide.
+
+  This is stages 4b–4d of durable coroutines (#180). Experimental. Guide:
+  `docs/guide/durable-coroutines.md`. `OPERATOR_OR_EMBEDDER_RUNBOOK.md` §6.2,
+  which said only a workflow survives a crash, is rewritten. Pinned by
   `tests/test_durable_spawn.py`, `tests/test_durable_clock.py` and
-  `tests/test_durable_sweep.py`, each including a real process kill.
+  `tests/test_durable_sweep.py`, each including a real process kill. Known
+  limits, filed: an embedder cannot yet build a sweep VM carrying its host
+  functions (#908), and a rebuild re-runs top-level `spawn`/`run_loop` and host
+  calls (#909, older than this feature).
 
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:

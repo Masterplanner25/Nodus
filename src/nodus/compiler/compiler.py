@@ -676,6 +676,9 @@ class Compiler:
             return
         if isinstance(stmt, CheckpointStmt):
             self.compile_expr(stmt.label)
+            # The call *is* the statement, so an error it raises points at the
+            # `checkpoint` word, not at its label (#180, found writing the guide).
+            self.set_current_loc(stmt)
             self.emit("CALL", "__workflow_checkpoint", 1)
             self.emit("POP")
             return

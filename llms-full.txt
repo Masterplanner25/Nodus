@@ -168,6 +168,30 @@ spawn(coroutine(fn() { print("concurrent") }))
 run_loop()
 ```
 
+### Durable coroutines [Experimental]
+A coroutine whose progress survives the process. Each `checkpoint "label"` is
+written to the workflow store before the function goes on; after a crash,
+calling `durable_spawn` with the same key (or `nodus workflow sweep`) resumes it
+at the last checkpoint. At-least-once between checkpoints. Needs
+`NODUS_WORKFLOW_STORE_BACKEND=sqlite` (the default from 6.0.0).
+```nd-no-run
+fn ingest(batch) {
+    let rows = fetch(batch)
+    checkpoint "fetched"
+    upload(rows)
+    checkpoint "uploaded"
+    return len(rows)
+}
+durable_spawn("ingest-batch-7", ingest, ["batch-7"])
+run_loop()
+```
+- The function must be a named top-level function with no captured variables;
+  arguments must be data (they are copied). One key names one run.
+- A finished or failed run never runs again under its key.
+- A checkpoint inside a `for` body is refused; loop with `while` over an index.
+- Deadlines from `runtime.time_ms()` / `sleep_until` survive the restart.
+- Guide: docs/guide/durable-coroutines.md
+
 ### Channels [Experimental]
 ```nodus
 let ch = channel()
