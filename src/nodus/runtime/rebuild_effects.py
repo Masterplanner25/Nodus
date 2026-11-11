@@ -94,7 +94,8 @@ def handle_rebuild_effect(vm, name: str, kind: str) -> None:
     mode = rebuild_mode(vm)
     if mode is None or mode == "allow":
         return
-    path, line, col = vm.current_loc()
+    # The user's line, not a stdlib wrapper's own (#922).
+    path, line, col = vm.user_facing_loc()
     where = f"{path}:{line}:{col}" if path and line is not None else (path or "the top level")
     remedy = ("move the call into `fn main()`, which a rebuild skips"
               if kind == "builtin" else

@@ -18,7 +18,7 @@ including the one nothing looked at.
 | `worker-dispatcher` | `worker:` declarations, reported rather than judged |
 | `default-store-sqlite` | a filesystem question: does the local store hold runs |
 | `record-equality` | **not checkable from source** -- needs both `==` operands' runtime types |
-| `rebuild-effect` | **not checked from source yet** -- the run-time warning names the call; a static check would look for effects at top level outside `main` |
+| `rebuild-effect` | top-level effects outside `main` in a file that can be rebuilt: builtins, stdlib wrappers, declared `extern` host functions; a run's report adds undeclared host functions |
 
 The concurrent-write check is worth understanding, because its answer is
 *stronger* than the runtime warning's. Which step writes which cell is known at
@@ -30,6 +30,7 @@ found a pair the run did not.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 from dataclasses import dataclass, field
@@ -53,7 +54,15 @@ _STATIC = {
     "concurrent-write",
     "worker-dispatcher",
     "default-store-sqlite",
+    "rebuild-effect",
 }
+
+#: Checked from source *and* merged with what runs observed. A static check
+#: here sees builtins, stdlib wrappers and declared `extern` host functions,
+#: but a host function called without an `extern` declaration is only visible
+#: when it runs, so a run's report adds to the source scan rather than being
+#: discarded by it (#922).
+_STATIC_AND_OBSERVED = {"rebuild-effect"}
 
 # v6-flip: concurrent-write
 #: A cell whose declaration says the author meant it: explicit last-write-wins,
@@ -204,10 +213,155 @@ def _unordered_pairs(flow, writers: dict) -> list:
     return out
 
 
+#: A file that calls one of these, or declares a workflow or goal, can be
+#: rebuilt: its stored source is re-run when one of its runs is resumed.
+_REBUILD_ENTRY_CALLS = frozenset({"run_workflow", "run_goal", "durable_spawn"})
+_STDLIB_DIR = Path(__file__).resolve().parent.parent / "stdlib"
+
+
+def _children(node):
+    """Child AST nodes of `node`, through its fields and lists."""
+    for value in vars(node).values() if hasattr(node, "__dict__") else ():
+        for child in (value if isinstance(value, list) else [value]):
+            if hasattr(child, "__dict__") and type(child).__module__.endswith("ast_nodes"):
+                yield child
+
+
+def _walk_ast(node):
+    yield node
+    for child in _children(node):
+        yield from _walk_ast(child)
+
+
+@functools.lru_cache(maxsize=None)
+def _stdlib_effects(module: str) -> dict:
+    """`fn name -> effect builtin it calls`, for `std:<module>`, read from its source.
+
+    Read rather than listed, so a stdlib wrapper added or changed later is
+    classified by what it actually calls, with the runtime's own rule.
+    """
+    from nodus.frontend.ast.ast_nodes import Call, FnDef, Var
+    from nodus.runtime.rebuild_effects import is_rebuild_effect
+
+    path = _STDLIB_DIR / f"{module}.nd"
+    try:
+        tree = Parser(tokenize(path.read_text(encoding="utf-8"))).parse()
+    except Exception:
+        return {}
+    effects: dict = {}
+    for fn in tree:
+        if not isinstance(fn, FnDef):
+            continue
+        for node in _walk_ast(fn.body):
+            if (isinstance(node, Call) and isinstance(node.callee, Var)
+                    and is_rebuild_effect(node.callee.name)):
+                effects[fn.name] = node.callee.name
+                break
+    return effects
+
+
+def _call_start(call):
+    """(line, col) of the start of what `call` calls (#921's rule)."""
+    from nodus.frontend.ast.ast_nodes import Attr, Call, Index
+    node = call.callee
+    while isinstance(node, (Attr, Call, Index)):
+        if isinstance(node, Attr):
+            node = node.obj
+        elif isinstance(node, Index):
+            node = node.seq
+        else:
+            node = node.callee
+    tok = getattr(node, "_tok", None) or getattr(call, "_tok", None)
+    return (tok.line, tok.col) if tok is not None else (None, None)
+
+
+def _rebuild_effect_findings(path: str, tree) -> list:
+    """Top-level effects a rebuild of this file would run again (#922, flip #917).
+
+    What runs when a stored run is resumed is the program's top level, minus
+    `main` and the scheduling builtins (#909). So: every statement outside a
+    function body, and the body of every same-file function those statements
+    call, except `main`. Closures are not entered -- defining one runs nothing,
+    and one handed to `spawn` is not started by a rebuild.
+    """
+    from nodus.frontend.ast.ast_nodes import (
+        Attr, Call, ExportList, ExprStmt, ExternDecl, FnDef, FnExpr, GoalDef,
+        GoalPursuit, Import, Var, WorkflowDef,
+    )
+    from nodus.runtime.rebuild_effects import is_rebuild_effect
+
+    rebuildable = any(isinstance(node, (WorkflowDef, GoalDef, GoalPursuit)) for node in tree) or any(
+        isinstance(node, Call) and isinstance(node.callee, Var)
+        and node.callee.name in _REBUILD_ENTRY_CALLS
+        for root in tree for node in _walk_ast(root))
+    if not rebuildable:
+        return []
+
+    functions = {node.name: node for node in tree if isinstance(node, FnDef)}
+    externs = {node.name for node in tree if isinstance(node, ExternDecl)}
+    std_aliases = {}
+    for node in tree:
+        if isinstance(node, Import) and node.path.startswith("std:"):
+            module = node.path[len("std:"):]
+            std_aliases[node.alias or module.split("/")[-1]] = module
+
+    found: list = []
+    entered: set = set()
+
+    def report(call, what: str, via, host: bool) -> None:
+        line, col = _call_start(call)
+        where = f" (in `{via}`, called at top level)" if via else ""
+        remedy = ("move the call into `fn main()`, or have the host register the "
+                  "function with `rebuild_safe=True` if it only reads"
+                  if host else "move the call into `fn main()`, which a rebuild skips")
+        kind = "host function" if host else "call to"
+        # v6-flip: rebuild-effect
+        found.append(Finding(
+            "rebuild-effect", path,
+            f"top-level {kind} {what}{where} runs again each time a stored run of "
+            f"this program is resumed, and is refused at 6.0.0; {remedy}.",
+            line=line, col=col,
+        ))
+
+    def visit(node, via) -> None:
+        if isinstance(node, (FnExpr, FnDef)):
+            return
+        if isinstance(node, Call):
+            callee = node.callee
+            if isinstance(callee, Var):
+                name = callee.name
+                if is_rebuild_effect(name):
+                    report(node, f"`{name}`", via, host=False)
+                elif name in externs:
+                    report(node, f"`{name}`", via, host=True)
+                elif name in functions and name != "main" and name not in entered:
+                    entered.add(name)
+                    visit(functions[name].body, via or name)
+            elif isinstance(callee, Attr) and isinstance(callee.obj, Var):
+                module = std_aliases.get(callee.obj.name)
+                builtin = _stdlib_effects(module).get(callee.name) if module else None
+                if builtin:
+                    report(node, f"`{callee.obj.name}.{callee.name}` (`{builtin}`)", via, host=False)
+        for child in _children(node):
+            visit(child, via)
+
+    skipped = (FnDef, ExternDecl, Import, ExportList, WorkflowDef, GoalDef, GoalPursuit)
+    for stmt in tree:
+        if isinstance(stmt, skipped):
+            continue
+        # A top-level `main()` is skipped by a rebuild (#909); its body is not entered.
+        if (isinstance(stmt, ExprStmt) and isinstance(stmt.expr, Call)
+                and isinstance(stmt.expr.callee, Var) and stmt.expr.callee.name == "main"):
+            continue
+        visit(stmt, None)
+    return found
+
+
 def _scan_source(path: str, code: str) -> dict:
     """Per-flip findings for one file's source."""
     findings: dict[str, list] = {"concurrent-write": [], "worker-dispatcher": []}
     ast = Parser(tokenize(code)).parse()
+    findings["rebuild-effect"] = _rebuild_effect_findings(path, ast)
     for flow in _flow_defs(ast):
         flow_name = getattr(flow, "name", "?")
         silenced = {
@@ -350,7 +504,7 @@ def scan(
         seen = observed.get(name, [])
         checked = name in _STATIC or bool(seen)
         findings = list(collected.get(name, []))
-        if name not in _STATIC:
+        if name not in _STATIC or name in _STATIC_AND_OBSERVED:
             findings.extend(seen)
         report.flips.append(
             FlipReport(
@@ -374,12 +528,5 @@ def _unchecked_reason(name: str) -> str:
             "program or its tests with NODUS_STAGED_FLIP_REPORT=<path> set, then "
             "re-run this -- the warning fires exactly when a comparison's answer "
             "will change, and what it finds is reported here"
-        )
-    if name == "rebuild-effect":
-        return (
-            "not checked from source yet: it fires when a stored run's program is "
-            "rebuilt (a resume or a sweep) and its top level reaches outside the "
-            "program. Resume or sweep with NODUS_STAGED_FLIP_REPORT=<path> set, "
-            "then re-run this -- each effect is reported with its line"
         )
     return "no static check is implemented for this flip"

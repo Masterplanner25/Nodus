@@ -71,9 +71,9 @@
       "issue": 917,
       "summary": "A rebuild that re-runs a top-level effect (a write, a request, a subprocess, an unmarked host function) refuses it instead of repeating it",
       "warns_since": "5.16.0",
-      "signal": "ok -- a StagedFlipWarning per effect, naming the call and its line, and recorded in the staged-flip report; `nodus check --staged` lists it as unchecked from source",
+      "signal": "ok -- a StagedFlipWarning per effect, naming the call and its line, recorded in the staged-flip report; `nodus check --staged` finds top-level effects from source (#922)",
       "why": "DECIDED 2026-11-11 (#917): a rebuild exists to re-bind definitions, and an effect it re-runs happens again on every resume, silently. Refusing loudly is the house rule (refuse rather than lie). Staged because it makes some resumable runs unresumable; `rebuild_effects=\"allow\"` (runtime.sweep, nodus workflow sweep --rebuild-effects allow) is the override for runs whose stored source predates the fix. Reads stay allowed; network counts as an effect; host functions opt out with register_function(..., rebuild_safe=True).",
-      "sites": 2
+      "sites": 3
     }
   }
 }
