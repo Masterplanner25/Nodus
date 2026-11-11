@@ -173,11 +173,16 @@ of the task is already expressible. What is not yet in place:
   instructions to pay off, and importing Nodus's own modules makes `nodus run`
   start ~1.6× slower than on CPython. So the shape that fits is CPython for the
   CLI and PyPy for long runs, which is exactly what a compiler compiling itself
-  is. One blocker remains before that: files held open past their scope, which
-  CPython's refcounting closes and PyPy's GC does not
-  ([#701](https://github.com/Masterplanner25/Nodus/issues/701)). The first of
-  that class, in the SQLite workflow store, is fixed
-  ([#516](https://github.com/Masterplanner25/Nodus/issues/516)).
+  is. The PyPy-only failures found so far are all fixed:
+  - a cursor the SQLite workflow store left for CPython's refcounting to close
+    ([#516](https://github.com/Masterplanner25/Nodus/issues/516));
+  - a file handle held open in a test
+    ([#701](https://github.com/Masterplanner25/Nodus/issues/701));
+  - an order-sensitive resume refusal
+    ([#704](https://github.com/Masterplanner25/Nodus/issues/704)).
+
+  No open issue tracks a PyPy failure. The suite does not run under PyPy in CI,
+  though, so that is a statement about what has been found, not a guarantee.
 
   Two things already recovered on CPython: the VM no longer retains an event
   per call and return that nothing read, which was a third of throughput and
