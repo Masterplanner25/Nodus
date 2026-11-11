@@ -32,9 +32,12 @@
   - **Checked at the `durable_spawn` call:** the entry must be a named top-level
     function with no captured variables, and the arguments must be plain data.
     They are copied, and the coroutine sees the stored copy.
-  - **A checkpoint inside a `for` body** raises a catchable error naming the
-    workaround (a `while` loop over an index), because the loop's iterator
-    cannot be written down yet.
+  - **A checkpoint inside a `for` loop over a list works** (#911): the list
+    and the loop's position are saved with it, and a resume continues with the
+    next element. A `for` over a user-defined iterator (a record with
+    `__next__`) keeps its position in its own code, so a checkpoint there raises
+    a catchable error that says so. The continuation format is now
+    `nodus-continuation/2`, and `/1` data is still read.
   - **The same key with different arguments** is refused: a key names one run.
   - **A run held by a live process** is left alone, and the caller is told so on
     stderr, with how long the claim has left. A process that loses its claim

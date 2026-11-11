@@ -181,17 +181,9 @@ in every function call between `durable_spawn` and the checkpoint. A
 checkpoint may sit in a helper the durable function calls. Shared lists and
 maps stay shared, and a list that contains itself is fine.
 
-What cannot be written down is refused *at the checkpoint*, as an error the
-coroutine can catch:
-
-- a local holding a **channel, function, task or host object**;
-- a local that is the **same list or map as a module-level variable**. A resume
-  rebuilds module state from source, so the two would come back as separate
-  copies;
-- a checkpoint **inside a `for` loop**. The loop's position is held where it
-  cannot be saved yet.
-
-The `for` case is the one you will meet first:
+A checkpoint inside a `for` loop over a list is saved with the loop: the list
+and how far through it the loop had got. A resume carries on with the next
+element:
 
 ```nd-no-run
 fn upload_all(batches) {
@@ -208,43 +200,59 @@ run_loop()
 
 ```
 $ nodus run --time-limit 60 loop.nd
-Runtime error at /abs/path/loop.nd:4:9: checkpoint 'uploaded' cannot be made durable:
-not durable (1 obstacle):
-  - [live_value] operand stack slot 0: a `for` loop's iterator, which keeps its position in host state; the operand stack is not empty inside a `for` body
-A checkpoint inside a `for` body cannot be captured yet; loop with `while` over an index instead.
-
-uploading a
-```
-
-(`uploading a` appears after the error, though it was printed first. That is
-the same output holding as §3.1, #907.)
-
-Loop with `while` over an index instead. The index is an ordinary local, so it
-is saved with everything else:
-
-```nd-no-run
-fn upload_all(batches) {
-    let i = 0i
-    while (i < len(batches)) {
-        print("uploading \(batches[i])")
-        i += 1i
-        checkpoint "uploaded"
-    }
-    return i
-}
-
-durable_spawn("upload-while", upload_all, [["a", "b"]])
-run_loop()
-```
-
-```
-$ nodus run --time-limit 60 while.nd
 uploading a
 uploading b
 ```
 
-Increment the index *before* the checkpoint, as here, so a resume carries on
-with the next item rather than repeating this one.
+If the process dies after `uploading b` is printed but before its checkpoint,
+the resumed run prints `uploading b` again and carries on, because `a` was
+checkpointed and `b` was not. Put the checkpoint at the end of the loop body, as
+here, so a finished item is never redone.
+
+What cannot be written down is refused *at the checkpoint*, as an error the
+coroutine can catch:
+
+- a local holding a **channel, function, task or host object**;
+- a local, or a `for` loop's list, that is the **same list or map as a
+  module-level variable**. A resume rebuilds module state from source, so the
+  two would come back as separate copies;
+- a checkpoint inside a **`for` over a user-defined iterator**, a record with a
+  `__next__` function. Its position is kept by its own code.
+
+```nd-no-run
+fn pages(n) {
+    let st = {next: 1i}
+    return {__next__: fn(r) {
+        if (st.next > n) { return nil }
+        st.next = st.next + 1i
+        return st.next - 1i
+    }}
+}
+
+fn fetch_all() {
+    for page in pages(2i) {
+        print("fetching page \(page)")
+        checkpoint "fetched"
+    }
+    return 1i
+}
+
+durable_spawn("fetch-pages", fetch_all, [])
+run_loop()
+```
+
+```
+$ nodus run --time-limit 60 custom.nd
+Runtime error at /abs/path/custom.nd:13:9: checkpoint 'fetched' cannot be made durable:
+not durable (1 obstacle):
+  - [live_value] operand stack slot 0: a `for` loop over a user-defined iterator (`__next__`), whose position is kept by its own code and cannot be written down
+A checkpoint inside a `for` over a list is fine; one over a user-defined iterator is not. Iterate a list of its items instead.
+
+fetching page 1
+```
+
+(`fetching page 1` appears after the error, though it was printed first. That
+is the same output holding as §3.1, #907.)
 
 ### 4.2 `checkpoint` outside a durable coroutine
 
@@ -401,7 +409,8 @@ instead).
 - **A restart straight after a crash waits for the claim.** Up to the store's
   claim lifetime, 30 seconds by default. `durable_spawn` tells you how long is
   left (§3.2).
-- **No checkpoint inside `for`** yet. Use `while` (§4.1).
+- **No checkpoint inside a `for` over a user-defined iterator.** A `for` over a
+  list is fine (§4.1).
 - **A frame running inside an imported module's function** cannot be saved. A
   checkpoint reached through a call into another module is refused.
 - **No cancellation from outside** a running durable coroutine yet.
@@ -432,4 +441,9 @@ F4 An embedder cannot build a sweep VM that carries its registered host
    functions. Filed as #908.
 F5 A rebuild re-runs a top-level spawn + run_loop and top-level host calls.
    Older than durable coroutines (workflow rebuilds since #322). Filed as #909.
+
+Revised 2026-11-11 for #911: a checkpoint inside a `for` over a list is now
+captured, so §4.1's first example runs to completion (re-run, verbatim) and the
+`while` workaround is gone. The refusal example uses a user-defined iterator
+instead (custom.nd, run the same day).
 -->

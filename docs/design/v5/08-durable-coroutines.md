@@ -171,8 +171,16 @@ and `break` pops it). The iterator keeps its position in a host closure, so it
 has no written form today. `match` arms, `if`, `while` and `try` leave nothing.
 A checkpoint in a batch loop is the case this feature is most wanted for, so
 stage 3 must either give the iterator a written form (the list and an index are
-enough for a list) or refuse. Stage 2 reports it rather than assuming it away:
-`tests/test_durability_predicate.py`, `AFor_LoopHoldsItsIteratorOnTheStackTests`.
+enough for a list) or refuse. Stage 2 reports it rather than assuming it away.
+
+**Resolved for lists in #911 (2026-11-11).** A list iterator now carries its list
+and index as data (`Iterator.list_state`, built only by `Iterator.over_list`), so
+stage 2 walks it like any value, and stage 3 writes it down and restores it. A
+checkpoint inside nested `for` loops over lists resumes at the next elements.
+An iterator driven by a user-defined `__next__` keeps its position in a closure
+and is still refused. Pinned by `tests/test_durability_predicate.py`
+(`AFor_LoopOverAListIsDataTests`), `tests/test_continuation_roundtrip.py`, and a
+real crash inside a loop in `tests/test_durable_spawn.py`.
 
 ### 3.3 Compilation is deterministic across processes
 

@@ -110,11 +110,34 @@ class Iterator:
     when the iterator is exhausted.
     """
 
-    __slots__ = ("_advance_fn", "_exhausted")
+    __slots__ = ("_advance_fn", "_exhausted", "list_state")
 
-    def __init__(self, advance_fn):
+    def __init__(self, advance_fn, list_state: "ListIterator | None" = None):
         self._advance_fn = advance_fn
         self._exhausted = False
+        # #911: for an iterator over a list, the list and the position in it --
+        # plain data, so a durable coroutine checkpointed inside the loop can
+        # be written down and resumed at the next element. None for an iterator
+        # driven by a user-defined `__next__`, whose position is in user code.
+        self.list_state = list_state
+
+    @classmethod
+    def over_list(cls, values: list, index: int = 0) -> "Iterator":
+        """An iterator over `values` from `index`, its state kept as data.
+
+        The one way a list iterator is built, by `GET_ITER` and by a restore, so
+        the two cannot disagree about how a list is walked.
+        """
+        state = ListIterator(values)
+        state.index = index
+
+        def _advance(_it=state):
+            if _it.index >= len(_it.values):
+                return None, True
+            v = _it.values[_it.index]
+            _it.index += 1
+            return v, False
+        return cls(_advance, list_state=state)
 
     def advance(self):
         """Return ``(value, exhausted: bool)``.
@@ -3910,15 +3933,8 @@ class VM:
     def _op_get_iter(self, instr):
         value = self.pop()
         if isinstance(value, list):
-            # List path: wrap in Iterator with index-based advance.
-            list_iter = ListIterator(value)
-            def _adv_list(_it=list_iter):
-                if _it.index >= len(_it.values):
-                    return None, True
-                v = _it.values[_it.index]
-                _it.index += 1
-                return v, False
-            self.stack.append(Iterator(_adv_list))
+            # List path: index-based advance, state kept as data (#911).
+            self.stack.append(Iterator.over_list(value))
             self.ip += 1
             return None
         if isinstance(value, Record):
@@ -3927,14 +3943,7 @@ class VM:
                 iterator_fn = value.fields["__iter__"]
                 iterator_record = self.run_closure(iterator_fn, [value])
                 if isinstance(iterator_record, list):
-                    list_iter = ListIterator(iterator_record)
-                    def _adv_from_list(_it=list_iter):
-                        if _it.index >= len(_it.values):
-                            return None, True
-                        v = _it.values[_it.index]
-                        _it.index += 1
-                        return v, False
-                    self.stack.append(Iterator(_adv_from_list))
+                    self.stack.append(Iterator.over_list(iterator_record))
                 elif isinstance(iterator_record, Record) and "__next__" in iterator_record.fields:
                     self.stack.append(self._make_record_iterator(iterator_record))
                 else:
