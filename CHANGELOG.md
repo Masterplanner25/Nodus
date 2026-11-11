@@ -173,6 +173,18 @@
   workflow. A run of another kind is now refused by name, and the rehydrate sweep
   skips it rather than writing a rebuild error onto it.
 
+### Fixes
+
+- **#907: `nodus run` shows a program's output as it is written.** It used to
+  collect stdout until the program ended (the buffer that enforces
+  `--output-limit`). A long-running program showed no progress, a killed run lost
+  everything it had printed, and stdout landed after stderr, so an error appeared
+  before lines printed earlier. Output now streams through a writer that counts
+  against the same limit (`RuntimeLimitExceeded` past it, with what fit already
+  shown) and flushes at every newline, so the order also survives a pipe. Only
+  `nodus run` streams. An embedded `NodusRuntime` and `nodus serve` still return
+  stdout as a value, and `--dump-bytecode` keeps its disassembly first.
+
 ## [5.15.1] - 2026-11-07
 
 ### Security
