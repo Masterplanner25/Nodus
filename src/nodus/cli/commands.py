@@ -305,7 +305,8 @@ COMMANDS: dict[str, Command] = {
             "inspect": (_STORE, frozenset()),
             # #395 SS7: stop a run. Cross-process this marks the record and the
             # owning runner observes it at its next step boundary.
-            "cancel": (_STORE, frozenset()),
+            # #912: `--key` names a durable coroutine by the key it was spawned with.
+            "cancel": (_STORE | frozenset({"--key"}), frozenset()),
             "replay": (
                 _STORE | frozenset({"--checkpoint"}),
                 frozenset({"--rearm-only"}),

@@ -13,6 +13,50 @@ from nodus.vm.types import Closure
 from nodus.vm.vm_chain import root_vm
 
 
+def cancel_coroutine(vm, scheduler, coroutine, err) -> bool:
+    """Stop `coroutine`, running its `finally` blocks and no `catch` (#395).
+
+    The one cancellation path. `cancel(task)` reaches it from guest code, and a
+    durable coroutine whose run was cancelled from outside reaches it from the
+    scheduler (#912). The unwind itself is #502's. Returns True when this call
+    moved a live coroutine into unwinding, False when there was nothing to stop.
+    """
+    if coroutine.state == "finished":
+        return False
+    if coroutine.cancelling is not None:
+        return False          # already unwinding; do not unwind twice
+    if coroutine.id is None:
+        return False          # never spawned -- no scheduler state to stop
+
+    scheduler.unpark(coroutine)
+
+    if coroutine.state == "created":
+        # Never entered, so there is nothing to unwind and no `finally` to
+        # run. Mark it settled so a waiter is released rather than parked
+        # on a task that will never be scheduled.
+        coroutine.state = "finished"
+        coroutine.cancelled_error = err
+        scheduler._mark_completed(coroutine)
+        scheduler.release_waiters(coroutine)
+        return True
+
+    owner = getattr(coroutine, "owner_vm", None) or vm
+    try:
+        owner.unwind_cancelled_coroutine(coroutine, err)
+    except Exception:
+        # The unwind delivered the cancellation, or a `finally` threw
+        # something else. Either way the task is done and `err` is what it
+        # was cancelled with -- the same handling the timeout path uses.
+        pass
+    coroutine.state = "finished"
+    coroutine.cancelled_error = err
+    scheduler._mark_completed(coroutine)
+    if coroutine.id is not None:
+        scheduler.sleeping_tasks.discard(coroutine.id)
+    scheduler.release_waiters(coroutine)
+    return True
+
+
 def register(vm, registry) -> None:
     """Register coroutine, channel, and sleep builtins onto the registry."""
 
@@ -203,43 +247,8 @@ def register(vm, registry) -> None:
         into a check-then-act race (04 §6.3).
         """
         coroutine = vm.ensure_coroutine(value, "cancel(task)")
-
-        if coroutine.state == "finished":
-            return False
-        if coroutine.cancelling is not None:
-            return False          # already unwinding; do not unwind twice
-        if coroutine.id is None:
-            return False          # never spawned -- no scheduler state to stop
-
-        scheduler = vm.scheduler
-        scheduler.unpark(coroutine)
-
-        err = LangRuntimeError("cancelled", "Task cancelled")
-        if coroutine.state == "created":
-            # Never entered, so there is nothing to unwind and no `finally` to
-            # run. Mark it settled so a waiter is released rather than parked
-            # on a task that will never be scheduled.
-            coroutine.state = "finished"
-            coroutine.cancelled_error = err
-            scheduler._mark_completed(coroutine)
-            scheduler.release_waiters(coroutine)
-            return True
-
-        owner = getattr(coroutine, "owner_vm", None) or vm
-        try:
-            owner.unwind_cancelled_coroutine(coroutine, err)
-        except Exception:
-            # The unwind delivered the cancellation, or a `finally` threw
-            # something else. Either way the task is done and `err` is what it
-            # was cancelled with -- the same handling the timeout path uses.
-            pass
-        coroutine.state = "finished"
-        coroutine.cancelled_error = err
-        scheduler._mark_completed(coroutine)
-        if coroutine.id is not None:
-            scheduler.sleeping_tasks.discard(coroutine.id)
-        scheduler.release_waiters(coroutine)
-        return True
+        return cancel_coroutine(vm, vm.scheduler, coroutine,
+                                LangRuntimeError("cancelled", "Task cancelled"))
 
     def _settled_outcome(coroutine):
         """The value a settled task yields to a waiter, or its failure raised.

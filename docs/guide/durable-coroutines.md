@@ -353,6 +353,56 @@ $ nodus workflow resume co_971bbc5577ff87195a37471d058e6b50
 
 ---
 
+### 6.1 Cancelling a run
+
+`nodus workflow cancel` stops a durable run by its key (or its run id). The run
+becomes `cancelled`, which is final: neither re-running the program nor a sweep
+will resume it.
+
+```nd-no-run
+fn export_all(batches) {
+    let sent = 0i
+    try {
+        for batch in batches {
+            sleep(1000i)
+            sent += 1i
+            checkpoint "sent"
+        }
+    } finally {
+        print("closing export after \(sent) batches")
+    }
+    return sent
+}
+
+durable_spawn("export-2026-11", export_all, [["b1", "b2", "b3", "b4", "b5", "b6"]])
+run_loop()
+```
+
+With that running in one terminal, from another:
+
+```
+$ nodus workflow cancel --key export-2026-11
+Cancelled co_e07100b12c29fdf0b79b29b4419bc199 (was running)
+A durable coroutine running in another process stops at its next checkpoint or claim renewal, after running its finally blocks.
+```
+
+The running program noticed at its next checkpoint, ran its `finally`, and
+stopped:
+
+```
+durable coroutine 'export-2026-11' (run co_e07100b12c29fdf0b79b29b4419bc199) was cancelled; its finally blocks ran and it has stopped
+
+closing export after 5 batches
+```
+
+A cancel is **cooperative**. The running process notices at its next
+checkpoint, or at its next claim renewal if it has not checkpointed for a while
+(every third of the claim's lifetime, so within about ten seconds by default).
+Work done between the cancel and that point is not undone: here, the cancel
+arrived during the fifth batch. A `catch` cannot swallow the cancellation, and a
+`checkpoint` reached inside `finally` does nothing. From Python, the same thing
+is `runner.cancel_run(run_id_for(key))`.
+
 ## 7. From Python
 
 An embedding host chooses the store in code:
@@ -413,7 +463,8 @@ instead).
   list is fine (§4.1).
 - **A frame running inside an imported module's function** cannot be saved. A
   checkpoint reached through a call into another module is refused.
-- **No cancellation from outside** a running durable coroutine yet.
+- **A cancel takes effect at the next checkpoint or claim renewal**, not
+  instantly (§6.1).
 - **A failed run is not retried under its key.** Start it again with a new key.
 - **Output is held until exit** under `nodus run` (#907).
 
@@ -441,6 +492,9 @@ F4 An embedder cannot build a sweep VM that carries its registered host
    functions. Filed as #908.
 F5 A rebuild re-runs a top-level spawn + run_loop and top-level host calls.
    Older than durable coroutines (workflow rebuilds since #322). Filed as #909.
+
+Revised 2026-11-11 for #912: §6.1 is new. export.nd was started with `nodus run`,
+cancelled by key from a second shell 4.5 s in, and both outputs pasted verbatim.
 
 Revised 2026-11-11 for #911: a checkpoint inside a `for` over a list is now
 captured, so §4.1's first example runs to completion (re-run, verbatim) and the
