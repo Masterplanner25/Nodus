@@ -113,6 +113,8 @@ class SweepRunsWithoutAServerTests(unittest.TestCase):
                 "released_schedules": [],
                 "resumed_retries": [],
                 "rehydrated_runs": [],
+                # #180 stage 4c: durable coroutines the sweep resumed.
+                "resumed_coroutines": [],
             },
             report,
         )

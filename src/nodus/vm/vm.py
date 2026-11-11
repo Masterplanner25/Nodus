@@ -1317,7 +1317,24 @@ class VM:
         Unchanged on the default source — `HostTimeSource.now_ms()` *is*
         `runtime_time_ms()`.
         """
-        return root_vm(self).scheduler.time_source.now_ms()
+        return self.guest_clock_ms()
+
+    def guest_clock_ms(self) -> float:
+        """The scheduler's clock as the running coroutine sees it.
+
+        The one place a guest reading of the scheduling clock is made, so the
+        per-coroutine offset (#180 stage 4c, design 08a D6) cannot be applied to
+        one reader and missed by another. `sleep_until` converts its deadline
+        through this too, which is what keeps reading and waiting on one
+        timeline (#182). `tests/test_durable_clock.py` fails on a guest-facing
+        reading of `time_source.now_ms()` anywhere else.
+        """
+        root = root_vm(self)
+        now = root.scheduler.time_source.now_ms()
+        coroutine = root.current_coroutine
+        if coroutine is None:
+            return now
+        return now + float(getattr(coroutine, "clock_offset_ms", 0.0) or 0.0)
 
     def builtin_runtime_events(self):
         return [event.to_dict() for event in self.event_bus.events()]
@@ -2286,6 +2303,73 @@ class VM:
             },
         )
 
+    def reexecute_source_for_resume(self, source_code: str, source_path, *, what: str) -> None:
+        """Re-run a persisted program on this VM only to re-bind its definitions.
+
+        The one rebuild of a program from its stored source, shared by a
+        workflow's graph rebuild and a durable coroutine's resume (#180 stage
+        4c), so the two cannot drift. Top-level `run_workflow`, `run_goal`,
+        `durable_spawn` and `print` are suppressed while it runs (#322, #328).
+        Raises `WorkflowRebuildError` naming `what` if the re-run fails.
+        """
+        rebuild_path = source_path if isinstance(source_path, str) and source_path else None
+        worker_dispatcher = getattr(self, "worker_dispatcher", None)
+        event_bus = self.event_bus
+        try:
+            from nodus.runtime.module_loader import ModuleLoader as _ModuleLoader
+            # Rebuild through the normal module-load path with THIS vm as the
+            # execution target, so the workflow's `import` statements are re-bound
+            # exactly as on first run: flat exports land in module_globals and
+            # bare-namespace imports (e.g. `json` from `import "std:json"`)
+            # populate this vm's _bare_import_hints. The previous compile_only
+            # path was import-blind, leaving the rebuilt vm without tool/mem/json
+            # bound — a post-wait step referencing them failed with "Undefined
+            # variable: <name>", surfaced only in spawned_errors while the run
+            # still reported ok: True (so cross-process resume silently no-op'd).
+            #
+            # Host-injected (non-import) globals are NOT reconstructable from
+            # source; reset_program preserves self.host_globals, and the embedder
+            # must re-supply them on the rehydrating runtime.
+            _loader = _ModuleLoader(
+                project_root=None,
+                vm=self,
+                host_globals=getattr(self, "host_globals", None),
+            )
+            module_name = rebuild_path or "<memory>"
+            base_dir = os.path.dirname(rebuild_path) if rebuild_path else os.getcwd()
+            # #322: this re-execution exists only to re-bind the workflow/fn
+            # definitions and imports. Suppress top-level run_workflow/run_goal so a
+            # self-invoking module does not spawn a spurious fresh graph and re-run
+            # its steps. The flag rides on `self` (reset_program preserves it) and is
+            # cleared in finally, so the actual resume run that follows is unaffected.
+            # While `_suppress_flow_execution` is set, run_workflow/run_goal are
+            # skipped (above) and `print` is a no-op (see builtin_print) — so the
+            # rebuild's re-run of pure top-level statements (e.g. a
+            # `print("init: \(r["steps"])")` after the driver) is silent and does not
+            # leak into the resumed run's output (#328 facet 2). The real resume run
+            # happens after this returns, with the flag cleared, and prints normally.
+            _prev_suppress = getattr(self, "_suppress_flow_execution", False)
+            self._suppress_flow_execution = True
+            try:
+                _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
+            finally:
+                self._suppress_flow_execution = _prev_suppress
+        except WorkflowRebuildError:
+            raise
+        except Exception as err:
+            # #399: this used to be `except Exception: return None`, and the caller
+            # turned None into "Unknown graph" — so a rebuild that failed for any
+            # reason reported that the run did not exist, and the actual cause was
+            # discarded. Carry it instead; the diagnosis is the whole value here.
+            raise WorkflowRebuildError(
+                f"re-executing the module to rebuild '{what}' failed",
+                cause=err,
+            ) from err
+        self.event_bus = event_bus
+        self.source_code = source_code
+        if worker_dispatcher is not None:
+            self.worker_dispatcher = worker_dispatcher
+
     def _rebuild_workflow_graph(self, graph_id: str, state: dict) -> TaskGraph | None:
         _meta_raw = state.get("metadata")
         metadata: dict[str, Any] = _meta_raw if isinstance(_meta_raw, dict) else {}
@@ -2348,63 +2432,7 @@ class VM:
             self._last_resume_source_drift = self._warn_on_source_drift(
                 flow_name, source_path, source_code, graph_id
             )
-        rebuild_path = source_path if isinstance(source_path, str) and source_path else None
-        worker_dispatcher = getattr(self, "worker_dispatcher", None)
-        event_bus = self.event_bus
-        try:
-            from nodus.runtime.module_loader import ModuleLoader as _ModuleLoader
-            # Rebuild through the normal module-load path with THIS vm as the
-            # execution target, so the workflow's `import` statements are re-bound
-            # exactly as on first run: flat exports land in module_globals and
-            # bare-namespace imports (e.g. `json` from `import "std:json"`)
-            # populate this vm's _bare_import_hints. The previous compile_only
-            # path was import-blind, leaving the rebuilt vm without tool/mem/json
-            # bound — a post-wait step referencing them failed with "Undefined
-            # variable: <name>", surfaced only in spawned_errors while the run
-            # still reported ok: True (so cross-process resume silently no-op'd).
-            #
-            # Host-injected (non-import) globals are NOT reconstructable from
-            # source; reset_program preserves self.host_globals, and the embedder
-            # must re-supply them on the rehydrating runtime.
-            _loader = _ModuleLoader(
-                project_root=None,
-                vm=self,
-                host_globals=getattr(self, "host_globals", None),
-            )
-            module_name = rebuild_path or "<memory>"
-            base_dir = os.path.dirname(rebuild_path) if rebuild_path else os.getcwd()
-            # #322: this re-execution exists only to re-bind the workflow/fn
-            # definitions and imports. Suppress top-level run_workflow/run_goal so a
-            # self-invoking module does not spawn a spurious fresh graph and re-run
-            # its steps. The flag rides on `self` (reset_program preserves it) and is
-            # cleared in finally, so the actual resume run that follows is unaffected.
-            # While `_suppress_flow_execution` is set, run_workflow/run_goal are
-            # skipped (above) and `print` is a no-op (see builtin_print) — so the
-            # rebuild's re-run of pure top-level statements (e.g. a
-            # `print("init: \(r["steps"])")` after the driver) is silent and does not
-            # leak into the resumed run's output (#328 facet 2). The real resume run
-            # happens after this returns, with the flag cleared, and prints normally.
-            _prev_suppress = getattr(self, "_suppress_flow_execution", False)
-            self._suppress_flow_execution = True
-            try:
-                _loader.load_module_from_source(source_code, module_name=module_name, base_dir=base_dir)
-            finally:
-                self._suppress_flow_execution = _prev_suppress
-        except WorkflowRebuildError:
-            raise
-        except Exception as err:
-            # #399: this used to be `except Exception: return None`, and the caller
-            # turned None into "Unknown graph" — so a rebuild that failed for any
-            # reason reported that the run did not exist, and the actual cause was
-            # discarded. Carry it instead; the diagnosis is the whole value here.
-            raise WorkflowRebuildError(
-                f"re-executing the module to rebuild '{flow_name}' failed",
-                cause=err,
-            ) from err
-        self.event_bus = event_bus
-        self.source_code = source_code
-        if worker_dispatcher is not None:
-            self.worker_dispatcher = worker_dispatcher
+        self.reexecute_source_for_resume(source_code, source_path, what=flow_name)
         workflow = find_goal_value(self.globals, flow_name) if execution_kind == EXECUTION_KIND_GOAL else find_workflow_value(self.globals, flow_name)
         if workflow is None:
             kind_word = "goal" if execution_kind == EXECUTION_KIND_GOAL else "workflow"

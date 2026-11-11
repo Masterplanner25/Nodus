@@ -266,10 +266,26 @@ Consequences, stated so they are not rediscovered:
 | 4c | clock continuity (D6); `rehydrate_runs` for the coroutine kind; `nodus workflow list/resume/cleanup` | resumable by a long-lived host, and deadlines that survive |
 | 4d | guide chapter; `OPERATOR_OR_EMBEDDER_RUNBOOK.md` §6.2, whose title *"A bare coroutine is transient — only a workflow survives a crash"* stops being true; stability index entry as experimental; `llms.txt` | the claim is published |
 
-**Progress:** 4a shipped 2026-11-10 (#904). 4b is built (`nodus.runtime.durable`,
-`tests/test_durable_spawn.py`); its one addition beyond this file is an atomic
-`renew_claim` on the stores, because nothing renewed a claim before and a
-durable coroutine outlives the 30 s default.
+**Progress:** 4a shipped 2026-11-10 (#904). 4b shipped 2026-11-10 (#905); its one
+addition beyond this file is an atomic `renew_claim` on the stores, because
+nothing renewed a claim before and a durable coroutine outlives the 30 s
+default. 4c is built. Three points settled in building it:
+
+- **The clock offset is per coroutine, applied at one reader** (`VM.guest_clock_ms`,
+  which `runtime.time_ms()` and `sleep_until` both use, with a source test
+  pinning that). A scheduler-wide offset could not serve two adopted runs
+  checkpointed at different times, and it would shift every other coroutine's
+  clock.
+- **The sweep *resumes* a coroutine run; it does not adopt it.** That is
+  consistent with how the sweep already runs due retries and released
+  schedules. `rehydrate_runs` stays adoption-only and skips coroutine runs.
+- **One rebuild from stored source** (`VM.reexecute_source_for_resume`), shared
+  by the workflow graph rebuild and the coroutine resume, so the two cannot
+  drift. It suppresses `print`, `run_workflow`, `run_goal` and `durable_spawn`.
+  It does **not** suppress a top-level `spawn` + `run_loop` or a top-level host
+  call, which run again during any rebuild. That was already true of workflow
+  rebuilds before this (measured 2026-11-10), and is reported separately rather
+  than changed here.
 
 **4b and 4c are not separable in a release.** A release with 4b and without the
 clock continuity in 4c would let a deadline loop misbehave after a resume. They

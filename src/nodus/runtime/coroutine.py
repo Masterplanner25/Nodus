@@ -104,6 +104,13 @@ class Coroutine:
     # (`nodus.runtime.durable.DurableBinding`), set by `durable_spawn` and by
     # nothing else. None for every ordinary coroutine.
     durable: object | None = None
+    # #180 stage 4c (design 08a, D6): added to the scheduler's clock for every
+    # reading *this* coroutine makes (`runtime.time_ms()`, `sleep_until`). Zero
+    # except on a durable coroutine resumed in a process whose clock started
+    # later, where it makes the guest's timeline continue across the restart, so
+    # a deadline held in a local still means what it meant. Per coroutine,
+    # because two runs checkpointed at different times need two timelines.
+    clock_offset_ms: float = 0.0
     # ASYNC-MOD-001 (#105): the module execution context (code/functions/globals/
     # ...) this coroutine should run in. Captured at spawn and on every suspend,
     # restored on resume — so a coroutine suspended inside a cross-module call

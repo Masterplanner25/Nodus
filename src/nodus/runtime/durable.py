@@ -76,17 +76,16 @@ def durable_spawn(vm, key, fn, args) -> str:
     Starts the run, adopts an unfinished one, or does nothing for a finished
     one or one another process holds; the run id is returned in every case.
     """
-    from nodus.runtime.continuation import (
-        ContinuationRefused,
-        decode_values,
-        encode_values,
-        restore_continuation,
-    )
-    from nodus.runtime.coroutine import Coroutine
+    from nodus.runtime.continuation import ContinuationRefused, encode_values
     from nodus.runtime.durability import assess_values, entry_problem
 
     if not isinstance(key, str) or not key.strip():
         vm.runtime_error("type", f"{_CALLED_AS}: key must be a non-empty string")
+    if getattr(vm, "_suppress_flow_execution", False):
+        # The module is being re-run only to re-bind its definitions, for a
+        # rebuild or a sweep that is about to resume this very run (#322's
+        # flag). Starting or adopting it here would race that resume.
+        return run_id_for(key)
     closure = vm.ensure_function(fn, _CALLED_AS)
     if not isinstance(args, list):
         vm.runtime_error("type", f"{_CALLED_AS}: args must be a list")
@@ -107,17 +106,14 @@ def durable_spawn(vm, key, fn, args) -> str:
         vm.runtime_error("runtime", f"{_CALLED_AS}: the arguments cannot be written down.\n"
                                     + report.explain())
 
-    store = _workflow_store()
+    store = vm.resolve_workflow_runner().store
     try:
         from nodus_lang_workflow.store import StoreUnsuitableError, require_exclusive_claims
         require_exclusive_claims(store, feature="durable_spawn")
     except StoreUnsuitableError as exc:
         vm.runtime_error("runtime", str(exc))
 
-    from nodus_lang_workflow.models import (
-        RUN_STATUS_RUNNING,
-        TERMINAL_RUN_STATUSES,
-    )
+    from nodus_lang_workflow.models import TERMINAL_RUN_STATUSES
 
     run_id = run_id_for(key)
     encoded_args = encode_values(list(args))
@@ -173,20 +169,52 @@ def durable_spawn(vm, key, fn, args) -> str:
         )
         return run_id
 
+    try:
+        _launch(vm, store, record, claim, closure)
+    except ContinuationRefused as exc:
+        vm.runtime_error(
+            "runtime",
+            f"{_CALLED_AS}: run {key!r} cannot be resumed: {exc}. Its last "
+            "checkpoint belongs to a different version of this program.")
+    return run_id
+
+
+def _launch(vm, store, record, claim, closure=None):
+    """Start or restore the run `record` on `vm`, under `claim`, and spawn it.
+
+    The one place a durable coroutine is put on a scheduler, shared by
+    `durable_spawn` (a program re-run with its key) and `resume_durable_run` (a
+    sweep). Raises `ContinuationRefused`, having released the claim, if the
+    stored continuation does not fit this VM's program.
+    """
+    from nodus.runtime.continuation import (
+        ContinuationRefused,
+        decode_values,
+        restore_continuation,
+    )
+    from nodus.runtime.coroutine import Coroutine
+    from nodus.vm.types import Closure
+    from nodus_lang_workflow.models import RUN_STATUS_RUNNING
+
+    run_id = record.run_id
     continuation = record.metadata.get("continuation")
-    if continuation is None:
-        # Never checkpointed: start from the top, with the stored arguments.
-        coroutine = Coroutine(closure)
-        coroutine.initial_args = decode_values(record.metadata["args"])
-    else:
-        try:
+    try:
+        if continuation is None:
+            # Never checkpointed: start from the top, with the stored arguments.
+            if closure is None:
+                entry = vm.functions.get(record.metadata.get("entry"))
+                if entry is None:
+                    raise ContinuationRefused(
+                        f"this program has no function {record.metadata.get('entry')!r}")
+                closure = Closure(entry, [])
+            coroutine = Coroutine(closure)
+            coroutine.initial_args = decode_values(record.metadata["args"])
+        else:
             coroutine = restore_continuation(vm, continuation)
-        except ContinuationRefused as exc:
-            store.release_claim(run_id, claim.token)
-            vm.runtime_error(
-                "runtime",
-                f"{_CALLED_AS}: run {key!r} cannot be resumed: {exc}. Its last "
-                "checkpoint belongs to a different version of this program.")
+            _continue_clock(vm, coroutine, record.metadata.get("clock"))
+    except ContinuationRefused:
+        store.release_claim(run_id, claim.token)
+        raise
 
     record = store.get_run(run_id)
     record.status = RUN_STATUS_RUNNING
@@ -196,7 +224,8 @@ def durable_spawn(vm, key, fn, args) -> str:
     store.save_run(record)
 
     coroutine.durable = DurableBinding(
-        run_id=run_id, key=key, store=store, token=claim.token,
+        run_id=run_id, key=record.metadata.get("durable_key"), store=store,
+        token=claim.token,
         claim_ttl_ms=float(getattr(store, "claim_ttl_ms", 30_000.0)),
         renewed_at=time.monotonic(),
     )
@@ -204,12 +233,75 @@ def durable_spawn(vm, key, fn, args) -> str:
     # A durable coroutine is bounded by its checkpoints, not by a per-task
     # timeout: a timeout would settle it without a result or an error to record.
     coroutine.task_timeout_ms = None
-    return run_id
+    return coroutine
 
 
-def _workflow_store():
-    from nodus_lang_workflow.runner import get_default_workflow_runner
-    return get_default_workflow_runner().store
+def _continue_clock(vm, coroutine, clock) -> None:
+    """Make the restored coroutine's clock carry on from its checkpoint (D6).
+
+    At the checkpoint its guest clock read `guest_ms` at wall time `wall_ms`.
+    Now its guest clock should read `guest_ms` plus the wall time since, which
+    is the best estimate of elapsed time across a restart. Clamped at zero, so
+    a host clock that went backwards cannot make the coroutine's time run
+    backwards. Before 4c the new process's clock simply started near zero, and
+    a deadline held in a local meant something else.
+    """
+    if not isinstance(clock, dict):
+        return
+    guest_ms, wall_ms = clock.get("guest_ms"), clock.get("wall_ms")
+    if not isinstance(guest_ms, (int, float)) or not isinstance(wall_ms, (int, float)):
+        return
+    elapsed = max(0.0, time.time() * 1000.0 - float(wall_ms))
+    from nodus.vm.vm_chain import root_vm
+    scheduler_now = root_vm(vm).scheduler.time_source.now_ms()
+    coroutine.clock_offset_ms = float(guest_ms) + elapsed - scheduler_now
+
+
+def resume_durable_run(vm, store, record) -> dict:
+    """Resume one durable coroutine run on `vm` and drive it until it settles.
+
+    Called by `WorkflowFrameworkRunner.sweep` for an unfinished run of kind
+    `coroutine`, so a long-lived host (or `nodus workflow sweep`) can carry on a
+    run whose program is not going to be started again. The same claim decides
+    it as `durable_spawn` does, so a sweep and a restarted program cannot both
+    resume one run. The program is rebuilt from the source stored with the run,
+    not from whatever is on disk now.
+
+    It runs **here**, as a released schedule or a due retry does in a sweep: the
+    sweep is the explicit operator act that #176 requires before stored code
+    runs.
+    """
+    from nodus.orchestration.task_graph import WorkflowRebuildError
+    from nodus.runtime.continuation import ContinuationRefused
+    from nodus_lang_workflow.models import RUN_STATUS_FAILED
+
+    run_id = record.run_id
+    info = {"run_id": run_id, "key": record.metadata.get("durable_key"),
+            "workflow_name": record.workflow_name}
+    claim = store.claim_run(run_id, owner=_owner(vm))
+    if claim is None:
+        return {**info, "ok": True, "status": "held_elsewhere"}
+    source = record.metadata.get("program_source")
+    if not isinstance(source, str):
+        store.release_claim(run_id, claim.token)
+        return {**info, "ok": False,
+                "error": "the run stored no program source, so it cannot be rebuilt here"}
+    try:
+        vm.reexecute_source_for_resume(source, record.metadata.get("source_path"),
+                                       what=f"durable coroutine {info['key']!r}")
+        _launch(vm, store, store.get_run(run_id), claim)
+    except WorkflowRebuildError as err:
+        store.release_claim(run_id, claim.token)
+        return {**info, "ok": False, "error": err.describe()}
+    except ContinuationRefused as err:
+        return {**info, "ok": False, "error": str(err)}
+    vm.scheduler.run_loop()
+    final = store.get_run(run_id)
+    failed = final is not None and final.status == RUN_STATUS_FAILED
+    out = {**info, "ok": not failed, "status": final.status if final else None}
+    if failed:
+        out["error"] = final.last_error
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -276,6 +368,13 @@ def on_checkpoint(scheduler, coroutine, label: str) -> None:
     record = store.get_run(binding.run_id)
     metadata = dict(record.metadata)
     metadata["continuation"] = data
+    # D6: where this coroutine's clock stood, on both clocks, so a resume in a
+    # process whose clock started later can continue its timeline.
+    from nodus.vm.vm_chain import root_vm
+    owner = getattr(coroutine, "owner_vm", None) or scheduler.vm
+    guest_ms = (root_vm(owner).scheduler.time_source.now_ms()
+                + float(coroutine.clock_offset_ms or 0.0))
+    metadata["clock"] = {"guest_ms": guest_ms, "wall_ms": time.time() * 1000.0}
     metadata["checkpoints_reached"] = int(metadata.get("checkpoints_reached") or 0) + 1
     record.metadata = metadata
     record.current_checkpoint = label

@@ -47,13 +47,30 @@
   with a new message. Inside a step it is unchanged. The word is still not
   reserved.
 
-  **Not releasable on its own.** Stage 4c (in the same release) must land
-  first. It makes deadlines held in locals survive a resume (design 08a, D6),
-  and resumes runs from a long-lived host. Without it, a `sleep_until` deadline
-  saved before a crash means something else after it. This is stage 4b of
-  durable coroutines (#180, still open). Experimental.
-  Pinned by `tests/test_durable_spawn.py`, including a real process kill
-  between checkpoints.
+  **Deadlines survive the restart.** The scheduler's clock counts from process
+  start, so a deadline held in a local (`runtime.time_ms()`, a `sleep_until`
+  target, `std:loop`) would mean something else in the process that resumes
+  it. Each checkpoint now records where the coroutine's clock stood, and the
+  resumed coroutine's clock continues from there plus the wall time that
+  passed. The offset is per coroutine: two runs checkpointed at different
+  times keep their own timelines, and ordinary coroutines are unaffected. A
+  host clock that went backwards is clamped, so time never runs backwards for
+  the coroutine.
+
+  **A long-lived host resumes them.** `nodus workflow sweep`, and the server's
+  background sweeper, now resume unfinished durable coroutines (report bucket
+  `resumed_coroutines`), under the same claim as `durable_spawn`. So a sweep
+  and a restarted program can never both resume one run. The program is
+  rebuilt from the source stored with the run, and its top-level
+  `durable_spawn` is suppressed during that rebuild. Host functions must be
+  re-supplied by the sweeping host, as for a rebuilt workflow. `nodus workflow
+  resume <id>` on a durable coroutine now says where it is resumed instead of
+  failing as if it were a broken workflow.
+
+  This is stages 4b and 4c of durable coroutines (#180, still open). Still to
+  come is the user guide and runbook (4d). Experimental. Pinned by
+  `tests/test_durable_spawn.py`, `tests/test_durable_clock.py` and
+  `tests/test_durable_sweep.py`, each including a real process kill.
 
 - **`checkpoint "label"` outside a workflow step body is now a compile-time error
   that names the rule.** It used to fail at run time with `Undefined variable:
