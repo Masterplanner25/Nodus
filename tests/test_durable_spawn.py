@@ -241,6 +241,24 @@ class TheCheckpointTests(unittest.TestCase):
         self.assertIn("with `while` over an index", result["stdout"])
         self.assertEqual(RUN_STATUS_COMPLETED, record.status, "the coroutine carried on")
 
+    def test_the_refusal_says_where_the_checkpoint_is(self):
+        """The refusal is built by the scheduler, not by a VM instruction, so it
+        had no position: the guide's example printed `loop.nd:` and no line."""
+        with _store():
+            result = _run("""
+                fn worker() {
+                    for x in [1i] {
+                        checkpoint "in-loop"
+                    }
+                    return 1i
+                }
+                durable_spawn("kl", worker, [])
+                run_loop()
+                """)
+        (error,) = result["spawned_errors"]
+        self.assertIn("cannot be made durable", error["message"])
+        self.assertEqual((4, 9), (error["line"], error["column"]))
+
     def test_a_checkpoint_in_a_helper_the_worker_calls_is_durable(self):
         """D1 kept checkpoints legal in helpers, which is why it rejected a
         `durable fn` modifier. Stage 3 restores a suspend in a nested call."""

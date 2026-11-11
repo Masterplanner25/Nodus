@@ -172,7 +172,9 @@ class InsideAFunctionItIsACheckpointTests(unittest.TestCase):
         self.assertIn("OK", _cli(["check", "{path}"], src))
         out = _cli(["run", "--time-limit", "30", "{path}"], src)
         self.assertIn("ran outside a workflow step and outside a durable coroutine", out)
-        self.assertIn("cp.nd:3", out)
+        # At the `checkpoint` word (col 17), not at its label (col 28): the
+        # call is the statement, and that is where the error belongs.
+        self.assertIn("cp.nd:3:17", out)
 
     def test_an_interpolated_label_is_refused_as_in_a_step(self):
         with self.assertRaises(LangSyntaxError) as caught:

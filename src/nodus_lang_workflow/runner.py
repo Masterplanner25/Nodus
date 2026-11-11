@@ -1152,8 +1152,6 @@ class WorkflowFrameworkRunner:
         rebuild_graph,
     ):
         owner = f"vm:{id(vm)}"
-        # #733: releasing a due schedule is safe here -- this method resumes the
-        # run a few lines down, which is the whole condition on releasing one.
         # #180 stage 4c: `nodus workflow resume <id>` on a durable coroutine.
         # Answered by kind, before anything is written, with where it *is*
         # resumed -- not with whatever the graph path happens to say about a
@@ -1170,6 +1168,8 @@ class WorkflowFrameworkRunner:
                 "graph_id": graph_id,
                 "category": "not_a_graph_run",
             }
+        # #733: releasing a due schedule is safe here -- this method resumes the
+        # run a few lines down, which is the whole condition on releasing one.
         expired = self.store.expire_wait_timeout(graph_id, release_schedules=True)
         if expired is not None and expired.status == RUN_STATUS_DEAD_LETTERED:
             return {"ok": False, "error": expired.last_error or f"Wait timeout expired for '{graph_id}'"}
