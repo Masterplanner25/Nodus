@@ -211,9 +211,9 @@ Read this before the failure modes below, because it is what makes them what the
 are.
 
 `spawn` starts an **independent** coroutine. There is no parent/child
-relationship: `Coroutine` carries no parent, the scheduler keeps no tree, and
-`spawn` returns `nil` rather than a handle. Three consequences follow, and none
-of them is a bug:
+relationship: `Coroutine` carries no parent, and the scheduler keeps no tree. The
+handle `spawn` returns is the coroutine itself, and it belongs to no scope. Three
+consequences follow, and none of them is a bug:
 
 - **A spawned coroutine outlives the scope that created it.** Nothing binds its
   lifetime to the function it was spawned from.
@@ -237,8 +237,9 @@ stops the run dispatching new work, `with { allow_failure: true }` opts a branch
 out, and `step … each` fans out over a list computed at runtime. If you need
 "first failure stops the rest", write a workflow, not a fan-out of `spawn`.
 
-Tracked in [#395](https://github.com/Masterplanner25/Nodus/issues/395); the
-design record is `docs/design/v5/04-cancellation.md`.
+[#395](https://github.com/Masterplanner25/Nodus/issues/395) added the explicit
+`wait` and `cancel` (closed 2026-08-30); scope-bound tasks are not tracked by any
+open issue. The design record is `docs/design/v5/04-cancellation.md`.
 
 ### 9.1 Unhandled exception in a spawned coroutine
 
