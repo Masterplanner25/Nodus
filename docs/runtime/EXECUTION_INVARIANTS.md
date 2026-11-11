@@ -135,7 +135,15 @@ When `max_steps` is set, the VM counts total instructions across all coroutines.
 When the count exceeds `max_steps`, execution stops with `RuntimeLimitExceeded`.
 This prevents runaway programs from consuming unbounded compute in embedded use.
 
-**Code:** `vm.py::record_instruction`.
+It is exact: execution stops on instruction `max_steps + 1`. The dispatch loop runs
+the full `record_instruction` check only from `_next_check` on, the last count
+before any check could fire, and otherwise only counts (#927). So every check
+(this one, the deadline, the memory bound, the scheduler's slice and the batch
+event) must still fire on the instruction it fired on when it ran every time.
+
+**Code:** `vm.py::record_instruction`, `vm.py::_next_check_count`.
+**Test:** `tests/test_dispatch_fast_path.py`, which runs one program through the
+fast and the per-instruction loops and requires every check at the same count.
 
 ---
 

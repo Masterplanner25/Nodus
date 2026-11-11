@@ -63,8 +63,7 @@
     },
     "I-SCHED-03": {
       "title": "`max_steps` is a hard ceiling on total instructions",
-      "tests": [],
-      "reason": "No covering test is named anywhere in EXECUTION_INVARIANTS.md. Recorded as unrecorded rather than uncovered: the behaviour may well be tested, but nothing ties a test to this invariant, which is the gap #179 is about."
+      "tests": ["tests/test_dispatch_fast_path.py"]
     },
     "I-MOD-01": {
       "title": "Each module is executed at most once per process",

@@ -350,15 +350,18 @@ class VM:
         self.session_id: str | None = None
         self.execution_unit_id: str = secrets.token_hex(8)
         self.trace_id: str | None = None
-        self.task_step_budget: int | None = None
+        # The scheduler's slice, as the instruction count it ends at (#927).
+        # `task_step_budget` is the property that reads and writes it.
+        self._task_budget_end: int | None = None
         self._budget_exceeded: bool = False
         self.instructions_executed = 0
+        # The instruction count at which `execute` next has to run the full
+        # `record_instruction` (#927). Every bound setter resets it to 0.
+        self._next_check = 0
         self.function_calls = 0
         self.returns = 0
         self.exceptions = 0
-        self._instruction_batch_size = 100
         self._last_batch_emit = 0
-        self._deadline_check_interval = 100
         self._last_deadline_check = 0
         # Call-depth cap, on by default (#387). See the class docstring.
         #
@@ -374,8 +377,8 @@ class VM:
         # process. That is the one limit whose absence costs the host the process
         # rather than the request, and so the one that cannot sensibly default off.
         self.max_frames: int | None = MAX_STACK_DEPTH
-        self.max_steps: int | None = None
-        self.deadline: float | None = None
+        self._max_steps: int | None = None
+        self._deadline: float | None = None
         # #160: the third bound. `max_steps` limits instructions and `deadline`
         # limits wall clock; neither stops a script growing a list until the host
         # gets a MemoryError. Off by default like the other two, and for the same
@@ -389,7 +392,7 @@ class VM:
         # which cost ~9x throughput the last time it was crossed (#702, #488).
         # The interval is a class constant below, and the modulo in
         # `record_instruction` replaces a "last checked" counter.
-        self.max_memory_bytes: int | None = None
+        self._max_memory_bytes: int | None = None
         self.trace_scheduler = trace_scheduler
         self.scheduler_output = scheduler_output
         self._task_counter = 0
@@ -510,9 +513,12 @@ class VM:
         self.builtins.update(registry.entries)
 
     def pop(self):
-        if not self.stack:
+        # EAFP rather than a length test first: `try` costs nothing on 3.11+
+        # when nothing raises, and this runs for nearly every instruction (#927).
+        try:
+            return self.stack.pop()
+        except IndexError:
             self.runtime_error("runtime", "Stack underflow")
-        return self.stack.pop()
 
     def current_loc(self) -> tuple[str | None, int | None, int | None]:
         if self.ip < 0 or self.ip >= len(self.code_locs):
@@ -2719,9 +2725,6 @@ class VM:
             return None
         return ctx.get("resume_payload")
 
-    #: Options `workflow_wait`'s map form accepts. Closed and checked, like the
-    #: `budget` and step-option vocabularies -- an unknown key is a mistake the
-    #: author can fix now, not a silently discarded declaration (#490's rule).
     #: Instructions between RSS samples for `max_memory_bytes` (#160). 256, not
     #: the deadline's 100 and not the 2000 this started at: one RSS read costs
     #: ~4.4 us against ~2.75 us per Nodus instruction (#173), so this is ~0.6%
@@ -2730,6 +2733,59 @@ class VM:
     #: no per-instance slot.
     MEMORY_CHECK_INTERVAL = 256
 
+    #: Instructions per `vm_instruction_batch` event, and between deadline
+    #: checks. Class attributes, not instance ones: they never vary, and the VM's
+    #: instance attributes are budgeted (#702).
+    _instruction_batch_size = 100
+    _deadline_check_interval = 100
+
+    # The four bounds `record_instruction` checks are properties (#927). The
+    # dispatch loop runs that check only at `_next_check`, a count computed from
+    # the bounds, so a bound set mid-run -- by the scheduler, or through
+    # `inherit_run_bounds` -- must make the loop recompute it. Each setter resets
+    # `_next_check` to 0, which runs the full check on the next instruction.
+
+    @property
+    def task_step_budget(self) -> int | None:
+        """The scheduler's per-slice allowance: instructions left in this slice."""
+        end = self._task_budget_end
+        return None if end is None else end - self.instructions_executed
+
+    @task_step_budget.setter
+    def task_step_budget(self, value: int | None) -> None:
+        self._task_budget_end = None if value is None else self.instructions_executed + value
+        self._next_check = 0
+
+    @property
+    def max_steps(self) -> int | None:
+        return self._max_steps
+
+    @max_steps.setter
+    def max_steps(self, value: int | None) -> None:
+        self._max_steps = value
+        self._next_check = 0
+
+    @property
+    def deadline(self) -> float | None:
+        return self._deadline
+
+    @deadline.setter
+    def deadline(self, value: float | None) -> None:
+        self._deadline = value
+        self._next_check = 0
+
+    @property
+    def max_memory_bytes(self) -> int | None:
+        return self._max_memory_bytes
+
+    @max_memory_bytes.setter
+    def max_memory_bytes(self, value: int | None) -> None:
+        self._max_memory_bytes = value
+        self._next_check = 0
+
+    #: Options `workflow_wait`'s map form accepts. Closed and checked, like the
+    #: `budget` and step-option vocabularies -- an unknown key is a mistake the
+    #: author can fix now, not a silently discarded declaration (#490's rule).
     WAIT_OPTION_KEYS = ("correlation_key", "payload", "deadline_ms", "schema", "on_timeout")
 
     def builtin_workflow_wait(self, event_type, correlation_key=None, payload=None, deadline_ms=None):
@@ -3610,23 +3666,28 @@ class VM:
             raise err
 
     def record_instruction(self) -> None:
+        """Count one instruction and run every per-instruction check.
+
+        Correct on any instruction. `execute`'s fast loop calls it only from
+        `_next_check` onward and otherwise just counts (#927), so whatever
+        decides a check here must also be reflected in `_next_check_count`.
+        """
         self.instructions_executed += 1
-        if self.task_step_budget is not None:
-            self.task_step_budget -= 1
-            if self.task_step_budget <= 0:
-                self._budget_exceeded = True
-        if self.deadline is not None:
+        budget_end = self._task_budget_end
+        if budget_end is not None and self.instructions_executed >= budget_end:
+            self._budget_exceeded = True
+        if self._deadline is not None:
             if self.instructions_executed - self._last_deadline_check >= self._deadline_check_interval:
                 self._last_deadline_check = self.instructions_executed
-                if time.monotonic() >= self.deadline:
+                if time.monotonic() >= self._deadline:
                     err = RuntimeLimitExceeded("Execution timed out")
                     self.emit_runtime_error(err)
                     raise err
-        if self.max_steps is not None and self.instructions_executed > self.max_steps:
+        if self._max_steps is not None and self.instructions_executed > self._max_steps:
             err = RuntimeLimitExceeded("Execution step limit exceeded")
             self.emit_runtime_error(err)
             raise err
-        if (self.max_memory_bytes is not None
+        if (self._max_memory_bytes is not None
                 and self.instructions_executed % self.MEMORY_CHECK_INTERVAL == 0):
             self._check_memory_limit()
         if self.instructions_executed - self._last_batch_emit >= self._instruction_batch_size:
@@ -3640,14 +3701,44 @@ class VM:
                     "vm_instruction_batch",
                     data={"count": float(count), "total": float(self.instructions_executed)},
                 )
+        self._next_check = self._next_check_count()
+
+    def _next_check_count(self) -> int:
+        """The count at which `execute` must next call `record_instruction` (#927).
+
+        For each check above, the instruction count before the instruction it
+        could fire on. Never more than a batch away, since the batch event is
+        unconditional; earlier than needed is always safe, later never is. An
+        exhausted slice needs no case of its own: its end is at or behind the
+        count, so the loop reaches its yield at the very next instruction.
+        """
+        count = self.instructions_executed
+        nxt = self._last_batch_emit + self._instruction_batch_size - 1
+        if self._deadline is not None:
+            nxt = min(nxt, self._last_deadline_check + self._deadline_check_interval - 1)
+        if self._max_steps is not None:
+            nxt = min(nxt, self._max_steps)
+        if self._max_memory_bytes is not None:
+            interval = self.MEMORY_CHECK_INTERVAL
+            nxt = min(nxt, (count // interval + 1) * interval - 1)
+        if self._task_budget_end is not None:
+            nxt = min(nxt, self._task_budget_end - 1)
+        return nxt
 
     # The three sites below ask `event_bus.wants(...)` rather than deciding for
     # themselves (#522). The counters are maintained unconditionally, because
     # `get_execution_stats()` reports them and they are what makes suppressing
     # the per-event detail lossless in aggregate.
 
-    def record_vm_call(self, name: str | None, call_type: str) -> None:
+    def record_vm_call(self, name: str | None, call_type: str, *, raw: bool = False) -> None:
+        """Count a call. `raw=True` means `name` is still the internal name;
+        it is turned into a display name only if something reads it (#927)."""
         self.function_calls += 1
+        if raw and name is not None:
+            if not ((self.profiler is not None and self.profiler.enabled)
+                    or self.event_bus.wants("vm_call")):
+                return
+            name = self.display_name(name)
         if self.profiler is not None and self.profiler.enabled:
             self.profiler.record_function_call(name)
         if self.event_bus.wants("vm_call"):
@@ -4202,7 +4293,7 @@ class VM:
                 "(required by a compiler-generated call)",
             )
 
-        self.record_vm_call(self.display_name(fn_name), "call")
+        self.record_vm_call(fn_name, "call", raw=True)
 
         if fn_name in self.functions:
             if (fn_name == "main" and not self.frames
@@ -4996,7 +5087,72 @@ class VM:
         Each opcode is looked up in `self._dispatch` (built by `_build_dispatch_table()`
         at construction time).  Unknown opcodes raise a runtime error immediately.
         Handlers return None (normal advance) or a (status, value) tuple (suspend / halt).
+
+        Two loops (#927)
+        ----------------
+        This one runs when nothing is observing instructions. Per instruction it
+        counts and dispatches; `record_instruction`'s checks run only from
+        `_next_check` on, which `_next_check_count` sets to the last count before
+        any of them could fire. `_execute_instrumented` is the loop for a
+        debugger, profiler or trace, which see every instruction; this one hands
+        over to it if one appears mid-run.
         """
+        if self._instrumented():
+            return self._execute_instrumented()
+        dispatch = self._dispatch
+        while True:
+            code = self.code
+            ip = self.ip
+            if ip >= len(code):
+                return ("halt", None)
+            count = self.instructions_executed
+            if count >= self._next_check:
+                if self._budget_exceeded:
+                    self._budget_exceeded = False
+                    self.task_step_budget = None
+                    if self.current_coroutine is not None:
+                        self.current_coroutine.state = "suspended"
+                        self.save_current_coroutine_state(ip)
+                    return ("yield", {"__task_step_budget__": True})
+                if self._instrumented():
+                    return self._execute_instrumented()
+                self.record_instruction()
+            else:
+                self.instructions_executed = count + 1
+            instr = code[ip]
+            try:
+                handler = dispatch.get(instr[0])
+                if handler is None:
+                    self.runtime_error("runtime", f"Unknown opcode: {instr[0]}")
+                rv = handler(instr)
+                if rv is not None:
+                    return rv  # (status, result) from YIELD / RETURN / HALT
+            except LangRuntimeError as _e:
+                self.record_vm_exception(_e)
+                self.emit_runtime_error(_e)
+                if self.handle_exception(_e):
+                    continue
+                raise
+            except HostFunctionError:
+                raise
+            except Exception as _e:
+                self.record_vm_exception(_e)
+                wrapped = self.build_runtime_error("runtime", str(_e))
+                self.emit_runtime_error(wrapped)
+                if self.handle_exception(wrapped):
+                    continue
+                raise wrapped
+
+    def _instrumented(self) -> bool:
+        """Whether something observes each instruction, so `execute` must not skip any."""
+        return bool(
+            (self.debug and self.debugger is not None)
+            or (self.profiler is not None and self.profiler.enabled)
+            or self.trace
+        )
+
+    def _execute_instrumented(self):
+        """`execute` with the per-instruction hooks: debugger, profiler, trace (#927)."""
         pending_after = None
         while self.ip < len(self.code):
             if self._budget_exceeded:

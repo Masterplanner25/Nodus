@@ -270,6 +270,38 @@
   `nodus run` streams. An embedded `NodusRuntime` and `nodus serve` still return
   stdout as a value, and `--dump-bytecode` keeps its disassembly first.
 
+### Performance
+
+- **#927: the VM's dispatch loop is ~1.6x faster on CPython for compiler-like
+  code, ~2x on a tight loop.** Measured head to head against `main`, alternating,
+  best of four, each run a fresh process:
+
+  | workload | before | after | |
+  |---|---:|---:|---:|
+  | `examples/expr_compiler.nd`, 400 expressions | 719K instr/s | 1,135K instr/s | 1.58x |
+  | hot arithmetic loop | 967K instr/s | 1,909K instr/s | 1.97x |
+
+  PyPy is unchanged to slightly faster (1.04x and 1.22x). Before each
+  instruction did any work, the loop asked whether a debugger, profiler or trace
+  was attached, then called `record_instruction`, which checked the scheduler's
+  slice, the deadline, `max_steps`, the memory bound and the batch event. Now:
+  - a separate loop handles a debugger, profiler or trace;
+  - otherwise the loop counts the instruction and runs the full check only when
+    the next one could fire.
+  
+  Every check still fires on the same instruction it did before. A test runs one
+  program through both loops and requires every check at the same count, and
+  another compares the check-point arithmetic against a brute-force model.
+  Moving any one check point a single instruction late turns a test red.
+
+  Two smaller costs went too:
+  - a call no longer computes its function's display name unless an event sink
+    or the profiler reads it;
+  - `pop` no longer tests the stack's length before popping.
+
+  Found by profiling for LIMITS-001 (#173), whose native-loop direction this
+  defers.
+
 ### Tooling
 
 - **`tools/benchmark_runtime.py` measures the compiler workload too.** Besides the
