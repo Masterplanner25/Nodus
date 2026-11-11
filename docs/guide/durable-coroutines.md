@@ -333,11 +333,10 @@ Two things to know when a sweep rebuilds a program:
   `run_workflow`, `run_goal` and `durable_spawn` are skipped while it does, but
   a top-level `spawn(...)` with `run_loop()`, or a top-level call to a host
   function, runs again (#909).
-- **Host functions are not in the stored source.** A durable coroutine that calls
-  a function registered with `NodusRuntime.register_function` needs the
-  sweeping host to supply it, and there is no public way to do that yet
-  (#908). Until there is, resume those runs by re-running the program that
-  registers the function.
+- **Host functions are not in the stored source.** `nodus workflow sweep` has
+  none of your registered functions. A durable coroutine that calls one is
+  resumed by a host that registers it, with `runtime.sweep()` (§7.1), or by
+  re-running the program.
 
 `nodus workflow resume <run_id>` is for workflows. Given a durable coroutine's
 id, it says where that run is resumed instead:
@@ -447,6 +446,75 @@ The run id is derived from the key, so a host can find a run's record with
 that cannot be written down is noted in `metadata["result_unrecorded"]`
 instead).
 
+### 7.1 Sweeping from your own host
+
+A host that registers functions resumes durable runs with `runtime.sweep()`. It
+sweeps on VMs built the way the runtime builds every VM: with the host's
+functions, and held to the same confinement and policy as `run_source`. A run
+the worker below left behind, when its process died after `received`:
+
+```python
+import os
+from nodus.runtime.embedding import NodusRuntime
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner
+from nodus_lang_workflow.store import SQLiteWorkflowStore
+
+runner = WorkflowFrameworkRunner(SQLiteWorkflowStore("jobs.sqlite3"))
+runtime = NodusRuntime(timeout_ms=None, workflow_runner=runner)
+runtime.register_function("upload", lambda rows: None)
+runtime.register_function("crash", lambda: os._exit(3))
+
+runtime.run_source("""
+fn job(rows) {
+    checkpoint "received"
+    crash()
+    upload(rows)
+    print("uploaded \\(len(rows)) rows")
+    return len(rows)
+}
+
+durable_spawn("job-42", job, [[1, 2, 3]])
+run_loop()
+""")
+```
+
+is carried on by a second process:
+
+```python
+from nodus.runtime.embedding import NodusRuntime
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner
+from nodus_lang_workflow.store import SQLiteWorkflowStore
+
+runner = WorkflowFrameworkRunner(SQLiteWorkflowStore("jobs.sqlite3"))
+runtime = NodusRuntime(timeout_ms=None, workflow_runner=runner)
+uploaded = []
+runtime.register_function("upload", lambda rows: uploaded.append(rows))
+runtime.register_function("crash", lambda: None)
+
+report = runtime.sweep()
+print(report["resumed_coroutines"])
+print(repr(report["stdout"]))
+print(uploaded)
+```
+
+```
+$ python worker.py
+$ python sweeper.py
+[{'run_id': 'co_5359ae12ca11e5d628161c38de88522b', 'key': 'job-42', 'workflow_name': 'job', 'ok': True, 'status': 'completed'}]
+'uploaded 3 rows\n'
+[[1, 2, 3]]
+```
+
+(`sweeper.py` ran 31 seconds after `worker.py` died, once the dead process's
+claim had expired.) What the resumed program prints is collected into
+`report["stdout"]`, as `run_source` returns it, and that includes anything a host
+function prints while it runs. `runtime.new_vm()` gives the same VM directly,
+for the other workflow calls that take a VM factory.
+
+Do not sweep with a bare `VM([], {})`. It has none of your functions, and it is
+permissive by default, so a resumed program could do what your runtime would
+have refused (#908).
+
 ---
 
 ## 8. Limits
@@ -484,8 +552,9 @@ F2 The for-loop refusal carried no line:col (it is raised by the scheduler, not
    by an instruction). Fixed in the PR that added this guide.
 F3 The "checkpoint outside a durable coroutine" error pointed at the label
    (2:16), not at `checkpoint` (2:5). Fixed in the same PR.
-F4 An embedder cannot build a sweep VM that carries its registered host
-   functions. Filed as #908.
+F4 An embedder could not build a sweep VM that carries its registered host
+   functions, or its confinement. Filed as #908 and fixed: NodusRuntime.sweep()
+   and new_vm(). §7.1 (worker.py then sweeper.py, 31 s apart) run 2026-11-11.
 F5 A rebuild re-runs a top-level spawn + run_loop and top-level host calls.
    Older than durable coroutines (workflow rebuilds since #322). Filed as #909.
 

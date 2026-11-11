@@ -631,9 +631,12 @@ resumed = runner.rehydrate_runs(vm_factory=my_vm_factory)   # call at startup
 ```
 
 `rehydrate_runs` adopts interrupted workflow runs. It skips durable coroutines,
-which `runner.sweep(vm_factory)` resumes instead. A sweep VM must carry any host
-functions the resumed code calls, and there is not yet a public way to build one
-that does (#908). A rebuild also re-runs a module's top-level `spawn`/`run_loop` and
+which a sweep resumes instead. **An embedder sweeps with `runtime.sweep()`**,
+which builds each VM the way the runtime builds every VM: with its registered host
+functions, and held to its confinement and capability policy (#908). A bare
+`VM([], {})` has neither, and is permissive by default, so resuming on one lets a
+program do what the runtime would refuse. `runtime.new_vm()` gives that VM for
+the other calls that take a VM factory. A rebuild also re-runs a module's top-level `spawn`/`run_loop` and
 top-level host calls (#909), so keep the top level of a durable program to
 definitions and the `durable_spawn` call.
 

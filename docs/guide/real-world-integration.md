@@ -349,6 +349,12 @@ Always call `sweep_loop.start()` before accepting any traffic. Skipping it
 means runs that were in `"waiting"` status when the process last shut down
 will never receive resume events after restart.
 
+If the host embeds with `NodusRuntime`, sweep with `runtime.sweep(min_idle_ms=...)`
+rather than a runner and a hand-built VM. It builds each VM the way the runtime
+builds every VM, so resumed code gets your registered functions and stays under
+your confinement. The bare `VM([], {})` above has neither, and is permissive by
+default (#908, `embedding-nodus.md` §11).
+
 ---
 
 ## Part 3: Routing events to waiting flows

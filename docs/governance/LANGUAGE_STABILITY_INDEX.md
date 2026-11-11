@@ -51,7 +51,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `action` expressions in steps | Experimental | Step modifier; API not yet frozen |
 | `yield expr` | Stable | Promoted v4.0.5; `YIELD` opcode stable since v1.0; no further changes planned |
 | `spawn`, `coroutine`, `channel` | Mostly Stable | Graduated v4.0.5; SCHED-001/002, CHAN-001, CIRC-001 all resolved |
-| `durable_spawn(key, fn, args)`, `checkpoint` in a function | Experimental | New after 5.15.1 (#180). A coroutine whose `checkpoint`s are persisted; a crash resumes it at the last one (at-least-once between checkpoints). Needs a store with cross-process claims (SQLite today). Not yet frozen: the run-record metadata layout and continuation format (`nodus-continuation/2`), checkpoints inside a `for` over a user-defined iterator (refused; over a list works, #911), frames inside an imported module (refused), and a public sweep VM for host functions (#908). `checkpoint` stays a contextual word, not a reserved one. Guide: `docs/guide/durable-coroutines.md`. |
+| `durable_spawn(key, fn, args)`, `checkpoint` in a function | Experimental | New after 5.15.1 (#180). A coroutine whose `checkpoint`s are persisted; a crash resumes it at the last one (at-least-once between checkpoints). Needs a store with cross-process claims (SQLite today). Not yet frozen: the run-record metadata layout and continuation format (`nodus-continuation/2`), checkpoints inside a `for` over a user-defined iterator (refused; over a list works, #911), and frames inside an imported module (refused). `checkpoint` stays a contextual word, not a reserved one. Guide: `docs/guide/durable-coroutines.md`. |
 | Optional type annotations | Experimental | Syntax accepted and preserved in AST; **no runtime enforcement** — `let x: int = "hello"` succeeds silently. Forward path: `nodus check --strict` (not yet implemented). |
 | `break` / `continue` | Mostly Stable | Shipped v4.1.0 (#309) for `while`, C-style `for`, and `for … in`. Compile-time error outside a loop or across a `try`/`catch`/`finally` boundary. No new opcodes. |
 | `match` expression | Mostly Stable | Shipped v4.1.0 (#308). Value-matching arms compared with `==`, first match wins, `_` catch-all must be last. **No destructuring or binding patterns** — those would extend the surface, so it is not yet Stable. |
@@ -97,6 +97,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | Surface | Tier | Notes |
 |---------|------|-------|
 | `from nodus import NodusRuntime` | Stable | Added to `nodus.__all__` in v1.0 |
+| `NodusRuntime.new_vm()`, `NodusRuntime.sweep()` | Experimental | New after 5.15.1 (#908). A VM configured as `run_source`'s (host functions, confinement, policy, limits), and the workflow sweep run on it. Not yet frozen: the report shape is the runner's, plus `stdout`/`stderr`. |
 | `NodusRuntime(...)` constructor params | Stable | Stable: `max_steps`, `timeout_ms`, `max_stdout_chars`, `project_root`, `allowed_paths`, `allow_input`, `max_frames`. Added v4.0: `on_error` (coroutine error hook) |
 | `run_source(source, ...)` | Stable | Returns `{"ok", "stdout", "stderr", "error"}` |
 | `run_file(path, ...)` | Stable | |
