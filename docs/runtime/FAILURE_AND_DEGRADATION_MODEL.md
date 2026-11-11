@@ -322,9 +322,12 @@ cancellation set, so every pending `finally` block runs, and `catch` blocks are
 refused so it cannot swallow its own deadline. The unwind is bounded by a step
 budget, so a `finally` that loops forever cannot turn a timeout into a hang.
 
-This is the **only** cancellation path in the runtime, and nothing but the
-scheduler's own timeout check can reach it — there is no `cancel` builtin, no
-host API and no CLI command (#502; the gap is #395).
+This unwind is [#502](https://github.com/Masterplanner25/Nodus/issues/502)'s
+fix. It used to be the only cancellation path in the runtime, and it no longer
+is. A program can stop a task with `cancel(task)`
+([#395](https://github.com/Masterplanner25/Nodus/issues/395)), which likewise runs
+its `finally` blocks and skips its `catch` blocks. A run can be cancelled with
+`nodus workflow cancel` or the runner's `cancel_run`.
 
 **A host agent handler is a separate case and cannot be preempted.** The deadline
 stops the *wait*, not the handler: arbitrary Python keeps running on a daemon
