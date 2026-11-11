@@ -196,6 +196,15 @@
 
 ### Fixes
 
+- **#920: `nodus workflow resume` / `replay` and `goal-resume` exit 1 when they
+  fail.** These commands print the workflow runner's answer, and a run that does
+  not exist, could not be rebuilt, or is not a workflow comes back as
+  `{"ok": false, ...}`. The CLI exited by whether the command *executed*, so it
+  printed the failure and returned 0, and a script or cron job checking the exit
+  code was told it worked. The JSON is still printed either way. One helper now
+  serves every command of that shape, including `workflow replay`, which the
+  issue did not name.
+
 - **#909: a rebuild no longer re-runs `main()` or restarts spawned work.** A
   workflow resume, a sweep, or a durable coroutine's resume rebuilds the program
   by re-running its stored source, only to re-bind definitions. Two more things
