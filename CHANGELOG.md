@@ -25,6 +25,17 @@
 
   Guide: `docs/migration/v6.0-staged-flips.md` §6.
 
+  **`nodus check --staged` finds them from source too (#922).** It looks in any
+  file that runs a workflow, a goal or a durable coroutine: at its top-level
+  statements outside `main`, and in the same-file functions those call. It
+  reports effectful builtins (by the runtime's own rule), stdlib wrappers
+  (classified by reading the stdlib's source), and `extern`-declared host
+  functions, each with its line. A run's report is merged into the same flip,
+  which adds host functions called without an `extern`. Building it found that
+  the runtime warning pointed into `std:fs`'s own source for a top-level
+  `fs.write`. It now names the user's line, through the same `user_facing_loc`
+  runtime errors use, and a test holds the static and runtime positions equal.
+
 - **Durable coroutines: `durable_spawn(key, fn, args)`, and `checkpoint` inside
   a function.** `durable_spawn` runs `fn(args...)` as a coroutine backed by a run
   record in the workflow store. Each `checkpoint "label"` it reaches is written

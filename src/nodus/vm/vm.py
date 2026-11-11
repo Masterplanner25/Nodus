@@ -534,7 +534,13 @@ class VM:
         self.emit_runtime_error(err)
         raise err
 
-    def build_runtime_error(self, kind: str, message: str, payload: object = None, origin: str = "vm") -> LangRuntimeError:
+    def user_facing_loc(self) -> tuple[str | None, int | None, int | None]:
+        """Where to tell the user something happened: the current position,
+        or, inside a stdlib wrapper, the user's call into it.
+
+        One place, shared by runtime errors and the rebuild-effect warning
+        (#922), which reported `std:fs`'s own line for a top-level `fs.write`.
+        """
         path, line, col = self.current_loc()
         if _is_stdlib_path(path):
             promoted = False
@@ -551,6 +557,10 @@ class VM:
                     caller_path, caller_line, caller_col = caller_vm.current_loc()
                     if caller_line is not None and not _is_stdlib_path(caller_path):
                         path, line, col = caller_path or "<repl>", caller_line, caller_col
+        return path, line, col
+
+    def build_runtime_error(self, kind: str, message: str, payload: object = None, origin: str = "vm") -> LangRuntimeError:
+        path, line, col = self.user_facing_loc()
         stack = self._build_error_stack(path, line, col)
         return LangRuntimeError(kind, message, line=line, col=col, path=path or self.source_path, stack=stack, payload=payload, origin=origin)
 
