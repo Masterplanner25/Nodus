@@ -227,10 +227,15 @@ class RebuildFailureIsDiagnosedTests(unittest.TestCase):
             self.assertIn("status=waiting", out)
             graph_id = _graph_id_from(out)
 
-            _rc, rebuild_out = _cli(["nodus", "workflow", "resume", graph_id], project.root)
-            _rc, unknown_out = _cli(
+            rebuild_rc, rebuild_out = _cli(["nodus", "workflow", "resume", graph_id], project.root)
+            unknown_rc, unknown_out = _cli(
                 ["nodus", "workflow", "resume", "g_doesnotexist"], project.root
             )
+
+        # #920: both are failures the runner reports as an inner `ok: false`,
+        # and both exited 0 -- a cron job checking the code was told it worked.
+        self.assertEqual(1, rebuild_rc, rebuild_out)
+        self.assertEqual(1, unknown_rc, unknown_out)
 
         # Before #399 this said exactly: {"ok": false, "error": "Unknown graph"} —
         # for a run the store lists as waiting, with its state file on disk.

@@ -890,22 +890,38 @@ def _plan_goal(path: str, goal_name: str | None = None, *, project_root: str | N
     return 0
 
 
-def _run_resume_workflow(graph_id: str, checkpoint: str | None) -> int:
-    result, _vm = resume_workflow(graph_id, checkpoint)
+def _print_runner_answer(result: dict) -> int:
+    """Print what a resume or replay *answered*, and exit by it (#920).
+
+    These commands get a two-level result. The outer one says whether the
+    command executed; the inner `result["result"]` is the workflow runner's own
+    answer -- and a run that does not exist, cannot be claimed or is not a
+    workflow comes back as an inner `{"ok": false, ...}` with the outer one fine.
+    Exiting by the outer level alone printed the failure and returned 0, so a
+    script or cron job checking the exit code was told it worked. The JSON is
+    printed either way; it is the report.
+
+    One function for every command of that shape (resume, goal resume,
+    replay), so the check cannot be added to one and missed by another.
+    """
     if not result.get("ok", False):
         _print_error(result)
         return 1
-    _json_print(result.get("result"))
+    answer = result.get("result")
+    _json_print(answer)
+    if isinstance(answer, dict) and answer.get("ok") is False:
+        return 1
     return 0
+
+
+def _run_resume_workflow(graph_id: str, checkpoint: str | None) -> int:
+    result, _vm = resume_workflow(graph_id, checkpoint)
+    return _print_runner_answer(result)
 
 
 def _run_resume_goal(graph_id: str, checkpoint: str | None) -> int:
     result, _vm = resume_goal(graph_id, checkpoint)
-    if not result.get("ok", False):
-        _print_error(result)
-        return 1
-    _json_print(result.get("result"))
-    return 0
+    return _print_runner_answer(result)
 
 
 # #499: `nodus workflow cleanup` with no retention configured used to remove
@@ -1036,11 +1052,7 @@ def _workflow_replay_cli(
 ) -> int:
     with _project_root_context(project_root):
         result, _vm = replay_workflow(graph_id, checkpoint, rearm_only=rearm_only)
-    if not result.get("ok", False):
-        _print_error(result)
-        return 1
-    _json_print(result.get("result"))
-    return 0
+    return _print_runner_answer(result)
 
 
 def _workflow_migrate_state(project_root: str | None, graph_id: str | None = None) -> int:
