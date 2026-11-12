@@ -1,35 +1,19 @@
 # AGENTS.md
 
-## Project intent
-This repository contains a small educational scripting language implemented in Python using:
-- tokenizer
-- parser
-- AST
-- bytecode compiler
-- stack VM
+**This repository's agent instructions are in [`CLAUDE.md`](CLAUDE.md). Read it first.**
+They apply to every agent working here, not only Claude Code. This file is deliberately only
+a pointer: a second copy of the instructions would drift from the first. It already had, once.
+Until 2026-11-11 this file described "a small educational scripting language", years out of
+date.
 
-## Coding rules
-- Preserve existing behavior unless explicitly extending it.
-- Prefer minimal, local changes over broad rewrites.
-- Keep parser, compiler, and VM responsibilities separate.
-- Add tests for each new language feature.
-- Keep language behavior consistent and script-friendly.
+`CLAUDE.md` links to everything else, including:
 
-## Style
-- Favor readability over cleverness.
-- Use small helper functions where they simplify the VM/compiler.
-- Avoid unnecessary dependencies.
+- **directory instructions:** `tests/CLAUDE.md`, `tools/CLAUDE.md` and
+  `src/nodus_lang_workflow/CLAUDE.md`. Read the one for the directory you work in;
+- **task guides:** `.claude/commands/`, listed in its "Read on demand" table, e.g.
+  `release-sequence.md` before any release step;
+- **[`docs/AGENT_EXPERIENCE.md`](docs/AGENT_EXPERIENCE.md):** problems agents have already
+  hit here, searched by error text.
 
-## When something fails
-Before troubleshooting an unfamiliar error, a test that skips, or a gate that disagrees with
-CI, search `docs/AGENT_EXPERIENCE.md` for its text. It records problems agents have already
-hit in this repository, their causes and verified fixes. When you resolve a new one that
-could recur, add an entry in its format: the exact symptom first, then the evidence and a
-status. It is evidence, not policy. The project's rules are in `CLAUDE.md`.
-
-## Output expectations
-When finishing a task, summarize:
-- files changed
-- features completed
-- tests added or updated
-- known limitations
+Do not add instructions here. Put them in `CLAUDE.md`, or the file it points to for that
+task.
