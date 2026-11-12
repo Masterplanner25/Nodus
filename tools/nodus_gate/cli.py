@@ -27,6 +27,7 @@ def _parse_args(argv: list[str]) -> dict:
         "--versions": False,
         "--invariants": False,
         "--flips": False,
+        "--open-claims": False,
         "--all": False,
         "--include-design": False,
         "--verbose": False,
@@ -139,13 +140,14 @@ def main(argv: list[str] | None = None) -> int:
     run_versions = args["--versions"] or args["--all"]
     run_invariants = args["--invariants"] or args["--all"]
     run_flips = args["--flips"] or args["--all"]
+    run_open_claims = args["--open-claims"] or args["--all"]
 
     if not (run_static or run_runtime or run_closed or run_contracts or run_opcodes
             or run_consumers or run_versions or run_shapes or run_invariants
-            or run_flips):
+            or run_flips or run_open_claims):
         print("Usage: nodus_gate [--static] [--runtime] [--closed-issues] [--contracts] "
               "[--opcodes] [--consumers] [--versions] [--shapes] [--invariants] "
-              "[--flips] [--all]")
+              "[--flips] [--open-claims] [--all]")
         print("  --static         Verify documented symbols exist in shipped code")
         print("  --runtime        Execute code blocks from docs and verify output")
         print("  --closed-issues  Verify CHANGELOG-referenced issues have passing tests")
@@ -156,7 +158,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  --shapes         Report new instances of the recurring bug shape")
         print("  --invariants     Verify the invariant-to-test ledger is honest")
         print("  --flips          Verify every staged next-major promise is registered")
-        print("  --all            Run all ten phases")
+        print("  --open-claims    Report docs that call a closed issue open")
+        print("  --all            Run all eleven phases")
         print("")
         print("Options:")
         print("  --include-design  Include docs/design/ in scans")
@@ -185,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     from tools.nodus_gate.output import (
         format_static, format_runtime, format_closed_issues, format_contracts,
         format_opcodes, format_consumers, format_versions, format_shapes,
-        format_invariants, format_flips,
+        format_invariants, format_flips, format_open_claims,
         format_json_results,
     )
 
@@ -307,6 +310,22 @@ def main(argv: list[str] | None = None) -> int:
         # fix is one manifest entry. This cohort was found two short precisely
         # because nothing failed when it drifted.
         if flips_result.has_failure:
+            any_failure = True
+
+    if run_open_claims:
+        from tools.nodus_gate.open_claims_phase import run_open_claims_phase
+        open_claims_result = run_open_claims_phase(root, allowlist=allowlist)
+        if output_fmt != "json":
+            print(format_open_claims(open_claims_result, use_color=use_color,
+                                     verbose=verbose, quiet=quiet))
+        # Advisory, like --consumers and --shapes: a stale "still open" is wrong
+        # and the fix is one line, but the cache can lag the tracker, and a phase
+        # that blocks unrelated merges on a lagging cache gets switched off. The
+        # release sequence refreshes the cache and runs it --strict. An unreadable
+        # cache IS a failure -- the check may not pass by being unable to run.
+        if open_claims_result.error:
+            any_failure = True
+        elif open_claims_result.has_finding and strict:
             any_failure = True
 
     if output_fmt == "json":

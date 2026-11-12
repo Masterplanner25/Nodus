@@ -1,6 +1,6 @@
 # .nodusgate-allow — nodus_gate suppression list
 #
-# Format: blockhash:<relative-path>:<12-hex>  or  symbol:<name>
+# Format: blockhash:<relative-path>:<12-hex>  or  symbol:<name>  or  open-claim:<relative-path>#<N>
 #
 # The hash covers the code block's normalized source (trailing whitespace and
 # surrounding blank lines stripped, line-ending agnostic), so an entry survives
@@ -174,3 +174,13 @@ blockhash:docs/migration/v3-to-v4.md:28ac36e3c019
 blockhash:docs/migration/v4.0-patch-notes.md:e78b664637bb
 blockhash:docs/migration/v4.0-patch-notes.md:a855ac0f33ce
 blockhash:docs/migration/v4.0-to-v4.1.md:8979c7948da6
+
+# --- open-claim:<relative-path>#<N> (nodus_gate --open-claims, #931) -----------
+# A citation that may keep calling a closed issue open: history recorded in a
+# current document, where "open" was true at the time and the sentence says so.
+# Keyed by file and issue, not line, so an entry survives edits elsewhere. An
+# entry that matches no claim is reported, and fails under --strict.
+
+# The dated v4.1.1 entry in the release history; the v4.2.0 entry below it
+# records the fix.
+open-claim:docs/governance/COMPATIBILITY.md#339

@@ -186,6 +186,37 @@ rather than a skipped check.
 
 ---
 
+## Gate 3e: No document calls a closed issue open
+
+"The gap is #395", "still open in #380", "SCHED-002 (#95) open": each is true the
+day it is written and false the day the issue closes, and closing an issue touches
+no document that cites it. #931 found three documents calling #395 "the gap" two
+and a half months after it closed, through four releases of reviews. Run against
+the tree as it stood that day (`cfc0890`), this phase reports 18 such claims.
+
+**Check, refreshing the issue states first:**
+
+```powershell
+& "C:/dev/Coding Language/.venv/Scripts/python.exe" -m tools.refresh_issue_states
+PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
+  "C:/dev/Coding Language/.venv/Scripts/python.exe" `
+  -m tools.nodus_gate.cli --open-claims --strict
+```
+
+The phase reads `tools/issue_states.json` and makes no network call, so it runs in
+CI's `--all`, where it is **advisory**. The cache only knows what was true at its
+last refresh, which is why the release runs the refresh first and then the phase
+`--strict`. Commit the refreshed cache in the release PR.
+
+**Passing criteria:** no present-tense claim cites a closed issue, and no
+`open-claim:` allowlist entry is dead. Fix a stale claim by saying what is true now,
+which usually means checking what the issue's fix actually did: "#380 closed on a
+speed-up, not a bound" is the true sentence, and "#380 (closed)" would not have
+been. Allowlist (`open-claim:<path>#<N>` in `.nodusgate-allow`) only history that
+says "open" about a past moment.
+
+---
+
 ## Gate 4: Closed-issue regression test gate
 
 **Standard (established after v3.0.1 incident):**
@@ -534,6 +565,7 @@ doc-vs-code failures cannot be deferred.
 | Test suite | All releases | No |
 | Ruff lint | All releases | Only for pre-existing violations |
 | Doc-vs-code | All releases | No |
+| No document calls a closed issue open (3e) | All releases | No |
 | Closed-issue regression | Patch/minor | No |
 | Version sync | All releases | No |
 | CHANGELOG entry | All releases | Minor for trivial patches |

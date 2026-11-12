@@ -502,7 +502,7 @@ PYTHONPATH="C:/dev/Coding Language/src;C:/dev/Coding Language" `
 ```
 
 Phases: `--static`, `--runtime`, `--closed-issues`, `--contracts`, `--consumers`, `--opcodes`,
-`--shapes`, `--versions`, `--invariants`, `--flips`. What each checks, and why, is in
+`--shapes`, `--versions`, `--invariants`, `--flips`, `--open-claims`. What each checks, and why, is in
 `tools/CLAUDE.md`, which loads when you work under `tools/`.
 
 The allowlist at `.nodusgate-allow` suppresses intentionally non-runnable

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#931: `nodus_gate --open-claims` reports a document calling a closed issue
+  open.** "The gap is #395", "still open in #380" and "SCHED-002 (#95) open" are
+  true the day they are written and false the day the issue closes, and nothing
+  re-reads them. Three documents called #395 "the gap" for two and a half months
+  after it closed, through four releases of reviews.
+
+  The phase checks present-tense claims only ("tracked as #N", "#N stays open",
+  "until #N is fixed") and leaves history alone ("Filed as #N", "#N has been open
+  since…"). It reads issue states from a committed cache,
+  `tools/issue_states.json`, written by the new `python -m
+  tools.refresh_issue_states`, so CI makes no network call. It is advisory in
+  `--all`. A release refreshes the cache and runs it `--strict` (new Gate 3e in
+  `RELEASE_GATES.md`). Scope is current documents, and only `[Unreleased]` of
+  this file. History in a current document is allowlisted per file and issue
+  (`open-claim:<path>#<N>`).
+
+  Its first run on `main` found nine claims. Seven were fixed by checking what
+  each issue's fix actually did, which twice changed more than the word "open":
+  - #380 closed on a speed-up, not the bound two notes said it still owed;
+  - the #322 caveat in the workflows guide described a mechanism #322 removed.
+    Re-tested, a nested `run_workflow` still runs again when its step is
+    replayed, which is what the caveat now says.
+
+  Two are history and allowlisted. Against the tree before #930, it reports
+  all seven claims #931 listed by hand and eleven more. Pinned by
+  `tests/test_open_claims_phase.py`.
+
 ## [5.16.0] - 2026-11-11
 
 ### Changed

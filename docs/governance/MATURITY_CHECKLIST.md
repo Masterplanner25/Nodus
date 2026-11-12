@@ -107,7 +107,7 @@ Nodus is being matured as:
 - [x] Tighten broad `object` interfaces — body: Block, _tok: Tok|None, dict[str,Any], etc.
 
 ### Core Refactors
-- [ ] Isolate one oversized responsibility from `vm.py` — SCHED-001 fixed (#94 closed); SCHED-002 (#95) open
+- [ ] Isolate one oversized responsibility from `vm.py` — SCHED-001 fixed (#94 closed); SCHED-002 fixed (#95 closed 2026-06-06). Both were bug fixes, not the extraction this item asks for, so it stays unticked
 - [ ] Simplify one loader/import boundary — CIRC-001 #103, CHAN-001 #107
 - [ ] Simplify one scheduler/runtime boundary — SCHED-002 #95 (SCHED-001 #94 closed)
 - [x] Preserve/document semantics while refactoring — graduation skills + invariants

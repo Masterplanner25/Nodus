@@ -98,11 +98,10 @@ These burn time when forgotten:
   binds one parameter per dependency.
 - **Containers alias; assignment binds, it does not copy.** `let b = a` gives a second
   name for one list, map or record — mutating through either is visible through both, at
-  any depth and across a call boundary, and from inside a coroutine or a step body. There
-  is **no copy or clone builtin**, so "hand this container to a step without letting it
-  mutate mine" is currently inexpressible. Pinned by `tests/test_container_aliasing.py`
-  (#818); **#814 is open** on stating the rule in the guide and deciding whether a copy
-  surface is owed, so treat the test as *what the VM does*, not as a ratified contract.
+  any depth and across a call boundary, and from inside a coroutine or a step body.
+  Pinned by `tests/test_container_aliasing.py` (#818). To hand a container to a step
+  without letting it mutate yours, copy it first (below). #814, closed 2026-09-07, is
+  where the rule was stated in the guide and the copy surface decided.
 
   **`copy(value)` is the deep copy** (#814, 5.13.0) — a global, no import. It preserves
   shared structure rather than expanding it, terminates on a cycle, and **refuses** a

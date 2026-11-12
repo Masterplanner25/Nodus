@@ -412,11 +412,12 @@ exposed); the rest are open. Ordered by severity.
   regex is unaffected either way. Affected consumers are those that invoke nodus
   with a *relative* path and expect that exact string back.
 
-- **#357 (LOW, open) — the VS Code grammar does not highlight `match`,
-  `break`, or `continue`.** Neither the in-repo grammar nor the published
-  `nodus-vscode` v0.1.0. The two have also diverged in opposite directions and
-  neither is a superset. Worth a release-checklist item: a new language keyword
-  needs a grammar update, or this recurs on every syntax addition.
+- **#357 (LOW, closed 2026-08-15) — the VS Code grammar did not highlight
+  `match`, `break`, or `continue`.** Neither the in-repo grammar nor the published
+  `nodus-vscode` v0.1.0 did. The two had also diverged in opposite directions and
+  neither was a superset. The release-checklist item this asked for exists now as
+  `nodus_gate --consumers`, which flags nodus-vscode whenever the keyword set
+  moves.
 
 ### Process gap: Gate 10 was skipped for 4.1.1
 
