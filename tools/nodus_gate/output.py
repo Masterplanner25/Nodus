@@ -248,6 +248,57 @@ def format_consumers(result, *, use_color: bool, verbose: bool, quiet: bool) -> 
     return "\n".join(lines)
 
 
+def format_open_claims(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
+    """Each document calling a closed issue open, with the line to fix."""
+    lines = []
+    if result.error:
+        lines.append(_c(f"FAIL {result.error}", _RED, use_color=use_color))
+        lines.append("     regenerate it: python -m tools.refresh_issue_states")
+        return "\n".join(lines)
+
+    if not quiet:
+        lines.append(
+            f"Checked {result.files_scanned} document(s) for present-tense open-issue "
+            f"claims (issue states refreshed {result.refreshed})"
+        )
+        lines.append("")
+
+    for c in result.stale:
+        mark = _c("[--]", _YELLOW, use_color=use_color)
+        lines.append(f"  {mark} {c.path}:{c.line} — calls #{c.issue} open; it is closed")
+        lines.append(f"       {c.source[:160]}")
+        lines.append(f"       allow (only if this is history): {c.allow_key}")
+    for entry in result.dead_allow:
+        mark = _c("[--]", _YELLOW, use_color=use_color)
+        lines.append(f"  {mark} .nodusgate-allow: {entry} matches no claim; remove it")
+    for c in result.unknown:
+        mark = _c("[??]", _YELLOW, use_color=use_color)
+        lines.append(
+            f"  {mark} {c.path}:{c.line} — #{c.issue} is not in the cache "
+            "(a PR, or filed since the refresh); not judged"
+        )
+    if verbose:
+        for c in result.allowed:
+            lines.append(f"  [allowed] {c.path}:{c.line} #{c.issue}")
+    if result.stale or result.dead_allow or result.unknown:
+        lines.append("")
+
+    if not quiet:
+        n_bad = len(result.stale) + len(result.dead_allow)
+        summary = (f"{len(result.claims)} claim(s), {len(result.stale)} stale, "
+                   f"{len(result.allowed)} allowed, {len(result.unknown)} unknown")
+        if n_bad == 0:
+            status = _c("PASS", _GREEN, use_color=use_color)
+            lines.append(f"Open-claims: {status} — {summary}")
+        else:
+            status = _c("STALE", _YELLOW, use_color=use_color)
+            dead = f", {len(result.dead_allow)} dead allowlist entr" + (
+                "y" if len(result.dead_allow) == 1 else "ies") if result.dead_allow else ""
+            lines.append(f"Open-claims: {status} — {summary}{dead} "
+                         "(advisory; --strict to fail)")
+    return "\n".join(lines)
+
+
 def format_invariants(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
     """The ledger's state in one line when clean, every break when not."""
     lines = []

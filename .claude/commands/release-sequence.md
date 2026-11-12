@@ -15,7 +15,12 @@ description: The authoritative Nodus release sequence, version-claim rules, what
 
 Release order — the whole sequence, not just the publish half:
 
-1. Run the gates (`RELEASE_GATES.md`): suite, ruff, `nodus_gate --all`, keyword coverage
+1. Run the gates (`RELEASE_GATES.md`): suite, ruff, `nodus_gate --all`, keyword coverage,
+   and Gate 3e: `python -m tools.refresh_issue_states`, then
+   `nodus_gate --open-claims --strict`. In CI that phase is advisory and reads the
+   committed cache, so only a refresh tells you what closed since. Commit the
+   refreshed `tools/issue_states.json` in the release PR. At 5.16.0, before the
+   phase existed, four `[Unreleased]` entries still called #180 open
 2. Bump both version files — **and finish every `README.md` edit now, before step 6.**
    `pyproject.toml` sets `readme = "README.md"`, so the README *is* the PyPI long
    description: whatever it says at tag time is what the project page shows forever, and

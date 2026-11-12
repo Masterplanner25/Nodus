@@ -1635,12 +1635,13 @@ passes: 3
 ```
 
 > **Durability caveat.** Composition is safe for *execution* and each sub-workflow
-> checkpoints independently, but a composed flow does **not** resume from a
-> checkpoint cleanly today: resuming the outer workflow re-executes its source
-> module, which re-runs the nested `run_workflow` and **duplicates its side
-> effects** (see #322). Use composition for control flow and per-sub-workflow
-> checkpointing; do not rely on whole-flow crash-resume with exactly-once nested
-> execution until #322 is fixed.
+> checkpoints independently. Resuming the outer workflow no longer re-runs a nested
+> `run_workflow` by rebuilding the module (#322, fixed). But a nested
+> `run_workflow` is part of the step that calls it: when that step is **replayed**,
+> from a checkpoint inside it or after a crash part-way through it, the nested
+> workflow runs again as a new graph and **repeats its side effects**. That is the
+> at-least-once rule every effect in a step follows, so make the nested workflow
+> safe to repeat.
 
 ---
 

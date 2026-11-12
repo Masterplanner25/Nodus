@@ -23,7 +23,8 @@ linear it remains.
 
 **Do not quote a file-count threshold here.** Two earlier revisions did and both were
 wrong in the same direction; the numbers are cheap to regenerate and have moved twice.
-Measure if you need one. The bound itself is still open in #380.
+Measure if you need one. #380 closed on that speed-up, not on a bound: the cost is
+still linear, and no open issue tracks an index.
 
 The default store root is **CWD-relative**, so anything running a workflow from
 the repo root writes there. As of #380 the suite and the doc gate clean up after
@@ -95,8 +96,10 @@ instead of "not found"). Use `nodus workflow cleanup`, which removes both
 halves.
 `NODUS_RUN_STATE_ROOT` relocates both halves of a run's state for a process
 (`NODUS_WORKFLOW_STORE_ROOT` moves the records alone). Bounding
-the store's cost — pruning by count, or an index instead of a full rescan —
-is still open in #380.
+the store's cost: pruning by count exists as the opt-in `max_terminal_runs` (#875,
+5.15.0), which deletes terminal records and never a live one. An index instead of
+a full rescan does not exist, and no open issue tracks it (#380 closed on a
+speed-up, not a bound).
 
 **Circular import (CIRC-001, #103) — FIXED** 2026-06-01. `nodus.vm.vm` no longer imports
 `get_default_workflow_runner` at module level; the imports are lazy, inside

@@ -176,6 +176,39 @@
   `DeprecationWarning` raised outside `__main__`, which Python's default filter
   discards, so no CLI user has ever seen it
 
+- `--open-claims`: reports **a document calling a closed issue open** (#931).
+  "The gap is #395", "still open in #380", "SCHED-002 (#95) open" are true the day
+  they are written and false the day the issue closes, and closing an issue
+  touches no document. **The design is the tense**: present-tense openness claims
+  are checked; past-tense records ("Filed as #N", "#N has been open since", "until
+  #631 was fixed") are history and left alone. When a new phrasing needs adding,
+  add it to the right half of `tests/test_open_claims_phase.py` first. A pattern
+  that also catches history makes the phase noisy, and a noisy phase gets
+  switched off.
+
+  It reads `tools/issue_states.json`, written only by
+  `python -m tools.refresh_issue_states` (uses `gh`), and **makes no network
+  call**, for the same reason `--consumers` reads no checkout. The cache lags
+  the tracker, so the phase is **advisory** in CI's `--all`. The release runs
+  the refresh and then `--strict` (`RELEASE_GATES.md` Gate 3e). An unreadable
+  cache always fails. A number the cache does not know (a PR, or an issue filed
+  since the refresh) is reported as unknown and never fails.
+
+  Scope is current documents: not `docs/{history,archive,audits,evals}/`, and
+  only `[Unreleased]` of `CHANGELOG.md`. A released section's "Known issue:
+  #537" was true when it shipped. History in a current document is allowlisted
+  per file and issue (`open-claim:<path>#<N>`); a dead entry is reported.
+
+  **Checked by falsification, not by reading.** Run against `cfc0890` (before
+  #930), it reports all seven claims #931 listed by hand, plus eleven the hand
+  scan missed. Its first pass missed three of the seven, each a phrasing with
+  something between the phrase and the number:
+  "still open (#409)",
+  "STILL PRESENT — now filed as #348",
+  "Known CLI wart (…, filed as #345)".
+  Eight mutations of the phase were each killed by the tests. A quote is read as a
+  mention only when it opens and closes on one line, so keep them unwrapped.
+
 ## Tool notes
 
 | What | Where |
@@ -183,6 +216,7 @@
 | Version-claim manifest | `tools/version_claims.json` — every sentence asserting a current version; checked by `nodus_gate --versions`. Add a claim here, never to a list in prose |
 | Dependent-suite gate | `tools/check_dependent_suites.py` — **Gate 10 step 0**, run before any PyPI upload. Names failing tests, classifies recorded flakes, logs full output to `.dependent-suites/`. Also sweeps beside the registered checkouts and exits **2** on a dependent nobody registered (#810) |
 | nodus-lang dependent registry | `tools/nodus_lang_dependents.json` — the **one** list of companions that *declare* a nodus-lang dependency, read by Gate 10a and by Stage 6's range check. They kept separate lists until #810 and drifted; `nodus-a2a-wire` was missing from **both**. The criterion is `declares`, not `imports` — a package that emits Nodus source or shells out to the CLI breaks without importing anything. Non-first-party checkouts go under `ignored` with a stated reason |
+| Issue-state cache | `tools/issue_states.json`: open and closed issue numbers for `nodus_gate --open-claims`. Written only by `python -m tools.refresh_issue_states`; never edit it by hand. Refresh it in the release PR |
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata. `UNPUBLISHED_COMPANIONS` registers a companion's `nodus-lang` floor **before** it is published, each with a stated reason, and reports a floor naming a version that does not exist yet — a package nobody can install. Register on the day the package is written, not the day it ships; move it into `COMPANIONS` in the publishing commit |
