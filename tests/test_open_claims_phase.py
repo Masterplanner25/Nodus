@@ -148,6 +148,7 @@ class PhaseTests(unittest.TestCase):
     def test_every_documented_surface_is_in_scope(self):
         surfaces = ["README.md", "llms.txt", "CLAUDE.md", "tests/CLAUDE.md",
                     "src/pkg/CLAUDE.md", ".claude/commands/x.md", "skills/nodus.skill",
+                    "skills/nodus/references/idioms.md",
                     "docs/design/v5/d.md"]
         for rel in surfaces:
             _doc(self.root, rel, "The gap is #395.\n")

@@ -181,7 +181,7 @@ def documents(root: str) -> list[tuple[Path, str]]:
         add(base / name)
     for p in base.glob(".claude/commands/*.md"):
         add(p)
-    for p in base.glob("skills/*"):
+    for p in base.glob("skills/**/*"):
         add(p)
     for sub in ("", "tests", "tools"):
         add(base / sub / "CLAUDE.md")

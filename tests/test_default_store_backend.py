@@ -1,7 +1,8 @@
 """The default workflow runner honours the store-backend environment (#174).
 
 `get_default_workflow_runner()` hardcoded `LocalWorkflowStore`, the file-backed
-JSON store that is explicitly not crash-safe. `nodus serve` had honoured
+JSON store whose claims are exclusive only within one process (#937; it is
+crash-safe, writing each record atomically). `nodus serve` had honoured
 `NODUS_WORKFLOW_STORE_BACKEND` for a long time, so the same question — *which
 store backs this run?* — had two answers, and the half every embedder reaches by
 calling `run_workflow()` was the one that could not be configured at all short of
@@ -101,7 +102,7 @@ class DefaultStoreBackendTests(unittest.TestCase):
         self.assertEqual(self._store().store_info().get("path"), os.path.abspath(target))
 
     def test_an_unknown_backend_is_refused(self):
-        """A misspelling must not silently fall back to the non-durable store.
+        """A misspelling must not silently fall back to the JSON store.
 
         Falling back would be the declared-but-not-enforced shape: the operator
         asked for durability and would get JSON files with no signal.
@@ -220,6 +221,42 @@ class TheTransitionalWarningTests(unittest.TestCase):
         message = str(found[0].message)
         self.assertIn("migrate-store", message, "a warning must say what to type")
         self.assertIn("6.0.0", message)
+
+    # closes: #937
+    def test_it_gives_the_real_reason_not_crash_safety(self):
+        """The JSON store writes every record atomically (fsync + rename), so a
+        kill cannot corrupt one. What it lacks is a claim another process can
+        see, and that is what the warning must say. It said "not crash-safe"
+        from 5.10.0 until #937, after the store's own docstring had been
+        corrected."""
+        self._record_a_run()
+        message = str(self._warnings_from_building_the_runner()[0].message)
+        self.assertNotIn("crash", message.lower())
+        self.assertIn("one process", message)
+        self.assertIn("durable coroutines", message)
+
+    # closes: #937
+    def test_the_json_store_writes_records_atomically(self):
+        """The fact the corrected reason rests on, pinned at the source: every
+        record write goes through `_atomic_write_json`, which fsyncs a temp file
+        and renames it over the record. A new write path that bypassed it would
+        make the old warning true, and this is what would notice."""
+        import inspect
+        import re
+
+        from nodus_lang_workflow import store as store_module
+
+        source = inspect.getsource(store_module.LocalWorkflowStore)
+        writer = inspect.getsource(store_module.LocalWorkflowStore._atomic_write_json)
+        self.assertIn("os.fsync", writer)
+        self.assertIn("_replace_with_retry", writer)
+        # Every open() in a writing mode, however it is spelled: the temp file
+        # in `_atomic_write_json` must be the only one.
+        writes = re.findall(
+            r"open\(\s*([\w.]+)\s*,\s*[\"'](?:w|a|x|r\+)[bt+]*[\"']", source)
+        self.assertEqual(["tmp_path"], writes)
+        self.assertNotIn("write_text(", source)
+        self.assertNotIn("write_bytes(", source)
 
     # closes: #174
     def test_it_is_quiet_when_the_store_is_empty(self):
