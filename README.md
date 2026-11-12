@@ -47,7 +47,41 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.15.1 closes a path out of the run-state directory and makes the declared Python 3.10 floor real.
+**Recent:** 5.16.0 adds durable coroutines: work that survives the process dying,
+without being written as a workflow.
+
+```
+fn worker(job) {
+    let rows = fetch(job)
+    checkpoint "fetched"
+    upload(rows)
+    return len(rows)
+}
+durable_spawn("ingest-42", worker, ["job-42"])
+run_loop()
+```
+
+`durable_spawn(key, fn, args)` runs a function as a coroutine backed by a run
+record in the workflow store, and each `checkpoint` it reaches is written down
+before it goes on. Kill the process and run the program again, and the same key
+resumes from the last checkpoint: the fetch does not run twice. The contract is
+**at-least-once between checkpoints**, and it needs a store whose claims are
+exclusive across processes (`NODUS_WORKFLOW_STORE_BACKEND=sqlite`, the default
+from 6.0.0). A checkpoint inside a `for` loop over a list keeps its place,
+deadlines carry across the restart, `nodus workflow cancel --key` stops one from
+outside, and `nodus workflow sweep` resumes unfinished ones from a long-lived
+host. It is **Experimental**; the guide is `docs/guide/durable-coroutines.md`.
+
+Resuming any stored run rebuilds the program by re-running its top level. That
+no longer re-runs `main()` or restarts spawned work, and any other top-level call
+with an effect now warns, naming the call and its line (`StagedFlipWarning`; it
+is refused at 6.0.0, and `nodus check --staged` finds them from source). Also:
+`nodus run` shows output as it is written instead of when the program ends; an
+error raised by a call points at the call rather than its last argument;
+`nodus workflow resume` and `replay` exit 1 when they fail; and the VM's
+dispatch loop is ~1.6× faster on CPython on compiler-like code.
+
+5.15.1 closes a path out of the run-state directory and makes the declared Python 3.10 floor real.
 
 A run-state id — a `graph_id`, a snapshot id, a workflow `run_id` — named a
 `<id>.json` file under a state root with nothing checking it, so an id like

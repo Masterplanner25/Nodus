@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.16.0] - 2026-11-11
+
 ### Changed
 
 - **#917: a rebuild that re-runs a top-level effect now says so, and 6.0.0 will
@@ -127,20 +129,21 @@
   `main`. It is reported now and refused at 6.0.0 (see the rebuild-effect entry
   below).
 
-- **`checkpoint "label"` outside a workflow step body is now a compile-time error
-  that names the rule.** It used to fail at run time with `Undefined variable:
-  checkpoint`. That told you neither that `checkpoint` only works inside a step nor
-  what to do instead. The place people most often write it is a bare coroutine,
-  which cannot checkpoint yet. The new error points at durable coroutines (#180,
-  `docs/design/v5/08-durable-coroutines.md`) and at running the work as a
-  workflow step. `nodus check` reports it now too.
+- **`checkpoint "label"` where it can record nothing now fails with an error that
+  names the rule.** It used to fail at run time with `Undefined variable:
+  checkpoint`. That told you neither where `checkpoint` works nor what to do
+  instead. At module level it is now a compile-time error, reported by `nodus
+  check` too. Inside a function it compiles (see the durable-coroutines entry
+  above: whether a function runs durably is decided at run time), and outside a
+  step and outside a durable coroutine it fails at run time. Both messages point
+  at `durable_spawn` and at running the work as a workflow step.
 
-  This is stage 1 of #180's five-stage plan; the issue stays open.
+  This was stage 1 of #180.
 
   **`checkpoint` is still not a reserved word.** Only the identifier
   `checkpoint` followed immediately by a string literal, at the start of a
-  statement, is refused. That shape can never mean anything outside a step: it
-  is a variable reference followed by a discarded string. `let checkpoint = ...`,
+  statement, is treated as the statement. That shape can never mean anything
+  else: it is a variable reference followed by a discarded string. `let checkpoint = ...`,
   `checkpoint("x")`, a record field or parameter named `checkpoint`, and the name
   and a string on separate lines all still work.
 
@@ -154,9 +157,9 @@
   lists everything that would stop it being written down and resumed in another
   process, each with where it is: ``frame 0 (`holds`), local `ch`: a channel,
   whose other end does not survive the process``. Nothing is persisted and the
-  coroutine is not changed. This is stage 2 of durable coroutines (#180, which
-  stays open); it is the reasoning a durable `checkpoint` will refuse with, and
-  it is provisional Python API, not yet a promise to embedders.
+  coroutine is not changed. This was stage 2 of durable coroutines (#180); it
+  is the reasoning a durable `checkpoint` refuses with, and it is provisional
+  Python API, not yet a promise to embedders.
 
   It found something the design had wrong. **Inside a `for` body the operand
   stack is not empty**: the loop's iterator sits there for the whole body and
@@ -172,9 +175,8 @@
   coroutine continues from where it stopped, and the work before that point does
   not run again. Shared and cyclic containers keep their shape. Capture refuses
   anything the durability check above reports, and restore refuses a different
-  program rather than jumping into unrelated code. This is stage 3 of durable
-  coroutines (#180, which stays open for stage 4: the `checkpoint` statement in a
-  coroutine, the store, and resuming after a crash). Provisional Python API; the
+  program rather than jumping into unrelated code. This was stage 3 of durable
+  coroutines (#180); `durable_spawn` above is built on it. Provisional Python API; the
   data format is versioned and not yet a stable contract. Pinned by
   `tests/test_continuation_roundtrip.py`, including a round trip between two
   processes.
@@ -190,16 +192,16 @@
   `SQLiteWorkflowStore` and False for `LocalWorkflowStore`, whose claim is
   guarded by an in-process lock only. `require_exclusive_claims(store,
   feature=...)` refuses a store without the property and names the fix. Durable
-  coroutines will require it, so that a restarted program and a resuming host
+  coroutines require it, so that a restarted program and a resuming host
   cannot both resume one run. A third-party store says False unless it opts
   in. Each built-in store's declaration is checked against an interleaved race
-  in `tests/test_store_claim_exclusivity.py`. This is stage 4a of durable
-  coroutines (#180, still open).
+  in `tests/test_store_claim_exclusivity.py`. This was stage 4a of durable
+  coroutines (#180).
 
   Both stores write each record atomically, so this is not a crash-safety
   distinction, despite how the JSON store has been described.
 
-  Run kinds (`workflow`, `goal`, and the coming `coroutine`) are now named once,
+  Run kinds (`workflow`, `goal`, and `coroutine`) are now named once,
   in `nodus.orchestration.workflow_state`, and no other site may compare against
   a literal kind. The resume path used to treat any kind that is not `goal` as a
   workflow. A run of another kind is now refused by name, and the rehydrate sweep
