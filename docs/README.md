@@ -24,6 +24,7 @@ This directory contains all technical documentation for Nodus. Start with the
 | Upgrading an embedded runtime to v5 | [`migration/v5.0-deny-by-default.md`](migration/v5.0-deny-by-default.md) |
 | What breaks at 6.0.0, and what to do now | [`migration/v6.0-staged-flips.md`](migration/v6.0-staged-flips.md) |
 | Older migrations (v2→v3, v3→v4) | [`migration/`](#migration--migration-guides) |
+| Problems agents have hit working on this repo, by symptom | [`AGENT_EXPERIENCE.md`](AGENT_EXPERIENCE.md) |
 
 ---
 
