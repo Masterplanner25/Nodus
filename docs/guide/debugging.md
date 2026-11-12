@@ -493,8 +493,9 @@ F33: RESOLVED 2026-08-14 (#49) — for real this time. The earlier "RESOLVED in
      The error PAYLOAD stays uncapped by design — result["errors"][0]["stack"]
      carries every frame. Only rendering is capped.
 
-F27: STILL PRESENT — now filed as #348. --trace-imports emits nothing once the
-     on-disk bytecode cache is warm. Not the same as #51 (closed/completed),
+F27: FIXED — filed as #348, closed 2026-08-15. --trace-imports used to emit
+     nothing once the on-disk bytecode cache was warm. Re-verified 2026-11-11: a
+     warm second run prints `[import] Resolved (from bytecode cache) ...`. Not the same as #51 (closed/completed),
      which was the in-memory cache within a single run. See the
      modules-and-imports.md findings block for the mechanism.
 -->

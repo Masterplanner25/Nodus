@@ -491,7 +491,7 @@ already closed for anyone on current 4.x. The residual risk is a *downgrade*: an
 The process gap this exposes is that nothing enforced step 2 or 3 — the freeze was
 declared in prose and checked by nobody. A gate comparing `_build_dispatch_table()`
 against this document's inventory would have caught both additions the day they landed.
-Tracked as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
+Filed as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
 
 **Closed 2026-08-14.** That gate now exists as `tools/nodus_gate/opcode_phase.py`
 and runs in CI — see "The gate enforces steps 2, 4 and 5" above. Re-running it

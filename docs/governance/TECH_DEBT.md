@@ -572,8 +572,9 @@ here.
   completes. A goal result is a workflow result plus a `goal` key. That was
   corrected on the issue before the fix landed.
 
-  **Follow-on, still open (#409):** after unification, `goal` is a workflow with
-  different event names. Giving it a stopping condition is what would make it
+  **Follow-on (#409, closed 2026-08-16; `goal … over …` shipped in 5.0.0):** after
+  unification, `goal` was a workflow with different event names. Giving it a stopping
+  condition is what would make it
   mean "an objective" rather than "a pipeline".
 
 - **#394 — RESOLVED.** Step ordering is an invariant now, not a default. A

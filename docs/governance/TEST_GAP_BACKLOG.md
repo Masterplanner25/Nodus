@@ -164,8 +164,9 @@ diagnostics engine was one of the two walkers that did not enter a step body (#4
 ### TG-010: DAP server correctness -- CLOSED (verified 2026-09-01)
 
 **Priority:** Low (experimental feature)
-**Closed:** `tests/test_dap_server.py` (9 tests). The `evaluate` command remains
-unimplemented -- tracked as #106, not as a test gap.
+**Closed:** `tests/test_dap_server.py` (9 tests). The `evaluate` command is
+implemented (#106, closed 2026-06-06; `dap/server.py` dispatches it to
+`DebugSession.evaluate`) and covered in the same file.
 
 ---
 

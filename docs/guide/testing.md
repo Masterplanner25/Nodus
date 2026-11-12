@@ -656,8 +656,9 @@ Claims verified individually rather than assumed:
 - assert_eq argument order is actual-first, expected-second (confirmed from
   failure output: "actual: 2 / expected: 99").
 
-Known CLI wart (not a doc error, filed as #345): `nodus test --help` runs discovery instead
-of printing usage — the same class of bug fixed for `nodus serve`/`worker`
+Fixed CLI wart (filed as #345, closed 2026-08-15; `--help` is now handled centrally
+for every command, re-verified 2026-11-11): `nodus test --help` used to run discovery
+instead of printing usage — the same class of bug fixed for `nodus serve`/`worker`
 in v4.0.6 (#268).
 
 Earlier notes, still confirmed:
