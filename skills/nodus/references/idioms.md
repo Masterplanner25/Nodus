@@ -122,5 +122,6 @@ step dispatch after classify {
 A single workflow is a static, acyclic DAG (every declared step runs; no per-step
 guard; no cyclic `after`). Express conditional routing and iteration by
 *composition*: control flow (`match`/`while`) selecting nested `run_workflow` calls.
-Executes fine and each sub-workflow checkpoints independently, but not durable
-across whole-flow resume yet (#322).
+Executes fine and each sub-workflow checkpoints independently. Resuming the outer
+run does not re-run a finished nested workflow (#322), but replaying the step that
+calls it does, so make the nested workflow safe to repeat.

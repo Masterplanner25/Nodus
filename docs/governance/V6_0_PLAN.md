@@ -328,10 +328,13 @@ ones changes what 6.0.0 contains or when it can be cut.
 ## 7. Not in scope
 
 - **#173 (throughput)** — a JIT-scale question, unrelated to any flip.
-- **#180 (durable coroutines)** — *downstream* of 6.0.0, not part of it.
-  `docs/design/v5/08-durable-coroutines.md` §6: a durable coroutine must refuse
-  a non-crash-safe store or land after #174's step 2. Stage 4 becomes possible
-  once the default is SQLite; it does not ship in the major that makes it so.
+- **#180 (durable coroutines)** — not part of 6.0.0, and no longer downstream of
+  it. This bullet used to say stage 4 had to wait for the SQLite default. It
+  shipped in 5.16.0 instead, by refusing a store whose claims are not exclusive
+  across processes, so today it needs `NODUS_WORKFLOW_STORE_BACKEND=sqlite`. The
+  property was never crash safety: both stores write records atomically (#937;
+  `docs/design/v5/08a-durable-coroutines-stage4.md` D3). The 6.0.0 default flip
+  makes durable coroutines work without that setting.
 
 ---
 

@@ -1543,8 +1543,13 @@ def _warn_default_store_is_transitional(backend_from_env, store) -> None:
         "an unconfigured local workflow store holds runs; the default becomes SQLite at 6.0.0",
     )
     warn_staged_flip(
+        # #937: the reason is cross-process claims, not crash safety. Every
+        # record write is atomic (fsync + rename), so a kill corrupts nothing.
         "The default workflow store is LocalWorkflowStore (file-backed JSON), "
-        "which is not crash-safe, and this store already holds runs. The default "
+        "whose claims are exclusive only within one process, so two processes "
+        "(a sweep and a restarted program, or two workers) can both resume one "
+        "run; durable coroutines refuse it for that reason. This store already "
+        "holds runs. The default "
         "becomes SQLite at 6.0.0, and runs recorded in the JSON store are not "
         "visible to a SQLite one -- an in-flight waiting run would become "
         "unresumable. Migrate with `nodus workflow migrate-store --to sqlite` "
@@ -1678,7 +1683,8 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # #174: built through the same factory and the same environment
             # overrides `nodus serve` honours. This used to hardcode
             # `LocalWorkflowStore`, so an embedder calling `run_workflow()`
-            # without configuring a runner got the non-crash-safe JSON store with
+            # without configuring a runner got the JSON store (claims exclusive
+            # within one process only, #937) with
             # no way to say otherwise short of `configure_default_workflow_runner`
             # — while `NODUS_WORKFLOW_STORE_BACKEND` sat there working for the
             # server and doing nothing here.

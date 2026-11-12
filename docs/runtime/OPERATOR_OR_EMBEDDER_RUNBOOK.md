@@ -464,11 +464,21 @@ Before deploying a Nodus-embedded application to production:
 ## 6.1 Workflow store durability (#174)
 
 The default workflow runner uses `LocalWorkflowStore` — file-backed JSON at
-`.nodus/workflow_framework/runs/`. This store is **not crash-safe**: a process kill
-between the read-modify-write of a run file can corrupt run state. It is appropriate
-for development and short-lived scripts only.
+`.nodus/workflow_framework/runs/`. It is appropriate for a single process: development,
+and scripts that run one at a time.
 
-For any production deployment where workflows must survive a restart:
+**What it lacks is a claim that holds across processes, not crash safety** (#937). Every
+record is written atomically: a temp file, `fsync`, then a rename over the old one. So a
+process killed mid-write leaves the previous record or the new one, never a torn one,
+and at most an orphaned `.tmp` file, which the store ignores. Measured: 30 kills timed
+to land during a rewrite, 30 records that load. But `claim_run` is guarded by a
+`threading.Lock`, which another process cannot see. So two processes, such as a sweep
+and a restarted program or two workers, can both claim one run and both resume it, and
+a read-modify-write in one can overwrite the other's. `durable_spawn` refuses this store
+for that reason (`WorkflowStore.EXCLUSIVE_CLAIMS_ACROSS_PROCESSES`).
+
+For any deployment where more than one process touches the store, which includes any
+host that sweeps while programs run:
 
 ```python
 from nodus_lang_workflow.runner import configure_default_workflow_runner

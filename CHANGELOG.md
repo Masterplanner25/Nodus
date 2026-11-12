@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#937: the default-store warning gives the real reason to leave the JSON
+  store.** It said `LocalWorkflowStore` is "not crash-safe", and the runbook said
+  a kill mid-write can corrupt run state. Neither is true. Every record is
+  written atomically (temp file, `fsync`, rename), so a process killed mid-write
+  leaves the old record or the new one, and at most an orphaned `.tmp` the store
+  ignores. Measured: 30 kills timed to land during a rewrite, 30 records that
+  load.
+
+  What the JSON store lacks is a claim another process can see. `claim_run` is
+  guarded by a `threading.Lock`, so a sweep and a restarted program, or two
+  workers, can both resume one run. That is why `durable_spawn` refuses it, and
+  it is what the warning, the runbook (§6.1) and the 6.0 plan now say. The advice
+  is unchanged: SQLite for anything more than one process touches, and the
+  default still becomes SQLite at 6.0.0.
+
+  The store's own docstring had been corrected during 5.16.0 and these had not.
+  The 6.0 plan also still said durable coroutines must wait for the SQLite
+  default; they shipped in 5.16.0 by refusing the JSON store. Pinned by
+  `tests/test_default_store_backend.py`, which also asserts at the source that
+  the temp file is the only file the store opens for writing.
+
 ### Tooling
 
 - **#931: `nodus_gate --open-claims` reports a document calling a closed issue
