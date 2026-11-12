@@ -156,16 +156,18 @@ is none to invent. That is deliberately asymmetric with `cancel`'s no-op.
   a failure.
 
 **The model is a worker pool, not structured concurrency.** A spawned coroutine
-is independent: there is no parent/child relationship, `spawn` returns no handle,
-a spawned coroutine outlives the scope that created it, and its failure does not
-stop its siblings — nor does it fail the run, which still exits `0`. There is no
-`join` and no way to cancel work once started. Do not carry intuitions from
-Python's `asyncio.TaskGroup` or Go's `context` across.
+is independent: there is no parent/child relationship, a spawned coroutine
+outlives the scope that created it, and its failure does not stop its siblings —
+nor does it fail the run, which still exits `0`. The handle `spawn` returns can be
+`wait`ed on or `cancel`led (above), but only where the program asks: nothing is
+joined when a scope ends, and nothing is cancelled when a sibling fails. Do not
+carry intuitions from Python's `asyncio.TaskGroup` or Go's `context` across.
 
 Where "first failure stops the rest" *does* exist is the workflow DSL, which has
 declared failure semantics (`allow_failure`) and dynamic fan-out (`step … each`).
-See `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9` for the full model and
-[#395](https://github.com/Masterplanner25/Nodus/issues/395) for the gap.
+See `docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9` for the full model.
+[#395](https://github.com/Masterplanner25/Nodus/issues/395) added the explicit
+`wait` and `cancel`; scope-bound tasks are not tracked by any open issue.
 
 ## Channels
 Stability: Experimental.

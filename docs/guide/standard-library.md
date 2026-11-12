@@ -1150,8 +1150,10 @@ from that:
   `true` when embedded. **Check what `run_loop()` returns**; it is the only way a
   program can see the failure. A script that ignores it cannot tell a clean run
   from one where every coroutine died.
-- **`spawn` returns `nil`.** There is no handle, so there is no `join` and no way
-  to cancel work once started.
+- **Nothing is joined or cancelled for you.** `spawn` returns the coroutine, and
+  `wait(t)` and `cancel(t)` act on it — but only where the program calls them.
+  A scope ending does not wait for what it spawned, and a sibling failing does
+  not cancel anything.
 - **A spawned coroutine outlives the scope that created it.** Nothing binds its
   lifetime to the function that spawned it.
 
@@ -1159,8 +1161,9 @@ If you want "first failure stops the rest", that lives in the workflow DSL, whic
 has declared failure semantics (`with { allow_failure: true }`) and dynamic
 fan-out (`step … each`) — see
 [workflows-and-tasks.md](workflows-and-tasks.md). The full model is
-`docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9`; the gap is
-[#395](https://github.com/Masterplanner25/Nodus/issues/395).
+`docs/runtime/FAILURE_AND_DEGRADATION_MODEL.md §9`.
+[#395](https://github.com/Masterplanner25/Nodus/issues/395) added the explicit
+`wait` and `cancel`; scope-bound tasks are not tracked by any open issue.
 
 ### std:loop
 
