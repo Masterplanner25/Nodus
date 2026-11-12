@@ -732,13 +732,18 @@ Both are real, reachable, and correct; the defect is in the record, not the runt
 They are documented above and in `FREEZE_PROPOSAL.md` as of 2026-08-07.
 
 `BYTECODE_VERSION` remains **4**, and was not bumped for either addition. The practical
-consequence is narrow but real: the bytecode cache (`.nodus/cache/`) is keyed on that
-version, so bytecode compiled by a newer nodus containing `MOD` or `RESET_LOCAL_IDX` is
-accepted by an older 4.x nodus that has no handler for them. The failure surfaces as
-`Unknown opcode: MOD` rather than the clean version-mismatch message the handshake
-exists to produce. Deleting `.nodus/cache/` resolves it.
+consequence was narrow but real: the bytecode cache (`.nodus/cache/`) was keyed only on
+that version, so bytecode compiled by a newer nodus containing `MOD` or
+`RESET_LOCAL_IDX` was accepted by an older 4.x nodus that has no handler for them. The
+failure surfaces as `Unknown opcode: MOD` rather than the clean version-mismatch
+message the handshake exists to produce. Deleting `.nodus/cache/` resolves it.
 
-Tracked as [#366](https://github.com/Masterplanner25/Nodus/issues/366).
+Filed as [#366](https://github.com/Masterplanner25/Nodus/issues/366), closed
+2026-08-15; the process half is now enforced by `nodus_gate --opcodes`. The cache half
+closed separately: since 5.0.2 (#449) a cache entry also records the nodus-lang version
+and any mismatch, in either direction, invalidates it. A release from before 5.0.2
+does not check that field, so it can still pick up a newer release's cache. Deleting
+`.nodus/cache/` remains the fix there.
 - Import/module behavior is intentionally non-opcode (compile/load phase), which is a deliberate design choice rather than missing VM feature.
 
 ## 4. Opcode Families
