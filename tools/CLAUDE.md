@@ -209,6 +209,10 @@
   Eight mutations of the phase were each killed by the tests. A quote is read as a
   mention only when it opens and closes on one line, so keep them unwrapped.
 
+**A regex in a tool that matches a package name: `\b` does not stop at a hyphen.**
+`nodus-workflow\b` matches inside `nodus-workflow-ai`, which is how
+`tests/closed_issues/issue_483.py` failed unnoticed from 2026-08-30. Use `(?![\w-])`.
+
 ## Tool notes
 
 | What | Where |
@@ -220,5 +224,5 @@
 | Invariant coverage ledger | `tools/invariant_coverage.json` — one entry per invariant in `EXECUTION_INVARIANTS.md`, naming the tests that cover it or stating why none is recorded. Checked by `nodus_gate --invariants`. `unrecorded` is not `uncovered`; never guess a mapping |
 | Shape manifest | `tools/shape_manifest.json` — every instance of the recurring bug shape currently in the tree, each `intentional` or `tracked`. The baseline `nodus_gate --shapes` measures new ones against. Adding an entry needs a stated reason |
 | Downstream range check | `tools/check_downstream_constraints.py` — Stage 6; resolves *published* metadata. `UNPUBLISHED_COMPANIONS` registers a companion's `nodus-lang` floor **before** it is published, each with a stated reason, and reports a floor naming a version that does not exist yet — a package nobody can install. Register on the day the package is written, not the day it ships; move it into `COMPANIONS` in the publishing commit |
-| Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip |
+| Publish-drift check | `tools/check_publish_drift.py` — Stage 6; downloads each published sdist and compares file contents. Also prints each companion's published version, which is why this file no longer lists them. Exits **2** on a skip. **It keeps its own checkout-path table**, separate from `nodus_lang_dependents.json` (#810 unified the membership, not the paths), so a checkout that moves must be corrected in both |
 | Throughput + startup benchmark | `tools/benchmark_runtime.py` — reports VM instructions/sec on a hot loop **and** on `examples/expr_compiler.nd` (from the VM's own counter, not an estimate per loop iteration), and CLI startup. No figure is asserted anywhere; it exists so #173's numbers can be re-derived instead of transcribed, which is how they went stale by 2-4x. Run it under `.venv-pypy` too: the PyPy ratio is the figure that moved most, both ways (#702) |

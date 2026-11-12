@@ -412,7 +412,17 @@ cannot see it.
 - **Phase 3:** Run File (`Ctrl+Alt+N`), Format File, DAP debugger (`Ctrl+Alt+D`, `nodus dap`)
 - **Phase 4:** LSP via `nodus lsp` — hover docs, go-to-definition, completions
 
-**Build:** `cd C:\dev\nodus-vscode && npm run package` (needs `@vscode/vsce`).
+**Build:** `cd C:\dev\nodus-vscode && npm run package` (needs `@vscode/vsce`). **Needs
+Node 22 or later** since 0.1.6 moved `vsce` to 4.x. **Build from merged `main`, after the
+changelog entry lands**: the Marketplace shows the `changelog.md` inside the VSIX, and
+0.1.6's first build predated its entry.
+
+The one Dependabot alert left (`minimatch`, inside `vsce` 4.1.0) is **decided: it stays
+open**. It is packaging-time only, and clearing it means pinning `vsce` back to 3.9.1.
+
+An old extension, `masterplanner25.nodus-lang` 0.1.0, has a different publisher ID, so it
+never receives updates and runs alongside this one. It was removed on `MPIW1`; another
+machine may still have it.
 
 ### Publishing — the update path is not the first-publish path
 
