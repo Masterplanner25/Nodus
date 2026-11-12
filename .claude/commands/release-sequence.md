@@ -406,9 +406,18 @@ was never built (#88, closed on that basis).
 release as latest, which reads exactly like a failed upload, and at 5.6.0 it
 reported **zero files** for the version that had just landed. The simple index lags
 too: `pip install nodus-lang==5.8.0` failed for minutes after the 5.8.0 upload
-succeeded. `Cache-Control: no-cache` does not prevent either.
+succeeded. `Cache-Control: no-cache` does not prevent either. The same lag reaches
+`check_publish_drift`: right after nodus-mcp 0.1.5's upload it reported `DRIFT`, and a
+re-run minutes later said `ok — identical to 0.1.5`.
 
 **Only `pip install <name>==<version>` is authoritative.**
+
+### Build from a clean tree
+
+**`build/` survives `python -m build`, even with `--outdir`**, and stale files in it can
+reach a later wheel. Delete it before building, or do what 5.16.0 did: build in a fresh
+`git worktree add --detach <dir> vX.Y.Z` of the tag, which also proves the wheel holds
+only tracked files.
 
 ### Tokens
 

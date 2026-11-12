@@ -158,6 +158,44 @@ interval. If you set `_worker_heartbeat_timeout_ms` after construction, the swee
 default interval (500ms) before adopting the new value. Fix: pass `worker_sweep_interval_ms=N`
 directly to the constructor.
 
+## Writing a test that can fail
+
+Moved here from the session handoffs (2026-11-11), where each was learned by a red CI or
+a green test that checked nothing.
+
+**Before pushing, four steps; each was learned by a red CI after applying the previous one:**
+
+1. targeted `pytest` over what you touched, **including every test that reads `src/` as
+   text**. The source scanners (step guards, `# v6-flip` markers, door lists) catch what
+   behavioural runs miss;
+2. `nodus_gate --all`. A `6.0.0` in a comment fails `--flips`;
+3. the release probes (`tests/eval/release_claims_probe.py`), a harness no gate phase runs;
+4. `python -m unittest` over the new test file plus its alphabetical neighbours. CI runs
+   single-process `unittest discover`, and per-file `pytest` cannot see cross-file
+   pollution.
+
+**Ask of any new test: does it leave process-global state?** That includes `.nodus/`,
+`task_graph._GRAPH_REGISTRY`, the default workflow runner, and an env var read once at
+build time. If yes, step 4 is not optional. Budget tests that stop a step mid-body leave an
+open record in the graph registry. Clean up by **difference against a `setUp` snapshot**,
+not by tracking ids, because a resume registers its graph on the child VM.
+
+**Make it fail before trusting it.** Build the plausible wrong version and confirm the
+right test notices. Three ways a test looked green while checking nothing:
+
+- **The assertion iterates the list it guards.** Deleting `input_fn` from
+  `AUTHORITY_ATTRIBUTES` left the suite green, because the comparison looped over that same
+  tuple, so removing a name removed its assertion.
+- **A source assertion matches the docstring.** The docstring explains the fix and so
+  contains the string. Strip it before searching the body.
+- **A source assertion pins a claim as a string and never runs it.**
+  `assert "discards the payload" in source` kept a false sentence alive for ten releases
+  (#870). Pair every source probe with a behavioural one.
+
+**A probe that sends the same value every time cannot see staleness.** A contextvar probe
+that set a constant "passed" in a mode where every call actually saw the first request's
+value. A per-request id showed it.
+
 ## Test-related files
 
 | What | Where |

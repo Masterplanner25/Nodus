@@ -34,7 +34,7 @@
       "tracks": "nodus_version",
       "fingerprint": "5.16.0",
       "why": "Its README documents a pinned `version:` for reproducible CI. The pin is the version new users copy, so it going stale hands them an old runtime.",
-      "republish": "Update the pinned `version:` in README.md examples, then tag the action."
+      "republish": "Update the pinned `version:` in README.md examples, tag the action (vX.Y.Z), move the floating `v1` tag to the same commit (the README tells users to pin @v1; it once sat unmoved for six releases), and create the GitHub release."
     },
     {
       "name": "nodus-wiki",

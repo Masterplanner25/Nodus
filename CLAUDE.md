@@ -42,6 +42,15 @@ blocked this file`, and every test needing it **skipped** while pytest reported 
 existing venv's binaries are already allowed. If a fresh venv is unavoidable, check that a
 native import works before trusting a run, and pin to a build the policy already allows.
 
+The same policy blocks some console-script launchers in `.venv` (`pip.exe`, `nodus-mcp.exe`
+seen): use `python -m pip`. And **use PowerShell, not Git Bash, for a path that belongs
+inside a container** (`docker exec ... /app/...`): Git Bash can rewrite Unix-style
+arguments to native programs into Windows paths.
+
+**Editing a `.claude/commands/*.md` file: quote a `description:` that contains a colon.**
+An unquoted colon silently breaks the frontmatter, and the skill list then shows the
+file's heading instead of its description.
+
 ## GitHub API
 
 The `gh` CLI **is installed** and authenticated as `Masterplanner25`. Use it
@@ -462,6 +471,27 @@ pending" — are exactly the trap. Write **`Filed (open):`**, **`Reported:`**, o
 number on its own line well away from any such verb. After merging a PR that names issue
 numbers it does not resolve, **check their state** — reopening is cheap, but a silently
 closed issue is one nobody looks at again.
+
+**Mechanics that have each cost a session** (moved from the session handoffs, 2026-11-11):
+
+- **`.claude/` is gitignored, tracked files included.** `git add` refuses a path there and
+  can abort the whole add, so use `git add -f`; a new file there never shows in `git status`.
+  Chain each step with `&&`: a `git push` on its own line once ran after a failed add and
+  pushed an empty branch.
+- **Judge CI by each job's state, never by a pipe's exit code.** `gh pr checks --watch | tail`
+  reports `tail`'s exit, and once read as success with `test` still running. Use
+  `gh pr checks <N>` or `gh run view <id> --json jobs`, per job, before saying it is green.
+  Likewise a trailing `|| echo "gone"` reports the chain failing, not the thing being gone.
+- **A PR stacked on another conflicts once its base is squash-merged.**
+  `git rebase --onto origin/main <old-base>`, then `git push --force-with-lease`.
+- **Runs stranded by a GitHub Actions outage** can sit queued for hours, refusing both
+  cancel ("completed") and re-run ("already running"). Push an empty commit to the branch;
+  the squash merge folds it away.
+- **`git branch -vv` shows the last-fetched remote state.** `git fetch --prune` or
+  `git ls-remote` before saying a branch exists on origin. Because PRs are squash-merged,
+  `git branch --merged` does not list merged branches; check each one's PR before deleting.
+- **`gh release create --target` needs the full 40-character sha.** A short one fails with
+  `HTTP 422 target_commitish is invalid` and creates nothing, so a retry is safe.
 
 ## CHANGELOG — update it in the same PR as the change
 
