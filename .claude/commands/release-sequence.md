@@ -178,6 +178,9 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.16.0 | `nodus workflow resume` / `replay`, `goal-resume` and the legacy `workflow-resume` **exit 1** when the run is not found, cannot be rebuilt or is not a workflow (#920) | intended: they printed `{"ok": false, ...}` and exited 0, so a script testing the exit code read every failure as success. The answer is still printed. A script that relied on 0 was reading a failure as a pass |
+| 5.16.0 | resuming a stored run prints a `StagedFlipWarning` for each top-level call with an effect (#917) | a warning, not a refusal, until 6.0.0. The call really did run again on every resume; it was silent. Move it into `main()`, register a host function with `rebuild_safe=True`, or pass `rebuild_effects="allow"` to the sweep for a run stored before the fix |
+| 5.16.0 | `let checkpoint = 1; checkpoint "x"` **on one line** is a syntax error | the only program refused: it evaluated a variable and discarded a string. `checkpoint` is otherwise not reserved, so a variable, function, parameter or field of that name still works |
 | 5.15.0 | a program doing **two or more** `resume_workflow` calls under the `nodus run` default now times out (#873) | intended, and the reason it is a row: a resume child inherited no bounds at all, so a guest escaped its instruction budget *and* its deadline by parking and resuming -- measured, 8 resumes and ~800 ms inside a 300 ms budget, and ~270,000 instructions inside 5,000. A resume costs ~99 ms against the 200 ms default, so one still fits and two do not. `--time-limit N` (seconds) is the fix, as it already is for anything else needing more than 200 ms |
 | 5.15.0 | `max_terminal_runs` deletes **more** than it used to (#875) | it is the documented hard ceiling on a store's size and was not one: it chose what to delete from the age-bounded listing, and terminal is exactly what it deletes, so a cap of 2 left 6 files and the survivors were the oldest. Opt-in -- the default is `None` and an unset cap still deletes nothing -- so only a host that asked for a ceiling is affected. Live runs are untouched at any age. Unset the cap to keep the old retention |
 | 5.15.0 | `resume_workflow(id, "checkpoint", {payload})` on a waiting run replays instead of being refused (#870) | a restoration, not a restriction: #482 refused it on the stated grounds that the payload was "silently discarded", and it was not -- it reached the replayed step. Nothing can have depended on an error. `resume_workflow(id, "checkpoint")` with no payload is still refused, which is the part #482 earned |
@@ -235,7 +238,9 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.15.0 took its seven entries** (five fixes, two changes).
+**`[Unreleased]` is empty — 5.16.0 took its thirteen entries** (six changes, five
+fixes, one performance, one tooling). Its theme is durable coroutines (#180),
+shipped Experimental, plus the follow-ups that writing their guide turned up.
 
 **5.15.0 has three rows, and every one of them came from outside.** A project building on Nodus reported five defects against 5.14.0; all five were real, two of its stated *causes* were not, and fixing them turned up two more (#873, #875). They were invisible here for the same reason in every case: the suite, the gates and the release probes all exercise a program that runs start to finish, and every one of these lives on the far side of a park-and-resume boundary. The lesson is the one #691 already taught in a different place — **a construct documented for use across a resume has to be tested across a resume**, not merely called.
 

@@ -3391,6 +3391,168 @@ def probe_no_stale_5_15_0_current(repo: Path):
     return "no document still calls 5.15.0 the current release"
 
 
+# --- 5.16.0 ---------------------------------------------------------------
+
+# A child process running the *installed* nodus (the probe's own interpreter,
+# from a temp CWD, so the repo shim cannot shadow it). `os._exit` is a real
+# process death: no finally, no flush, no claim release.
+_DURABLE_CHILD = r'''
+import os, sys
+from nodus.runtime.embedding import NodusRuntime
+from nodus_lang_workflow.runner import WorkflowFrameworkRunner, configure_default_workflow_runner
+from nodus_lang_workflow.store import SQLiteWorkflowStore
+configure_default_workflow_runner(runner=WorkflowFrameworkRunner(
+    SQLiteWorkflowStore(os.environ["DURABLE_DB"], claim_ttl_ms=200.0)))
+
+def maybe_crash():
+    if os.environ.get("CRASH") == "1":
+        os._exit(3)
+
+def note(line):
+    with open(os.environ["DURABLE_LOG"], "a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+rt = NodusRuntime(timeout_ms=None, max_steps=None)
+rt.register_function("maybe_crash", maybe_crash)
+rt.register_function("note", note)
+result = rt.run_source(sys.stdin.read())
+sys.exit(0 if result.get("ok") else 1)
+'''
+
+_DURABLE_PROGRAM = """
+fn worker(job) {
+    note("start")
+    let total = 10i
+    checkpoint "fetched"
+    note("after fetched, total=\\(total)")
+    maybe_crash()
+    total += 5i
+    checkpoint "uploaded"
+    note("finished, total=\\(total)")
+    return total
+}
+durable_spawn("probe-job", worker, ["probe-job"])
+run_loop()
+"""
+
+
+@probe("5.16.0: a durable coroutine resumes at its last checkpoint after a real crash")
+def probe_durable_resume_after_crash():
+    import os
+    import subprocess
+    import tempfile
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        log = tmp / "log.txt"
+        base = dict(os.environ, DURABLE_DB=str(tmp / "runs.db"), DURABLE_LOG=str(log))
+        base.pop("CRASH", None)
+
+        def run(crash: bool) -> int:
+            env = dict(base, CRASH="1") if crash else base
+            proc = subprocess.run([sys.executable, "-c", _DURABLE_CHILD],
+                                  input=_DURABLE_PROGRAM, cwd=raw, env=env,
+                                  capture_output=True, text=True, timeout=120)
+            assert proc.returncode in (0, 3), f"child failed: {proc.stderr[-800:]}"
+            return proc.returncode
+
+        assert run(crash=True) == 3, "the crashing run did not die"
+        _time.sleep(0.5)  # the dead process's 200 ms claim must lapse
+        assert run(crash=False) == 0, "the resuming run failed"
+        lines = log.read_text(encoding="utf-8").splitlines()
+        assert lines.count("start") == 1, f"work before the checkpoint ran again: {lines}"
+        assert lines[-1] == "finished, total=15", f"resumed with the wrong state: {lines}"
+        run(crash=False)
+        assert len(log.read_text(encoding="utf-8").splitlines()) == len(lines), (
+            "a finished key ran again"
+        )
+    return "killed between checkpoints; resumed at `fetched` with total=10; a finished key is a no-op"
+
+
+@probe("5.16.0: durable_spawn refuses a store whose claims are not cross-process")
+def probe_durable_refuses_local_store():
+    import os
+    import subprocess
+    import tempfile
+
+    env = dict(os.environ)
+    env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
+    with tempfile.TemporaryDirectory() as raw:
+        (Path(raw) / "d.nd").write_text(
+            'fn w() { checkpoint "a"; return 1i }\ndurable_spawn("k", w, [])\nrun_loop()\n',
+            encoding="utf-8")
+        proc = subprocess.run([sys.executable, "-m", "nodus", "run", "d.nd"], cwd=raw,
+                              env=env, capture_output=True, text=True, timeout=120)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode != 0, "the JSON store was accepted"
+    assert "NODUS_WORKFLOW_STORE_BACKEND=sqlite" in out, f"the refusal names no fix: {out[-400:]}"
+    return "refused, and the message names NODUS_WORKFLOW_STORE_BACKEND=sqlite"
+
+
+@probe("5.16.0: checkpoint where it records nothing names durable_spawn")
+def probe_checkpoint_outside_names_durable():
+    inside_fn = run_nd('fn f() {\n    checkpoint "a"\n    return 1i\n}\nf()\n')
+    assert not inside_fn.get("ok"), "a stray checkpoint in a function succeeded"
+    message = str(inside_fn.get("error"))
+    assert "durable_spawn" in message, f"no way forward named: {message}"
+    top = run_nd('checkpoint "a"\n')
+    assert not top.get("ok"), "a module-level checkpoint was accepted"
+    assert "module level" in str(top.get("error")), f"unexpected error: {top.get('error')}"
+    callable_name = run_nd('fn checkpoint(x) { return x }\nprint(checkpoint("ok"))\n')
+    assert callable_name.get("ok"), f"`checkpoint` became reserved: {callable_name.get('error')}"
+    return "function: run-time error naming durable_spawn; module: syntax error; the name is not reserved"
+
+
+@probe("5.16.0: a failed `nodus workflow resume` exits 1 (#920)")
+def probe_failed_resume_exits_1():
+    import json
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        proc = subprocess.run([sys.executable, "-m", "nodus", "workflow", "resume", "g_nope"],
+                              cwd=raw, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 1, f"exit {proc.returncode}: {proc.stdout[-300:]}"
+    assert json.loads(proc.stdout)["ok"] is False, "the answer is no longer printed"
+    return "exit 1, and the runner's answer is still printed"
+
+
+@probe("README names the 5.16.0 surface")
+def probe_readme_names_516_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [
+        n for n in ("durable_spawn", "at-least-once between checkpoints",
+                    "NODUS_WORKFLOW_STORE_BACKEND=sqlite", "StagedFlipWarning",
+                    "nodus workflow cancel --key", "Experimental")
+        if n not in text
+    ]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the durable-coroutine surface appears in the README"
+
+
+@probe("no stale '5.15.1 is current' claim survives")
+def probe_no_stale_5_15_1_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.15\.1[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.15\.1"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.15.1 current: {', '.join(offenders)}"
+    return "no document still calls 5.15.1 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -3628,6 +3790,14 @@ def main() -> int:
     # --- 5.15.1 -------------------------------------------------------------
     probe_readme_names_5151_surface(args.repo)
     probe_no_stale_5_15_0_current(args.repo)
+
+    # --- 5.16.0 -------------------------------------------------------------
+    probe_durable_resume_after_crash()
+    probe_durable_refuses_local_store()
+    probe_checkpoint_outside_names_durable()
+    probe_failed_resume_exits_1()
+    probe_readme_names_516_surface(args.repo)
+    probe_no_stale_5_15_1_current(args.repo)
 
     failed = [r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
