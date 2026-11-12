@@ -83,7 +83,7 @@ named `nodus-a2a-wire` is the one that is *not* the wire repo.**
 | Directory | Remote | Branch | What it actually is |
 |---|---|---|---|
 | ~~`C:\codev\nodus-a2a-wire`~~ | **`nodus-a2a`** | detached at `10746ce` | a worktree of the *coordinator* repo's old history — pulls and pushes went to the wrong project. **Removed 2026-09-07**; see below |
-| `C:\codev\a2a-wire-pub` | **`nodus-a2a-wire`** | `main` | the one that corresponds to `github.com/Masterplanner25/nodus-a2a-wire` |
+| `C:\dev\a2a-wire-pub` (formerly `C:\codev\a2a-wire-pub`; moved, and the old path no longer exists as of 2026-11-11) | **`nodus-a2a-wire`** | `main` | the one that corresponds to `github.com/Masterplanner25/nodus-a2a-wire` |
 
 Use **`a2a-wire-pub`** for anything touching that GitHub repo. It is now the only
 candidate. The misleading worktree was removed on 2026-09-07 with

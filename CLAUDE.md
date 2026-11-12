@@ -543,7 +543,7 @@ What exists and in what tier: `docs/ecosystem/README.md`.
 |---|---|---|
 | nodus-mcp | `C:\dev\nodus-mcp` | PyPI |
 | nodus-a2a | `C:\dev\nodus-a2a` | PyPI |
-| nodus-a2a-wire | `C:\codev\a2a-wire-pub` | PyPI |
+| nodus-a2a-wire | `C:\dev\a2a-wire-pub` | PyPI |
 | nodus-memory | `C:\dev\nodus-memory` | PyPI |
 | nodus-native-memory-engine | `C:\dev\nodus-native-memory-engine` | PyPI |
 | nodus-extension | `C:\dev\nodus-extension` | PyPI |
@@ -563,7 +563,9 @@ is the authority for the two non-PyPI consumers.
 
 Four things worth knowing before you open the detail file:
 
-- **The wire repo is `C:\codev\a2a-wire-pub`**, and there is only one candidate
+- **The wire repo is `C:\dev\a2a-wire-pub`** (it was under `C:\codev` until
+  it moved; `tools/nodus_lang_dependents.json` is the authority for the path, and
+  the old one no longer exists, checked 2026-11-11). There is only one candidate
   now. `C:\codev\nodus-a2a-wire` was a worktree of the *coordinator* repo's old
   history, so its name pointed at the wrong project and pulls and pushes went
   there; **removed 2026-09-07** with `git worktree remove`, after checking it held
