@@ -22,12 +22,14 @@ import tempfile
 import textwrap
 import time
 import unittest
+from unittest import mock
 from contextlib import contextmanager
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))  # noqa: E402
 
+from nodus.runtime import time_source as time_source_module  # noqa: E402
 from nodus.runtime.durable import run_id_for  # noqa: E402
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 from nodus_lang_workflow.runner import (  # noqa: E402
@@ -194,8 +196,14 @@ _SIDE = textwrap.dedent("""
         SQLiteWorkflowStore(os.environ["DURABLE_DB"], claim_ttl_ms=200.0)))
     def crash():
         os._exit(3)
+    def armed(deadline):
+        # Straight to a file: the process dies with os._exit, so nothing
+        # buffered survives it.
+        with open(os.environ["DURABLE_NOTE"], "w", encoding="utf-8") as fh:
+            fh.write(repr(float(deadline)))
     rt = NodusRuntime(timeout_ms=None, max_steps=None)
     rt.register_function("crash", crash)
+    rt.register_function("armed", armed)
     rt.run_source({program!r})
     os._exit(4)
 """)
@@ -204,7 +212,8 @@ _DEADLINE = """
 import "std:runtime" as runtime
 fn worker() {
     sleep(1500i)
-    let deadline = runtime.time_ms() + 1000.0
+    let deadline = runtime.time_ms() + 3000.0
+    armed(deadline)
     checkpoint "armed"
     crash()
     sleep_until(deadline)
@@ -219,37 +228,64 @@ run_loop()
 class AfterARealCrashTests(unittest.TestCase):
 
     def test_a_deadline_set_before_a_crash_fires_on_time_after_it(self):
-        """The first process builds up 1.5 s of uptime, arms a deadline one
-        second ahead, checkpoints and dies. The resumed coroutine must wake about
-        one second after the checkpoint in wall time. Without D6 it wakes at a
+        """The first process builds up 1.5 s of uptime, arms a deadline three
+        seconds ahead, checkpoints and dies. The resumed coroutine must wake
+        when its deadline comes due in wall time. Without D6 it wakes at a
         moment set by the difference between the two processes' uptimes: here,
-        immediately, because this test process has been up far longer."""
+        as soon as it resumes, because the resuming clock is shifted far ahead.
+
+        The expected wake is computed from the checkpoint's own clock pair, not
+        assumed. The deadline is 3 s after the `let`, and the checkpoint comes
+        later, by however long capturing the continuation takes. With a fixed
+        "wake >= 900 ms after the checkpoint" bound, the wake landed at 727 ms on
+        a CI runner (2026-11-12) for a checkpoint that took ~270 ms. That was
+        correct behaviour, failing a wrong test."""
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
-            env = dict(os.environ, DURABLE_DB=str(tmp / "runs.db"))
+            note = tmp / "deadline.txt"
+            env = dict(os.environ, DURABLE_DB=str(tmp / "runs.db"), DURABLE_NOTE=str(note))
             proc = subprocess.run(
                 [sys.executable, "-c", _SIDE.format(src=str(REPO / "src"), program=_DEADLINE)],
                 env=env, cwd=raw, capture_output=True, text=True, timeout=120)
             self.assertEqual(3, proc.returncode, proc.stderr[-1500:])
+            deadline_guest = float(note.read_text(encoding="utf-8"))
             time.sleep(0.4)  # the dead process's claim lapses
             woke_at = []
             with _store(tmp) as store:
-                checkpoint_wall = store.get_run(run_id_for("deadline")).metadata["clock"]["wall_ms"]
+                clock = store.get_run(run_id_for("deadline")).metadata["clock"]
+                # When the deadline falls due in wall time, if the resumed clock
+                # carries on from the checkpoint (D6).
+                due_wall = clock["wall_ms"] + (deadline_guest - clock["guest_ms"])
+                resumed_at = time.time() * 1000.0
                 runtime = NodusRuntime(timeout_ms=None, max_steps=None)
                 runtime.register_function("crash", lambda: None)
+                runtime.register_function("armed", lambda deadline: None)
                 runtime.register_function("woke", lambda: woke_at.append(time.time() * 1000.0))
-                result = runtime.run_source(_DEADLINE)
+                # This process's scheduler clock, a million ms ahead. Without D6
+                # the guest deadline (a few seconds of the first process's uptime)
+                # is then long past, and the coroutine wakes the moment it
+                # resumes, whatever either process's real uptime was. Unshifted,
+                # the outcome depended on the two uptimes, and in a lone run they
+                # were close enough that the regression woke only 243 ms early.
+                real_clock = time_source_module.runtime_time_ms
+                with mock.patch.object(time_source_module, "runtime_time_ms",
+                                       lambda: real_clock() + 1_000_000.0):
+                    result = runtime.run_source(_DEADLINE)
             self.assertTrue(result.get("ok"), result)
         self.assertEqual(1, len(woke_at))
-        after_checkpoint = woke_at[0] - checkpoint_wall
-        # The lower bound is the discriminating one: without the clock offset
-        # this long-running test process's clock is far past the old deadline,
-        # so the coroutine wakes at once, well under 900 ms. The upper bound only
-        # catches "absurdly late", so it is generous: a loaded box can take
-        # seconds to restart and rebuild, and that is not what this measures
-        # (a 2.5 s bound failed once in a 12-minute run under load).
-        self.assertGreaterEqual(after_checkpoint, 900.0)
-        self.assertLess(after_checkpoint, 15_000.0)
+        if resumed_at > due_wall - 1500.0:
+            # Without D6 the coroutine wakes as soon as it resumes. If the
+            # resume itself started this close to the deadline, the two cases
+            # are indistinguishable, and a pass would prove nothing.
+            self.skipTest(f"the resume started {due_wall - resumed_at:.0f} ms before "
+                          "the deadline; too late to tell D6 from its absence")
+        # The discriminating bound. 50 ms covers the host clock's ~16 ms tick and
+        # scheduler latency. Without D6 the wake lands at about `resumed_at`,
+        # plus the rebuild, and the check above leaves 1.5 s for that rebuild.
+        self.assertGreaterEqual(woke_at[0], due_wall - 50.0)
+        # Only "absurdly late". A loaded box can take seconds to rebuild, and
+        # that is not what this measures.
+        self.assertLess(woke_at[0] - due_wall, 15_000.0)
 
 
 if __name__ == "__main__":
