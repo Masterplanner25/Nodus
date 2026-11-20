@@ -25,27 +25,36 @@
   `tests/test_default_store_backend.py`, which also asserts at the source that
   the temp file is the only file the store opens for writing.
 
-- **#939: on Windows, `get_run` and `list_runs` no longer fail while another
-  process saves the same record.** Opening a record while another process
-  renames over it fails with `PermissionError: [Errno 13]` for a few
-  milliseconds. #376 gave the write a bounded retry and left the read with
-  none. So a `nodus workflow runs` or sweep in one process failed on about 5–8%
-  of reads against a program or server saving in another. Measured with a
-  reader polling every 10 ms, three 15-second runs: 113 of 1,374 reads denied
-  before, 0 of 3,682 after.
+- **#939: on Windows, two processes sharing a JSON workflow store no longer
+  fail each other's reads and saves.** Opening a record while another process
+  renames over it fails with `PermissionError: [Errno 13]`, and renaming over a
+  record another process has open fails with `[WinError 5]`, for as long as
+  the other side holds the file.
+  - **Reads had no retry at all.** #376 gave the write one and left the read
+    bare, so a `nodus workflow runs` or sweep in one process failed on about
+    5–8% of reads against a program or server saving in another. With a reader
+    polling every 10 ms, three 15-second runs: 113 of 1,374 reads denied
+    before, 0 of 3,682 after.
+  - **The write's retry was too short.** Five tries, about 0.2 s. A reader in a
+    tight loop outlasted it, and `save_run` failed within seconds in every run,
+    which loses that update. It is now a **2-second time budget**: about twice
+    the slowest save measured surviving such a reader (1.1 s). Three 15-second
+    runs against a tight-loop reader: the writer survived all three, where at
+    0.2 s it died in every run.
 
-  Reads and writes now go through one helper, `_retry_sharing_violation`, so
-  their policies cannot drift apart again. It is the same bounded wait as
-  before, about 0.2 s, then the error is raised. A missing record is not
-  retried.
+  Reads and writes go through one helper, `_retry_sharing_violation`, so their
+  policies cannot drift apart again. The budget is time, not a count of tries,
+  because what a writer has to outlast is how long a reader holds the file.
+  Past 2 s the error is still raised, and a missing record is not retried. The
+  cost is that while a call waits, other threads in that process wait on the
+  store's lock too. That happens only under contention, where the call
+  previously failed.
 
-  The write half is still open in #939. A reader in a tight loop can hold the
-  record long enough to outlast the write's retry, and `save_run` then raises
-  `[WinError 5]`. Whether to widen that retry or call cross-process use of the
-  JSON store unsupported is undecided. SQLite is unaffected and remains the
-  advice for more than one process. Pinned by
-  `tests/test_store_sharing_violation.py`, including a real two-process race on
-  Windows that skips when it sees no contention.
+  Nothing coordinates the two processes. That is still SQLite's job, and
+  runbook §6.1 now says both. Pinned by `tests/test_store_sharing_violation.py`:
+  the budget, checked with an injected clock, and a real two-process race on
+  Windows in which neither side may fail. The race skips when it sees no
+  contention. It caught the 0.2 s budget in 3 runs of 3.
 
 ### Tooling
 

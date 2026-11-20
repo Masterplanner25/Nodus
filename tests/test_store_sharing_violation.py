@@ -1,18 +1,21 @@
-"""A record read waits out a Windows sharing violation, like a write does (#939).
+"""Store reads and writes wait out a Windows sharing violation (#939).
 
 On Windows, opening a run record while another process renames over it fails
-with ``[Errno 13]`` for a few milliseconds. #376 gave the write a bounded retry
+with ``[Errno 13]``, and renaming over a record another process has open fails
+with ``[WinError 5]``. Both clear quickly. #376 gave the write a bounded retry
 (``_replace_with_retry``) and left the read bare, so ``get_run`` in one process
-failed on ~5% of calls while another process was saving (#939, measured 8% with
-a reader polling every 10 ms).
+failed on ~5% of calls while another process was saving (measured 8% with a
+reader polling every 10 ms). That was fixed first.
 
-The fix is one retry policy, ``_retry_sharing_violation``, that both halves go
-through. These tests pin the behaviour with injected fakes (never by patching the
-global ``open``, for the reason #612 gives), pin the one-policy shape at the
-source, and, on Windows, run the real two-process race.
+The write's retry was also too short: 5 tries, about 0.2 s. A reader in a tight
+loop outlasted it and the writer's ``save_run`` failed within seconds, every
+run. The retry is now a 2 s time budget, about twice the slowest save measured
+surviving such a reader (1.1 s).
 
-Not covered here, because it is not fixed: a reader in a tight loop can still
-outlast the *write's* retry. That half of #939 is open.
+Both halves go through one policy, ``_retry_sharing_violation``. These tests pin
+the behaviour with injected fakes (never by patching the global ``open``, for
+the reason #612 gives), pin the budget with an injected clock, pin the
+one-policy shape at the source, and, on Windows, run the real two-process race.
 """
 
 import ast
@@ -121,6 +124,85 @@ class ReadRetryTests(unittest.TestCase):
         self.assertIs(before, builtins.open)
 
 
+class _FakeTime:
+    """A clock that only moves when the code under test sleeps."""
+
+    def __init__(self):
+        self.now = 1000.0
+        self.sleeps: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _denied_until(fake: _FakeTime, until: float):
+    """An operation denied until the fake clock reaches `until`."""
+
+    def op():
+        if fake.now < until:
+            raise PermissionError(5, "Access is denied")
+        return "done"
+
+    return op
+
+
+class RetryBudgetTests(unittest.TestCase):
+    """The budget is time, and it is 2 s. With an injected clock, so nothing
+    here actually waits."""
+
+    def test_the_budget_is_two_seconds(self):
+        self.assertEqual(2.0, store_module._SHARING_VIOLATION_BUDGET_S)
+
+    # closes: #939
+    def test_a_denial_lasting_well_past_the_old_window_is_waited_out(self):
+        """1.5 s of denial. The old 5-try policy gave up after about 0.2 s, and
+        a tight-loop reader in another process measured up to 1.1 s."""
+        fake = _FakeTime()
+        start = fake.now
+        result = store_module._retry_sharing_violation(
+            _denied_until(fake, start + 1.5), clock=fake.clock, sleep=fake.sleep)
+        self.assertEqual("done", result)
+        self.assertGreaterEqual(fake.now - start, 1.5)
+
+    def test_it_gives_up_at_the_budget_and_not_before(self):
+        fake = _FakeTime()
+        start = fake.now
+        with self.assertRaises(PermissionError):
+            store_module._retry_sharing_violation(
+                _denied_until(fake, float("inf")), clock=fake.clock, sleep=fake.sleep)
+        waited = fake.now - start
+        self.assertGreaterEqual(waited, 2.0, "gave up before the budget")
+        self.assertLessEqual(waited, 2.0 + 1e-9, "slept past the budget")
+
+    def test_no_single_sleep_is_long(self):
+        """A reader lets go within milliseconds. A long sleep would mostly
+        waste the window a writer is waiting for."""
+        fake = _FakeTime()
+        with self.assertRaises(PermissionError):
+            store_module._retry_sharing_violation(
+                _denied_until(fake, float("inf")), clock=fake.clock, sleep=fake.sleep)
+        self.assertLessEqual(max(fake.sleeps), 0.1)
+        self.assertGreater(len(fake.sleeps), 10, "too few tries across 2 s")
+
+    def test_success_on_the_first_try_does_not_sleep(self):
+        fake = _FakeTime()
+        result = store_module._retry_sharing_violation(
+            lambda: "done", clock=fake.clock, sleep=fake.sleep)
+        self.assertEqual("done", result)
+        self.assertEqual([], fake.sleeps)
+
+    def test_the_write_uses_the_same_budget(self):
+        """`_replace_with_retry` must not carry a shorter default of its own,
+        which is how the write ended up at 0.2 s while nothing said so."""
+        default = inspect.signature(
+            LocalWorkflowStore._replace_with_retry).parameters["budget_s"].default
+        self.assertEqual(store_module._SHARING_VIOLATION_BUDGET_S, default)
+
+
 def _body_without_docstring(func) -> str:
     """A function's source with its docstring removed, so a source assertion
     cannot be satisfied by the docstring explaining the fix."""
@@ -175,37 +257,43 @@ from nodus_lang_workflow.store import LocalWorkflowStore
 store = LocalWorkflowStore(root={root!r})
 rec = store.get_run("r1")
 end = time.time() + {seconds}
-n = 0
+saves = failed = 0
 while time.time() < end:
-    rec.metadata["n"] = n
+    rec.metadata["n"] = saves
     try:
         store.save_run(rec)
     except PermissionError:
-        pass  # the write half of #939 is not fixed; keep the race going
-    n += 1
+        failed += 1  # keep the race going; the exit code reports it
+    saves += 1
+print(f"saves={{saves}} failed={{failed}}")
+sys.exit(1 if failed else 0)
 """
 
 
 @unittest.skipUnless(os.name == "nt", "the sharing violation is Windows-only")
-class CrossProcessReadTests(unittest.TestCase):
-    """The real race: another process saving while this one reads.
+class CrossProcessRaceTests(unittest.TestCase):
+    """The real race: one process saving in a loop, this one reading the same
+    record in a tight loop, which is the case that outlasted the old 0.2 s
+    write retry. Neither side may see a `PermissionError`.
 
     It skips rather than passes when it cannot discriminate. Each iteration
     also makes one bare `open()` of the record; if none of those is ever
-    denied, the writer never contended and a clean `get_run` proves nothing.
+    denied, the two processes never contended and a clean run proves nothing.
     """
 
-    SECONDS = 4
+    SECONDS = 6
 
     # closes: #939
-    def test_get_run_is_not_denied_while_another_process_saves(self):
+    def test_neither_side_fails_while_two_processes_share_a_record(self):
         with tempfile.TemporaryDirectory() as root:
             store = LocalWorkflowStore(root=root)
             store.create_run(run_id="r1", graph_id="r1", workflow_name="w",
                              execution_kind="workflow")
             path = store._run_path("r1")
-            writer = subprocess.Popen([sys.executable, "-c", _WRITER.format(
-                src=str(_REPO_ROOT / "src"), root=root, seconds=self.SECONDS)])
+            writer = subprocess.Popen(
+                [sys.executable, "-c", _WRITER.format(
+                    src=str(_REPO_ROOT / "src"), root=root, seconds=self.SECONDS)],
+                stdout=subprocess.PIPE, text=True)
             try:
                 time.sleep(0.5)  # let the writer import and start
                 bare_denied = store_denied = reads = 0
@@ -221,9 +309,8 @@ class CrossProcessReadTests(unittest.TestCase):
                     except PermissionError:
                         store_denied += 1
                     reads += 1
-                    time.sleep(0.005)
             finally:
-                writer.wait(timeout=30)
+                writer_out, _ = writer.communicate(timeout=60)
 
         if bare_denied == 0:
             self.skipTest(f"no contention in {reads} reads; cannot discriminate")
@@ -231,6 +318,10 @@ class CrossProcessReadTests(unittest.TestCase):
             0, store_denied,
             f"get_run denied {store_denied} times in {reads} reads "
             f"(a bare open was denied {bare_denied} times)")
+        self.assertEqual(
+            0, writer.returncode,
+            f"the writer's save_run failed against a tight-loop reader: "
+            f"{writer_out.strip()}")
 
 
 if __name__ == "__main__":
