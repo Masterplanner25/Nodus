@@ -113,6 +113,37 @@ jobs:
           printf 'fn main() { print(6i * 7i) }\n' > floor.nd
           /tmp/floor/bin/nodus run floor.nd
 
+  # #173: PyPy runs Nodus 10-12x faster on long workloads, and every other job
+  # here is CPython, so nothing could see PyPy break. That is not hypothetical:
+  # #488 pushed `VM` past PyPy's 80-instance-attribute cliff and cost ~9x for
+  # three releases with every gate green (#702). And PyPy's GC does not close
+  # what CPython's refcounting closes on the spot, so it finds handles held past
+  # their scope that CPython hides (#516, #701). This job is the detector for
+  # both. It runs pytest only; lint, mypy and the doc gate are interpreter-
+  # independent and stay in `test`. mypy is left out of the install because its
+  # `ast-serialize` dependency has no PyPy wheel.
+  pypy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout v4.3.1
+
+      - name: Set up PyPy
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # actions/setup-python v5.6.0
+        with:
+          python-version: "pypy3.11"
+
+      - name: Install dependencies (without mypy)
+        run: |
+          grep -v '^mypy' requirements.txt > /tmp/requirements-pypy.txt
+          python -m pip install -r /tmp/requirements-pypy.txt
+          python -c "import platform, sys; print(platform.python_implementation(), sys.version)"
+
+      - name: Pytest under PyPy
+        run: python -m pytest -q
+
   test:
     runs-on: ubuntu-latest
     permissions:
