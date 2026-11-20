@@ -621,6 +621,36 @@ def _runs_waiting_for_event(
     return _sorted_run_records(matched)
 
 
+_SHARING_VIOLATION_ATTEMPTS = 5
+
+
+def _retry_sharing_violation(op, *, attempts: int = _SHARING_VIOLATION_ATTEMPTS):
+    """Run `op()`, retrying briefly on a Windows sharing violation (#376, #939).
+
+    The one place `LocalWorkflowStore` decides how long a transient
+    `PermissionError` is waited out, for reads and writes alike. On Windows,
+    opening a record while another process renames over it fails with
+    `[Errno 13]`, and renaming over a record another process has open fails
+    with `[WinError 5]`. Both clear within milliseconds. #376 retried the write
+    and left the read bare, so a reader in a second process saw ~5% of its
+    `get_run` calls fail against a busy writer (#939). One helper means the two
+    halves cannot drift apart again.
+
+    Bounded: after `attempts` tries (about 0.2 s of backoff) the error is
+    raised, because blocking forever is worse than failing loudly. POSIX permits
+    both operations, so there this only ever sees a real permission error,
+    which it re-raises after the same bounded wait.
+    """
+    for attempt in range(attempts):
+        try:
+            return op()
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+    raise AssertionError("unreachable: attempts must be >= 1")
+
+
 class LocalWorkflowStore(WorkflowStore):
     """File-backed local store for workflow runs and claims.
 
@@ -757,24 +787,40 @@ class LocalWorkflowStore(WorkflowStore):
 
         Resolved late rather than bound as a default, so the behaviour of every
         real caller is exactly what it was.
+
+        The retry policy itself is `_retry_sharing_violation`, shared with
+        `_read_record_json` (#939).
         """
         do_replace = replace if replace is not None else os.replace
-        for attempt in range(attempts):
-            try:
-                do_replace(tmp_path, path)
-                return
-            except PermissionError:
-                if attempt == attempts - 1:
-                    raise
-                time.sleep(0.02 * (attempt + 1))
+        _retry_sharing_violation(lambda: do_replace(tmp_path, path), attempts=attempts)
+
+    @staticmethod
+    def _read_record_json(path: str, *, opener=None) -> dict:
+        """Read one record file, through the same retry as the write (#939).
+
+        A second process replacing the record makes the open fail with
+        `[Errno 13]` for a few milliseconds on Windows. The in-process lock
+        cannot help with that, so `get_run` from one process failed while a
+        sweep or a step in another was saving. A missing file is not retried:
+        `FileNotFoundError` is not a `PermissionError`.
+
+        `opener` exists for the tests and defaults to `open`, for the reason
+        `_replace_with_retry` gives about `os.replace` (#612).
+        """
+        do_open = opener if opener is not None else open
+
+        def read() -> dict:
+            with do_open(path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+
+        return _retry_sharing_violation(read)
 
     def _load_run_unlocked(self, run_id: str) -> WorkflowRunRecord | None:
         # #380: no `os.path.exists` pre-check — the open below already reports a
         # missing file, and the extra stat doubled the syscalls per record in
         # list_runs(). It was also a race: the file could vanish between the two.
         try:
-            with open(self._run_path(run_id), "r", encoding="utf-8") as handle:
-                return WorkflowRunRecord.from_dict(json.load(handle))
+            return WorkflowRunRecord.from_dict(self._read_record_json(self._run_path(run_id)))
         except (FileNotFoundError, InvalidStateId):
             # An id that cannot name a file names no run.
             return None
