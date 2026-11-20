@@ -107,11 +107,23 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(payload["ast"][0]["type"], "Let")
 
     def test_sandbox_timeout(self):
+        """A runaway program sent to /execute is stopped by the sandbox.
+
+        Which of the service's two limits stops it is interpreter speed: the
+        200 ms deadline on CPython, and on a fast PyPy runner the 10M step
+        limit, since `while (true) { }` there runs faster than 50M
+        instructions a second (#173's PyPy CI job). Both are the sandbox doing
+        its job. The deadline on its own is pinned by
+        test_serve_execution_budget.py, which states its limits explicitly.
+        """
         status, payload = self.request("POST", "/execute", {"code": "while (true) { }", "filename": "inline.nd"})
         self.assertEqual(status, 200)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error"]["type"], "sandbox")
-        self.assertIn("timed out", payload["error"]["message"])
+        message = payload["error"]["message"]
+        self.assertTrue(
+            "timed out" in message or "step limit exceeded" in message,
+            f"stopped by something other than a sandbox limit: {message!r}")
 
     def test_input_blocked(self):
         status, payload = self.request("POST", "/execute", {"code": "input(\"x\")", "filename": "inline.nd"})

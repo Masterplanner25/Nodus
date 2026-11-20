@@ -80,9 +80,14 @@
     `test_rebuild_is_inert.py`. A fourth, in `test_store_clock.py`, passed by
     luck and is fixed too. The `--shapes` phase also left its own reads
     unclosed, which failed temp-directory cleanup under PyPy on Windows.
-  - **One test assumed CPython's speed.** `test_two_execution_paths.py` relied
+  - **Two tests assumed CPython's speed.** `test_two_execution_paths.py` relied
     on a 400,000-iteration loop overrunning the CLI's 200 ms budget, and PyPy
-    finished it inside it. It now loops for 400 ms of wall clock.
+    finished it inside it. It now loops for 400 ms of wall clock, with the step
+    limit off on both paths: warm PyPy executes about 8M instructions in those
+    400 ms (CPython about 0.5M), so on a fast runner the 10M step limit fired
+    first. `test_server.py`'s runaway-program test likewise saw the step limit
+    before the deadline. It now accepts either sandbox limit; the deadline
+    itself is pinned by `test_serve_execution_budget.py`.
 
   Part of the work on #173; that issue stays open.
 
