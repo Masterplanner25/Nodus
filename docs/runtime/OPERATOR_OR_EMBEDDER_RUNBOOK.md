@@ -477,6 +477,16 @@ and a restarted program or two workers, can both claim one run and both resume i
 a read-modify-write in one can overwrite the other's. `durable_spawn` refuses this store
 for that reason (`WorkflowStore.EXCLUSIVE_CLAIMS_ACROSS_PROCESSES`).
 
+**On Windows, two processes on one JSON store also contend at the file level** (#939).
+Reading a record while another process replaces it, or replacing one another process has
+open, is refused by the OS for as long as the other side holds the file. The store waits
+that out for up to 2 seconds, on reads and writes alike, then raises the
+`PermissionError`. Measured against a reader in a tight loop, the slowest save that
+got through took about 1.1 s. So `nodus workflow runs` beside a running program works.
+But while a call waits, other threads in that process wait on the store's lock too, and
+nothing coordinates the two processes. That is the job of SQLite, below. POSIX allows
+both operations, so none of this applies there.
+
 For any deployment where more than one process touches the store, which includes any
 host that sweeps while programs run:
 

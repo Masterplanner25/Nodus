@@ -621,10 +621,24 @@ def _runs_waiting_for_event(
     return _sorted_run_records(matched)
 
 
-_SHARING_VIOLATION_ATTEMPTS = 5
+# How long a sharing violation is waited out before it is raised (#939). It
+# used to be 5 attempts, about 0.2 s, and a process reading one record in a
+# tight loop outlasted that: the writer's `save_run` failed within seconds in
+# every run. Measured with the read retry in place, the slowest save that
+# survived such a reader took 1.1 s. 2 s is about twice that.
+_SHARING_VIOLATION_BUDGET_S = 2.0
+# The longest single sleep. A reader releases its handle within milliseconds,
+# so a long sleep would mostly waste the window it is waiting for.
+_SHARING_VIOLATION_MAX_SLEEP_S = 0.1
 
 
-def _retry_sharing_violation(op, *, attempts: int = _SHARING_VIOLATION_ATTEMPTS):
+def _retry_sharing_violation(
+    op,
+    *,
+    budget_s: float = _SHARING_VIOLATION_BUDGET_S,
+    clock=None,
+    sleep=None,
+):
     """Run `op()`, retrying briefly on a Windows sharing violation (#376, #939).
 
     The one place `LocalWorkflowStore` decides how long a transient
@@ -636,19 +650,36 @@ def _retry_sharing_violation(op, *, attempts: int = _SHARING_VIOLATION_ATTEMPTS)
     `get_run` calls fail against a busy writer (#939). One helper means the two
     halves cannot drift apart again.
 
-    Bounded: after `attempts` tries (about 0.2 s of backoff) the error is
-    raised, because blocking forever is worse than failing loudly. POSIX permits
-    both operations, so there this only ever sees a real permission error,
-    which it re-raises after the same bounded wait.
+    Bounded by time, not by a count of tries: once `budget_s` has passed since
+    the first try, the error is raised, because blocking forever is worse than
+    failing loudly. A count was the wrong unit. What a writer has to outlast is
+    how long a reader holds the file, and five quick tries covered 0.2 s of it.
+
+    The cost of the wait: `save_run` and `get_run` call this holding the
+    store's in-process lock, so other threads in the same process wait too,
+    for up to `budget_s`. That happens only under contention, when the
+    alternative was a failed call, and for a write a lost update.
+
+    POSIX permits both operations, so there this only ever sees a real
+    permission error, which it re-raises after the same bounded wait.
+
+    `clock` and `sleep` exist for the tests, so the budget can be checked
+    without waiting it out. They default to `time.monotonic` and `time.sleep`,
+    resolved late for the reason `_replace_with_retry` gives (#612).
     """
-    for attempt in range(attempts):
+    now = clock if clock is not None else time.monotonic
+    pause = sleep if sleep is not None else time.sleep
+    deadline = now() + budget_s
+    attempt = 0
+    while True:
         try:
             return op()
         except PermissionError:
-            if attempt == attempts - 1:
+            remaining = deadline - now()
+            if remaining <= 0:
                 raise
-            time.sleep(0.02 * (attempt + 1))
-    raise AssertionError("unreachable: attempts must be >= 1")
+            attempt += 1
+            pause(min(0.02 * attempt, _SHARING_VIOLATION_MAX_SLEEP_S, remaining))
 
 
 class LocalWorkflowStore(WorkflowStore):
@@ -763,7 +794,7 @@ class LocalWorkflowStore(WorkflowStore):
         tmp_path: str,
         path: str,
         *,
-        attempts: int = 5,
+        budget_s: float = _SHARING_VIOLATION_BUDGET_S,
         replace=None,
     ) -> None:
         """`os.replace`, retried briefly on Windows sharing violations (#376).
@@ -789,10 +820,10 @@ class LocalWorkflowStore(WorkflowStore):
         real caller is exactly what it was.
 
         The retry policy itself is `_retry_sharing_violation`, shared with
-        `_read_record_json` (#939).
+        `_read_record_json` (#939), and so is its 2 s budget.
         """
         do_replace = replace if replace is not None else os.replace
-        _retry_sharing_violation(lambda: do_replace(tmp_path, path), attempts=attempts)
+        _retry_sharing_violation(lambda: do_replace(tmp_path, path), budget_s=budget_s)
 
     @staticmethod
     def _read_record_json(path: str, *, opener=None) -> dict:

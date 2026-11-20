@@ -282,10 +282,14 @@ class StoreReadLockingTests(unittest.TestCase):
         def always_denied(a, b):
             raise PermissionError(5, "Access is denied")
 
+        # #939: the real budget is 2 s; a short one keeps this test fast. That
+        # the budget is time-based, and is 2 s, is pinned with an injected clock
+        # in test_store_sharing_violation.py.
         with self.assertRaises(PermissionError):
             LocalWorkflowStore._replace_with_retry(
                 src,
                 os.path.join(self._tmp.name, "dst2.json"),
+                budget_s=0.1,
                 replace=always_denied,
             )
 
