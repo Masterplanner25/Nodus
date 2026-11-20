@@ -65,6 +65,14 @@
   (`Unexpected ' '`, `Error when decoding null`) still give the location only,
   rather than a guessed reason. CPython is unchanged.
 
+- **#948: the debug adapter announces a stop before it counts it.** `nodus dap`
+  incremented its stop counter and woke waiters before it wrote the `stopped`
+  event, so `launch` could answer ahead of the first stop, and anything waiting
+  on `wait_for_stop` could read the output too early. That wait also returned
+  False on any unrelated wake-up, such as a resume, before its timeout. Now the
+  event is sent first, and the wait re-checks until its timeout. It surfaced as
+  a once-in-four failure on the PyPy CI job.
+
 ### Tooling
 
 - **CI runs the test suite under PyPy.** A new `pypy` job runs `pytest` on
