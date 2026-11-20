@@ -25,6 +25,28 @@
   `tests/test_default_store_backend.py`, which also asserts at the source that
   the temp file is the only file the store opens for writing.
 
+- **#939: on Windows, `get_run` and `list_runs` no longer fail while another
+  process saves the same record.** Opening a record while another process
+  renames over it fails with `PermissionError: [Errno 13]` for a few
+  milliseconds. #376 gave the write a bounded retry and left the read with
+  none. So a `nodus workflow runs` or sweep in one process failed on about 5–8%
+  of reads against a program or server saving in another. Measured with a
+  reader polling every 10 ms, three 15-second runs: 113 of 1,374 reads denied
+  before, 0 of 3,682 after.
+
+  Reads and writes now go through one helper, `_retry_sharing_violation`, so
+  their policies cannot drift apart again. It is the same bounded wait as
+  before, about 0.2 s, then the error is raised. A missing record is not
+  retried.
+
+  The write half is still open in #939. A reader in a tight loop can hold the
+  record long enough to outlast the write's retry, and `save_run` then raises
+  `[WinError 5]`. Whether to widen that retry or call cross-process use of the
+  JSON store unsupported is undecided. SQLite is unaffected and remains the
+  advice for more than one process. Pinned by
+  `tests/test_store_sharing_violation.py`, including a real two-process race on
+  Windows that skips when it sees no contention.
+
 ### Tooling
 
 - **#931: `nodus_gate --open-claims` reports a document calling a closed issue
