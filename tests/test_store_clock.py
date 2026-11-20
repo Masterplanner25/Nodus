@@ -236,7 +236,8 @@ class EveryPersistedDeadlineIsStoreTimeTests(unittest.TestCase):
             import os
             code = WORKFLOW_WITH_A_RETRY
             path = os.path.join(os.getcwd(), "demo.nd")
-            open(path, "w", encoding="utf-8").write(code)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(code)
             with nodus_cli._project_root_context(os.getcwd()), retry_sweeper():
                 result, _vm = run_workflow_code(
                     VM([], {}, code_locs=[], source_path=None), code,

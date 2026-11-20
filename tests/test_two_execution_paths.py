@@ -272,7 +272,15 @@ class TheDeadlineDiffersTests(unittest.TestCase):
     happens.
     """
 
-    BUSY = "let i = 0i\nwhile (i < 400000i) { i = i + 1i }\nprint(\"finished\")\n"
+    # Busy for 400 ms of wall clock, not for a count of iterations. A count
+    # assumed CPython's speed: PyPy finished the old 400,000-iteration loop
+    # inside the 200 ms budget, on #173's first PyPy CI run.
+    BUSY = (
+        "let start = clock()\n"
+        "let n = 0i\n"
+        "while (clock() - start < 0.4) { n = n + 1i }\n"
+        "print(\"finished\")\n"
+    )
 
     # closes: #192
     def test_the_runner_path_times_out_where_the_embedded_one_does_not(self):

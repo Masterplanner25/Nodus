@@ -11,7 +11,6 @@ the thing it guards was broken.
 """
 
 import ast
-import io
 import json
 import os
 import pathlib
@@ -168,7 +167,7 @@ class ManifestContractTests(unittest.TestCase):
     def test_every_entry_states_a_reason(self):
         """`why` must record what was established. An entry reading 'looks fine'
         is how a real one gets lost — the lesson dependent_flakes.json carries."""
-        entries = json.loads(io.open(MANIFEST, encoding="utf-8").read())["entries"]
+        entries = json.loads(pathlib.Path(MANIFEST).read_text(encoding="utf-8"))["entries"]
         for key, entry in entries.items():
             with self.subTest(entry=key):
                 self.assertIn(entry.get("verdict"), ("intentional", "tracked"))
@@ -188,8 +187,10 @@ class ManifestContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "src"))
             os.makedirs(os.path.join(tmp, "tools"))
-            io.open(os.path.join(tmp, "tools", "shape_manifest.json"),
-                    "w", encoding="utf-8").write("{ not json")
+            # Closed before the phase reads it: unclosed, PyPy leaves the file
+            # empty, which is also invalid JSON, so the test passed by accident.
+            pathlib.Path(tmp, "tools", "shape_manifest.json").write_text(
+                "{ not json", encoding="utf-8")
             result = run_shapes_phase(pathlib.Path(tmp))
             self.assertIsNotNone(result.error)
             self.assertIn("could not be read", result.error)
@@ -207,10 +208,13 @@ class GrowthTests(unittest.TestCase):
     def _run_in(self, tmp, sources, entries):
         os.makedirs(os.path.join(tmp, "src"), exist_ok=True)
         os.makedirs(os.path.join(tmp, "tools"), exist_ok=True)
+        # write_text closes the file. An unclosed write is flushed only when
+        # the GC gets to it, which on PyPy is after the phase has read an
+        # empty file (#173's PyPy CI job found this).
         for name, text in sources.items():
-            io.open(os.path.join(tmp, "src", name), "w", encoding="utf-8").write(text)
-        io.open(os.path.join(tmp, "tools", "shape_manifest.json"),
-                "w", encoding="utf-8").write(json.dumps({"entries": entries}))
+            pathlib.Path(tmp, "src", name).write_text(text, encoding="utf-8")
+        pathlib.Path(tmp, "tools", "shape_manifest.json").write_text(
+            json.dumps({"entries": entries}), encoding="utf-8")
         return run_shapes_phase(pathlib.Path(tmp))
 
     def test_a_third_copy_of_a_recorded_duplication_is_reported(self):
