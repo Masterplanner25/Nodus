@@ -128,7 +128,10 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
 - Stack behavior: none (no stack effect)
 - Operands: slot (integer) — index into `frame.locals_array`
 - Emitted by compiler: yes — at the start of each `for`-loop iteration for the loop
-  variable, and before each `let` binding for any variable inside a loop body
+  variable, and before each `let` binding inside a function (not only in a loop
+  body, as this entry used to say). The optimizer then removes every reset of a
+  slot that no closure in the function captures, since only a capture puts a
+  `Cell` there (`Compiler.uncaptured_resets`). Under `--no-opt` they all remain.
 - Purpose: detach any `Cell` at a local slot by replacing it with a plain `None`, so
   that `MAKE_CLOSURE` creates a fresh per-iteration `Cell` rather than reusing the one
   from the previous iteration. This is what makes closures captured in a loop see their

@@ -45,11 +45,23 @@ def optimize_bytecode(
     code: list[tuple],
     functions: dict[str, FunctionInfo],
     code_locs: Locs,
+    *,
+    removable: set[int] | None = None,
 ) -> tuple[list[tuple], dict[str, FunctionInfo], Locs]:
+    """Optimize compiler output.
+
+    `removable` is the compiler's `uncaptured_resets`: indices into `code`, as
+    the compiler emitted it, of `RESET_LOCAL_IDX`s that cannot have an effect.
+    They are dropped first, before anything moves the indices.
+    """
     changed = True
     current_code = list(code)
     current_locs = list(code_locs)
     current_functions = functions
+    if removable:
+        current_code, current_functions, current_locs = drop_uncaptured_resets(
+            current_code, current_functions, current_locs, removable
+        )
 
     while changed:
         changed = False
@@ -88,6 +100,33 @@ def optimize_bytecode(
             changed = True
 
     return current_code, current_functions, current_locs
+
+
+def drop_uncaptured_resets(
+    code: list[tuple],
+    functions: dict[str, FunctionInfo],
+    code_locs: Locs,
+    removable: set[int],
+) -> tuple[list[tuple], dict[str, FunctionInfo], Locs]:
+    """Remove the resets the compiler found no closure capturing.
+
+    Each index must still name a `RESET_LOCAL_IDX`; anything else means the
+    indices and the code have come apart, and is refused rather than guessed.
+    A jump to a removed reset lands on the store that follows it.
+    """
+    for index in removable:
+        if not (0 <= index < len(code)) or code[index][0] != "RESET_LOCAL_IDX":
+            raise ValueError(f"removable index {index} is not a RESET_LOCAL_IDX")
+    out_code: list[tuple] = []
+    out_locs: Locs = []
+    mapping: dict[int, int] = {}
+    for i, instr in enumerate(code):
+        if i in removable:
+            continue
+        mapping[i] = len(out_code)
+        out_code.append(instr)
+        out_locs.append(code_locs[i])
+    return remap_compacted(out_code, functions, out_locs, mapping, len(code))
 
 
 def _constant_key(value: object) -> tuple[str, object]:

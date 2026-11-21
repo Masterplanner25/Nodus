@@ -938,7 +938,9 @@ class ModuleLoader:
         compiler = Compiler(module_infos={metadata.module_id: module_info}, module_defs_index={}, builtin_names=builtin_names)
         code, functions, code_locs = compiler.compile_program(metadata.parsed.ast)
         if optimize:
-            code, functions, code_locs = optimize_bytecode(code, functions, code_locs)
+            code, functions, code_locs = optimize_bytecode(
+                code, functions, code_locs, removable=compiler.uncaptured_resets
+            )
         bytecode = wrap_bytecode(
             code,
             module_name=metadata.module_id,

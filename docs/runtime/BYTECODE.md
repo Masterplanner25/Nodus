@@ -140,7 +140,8 @@ STORE_ARG <slot>
 Detaches any `Cell` at a local slot by writing a plain `None` over it, so the
 next `MAKE_CLOSURE` boxes a fresh per-iteration `Cell`. Emitted at the start of
 each `for`-loop iteration for the loop variable, and before each `let` binding
-inside a loop body. No stack effect.
+in a function. The optimizer keeps only the resets of slots that a closure in
+the same function captures; the rest cannot have an effect. No stack effect.
 
 ```
 RESET_LOCAL_IDX <slot>
