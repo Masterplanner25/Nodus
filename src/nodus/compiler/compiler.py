@@ -241,7 +241,6 @@ class Compiler:
                 return
             if self.symbols is not None:
                 self.symbols.enter_scope("block")
-                self.predeclare_block(body)
             for s in stmts[:-1]:
                 self.compile_stmt(s)
             last = stmts[-1]
@@ -481,12 +480,10 @@ class Compiler:
                 self.symbols.define(stmt.expr.name)
                 continue
 
-    def predeclare_block(self, block: Block) -> None:
-        if self.symbols is None:
-            return
-        for stmt in block.stmts:
-            if isinstance(stmt, Let):
-                self.symbols.define(stmt.name)
+    def _is_frame_slot(self, symbol) -> bool:
+        """Whether *symbol* lives in a slot of the current function's frame."""
+        return (symbol is not None and symbol.scope == "local"
+                and self.in_function_scope() and symbol.index is not None)
 
     def compile_program(self, stmts: list) -> tuple[list[tuple], dict[str, FunctionInfo], list[tuple[str | None, int | None, int | None]]]:
         jump_to_main = self.emit("JUMP", None)
@@ -641,15 +638,36 @@ class Compiler:
         self.set_current_loc(stmt)
         if isinstance(stmt, Let):
             self.reject_reserved_name(stmt.name, node=stmt)
-            if self.symbols is not None:
+            # #957: `let` is lexical. The name means the outer binding until
+            # this statement, so the initializer is compiled *before* the name
+            # is defined -- `let x = x + 1i` reads the outer `x`, a parameter
+            # included. It used to be defined first, so the initializer read
+            # the new, empty slot and got nil.
+            #
+            # The one exception is a function literal, which may name itself:
+            # `let fact = fn(n) { ... fact(n - 1i) ... }`. There the name is
+            # defined first and its slot reset *before* the closure is made, so
+            # MAKE_CLOSURE captures the fresh Cell and the store below fills
+            # it. The reset used to come after, so the closure held the
+            # previous Cell and saw nil.
+            names_itself = isinstance(stmt.expr, FnExpr)
+            if names_itself and self.symbols is not None:
                 self.symbols.define(stmt.name)
-            self.compile_expr(stmt.expr)
-            symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
-            if symbol is not None and symbol.scope == "local" and self.in_function_scope() and symbol.index is not None:
-                # Reset before storing so that inside loop bodies each `let`
-                # definition creates a fresh Cell on MAKE_CLOSURE rather than
-                # reusing the Cell left behind by the previous iteration.
-                self.emit("RESET_LOCAL_IDX", symbol.index)
+                symbol = self.resolve_symbol(stmt.name)
+                if self._is_frame_slot(symbol):
+                    self.emit("RESET_LOCAL_IDX", symbol.index)
+                self.compile_expr(stmt.expr)
+            else:
+                self.compile_expr(stmt.expr)
+                if self.symbols is not None:
+                    self.symbols.define(stmt.name)
+                symbol = self.resolve_symbol(stmt.name) if self.symbols is not None else None
+                if self._is_frame_slot(symbol):
+                    # Reset before storing so that inside loop bodies each
+                    # `let` creates a fresh Cell on MAKE_CLOSURE rather than
+                    # reusing the Cell left by the previous iteration.
+                    self.emit("RESET_LOCAL_IDX", symbol.index)
+            if self._is_frame_slot(symbol):
                 self.emit("STORE_LOCAL_IDX", symbol.index)
             else:
                 self.emit("STORE", self.resolve_store_name(stmt.name))
@@ -686,13 +704,15 @@ class Compiler:
             return
 
         if isinstance(stmt, DestructureLet):
+            # #957: lexical, like `let` -- the value is compiled before the
+            # pattern's names exist, so `let [a, b] = [b, a]` swaps.
+            self.compile_expr(stmt.expr)
             if self.symbols is not None:
                 for name in self.collect_pattern_names(stmt.pattern):
                     self.symbols.define(name)
             temp = self.new_temp()
             if self.symbols is not None:
                 self.symbols.define(temp)
-            self.compile_expr(stmt.expr)
             destruct_temp_symbol = self.resolve_symbol(temp) if self.symbols is not None else None
             if destruct_temp_symbol is not None and destruct_temp_symbol.scope == "local" and self.in_function_scope() and destruct_temp_symbol.index is not None:
                 self.emit("STORE_LOCAL_IDX", destruct_temp_symbol.index)
@@ -726,7 +746,6 @@ class Compiler:
         if isinstance(stmt, Block):
             if self.symbols is not None:
                 self.symbols.enter_scope("block")
-                self.predeclare_block(stmt)
             for s in stmt.stmts:
                 self.compile_stmt(s)
             if self.symbols is not None:
