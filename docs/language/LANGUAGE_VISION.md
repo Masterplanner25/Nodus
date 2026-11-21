@@ -181,8 +181,19 @@ of the task is already expressible. What is not yet in place:
   - an order-sensitive resume refusal
     ([#704](https://github.com/Masterplanner25/Nodus/issues/704)).
 
-  No open issue tracks a PyPy failure. The suite does not run under PyPy in CI,
-  though, so that is a statement about what has been found, not a guarantee.
+  No open issue tracks a PyPy failure. Since #947 the whole suite runs under
+  PyPy in CI, in the `pypy` job, so a PyPy-only break fails a pull request
+  rather than waiting to be found.
+
+  **How much PyPy helps depends on how long a run is.** Since #973 both CI jobs
+  time the self-hosted frontend (`python -m tools.selfhost_check`), and there
+  PyPy was **2.1–2.3×** faster on 2026-11-21. The jobs run on different
+  runners, so the ratio is approximate. That workload is 190 short runs: each
+  of 95 files is lexed in one and parsed in another, averaging about 57k
+  instructions apiece. Most of them end before the JIT pays off. The ~16× above
+  is one run of 13M instructions. A compiler compiling itself is one long run,
+  so it should sit nearer the second figure than the first; that has not been
+  measured, because the compiler does not exist yet.
 
   Two things already recovered on CPython: the VM no longer retains an event
   per call and return that nothing read, which was a third of throughput and
