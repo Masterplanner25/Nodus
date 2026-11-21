@@ -326,16 +326,16 @@ def register(vm, registry) -> None:
                     allowed_commands=getattr(rvm, "allowed_commands", None),
                     allowed_hosts=getattr(rvm, "allowed_hosts", None),
                 )
-                # #405: see module.py — authority is not shed by crossing into
-                # a tool handler.
-                from nodus.runtime.capability import inherit_authority, inherit_host_state  # noqa: E402
+                # #405, #868: see module.py. A tool handler is not a way out of
+                # the caller's authority, its host wiring or its bounds.
+                from nodus.runtime.capability import charge_run_bounds, derive_child_vm  # noqa: E402
 
-                inherit_authority(child_vm, rvm)
-                # #868: was six of `module.py`'s seven — `session_id` had been
-                # left off, which is the drift a shared list removes.
-                inherit_host_state(child_vm, rvm)
+                derive_child_vm(child_vm, rvm)
                 setattr(child_vm, "_caller_vm", rvm)
-                result = child_vm.run_closure(handler, [args])
+                try:
+                    result = child_vm.run_closure(handler, [args])
+                finally:
+                    charge_run_bounds(child_vm, rvm)
             else:
                 result = rvm.run_closure(handler, [args])
         elif callable(handler):

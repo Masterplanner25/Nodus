@@ -1027,6 +1027,30 @@ def charge_run_bounds(child, parent) -> None:
     parent.instructions_executed = getattr(parent, "instructions_executed", 0) + spent
 
 
+def derive_child_vm(child, parent) -> None:
+    """Everything a VM built to run on *parent*'s behalf must carry.
+
+    Its authority (#405), its host wiring (#868) and what it may still consume
+    (#873). Every site that builds a child VM calls this, and nothing else calls
+    the three parts, so a site cannot take two of them and miss the third.
+
+    That is exactly what happened before this helper. #873 added the bounds to the
+    resume child only. A call into an imported module and a tool handler run on a
+    child VM too, so each had the authority and the wiring but no bounds at all:
+    no step budget, no deadline, no memory ceiling and the default frame cap. A
+    guest given `max_steps=1000, timeout_ms=100` ran `std:strings.repeat` for
+    2.6 s, and the CLI's 200 ms deadline did not stop it either, because every
+    stdlib function is a module function. The steps it took were never counted,
+    so `get_execution_stats()` reported 13 instructions.
+
+    Pair it with :func:`charge_run_bounds` once the child has finished, in a
+    `finally`, or each call gets a fresh allowance.
+    """
+    inherit_authority(child, parent)
+    inherit_host_state(child, parent)
+    inherit_run_bounds(child, parent)
+
+
 def inherit_host_state(child, parent) -> None:
     """Copy every host-state attribute from *parent* to *child* (#868).
 

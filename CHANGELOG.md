@@ -4,6 +4,30 @@
 
 ### Fixes
 
+- **Code in an imported module now runs within the caller's step limit and
+  deadline.** That includes every stdlib module. Each call to a module function
+  runs on a child VM. That child inherited the caller's authority and host
+  wiring, but not its bounds, so it had no `max_steps`, no deadline, no memory
+  ceiling and the default frame cap. Its instructions were never counted either.
+  - Measured, with `NodusRuntime(max_steps=1000, timeout_ms=100)`:
+    `std:strings.repeat("a", 200000i)` ran for 2.6 s, and
+    `get_execution_stats()` reported 13 instructions. It now stops at step 1,001.
+  - `nodus run`'s 200 ms deadline did not stop such a loop either. It does now.
+  - A tool handler run on a child VM, and an expression evaluated in the debug
+    console, had the same gap.
+
+  The bounds were added to one of these child VMs in #873, the one for a
+  workflow resume. Every site now calls one helper, `derive_child_vm`, which
+  carries authority, wiring and bounds together. Each site charges the child's
+  steps back to the caller when the call returns, including when it raises.
+
+  **This can stop a program that used to finish.** Time and steps spent inside
+  stdlib and imported functions now count against `max_steps`, `timeout_ms` and
+  `nodus run`'s deadline, as they always should have. If a program now stops
+  with `Execution step limit exceeded` or `Execution timed out`, raise the limit
+  (`--time-limit` on the CLI, `max_steps` / `timeout_ms` on `NodusRuntime`). Its
+  work was always this large; until now it wasn't measured.
+
 - **#937: the default-store warning gives the real reason to leave the JSON
   store.** It said `LocalWorkflowStore` is "not crash-safe", and the runbook said
   a kill mid-write can corrupt run state. Neither is true. Every record is
