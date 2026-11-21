@@ -215,6 +215,12 @@ class VM:
     budget_meters: dict | None = None
     trace_errors: bool = False
     last_graph_plan: dict | None = None
+    #: #964: whether a loader built on this VM runs the bytecode optimizer.
+    #: `run_source(optimize=False)` / `--no-opt` write False on the instance;
+    #: every other run reads this default. It was `self.optimize_bytecode = True`
+    #: in __init__ for a few hours, which took a runtime-built VM to 79
+    #: attributes, the last slot of headroom.
+    optimize_bytecode: bool = True
     #: The result of the last workflow or goal *this program* ran (#858). The
     #: `workflow run` / `goal run` entry points (CLI and server) execute the
     #: program and then run the flow it defines; a program that already called
@@ -286,9 +292,6 @@ class VM:
         # #629: set on a child VM built for a resume, carrying what the
         # drift check needs about the module that drove it. None on a VM
         # running its own program.
-        #: #964: whether a loader built on this VM runs the bytecode optimizer.
-        #: `run_source(optimize=False)` / `--no-opt` clear it.
-        self.optimize_bytecode = True
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter

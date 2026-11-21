@@ -102,7 +102,7 @@ class VmAttributeBudgetTests(unittest.TestCase):
         vm = bare_vm()
         for name, expected in (("_resume_origin", None), ("budget_meters", None),
                                ("trace_errors", False), ("last_graph_plan", None),
-                               ("trace_count", 0)):
+                               ("trace_count", 0), ("optimize_bytecode", True)):
             with self.subTest(attribute=name):
                 self.assertEqual(expected, getattr(vm, name),
                                  f"{name} must still read as {expected!r}")

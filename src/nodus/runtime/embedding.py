@@ -1287,7 +1287,9 @@ class NodusRuntime:
         )
         self.__last_vm = vm
         # #964: `optimize` was accepted here and never used.
-        vm.optimize_bytecode = optimize
+        if not optimize:
+            # Only when it differs from the class default (#702's budget).
+            vm.optimize_bytecode = False
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):
