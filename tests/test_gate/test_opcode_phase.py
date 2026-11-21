@@ -23,6 +23,7 @@ from tools.nodus_gate.opcode_phase import (  # noqa: E402
     _check_claims,
     _check_semantic_specs,
     _compare,
+    check_provisional_marking,
     load_dispatch_opcodes,
     parse_freeze_stability_tables,
     parse_reference_appendix,
@@ -79,7 +80,7 @@ class ParserTests(unittest.TestCase):
         # "|" shifts the classification column and loses the row.
         stable, provisional, removed = parse_freeze_stability_tables(_freeze_text())
         self.assertIn("ITER_NEXT", stable)
-        self.assertEqual(set(), provisional)
+        self.assertFalse(stable & provisional)
         self.assertEqual({"LOAD_LOCAL"}, removed)
 
     def test_emit_scan_finds_opcodes_from_both_call_and_table_positions(self):
@@ -102,10 +103,11 @@ class RealRepoTests(unittest.TestCase):
         dispatch, _ = load_dispatch_opcodes(str(_ROOT))
         inv_active, _ = parse_reference_inventory(_reference_text())
         app_active, _ = parse_reference_appendix(_reference_text())
-        stable, _, _ = parse_freeze_stability_tables(_freeze_text())
+        stable, provisional, _ = parse_freeze_stability_tables(_freeze_text())
         self.assertEqual(dispatch, inv_active)
         self.assertEqual(dispatch, app_active)
-        self.assertEqual(dispatch, stable)
+        # #969: provisional opcodes are active too; the process adds them so.
+        self.assertEqual(dispatch, stable | provisional)
 
     def test_everything_the_compiler_emits_has_a_handler(self):
         dispatch, _ = load_dispatch_opcodes(str(_ROOT))
@@ -273,10 +275,15 @@ class ClaimAnchorTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         return root
 
-    def _run(self, root: Path, *, count: int, version: int = 4) -> OpcodeResult:
+    def _run(self, root: Path, *, count: int, version: int = 4,
+             stable: int | None = None, provisional: int | None = None) -> OpcodeResult:
+        real_stable, real_provisional, _ = parse_freeze_stability_tables(_freeze_text())
         result = OpcodeResult()
         _check_claims(result, str(root), dispatch_count=count,
-                      bytecode_version=version)
+                      bytecode_version=version,
+                      stable_count=len(real_stable) if stable is None else stable,
+                      provisional_count=(len(real_provisional) if provisional is None
+                                         else provisional))
         return result
 
     def test_clean_copy_passes(self):
@@ -304,12 +311,31 @@ class ClaimAnchorTests(unittest.TestCase):
             [f.message for f in result.findings],
         )
 
+    def test_a_stale_stable_count_is_reported(self):
+        root = self._fixture_root()
+        dispatch, version = load_dispatch_opcodes(str(_ROOT))
+        stable, _, _ = parse_freeze_stability_tables(_freeze_text())
+        result = self._run(root, count=len(dispatch), version=version, stable=len(stable) + 1)
+        self.assertTrue(
+            any("wrong stable-opcode count" in f.message for f in result.findings),
+            [f.message for f in result.findings],
+        )
+
+    def test_a_stale_provisional_count_is_reported(self):
+        root = self._fixture_root()
+        dispatch, version = load_dispatch_opcodes(str(_ROOT))
+        result = self._run(root, count=len(dispatch), version=version, provisional=0)
+        self.assertTrue(
+            any("wrong provisional-opcode count" in f.message for f in result.findings),
+            [f.message for f in result.findings],
+        )
+
     def test_rewording_a_policed_claim_is_reported(self):
         root = self._fixture_root()
         target = root / "docs" / "runtime" / "INSTRUCTION_SEMANTICS.md"
         text = target.read_text(encoding="utf-8")
         target.write_text(
-            text.replace("active opcodes are stable", "opcodes are locked down"),
+            text.replace("of them stable", "of them locked down"),
             encoding="utf-8",
         )
         dispatch, version = load_dispatch_opcodes(str(_ROOT))
@@ -318,6 +344,34 @@ class ClaimAnchorTests(unittest.TestCase):
             any("no longer matches" in f.message for f in result.findings),
             [f.message for f in result.findings],
         )
+
+
+class ProvisionalMarkingTests(unittest.TestCase):
+    """#969: step 2 of the extension process, enforced."""
+
+    def test_the_repo_agrees(self):
+        _, provisional, _ = parse_freeze_stability_tables(_freeze_text())
+        result = OpcodeResult()
+        check_provisional_marking(result, provisional, _reference_text())
+        self.assertEqual([], [f.detail for f in result.findings])
+
+    def test_a_provisional_opcode_not_marked_in_the_reference_is_reported(self):
+        _, provisional, _ = parse_freeze_stability_tables(_freeze_text())
+        self.assertIn("ENTER", provisional)
+        marked = "### ENTER\n- Category: frame setup\n- Stability: provisional (#969)\n"
+        text = _reference_text().replace(marked, "### ENTER\n- Category: frame setup\n")
+        self.assertNotEqual(text, _reference_text())
+        result = OpcodeResult()
+        check_provisional_marking(result, provisional, text)
+        self.assertEqual(1, len(result.findings))
+        self.assertIn("ENTER", result.findings[0].detail)
+
+    def test_an_opcode_marked_provisional_only_in_the_reference_is_reported(self):
+        _, provisional, _ = parse_freeze_stability_tables(_freeze_text())
+        result = OpcodeResult()
+        check_provisional_marking(result, provisional - {"ENTER"}, _reference_text())
+        self.assertEqual(1, len(result.findings))
+        self.assertIn("ENTER", result.findings[0].detail)
 
 
 if __name__ == "__main__":

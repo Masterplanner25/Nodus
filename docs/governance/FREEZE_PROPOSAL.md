@@ -6,7 +6,7 @@
 
 **Date:** 2026-03-15
 **Version:** Nodus v1.0
-**BYTECODE_VERSION:** 4
+**BYTECODE_VERSION:** 5 (4 at the freeze; 5 since #969)
 
 The Nodus opcode set is hereby frozen.
 
@@ -14,9 +14,9 @@ The Nodus opcode set is hereby frozen.
 
 | Metric | At v1.0 freeze | Today |
 |---|---|---|
-| Total opcodes (active) | **47** | **49** |
+| Total opcodes (active) | **47** | **52** |
 | Stable | **47** | **49** |
-| Provisional | **0** | **0** |
+| Provisional | **0** | **3** |
 | Removed | 1 (`LOAD_LOCAL`) | 1 (`LOAD_LOCAL`) |
 | Total in opcode space | 48 | 50 |
 
@@ -92,7 +92,7 @@ Items marked ✅ were completed in v0.8.
 
 ## Opcode Stability Table
 
-48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.) `MOD` and `RESET_LOCAL_IDX` were added later and are included in the tables below — 49 active today, 50 total.
+48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.) `MOD` and `RESET_LOCAL_IDX` were added later and are included in the tables below, as are the three provisional fused instructions from #969 — 52 active today, 53 total.
 
 ### Constants / Literals
 
@@ -229,6 +229,16 @@ Items marked ✅ were completed in v0.8.
 | `YIELD` | `val →` (suspend) | **stable** | Suspends the current coroutine and returns a value to the scheduler. No YIELD_VALUE/SEND opcode needed — send-value path is implicit via `builtin_coroutine_resume()`. Promoted to stable at v1.0. |
 | `HALT` | none | **stable** | Terminates the VM execution loop. Emitted once at end of module top-level code. |
 
+### Fused Instructions (#969)
+
+Emitted by the optimizer only. `--no-opt` and a debugged run execute the stable sequence each one replaces.
+
+| Opcode | Stack effect | Classification | Notes |
+|---|---|---|---|
+| `LOAD_LOCAL_FIELD` | `→ val` | **provisional** | `LOAD_LOCAL_IDX slot; LOAD_FIELD name`. Added 2026-11-21 through the extension process (#969). |
+| `JUMP_IF_LOCAL_NE_CONST` | none | **provisional** | `LOAD_LOCAL_IDX slot; PUSH_CONST c; EQ; JUMP_IF_FALSE t`. Added 2026-11-21 (#969). |
+| `ENTER` | `args… →` | **provisional** | A function's `FRAME_SIZE n; STORE_ARG…` prologue. Added 2026-11-21 (#969). |
+
 ---
 
 ## Summary Counts
@@ -236,9 +246,9 @@ Items marked ✅ were completed in v0.8.
 | Classification | Count |
 |---|---|
 | **stable** | **49** |
-| provisional | 0 |
+| **provisional** | **3** |
 | removed | 1 (`LOAD_LOCAL`) |
-| **Total (active)** | **49** |
+| **Total (active)** | **52** |
 
 (47 at the v1.0 freeze, plus the two post-freeze additions `MOD` and
 `RESET_LOCAL_IDX` — see the amendment below.)
@@ -251,11 +261,12 @@ MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
 LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT,
 SETUP_TRY, POP_TRY, FINALLY_END, THROW = **47 stable at freeze**.)
 
-Plus two added after the freeze — `MOD` and `RESET_LOCAL_IDX` — for **49 active today**.
+Plus two added after the freeze — `MOD` and `RESET_LOCAL_IDX` — and three provisional
+fused instructions through the extension process (#969), for **52 active today**.
 See the amendment below.
 
 Totals at freeze: **47 stable**, **0 provisional**, **1 removed** = 47 active + 1 removed = 48 total.
-Totals today: **49 stable**, **0 provisional**, **1 removed** = 49 active + 1 removed = 50 total.
+Totals today: **49 stable**, **3 provisional**, **1 removed** = 52 active + 1 removed = 53 total.
 (v1.0: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted to stable. LOAD_LOCAL removed.
  BYTECODE_VERSION bumped 2→3 (LOAD_LOCAL removal) then 3→4 (finally support).
  FINALLY_END added; SETUP_TRY/POP_TRY extended. SETUP_TRY, POP_TRY, FINALLY_END, THROW
@@ -500,6 +511,27 @@ against the tree as it stood on 2026-08-07 reports both `MOD` and
 
 ---
 
+## Amendment 2026-11-21 — three provisional opcodes through the process (#969)
+
+The first additions since the freeze to go through the extension process above:
+
+1. **Proposed** in [#969](https://github.com/Masterplanner25/Nodus/issues/969), with encodings, stack effects, motivation and alternatives.
+2. **Documented** as provisional in `BYTECODE_REFERENCE.md` §3, each with a `- Stability: provisional` line.
+3. **`BYTECODE_VERSION` bumped from 4 to 5**, so an older VM refuses this bytecode with a clean version mismatch instead of `Unknown opcode`. The version is now defined once, in `nodus/runtime/module.py`, and read by the compiler and the CLI.
+4. **Handlers implemented** and registered.
+5. **This document updated:** the "Fused Instructions" table above.
+
+Steps 6 and 7 come after one full release cycle. For each opcode, promotion to `stable` is a decision to make then.
+
+**All three are emitted by the optimizer only, never by the compiler.** Their purpose is to run fewer instructions (#173): about 17–18% fewer on the self-hosted frontend.
+
+**The gate changed with them.** `nodus_gate --opcodes` had required the stability tables' *stable* set to equal the dispatch table, and had treated any provisional opcode as a finding. That contradicted step 2 of the process it enforces. It now requires:
+- stable plus provisional to equal the dispatch table;
+- every provisional opcode to be marked provisional in its `BYTECODE_REFERENCE.md` §3 entry;
+- each stable and provisional count stated in prose to match the tables.
+
+---
+
 ## Version History
 
 | Version | Event |
@@ -509,3 +541,4 @@ against the tree as it stood on 2026-08-07 reports both `MOD` and
 | v4.0.x | `MOD` added 2026-05-24 (`7520fc3`) outside the extension process. Not recorded at the time. |
 | v4.0.x | `RESET_LOCAL_IDX` added 2026-06-10 (`53da7f7`) outside the extension process. Not recorded at the time. |
 | — | 2026-08-07 doc sweep found both. Inventory corrected to 49 active; amendment added above; #366 filed. BYTECODE_VERSION deliberately left at 4. |
+| 5.x | 2026-11-21: `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER` added as **provisional** through the extension process (#969). BYTECODE_VERSION 4 → 5. 52 active. |

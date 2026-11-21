@@ -144,10 +144,32 @@ class AMissingExampleIsAFailureTests(unittest.TestCase):
 
         from nodus.cli import cli as cli_module
 
-        with contextlib.redirect_stdout(io.StringIO()):
-            with contextlib.redirect_stderr(io.StringIO()):
-                code = cli_module._run_examples()
-        self.assertEqual(code, 0)
+        # This failed intermittently on CI's Coverage step (5cae036, then PR #968)
+        # with nothing but `1 != 0`. Two things are fixed here:
+        #
+        # - **Both streams are kept**, because `_run_examples` names each failing
+        #   example and the run prints its error. They used to be discarded.
+        # - **Each example gets a generous deadline.** `run_file` applies the
+        #   CLI's 200 ms wall-clock default, and an import compiles inside that
+        #   window. Under coverage, which traces every line of the VM's Python
+        #   loop, the two heaviest examples took 75-83 ms cold on the
+        #   development machine. A slower runner can cross 200 ms. A deadline of
+        #   2 ms reproduces CI's exact symptom. The question here is whether the
+        #   examples run correctly, not whether a loaded runner beats the CLI's
+        #   default budget (#631 and #711: the harness sets the deadline).
+        from unittest import mock
+
+        real_run_file = cli_module.run_file
+
+        def run_file_with_headroom(path, **kwargs):
+            kwargs.setdefault("timeout_ms", 30_000)
+            return real_run_file(path, **kwargs)
+
+        with mock.patch.object(cli_module, "run_file", run_file_with_headroom):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    code = cli_module._run_examples()
+        self.assertEqual(code, 0, f"stderr:\n{err.getvalue()}\nstdout:\n{out.getvalue()[-2000:]}")
 
 
 if __name__ == "__main__":

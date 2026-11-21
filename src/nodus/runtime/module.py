@@ -9,7 +9,11 @@ if TYPE_CHECKING:
     from nodus.compiler.compiler import FunctionInfo
 
 
-NODUS_BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode added
+# The one definition; the compiler and the CLI read it from here.
+#   4: v1.0, finally blocks (FINALLY_END).
+#   5: #969, the optimizer's fused instructions LOAD_LOCAL_FIELD,
+#      JUMP_IF_LOCAL_NE_CONST and ENTER.
+NODUS_BYTECODE_VERSION = 5
 
 
 @dataclass
