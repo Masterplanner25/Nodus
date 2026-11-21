@@ -904,8 +904,15 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 - CLI: `nodus run script.nd`, `nodus run`, `nodus repl`, `nodus check script.nd`
 - Dependency graph inspection: `nodus deps`
 - Cache maintenance: `nodus cache clear`
-- Bytecode optimization runs automatically during compilation.
+- Bytecode optimization runs automatically during compilation. It folds constant
+  expressions by running the VM's own operation on them, so a folded result is
+  always what the VM would compute, and an expression that would fail is left to
+  fail at run time. It also drops instructions that cannot run or have no effect.
 - `nodus run --no-opt script.nd` disables the optimizer for debugging or comparison.
+  A run under the debugger is never optimized, so every statement keeps the
+  instructions a breakpoint binds to.
+- Between v1.0 and #964 the optimizer was disconnected, and `--no-opt` changed
+  nothing.
 - Service mode: `nodus serve [--port <n>] [--trace]` exposes HTTP endpoints for executing code.
   - `--worker-sweep-interval-ms <ms>` sets the background worker expiry sweep interval.
   - `POST /session` -> `{ "session": "id" }`

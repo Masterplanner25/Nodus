@@ -961,7 +961,8 @@ print(read_file("{out_path}"))
         with tempfile.TemporaryDirectory() as td:
             script = os.path.join(td, "x.nd")
             with open(script, "w", encoding="utf-8") as f:
-                f.write("print(-1)\n")
+                # A variable, not a constant: the optimizer folds `-1` (#964).
+                f.write("let a = 1\nprint(-a)\n")
             buf = io.StringIO()
             with redirect_stdout(buf):
                 exit_code = lang.main(["nodus", "run", script, "--dump-bytecode"])
@@ -1011,7 +1012,8 @@ print(read_file("{out_path}"))
         with tempfile.TemporaryDirectory() as td:
             script = os.path.join(td, "x.nd")
             with open(script, "w", encoding="utf-8") as f:
-                f.write("print(1 + 2)\n")
+                # A variable, not a constant: the optimizer folds `1 + 2` (#964).
+                f.write("let a = 1\nprint(a + 2)\n")
             buf = io.StringIO()
             with redirect_stdout(buf):
                 exit_code = lang.main(["nodus", "dis", script])

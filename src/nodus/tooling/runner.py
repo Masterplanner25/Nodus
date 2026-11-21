@@ -294,6 +294,8 @@ def run_source(
     vm.trace_errors = trace_errors
     vm.trace_id = str(uuid.uuid4())
     vm.session_id = str(uuid.uuid4())
+    # #964: read by every loader built on this VM, the resume rebuild's included.
+    vm.optimize_bytecode = optimize
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     loader = ModuleLoader(
         project_root=project_root,

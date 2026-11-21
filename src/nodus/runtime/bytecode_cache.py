@@ -73,7 +73,7 @@ def cache_path(project_root: str, module_path: str, mtime_ns: int) -> str:
     return os.path.join(cache_dir(project_root), filename)
 
 
-def load_cached_bytecode(project_root: str | None, module_path: str) -> ModuleBytecode | None:
+def load_cached_bytecode(project_root: str | None, module_path: str, *, optimized: bool = True) -> ModuleBytecode | None:
     if project_root is None or not os.path.isfile(module_path):
         return None
     mtime_ns = source_mtime_ns(module_path)
@@ -90,13 +90,24 @@ def load_cached_bytecode(project_root: str | None, module_path: str) -> ModuleBy
         return None
     if not _is_valid_cache_payload(payload, module_path, mtime_ns):
         return None
+    # #964: optimized and unoptimized compiles of one file share a key. An
+    # entry written before the optimizer was reconnected has no flag and is
+    # unoptimized, so it misses once and is rewritten.
+    if payload.get("optimized", False) is not optimized:
+        return None
     raw_unit = payload.get("module_bytecode")
     if not isinstance(raw_unit, dict):
         return None
     return ModuleBytecode.from_cache_payload(raw_unit)
 
 
-def write_cached_bytecode(project_root: str | None, module_path: str, module_bytecode: ModuleBytecode) -> str | None:
+def write_cached_bytecode(
+    project_root: str | None,
+    module_path: str,
+    module_bytecode: ModuleBytecode,
+    *,
+    optimized: bool = True,
+) -> str | None:
     if project_root is None or not os.path.isfile(module_path):
         return None
     mtime_ns = source_mtime_ns(module_path)
@@ -111,6 +122,7 @@ def write_cached_bytecode(project_root: str | None, module_path: str, module_byt
         # two programs apart when an edit lands inside the platform's mtime
         # resolution; this can.
         "source_sha256": source_sha256(module_path),
+        "optimized": optimized,
         "module_bytecode": module_bytecode.to_cache_payload(),
     }
     temp_path = final_path + ".tmp"

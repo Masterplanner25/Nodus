@@ -1286,6 +1286,8 @@ class NodusRuntime:
             max_frames=max_frames,
         )
         self.__last_vm = vm
+        # #964: `optimize` was accepted here and never used.
+        vm.optimize_bytecode = optimize
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):

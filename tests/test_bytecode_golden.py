@@ -24,8 +24,9 @@ _UPDATE = os.environ.get("NODUS_UPDATE_GOLDEN") == "1"
 
 
 def _compile_opcodes(src: str) -> list[str]:
+    # The compiler's own output: the optimizer has its tests in test_optimizer.py.
     loader = ModuleLoader(project_root=None)
-    code, _fns, _locs = loader.compile_only(src, module_name="golden.nd")
+    code, _fns, _locs = loader.compile_only(src, module_name="golden.nd", optimize=False)
     _version, instrs = normalize_bytecode(code)
     return [instr[0] for instr in instrs]
 

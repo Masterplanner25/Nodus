@@ -13,6 +13,7 @@ except ImportError:  # Python < 3.9 fallback (not expected but guard anyway)
 
 from nodus.builtins.nodus_builtins import BUILTIN_NAMES, BuiltinInfo
 from nodus.compiler.compiler import Compiler, wrap_bytecode
+from nodus.compiler.optimizer import optimize_bytecode
 from nodus.frontend.lexer import Tok, tokenize
 from nodus.frontend.parser import Parser
 from nodus.frontend.ast.ast_nodes import (
@@ -111,8 +112,12 @@ class ModuleLoader:
         debugger=None,
         import_trace_fn=None,
         statement_filter=None,
+        optimize: bool | None = None,
     ) -> None:
         self.project_root = project_root
+        #: #964: whether compiled modules go through `optimize_bytecode`. None
+        #: means decide from context; see `optimize`.
+        self._optimize = optimize
         self.host_globals = host_globals or {}
         self.host_builtins = host_builtins or {}
         self.extra_builtins = set(extra_builtins or [])
@@ -156,6 +161,24 @@ class ModuleLoader:
         # filtered compile is not the file's program and would poison the entry
         # (#521's cache-write half).
         self._statement_filter = statement_filter
+
+    @property
+    def optimize(self) -> bool:
+        """Whether this loader optimizes what it compiles (#964).
+
+        Explicit `optimize=` wins. Otherwise a debugged load is not optimized,
+        so every statement keeps the instructions a breakpoint binds to, and
+        any other load follows its VM's `optimize_bytecode`. That is how a
+        durable-coroutine rebuild, which builds its loader from the VM it
+        resumes, compiles exactly as the original run did.
+        """
+        if self._optimize is not None:
+            return self._optimize
+        if self._debugger is not None:
+            return False
+        if self._vm is not None:
+            return bool(getattr(self._vm, "optimize_bytecode", True))
+        return True
 
     def _record_unknown_type_names(self, module_id: str, items: list[dict]) -> None:
         """The single place diagnostics enter the run's list.
@@ -232,11 +255,20 @@ class ModuleLoader:
             auto_run_main=auto_run_main,
         )
 
-    def compile_only(self, source: str, *, module_name: str, base_dir: str | None = None) -> tuple[dict, dict, list]:
+    def compile_only(
+        self,
+        source: str,
+        *,
+        module_name: str,
+        base_dir: str | None = None,
+        optimize: bool | None = None,
+    ) -> tuple[dict, dict, list]:
         base_dir = base_dir or os.getcwd()
         module_id = module_name
         metadata = self._build_metadata(module_id, base_dir=base_dir, source=source)
-        bytecode, functions, code_locs = self._compile_module(metadata)
+        bytecode, functions, code_locs = self._compile_module(
+            metadata, optimize=self.optimize if optimize is None else optimize
+        )
         return bytecode, functions, code_locs
 
     def _load_module(
@@ -365,14 +397,14 @@ class ModuleLoader:
     ) -> ModuleBytecode:
         can_reuse_cache = self._cache_is_authoritative(source_path, source)
         if can_reuse_cache and source_path is not None:
-            cached = load_cached_bytecode(self.project_root, source_path)
+            cached = load_cached_bytecode(self.project_root, source_path, optimized=self.optimize)
             if cached is not None:
                 self._record_unknown_type_names(source_path, cached.unknown_type_names)
                 if not cached.module_metadata:
                     cached.module_metadata = self._serialize_module_metadata(metadata)
-                    write_cached_bytecode(self.project_root, source_path, cached)
+                    write_cached_bytecode(self.project_root, source_path, cached, optimized=self.optimize)
                 return cached
-        bytecode, functions, code_locs = self._compile_module(metadata)
+        bytecode, functions, code_locs = self._compile_module(metadata, optimize=self.optimize)
         bytecode_unit = ModuleBytecode(
             code=bytecode,
             functions=functions,
@@ -390,7 +422,9 @@ class ModuleLoader:
         # keyed by path + mtime, so storing the compile of a *different* source
         # under that key poisons it for everyone who later reads the file --
         # including `run_file`. Guarding only the read leaves that half live.
-        if source_path is not None and self._source_is_the_file(source_path, source):
+        # Only optimized compiles are stored: they are what every ordinary run
+        # reads, and a `--no-opt` or debugged run must not displace them (#964).
+        if source_path is not None and self.optimize and self._source_is_the_file(source_path, source):
             write_cached_bytecode(self.project_root, source_path, bytecode_unit)
             self._record_dependency_graph(metadata, source_path)
             self._recompiled_modules.add(os.path.abspath(source_path))
@@ -688,7 +722,7 @@ class ModuleLoader:
             self._ensure_dependency_graph()
 
             if source_path is not None and self._cache_is_authoritative(source_path, source):
-                cached = load_cached_bytecode(self.project_root, source_path)
+                cached = load_cached_bytecode(self.project_root, source_path, optimized=self.optimize)
                 if cached is not None:
                     self._record_unknown_type_names(source_path, cached.unknown_type_names)
                     cached_metadata = self._build_metadata_from_cached_bytecode(module_id, cached)
@@ -892,7 +926,7 @@ class ModuleLoader:
         self._parsed[module_id] = parsed
         return parsed
 
-    def _compile_module(self, metadata: ModuleMetadata) -> tuple[dict, dict, list]:
+    def _compile_module(self, metadata: ModuleMetadata, *, optimize: bool) -> tuple[dict, dict, list]:
         if metadata.parsed is None:
             raise LangRuntimeError("compile", f"Module metadata for {metadata.module_id} is not available for compilation", path=metadata.module_id)
         module_info = metadata.module_info
@@ -903,6 +937,8 @@ class ModuleLoader:
             builtin_names.update(self.extra_builtins)
         compiler = Compiler(module_infos={metadata.module_id: module_info}, module_defs_index={}, builtin_names=builtin_names)
         code, functions, code_locs = compiler.compile_program(metadata.parsed.ast)
+        if optimize:
+            code, functions, code_locs = optimize_bytecode(code, functions, code_locs)
         bytecode = wrap_bytecode(
             code,
             module_name=metadata.module_id,
