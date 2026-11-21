@@ -17,9 +17,6 @@
 // Not ported: the cross-statement checks that run after parsing
 // (`validate_goal_pursuits`, `validate_step_guards`) and the unknown-type-name
 // warnings. Neither changes the tree.
-//
-// No local in this file shares a name with a parameter of its function: that
-// would make the parameter read as nil (#949).
 import "./lexer.nd" as lexer
 
 let MAX_PARSE_DEPTH = 50i

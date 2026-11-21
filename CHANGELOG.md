@@ -4,6 +4,27 @@
 
 ### Fixes
 
+- **#949: a parameter keeps its argument when a later local reuses its name.**
+  This covers a `let` in a nested block, a `for` variable or a `catch` variable
+  with the parameter's name. Before, the parameter read `nil` from the start of
+  the function, silently.
+  - The compiler kept one slot per local *name*, and a later local overwrote
+    the parameter's entry. Arguments are bound through that map by name, so the
+    argument landed in the later local's slot. A parameter's name now always
+    means the parameter.
+  - **Closure capture had the same defect.** A closure capturing `x` in a
+    function that also declares an `x` inside a block captured whichever `x`
+    was declared last, so `let x = 1i; if (...) { let x = 2i }; fn() { x }`
+    returned 2. Capture now uses the slot the compiler resolved.
+  - The check that lists what a durable checkpoint would have to save also
+    walked the map by name, and skipped a slot whose name had been taken over.
+    It now walks every slot.
+
+  Not covered here, and filed as #957: `fn f(x) { let x = x + 1i }`, a read
+  before a block's own `let`, and a local closure that calls itself. Each still
+  sees `nil`, because of how a local `let` is compiled, not because of the slot
+  map.
+
 - **#952: a `return` no longer leaves values on the caller's stack.** Before,
   the caller then silently read wrong operands. Two constructs left values
   behind:

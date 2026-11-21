@@ -271,14 +271,21 @@ def _upvalue_names(closure) -> list[str]:
 
 
 def _frame_locals(frame):
-    """A frame's locals: the dict, then the slot array by name (slot wins)."""
+    """A frame's locals: the dict, then every slot of the slot array (slot wins).
+
+    Every slot, not every name (#949). The name map holds one slot per name, so
+    a local shadowed in a block -- `let x` inside an `if` that already has an
+    `x` outside it -- has a slot no name points at. Walking the map missed it,
+    and an obstacle held only there went unreported. A slot no name points at is
+    labelled by its index.
+    """
     merged = dict(getattr(frame, "locals", None) or {})
     array = getattr(frame, "locals_array", None)
-    slots = getattr(frame, "locals_name_to_slot", None)
-    if array is not None and slots:
-        for name, index in slots.items():
-            if 0 <= index < len(array):
-                merged[name] = array[index]
+    slots = getattr(frame, "locals_name_to_slot", None) or {}
+    if array is not None:
+        names = {index: name for name, index in slots.items()}
+        for index, value in enumerate(array):
+            merged[names.get(index, f"<slot {index}>")] = value
     return sorted(merged.items())
 
 
