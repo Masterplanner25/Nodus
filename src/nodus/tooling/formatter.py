@@ -465,7 +465,14 @@ def _format_stmt(stmt, indent: int, keep_trailing_comments: bool = False) -> lis
         header = f"{prefix}if ({format_expr(stmt.cond)}) {{"
         then_lines = format_block(stmt.then_branch, indent + 1, keep_trailing_comments=keep_trailing_comments)
         out = [header] + then_lines + [f"{prefix}}}"]
-        if stmt.else_branch is not None:
+        if isinstance(stmt.else_branch, If):
+            # `else if`: the parser stores the second `if` itself as the else
+            # branch, not a block holding it, so it is rendered on the `}` line
+            # (#950). It used to go to `format_block` and crash.
+            chained = _format_stmt(stmt.else_branch, indent, keep_trailing_comments)
+            out[-1] = f"{prefix}}} else {chained[0].lstrip()}"
+            out += chained[1:]
+        elif stmt.else_branch is not None:
             else_lines = format_block(stmt.else_branch, indent + 1, keep_trailing_comments=keep_trailing_comments)
             out[-1] = f"{prefix}}} else {{"
             out += else_lines + [f"{prefix}}}"]
