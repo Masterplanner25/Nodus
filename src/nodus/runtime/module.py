@@ -234,17 +234,18 @@ class NodusModule:
         # #405: authority must not be shed by crossing into a module or a tool
         # handler. A policy that applied only to the top-level VM would be
         # bypassed by `import "std:subprocess"`, which is how everyone calls it.
-        from nodus.runtime.capability import inherit_authority, inherit_host_state  # noqa: E402
+        #
+        # #868: the host wiring is inherited too. This was seven attributes
+        # copied by hand, and `agent_registry` was missing: a module function's
+        # `agent_call` resolved against the process-global registry while the
+        # same call at top level used the runtime's own.
+        #
+        # And the run's bounds. Without them every module function -- the whole
+        # stdlib included -- ran with no step budget and no deadline, and its
+        # instructions were never counted against the caller's.
+        from nodus.runtime.capability import charge_run_bounds, derive_child_vm  # noqa: E402
 
-        inherit_authority(vm, caller_vm)
-        # #868: this was seven attributes copied by hand, and the set it belongs
-        # to had grown past it. `agent_registry` was the one that mattered: a
-        # module function's `agent_call` resolved against the **process-global**
-        # registry while the same call at top level resolved against the
-        # runtime's own — #185's tenant isolation, undone by crossing a module
-        # boundary. Measured, two runtimes in one process, agents of the same
-        # name: top level answered TENANT, the module function answered GLOBAL.
-        inherit_host_state(vm, caller_vm)
+        derive_child_vm(vm, caller_vm)
         if self.host_builtins:
             vm.builtins.update(self.host_builtins)
 
@@ -274,7 +275,12 @@ class NodusModule:
             ]
 
         closure = Closure(self.functions[name], [])
-        return vm.run_closure(closure, args)
+        try:
+            return vm.run_closure(closure, args)
+        finally:
+            # In `finally`, so a call that raises is charged too: an uncharged
+            # failure would be a free retry.
+            charge_run_bounds(vm, caller_vm)
 
 
 @dataclass(frozen=True)

@@ -168,17 +168,18 @@ class EveryDerivationSiteCarriesBoth(unittest.TestCase):
         with open(os.path.join(root, relative), "r", encoding="utf-8") as handle:
             return handle.read()
 
-    def test_every_inherit_authority_call_site_also_inherits_host_state(self):
+    def test_every_site_inherits_through_the_one_helper(self):
+        # This used to compare counts of `inherit_authority(` and
+        # `inherit_host_state(` per site. Once every site called
+        # `derive_child_vm` instead, both counts were zero and the check passed
+        # on nothing. The rule it guarded is now one call that does both, plus
+        # the bounds. `test_module_call_run_bounds.py` checks that nothing calls
+        # the parts directly.
         for relative in self.SITES:
             source = self._read(relative)
-            authority = source.count("inherit_authority(")
-            host_state = source.count("inherit_host_state(")
-            # Subtract the import lines, which name both without calling either.
-            self.assertGreaterEqual(
-                host_state, authority - source.count("import inherit_authority"),
-                f"{relative} derives a VM and inherits authority but not host "
-                f"state: {authority} inherit_authority( vs {host_state} "
-                f"inherit_host_state(",
+            self.assertTrue(
+                "derive_child_vm(" in source,
+                f"{relative} derives a VM without derive_child_vm",
             )
 
     def test_no_site_hand_copies_an_attribute_the_shared_list_owns(self):

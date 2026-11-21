@@ -59,7 +59,7 @@ from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, dele
 from nodus.runtime.memory import rss_bytes
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
-from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, charge_run_bounds, emit_denied, inherit_authority, inherit_host_state, inherit_run_bounds
+from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, charge_run_bounds, derive_child_vm, emit_denied
 from nodus.vm.runtime_values import is_json_safe, payload_keys
 from nodus.runtime.scheduler import Scheduler, SleepRequest, SLEEP_KEY, CHANNEL_WAIT_KEY, CHECKPOINT_KEY, CheckpointRequest
 from nodus.runtime.durable import CHECKPOINT_NOT_DURABLE
@@ -1756,21 +1756,20 @@ class VM:
         # inheriting host_globals, memory_store, the dispatcher and the builtins
         # — and none of the sandbox: `allowed_paths` went from a jail to None and
         # `allow_subprocess` from False to True.
-        inherit_authority(child, self)
+        derive_child_vm(child, self)
         # #868: and the other half. This site used to copy `memory_store` and
         # `worker_dispatcher` by hand and stop there, so the child ran with an
         # empty `tool_registry`, a fresh `InMemoryEffectStore` in place of an
         # injected one, and no `agent_registry` — the resumed step's
         # `tool.call` returned an error *value* while the run reported every
         # step completed.
-        inherit_host_state(child, self)
         # #873: and the third thing -- how much it may consume. Without this the
         # child ran with no deadline, no step budget, no memory ceiling and the
         # *default* frame cap even where the host had set a tighter one, so a
         # guest escaped every bound by parking and resuming. The caller's usage
         # is charged back in `builtin_resume_workflow`, which is the only site
-        # that knows when the resume has finished.
-        inherit_run_bounds(child, self)
+        # that knows when the resume has finished. All three are one call,
+        # `derive_child_vm`, so no site can take two and miss the third.
         for name, info in self.builtins.items():
             child.builtins.setdefault(name, info)   # carry host builtins; core already bound to child
         return child
@@ -2742,7 +2741,7 @@ class VM:
     # The four bounds `record_instruction` checks are properties (#927). The
     # dispatch loop runs that check only at `_next_check`, a count computed from
     # the bounds, so a bound set mid-run -- by the scheduler, or through
-    # `inherit_run_bounds` -- must make the loop recompute it. Each setter resets
+    # `derive_child_vm` -- must make the loop recompute it. Each setter resets
     # `_next_check` to 0, which runs the full check on the next instruction.
 
     @property
