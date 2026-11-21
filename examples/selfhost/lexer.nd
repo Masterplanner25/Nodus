@@ -5,8 +5,8 @@
 // token for token, over every tracked .nd file in the repository.
 //
 // The Python lexer matches one compiled regular expression per token. Nodus has
-// no regex and no substring, so each token's text is built one character at a
-// time; `scan_token` reproduces the regex's alternation order by hand.
+// no regex, so `scan_token` reproduces the regex's alternation order by hand:
+// it scans by index and cuts each token's text out with `substring`.
 //
 // A token is a record: {kind, val, line, col}.
 let KEYWORDS = {"let": "LET", "print": "PRINT", "if": "IF", "else": "ELSE", "while": "WHILE", "for": "FOR", "true": "TRUE", "false": "FALSE", "fn": "FN", "return": "RETURN", "nil": "NIL", "import": "IMPORT", "as": "AS", "export": "EXPORT", "from": "FROM", "try": "TRY", "catch": "CATCH", "finally": "FINALLY", "throw": "THROW", "record": "RECORD", "in": "IN", "yield": "YIELD", "workflow": "WORKFLOW", "goal": "GOAL", "step": "STEP", "after": "AFTER", "with": "WITH", "action": "ACTION"}
@@ -54,13 +54,11 @@ fn scan_token(src, n, pos) {
         return ["WS", nil, j]
     }
     if (c == "#" || c == "/" && char_at(src, pos + 1i, n) == "/") {
-        let text = ""
         let j = pos
         while (j < n && src[j] != "\n") {
-            text = text + src[j]
             j = j + 1i
         }
-        return ["COMMENT", text, j]
+        return ["COMMENT", substring(src, pos, j), j]
     }
     if (c == "\n") {
         let j = pos + 1i
@@ -70,64 +68,53 @@ fn scan_token(src, n, pos) {
         return ["NL", nil, j]
     }
     if (is_digit(c)) {
-        let text = ""
+        // Scan by index and cut the text out once at the end, with substring.
         let j = pos
         while (is_digit(char_at(src, j, n))) {
-            text = text + src[j]
             j = j + 1i
         }
         let d = char_at(src, j, n)
         if (d == "I") {
-            return ["NUM_INT_BAD", text + "I", j + 1i]
+            return ["NUM_INT_BAD", substring(src, pos, j + 1i), j + 1i]
         }
         if (d == "i") {
             if (is_ident_start(char_at(src, j + 1i, n))) {
-                let bad = text + "i"
                 let k = j + 1i
                 while (is_ident_char(char_at(src, k, n))) {
-                    bad = bad + src[k]
                     k = k + 1i
                 }
-                return ["NUM_INT_DOUBLE", bad, k]
+                return ["NUM_INT_DOUBLE", substring(src, pos, k), k]
             }
-            return ["NUM_INT", text, j + 1i]
+            return ["NUM_INT", substring(src, pos, j), j + 1i]
         }
         if (d == "." && is_digit(char_at(src, j + 1i, n))) {
-            text = text + "."
             j = j + 1i
             while (is_digit(char_at(src, j, n))) {
-                text = text + src[j]
                 j = j + 1i
             }
         }
         let e = char_at(src, j, n)
         if (e == "e" || e == "E") {
             let k = j + 1i
-            let exponent = e
             let sign = char_at(src, k, n)
             if (sign == "+" || sign == "-") {
-                exponent = exponent + sign
                 k = k + 1i
             }
             if (is_digit(char_at(src, k, n))) {
-                text = text + exponent
                 j = k
                 while (is_digit(char_at(src, j, n))) {
-                    text = text + src[j]
                     j = j + 1i
                 }
             }
         }
-        return ["NUM", text, j]
+        return ["NUM", substring(src, pos, j), j]
     }
     if (is_ident_start(c)) {
-        let text = c
         let j = pos + 1i
         while (j < n && is_ident_char(src[j])) {
-            text = text + src[j]
             j = j + 1i
         }
-        return ["ID", text, j]
+        return ["ID", substring(src, pos, j), j]
     }
     let two = c + char_at(src, pos + 1i, n)
     if (has_key(TWO_CHAR_OPS, two)) {
@@ -182,13 +169,11 @@ fn hex_value(digits, line, col, label) {
 
 // `count` characters from `pos`, or fewer at the end of the source.
 fn take(src, n, pos, count) {
-    let text = ""
-    let k = pos
-    while (k < n && k < pos + count) {
-        text = text + src[k]
-        k = k + 1i
+    let end = pos + count
+    if (end > n) {
+        end = n
     }
-    return text
+    return substring(src, pos, end)
 }
 
 // A string literal starting at src[pos], which is `"`. Pushes its tokens onto
