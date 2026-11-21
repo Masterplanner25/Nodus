@@ -145,6 +145,7 @@ def register(vm, registry) -> None:
                     call_col=call_col,
                     call_path=call_path,
                     closure=coroutine.closure,
+                    stack_base=0,
                 )
                 if fn.local_slots:
                     coro_frame.locals_name_to_slot = fn.local_slots

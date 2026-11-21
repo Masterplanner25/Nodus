@@ -99,6 +99,7 @@ def capture_continuation(coroutine) -> dict:
             "fn_name": frame.fn_name,
             "function": _function_ref(fn, functions) if fn is not None else None,
             "return_ip": frame.return_ip,
+            "stack_base": frame.stack_base,
             "call": [frame.call_path, frame.call_line, frame.call_col],
             "locals": {name: heap.encode(value) for name, value in frame.locals.items()},
             "locals_array": (None if frame.locals_array is None
@@ -262,6 +263,9 @@ def restore_continuation(vm, data: dict):
             locals_array=(None if raw["locals_array"] is None
                           else [decode(v) for v in raw["locals_array"]]),
             locals_name_to_slot=slots,
+            # Absent from a continuation written before #952: None, the old
+            # behaviour, rather than a guess at the depth.
+            stack_base=raw.get("stack_base"),
         ))
 
     def deferred(raw):

@@ -929,12 +929,7 @@ fn parse_assignment(p) {
         }
         fail("Invalid assignment target", eq_tok)
     }
-    // An index loop, not `for pair in`: a return from inside a for-in loop
-    // leaves its iterator on the caller's stack (#952).
-    let k = 0i
-    while (k < len(COMPOUND_OPS)) {
-        let pair = COMPOUND_OPS[k]
-        k = k + 1i
+    for pair in COMPOUND_OPS {
         if (at(p, pair[0i])) {
             let op_tok = eat(p, pair[0i])
             let rhs = parse_assignment(p)

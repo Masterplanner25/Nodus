@@ -217,3 +217,12 @@ class Frame:
     # ASYNC-MOD-001 (#105): for a cross-module call frame, the caller's module
     # context to restore when this frame pops. None for ordinary frames.
     cross_module_ctx: object | None = None
+    # #952: the operand-stack depth below which everything belongs to the
+    # caller. A return cuts the stack back to it before pushing the result, so
+    # nothing the callee left there reaches the caller: a `for` loop's iterator,
+    # or a `match` operand pending when an arm returned. Without it the caller
+    # read the leftover in place of its own operand, silently. Every site that
+    # builds a Frame sets it; `tests/test_return_stack_depth.py` checks that.
+    # None only for a frame restored from a continuation written before it
+    # existed, which keeps the old behaviour.
+    stack_base: int | None = None
