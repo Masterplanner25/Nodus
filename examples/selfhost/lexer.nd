@@ -14,6 +14,10 @@ let TWO_CHAR_OPS = {"&&": true, "||": true, "==": true, "!=": true, "<=": true, 
 let ONE_CHAR_OPS = {"+": true, "-": true, "*": true, "/": true, "=": true, "%": true, "(": true, ")": true, "{": true, "}": true, "[": true, "]": true, ",": true, ";": true, ":": true, ".": true, "<": true, ">": true, "!": true, "@": true}
 let SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\"": "\"", "\\": "\\"}
 let MAX_INTERP_DEPTH = 32i
+let DIGITS = "0123456789"
+let IDENT_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789"
+// What ends a run of plain text inside a string literal.
+let STRING_STOPS = "\"\\\n"
 
 fn fail(msg, line, col) {
     throw "\(line):\(col): \(msg)"
@@ -38,60 +42,37 @@ fn is_ident_start(c) {
     return c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c == "_"
 }
 
-fn is_ident_char(c) {
-    return is_ident_start(c) || is_digit(c)
-}
-
 // One token of TOKEN_RE, starting at `pos`: [kind, text, end], or nil when
 // nothing matches. The branches are in the regex's alternation order.
 fn scan_token(src, n, pos) {
     let c = src[pos]
     if (c == " " || c == "\t") {
-        let j = pos + 1i
-        while (j < n && (src[j] == " " || src[j] == "\t")) {
-            j = j + 1i
-        }
-        return ["WS", nil, j]
+        return ["WS", nil, str_span(src, pos + 1i, " \t")]
     }
     if (c == "#" || c == "/" && char_at(src, pos + 1i, n) == "/") {
-        let j = pos
-        while (j < n && src[j] != "\n") {
-            j = j + 1i
-        }
+        let j = str_span_until(src, pos, "\n")
         return ["COMMENT", substring(src, pos, j), j]
     }
     if (c == "\n") {
-        let j = pos + 1i
-        while (j < n && src[j] == "\n") {
-            j = j + 1i
-        }
-        return ["NL", nil, j]
+        return ["NL", nil, str_span(src, pos + 1i, "\n")]
     }
     if (is_digit(c)) {
-        // Scan by index and cut the text out once at the end, with substring.
-        let j = pos
-        while (is_digit(char_at(src, j, n))) {
-            j = j + 1i
-        }
+        // Each run is found with one str_span and cut out with one substring,
+        // rather than a call per character.
+        let j = str_span(src, pos, DIGITS)
         let d = char_at(src, j, n)
         if (d == "I") {
             return ["NUM_INT_BAD", substring(src, pos, j + 1i), j + 1i]
         }
         if (d == "i") {
             if (is_ident_start(char_at(src, j + 1i, n))) {
-                let k = j + 1i
-                while (is_ident_char(char_at(src, k, n))) {
-                    k = k + 1i
-                }
+                let k = str_span(src, j + 1i, IDENT_CHARS)
                 return ["NUM_INT_DOUBLE", substring(src, pos, k), k]
             }
             return ["NUM_INT", substring(src, pos, j), j + 1i]
         }
         if (d == "." && is_digit(char_at(src, j + 1i, n))) {
-            j = j + 1i
-            while (is_digit(char_at(src, j, n))) {
-                j = j + 1i
-            }
+            j = str_span(src, j + 1i, DIGITS)
         }
         let e = char_at(src, j, n)
         if (e == "e" || e == "E") {
@@ -101,19 +82,13 @@ fn scan_token(src, n, pos) {
                 k = k + 1i
             }
             if (is_digit(char_at(src, k, n))) {
-                j = k
-                while (is_digit(char_at(src, j, n))) {
-                    j = j + 1i
-                }
+                j = str_span(src, k, DIGITS)
             }
         }
         return ["NUM", substring(src, pos, j), j]
     }
     if (is_ident_start(c)) {
-        let j = pos + 1i
-        while (j < n && is_ident_char(src[j])) {
-            j = j + 1i
-        }
+        let j = str_span(src, pos + 1i, IDENT_CHARS)
         return ["ID", substring(src, pos, j), j]
     }
     let two = c + char_at(src, pos + 1i, n)
@@ -191,6 +166,14 @@ fn lex_string(src, n, pos, start_line, start_col, depth, out) {
     let interpolated = false
     while (pos < n) {
         let ch = src[pos]
+        if (ch != "\"" && ch != "\\" && ch != "\n") {
+            // A run of plain text, taken whole.
+            let stop = str_span_until(src, pos, STRING_STOPS)
+            buf = buf + substring(src, pos, stop)
+            col = col + (stop - pos)
+            pos = stop
+            continue
+        }
         if (ch == "\"") {
             pos = pos + 1i
             col = col + 1i

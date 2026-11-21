@@ -83,6 +83,49 @@ def register(vm, registry) -> None:
             )
         return value[i:j]
 
+    def _span_args(value, start, chars, name):
+        vm.ensure_string(value, f"{name}(s, start, chars)")
+        vm.ensure_string(chars, f"{name}(s, start, chars)")
+        if isinstance(start, bool) or not (
+            isinstance(start, int) or (isinstance(start, float) and start.is_integer())
+        ):
+            vm.runtime_error("type", f"{name}(s, start, chars): start must be an integer")
+        i = int(start)
+        if i < 0 or i > len(value):
+            vm.runtime_error(
+                "index",
+                f"{name}(s, {i}, chars) is out of range for a string of length {len(value)}",
+            )
+        return i, frozenset(chars)
+
+    def builtin_str_span(value, start, chars):
+        """Where the run of characters in `chars`, from `start`, ends.
+
+        Returns an index, `start` itself when the character there is not in
+        `chars`, and the length at the end of the string. With `substring`, a
+        scanner takes a whole token in two calls rather than a call per
+        character, which is where the self-hosted lexer (#173) spent most of
+        its instructions.
+        """
+        i, members = _span_args(value, start, chars, "str_span")
+        n = len(value)
+        while i < n and value[i] in members:
+            i += 1
+        return i
+
+    def builtin_str_span_until(value, start, chars):
+        """Where the run of characters NOT in `chars`, from `start`, ends.
+
+        The complement of `str_span`: the index of the first character from
+        `start` that is in `chars`, or the length if there is none. "Up to the
+        end of the line" is `str_span_until(s, i, "\n")`.
+        """
+        i, members = _span_args(value, start, chars, "str_span_until")
+        n = len(value)
+        while i < n and value[i] not in members:
+            i += 1
+        return i
+
     def builtin_has_key(value, key):
         if not isinstance(value, dict):
             vm.runtime_error("type", "has_key(map, key) expects a map")
@@ -346,7 +389,9 @@ def register(vm, registry) -> None:
     registry.add("str_endswith", 2, builtin_endswith)
     registry.add("str_replace", 3, builtin_replace)
     registry.add("substring", (2, 3), builtin_substring)
-    registry.add("str_substring", (2, 3), builtin_substring)  # for std:strings, whose own `substring` would call itself
+    registry.add("str_substring", (2, 3), builtin_substring)
+    registry.add("str_span", 3, builtin_str_span)
+    registry.add("str_span_until", 3, builtin_str_span_until)  # for std:strings, whose own `substring` would call itself
     registry.add("has_key", 2, builtin_has_key)
     registry.add("map_has_key", 2, builtin_has_key)  # internal alias used by std:collections
     registry.add("keys", 1, builtin_keys)
