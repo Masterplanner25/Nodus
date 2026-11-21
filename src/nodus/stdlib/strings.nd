@@ -50,6 +50,18 @@ fn substring(s, start, end) {
     return str_substring(s, start, end)
 }
 
+// Where the run of characters in `chars`, starting at `start`, ends: an index,
+// for `substring`. `span("abc123", 3i, "0123456789")` is 6.
+fn span(s, start, chars) {
+    return str_span(s, start, chars)
+}
+
+// Where the run of characters NOT in `chars` ends: the index of the first
+// character from `start` that is in `chars`, or the length.
+fn span_until(s, start, chars) {
+    return str_span_until(s, start, chars)
+}
+
 fn join(items, sep) {
     let out = ""
     let i = 0

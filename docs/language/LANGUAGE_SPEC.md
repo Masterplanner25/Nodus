@@ -328,6 +328,14 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   including, `end`. `end` defaults to `len(s)`. Bounds are refused, not
   clamped: a negative bound, `start` after `end`, or `end` past the length is
   an index error, as `s[i]` is. Also available as `std:strings.substring`.
+- `str_span(s, start, chars)`: the index after the run of characters in
+  `chars` that starts at `start`, which is `start` itself if the character
+  there is not in `chars`.
+- `str_span_until(s, start, chars)`: the index of the first character from
+  `start` that is in `chars`, or `len(s)` if there is none.
+- Both return an index for `substring`: `substring(s, i, str_span(s, i, digits))`
+  takes a run of digits. `start` follows `substring`'s rule and may equal
+  `len(s)`. They are also `std:strings.span` and `std:strings.span_until`.
 - `print(x)`
 - `input(prompt)`
 - `keys(map)`

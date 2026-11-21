@@ -54,11 +54,15 @@ anyone running it.
   the per-character work. That was a prediction, and it was wrong.
   `substring` now exists, and the lexer uses it to cut each token out in one
   call. Lexing went from 76.6 to 73.1 instructions per character, about 5%.
-  The rest is the scanning loop: every character still goes through one or two
+  The rest was the scanning loop: every character went through one or two
   function calls (`char_at`, `is_digit`, `is_ident_char`) and several
-  comparisons. Cutting that would need a builtin that scans: one that returns
-  where a run of digits, identifier characters or whitespace ends, starting
-  from a position.
+  comparisons. `str_span` and `str_span_until` now find where a run ends in
+  one call. With them, each identifier, number, comment, whitespace run and
+  plain stretch of a string literal costs two builtin calls, whatever its
+  length. Lexing went from 73.1 to **47.4** instructions per character, 35%
+  fewer, and 10.8 s to 7.6 s over the corpus. What remains is per token, not
+  per character: the dispatch in `scan_token`, the keyword lookup and building
+  each token record.
 - **Parsing costs 230–310 instructions per token.** Most of that is `peek`,
   which is called again at each `at(...)` test of the same token, and the
   record-field reads for the parser state.

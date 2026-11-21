@@ -4,6 +4,23 @@
 
 ### Changed
 
+- **`str_span(s, start, chars)` and `str_span_until(s, start, chars)`: where a
+  run of characters ends.**
+  - `str_span` returns the index after the run of characters in `chars` that
+    starts at `start`.
+  - `str_span_until` returns the index of the first character in `chars` from
+    `start`, or the length if there is none.
+
+  Each returns an index for `substring`, so a scanner takes a token in two calls
+  instead of a call per character. `start` follows `substring`'s rule: an int or
+  a whole-number float, anything out of range is an index error, and it may
+  equal the length. They are also `std:strings.span` and
+  `std:strings.span_until`. `register_function` refuses both names, as for every
+  builtin; no first-party companion uses either.
+
+  The self-hosted lexer uses them. It went from 73.1 to 47.4 instructions per
+  character, 35% fewer, with every file still matching the Python lexer.
+
 - **`substring(s, start, end)`: part of a string in one call.** It returns the
   characters from `start` up to, not including, `end`, which defaults to the
   length. Until now a string could only be taken apart one character at a time,
