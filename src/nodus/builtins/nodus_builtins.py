@@ -130,6 +130,8 @@ BUILTIN_NAMES = {
     "str_startswith",
     "str_endswith",
     "str_replace",
+    "substring",
+    "str_substring",
     "has_key",
     "map_has_key",
     "print",
