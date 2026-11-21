@@ -107,6 +107,22 @@
 
 ### Tooling
 
+- **A Nodus lexer and parser written in Nodus, checked against the real ones.**
+  `examples/selfhost/` ports `nodus.frontend.lexer` and `nodus.frontend.parser`
+  in about 1,900 lines. `python -m tools.selfhost_check` runs them over every
+  tracked `.nd` file, compares the tokens and AST with the Python frontend, and
+  reports the VM instructions each phase took. They agree exactly on every file.
+  `tests/fixtures/selfhost/constructs.nd` covers the constructs the corpus never
+  uses: goals, `extern`, compensation, `each` and action expressions.
+  - The cost is about 3,500 instructions per source line: 74 per character to
+    lex and 263 per token to parse. That is about 1.3M instructions/s on CPython,
+    44× slower than the Python frontend.
+  - That puts compiling a self-hosted compiler at roughly 30–50M instructions,
+    against an earlier estimate of 100–300M.
+
+  Part of the work on #173; that issue stays open. Writing it found #949, #950,
+  #952 and #954.
+
 - **CI runs the test suite under PyPy.** A new `pypy` job runs `pytest` on
   `pypy3.11`. PyPy is 10–12× faster on long Nodus runs, and until now no CI
   job could see it break: the #702 attribute cliff cost ~9× under PyPy for

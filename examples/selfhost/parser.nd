@@ -1,0 +1,1452 @@
+// parser.nd -- the Nodus parser, written in Nodus (#173).
+//
+// A port of src/nodus/frontend/parser.py. `parse_source(text)` returns the
+// program as a list of statements. tools/selfhost_check.py holds the result to
+// the Python parser's AST, node for node, over every tracked .nd file.
+//
+// A node is a list: its class name, then its fields in the Python dataclass's
+// order, e.g. ["Bin", "+", left, right]. A field holding a pair, such as a map
+// item, is a two-element list.
+//
+// Comments are tracked as the Python parser tracks them, because a comment with
+// no statement after it in a block becomes a `Comment` node. Only the queue that
+// can produce one is kept. Comments the Python parser attaches to a node as
+// private attributes (`_comments`, `_trailing_comments`) have no field to land
+// in here.
+//
+// Not ported: the cross-statement checks that run after parsing
+// (`validate_goal_pursuits`, `validate_step_guards`) and the unknown-type-name
+// warnings. Neither changes the tree.
+//
+// No local in this file shares a name with a parameter of its function: that
+// would make the parameter read as nil (#949).
+import "./lexer.nd" as lexer
+
+let MAX_PARSE_DEPTH = 50i
+// Token kinds that only ever follow a completed value (#717). `match` followed
+// by one of these is a variable, not a match expression.
+let VALUE_FOLLOWERS = {")": true, "]": true, "}": true, ",": true, ";": true, ":": true, "SEP": true, "EOF": true, "INTERP_END": true, ".": true, "=": true, "=>": true, "->": true, "+": true, "*": true, "/": true, "%": true, "==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "&&": true, "||": true, "+=": true, "-=": true, "*=": true, "/=": true}
+let COMPOUND_OPS = [["+=", "+"], ["-=", "-"], ["*=", "*"], ["/=", "/"]]
+let COMPARISON_OPS = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true}
+let STATE_OPTION_KEYS = {"barrier": true, "durable": true, "merge": true}
+let STEP_OPTION_KEYS = {"allow_failure": true, "cache": true, "cache_key": true, "on": true, "retries": true, "retry_delay_ms": true, "returns": true, "timeout_ms": true, "worker": true, "worker_timeout_ms": true}
+let BUDGET_KEYS = {"max_iterations": true, "deadline_ms": true, "limits": true}
+let TYPE_NAMES = {"any": true, "bool": true, "float": true, "function": true, "int": true, "list": true, "map": true, "nil": true, "record": true, "string": true}
+let TOKEN_NAMES = {"ID": "identifier", "STR": "string literal", "STRING_START": "interpolated string", "NUM": "number", "NUM_INT": "integer literal", "SEP": "end of statement", "EOF": "end of file"}
+let GOAL_UNTIL_CLAUSE = "goal `until`"
+let STEP_WHEN_CLAUSE = "step guard `when`"
+
+fn fail(msg, at_tok) {
+    throw "\(at_tok.line):\(at_tok.col): \(msg)"
+}
+
+fn tok_name(kind) {
+    if (has_key(TOKEN_NAMES, kind)) {
+        return TOKEN_NAMES[kind]
+    }
+    return "'\(kind)'"
+}
+
+fn is_digit(c) {
+    return c >= "0" && c <= "9" && c != ""
+}
+
+// float(text), exactly. json_parse refuses a leading zero, which a NUM token
+// may have, so those are dropped first.
+fn parse_float(text) {
+    let n = len(text)
+    let k = 0i
+    while (k < n - 1i && text[k] == "0" && is_digit(text[k + 1i])) {
+        k = k + 1i
+    }
+    let digits = ""
+    while (k < n) {
+        digits = digits + text[k]
+        k = k + 1i
+    }
+    return math_to_float(json_parse(digits))
+}
+
+// --- the token cursor ------------------------------------------------------
+fn new_parser(toks) {
+    return record {toks: toks, i: 0i, pending: [], has_last_stmt: false, last_stmt_line: 0i, last_tok: nil, workflow_depth: 0i, step_depth: 0i, function_depth: 0i, block_depth: 0i, goal_depth: 0i, depth: 0i}
+}
+
+// A comment on the line where the last statement ended, or the line of the last
+// token consumed, trails it. Any other comment is queued for whatever follows.
+fn handle_comment(p, comment) {
+    if (p.has_last_stmt && p.last_stmt_line == comment.line) {
+        return nil
+    }
+    if (p.last_tok != nil && p.last_tok.line == comment.line) {
+        return nil
+    }
+    push(p.pending, comment.val)
+}
+
+fn peek(p) {
+    let t = p.toks[p.i]
+    while (t.kind == "COMMENT") {
+        handle_comment(p, t)
+        p.i = p.i + 1i
+        t = p.toks[p.i]
+    }
+    return t
+}
+
+fn peek_ahead(p, offset) {
+    let j = p.i
+    let seen = 0i
+    let n = len(p.toks)
+    while (j < n) {
+        let t = p.toks[j]
+        if (t.kind != "COMMENT") {
+            if (seen == offset) {
+                return t
+            }
+            seen = seen + 1i
+        }
+        j = j + 1i
+    }
+    return p.toks[n - 1i]
+}
+
+fn at(p, kind) {
+    return peek(p).kind == kind
+}
+
+fn at_word(p, word) {
+    let t = peek(p)
+    return t.kind == "ID" && t.val == word
+}
+
+fn eat(p, kind) {
+    let t = peek(p)
+    if (t.kind != kind) {
+        let got = tok_name(t.kind)
+        if (t.kind == "ID" || t.kind == "STR" || t.kind == "NUM" || t.kind == "NUM_INT") {
+            got = "\(got) ('\(t.val)')"
+        }
+        fail("Expected \(tok_name(kind)), got \(got)", t)
+    }
+    p.i = p.i + 1i
+    p.last_tok = t
+    return t
+}
+
+fn skip_seps(p) {
+    while (at(p, "SEP")) {
+        p.i = p.i + 1i
+    }
+}
+
+fn take_pending(p) {
+    let taken = p.pending
+    p.pending = []
+    return taken
+}
+
+fn bind(p, node) {
+    if (p.last_tok != nil) {
+        p.has_last_stmt = true
+        p.last_stmt_line = p.last_tok.line
+    }
+    return node
+}
+
+fn flush_comments(p, stmts) {
+    for text in p.pending {
+        push(stmts, ["Comment", text])
+    }
+    p.pending = []
+}
+
+// --- statements ------------------------------------------------------------
+fn parse_program(p) {
+    let stmts = []
+    skip_seps(p)
+    while (!at(p, "EOF")) {
+        take_pending(p)
+        push(stmts, bind(p, stmt(p)))
+        skip_seps(p)
+    }
+    flush_comments(p, stmts)
+    return stmts
+}
+
+fn name_list(p) {
+    let names = []
+    if (!at(p, "}")) {
+        push(names, eat(p, "ID").val)
+        while (at(p, ",")) {
+            eat(p, ",")
+            push(names, eat(p, "ID").val)
+        }
+    }
+    return names
+}
+
+fn ends_statement(p) {
+    return at(p, "SEP") || at(p, "}") || at(p, "EOF")
+}
+
+fn stmt(p) {
+    skip_seps(p)
+    let t = peek(p)
+    let kind = t.kind
+    if (kind == "ID" && t.val == "extern" && peek_ahead(p, 1i).kind == "ID") {
+        return extern_decl(p)
+    }
+    if (kind == "EXPORT") {
+        let export_tok = eat(p, "EXPORT")
+        if (at(p, "LET")) {
+            return let_stmt(p, true, eat(p, "LET"))
+        }
+        if (at(p, "@")) {
+            return annotated_fn_def(p, true)
+        }
+        if (at(p, "FN")) {
+            return fn_def(p, true)
+        }
+        if (at(p, "{")) {
+            eat(p, "{")
+            let names = name_list(p)
+            eat(p, "}")
+            if (at(p, "FROM")) {
+                eat(p, "FROM")
+                return ["ExportFrom", names, eat(p, "STR").val]
+            }
+            return ["ExportList", names]
+        }
+        fail("Expected 'let', 'fn', or '{' after export", export_tok)
+    }
+    if (kind == "LET") {
+        return let_stmt(p, false, eat(p, "LET"))
+    }
+    if (kind == "PRINT") {
+        eat(p, "PRINT")
+        eat(p, "(")
+        let printed = expr(p)
+        eat(p, ")")
+        return ["Print", printed]
+    }
+    if (kind == "IMPORT") {
+        eat(p, "IMPORT")
+        if (at(p, "{")) {
+            eat(p, "{")
+            let names = name_list(p)
+            eat(p, "}")
+            eat(p, "FROM")
+            return ["Import", eat(p, "STR").val, nil, names]
+        }
+        let path = eat(p, "STR").val
+        let alias = nil
+        if (at(p, "AS")) {
+            eat(p, "AS")
+            alias = eat(p, "ID").val
+        }
+        return ["Import", path, alias, nil]
+    }
+    if (kind == "IF") {
+        return if_stmt(p)
+    }
+    if (kind == "WHILE") {
+        return while_stmt(p)
+    }
+    if (kind == "FOR") {
+        if (peek_ahead(p, 1i).kind == "(") {
+            return for_stmt(p)
+        }
+        return for_each_stmt(p)
+    }
+    if (kind == "@") {
+        return annotated_fn_def(p, false)
+    }
+    if (kind == "FN") {
+        return fn_def(p, false)
+    }
+    if (kind == "WORKFLOW") {
+        return flow_def(p, eat(p, "WORKFLOW"), "WorkflowDef", "WorkflowStep", "workflow")
+    }
+    if (kind == "GOAL") {
+        return goal_def(p)
+    }
+    if (kind == "RETURN" || kind == "YIELD") {
+        eat(p, kind)
+        let tag = "Return"
+        if (kind == "YIELD") {
+            tag = "Yield"
+        }
+        if (ends_statement(p)) {
+            return [tag, nil]
+        }
+        return [tag, expr(p)]
+    }
+    if (kind == "TRY") {
+        return try_stmt(p)
+    }
+    if (kind == "THROW") {
+        eat(p, "THROW")
+        return ["Throw", expr(p)]
+    }
+    if (kind == "ID" && t.val == "checkpoint") {
+        if (p.step_depth > 0i) {
+            let cp = eat(p, "ID")
+            if (!at(p, "STR")) {
+                fail("checkpoint label must be a string", cp)
+            }
+            return ["CheckpointStmt", ["Str", eat(p, "STR").val]]
+        }
+        let following = peek_ahead(p, 1i).kind
+        if (following == "STR" || following == "STRING_START") {
+            if (p.function_depth == 0i) {
+                fail("`checkpoint` at module level records nothing", t)
+            }
+            let cp = eat(p, "ID")
+            if (following != "STR") {
+                fail("checkpoint label must be a string", cp)
+            }
+            return ["CheckpointStmt", ["Str", eat(p, "STR").val]]
+        }
+    }
+    if (kind == "{") {
+        return block(p)
+    }
+    if (kind == "ID" && (t.val == "break" || t.val == "continue")) {
+        eat(p, "ID")
+        if (t.val == "break") {
+            return ["Break"]
+        }
+        return ["Continue"]
+    }
+    return ["ExprStmt", expr(p)]
+}
+
+fn try_stmt(p) {
+    let try_tok = eat(p, "TRY")
+    let try_block = block(p)
+    skip_seps(p)
+    let catch_var = nil
+    let catch_block = nil
+    if (at(p, "CATCH")) {
+        eat(p, "CATCH")
+        if (at(p, "(")) {
+            eat(p, "(")
+            catch_var = eat(p, "ID").val
+            eat(p, ")")
+        } else {
+            catch_var = eat(p, "ID").val
+        }
+        catch_block = block(p)
+        skip_seps(p)
+    }
+    let finally_block = nil
+    if (at(p, "FINALLY")) {
+        eat(p, "FINALLY")
+        finally_block = block(p)
+    }
+    if (catch_block == nil && finally_block == nil) {
+        fail("try needs a 'catch', a 'finally', or both", try_tok)
+    }
+    return ["TryCatch", try_block, catch_var, catch_block, finally_block]
+}
+
+fn block(p) {
+    eat(p, "{")
+    let stmts = []
+    skip_seps(p)
+    p.block_depth = p.block_depth + 1i
+    while (!at(p, "}")) {
+        if (at(p, "EOF")) {
+            fail("Unterminated block", peek(p))
+        }
+        take_pending(p)
+        push(stmts, bind(p, stmt(p)))
+        skip_seps(p)
+    }
+    flush_comments(p, stmts)
+    p.block_depth = p.block_depth - 1i
+    eat(p, "}")
+    return ["Block", stmts]
+}
+
+fn if_stmt(p) {
+    eat(p, "IF")
+    eat(p, "(")
+    let cond = expr(p)
+    eat(p, ")")
+    let then_branch = block(p)
+    skip_seps(p)
+    let else_branch = nil
+    if (at(p, "ELSE")) {
+        eat(p, "ELSE")
+        skip_seps(p)
+        if (at(p, "IF")) {
+            else_branch = if_stmt(p)
+        } else {
+            else_branch = block(p)
+        }
+    }
+    return ["If", cond, then_branch, else_branch]
+}
+
+fn while_stmt(p) {
+    let while_tok = eat(p, "WHILE")
+    if (!at(p, "(")) {
+        fail("while condition must be in parentheses: while (condition) { ... }", while_tok)
+    }
+    eat(p, "(")
+    let cond = expr(p)
+    eat(p, ")")
+    return ["While", cond, block(p)]
+}
+
+fn for_stmt(p) {
+    eat(p, "FOR")
+    eat(p, "(")
+    let init = nil
+    if (!at(p, "SEP")) {
+        if (at(p, "LET")) {
+            init = let_stmt(p, false, eat(p, "LET"))
+        } else {
+            init = ["ExprStmt", expr(p)]
+        }
+    }
+    eat(p, "SEP")
+    skip_seps(p)
+    let cond = nil
+    if (!at(p, "SEP")) {
+        cond = expr(p)
+    }
+    eat(p, "SEP")
+    skip_seps(p)
+    let inc = nil
+    if (!at(p, ")")) {
+        inc = expr(p)
+    }
+    eat(p, ")")
+    return ["For", init, cond, inc, block(p)]
+}
+
+fn for_each_stmt(p) {
+    eat(p, "FOR")
+    let name = eat(p, "ID").val
+    eat(p, "IN")
+    let iterable = expr(p)
+    return ["ForEach", name, iterable, block(p)]
+}
+
+fn let_stmt(p, exported, let_tok) {
+    if (at(p, "[") || at(p, "{")) {
+        let pattern = parse_pattern(p)
+        eat(p, "=")
+        let value = expr(p)
+        if (exported) {
+            fail("Destructuring cannot be exported", let_tok)
+        }
+        return ["DestructureLet", pattern, value]
+    }
+    let name = eat(p, "ID").val
+    let type_hint = nil
+    if (at(p, ":")) {
+        eat(p, ":")
+        type_hint = parse_type_name(p)
+    }
+    eat(p, "=")
+    return ["Let", name, expr(p), type_hint, exported]
+}
+
+fn annotated_fn_def(p, exported) {
+    let annotations = []
+    while (at(p, "@")) {
+        eat(p, "@")
+        let name = eat(p, "ID").val
+        let args = nil
+        if (at(p, "(")) {
+            eat(p, "(")
+            args = []
+            if (!at(p, ")")) {
+                while (true) {
+                    let key = eat(p, "ID").val
+                    eat(p, ":")
+                    push(args, [key, expr(p)])
+                    if (!at(p, ",")) {
+                        break
+                    }
+                    eat(p, ",")
+                }
+            }
+            eat(p, ")")
+        }
+        push(annotations, ["Annotation", name, args])
+        skip_seps(p)
+    }
+    let def = fn_def(p, exported)
+    def[6i] = annotations
+    return def
+}
+
+fn param_list(p) {
+    let params = []
+    if (!at(p, ")")) {
+        push(params, parse_param(p))
+        while (at(p, ",")) {
+            eat(p, ",")
+            push(params, parse_param(p))
+        }
+    }
+    return params
+}
+
+fn function_body(p) {
+    p.function_depth = p.function_depth + 1i
+    let body = block(p)
+    p.function_depth = p.function_depth - 1i
+    return body
+}
+
+fn fn_def(p, exported) {
+    eat(p, "FN")
+    let name = eat(p, "ID").val
+    eat(p, "(")
+    let params = param_list(p)
+    eat(p, ")")
+    let return_type = nil
+    if (at(p, "->")) {
+        eat(p, "->")
+        return_type = parse_type_name(p)
+    }
+    let body = function_body(p)
+    return ["FnDef", name, params, body, return_type, exported, [], nil]
+}
+
+fn goal_def(p) {
+    let goal_tok = eat(p, "GOAL")
+    if (at(p, "ID") && peek_ahead(p, 1i).kind == "ID" && peek_ahead(p, 1i).val == "over") {
+        return goal_pursuit(p, goal_tok)
+    }
+    return flow_def(p, goal_tok, "GoalDef", "GoalStep", "goal")
+}
+
+fn goal_pursuit(p, goal_tok) {
+    let name = eat(p, "ID").val
+    eat(p, "ID")
+    let workflow_name = eat(p, "ID").val
+    eat(p, "{")
+    skip_seps(p)
+    take_pending(p)
+    let until = nil
+    let budget = nil
+    let retry_from = nil
+    while (!at(p, "}")) {
+        if (at(p, "EOF")) {
+            fail("Unterminated goal", goal_tok)
+        }
+        if (!at(p, "ID")) {
+            fail("goal body must contain `until`, `budget` or `retry from`", peek(p))
+        }
+        let clause_tok = peek(p)
+        let clause = clause_tok.val
+        if (clause == "until") {
+            if (until != nil) {
+                fail("Duplicate `until` in goal", clause_tok)
+            }
+            eat(p, "ID")
+            until = goal_predicate(p, GOAL_UNTIL_CLAUSE)
+        } else if (clause == "budget") {
+            if (budget != nil) {
+                fail("Duplicate `budget` in goal", clause_tok)
+            }
+            eat(p, "ID")
+            budget = goal_budget(p, clause_tok)
+        } else if (clause == "retry") {
+            if (retry_from != nil) {
+                fail("Duplicate `retry from` in goal", clause_tok)
+            }
+            eat(p, "ID")
+            if (!at(p, "FROM")) {
+                fail("Expected `from` after `retry`", peek(p))
+            }
+            eat(p, "FROM")
+            if (!at(p, "STR")) {
+                fail("retry from label must be a string", peek(p))
+            }
+            retry_from = ["Str", eat(p, "STR").val]
+        } else {
+            fail("Unsupported goal clause: \(clause)", clause_tok)
+        }
+        skip_seps(p)
+    }
+    eat(p, "}")
+    if (until == nil) {
+        fail("goal '\(name)' has no `until`", goal_tok)
+    }
+    if (budget == nil) {
+        fail("goal '\(name)' has no `budget`", goal_tok)
+    }
+    take_pending(p)
+    return ["GoalPursuit", name, workflow_name, until, budget, retry_from]
+}
+
+fn goal_budget(p, budget_tok) {
+    let options = parse_named_map_literal(p, BUDGET_KEYS, "Unsupported budget option")
+    let found = {}
+    for item in options[1i] {
+        found[item[0i][1i]] = item[1i]
+    }
+    let limits = nil
+    if (has_key(found, "limits")) {
+        limits = found["limits"]
+        // `{ tokens: 100000 }` is a record literal; normalised to a map.
+        if (limits[0i] == "RecordLiteral") {
+            let items = []
+            for field in limits[1i] {
+                push(items, [["Str", field[0i]], field[1i]])
+            }
+            limits = ["MapLit", items]
+        }
+        if (limits[0i] != "MapLit") {
+            fail("goal budget `limits` must be a map of meter names to numbers", budget_tok)
+        }
+        if (len(limits[1i]) == 0i) {
+            fail("goal budget `limits` is empty", budget_tok)
+        }
+    }
+    let max_iterations = nil
+    if (has_key(found, "max_iterations")) {
+        max_iterations = found["max_iterations"]
+    }
+    let deadline_ms = nil
+    if (has_key(found, "deadline_ms")) {
+        deadline_ms = found["deadline_ms"]
+    }
+    if (max_iterations == nil && deadline_ms == nil && limits == nil) {
+        fail("goal budget must set at least one of `max_iterations`, `deadline_ms` or `limits`", budget_tok)
+    }
+    return ["GoalBudget", max_iterations, deadline_ms, limits]
+}
+
+// --- the `until` / `when` predicate ----------------------------------------
+fn goal_predicate(p, clause) {
+    let node = goal_predicate_and(p, clause)
+    while (at(p, "||")) {
+        eat(p, "||")
+        node = ["PredicateOr", node, goal_predicate_and(p, clause)]
+    }
+    return node
+}
+
+fn goal_predicate_and(p, clause) {
+    let node = goal_predicate_unary(p, clause)
+    while (at(p, "&&")) {
+        eat(p, "&&")
+        node = ["PredicateAnd", node, goal_predicate_unary(p, clause)]
+    }
+    return node
+}
+
+fn goal_predicate_unary(p, clause) {
+    if (at(p, "!")) {
+        eat(p, "!")
+        return ["PredicateNot", goal_predicate_unary(p, clause)]
+    }
+    return goal_predicate_primary(p, clause)
+}
+
+fn goal_predicate_primary(p, clause) {
+    if (at(p, "(")) {
+        eat(p, "(")
+        let inner = goal_predicate(p, clause)
+        eat(p, ")")
+        return inner
+    }
+    if (at_word(p, "reached")) {
+        eat(p, "ID")
+        eat(p, "(")
+        if (!at(p, "STR")) {
+            fail("reached() takes a string literal checkpoint label", peek(p))
+        }
+        let label = eat(p, "STR").val
+        eat(p, ")")
+        return ["Reached", ["Str", label]]
+    }
+    fail("\(clause) supports reached(\"label\"), &&, || ,! and parentheses", peek(p))
+}
+
+// --- workflows and goals ---------------------------------------------------
+fn flow_def(p, flow_tok, def_tag, step_tag, label) {
+    let name = eat(p, "ID").val
+    let params = []
+    if (at(p, "(")) {
+        let paren = eat(p, "(")
+        if (at(p, ")")) {
+            fail("\(label) '\(name)' declares an empty parameter list", paren)
+        }
+        while (true) {
+            push(params, parse_param(p))
+            if (at(p, ",")) {
+                eat(p, ",")
+                continue
+            }
+            break
+        }
+        eat(p, ")")
+        let seen_params = {}
+        for param in params {
+            if (has_key(seen_params, param[1i])) {
+                fail("Duplicate parameter '\(param[1i])' in \(label) '\(name)'", flow_tok)
+            }
+            seen_params[param[1i]] = true
+        }
+    }
+    eat(p, "{")
+    let steps = []
+    let states = []
+    if (label == "workflow") {
+        p.workflow_depth = p.workflow_depth + 1i
+    } else {
+        p.goal_depth = p.goal_depth + 1i
+    }
+    skip_seps(p)
+    while (!at(p, "}")) {
+        if (at(p, "EOF")) {
+            fail("Unterminated \(label)", peek(p))
+        }
+        take_pending(p)
+        if (at_word(p, "state")) {
+            push(states, bind(p, flow_state_decl(p, label)))
+        } else if (at(p, "STEP")) {
+            push(steps, bind(p, flow_step(p, step_tag)))
+        } else {
+            fail("\(label) body must contain state declarations or steps", peek(p))
+        }
+        skip_seps(p)
+    }
+    take_pending(p)
+    eat(p, "}")
+    if (label == "workflow") {
+        p.workflow_depth = p.workflow_depth - 1i
+    } else {
+        p.goal_depth = p.goal_depth - 1i
+    }
+    if (len(steps) == 0i) {
+        fail("\(label) must contain at least one step", flow_tok)
+    }
+    let names = {}
+    for declared in steps {
+        if (has_key(names, declared[1i])) {
+            fail("Duplicate step name in \(label): \(declared[1i])", flow_tok)
+        }
+        names[declared[1i]] = true
+    }
+    for declared in steps {
+        for dep in declared[2i] {
+            if (!has_key(names, dep)) {
+                fail("Unknown \(label) dependency: \(dep)", flow_tok)
+            }
+        }
+    }
+    for param in params {
+        if (has_key(names, param[1i])) {
+            fail("\(label) '\(name)' has a parameter and a step both named '\(param[1i])'", flow_tok)
+        }
+        for cell in states {
+            if (cell[1i] == param[1i]) {
+                fail("\(label) '\(name)' has a parameter and a state cell both named '\(param[1i])'", flow_tok)
+            }
+        }
+    }
+    return [def_tag, name, states, steps, params]
+}
+
+fn flow_state_decl(p, label) {
+    let state_tok = eat(p, "ID")
+    if (p.workflow_depth <= 0i && p.goal_depth <= 0i) {
+        fail("state declarations are only valid inside \(label)s", state_tok)
+    }
+    let name = eat(p, "ID").val
+    eat(p, "=")
+    let value = expr(p)
+    let options = nil
+    if (at(p, "WITH")) {
+        eat(p, "WITH")
+        options = parse_named_map_literal(p, STATE_OPTION_KEYS, "Unsupported workflow state option")
+    }
+    return ["WorkflowStateDecl", name, value, options]
+}
+
+fn flow_step(p, step_tag) {
+    let step_tok = eat(p, "STEP")
+    let name = eat(p, "ID").val
+    let deps = []
+    let options = nil
+    let compensates = nil
+    if (at_word(p, "compensates")) {
+        let comp_tok = eat(p, "ID")
+        compensates = eat(p, "ID").val
+        if (compensates == name) {
+            fail("step '\(name)' compensates itself", comp_tok)
+        }
+    }
+    let each_var = nil
+    let each_source = nil
+    if (at_word(p, "each")) {
+        let each_tok = eat(p, "ID")
+        each_var = eat(p, "ID").val
+        if (!at(p, "IN")) {
+            fail("step `each` needs a source: `each item in producer { ... }`", each_tok)
+        }
+        eat(p, "IN")
+        each_source = eat(p, "ID").val
+        push(deps, each_source)
+        if (each_var == each_source) {
+            fail("step '\(name)' binds `each \(each_var) in \(each_source)`", each_tok)
+        }
+    }
+    if (at(p, "AFTER")) {
+        eat(p, "AFTER")
+        push(deps, eat(p, "ID").val)
+        while (at(p, ",")) {
+            eat(p, ",")
+            push(deps, eat(p, "ID").val)
+        }
+    }
+    let when = nil
+    if (at_word(p, "when")) {
+        eat(p, "ID")
+        when = goal_predicate(p, STEP_WHEN_CLAUSE)
+    }
+    if (at(p, "WITH")) {
+        eat(p, "WITH")
+        options = parse_workflow_options(p)
+    }
+    p.step_depth = p.step_depth + 1i
+    let body = block(p)
+    p.step_depth = p.step_depth - 1i
+    if (compensates != nil) {
+        if (each_var != nil) {
+            fail("compensation handler '\(name)' cannot declare `each`", step_tok)
+        }
+        if (len(deps) > 0i) {
+            fail("compensation handler '\(name)' cannot declare `after`", step_tok)
+        }
+        if (when != nil) {
+            fail("compensation handler '\(name)' cannot declare `when`", step_tok)
+        }
+        deps = [compensates]
+    }
+    return [step_tag, name, deps, body, options, when, each_var, each_source, compensates]
+}
+
+fn extern_decl(p) {
+    let extern_tok = eat(p, "ID")
+    if (p.block_depth > 0i) {
+        fail("`extern` belongs at the top of the file rather than inside a block", extern_tok)
+    }
+    let name = eat(p, "ID").val
+    eat(p, "(")
+    let params = []
+    let seen = {}
+    if (!at(p, ")")) {
+        while (true) {
+            let param_tok = peek(p)
+            let param_name = eat(p, "ID").val
+            if (has_key(seen, param_name)) {
+                fail("extern '\(name)' declares parameter '\(param_name)' twice", param_tok)
+            }
+            seen[param_name] = true
+            let type_hint = nil
+            if (at(p, ":")) {
+                eat(p, ":")
+                type_hint = known_type_name(p, "extern '\(name)'")
+            }
+            push(params, ["Param", param_name, type_hint])
+            if (!at(p, ",")) {
+                break
+            }
+            eat(p, ",")
+        }
+    }
+    eat(p, ")")
+    let return_type = nil
+    if (at(p, "->")) {
+        eat(p, "->")
+        return_type = known_type_name(p, "extern '\(name)'")
+    }
+    return ["ExternDecl", name, params, return_type]
+}
+
+fn known_type_name(p, owner) {
+    let type_tok = peek(p)
+    let declared = parse_type_name(p)
+    if (!has_key(TYPE_NAMES, declared)) {
+        fail("\(owner) names unknown type '\(declared)'", type_tok)
+    }
+    return declared
+}
+
+fn parse_workflow_options(p) {
+    let options = parse_named_map_literal(p, STEP_OPTION_KEYS, "Unsupported workflow step option")
+    for item in options[1i] {
+        if (item[0i][1i] == "returns") {
+            let declared = item[1i]
+            if (declared[0i] != "Str") {
+                fail("step `returns:` must be a type name in quotes", peek(p))
+            }
+            if (!has_key(TYPE_NAMES, declared[1i])) {
+                fail("step `returns:` names unknown type '\(declared[1i])'", peek(p))
+            }
+        }
+    }
+    return options
+}
+
+// --- expressions -----------------------------------------------------------
+fn expr(p) {
+    p.depth = p.depth + 1i
+    if (p.depth > MAX_PARSE_DEPTH) {
+        fail("Expression too deeply nested (max depth: \(MAX_PARSE_DEPTH))", peek(p))
+    }
+    let node = parse_assignment(p)
+    p.depth = p.depth - 1i
+    return node
+}
+
+fn parse_assignment(p) {
+    let target = parse_or(p)
+    if (at(p, "=")) {
+        let eq_tok = eat(p, "=")
+        let rhs = parse_assignment(p)
+        let tag = target[0i]
+        if (tag == "Var") {
+            return ["Assign", target[1i], rhs]
+        }
+        if (tag == "Index") {
+            return ["IndexAssign", target[1i], target[2i], rhs]
+        }
+        if (tag == "Attr") {
+            return ["FieldAssign", target[1i], target[2i], rhs]
+        }
+        fail("Invalid assignment target", eq_tok)
+    }
+    // An index loop, not `for pair in`: a return from inside a for-in loop
+    // leaves its iterator on the caller's stack (#952).
+    let k = 0i
+    while (k < len(COMPOUND_OPS)) {
+        let pair = COMPOUND_OPS[k]
+        k = k + 1i
+        if (at(p, pair[0i])) {
+            let op_tok = eat(p, pair[0i])
+            let rhs = parse_assignment(p)
+            let op = pair[1i]
+            let tag = target[0i]
+            if (tag == "Var") {
+                return ["CompoundAssign", target[1i], op, rhs]
+            }
+            if (tag == "Index") {
+                return ["IndexAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
+            }
+            if (tag == "Attr") {
+                return ["FieldAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
+            }
+            fail("Invalid left-hand side for '\(pair[0i])'", op_tok)
+        }
+    }
+    return target
+}
+
+fn parse_or(p) {
+    let node = parse_and(p)
+    while (at(p, "||")) {
+        eat(p, "||")
+        node = ["Bin", "||", node, parse_and(p)]
+    }
+    return node
+}
+
+fn parse_and(p) {
+    let node = parse_comparison(p)
+    while (at(p, "&&")) {
+        eat(p, "&&")
+        node = ["Bin", "&&", node, parse_comparison(p)]
+    }
+    return node
+}
+
+// The binary levels below advance with `p.i` rather than `eat`, as the Python
+// parser does, so they leave `last_tok` alone. That decides which line a later
+// comment is measured against.
+fn parse_comparison(p) {
+    let node = parse_add(p)
+    while (has_key(COMPARISON_OPS, peek(p).kind)) {
+        let op = peek(p).kind
+        p.i = p.i + 1i
+        node = ["Bin", op, node, parse_add(p)]
+    }
+    return node
+}
+
+fn parse_add(p) {
+    let node = parse_mul(p)
+    while (at(p, "+") || at(p, "-")) {
+        let op = peek(p).kind
+        p.i = p.i + 1i
+        node = ["Bin", op, node, parse_mul(p)]
+    }
+    return node
+}
+
+fn parse_mul(p) {
+    let node = parse_unary(p)
+    while (at(p, "*") || at(p, "/") || at(p, "%")) {
+        let op = peek(p).kind
+        p.i = p.i + 1i
+        node = ["Bin", op, node, parse_unary(p)]
+    }
+    return node
+}
+
+fn parse_unary(p) {
+    if (at(p, "!")) {
+        eat(p, "!")
+        return ["Unary", "!", parse_unary(p)]
+    }
+    if (at(p, "-")) {
+        eat(p, "-")
+        return ["Unary", "-", parse_unary(p)]
+    }
+    return parse_postfix(p)
+}
+
+fn parse_postfix(p) {
+    let node = parse_primary(p)
+    while (true) {
+        if (at(p, "(")) {
+            eat(p, "(")
+            let args = []
+            if (!at(p, ")")) {
+                push(args, expr(p))
+                while (at(p, ",")) {
+                    eat(p, ",")
+                    skip_seps(p)
+                    if (at(p, ")")) {
+                        break
+                    }
+                    push(args, expr(p))
+                }
+            }
+            eat(p, ")")
+            node = ["Call", node, args]
+            continue
+        }
+        if (at(p, "[")) {
+            eat(p, "[")
+            let index = expr(p)
+            eat(p, "]")
+            node = ["Index", node, index]
+            continue
+        }
+        if (at(p, ".")) {
+            eat(p, ".")
+            node = ["Attr", node, eat(p, "ID").val]
+            continue
+        }
+        break
+    }
+    return node
+}
+
+fn parse_map_literal(p) {
+    eat(p, "{")
+    let items = []
+    skip_seps(p)
+    if (!at(p, "}")) {
+        while (true) {
+            let key_start = peek(p)
+            let key = expr(p)
+            if (key[0i] == "Var" && key_start.kind == "ID") {
+                fail("bare identifier \"\(key[1i])\" cannot be a map key", key_start)
+            }
+            eat(p, ":")
+            skip_seps(p)
+            push(items, [key, expr(p)])
+            skip_seps(p)
+            if (at(p, ",")) {
+                eat(p, ",")
+                skip_seps(p)
+                if (at(p, "}")) {
+                    break
+                }
+                continue
+            }
+            break
+        }
+    }
+    eat(p, "}")
+    return ["MapLit", items]
+}
+
+fn parse_record_literal(p) {
+    eat(p, "{")
+    let fields = []
+    skip_seps(p)
+    if (!at(p, "}")) {
+        while (true) {
+            if (at(p, "STR")) {
+                fail("cannot mix quoted and bare-identifier keys in the same literal", peek(p))
+            }
+            let key = eat(p, "ID").val
+            eat(p, ":")
+            skip_seps(p)
+            push(fields, [key, expr(p)])
+            skip_seps(p)
+            if (at(p, ",")) {
+                eat(p, ",")
+                skip_seps(p)
+                if (at(p, "}")) {
+                    break
+                }
+                continue
+            }
+            break
+        }
+    }
+    eat(p, "}")
+    return ["RecordLiteral", fields]
+}
+
+fn parse_pattern(p) {
+    if (at(p, "[")) {
+        eat(p, "[")
+        let elements = []
+        if (!at(p, "]")) {
+            push(elements, parse_pattern(p))
+            while (at(p, ",")) {
+                eat(p, ",")
+                if (at(p, "]")) {
+                    break
+                }
+                push(elements, parse_pattern(p))
+            }
+        }
+        eat(p, "]")
+        return ["ListPattern", elements]
+    }
+    if (at(p, "{")) {
+        eat(p, "{")
+        let fields = []
+        skip_seps(p)
+        if (!at(p, "}")) {
+            while (true) {
+                let key = eat(p, "ID").val
+                let value = ["VarPattern", key]
+                if (at(p, ":")) {
+                    eat(p, ":")
+                    value = parse_pattern(p)
+                }
+                push(fields, [key, value])
+                skip_seps(p)
+                if (at(p, ",")) {
+                    eat(p, ",")
+                    skip_seps(p)
+                    if (at(p, "}")) {
+                        break
+                    }
+                    continue
+                }
+                break
+            }
+        }
+        eat(p, "}")
+        return ["RecordPattern", fields]
+    }
+    if (at(p, "ID")) {
+        return ["VarPattern", eat(p, "ID").val]
+    }
+    fail("Expected a destructuring pattern ('[', '{', or identifier)", peek(p))
+}
+
+// The kind of the first token after p.toks[k] that is not a separator.
+// Comments are not skipped: the Python parser looks at the raw list here.
+fn kind_after_seps(p, k) {
+    let n = len(p.toks)
+    while (k < n && p.toks[k].kind == "SEP") {
+        k = k + 1i
+    }
+    if (k < n) {
+        return [k, p.toks[k].kind]
+    }
+    return [k, nil]
+}
+
+fn parse_primary(p) {
+    let t = peek(p)
+    let kind = t.kind
+    if (kind == "ACTION") {
+        if (p.step_depth <= 0i) {
+            fail("action expressions are only valid inside steps", t)
+        }
+        return parse_action_expr(p)
+    }
+    if (kind == "NUM_INT") {
+        eat(p, "NUM_INT")
+        return ["Int", math_parse_int(t.val), t.val + "i"]
+    }
+    if (kind == "NUM") {
+        eat(p, "NUM")
+        return ["Num", parse_float(t.val), t.val]
+    }
+    if (kind == "TRUE") {
+        eat(p, "TRUE")
+        return ["Bool", true]
+    }
+    if (kind == "FALSE") {
+        eat(p, "FALSE")
+        return ["Bool", false]
+    }
+    if (kind == "NIL") {
+        eat(p, "NIL")
+        return ["Nil"]
+    }
+    if (kind == "STR") {
+        eat(p, "STR")
+        return ["Str", t.val]
+    }
+    if (kind == "STRING_START") {
+        return parse_interpolated_string(p)
+    }
+    if (kind == "ID") {
+        if (t.val == "match" && !has_key(VALUE_FOLLOWERS, peek_ahead(p, 1i).kind)) {
+            return parse_match(p)
+        }
+        eat(p, "ID")
+        return ["Var", t.val]
+    }
+    if (kind == "PRINT") {
+        eat(p, "PRINT")
+        return ["Var", "print"]
+    }
+    if (kind == "FN") {
+        eat(p, "FN")
+        eat(p, "(")
+        let params = param_list(p)
+        eat(p, ")")
+        let return_type = nil
+        if (at(p, "->")) {
+            eat(p, "->")
+            return_type = parse_type_name(p)
+        }
+        let body = function_body(p)
+        return ["FnExpr", params, body, return_type, nil]
+    }
+    if (kind == "[") {
+        eat(p, "[")
+        let items = []
+        if (!at(p, "]")) {
+            push(items, expr(p))
+            while (at(p, ",")) {
+                eat(p, ",")
+                skip_seps(p)
+                if (at(p, "]")) {
+                    break
+                }
+                push(items, expr(p))
+            }
+        }
+        eat(p, "]")
+        return ["ListLit", items]
+    }
+    if (kind == "{") {
+        // `{ID :` opens a record literal; anything else, a map.
+        let first = kind_after_seps(p, p.i + 1i)
+        let second = kind_after_seps(p, first[0i] + 1i)
+        if (first[1i] == "ID" && second[1i] == ":") {
+            return parse_record_literal(p)
+        }
+        return parse_map_literal(p)
+    }
+    if (kind == "RECORD") {
+        let record_tok = eat(p, "RECORD")
+        if (!at(p, "{")) {
+            fail("Expected '{' after record", record_tok)
+        }
+        return parse_record_literal(p)
+    }
+    if (kind == "(") {
+        eat(p, "(")
+        let inner = expr(p)
+        eat(p, ")")
+        return inner
+    }
+    if (kind == "}") {
+        fail("Unexpected '}' - check for a missing expression or extra closing brace", t)
+    }
+    if (kind == "EOF" || kind == "SEP") {
+        fail("Unexpected \(tok_name(kind)) - expression is incomplete", t)
+    }
+    fail("Unexpected \(tok_name(kind)) in expression", t)
+}
+
+fn parse_match(p) {
+    let match_tok = eat(p, "ID")
+    let scrutinee = expr(p)
+    if (!at(p, "{")) {
+        fail("match requires arms in braces: match <expr> { pattern => body, ... }", match_tok)
+    }
+    eat(p, "{")
+    skip_seps(p)
+    take_pending(p)
+    let arms = []
+    let seen_wildcard = false
+    while (!at(p, "}")) {
+        if (at(p, "EOF")) {
+            fail("Unterminated match expression: expected '}'", peek(p))
+        }
+        if (seen_wildcard) {
+            fail("the wildcard arm '_' must be the last arm in a match", peek(p))
+        }
+        let pattern = nil
+        if (at_word(p, "_")) {
+            eat(p, "ID")
+            seen_wildcard = true
+        } else {
+            pattern = expr(p)
+        }
+        if (!at(p, "=>")) {
+            fail("match arm requires '=>' between pattern and body", peek(p))
+        }
+        eat(p, "=>")
+        let body = nil
+        if (at(p, "{")) {
+            body = block(p)
+        } else if (at(p, "THROW")) {
+            eat(p, "THROW")
+            body = ["Throw", expr(p)]
+        } else if (at(p, "RETURN")) {
+            eat(p, "RETURN")
+            if (at(p, "SEP") || at(p, "}") || at(p, ",") || at(p, "EOF")) {
+                body = ["Return", nil]
+            } else {
+                body = ["Return", expr(p)]
+            }
+        } else {
+            body = expr(p)
+        }
+        push(arms, ["MatchArm", pattern, body])
+        skip_seps(p)
+        if (at(p, ",")) {
+            eat(p, ",")
+            skip_seps(p)
+        }
+    }
+    eat(p, "}")
+    if (len(arms) == 0i) {
+        fail("match must have at least one arm", match_tok)
+    }
+    return ["Match", scrutinee, arms]
+}
+
+fn parse_action_expr(p) {
+    eat(p, "ACTION")
+    let kind_tok = eat(p, "ID")
+    let action_kind = kind_tok.val
+    if (action_kind == "tool" || action_kind == "agent" || action_kind == "emit") {
+        let target = eat(p, "STR").val
+        eat(p, "WITH")
+        return ["ActionStmt", action_kind, target, parse_named_map_literal(p, nil, nil)]
+    }
+    if (action_kind == "memory_put") {
+        let target = eat(p, "STR").val
+        return ["ActionStmt", action_kind, target, expr(p)]
+    }
+    if (action_kind == "memory_get") {
+        return ["ActionStmt", action_kind, eat(p, "STR").val, nil]
+    }
+    fail("Unsupported action kind: \(action_kind)", kind_tok)
+}
+
+fn parse_interpolated_string(p) {
+    let start_tok = eat(p, "STRING_START")
+    let parts = []
+    while (!at(p, "STRING_END")) {
+        if (at(p, "STRING_LITERAL")) {
+            push(parts, ["StringLiteralPart", eat(p, "STRING_LITERAL").val])
+        } else if (at(p, "INTERP_START")) {
+            let interp_tok = eat(p, "INTERP_START")
+            if (at(p, "INTERP_END")) {
+                fail("Empty interpolation expression", interp_tok)
+            }
+            skip_seps(p)
+            let inner = expr(p)
+            skip_seps(p)
+            eat(p, "INTERP_END")
+            push(parts, ["InterpolationPart", inner])
+        } else if (at(p, "EOF")) {
+            fail("Unclosed interpolated string", start_tok)
+        } else {
+            fail("Unexpected token '\(peek(p).kind)' inside interpolated string", peek(p))
+        }
+    }
+    eat(p, "STRING_END")
+    return ["InterpolatedString", parts]
+}
+
+// `{ key: value, ... }` with bare keys, as a MapLit of Str keys. `allowed` is
+// a map of the permitted keys, or nil for any.
+fn parse_named_map_literal(p, allowed, refusal) {
+    eat(p, "{")
+    let items = []
+    skip_seps(p)
+    if (!at(p, "}")) {
+        while (true) {
+            let key_tok = eat(p, "ID")
+            if (allowed != nil && !has_key(allowed, key_tok.val)) {
+                fail("\(refusal): \(key_tok.val)", key_tok)
+            }
+            eat(p, ":")
+            skip_seps(p)
+            push(items, [["Str", key_tok.val], expr(p)])
+            skip_seps(p)
+            if (at(p, ",")) {
+                eat(p, ",")
+                skip_seps(p)
+                if (at(p, "}")) {
+                    break
+                }
+                continue
+            }
+            break
+        }
+    }
+    eat(p, "}")
+    return ["MapLit", items]
+}
+
+// `record` and `nil` are keywords, so they arrive as their own kinds.
+fn parse_type_name(p) {
+    let t = peek(p)
+    if (t.kind == "RECORD" || t.kind == "NIL") {
+        p.i = p.i + 1i
+        p.last_tok = t
+        return t.val
+    }
+    return eat(p, "ID").val
+}
+
+fn parse_param(p) {
+    let name = eat(p, "ID").val
+    let type_hint = nil
+    if (at(p, ":")) {
+        eat(p, ":")
+        type_hint = parse_type_name(p)
+    }
+    return ["Param", name, type_hint]
+}
+
+export fn parse_tokens(toks) {
+    return parse_program(new_parser(toks))
+}
+
+export fn parse_source(source) {
+    return parse_tokens(lexer.tokenize(source))
+}

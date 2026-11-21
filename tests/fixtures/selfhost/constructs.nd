@@ -1,0 +1,148 @@
+// Every construct the parser has a branch for, for tools/selfhost_check.py.
+// The tracked .nd corpus never uses goals, extern, compensation, `each`,
+// action expressions or annotations, so without this file those branches of
+// examples/selfhost/parser.nd would be unchecked. It is parsed, never run.
+import "std:strings" as strings
+import { upper, lower } from "std:strings"
+
+extern delegate(who: string, task: string) -> string
+extern ping()
+export let limit: int = 007i
+let ratio = 1.5e3
+let small = 2.5E-2
+let plain = 10
+let flags = [true, false, nil]
+let text = "tab\there \"quoted\" \\ Aα"
+let nested = "outer \(strings.upper("in \(limit) ner")) end \(ratio + 1.0)"
+let [first, [second, third]] = [1i, [2i, 3i]]
+let {name: name, inner: {depth: depth}} = record {name: "n", inner: record {depth: 1i}}
+let point = record {x: 1i, y: 2i}
+let lookup = {"a": 1i, "b" + "c": 2i, 3i: "three"}
+let trailing = [1i, 2i, 3i]
+let multiline = {"k": 1i, "j": 2i}
+let rec = record {a: 1i, b: [1i, 2i]}
+let match = 7i
+let bumped = match + 1i
+
+export fn annotated(a: int, b) -> int {
+    return a + b
+}
+
+export { annotated }
+
+fn plain_annotated() {
+    return nil
+}
+
+fn control(xs: list, m: map) -> record {
+    let total = 0i
+    for x in xs {
+        if (x == 0i) {
+            continue
+        } else if (x > 100i) {
+            break
+        } else {
+            total += x
+        }
+    }
+    for (let i = 0i; i < 3i; i = i + 1i) {
+        total -= i
+    }
+    while (total > 10i) {
+        total /= 2i
+    }
+    m["k"] = m["k"] * 2i
+    m["k"] = -m["k"]
+    rec.a = rec.a + 1i
+    rec.b[0i] = !true
+    let r = record {total: total, ok: total >= 0i && total <= 10i || false}
+    print(r)
+    return r
+    // a comment closing the block
+}
+
+fn errors() {
+    try {
+        throw "boom"
+    } catch e {
+        print(e)
+    } finally {
+        print("cleanup")
+    }
+    try {
+        throw "again"
+    } catch err {
+        print(err)
+    }
+    try {
+        print("no catch")
+    } finally {
+        print("only finally")
+    }
+}
+
+fn shapes(v) {
+    let label = match v {
+        0i => "zero",
+        1i => {
+            return "one"
+        },
+        2i => throw "two",
+        3i => return,
+        _ => "many",
+    }
+    let f = fn(a: int, b: int) -> int { return (a * b) % 3i }
+    let g = fn() {
+        yield 1i
+        yield
+    }
+    return [label, f(2i, 3i), g, print]
+}
+
+fn durable_body() {
+    checkpoint "halfway"
+    return 1i
+}
+
+workflow pipeline {
+    state count = 0i
+    state total = 0i with { merge: "sum", barrier: true }
+    step discover {
+        checkpoint "found"
+        return [1i, 2i]
+    }
+    step render each page in discover with { retries: 2i, timeout_ms: 500i, returns: "int" } {
+        total = 1i
+        return page
+    }
+    step publish after discover, render when (reached("found") && !reached("found")) || reached("found") {
+        let saved = action memory_put "key" count
+        let got = action memory_get "key"
+        let called = action tool "pkg.tool" with { input: 1i }
+        let asked = action agent "pkg.agent" with { task: "go" }
+        action emit "pkg.event" with { kind: "done" }
+        return [saved, got, called, asked]
+    }
+    step undo compensates publish {
+        return "undone"
+    }
+}
+goal old_style {
+    state seen = 0i
+    step a {
+        return 1i
+    }
+    step b after a {
+        return 2i
+    }
+}
+goal reach over pipeline {
+    until reached("found")
+    budget { max_iterations: 3i, deadline_ms: 1000i, limits: { tokens: 100i } }
+    retry from "found"
+}
+goal reach_quoted over pipeline {
+    until !reached("found")
+    budget { limits: { tokens: 5i } }
+}
+// A comment at the end of the file.
