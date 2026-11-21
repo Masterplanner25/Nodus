@@ -44,6 +44,12 @@ fn replace(s, old, new) {
     return str_replace(s, old, new)
 }
 
+// The characters from `start` up to, not including, `end` (the length if
+// omitted). Out-of-range bounds are an error, not clamped.
+fn substring(s, start, end) {
+    return str_substring(s, start, end)
+}
+
 fn join(items, sep) {
     let out = ""
     let i = 0

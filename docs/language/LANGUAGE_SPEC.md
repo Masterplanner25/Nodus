@@ -324,6 +324,10 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
 - `type(x)` — returns `"float"` for floats, `"int"` for integer values (`42i`), `"bool"`, `"string"`, `"nil"`, `"list"`, `"map"`, `"record"`, `"function"`, `"error"`. Use `rt.typeof(x)` from `std:runtime` for the internal runtime type name.
 - `str(x)`
 - `len(x)` for list/map/string
+- `substring(s, start, end)` — the characters from `start` up to, not
+  including, `end`. `end` defaults to `len(s)`. Bounds are refused, not
+  clamped: a negative bound, `start` after `end`, or `end` past the length is
+  an index error, as `s[i]` is. Also available as `std:strings.substring`.
 - `print(x)`
 - `input(prompt)`
 - `keys(map)`

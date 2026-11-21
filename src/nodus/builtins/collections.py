@@ -52,6 +52,37 @@ def register(vm, registry) -> None:
         vm.ensure_string(new, "str_replace(s, old, new)")
         return value.replace(old, new)
 
+    def _substring_bound(value, what):
+        # The same rule `s[i]` uses: an int, or a float with no fractional part.
+        if isinstance(value, bool) or not (
+            isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+        ):
+            vm.runtime_error("type", f"substring(s, start, end): {what} must be an integer")
+        return int(value)
+
+    def builtin_substring(value, start, end=None):
+        """The characters of `value` from `start` up to, not including, `end`.
+
+        `end` defaults to the length. Bounds are refused rather than clamped,
+        as `s[i]` refuses an index past the end: a negative bound, `start` after
+        `end`, or `end` past the length is an index error naming all three. An
+        empty range (`start == end`) is "".
+
+        Before this, Nodus had no way to take part of a string but one character
+        at a time. The self-hosted lexer for #173 built every token that way, and
+        it was the larger half of the frontend's cost.
+        """
+        vm.ensure_string(value, "substring(s, start, end)")
+        n = len(value)
+        i = _substring_bound(start, "start")
+        j = n if end is None else _substring_bound(end, "end")
+        if i < 0 or j > n or i > j:
+            vm.runtime_error(
+                "index",
+                f"substring(s, {i}, {j}) is out of range for a string of length {n}",
+            )
+        return value[i:j]
+
     def builtin_has_key(value, key):
         if not isinstance(value, dict):
             vm.runtime_error("type", "has_key(map, key) expects a map")
@@ -314,6 +345,8 @@ def register(vm, registry) -> None:
     registry.add("str_startswith", 2, builtin_startswith)
     registry.add("str_endswith", 2, builtin_endswith)
     registry.add("str_replace", 3, builtin_replace)
+    registry.add("substring", (2, 3), builtin_substring)
+    registry.add("str_substring", (2, 3), builtin_substring)  # for std:strings, whose own `substring` would call itself
     registry.add("has_key", 2, builtin_has_key)
     registry.add("map_has_key", 2, builtin_has_key)  # internal alias used by std:collections
     registry.add("keys", 1, builtin_keys)

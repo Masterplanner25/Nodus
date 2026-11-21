@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`substring(s, start, end)`: part of a string in one call.** It returns the
+  characters from `start` up to, not including, `end`, which defaults to the
+  length. Until now a string could only be taken apart one character at a time,
+  with `s[i]`.
+  - Bounds follow `s[i]`. Each is an int or a whole-number float. A negative
+    bound, `start` after `end`, or `end` past the length is an index error, not
+    clamped.
+  - It is also available as `std:strings.substring`, and as `str_substring`
+    for that wrapper's use.
+  - A program that defines its own `substring` keeps its own: a user definition
+    takes precedence over a builtin of the same name.
+  - **Embedders:** `register_function("substring", ...)` and
+    `register_function("str_substring", ...)` are now refused, as for every
+    builtin, because the override guard is a security boundary. No first-party
+    companion registers either name.
+
+  The self-hosted lexer (`examples/selfhost/`) now cuts each token out with it.
+  That saved only about 5%, 76.6 to 73.1 instructions per character, less than
+  was predicted: the lexer's cost is the per-character scanning loop, not
+  building the text.
+
 ### Fixes
 
 - **#954: `nodus fmt` formats every file it is given.** It used to format the

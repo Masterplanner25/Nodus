@@ -49,10 +49,16 @@ anyone running it.
 
 ## Where the instructions go
 
-- **Lexing is the larger share.** There is no substring builtin, so every token's
-  text is built one character at a time, and each character costs a function
-  call or two. A builtin that returned `src[a:b]` would remove most of the
-  per-character work.
+- **Lexing is the larger share, and the cost is the scan, not the text.** This
+  section first said that a builtin returning `src[a:b]` would remove most of
+  the per-character work. That was a prediction, and it was wrong.
+  `substring` now exists, and the lexer uses it to cut each token out in one
+  call. Lexing went from 76.6 to 73.1 instructions per character, about 5%.
+  The rest is the scanning loop: every character still goes through one or two
+  function calls (`char_at`, `is_digit`, `is_ident_char`) and several
+  comparisons. Cutting that would need a builtin that scans: one that returns
+  where a run of digits, identifier characters or whitespace ends, starting
+  from a position.
 - **Parsing costs 230–310 instructions per token.** Most of that is `peek`,
   which is called again at each `at(...)` test of the same token, and the
   record-field reads for the parser state.
