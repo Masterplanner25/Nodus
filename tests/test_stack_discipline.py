@@ -162,18 +162,22 @@ class StaticCompilerAssumptionTests(unittest.TestCase):
             bad += [f"{path.name}:{f}" for f in negative_slot_operands(instructions)]
         self.assertEqual([], bad)
 
+    # The instructions that allocate a frame's slot array. `ENTER` (#969) is the
+    # optimizer's fused `FRAME_SIZE; STORE_ARG...` and allocates it the same way.
+    FRAME_OPENERS = {"FRAME_SIZE", "ENTER"}
+
     def test_every_function_body_opens_with_frame_size(self):
-        """`FRAME_SIZE` is the first instruction of every compiled body, and the
-        VM's slot array does not exist until it runs. A body reached without one
-        would index `None`."""
+        """`FRAME_SIZE`, or the optimizer's `ENTER`, is the first instruction of
+        every compiled body, and the VM's slot array does not exist until it
+        runs. A body reached without one would index `None`."""
         bad = []
         for path, instructions, functions in self._modules():
             for name, fn in functions.items():
                 if not (0 <= fn.addr < len(instructions)):
                     bad.append(f"{path.name}: {name} addr {fn.addr} outside the code")
-                elif instructions[fn.addr][0] != "FRAME_SIZE":
+                elif instructions[fn.addr][0] not in self.FRAME_OPENERS:
                     bad.append(f"{path.name}: {name}@{fn.addr} opens with "
-                               f"{instructions[fn.addr][0]}, not FRAME_SIZE")
+                               f"{instructions[fn.addr][0]}, not FRAME_SIZE or ENTER")
         self.assertEqual([], bad)
 
 

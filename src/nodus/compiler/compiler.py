@@ -70,7 +70,7 @@ from nodus.compiler.symbol_table import SymbolTable, Symbol, Upvalue
 from nodus.orchestration.workflow_lowering import lower_goal_ast, lower_goal_pursuit_ast, lower_workflow_ast
 
 
-BYTECODE_VERSION = 4  # v1.0: finally block support; FINALLY_END opcode added
+from nodus.runtime.module import NODUS_BYTECODE_VERSION as BYTECODE_VERSION
 
 
 def wrap_bytecode(

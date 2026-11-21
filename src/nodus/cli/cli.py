@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from nodus.runtime.diagnostics import LangSyntaxError
+from nodus.runtime.module import NODUS_BYTECODE_VERSION
 from nodus.runtime.errors import format_error_payload
 from nodus.runtime.bytecode_cache import clear_bytecode_cache
 from nodus.runtime.dependency_graph import DependencyGraph
@@ -1735,7 +1736,7 @@ def _print_stability() -> int:
         "  Operators:      all arithmetic, comparison, logical operators",
         "  Imports/exports: syntax stable; module caching semantics stable",
         "  Error model:    err record shape {kind, message, payload, path, line, column}",
-        "  VM:             bytecode format (BYTECODE_VERSION=4), opcode set frozen",
+        f"  VM:             bytecode format (BYTECODE_VERSION={NODUS_BYTECODE_VERSION}), opcode set frozen",
         "  Embedding API:  NodusRuntime constructor, run_source, run_file,",
         "                  register_function, tool_registry, reset, shutdown",
         "  Standard I/O:   std:json, std:fs",

@@ -48,11 +48,11 @@ Opcode families (from VM dispatch):
 - Exceptions: `SETUP_TRY`, `POP_TRY`, `FINALLY_END`, `THROW`
 - Calls/closures: `CALL`, `CALL_VALUE`, `CALL_METHOD`, `MAKE_CLOSURE`, `RETURN`, `YIELD`
 - Collections/records: `BUILD_LIST`, `BUILD_MAP`, `BUILD_RECORD`, `BUILD_MODULE`, `INDEX`, `INDEX_SET`, `LOAD_FIELD`, `STORE_FIELD`
+- Fused, optimizer only (provisional, #969): `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER`
 
 Notes:
 - Imports are handled at compile time; the VM does not execute module load opcodes.
-- Bytecode is versioned: `BYTECODE_VERSION = 4` (frozen at v1.0). All 49 active opcodes
-  are stable. `LOAD_LOCAL` was removed in v1.0; `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`,
+- Bytecode is versioned: `BYTECODE_VERSION = 5` (frozen at v1.0). 52 active opcodes, 49 of them stable and 3 provisional (#969). `LOAD_LOCAL` was removed in v1.0; `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`,
   and `FRAME_SIZE` are the canonical slot-indexed local variable opcodes. `FINALLY_END`
   was added at v1.0 for `try/catch/finally` support.
 - Variable access fast path (v0.8.0+): `FRAME_SIZE`, `LOAD_LOCAL_IDX`, `STORE_LOCAL_IDX`.
@@ -96,8 +96,8 @@ Biggest usability gaps:
 
 ## 8. Recommended Next Moves (Aligned With Current Code)
 1. Define a runtime module object model and stop flattening imports into a single compile unit.
-2. ✅ Bytecode versioning and stable opcode reference: complete at v1.0. `BYTECODE_VERSION = 4`,
-   47 stable opcodes at the freeze and 49 today, `docs/runtime/BYTECODE_REFERENCE.md`
+2. ✅ Bytecode versioning and stable opcode reference: complete at v1.0. `BYTECODE_VERSION = 5`
+   since #969, 47 stable opcodes at the freeze, 49 stable and 3 provisional today, `docs/runtime/BYTECODE_REFERENCE.md`
    is the authoritative reference.
 3. ✅ Embedding API formalized: `NodusRuntime` in `nodus.__all__` as of v1.0.
 4. Clarify runtime service contracts (tools/agents/memory/events) with structured results.
