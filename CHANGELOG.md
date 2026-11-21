@@ -4,6 +4,34 @@
 
 ### Changed
 
+- **#969: three fused instructions, and `BYTECODE_VERSION` 5.** The optimizer
+  replaces three common sequences with one instruction each:
+  - `LOAD_LOCAL_IDX; PUSH_CONST; EQ; JUMP_IF_FALSE` with `JUMP_IF_LOCAL_NE_CONST`,
+    as in `if (t.kind == "ID")`;
+  - a function's `FRAME_SIZE; STORE_ARG…` prologue with `ENTER`;
+  - `LOAD_LOCAL_IDX; LOAD_FIELD` with `LOAD_LOCAL_FIELD`.
+
+  Each does exactly what its sequence did, so a program behaves the same; it
+  counts fewer instructions toward `max_steps`. On the self-hosted frontend
+  that is 17.7% fewer instructions and 8–9% less time; each fused instruction
+  does the work of several, so time falls by less.
+  - **These are the first opcodes added through the post-freeze extension
+    process.** They are `provisional`, and become `stable` after one release
+    cycle (`FREEZE_PROPOSAL.md`).
+  - **Only the optimizer emits them.** `--no-opt` and a debugged run execute
+    the stable sequences.
+  - **`BYTECODE_VERSION` is 5**, so an older nodus refuses this bytecode with a
+    version mismatch instead of `Unknown opcode`. The version is now defined
+    once, in `nodus/runtime/module.py`. `nodus stability` used to print a
+    hard-coded 4.
+  - **Durable coroutines (Experimental):** the program fingerprint changes, so
+    a continuation saved by an earlier version refuses to resume.
+  - **`nodus_gate --opcodes` now models the process it enforces.** It used to
+    treat any provisional opcode as a finding. Now stable plus provisional must
+    equal the dispatch table, each provisional opcode must be marked so in
+    `BYTECODE_REFERENCE.md`, and stated stable and provisional counts are
+    checked.
+
 - **`str_span(s, start, chars)` and `str_span_until(s, start, chars)`: where a
   run of characters ends.**
   - `str_span` returns the index after the run of characters in `chars` that

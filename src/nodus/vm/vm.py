@@ -4279,23 +4279,90 @@ class VM:
         self.stack.append(self.write_index(seq, idx, value))
         self.ip += 1
 
-    def _op_load_field(self, instr):
-        name = instr[1]
-        try:
-            obj = self.stack.pop()
-        except IndexError:
-            self.stack_underflow()
+    def read_field(self, obj, name: str):
+        """`obj.name`: what `LOAD_FIELD` and `LOAD_LOCAL_FIELD` both compute.
+
+        One method so the two cannot disagree about a module export, a missing
+        field, or a value that is not a record (#969).
+        """
         if isinstance(obj, NodusModule):
             if not obj.has_export(name):
                 self.runtime_error("key", f"Missing module export: {name}")
-            self.stack.append(obj.get_export(name))
-            self.ip += 1
-            return None
+            return obj.get_export(name)
         if not isinstance(obj, Record):
             self.runtime_error("type", "Field access is only supported on records")
         if name not in obj.fields:
             self.runtime_error("key", f"Missing record field: {name}")
-        self.stack.append(obj.fields[name])
+        return obj.fields[name]
+
+    def _op_load_field(self, instr):
+        try:
+            obj = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        self.stack.append(self.read_field(obj, instr[1]))
+        self.ip += 1
+
+    # --- fused instructions (#969) --------------------------------------------
+    # Emitted only by the optimizer, never by the compiler, so `--no-opt` and a
+    # debugged run execute the stable sequences each one replaces. Each must do
+    # exactly what that sequence does; tests/test_fused_opcodes.py runs every
+    # program both ways.
+
+    def _op_load_local_field(self, instr):
+        """`LOAD_LOCAL_IDX slot; LOAD_FIELD name`."""
+        value = self.frames[-1].locals_array[instr[1]]
+        cls = type(value)
+        if cls is Cell:
+            value = value.value
+        elif cls is LiveBinding:
+            value = value.get()
+        self.stack.append(self.read_field(value, instr[2]))
+        self.ip += 1
+
+    def _op_jump_if_local_ne_const(self, instr):
+        """`LOAD_LOCAL_IDX slot; PUSH_CONST const; EQ; JUMP_IF_FALSE target`."""
+        value = self.frames[-1].locals_array[instr[1]]
+        cls = type(value)
+        if cls is Cell:
+            value = value.value
+        elif cls is LiveBinding:
+            value = value.get()
+        const = instr[2]
+        if type(value) is str and type(const) is str:
+            equal = value == const
+        else:
+            equal = self._nodus_eq(value, const)
+        if equal:
+            self.ip += 1
+        else:
+            self.ip = instr[3]
+
+    def _op_enter(self, instr):
+        """`FRAME_SIZE size` then `STORE_ARG p` for each p in reversed(params)."""
+        params = instr[2]
+        if not self.frames:
+            self.runtime_error("runtime", "STORE_ARG used without a call frame")
+        frame = self.frames[-1]
+        arr = [None] * instr[1]
+        frame.locals_array = arr
+        locals_ = frame.locals
+        slots = frame.locals_name_to_slot
+        stack = self.stack
+        for name in reversed(params):
+            try:
+                value = stack.pop()
+            except IndexError:
+                self.stack_underflow()
+            existing = locals_.get(name)
+            if type(existing) is Cell:
+                existing.value = value
+            else:
+                locals_[name] = value
+            if slots is not None:
+                slot = slots.get(name)
+                if slot is not None:
+                    arr[slot] = value
         self.ip += 1
 
     def _op_store_field(self, instr):
@@ -5114,6 +5181,10 @@ class VM:
             "INDEX":        self._op_index,
             "INDEX_SET":    self._op_index_set,
             "LOAD_FIELD":   self._op_load_field,
+            # #969: fused instructions, emitted only by the optimizer.
+            "LOAD_LOCAL_FIELD":       self._op_load_local_field,
+            "JUMP_IF_LOCAL_NE_CONST": self._op_jump_if_local_ne_const,
+            "ENTER":                  self._op_enter,
             "STORE_FIELD":  self._op_store_field,
             "CALL":         self._op_call,
             "CALL_VALUE":   self._op_call_value,

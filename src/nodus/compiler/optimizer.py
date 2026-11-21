@@ -37,7 +37,19 @@ FOLDABLE_UNARY = {"NEG", "NOT", "TO_BOOL"}
 # map would be one object shared by every execution of the instruction.
 _SCALARS = (bool, int, float, str, type(None))
 
-TARGETED_OPS = {"JUMP", "JUMP_IF_FALSE", "JUMP_IF_TRUE", "ITER_NEXT", "SETUP_TRY"}
+# Every opcode that names a code address, and which operands are addresses.
+# The one place that says so: reachability, jump targets, jump threading and
+# remapping all read this table. SETUP_TRY's second address is its `finally`
+# block, and 0 or None there means it has none.
+ADDRESS_OPERANDS: dict[str, tuple[int, ...]] = {
+    "JUMP": (1,),
+    "JUMP_IF_FALSE": (1,),
+    "JUMP_IF_TRUE": (1,),
+    "ITER_NEXT": (1,),
+    "SETUP_TRY": (1, 2),
+    "JUMP_IF_LOCAL_NE_CONST": (3,),  # #969
+}
+TARGETED_OPS = frozenset(ADDRESS_OPERANDS)
 TERMINATORS = {"RETURN", "THROW", "HALT"}
 
 
@@ -99,7 +111,83 @@ def optimize_bytecode(
             current_locs = reachable_locs
             changed = True
 
-    return current_code, current_functions, current_locs
+    return fuse_instructions(current_code, current_functions, current_locs)
+
+
+# --- fused instructions (#969) ------------------------------------------------
+
+def _fusion_at(code: list[tuple], i: int, targets: set[int]) -> tuple[tuple, int, int] | None:
+    """(fused instruction, instructions it replaces, which one's location) or None.
+
+    The first instruction of a sequence may be a jump target: the fused one
+    takes its address. None of the others may be, or a jump into the middle
+    would land on something that no longer exists.
+    """
+    n = len(code)
+
+    def free(k: int) -> bool:
+        return all(j < n and j not in targets for j in range(i + 1, i + k))
+
+    instr = code[i]
+    op = instr[0]
+    if op == "LOAD_LOCAL_IDX" and i + 1 < n:
+        nxt = code[i + 1]
+        if (nxt[0] == "PUSH_CONST" and i + 3 < n and free(4)
+                and code[i + 2][0] == "EQ" and code[i + 3][0] == "JUMP_IF_FALSE"
+                and isinstance(nxt[1], _SCALARS)):
+            return ("JUMP_IF_LOCAL_NE_CONST", instr[1], nxt[1], code[i + 3][1]), 4, i + 2
+        if nxt[0] == "LOAD_FIELD" and free(2):
+            # The field read is what can fail, so its location is kept.
+            return ("LOAD_LOCAL_FIELD", instr[1], nxt[1]), 2, i + 1
+    if op == "FRAME_SIZE":
+        names = []
+        j = i + 1
+        while j < n and code[j][0] == "STORE_ARG" and j not in targets:
+            names.append(code[j][1])
+            j += 1
+        if names:
+            # STORE_ARG binds the last parameter first; ENTER lists them in
+            # declaration order.
+            return ("ENTER", instr[1], tuple(reversed(names))), 1 + len(names), i
+    return None
+
+
+def fuse_instructions(
+    code: list[tuple],
+    functions: dict[str, FunctionInfo],
+    code_locs: Locs,
+) -> tuple[list[tuple], dict[str, FunctionInfo], Locs]:
+    """Replace three common sequences with one instruction each (#969).
+
+    `LOAD_LOCAL_IDX; PUSH_CONST; EQ; JUMP_IF_FALSE` becomes
+    `JUMP_IF_LOCAL_NE_CONST`; `LOAD_LOCAL_IDX; LOAD_FIELD` becomes
+    `LOAD_LOCAL_FIELD`; a function's `FRAME_SIZE; STORE_ARG...` becomes
+    `ENTER`. Each handler does exactly what its sequence did, so the only
+    difference a program can see is `instructions_executed`.
+    """
+    targets = collect_jump_targets(code)
+    out_code: list[tuple] = []
+    out_locs: Locs = []
+    mapping: dict[int, int] = {}
+    changed = False
+    i = 0
+    while i < len(code):
+        fused = _fusion_at(code, i, targets)
+        if fused is not None:
+            instr, width, loc_index = fused
+            mapping[i] = len(out_code)
+            out_code.append(instr)
+            out_locs.append(code_locs[loc_index])
+            changed = True
+            i += width
+            continue
+        mapping[i] = len(out_code)
+        out_code.append(code[i])
+        out_locs.append(code_locs[i])
+        i += 1
+    if not changed:
+        return code, functions, code_locs
+    return remap_compacted(out_code, functions, out_locs, mapping, len(code))
 
 
 def drop_uncaptured_resets(
@@ -308,19 +396,20 @@ def remove_useless_stack_ops(
 # --- jumps and reachability ---------------------------------------------------
 
 def simplify_jumps(code: list[tuple]) -> tuple[list[tuple], bool]:
-    """Point a jump at the end of a chain of unconditional jumps."""
+    """Point each address at the end of a chain of unconditional jumps."""
     out = list(code)
     changed = False
     for i, instr in enumerate(out):
-        op = instr[0]
-        if op not in TARGETED_OPS:
+        positions = _address_positions(instr)
+        if not positions:
             continue
-        target = instr[1]
-        final_target = resolve_jump_target(out, target)
-        if final_target == target:
-            continue
-        out[i] = (op, final_target, *instr[2:])
-        changed = True
+        operands = list(instr)
+        for pos in positions:
+            final_target = resolve_jump_target(out, operands[pos])
+            if final_target != operands[pos]:
+                operands[pos] = final_target
+                changed = True
+        out[i] = tuple(operands)
     return out, changed
 
 
@@ -377,16 +466,24 @@ def compute_reachable(code: list[tuple], functions: dict[str, FunctionInfo]) -> 
     return reachable
 
 
+def _address_positions(instr: tuple) -> list[int]:
+    """The operand positions in `instr` that hold a code address."""
+    positions = ADDRESS_OPERANDS.get(instr[0])
+    if not positions:
+        return []
+    out = []
+    for pos in positions:
+        if pos >= len(instr) or instr[pos] is None:
+            continue
+        if instr[0] == "SETUP_TRY" and pos == 2 and not instr[pos]:
+            continue  # no `finally` block
+        out.append(pos)
+    return out
+
+
 def _addresses(instr: tuple) -> list[int]:
     """Every code address an instruction names."""
-    op = instr[0]
-    if op not in TARGETED_OPS:
-        return []
-    out = [instr[1]]
-    # SETUP_TRY's second operand is its `finally` block; 0 or None means none.
-    if op == "SETUP_TRY" and len(instr) > 2 and instr[2]:
-        out.append(instr[2])
-    return out
+    return [instr[pos] for pos in _address_positions(instr)]
 
 
 def next_ips(ip: int, instr: tuple, code_len: int) -> list[int]:
@@ -411,12 +508,13 @@ def collect_jump_targets(code: list[tuple]) -> set[int]:
 # --- remapping ----------------------------------------------------------------
 
 def remap_instruction(instr: tuple, mapping: dict[int, int]) -> tuple:
-    op = instr[0]
-    if op not in TARGETED_OPS:
+    positions = _address_positions(instr)
+    if not positions:
         return instr
-    if op == "SETUP_TRY" and len(instr) > 2 and instr[2]:
-        return (op, mapping[instr[1]], mapping[instr[2]], *instr[3:])
-    return (op, mapping[instr[1]], *instr[2:])
+    operands = list(instr)
+    for pos in positions:
+        operands[pos] = mapping[operands[pos]]
+    return tuple(operands)
 
 
 def function_addrs(functions: dict[str, FunctionInfo]) -> dict[str, int]:

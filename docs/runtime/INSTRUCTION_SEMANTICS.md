@@ -3,7 +3,7 @@
 **Last reviewed:** 2026-09-07, against 5.12.0
 
 > The opcode semantics in this document are frozen at v1.0 (2026-03-15).
-> All 49 active opcodes are stable. See `docs/governance/FREEZE_PROPOSAL.md`
+> 52 active opcodes, 49 of them stable and 3 provisional (#969). See `docs/governance/FREEZE_PROPOSAL.md`
 > for the freeze declaration and post-freeze extension process.
 
 This document defines the precise behavior of each Nodus bytecode instruction.
@@ -725,6 +725,46 @@ module-export semantics in `LOAD_FIELD` and `CALL_METHOD` (i.e. only exported na
 are accessible; missing exports raise a "key" error rather than a generic field
 error). This opcode is emitted by the module loader pipeline to construct the
 runtime module value; it is not emitted directly from user-authored Nodus source.
+
+## 17. Fused Instructions (provisional, #969)
+
+The optimizer emits these in place of common sequences; the compiler never does.
+Each is defined as the sequence it replaces, and `--no-opt` runs that sequence.
+
+### LOAD_LOCAL_FIELD
+
+```
+[] → [value]
+```
+
+Operands: `slot` (int), `name` (str). Operation: `LOAD_LOCAL_IDX slot` then
+`LOAD_FIELD name`. The field read goes through `VM.read_field`, the method
+`LOAD_FIELD` uses, so its errors are the same.
+
+### JUMP_IF_LOCAL_NE_CONST
+
+```
+[] → []
+```
+
+Operands: `slot` (int), `const` (scalar), `target` (address). Operation:
+`LOAD_LOCAL_IDX slot; PUSH_CONST const; EQ; JUMP_IF_FALSE target`:
+
+```
+if not nodus_eq(local[slot], const):
+    ip = target
+else:
+    ip += 1
+```
+
+### ENTER
+
+```
+[arg_1 ... arg_k] → []
+```
+
+Operands: `size` (int), `params` (tuple of names, declaration order). Operation:
+`FRAME_SIZE size`, then `STORE_ARG p` for each `p` in `reversed(params)`.
 
 ## Final Principle
 

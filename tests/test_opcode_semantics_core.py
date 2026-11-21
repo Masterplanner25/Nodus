@@ -205,9 +205,15 @@ class DispatchCoverageTests(_SpecCase):
     def test_this_module_and_phase_2_together_cover_the_whole_dispatch_table(self):
         """The point of phase 4. If an opcode is added, this fails until it is
         specified — which is the same rule `nodus_gate --opcodes` enforces from
-        the outside, asserted here too so the suite alone is sufficient."""
-        from tests import test_opcode_semantics as phase2  # noqa: PLC0415
-        covered = set(SPECIFIED) | set(phase2.SPECIFIED)
+        the outside, asserted here too so the suite alone is sufficient.
+
+        Every `test_opcode_semantics*.py` module counts, found by glob as the gate
+        finds them (#969 added a third, for the fused instructions)."""
+        import importlib  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+        covered: set[str] = set()
+        for path in sorted(Path(__file__).parent.glob("test_opcode_semantics*.py")):
+            covered |= set(importlib.import_module(f"tests.{path.stem}").SPECIFIED)
         dispatched = set(bare_vm()._dispatch)
         self.assertEqual(set(), dispatched - covered,
                          "dispatched opcode(s) with no semantic spec")
