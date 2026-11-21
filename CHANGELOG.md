@@ -4,6 +4,29 @@
 
 ### Fixes
 
+- **#952: a `return` no longer leaves values on the caller's stack.** Before,
+  the caller then silently read wrong operands. Two constructs left values
+  behind:
+  - a `for ... in` loop, which keeps its iterator on the stack;
+  - a `match` used as an operand, whose operand is pending while an arm runs.
+
+  So `[p, find(xs), q]`, where `find` returned from inside a loop, gave
+  `[<Iterator>, 2, "q"]`. A call used as a statement changed no visible value,
+  but each one left an iterator on the stack. Inside a coroutine, the shifted
+  stack could also produce an unrelated error, such as `Value is not iterable`
+  reported against another module's source. Present in 5.16.0 and earlier.
+
+  Each call frame now records where the caller's part of the stack ends, and
+  every return cuts back to it. Durable-coroutine continuations carry the new
+  field. One written before it restores with the old behaviour.
+
+  **A second defect, fixed by the same change.** A return held back by
+  `finally` was completed by a separate copy of the return logic. That copy
+  never restored a cross-module frame's module context. Inside a coroutine,
+  where a module function runs on the caller's VM, a module function that
+  returned through `finally` left the caller running the module's bytecode.
+  Both returns now go through one method.
+
 - **Code in an imported module now runs within the caller's step limit and
   deadline.** That includes every stdlib module. Each call to a module function
   runs on a child VM. That child inherited the caller's authority and host

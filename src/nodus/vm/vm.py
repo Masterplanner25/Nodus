@@ -3554,6 +3554,9 @@ class VM:
             call_col=call_col,
             call_path=call_path,
             closure=callee,
+            # The arguments are on the stack and belong to the callee, which
+            # stores them with STORE_ARG; everything below them is the caller's.
+            stack_base=len(self.stack) - arg_count,
         )
         if fn.local_slots:
             frame.locals_name_to_slot = fn.local_slots
@@ -3615,6 +3618,7 @@ class VM:
                 call_col=None,
                 call_path=None,
                 closure=closure,
+                stack_base=0,
             )
             if fn.local_slots:
                 run_frame.locals_name_to_slot = fn.local_slots
@@ -4124,20 +4128,7 @@ class VM:
             self._deferred_return = _DEFERRED_NONE
             if not self.frames:
                 self.runtime_error("runtime", "FINALLY_END deferred return outside function")
-            frame = self.frames.pop()
-            self._profiler_exit_frame(frame)
-            self.record_vm_return(self.display_name(frame.fn_name))
-            while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
-                self.handler_stack.pop()
-            if self.current_coroutine is not None and frame.return_ip is None:
-                self.current_coroutine.state = "finished"
-                self.current_coroutine.ip = None
-                self.current_coroutine.stack = []
-                self.current_coroutine.frames = []
-                self.current_coroutine.handler_stack = []
-                return ("return", ret_value)
-            self.stack.append(ret_value)
-            self.ip = frame.return_ip
+            return self._complete_return(self.frames.pop(), ret_value)
         else:
             self.ip += 1
 
@@ -4323,6 +4314,7 @@ class VM:
                 call_col=call_col,
                 call_path=call_path,
                 closure=None,
+                stack_base=len(self.stack) - arg_count,
             )
             if fn.local_slots:
                 frame.locals_name_to_slot = fn.local_slots
@@ -4480,6 +4472,8 @@ class VM:
             call_col=None,
             call_path=None,
             closure=closure,
+            # The arguments are pushed below, after the frame is built.
+            stack_base=len(self.stack),
         )
         frame.cross_module_ctx = saved
         if fn_info.local_slots:
@@ -4843,6 +4837,8 @@ class VM:
             call_col=None,
             call_path=None,
             closure=closure,
+            # The arguments are pushed below, after the frame is built.
+            stack_base=len(self.stack),
         )
         frame.cross_module_ctx = saved
         if fn_info.local_slots:
@@ -4961,7 +4957,20 @@ class VM:
             self._deferred_return_depth = len(self.handler_stack)
             self.ip = finally_ip
             return
-        frame = self.frames.pop()
+        return self._complete_return(self.frames.pop(), ret_value)
+
+    def _complete_return(self, frame, ret_value):
+        """Leave *frame* and hand *ret_value* to its caller.
+
+        One method for both ways a function returns: RETURN, and a return held
+        back by a `finally` and completed at FINALLY_END. They were two copies,
+        and had drifted: the deferred one never restored a cross-module frame's
+        module context.
+
+        #952: the stack is cut back to `frame.stack_base` before the result is
+        pushed. Neither copy did this, so whatever the callee had left on the
+        stack stayed there for the caller to read as its own operand.
+        """
         if frame.cross_module_ctx is not None:
             self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore caller module context
         self._profiler_exit_frame(frame)
@@ -4975,8 +4984,11 @@ class VM:
             self.current_coroutine.frames = []
             self.current_coroutine.handler_stack = []
             return ("return", ret_value)
+        if frame.stack_base is not None:
+            del self.stack[frame.stack_base:]
         self.stack.append(ret_value)
         self.ip = frame.return_ip
+        return None
 
     def _op_halt(self, instr):
         return ("halt", None)
