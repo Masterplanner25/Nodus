@@ -255,3 +255,35 @@ narrower or safer than the plan, not looser.
 2. **The CI cost is accepted.** The `compiled` job runs the whole suite with
    `NODUS_COMPILE_FUNCTIONS=always`.
 3. **The thresholds are measured, not assumed.** See "Thresholds, measured".
+
+## Thresholds, measured (2026-11-21)
+
+Measured on CPython 3.11 on the development machine, best of 3.
+
+**When to compile.** Compiling costs about 1.8 ms per function; the 43 functions
+the self-hosted frontend runs took 76 ms in all. A call-count threshold alone
+lost most of the gain:
+
+| Threshold | Frontend, `parser.nd` | Functions compiled |
+|---|---|---|
+| interpreted | 2.30 s | 0 |
+| 0 (compile on the first call) | 1.24 s | 43 |
+| 8, 32, 128 or 512 calls | 1.72–1.82 s | 38–39 |
+
+The reason: `tokenize` and `parse_program` are called once per file, but hold
+the program's hottest loops, and a call count never reaches them. So **a
+function with a loop (a backward jump) compiles on its first call**, and any
+other after 32 calls. With that rule every threshold measured 1.23–1.29 s.
+
+Short programs pay nothing:
+- `stdlib_demo` and `features_demo` compile nothing;
+- `expr_compiler` compiles 12 functions and runs in the same time (0.036 s,
+  against 0.038 s).
+
+**The depth cap.** Each compiled level costs about two Python frames.
+Recursing 3,000 deep from a plain `run_source`:
+- caps up to 450 completed;
+- 500 and above hit Python's default limit of 1,000.
+
+The cap is 200, or a fifth of the current recursion limit if that is lower. A
+host that lowers the limit then lowers the cap with it, instead of crashing.

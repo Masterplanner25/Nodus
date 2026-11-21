@@ -35,6 +35,7 @@ past the depth cap (`call_interpreted`).
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 
 from nodus.runtime.capability import NO_AUTHORITY_BUILTINS
@@ -62,10 +63,18 @@ COMPILABLE_BUILTINS = frozenset(
     for name in NO_AUTHORITY_BUILTINS[category]
 )
 
-#: Calls before a function is compiled, unless overridden.
+#: Calls before a function without a loop is compiled. A function with a loop
+#: compiles on its first call: a function called once can hold a program's
+#: hottest loop (`tokenize`), and a call count never reaches it. Measured on the
+#: self-hosted frontend, 2026-11-21: threshold 0 ran in 1.24 s, and 8, 32, 128
+#: and 512 in 1.72-1.82 s, because the once-called loops stayed interpreted.
+#: Compiling costs about 1.8 ms per function.
 DEFAULT_THRESHOLD = 32
 #: Compiled activations allowed on the Python stack at once. Past it, calls go
-#: to the interpreter, whose own calls do not recurse in Python.
+#: to the interpreter, whose own calls do not recurse in Python. Each compiled
+#: level costs about two Python frames; from a plain `run_source`, 450 survived
+#: 3,000-deep recursion and 500 hit Python's default limit of 1,000. So the cap
+#: is this, or a fifth of the current recursion limit if that is lower.
 DEFAULT_DEPTH_CAP = 200
 
 ENV_VAR = "NODUS_COMPILE_FUNCTIONS"
@@ -452,16 +461,33 @@ def make_builtin_call(name: str):
 class _Chunk:
     code: list
     reasons: dict
+    loops: set = field(default_factory=set)
     compiled: dict = field(default_factory=dict)
     sources: dict = field(default_factory=dict)
+
+
+def functions_with_loops(code: list, functions: dict) -> set:
+    """Names of the functions whose body has a backward jump: a loop."""
+    out = set()
+    for name, (start, end) in function_bodies(code, functions).items():
+        for i in range(max(start, 0), min(end, len(code))):
+            instr = code[i]
+            pos = JUMP_TARGET.get(instr[0])
+            if pos is not None and isinstance(instr[pos], int) and instr[pos] <= i:
+                out.add(name)
+                break
+    return out
 
 
 class CompileState:
     """Whether, what and when to compile, for one VM."""
 
-    def __init__(self, *, threshold: int = DEFAULT_THRESHOLD, depth_cap: int = DEFAULT_DEPTH_CAP):
-        self.threshold = threshold
-        self.depth_cap = depth_cap
+    def __init__(self, *, threshold: int | None = None, depth_cap: int | None = None):
+        # Resolved here, not as parameter defaults, so the module constants are
+        # read when a state is made (and can be patched by a test).
+        self.threshold = DEFAULT_THRESHOLD if threshold is None else threshold
+        self.depth_cap = (min(DEFAULT_DEPTH_CAP, max(10, sys.getrecursionlimit() // 5))
+                          if depth_cap is None else depth_cap)
         self.depth = 0
         self.calls: dict = {}
         self._chunks: dict = {}
@@ -472,7 +498,8 @@ class CompileState:
         key = id(vm.code)
         chunk = self._chunks.get(key)
         if chunk is None or chunk.code is not vm.code:
-            chunk = _Chunk(vm.code, eligible_functions(vm.code, vm.functions, vm.builtins))
+            chunk = _Chunk(vm.code, eligible_functions(vm.code, vm.functions, vm.builtins),
+                           functions_with_loops(vm.code, vm.functions))
             self._chunks[key] = chunk
         return chunk
 
@@ -490,7 +517,7 @@ class CompileState:
                 return None
             n = self.calls.get(name, 0) + 1
             self.calls[name] = n
-            if n < self.threshold:
+            if n < self.threshold and name not in chunk.loops:
                 return None
             compiled = self._compile(vm, chunk, name)
         if not self.may_run(vm):
@@ -630,9 +657,6 @@ def from_environment() -> CompileState | None:
 
 def enable(vm, *, threshold: int | None = None, depth_cap: int | None = None) -> CompileState:
     """Switch compilation on for `vm`."""
-    state = CompileState(
-        threshold=DEFAULT_THRESHOLD if threshold is None else threshold,
-        depth_cap=DEFAULT_DEPTH_CAP if depth_cap is None else depth_cap,
-    )
+    state = CompileState(threshold=threshold, depth_cap=depth_cap)
     vm._pycompile = state
     return state

@@ -162,6 +162,13 @@ Remaining parameters:
   pass the same `memory_store=` to both rather than turning this on. Agents are
   deliberately *not* isolated the same way — a guest cannot register one, so the registry
   holds only what the host put there; scope it with `agent_registry=` if you want to.
+- `compile_functions` (bool, default `False`): experimental (#173). Compiles hot
+  eligible functions to Python, which runs them about 4–5× faster per instruction. A
+  compiled function behaves exactly as interpreted code does: the same results,
+  errors, stack traces, instruction counts, limits and capability checks. Functions
+  that can suspend, capture variables, use `try` or call a capability-bearing
+  builtin stay interpreted, as does everything under a debugger, profiler or trace.
+  Design: `docs/design/throughput/01-compile-to-python.md`.
 - `persist_workflow_source` (bool, default `True`): whether a workflow run writes a
   verbatim copy of the whole module source into `.nodus/graphs/`
   ([#499](https://github.com/Masterplanner25/Nodus/issues/499)). That copy is the

@@ -407,6 +407,16 @@ class NodusRuntime:
             coroutine lifecycle (spawn/resume/complete), workflow/goal steps,
             subprocess and network capability use, and VM errors.  Simple
             arithmetic and variable assignments emit no events.
+        compile_functions:
+            Experimental, opt-in (#173). Compile hot eligible functions to Python:
+            a function with a loop on its first call, any other after 32 calls.
+            A compiled function behaves exactly as interpreted code does, with the
+            same results, errors, stack traces, instruction counts and limits, and
+            runs about 4–5× faster per instruction. Functions that can suspend,
+            capture variables, use ``try``, or call capability-bearing builtins
+            stay interpreted, as does everything while a debugger, profiler or
+            trace is attached. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
+            runtime. See ``docs/design/throughput/01-compile-to-python.md``.
         """
         allowed_paths = resolve_allowed_paths(allowed_paths)
         self.max_steps = max_steps

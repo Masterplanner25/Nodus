@@ -166,10 +166,28 @@ class Limits(BothWays):
 
     def test_recursion_past_the_depth_cap(self):
         # With a cap of 5, most of these 300 frames run through the interpreter
-        # from inside compiled code (`call_interpreted`).
+        # from inside compiled code (`call_interpreted`), counted so the test
+        # cannot pass without reaching it.
         src = "fn down(n) {\n    if (n == 0i) { return 0i }\n    return 1i + down(n - 1i)\n}\nprint(down(300i))\n"
-        fast, _ = self.assert_same(src, depth_cap=5)
+        real = pycompile.call_interpreted
+        seen = []
+
+        def counting(*args, **kwargs):
+            seen.append(1)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(pycompile, "call_interpreted", counting):
+            fast, _ = self.assert_same(src, depth_cap=5)
         self.assertEqual(fast["stdout"].strip(), "300")
+        self.assertGreater(len(seen), 0, "the depth cap was never reached")
+
+    def test_the_default_cap_follows_a_lowered_recursion_limit(self):
+        limit = sys.getrecursionlimit()
+        try:
+            sys.setrecursionlimit(400)
+            self.assertEqual(pycompile.CompileState().depth_cap, 80)
+        finally:
+            sys.setrecursionlimit(limit)
 
     def test_an_error_past_the_depth_cap(self):
         src = ("fn down(n) {\n    if (n == 0i) { return record { }.nope }\n"
@@ -186,6 +204,12 @@ class WhenItCompiles(unittest.TestCase):
         with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "1"}):
             _, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
         self.assertEqual(compiled_count(vm), 0)
+
+    def test_a_function_with_a_loop_compiles_on_its_first_call(self):
+        src = "fn total(n) {\n    let t = 0i\n    let i = 0i\n    while (i < n) { t = t + i\n i = i + 1i }\n    return t\n}\nprint(total(10i))\n"
+        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "1"}):
+            _, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
+        self.assertEqual(compiled_count(vm), 1)
 
     def test_at_the_threshold(self):
         src = ("fn f(x) { return x + 1i }\nlet i = 0i\n"

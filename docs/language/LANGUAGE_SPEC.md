@@ -913,6 +913,13 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
   instructions a breakpoint binds to.
 - Between v1.0 and #964 the optimizer was disconnected, and `--no-opt` changed
   nothing.
+- `nodus run --compile script.nd` compiles hot functions to Python. It is
+  experimental and opt-in (#173); `NODUS_COMPILE_FUNCTIONS=1` and
+  `NodusRuntime(compile_functions=True)` do the same. A compiled function behaves
+  as interpreted code does, with the same results, errors, stack traces,
+  instruction counts and limits. Only functions that cannot suspend, capture no
+  variables, use no `try` and call no capability-bearing builtin are compiled.
+  Design: `docs/design/throughput/01-compile-to-python.md`.
 - Service mode: `nodus serve [--port <n>] [--trace]` exposes HTTP endpoints for executing code.
   - `--worker-sweep-interval-ms <ms>` sets the background worker expiry sweep interval.
   - `POST /session` -> `{ "session": "id" }`
