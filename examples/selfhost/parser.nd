@@ -23,8 +23,9 @@ let MAX_PARSE_DEPTH = 50i
 // Token kinds that only ever follow a completed value (#717). `match` followed
 // by one of these is a variable, not a match expression.
 let VALUE_FOLLOWERS = {")": true, "]": true, "}": true, ",": true, ";": true, ":": true, "SEP": true, "EOF": true, "INTERP_END": true, ".": true, "=": true, "=>": true, "->": true, "+": true, "*": true, "/": true, "%": true, "==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true, "&&": true, "||": true, "+=": true, "-=": true, "*=": true, "/=": true}
-let COMPOUND_OPS = [["+=", "+"], ["-=", "-"], ["*=", "*"], ["/=", "/"]]
-let COMPARISON_OPS = {"==": true, "!=": true, "<": true, ">": true, "<=": true, ">=": true}
+let COMPOUND_OPS = {"+=": "+", "-=": "-", "*=": "*", "/=": "/"}
+// The binary operators, loosest first. Each level is left-associative.
+let BINARY_PRECEDENCE = {"||": 1i, "&&": 2i, "==": 3i, "!=": 3i, "<": 3i, ">": 3i, "<=": 3i, ">=": 3i, "+": 4i, "-": 4i, "*": 5i, "/": 5i, "%": 5i}
 let STATE_OPTION_KEYS = {"barrier": true, "durable": true, "merge": true}
 let STEP_OPTION_KEYS = {"allow_failure": true, "cache": true, "cache_key": true, "on": true, "retries": true, "retry_delay_ms": true, "returns": true, "timeout_ms": true, "worker": true, "worker_timeout_ms": true}
 let BUDGET_KEYS = {"max_iterations": true, "deadline_ms": true, "limits": true}
@@ -65,8 +66,32 @@ fn parse_float(text) {
 }
 
 // --- the token cursor ------------------------------------------------------
-fn new_parser(toks) {
-    return record {toks: toks, i: 0i, pending: [], has_last_stmt: false, last_stmt_line: 0i, last_tok: nil, workflow_depth: 0i, step_depth: 0i, function_depth: 0i, block_depth: 0i, goal_depth: 0i, depth: 0i}
+// The parser reads `toks` with the comments taken out, so looking at the
+// current token is one field read: `p.tok`. Each comment is kept in `notes`,
+// against the token it comes before, and handled when the cursor reaches that
+// token. That is the moment the Python parser handles it, when its `peek` first
+// steps over it, so the same `last_tok` decides where it belongs.
+fn new_parser(raw) {
+    let toks = []
+    let notes = []
+    let waiting = nil
+    for t in raw {
+        if (t.kind == "COMMENT") {
+            if (waiting == nil) {
+                waiting = []
+            }
+            push(waiting, t)
+        } else {
+            push(toks, t)
+            push(notes, waiting)
+            waiting = nil
+        }
+    }
+    let p = record {toks: toks, notes: notes, tok: toks[0i], i: 0i, pending: [], has_last_stmt: false, last_stmt_line: 0i, last_tok: nil, workflow_depth: 0i, step_depth: 0i, function_depth: 0i, block_depth: 0i, goal_depth: 0i, depth: 0i}
+    if (notes[0i] != nil) {
+        reach(p, 0i)
+    }
+    return p
 }
 
 // A comment on the line where the last statement ended, or the line of the last
@@ -81,44 +106,48 @@ fn handle_comment(p, comment) {
     push(p.pending, comment.val)
 }
 
-fn peek(p) {
-    let t = p.toks[p.i]
-    while (t.kind == "COMMENT") {
-        handle_comment(p, t)
-        p.i = p.i + 1i
-        t = p.toks[p.i]
+fn reach(p, i) {
+    for c in p.notes[i] {
+        handle_comment(p, c)
     }
-    return t
+}
+
+// Moves to the next token. The binary operators and separators move without
+// setting `last_tok`, as in Python. `eat` repeats these lines rather than
+// calling this, because it runs once for most tokens.
+fn advance(p) {
+    let i = p.i + 1i
+    p.i = i
+    p.tok = p.toks[i]
+    if (p.notes[i] != nil) {
+        reach(p, i)
+    }
+}
+
+fn peek(p) {
+    return p.tok
 }
 
 fn peek_ahead(p, offset) {
-    let j = p.i
-    let seen = 0i
+    let j = p.i + offset
     let n = len(p.toks)
-    while (j < n) {
-        let t = p.toks[j]
-        if (t.kind != "COMMENT") {
-            if (seen == offset) {
-                return t
-            }
-            seen = seen + 1i
-        }
-        j = j + 1i
+    if (j < n) {
+        return p.toks[j]
     }
     return p.toks[n - 1i]
 }
 
 fn at(p, kind) {
-    return peek(p).kind == kind
+    return p.tok.kind == kind
 }
 
 fn at_word(p, word) {
-    let t = peek(p)
+    let t = p.tok
     return t.kind == "ID" && t.val == word
 }
 
 fn eat(p, kind) {
-    let t = peek(p)
+    let t = p.tok
     if (t.kind != kind) {
         let got = tok_name(t.kind)
         if (t.kind == "ID" || t.kind == "STR" || t.kind == "NUM" || t.kind == "NUM_INT") {
@@ -126,14 +155,19 @@ fn eat(p, kind) {
         }
         fail("Expected \(tok_name(kind)), got \(got)", t)
     }
-    p.i = p.i + 1i
     p.last_tok = t
+    let i = p.i + 1i
+    p.i = i
+    p.tok = p.toks[i]
+    if (p.notes[i] != nil) {
+        reach(p, i)
+    }
     return t
 }
 
 fn skip_seps(p) {
-    while (at(p, "SEP")) {
-        p.i = p.i + 1i
+    while (p.tok.kind == "SEP") {
+        advance(p)
     }
 }
 
@@ -910,8 +944,9 @@ fn expr(p) {
 }
 
 fn parse_assignment(p) {
-    let target = parse_or(p)
-    if (at(p, "=")) {
+    let target = parse_binary(p, 1i)
+    let k = p.tok.kind
+    if (k == "=") {
         let eq_tok = eat(p, "=")
         let rhs = parse_assignment(p)
         let tag = target[0i]
@@ -926,86 +961,53 @@ fn parse_assignment(p) {
         }
         fail("Invalid assignment target", eq_tok)
     }
-    for pair in COMPOUND_OPS {
-        if (at(p, pair[0i])) {
-            let op_tok = eat(p, pair[0i])
-            let rhs = parse_assignment(p)
-            let op = pair[1i]
-            let tag = target[0i]
-            if (tag == "Var") {
-                return ["CompoundAssign", target[1i], op, rhs]
-            }
-            if (tag == "Index") {
-                return ["IndexAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
-            }
-            if (tag == "Attr") {
-                return ["FieldAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
-            }
-            fail("Invalid left-hand side for '\(pair[0i])'", op_tok)
-        }
+    if (!has_key(COMPOUND_OPS, k)) {
+        return target
     }
-    return target
+    let op_tok = eat(p, k)
+    let rhs = parse_assignment(p)
+    let op = COMPOUND_OPS[k]
+    let tag = target[0i]
+    if (tag == "Var") {
+        return ["CompoundAssign", target[1i], op, rhs]
+    }
+    if (tag == "Index") {
+        return ["IndexAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
+    }
+    if (tag == "Attr") {
+        return ["FieldAssign", target[1i], target[2i], ["Bin", op, target, rhs]]
+    }
+    fail("Invalid left-hand side for '\(k)'", op_tok)
 }
 
-fn parse_or(p) {
-    let node = parse_and(p)
-    while (at(p, "||")) {
-        eat(p, "||")
-        node = ["Bin", "||", node, parse_and(p)]
-    }
-    return node
-}
-
-fn parse_and(p) {
-    let node = parse_comparison(p)
-    while (at(p, "&&")) {
-        eat(p, "&&")
-        node = ["Bin", "&&", node, parse_comparison(p)]
-    }
-    return node
-}
-
-// The binary levels below advance with `p.i` rather than `eat`, as the Python
-// parser does, so they leave `last_tok` alone. That decides which line a later
-// comment is measured against.
-fn parse_comparison(p) {
-    let node = parse_add(p)
-    while (has_key(COMPARISON_OPS, peek(p).kind)) {
-        let op = peek(p).kind
-        p.i = p.i + 1i
-        node = ["Bin", op, node, parse_add(p)]
-    }
-    return node
-}
-
-fn parse_add(p) {
-    let node = parse_mul(p)
-    while (at(p, "+") || at(p, "-")) {
-        let op = peek(p).kind
-        p.i = p.i + 1i
-        node = ["Bin", op, node, parse_mul(p)]
-    }
-    return node
-}
-
-fn parse_mul(p) {
+// `||` and `&&` advance with `eat`, which sets `last_tok`; the other operators
+// advance without it, as the Python parser does. That decides which line a
+// later comment is measured against.
+fn parse_binary(p, min_prec) {
     let node = parse_unary(p)
-    while (at(p, "*") || at(p, "/") || at(p, "%")) {
-        let op = peek(p).kind
-        p.i = p.i + 1i
-        node = ["Bin", op, node, parse_unary(p)]
+    while (true) {
+        let op = p.tok.kind
+        if (!has_key(BINARY_PRECEDENCE, op)) {
+            return node
+        }
+        let prec = BINARY_PRECEDENCE[op]
+        if (prec < min_prec) {
+            return node
+        }
+        if (prec <= 2i) {
+            eat(p, op)
+        } else {
+            advance(p)
+        }
+        node = ["Bin", op, node, parse_binary(p, prec + 1i)]
     }
-    return node
 }
 
 fn parse_unary(p) {
-    if (at(p, "!")) {
-        eat(p, "!")
-        return ["Unary", "!", parse_unary(p)]
-    }
-    if (at(p, "-")) {
-        eat(p, "-")
-        return ["Unary", "-", parse_unary(p)]
+    let k = p.tok.kind
+    if (k == "!" || k == "-") {
+        eat(p, k)
+        return ["Unary", k, parse_unary(p)]
     }
     return parse_postfix(p)
 }
@@ -1013,15 +1015,16 @@ fn parse_unary(p) {
 fn parse_postfix(p) {
     let node = parse_primary(p)
     while (true) {
-        if (at(p, "(")) {
+        let k = p.tok.kind
+        if (k == "(") {
             eat(p, "(")
             let args = []
-            if (!at(p, ")")) {
+            if (p.tok.kind != ")") {
                 push(args, expr(p))
-                while (at(p, ",")) {
+                while (p.tok.kind == ",") {
                     eat(p, ",")
                     skip_seps(p)
-                    if (at(p, ")")) {
+                    if (p.tok.kind == ")") {
                         break
                     }
                     push(args, expr(p))
@@ -1029,23 +1032,18 @@ fn parse_postfix(p) {
             }
             eat(p, ")")
             node = ["Call", node, args]
-            continue
-        }
-        if (at(p, "[")) {
+        } else if (k == "[") {
             eat(p, "[")
             let index = expr(p)
             eat(p, "]")
             node = ["Index", node, index]
-            continue
-        }
-        if (at(p, ".")) {
+        } else if (k == ".") {
             eat(p, ".")
             node = ["Attr", node, eat(p, "ID").val]
-            continue
+        } else {
+            return node
         }
-        break
     }
-    return node
 }
 
 fn parse_map_literal(p) {
@@ -1158,22 +1156,36 @@ fn parse_pattern(p) {
     fail("Expected a destructuring pattern ('[', '{', or identifier)", peek(p))
 }
 
-// The kind of the first token after p.toks[k] that is not a separator.
-// Comments are not skipped: the Python parser looks at the raw list here.
-fn kind_after_seps(p, k) {
-    let n = len(p.toks)
-    while (k < n && p.toks[k].kind == "SEP") {
-        k = k + 1i
+// The kind of the first token from p.toks[j] on that is not a separator, as
+// [index, kind]. Comments are not skipped, because the Python parser looks at
+// the raw list here: a comment before p.toks[j] is what is found there.
+fn kind_after_seps(p, j) {
+    let toks = p.toks
+    let n = len(toks)
+    while (j < n) {
+        if (p.notes[j] != nil) {
+            return [j, "COMMENT"]
+        }
+        let kind = toks[j].kind
+        if (kind != "SEP") {
+            return [j, kind]
+        }
+        j = j + 1i
     }
-    if (k < n) {
-        return [k, p.toks[k].kind]
-    }
-    return [k, nil]
+    return [j, nil]
 }
 
 fn parse_primary(p) {
     let t = peek(p)
     let kind = t.kind
+    // Most operands are names, so that is tested first.
+    if (kind == "ID") {
+        if (t.val == "match" && !has_key(VALUE_FOLLOWERS, peek_ahead(p, 1i).kind)) {
+            return parse_match(p)
+        }
+        eat(p, "ID")
+        return ["Var", t.val]
+    }
     if (kind == "ACTION") {
         if (p.step_depth <= 0i) {
             fail("action expressions are only valid inside steps", t)
@@ -1206,13 +1218,6 @@ fn parse_primary(p) {
     }
     if (kind == "STRING_START") {
         return parse_interpolated_string(p)
-    }
-    if (kind == "ID") {
-        if (t.val == "match" && !has_key(VALUE_FOLLOWERS, peek_ahead(p, 1i).kind)) {
-            return parse_match(p)
-        }
-        eat(p, "ID")
-        return ["Var", t.val]
     }
     if (kind == "PRINT") {
         eat(p, "PRINT")
@@ -1418,8 +1423,8 @@ fn parse_named_map_literal(p, allowed, refusal) {
 fn parse_type_name(p) {
     let t = peek(p)
     if (t.kind == "RECORD" || t.kind == "NIL") {
-        p.i = p.i + 1i
         p.last_tok = t
+        advance(p)
         return t.val
     }
     return eat(p, "ID").val

@@ -230,11 +230,18 @@
   reports the VM instructions each phase took. They agree exactly on every file.
   `tests/fixtures/selfhost/constructs.nd` covers the constructs the corpus never
   uses: goals, `extern`, compensation, `each` and action expressions.
-  - The cost is about 3,500 instructions per source line: 74 per character to
-    lex and 263 per token to parse. That is about 1.3M instructions/s on CPython,
-    44× slower than the Python frontend.
-  - That puts compiling a self-hosted compiler at roughly 30–50M instructions,
-    against an earlier estimate of 100–300M.
+  - The cost is now about 2,200 instructions per source line: 47.6 per
+    character to lex and 136 per token to parse. That is about 1.2M
+    instructions/s on CPython, 40× slower than the Python frontend.
+  - Parsing was 263 per token as first written. Half of that was the parser's
+    design, not the VM: `peek` stepped over comments on every call, and the
+    expression ladder tested the current token once per operator. The parser
+    now takes comments out of the token list once, reads each token's kind once
+    per level, and parses binary operators in one precedence loop. The trees
+    still agree on every file.
+  - That puts compiling a self-hosted compiler at roughly 15–30M instructions,
+    against an earlier estimate of 100–300M. The first measurement said 30–50M,
+    partly because it miscounted the corpus's lines.
 
   Part of the work on #173; that issue stays open. Writing it found #949, #950,
   #952 and #954.

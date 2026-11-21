@@ -21,31 +21,37 @@ the tree:
 
 ## What it costs
 
-Measured 2026-11-20 on the development machine, CPython 3.11. The VM's own
-instruction counter is reliable since the module-call bounds fix: before it,
-instructions run inside an imported module were not counted at all.
+Measured 2026-11-21 on the development machine, CPython 3.11, after the parser
+restructure described below. The VM's own instruction counter is reliable since
+the module-call bounds fix: before it, instructions run inside an imported module
+were not counted at all.
 
 | Input | Lines | Lex | Parse | Per line | Time |
 |---|---|---|---|---|---|
-| Every tracked `.nd` file (92) | 4,488 | 9.3M (74/char) | 6.6M (263/token) | 3,540 | 12.4 s |
-| The stdlib (28 files) | 1,480 | 2.4M | 1.5M | 2,630 | 3.1 s |
-| `lexer.nd` + `parser.nd` | 1,896 | 4.7M | 4.3M | 4,720 | 7.4 s |
+| Every tracked `.nd` file (95) | 6,401 | 8.8M (47.6/char) | 5.4M (136/token) | 2,220 | 11.8 s |
+| The stdlib (28 files) | 1,470 | 1.4M | 0.9M | 1,570 | 2.0 s |
+| `lexer.nd` + `parser.nd` | 1,839 | 3.0M | 1.9M | 2,680 | 3.9 s |
 
-- **Throughput is about 1.3M instructions/s**, the same rate the VM reaches on
-  `examples/expr_compiler.nd`.
+Lines are `wc -l`. An earlier version of this table gave the corpus as 4,488
+lines, and so 3,540 instructions per line. The tree held 95 files totalling
+about 6,400 lines then too, so that figure was about 40% too high. The other two
+rows were right.
+
+- **Throughput is about 1.2M instructions/s.**
 - **The Python frontend does the whole corpus in 0.28 s**, so the Nodus one is
-  about 44× slower.
-- **Under PyPy**, the stdlib plus the two files here take 4.2 s, against 10.5 s
-  on CPython.
+  about 40× slower.
+- **Under PyPy**, before the scanning builtins and the parser restructure, the
+  stdlib plus the two files here took 4.2 s, against 10.5 s on CPython. That has
+  not been re-measured.
 
 **For #173 this replaces an estimate.** A self-hosted compiler would also need
 code generation and optimisation, and it would be several thousand lines. At
-roughly 3,500–4,700 instructions per line for the frontend, and perhaps twice
-that end to end, compiling it would take on the order of **30–50M
-instructions**: about 30 s on CPython today, and around 10 s under PyPy. The
-earlier estimate was 100–300M. That makes self-hosting slow but practical
-without a faster VM. It also makes it a heavy dependency on the VM's speed for
-anyone running it.
+roughly 1,600–2,700 instructions per line for the frontend, and perhaps twice
+that end to end, compiling it would take on the order of **15–30M
+instructions**: 15–25 s on CPython today. The first estimate was 100–300M, and
+the first measurement, with the line-count error above, 30–50M. Self-hosting is
+slow but practical without a faster VM. It also makes it a heavy dependency on
+the VM's speed for anyone running it.
 
 ## Where the instructions go
 
@@ -63,9 +69,24 @@ anyone running it.
   fewer, and 10.8 s to 7.6 s over the corpus. What remains is per token, not
   per character: the dispatch in `scan_token`, the keyword lookup and building
   each token record.
-- **Parsing costs 230–310 instructions per token.** Most of that is `peek`,
-  which is called again at each `at(...)` test of the same token, and the
-  record-field reads for the parser state.
+- **Parsing went from 267 to 136 instructions per token, 49% fewer**, and from
+  9.3 s to 4.4 s over the corpus. The cost was the parser's design, not the VM.
+  A profile of parsing `parser.nd` showed `peek` and `at` taking 55% of it:
+  78,000 peeks for about 10,000 tokens. Each one stepped over comments by
+  reading the parser record, and each level of the expression ladder called
+  `at` once per operator it knew. Three changes:
+  - **Comments come out of the token list once**, in `new_parser`. Each is kept
+    against the token it precedes and handled when the cursor reaches that
+    token. That is when the Python parser's `peek` would have stepped over it,
+    so the same `last_tok` decides where it belongs, and the trees still agree.
+    The current token is then a field, `p.tok`.
+  - **Each expression level reads the token kind once** and compares the local.
+  - **The five binary levels are one precedence loop**, `parse_binary`. That is
+    five calls fewer for every operand.
+
+  What remains is spread out. The largest single piece is `eat`, at about 42
+  instructions per call, most of them field reads and writes on the parser
+  record. Lexing is the larger phase again.
 
 ## Found by writing it
 
@@ -75,8 +96,9 @@ Writing about 1,900 lines of real Nodus turned up four defects, all filed:
   Now fixed, and `tokenize` is back to taking `text`.
 - **#952:** a `return` inside a `for ... in` loop leaves the iterator on the
   caller's stack, shifting the caller's pending operands. Now fixed.
-  `parse_assignment` returns from inside a `for` loop, so the self-host test
-  fails if the fix regresses.
+  `tests/test_return_stack_depth.py` holds it. The self-host check used to
+  cover it too, through a `return` inside a `for` loop in `parse_assignment`;
+  the restructure removed that loop.
 - **#950:** `nodus fmt` crashed on every `else if`.
 - Instructions run inside an imported module were never counted or bounded.
   Fixed in the same series.
