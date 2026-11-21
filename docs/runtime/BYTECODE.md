@@ -569,6 +569,21 @@ These changes should preserve compatibility where possible.
 (Note: bytecode version headers are already implemented as of v0.7.0; slot-indexed locals
 are implemented as of v0.8.0. See the versioning section above.)
 
+## 15. Fused Instructions (provisional, #969)
+
+Three instructions the optimizer emits in place of common sequences, to run fewer
+instructions per program (#173). The compiler never emits them; `--no-opt` and a
+debugged run execute the sequences instead.
+
+```
+LOAD_LOCAL_FIELD <slot> <name>            # LOAD_LOCAL_IDX slot; LOAD_FIELD name
+JUMP_IF_LOCAL_NE_CONST <slot> <c> <addr>  # LOAD_LOCAL_IDX slot; PUSH_CONST c; EQ; JUMP_IF_FALSE addr
+ENTER <size> <params>                     # FRAME_SIZE size; STORE_ARG for each param, last first
+```
+
+They are provisional until one release cycle has passed; see
+`docs/governance/FREEZE_PROPOSAL.md`. They are why `BYTECODE_VERSION` is 5.
+
 ## Final Principle
 
 The bytecode format should remain:

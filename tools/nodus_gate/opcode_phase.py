@@ -218,6 +218,23 @@ def parse_specified_opcodes(root: str) -> set[str] | None:
     return specified
 
 
+def parse_reference_stability(text: str) -> dict[str, str]:
+    """Map each §3 opcode that declares one to its `- Stability:` line.
+
+    Only provisional opcodes carry the line today (#969); an entry without one
+    is the frozen set's default, stable.
+    """
+    body = _section(text, "3. Opcode Inventory")
+    entries = list(re.finditer(rf"^### ({_OPCODE_NAME})\s*$", body, re.M))
+    stability: dict[str, str] = {}
+    for i, m in enumerate(entries):
+        end = entries[i + 1].start() if i + 1 < len(entries) else len(body)
+        found = re.search(r"^- Stability:\s*(.+?)\s*$", body[m.end():end], re.M)
+        if found:
+            stability[m.group(1)] = found.group(1).lower()
+    return stability
+
+
 def parse_reference_removed_section(text: str) -> set[str]:
     body = _section(text, "Removed Opcodes")
     return set(re.findall(rf"^### ({_OPCODE_NAME})\s*$", body, re.M))
@@ -321,40 +338,58 @@ _ARCH = "docs/runtime/ARCHITECTURE_ANALYSIS.md"
 _STABILITY_INDEX = "docs/governance/LANGUAGE_STABILITY_INDEX.md"
 
 # (file, kind, description, pattern) — every capture must equal the live value,
-# and a pattern that matches nothing is a finding in its own right.
+# and a pattern that matches nothing is a finding in its own right. Kinds:
+# `count` is the active opcodes (the dispatch table); `stable` and
+# `provisional` are the classifications in FREEZE_PROPOSAL.md's stability
+# tables (#969: the first provisional additions since the freeze); `version`
+# is BYTECODE_VERSION.
 CLAIM_ANCHORS: list[tuple[str, str, str, str]] = [
     (_REFERENCE, "count", "header stability banner",
-     r"All (\d+) active opcodes are \*\*stable\*\*"),
-    (_REFERENCE, "count", "intro freeze sentence",
-     r"\*\*frozen at v1\.0\*\*: (\d+) active stable opcodes"),
+     r"(\d+) active opcodes, \d+ of them stable"),
+    (_REFERENCE, "stable", "header stability banner — stable",
+     r"\d+ active opcodes, (\d+) of them stable"),
+    (_REFERENCE, "provisional", "header stability banner — provisional",
+     r"\d+ active opcodes, \d+ of them stable and (\d+) provisional"),
+    (_REFERENCE, "stable", "intro freeze sentence",
+     r"\*\*frozen at v1\.0\*\*: (\d+) stable opcodes"),
     (_REFERENCE, "count", "§3.1 dispatch-table total",
      r"total active opcodes in the dispatch table to \*\*(\d+)\*\*"),
     (_REFERENCE, "count", "§10 exact count from VM dispatch",
      r"opcode count \(exact from VM dispatch\): \*\*(\d+)\*\*"),
     (_REFERENCE, "version", "intro BYTECODE_VERSION",
-     r"active stable opcodes, `BYTECODE_VERSION = (\d+)`"),
+     r"through the extension process \(#969\), `BYTECODE_VERSION = (\d+)`"),
     (_REFERENCE, "version", "maturity snapshot BYTECODE_VERSION",
      r"^- `BYTECODE_VERSION = (\d+)`\. Future opcodes"),
     (_REFERENCE, "version", "§3.1 unbumped-version note",
-     r"`BYTECODE_VERSION` remains \*\*(\d+)\*\*"),
+     r"it stayed at 4 until #969 bumped it to \*\*(\d+)\*\*"),
     (_FREEZE, "count", "freeze summary — active today",
      r"\| Total opcodes \(active\) \| \*\*\d+\*\* \| \*\*(\d+)\*\* \|"),
-    (_FREEZE, "count", "freeze summary — stable today",
+    (_FREEZE, "stable", "freeze summary — stable today",
      r"\| Stable \| \*\*\d+\*\* \| \*\*(\d+)\*\* \|"),
+    (_FREEZE, "provisional", "freeze summary — provisional today",
+     r"\| Provisional \| \*\*\d+\*\* \| \*\*(\d+)\*\* \|"),
     (_FREEZE, "count", "stability table preamble — active today",
-     r"included in the tables below — (\d+) active today"),
-    (_FREEZE, "count", "summary counts — stable",
+     r"fused instructions from #969 — (\d+) active today"),
+    (_FREEZE, "stable", "summary counts — stable",
      r"\| \*\*stable\*\* \| \*\*(\d+)\*\* \|"),
+    (_FREEZE, "provisional", "summary counts — provisional",
+     r"\| \*\*provisional\*\* \| \*\*(\d+)\*\* \|"),
     (_FREEZE, "count", "summary counts — total active",
      r"\| \*\*Total \(active\)\*\* \| \*\*(\d+)\*\* \|"),
-    (_FREEZE, "count", "summary counts — totals today",
+    (_FREEZE, "stable", "summary counts — totals today",
      r"Totals today: \*\*(\d+) stable\*\*"),
+    (_FREEZE, "provisional", "summary counts — provisional today",
+     r"Totals today: \*\*\d+ stable\*\*, \*\*(\d+) provisional\*\*"),
     (_FREEZE, "version", "freeze declaration BYTECODE_VERSION",
      r"^\*\*BYTECODE_VERSION:\*\* (\d+)"),
     (_SEMANTICS, "count", "header stability banner",
-     r"All (\d+) active opcodes are stable"),
+     r"(\d+) active opcodes, \d+ of them stable"),
+    (_SEMANTICS, "stable", "header stability banner — stable",
+     r"\d+ active opcodes, (\d+) of them stable"),
     (_ARCH, "count", "bytecode versioning note",
-     r"\(frozen at v1\.0\)\. All (\d+) active opcodes"),
+     r"\(frozen at v1\.0\)\. (\d+) active opcodes"),
+    (_ARCH, "stable", "bytecode versioning note — stable",
+     r"\(frozen at v1\.0\)\. \d+ active opcodes, (\d+) of them stable"),
     (_STABILITY_INDEX, "count", "opcode set row",
      r"\| Opcode set \((\d+) opcodes\)"),
 ]
@@ -461,6 +496,28 @@ def _check_semantic_specs(result: OpcodeResult, root: str, reference: str, dispa
         ))
 
 
+def check_provisional_marking(result: OpcodeResult, provisional: set[str],
+                              reference: str) -> None:
+    """Every provisional opcode is marked so in BYTECODE_REFERENCE.md §3, and only those.
+
+    Step 2 of the extension process adds a new opcode to the reference as
+    provisional. Until #969 this phase treated any provisional opcode as a
+    finding, which forbade the process it enforces.
+    """
+    result.checks_run += 1
+    marked = parse_reference_stability(reference)
+    unmarked = sorted(op for op in provisional if "provisional" not in marked.get(op, ""))
+    overmarked = sorted(op for op, mark in marked.items()
+                        if "provisional" in mark and op not in provisional)
+    if unmarked or overmarked:
+        result.findings.append(OpcodeFinding(
+            message="provisional opcodes disagree between FREEZE_PROPOSAL.md "
+                    "and BYTECODE_REFERENCE.md §3",
+            detail=(f"provisional in the freeze tables but not marked in §3: {unmarked}; "
+                    f"marked provisional in §3 but not in the tables: {overmarked}"),
+        ))
+
+
 def run_opcode_phase(root: str) -> OpcodeResult:
     """Verify every record of the frozen opcode set against the live VM."""
     result = OpcodeResult()
@@ -490,6 +547,8 @@ def run_opcode_phase(root: str) -> OpcodeResult:
 
     reference = _read(_REFERENCE)
     freeze = _read(_FREEZE)
+    stable_count: int | None = None
+    provisional_count: int | None = None
 
     if reference is not None:
         inv_active, inv_removed = parse_reference_inventory(reference)
@@ -536,14 +595,11 @@ def run_opcode_phase(root: str) -> OpcodeResult:
 
     if freeze is not None:
         stable, provisional, freeze_removed = parse_freeze_stability_tables(freeze)
-        _compare(result, f"{_FREEZE} stability tables", stable, dispatch)
+        stable_count, provisional_count = len(stable), len(provisional)
+        _compare(result, f"{_FREEZE} stability tables", stable | provisional, dispatch)
 
-        result.checks_run += 1
-        if provisional:
-            result.findings.append(OpcodeFinding(
-                message="FREEZE_PROPOSAL.md lists provisional opcodes after the v1.0 freeze",
-                detail=", ".join(sorted(provisional)),
-            ))
+        if reference is not None:
+            check_provisional_marking(result, provisional, reference)
 
         result.checks_run += 1
         still_live = sorted(freeze_removed & dispatch)
@@ -565,13 +621,15 @@ def run_opcode_phase(root: str) -> OpcodeResult:
         ))
 
     _check_claims(result, root, dispatch_count=len(dispatch),
-                  bytecode_version=bytecode_version)
+                  bytecode_version=bytecode_version,
+                  stable_count=stable_count, provisional_count=provisional_count)
 
     return result
 
 
 def _check_claims(result: OpcodeResult, root: str, *, dispatch_count: int,
-                  bytecode_version: int) -> None:
+                  bytecode_version: int, stable_count: int | None,
+                  provisional_count: int | None) -> None:
     """Verify the counts and versions asserted in prose still hold."""
     cache: dict[str, str | None] = {}
     for rel, kind, description, pattern in CLAIM_ANCHORS:
@@ -597,10 +655,24 @@ def _check_claims(result: OpcodeResult, root: str, *, dispatch_count: int,
             ))
             continue
 
-        expected = dispatch_count if kind == "count" else bytecode_version
+        expected_by_kind = {
+            "count": dispatch_count,
+            "version": bytecode_version,
+            "stable": stable_count,
+            "provisional": provisional_count,
+        }
+        expected = expected_by_kind[kind]
+        if expected is None:
+            result.findings.append(OpcodeFinding(
+                message=f"{rel}: cannot verify '{description}'",
+                detail="FREEZE_PROPOSAL.md's stability tables were unreadable",
+            ))
+            continue
         wrong = sorted({int(v) for v in matches if int(v) != expected})
         if wrong:
-            noun = "opcode count" if kind == "count" else "BYTECODE_VERSION"
+            noun = {"count": "opcode count", "version": "BYTECODE_VERSION",
+                    "stable": "stable-opcode count",
+                    "provisional": "provisional-opcode count"}[kind]
             result.findings.append(OpcodeFinding(
                 message=f"{rel}: '{description}' states the wrong {noun}",
                 detail=f"document says {', '.join(str(v) for v in wrong)}; live value is {expected}",
