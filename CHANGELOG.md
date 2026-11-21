@@ -318,6 +318,21 @@
 
 ### Tooling
 
+- **CI times the self-hosted frontend under PyPy and CPython.** Both the
+  `pypy` and the `test` job run `python -m tools.selfhost_check`. Each logs the
+  instructions and seconds over every tracked `.nd` file, and fails if the
+  self-hosted frontend disagrees with the Python one, which is now checked under
+  PyPy too. The timings are read, not asserted. On 2026-11-21 PyPy was 2.1–2.3×
+  faster on this workload of many short runs; it is about 16× on one long run.
+  `docs/language/LANGUAGE_VISION.md` explains the difference. Part of the work
+  on #173.
+
+  The same change restored a slot of headroom under PyPy's 80-attribute limit
+  for `VM` instances. #966 had added `optimize_bytecode` as an instance
+  attribute, taking a runtime-built VM to 79, the last slot before the cliff
+  that cost about 9× in #702. It is a class-level default now, and a
+  runtime-built VM holds 78.
+
 - **A Nodus lexer and parser written in Nodus, checked against the real ones.**
   `examples/selfhost/` ports `nodus.frontend.lexer` and `nodus.frontend.parser`
   in about 1,900 lines. `python -m tools.selfhost_check` runs them over every

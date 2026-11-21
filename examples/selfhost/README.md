@@ -57,11 +57,14 @@ so the table's times are not a measurement of that difference.
 - **The Python frontend does the whole corpus in about 0.41 s** (best of 3 on
   2026-11-21), so the Nodus one is about 24× slower. This README used to say
   0.28 s and 40×; that time did not reproduce.
-- **Under PyPy**, before the scanning builtins and the parser restructure, the
-  stdlib plus the two files here took 4.2 s, against 10.5 s on CPython. The same
-  input now takes 4.7 s on CPython. PyPy was not re-measured: Application Control
-  on the development machine blocks the local PyPy interpreter. CI's `pypy` job
-  runs the suite under PyPy but does not time this.
+- **Under PyPy** this check is about **2.1–2.3× faster** than on CPython. CI
+  runs it in both the `pypy` and the `test` job (#973). On 2026-11-21 the whole
+  corpus took 1.84 s and 3.22 s under PyPy, against 4.31 s and 6.81 s on CPython,
+  in two runs. The jobs run on different runners, so the ratio is approximate.
+  PyPy's usual ~16× (`docs/language/LANGUAGE_VISION.md`) is for one long run.
+  This check is 190 short ones, averaging about 57k instructions each, and most
+  end before the JIT pays off. Application Control on the development machine
+  blocks the local PyPy interpreter, so CI is where this is measured.
 
 **For #173 this replaces an estimate.** A self-hosted compiler would also need
 code generation and optimisation, and it would be several thousand lines. At
