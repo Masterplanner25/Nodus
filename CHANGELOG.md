@@ -4,6 +4,31 @@
 
 ### Fixes
 
+- **#957: `let` is lexical.** A name means the outer binding until the `let`
+  that shadows it, and a function bound by `let` can call itself. Each of these
+  used to give `nil`, silently:
+  - `fn f(x) { let x = x + 1i }` read the new, empty `x` and failed with
+    `Cannot add nil and int`. It now reads the parameter.
+  - A read before a block's own `let` of the same name saw `nil`. It now sees
+    the outer value.
+  - `let fact = fn(n) { ... fact(n - 1i) }` inside a function called `nil`. It
+    now recurses.
+  - `let [a, b] = [b, a]` now swaps.
+
+  Two local closures that call each other still can't. The second isn't declared
+  when the first is compiled, just as in Rust. That now fails with
+  `Undefined function` instead of calling `nil`. Use top-level `fn` declarations
+  for mutual recursion.
+
+  Three compiler decisions combined to cause this:
+  - every `let` in a block was declared before the block's first statement;
+  - a `let` declared its name before compiling its initializer;
+  - a local's slot was reset after a closure in the initializer had captured it.
+
+  The rule is now written down in `docs/language/LANGUAGE_SPEC.md`, under
+  Variables and Assignment. A program that relied on any of these reads seeing
+  `nil` will now see a value, or the loud error above.
+
 - **#949: a parameter keeps its argument when a later local reuses its name.**
   This covers a `let` in a nested block, a `for` variable or a `catch` variable
   with the parameter's name. Before, the parameter read `nil` from the start of
@@ -20,10 +45,9 @@
     walked the map by name, and skipped a slot whose name had been taken over.
     It now walks every slot.
 
-  Not covered here, and filed as #957: `fn f(x) { let x = x + 1i }`, a read
-  before a block's own `let`, and a local closure that calls itself. Each still
-  sees `nil`, because of how a local `let` is compiled, not because of the slot
-  map.
+  `fn f(x) { let x = x + 1i }`, a read before a block's own `let`, and a local
+  closure that calls itself had a different cause, how a local `let` was
+  compiled. They are fixed by the #957 entry above.
 
 - **#952: a `return` no longer leaves values on the caller's stack.** Before,
   the caller then silently read wrong operands. Two constructs left values

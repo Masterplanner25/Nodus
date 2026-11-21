@@ -17,8 +17,8 @@ to save, walked the map by name. It could not see a slot whose name had been
 taken over, so it missed whatever was held there. It now walks every slot.
 
 What is NOT here: `fn f(x) { let x = x + 1i }`, and a read before a block's
-`let`. Those see nil for a different reason, block hoisting and the `let`
-compile order, and are #957.
+`let`. Those had a different cause, block hoisting and the `let` compile order.
+They were #957, and are covered in `test_lexical_let.py`.
 """
 
 import sys

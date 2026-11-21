@@ -66,6 +66,20 @@ Stability: Stable.
 - Record assignment:
   - `rec.field = value`
 
+Scope (#957):
+- A `let` is visible from the statement after it to the end of its block.
+  Before it, the name means what it meant outside: an outer local, a
+  parameter, or a global.
+- So the right-hand side sees the outer binding. `let x = x + 1i` reads the
+  outer `x`, and `let [a, b] = [b, a]` swaps.
+- A `let` inside a block shadows the outer name for the rest of that block
+  only. After the block, the outer binding is visible again, unchanged.
+- A function literal bound by `let` can call itself by that name:
+  `let fact = fn(n) { ... fact(n - 1i) ... }`.
+- Two such closures cannot call each other, because the second is not
+  declared yet when the first is compiled. The call fails with
+  `Undefined function`. For mutual recursion, use top-level `fn` declarations.
+
 ## Operators
 Stability: Stable.
 - Arithmetic: `+ - * / %` (`%` is modulo; works for integer and float values)
