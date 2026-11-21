@@ -286,6 +286,9 @@ class VM:
         # #629: set on a child VM built for a resume, carrying what the
         # drift check needs about the module that drove it. None on a VM
         # running its own program.
+        #: #964: whether a loader built on this VM runs the bytecode optimizer.
+        #: `run_source(optimize=False)` / `--no-opt` clear it.
+        self.optimize_bytecode = True
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter

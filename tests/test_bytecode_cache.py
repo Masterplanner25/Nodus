@@ -39,9 +39,9 @@ def test_bytecode_cache_reused_on_second_run(tmp_path, monkeypatch):
     compile_calls = []
     original = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original(self, metadata)
+        return original(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
 
@@ -62,9 +62,9 @@ def test_bytecode_cache_invalidates_when_source_changes(tmp_path, monkeypatch):
     compile_calls = []
     original = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original(self, metadata)
+        return original(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
 
@@ -81,9 +81,9 @@ def test_bytecode_cache_invalidates_when_version_changes(tmp_path, monkeypatch):
     compile_calls = []
     original = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original(self, metadata)
+        return original(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
     monkeypatch.setattr(bytecode_cache, "NODUS_BYTECODE_VERSION", bytecode_cache.NODUS_BYTECODE_VERSION + 1)
@@ -130,9 +130,9 @@ def test_bytecode_cache_invalidates_when_nodus_lang_version_changes(tmp_path, mo
     compile_calls = []
     original = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original(self, metadata)
+        return original(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
     # Source and mtime unchanged; only the nodus-lang version differs.
@@ -156,9 +156,9 @@ def test_bytecode_cache_is_reused_when_the_version_is_unchanged(tmp_path, monkey
     compile_calls = []
     original = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original(self, metadata)
+        return original(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
 

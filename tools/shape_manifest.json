@@ -142,10 +142,6 @@
       "verdict": "intentional",
       "why": "False positive, same reason: version-range comparators against the formatter's precedence tiers. Nothing keeps them in step and nothing should."
     },
-    "B:src/nodus/compiler/optimizer.py|src/nodus/compiler/optimizer.py|missing=JUMP": {
-      "verdict": "tracked",
-      "why": "Two opcode sets within the optimizer where one omits JUMP. Not triaged: it may be a deliberate distinction between unconditional and conditional branches, or the #518 shape. Reading remove_unreachable and its neighbours would settle it."
-    },
     "D:src/nodus/orchestration/task_graph.py::_GRAPH_REGISTRY": {
       "verdict": "tracked",
       "why": "Process-global graph registry. #585 gave a run's two STORES a shared relocatable root, but the in-memory registry has no per-runtime knob at all: a host can inject memory_store= and workflow_runner= and still shares this. Same family as #185/#390."
@@ -161,6 +157,10 @@
     "D:src/nodus/services/tool_runtime.py::TOOL_REGISTRY": {
       "verdict": "intentional",
       "why": "Host-provided built-in tools (nodus_execute, nodus_check, nodus_ast, nodus_dis), populated once by _ensure_registry. Guest tool.register() writes vm.tool_registry, which is already per-VM -- checked, because a guest-writable process-global here would be #185 exactly."
+    },
+    "D:src/nodus/compiler/optimizer.py::_scratch_vm": {
+      "verdict": "intentional",
+      "why": "#964: one VM per process that constant folding runs opcode handlers on, built lazily because a VM costs ~10 ms. Only optimizer._evaluate touches it, under _scratch_lock; it sets the stack to two constants and empties it after every fold, so nothing carries from one compile to the next. Guest code never runs on it, and its event bus is disabled, so a fold that raises records nothing."
     },
     "D:src/nodus/services/syscall_runtime.py::SYSCALL_REGISTRY": {
       "verdict": "intentional",

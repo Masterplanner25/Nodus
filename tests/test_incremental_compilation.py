@@ -36,9 +36,9 @@ def test_unchanged_modules_skip_reparsing_and_recompilation(tmp_path, monkeypatc
         parse_calls.append(module_id)
         return original_parse(self, module_id, **kwargs)
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original_compile(self, metadata)
+        return original_compile(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_parse_module", counting_parse)
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
@@ -63,9 +63,9 @@ def test_dependency_change_triggers_recompilation(tmp_path, monkeypatch):
     compile_calls = []
     original_compile = ModuleLoader._compile_module
 
-    def counting_compile(self, metadata):
+    def counting_compile(self, metadata, **kwargs):
         compile_calls.append(metadata.module_id)
-        return original_compile(self, metadata)
+        return original_compile(self, metadata, **kwargs)
 
     monkeypatch.setattr(ModuleLoader, "_compile_module", counting_compile)
 

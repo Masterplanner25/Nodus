@@ -303,21 +303,22 @@ class ClosureEntrySitesAreEnumeratedTests(unittest.TestCase):
 
     def test_the_mark_is_carried_across_every_functioninfo_rebuild(self):
         """`FunctionInfo` is rebuilt in three places outside the compiler: the
-        cache round-trip and the optimizer's two remappers. Each drops whatever
-        it does not name, which is how the warm-cache bypass survived the first
-        version of this fix."""
+        cache round-trip and the optimizer's remapper. A rebuild that names its
+        fields drops whatever it does not name, which is how the warm-cache
+        bypass survived the first version of this fix."""
         module_src = io.open(REPO / "src/nodus/runtime/module.py", encoding="utf-8").read()
         self.assertIn('"step_owner": fn.step_owner', module_src,
                       "the cache does not serialize the mark")
         self.assertIn("step_owner=(raw[\"step_owner\"]", module_src,
                       "the cache does not restore the mark")
 
+        # The optimizer used to rebuild FunctionInfo field by field and name
+        # `step_owner` in each rebuild. Since #964 it rebuilds only with
+        # `dataclasses.replace`, which carries every field, this one included.
         optimizer_src = io.open(REPO / "src/nodus/compiler/optimizer.py", encoding="utf-8").read()
-        rebuilds = optimizer_src.count("FunctionInfo(info.name")
-        carried = optimizer_src.count("step_owner=info.step_owner")
-        self.assertEqual(rebuilds, carried,
-                         f"{rebuilds} FunctionInfo rebuild(s) in the optimizer but "
-                         f"{carried} carry `step_owner`")
+        self.assertNotIn("FunctionInfo(", optimizer_src,
+                         "the optimizer builds a FunctionInfo field by field again")
+        self.assertIn("dataclasses.replace(info", optimizer_src)
 
     def test_exactly_one_site_originates_a_step_mark(self):
         """A guest cannot mark a function, and -- the half that matters -- cannot
@@ -333,7 +334,6 @@ class ClosureEntrySitesAreEnumeratedTests(unittest.TestCase):
         ORIGINATOR = "src/nodus/orchestration/workflow_lowering.py"
         CARRIERS = {
             "src/nodus/compiler/compiler.py",        # FnExpr -> FnDef -> FunctionInfo
-            "src/nodus/compiler/optimizer.py",       # two address remappers
             "src/nodus/runtime/module.py",           # the bytecode cache round-trip
         }
         # Neither originates nor carries: one declares the field, the rest read it.

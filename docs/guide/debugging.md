@@ -241,11 +241,17 @@ be debugging ([issue 348](https://github.com/Masterplanner25/Nodus/issues/348)).
 does the same without executing:
 
 ```
+$ cat script.nd
+fn add(a, b) {
+    return a + b
+}
+let x = add(3, 4)
+print(x)
 $ nodus dis script.nd --loc
 Program init:
 Function add:
 Function main:
-  0: JUMP 10
+  0: JUMP 8
   0: FRAME_SIZE 2  [1:1]
   1: STORE_ARG b  [1:1]
   2: STORE_ARG a  [1:1]
@@ -255,12 +261,12 @@ Function main:
   6: RETURN  [2:16]
   0: PUSH_CONST 3.0  [4:13]
   1: PUSH_CONST 4.0  [4:16]
-  2: CALL add 2  [4:16]
-  3: STORE x  [4:16]
+  2: CALL add 2  [4:9]
+  3: STORE x  [4:9]
   4: LOAD x  [5:7]
-  5: CALL print 1  [5:7]
-  6: POP  [5:7]
-  7: HALT  [5:7]
+  5: CALL print 1  [5:1]
+  6: POP  [5:1]
+  7: HALT  [5:1]
 ```
 
 `--loc` adds `[line:col]` annotations. Without it, only instruction indices
@@ -268,7 +274,9 @@ and operands are printed.
 
 `nodus dis` is useful for confirming the optimizer did what you expected,
 checking function boundaries, and understanding why a value is on the stack
-in an unexpected order.
+in an unexpected order. It shows the optimized program, the one `nodus run`
+executes. `nodus run --no-opt --dump-bytecode` shows the compiler's output
+before optimization. A run under the debugger is never optimized.
 
 ---
 
@@ -492,6 +500,15 @@ F33: RESOLVED 2026-08-14 (#49) — for real this time. The earlier "RESOLVED in
      limit, which makes the bug look absent whether or not it is.
      The error PAYLOAD stays uncapped by design — result["errors"][0]["stack"]
      carries every frame. Only rendering is capped.
+
+F34: The §6 `nodus dis` output has the shape only the optimizer produces:
+     `add` ends at its RETURN, with no trailing `PUSH_CONST None; RETURN`.
+     It was most likely captured before v1.0. From v1.0 until #964 nothing ran
+     the optimizer, so the real output carried that pair and the block was
+     wrong. Re-run
+     2026-11-21 with the optimizer reconnected, against the script now shown:
+     verbatim. `JUMP 8` (the old block said 10) and the call columns differ
+     from the original capture.
 
 F27: FIXED — filed as #348, closed 2026-08-15. --trace-imports used to emit
      nothing once the on-disk bytecode cache was warm. Re-verified 2026-11-11: a

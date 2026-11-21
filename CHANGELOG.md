@@ -44,6 +44,42 @@
 
 ### Fixes
 
+- **#964: the bytecode optimizer runs again, and `--no-opt` turns it off.**
+  From v1.0 until now nothing called it: v1.0 removed the deprecated
+  `compile_source()`, which was its only caller. `nodus run --no-opt` and
+  `NodusRuntime.run_source(optimize=...)` were accepted and ignored, and the
+  docs that said the optimizer ran were wrong. It runs on every module the
+  module loader compiles. A debugged run is not optimized, so breakpoints bind
+  as before.
+
+  The optimizer had drifted while nothing ran it. Reconnected as it was, it
+  would have changed what programs do, so it was repaired first:
+  - **Constant folding runs the VM's own handler for each operation.** It
+    folded `5i / 2i` to 2.5 (the VM says 2) and `1i == true` to true (false),
+    and turned `true + 1i`, a type error, into 2. An expression the VM would
+    reject is now left to fail at run time, with its location.
+  - **Compaction dropped every function's `local_slots`, `param_types` and
+    `return_type`.** Losing the slot map breaks frame setup. `FunctionInfo` is
+    now rebuilt with `dataclasses.replace`, so a field added later is carried
+    too.
+  - **`SETUP_TRY`'s `finally` address was not remapped**, and a `finally` block
+    reached only through it was removed as unreachable.
+  - **Removing a `PUSH_CONST; POP` pair that a jump targeted** crashed the
+    remap. Such a jump now lands on the next instruction kept.
+  - **`-0.0` was merged with `0.0`** when constants were shared.
+
+  New: an assignment statement no longer reads back the value it just stored.
+  Over every tracked `.nd` file, the self-hosted frontend runs 3.2% fewer
+  instructions lexing and 1.8% fewer parsing.
+
+  **Bytecode cache:** entries now record whether they are optimized, and only
+  optimized compiles are stored. Existing entries recompile once.
+
+  **Durable coroutines:** a continuation saved by an earlier version fingerprints
+  the unoptimized program, so it refuses to resume, as for any compiler change.
+  A resume rebuilds the program with the resuming VM's setting, so resume with
+  the same `optimize` the run used.
+
 - **#954: `nodus fmt` formats every file it is given.** It used to format the
   first, silently ignore the rest, and exit 0. `--check` likewise checked only
   the first. Now every path is handled, each failure is reported, a failure does
