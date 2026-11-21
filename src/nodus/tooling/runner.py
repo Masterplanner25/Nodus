@@ -295,7 +295,10 @@ def run_source(
     vm.trace_id = str(uuid.uuid4())
     vm.session_id = str(uuid.uuid4())
     # #964: read by every loader built on this VM, the resume rebuild's included.
-    vm.optimize_bytecode = optimize
+    if not optimize:
+        # An instance entry only when it differs from the class default: the
+        # VM's attribute count is budgeted for PyPy (#702).
+        vm.optimize_bytecode = False
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
     loader = ModuleLoader(
         project_root=project_root,

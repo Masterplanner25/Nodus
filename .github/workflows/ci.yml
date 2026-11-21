@@ -144,6 +144,14 @@ jobs:
       - name: Pytest under PyPy
         run: python -m pytest -q
 
+      - name: Time the self-hosted frontend under PyPy
+        # #173: the measurement behind recommending PyPy for long runs. The
+        # same step runs in `test` on CPython; compare the two logs. It also
+        # re-checks that the self-hosted frontend agrees with the Python one on
+        # every tracked .nd file, under this interpreter. Not a gate on speed:
+        # runner timings vary, so the numbers are read, not asserted.
+        run: python -m tools.selfhost_check
+
   test:
     runs-on: ubuntu-latest
     permissions:
@@ -202,6 +210,14 @@ jobs:
 
       - name: Pytest
         run: python -m pytest -q
+
+      - name: Time the self-hosted frontend on CPython
+        # #173: the measurement behind recommending PyPy for long runs. The
+        # same step runs in `pypy` under PyPy; compare the two logs. It also
+        # re-checks that the self-hosted frontend agrees with the Python one on
+        # every tracked .nd file, under this interpreter. Not a gate on speed:
+        # runner timings vary, so the numbers are read, not asserted.
+        run: python -m tools.selfhost_check
 
       - name: Coverage
         run: |
