@@ -15,6 +15,10 @@
     for that wrapper's use.
   - A program that defines its own `substring` keeps its own: a user definition
     takes precedence over a builtin of the same name.
+  - **Embedders:** `register_function("substring", ...)` and
+    `register_function("str_substring", ...)` are now refused, as for every
+    builtin, because the override guard is a security boundary. No first-party
+    companion registers either name.
 
   The self-hosted lexer (`examples/selfhost/`) now cuts each token out with it.
   That saved only about 5%, 76.6 to 73.1 instructions per character, less than
