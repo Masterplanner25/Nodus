@@ -150,6 +150,25 @@ fn main() {
     print(a + b)
 }
 """,
+    # #950: `else_branch` holds either a Block or, for `else if`, an If. The
+    # formatter handled only the Block, so every `else if` crashed it. One field
+    # with two node types is exactly what a node-level completeness check misses.
+    "else if": """
+fn f(x) {
+    if (x == 1i) { print(1) } else if (x == 2i) { print(2) }
+}
+""",
+    "else if chain ending in else": """
+fn f(x) {
+    if (x == 1i) { print(1) } else if (x == 2i) { print(2) } else if (x == 3i) {
+        // three
+        print(3)
+    } else { print(4) }
+}
+""",
+    "else if at module level": """
+if (true) { print(1) } else if (false) { print(2) }
+""",
 }
 
 
@@ -177,6 +196,33 @@ class FormatterRoundTripTests(unittest.TestCase):
             with self.subTest(label):
                 once = format_source(source)
                 self.assertEqual(once, format_source(once), label)
+
+    # closes: #950
+    def test_an_else_if_chain_renders_on_the_closing_brace_line(self):
+        """The reported crash, asserted on the text.
+
+        Before the fix this raised `AttributeError: 'If' object has no attribute
+        'stmts'`. The text check also pins the shape: a chain stays a chain
+        rather than becoming `else { if ... }`, which would round-trip
+        structurally only if the parser happened to collapse it.
+        """
+        formatted = format_source(
+            "fn f(x) {\n"
+            "    if (x == 1i) { print(1) } else if (x == 2i) { print(2) } else { print(3) }\n"
+            "}\n"
+        )
+        self.assertEqual(
+            formatted,
+            "fn f(x) {\n"
+            "    if (x == 1i) {\n"
+            "        print(1)\n"
+            "    } else if (x == 2i) {\n"
+            "        print(2)\n"
+            "    } else {\n"
+            "        print(3)\n"
+            "    }\n"
+            "}\n",
+        )
 
     # closes: #657
     def test_a_goal_budget_renders_only_what_is_declared(self):

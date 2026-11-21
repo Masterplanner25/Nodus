@@ -28,6 +28,14 @@
   (`--time-limit` on the CLI, `max_steps` / `timeout_ms` on `NodusRuntime`). Its
   work was always this large; until now it wasn't measured.
 
+- **#950: `nodus fmt` formats `else if` chains.** It crashed on every one, with
+  `AttributeError: 'If' object has no attribute 'stmts'`. That included
+  `nodus fmt --check` and the pre-commit hook, so a file containing `else if`
+  could not be formatted or committed through the hook. The parser stores the
+  second `if` itself as the else branch, and the formatter handled only a block
+  there. Nothing caught it because no tracked `.nd` file used `else if`, and the
+  round-trip corpus had no case for it. It has three now.
+
 - **#937: the default-store warning gives the real reason to leave the JSON
   store.** It said `LocalWorkflowStore` is "not crash-safe", and the runbook said
   a kill mid-write can corrupt run state. Neither is true. Every record is
