@@ -22,15 +22,15 @@ the tree:
 ## What it costs
 
 Measured 2026-11-21 on the development machine, CPython 3.11, after the parser
-restructure described below and the VM work in #965-#967. The VM's own
+restructure described below and the VM work in #965-#967 and #970. The VM's own
 instruction counter is reliable since the module-call bounds fix: before it,
 instructions run inside an imported module were not counted at all.
 
 | Input | Lines | Lex | Parse | Per line | Time |
 |---|---|---|---|---|---|
-| Every tracked `.nd` file (95) | 6,401 | 8.2M (44.0/char) | 5.0M (127/token) | 2,070 | 10.2 s |
-| The stdlib (28 files) | 1,470 | 1.4M | 0.8M | 1,470 | 1.7 s |
-| `lexer.nd` + `parser.nd` | 1,839 | 2.8M | 1.8M | 2,510 | 3.5 s |
+| Every tracked `.nd` file (95) | 6,401 | 6.9M (36.9/char) | 4.0M (102/token) | 1,710 | 9.7 s |
+| The stdlib (28 files) | 1,470 | 1.1M | 0.6M | 1,210 | 1.5 s |
+| `lexer.nd` + `parser.nd` | 1,839 | 2.4M | 1.4M | 2,060 | 3.2 s |
 
 Lines are `wc -l`. An earlier version of this table gave the corpus as 4,488
 lines, and so 3,540 instructions per line. The tree held 95 files totalling
@@ -42,26 +42,36 @@ the difference:
 - **fewer instructions** came from the optimizer, which runs again since #966:
   - assignment statements no longer read back what they stored;
   - uncaptured slots are no longer reset (#967);
+  - three common sequences are fused into one instruction each (#970, the
+    provisional opcodes proposed in #969): 8.2M + 5.0M became 6.9M + 4.0M;
 - **cheaper instructions** came from the opcode handlers (#965).
 
-- **Throughput is about 1.3M instructions/s.**
+A fused instruction does the work of several, so its time falls by less than its
+instruction count. Over this corpus the fused instructions cut instructions by
+16-20%. Time fell 8-9% when the frontend parsed `parser.nd` on `main` and on
+#970 alternately in one window; single runs on this machine swing about 10%,
+so the table's times are not a measurement of that difference.
+
+- **Throughput is about 1.1M instructions/s.** The count is lower than before
+  the fused instructions, because each now does more.
 - **The Python frontend does the whole corpus in about 0.41 s** (best of 3 on
-  2026-11-21), so the Nodus one is about 25× slower. This README used to say
+  2026-11-21), so the Nodus one is about 24× slower. This README used to say
   0.28 s and 40×; that time did not reproduce.
 - **Under PyPy**, before the scanning builtins and the parser restructure, the
   stdlib plus the two files here took 4.2 s, against 10.5 s on CPython. The same
-  input now takes 5.3 s on CPython. PyPy was not re-measured: Application Control
+  input now takes 4.7 s on CPython. PyPy was not re-measured: Application Control
   on the development machine blocks the local PyPy interpreter. CI's `pypy` job
   runs the suite under PyPy but does not time this.
 
 **For #173 this replaces an estimate.** A self-hosted compiler would also need
 code generation and optimisation, and it would be several thousand lines. At
-roughly 1,500-2,500 instructions per line for the frontend, and perhaps twice
-that end to end, compiling it would take on the order of **15-25M
-instructions**: about 12-20 s on CPython today.
+roughly 1,200-2,100 instructions per line for the frontend, and perhaps twice
+that end to end, compiling it would take on the order of **12-21M
+instructions**: about 11-19 s on CPython today.
 - The first estimate was 100-300M instructions.
 - The first measurement said 30-50M, with the line-count error above.
 - After the parser restructure it was 15-30M.
+- After the VM work in #965-#967 it was 15-25M.
 
 Self-hosting is slow but practical without a faster VM. It also makes it a heavy
 dependency on the VM's speed for anyone running it.
