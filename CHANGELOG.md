@@ -221,6 +221,25 @@
   event is sent first, and the wait re-checks until its timeout. It surfaced as
   a once-in-four failure on the PyPy CI job.
 
+### Performance
+
+- **The VM runs the same instructions 13–17% faster on the self-hosted
+  frontend.** No bytecode changed; the work is inside the opcode handlers:
+  - The hottest handlers pop the operand stack directly instead of through
+    `VM.pop()`. An empty stack still reports `Stack underflow` from the handler
+    itself, through one method, `stack_underflow()`.
+  - Local reads and stores test for a captured variable's cell with one exact
+    type check instead of two `isinstance` calls.
+  - Conditional jumps decide `true`, `false` and `nil` without `is_truthy`.
+    `==` and `!=` compare two strings directly.
+  - A builtin's arguments come off the stack in one slice. A return no longer
+    builds a display name for an event nothing records.
+  - The dispatch loop measures the code's length only when it changes chunks.
+
+  Call-heavy code gains less, 2–9%: most of its cost is the dispatch loop
+  itself. `tests/test_vm_hot_paths.py` checks each shortcut against the
+  general code it skips. Part of the work on #173.
+
 ### Tooling
 
 - **A Nodus lexer and parser written in Nodus, checked against the real ones.**
