@@ -605,8 +605,9 @@ class Compiler:
         if self.symbols is None:
             self.symbols = SymbolTable()
         self.symbols.enter_scope("function")
+        param_slots = {}
         for param in param_names:
-            self.symbols.define(param)
+            param_slots[param] = self.symbols.define(param).index
         # Emit FRAME_SIZE placeholder; will be patched with final slot count after body compile
         frame_size_idx = self.emit("FRAME_SIZE", 0)
         for param in reversed(param_names):
@@ -618,7 +619,17 @@ class Compiler:
         func_scope = self.symbols._current_function_scope()
         if func_scope is not None:
             # Use all_local_slots which includes vars from nested block scopes
-            fn_info.local_slots = dict(func_scope.all_local_slots)
+            local_slots = dict(func_scope.all_local_slots)
+            # #949: the map is keyed by name, so a later local with a
+            # parameter's name -- a `let`, a `for` variable, a `catch`
+            # variable -- overwrote the parameter's entry. STORE_ARG binds
+            # arguments through this map by name, so the argument went into the
+            # later local's slot and the parameter read nil from function
+            # entry. A parameter's name means the parameter.
+            for param, slot in param_slots.items():
+                if slot is not None:
+                    local_slots[param] = slot
+            fn_info.local_slots = local_slots
             self.patch(frame_size_idx, "FRAME_SIZE", func_scope.local_slot_counter)
         self.symbols.exit_scope()
         self.emit("PUSH_CONST", None)

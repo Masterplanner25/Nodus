@@ -353,10 +353,10 @@ fn lex_interp(src, n, pos, line, col, interp_line, interp_col, depth, out) {
     fail("Unclosed interpolation expression", interp_line, interp_col)
 }
 
-// The parameter is not called `text`: a local of that name below would make it
-// read as nil (#949).
-export fn tokenize(source) {
-    let src = str_replace(str_replace(source, "\r\n", "\n"), "\r", "\n")
+// The loop below declares its own `text`, which used to make this parameter
+// read as nil (#949). The self-host test fails if that comes back.
+export fn tokenize(text) {
+    let src = str_replace(str_replace(text, "\r\n", "\n"), "\r", "\n")
     let n = len(src)
     let pos = 0i
     if (n > 0i && src[0i] == "\uFEFF") {

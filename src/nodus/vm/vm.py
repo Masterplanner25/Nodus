@@ -980,19 +980,22 @@ class VM:
         closure.upvalues[index].value = value
         return value
 
-    def capture_local(self, frame: Frame, name: str) -> Cell:
-        # Prefer locals_array when available (slot-indexed path)
-        if frame.locals_array is not None and frame.locals_name_to_slot is not None:
+    def capture_local(self, frame: Frame, name: str, slot: int | None = None) -> Cell:
+        # #949: capture by the slot the compiler resolved when it has one. The
+        # name map holds one slot per name, so with `let x` shadowed in a block
+        # a closure capturing the outer `x` got the inner one's slot.
+        if frame.locals_array is not None and slot is None and frame.locals_name_to_slot is not None:
             slot = frame.locals_name_to_slot.get(name)
-            if slot is not None:
-                existing = frame.locals_array[slot]
-                if isinstance(existing, Cell):
-                    return existing
-                cell = Cell(existing if existing is not None else None)
-                frame.locals_array[slot] = cell
-                # Also sync to dict for any code still using the dict path
-                frame.locals[name] = cell
-                return cell
+        # Prefer locals_array when available (slot-indexed path)
+        if frame.locals_array is not None and slot is not None and 0 <= slot < len(frame.locals_array):
+            existing = frame.locals_array[slot]
+            if isinstance(existing, Cell):
+                return existing
+            cell = Cell(existing if existing is not None else None)
+            frame.locals_array[slot] = cell
+            # Also sync to dict for any code still using the dict path
+            frame.locals[name] = cell
+            return cell
         # Fallback: dict-based locals (old path)
         if name in frame.locals:
             value = frame.locals[name]
@@ -4756,7 +4759,7 @@ class VM:
             if upvalue.is_local:
                 if not self.frames:
                     self.runtime_error("runtime", "Closure capture without frame")
-                cell = self.capture_local(self.frames[-1], upvalue.name)
+                cell = self.capture_local(self.frames[-1], upvalue.name, upvalue.index)
             else:
                 if not self.frames or self.frames[-1].closure is None:
                     self.runtime_error("runtime", "Closure capture missing outer closure")

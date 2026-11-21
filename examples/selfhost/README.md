@@ -62,6 +62,7 @@ anyone running it.
 Writing about 1,900 lines of real Nodus turned up four defects, all filed:
 - **#949:** a local named like a parameter makes the parameter `nil` from the
   start of the function. `tokenize(text)` with a later `let text` received `nil`.
+  Now fixed, and `tokenize` is back to taking `text`.
 - **#952:** a `return` inside a `for ... in` loop leaves the iterator on the
   caller's stack, shifting the caller's pending operands. Now fixed.
   `parse_assignment` returns from inside a `for` loop, so the self-host test
