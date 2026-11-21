@@ -518,7 +518,18 @@ class VM:
         try:
             return self.stack.pop()
         except IndexError:
-            self.runtime_error("runtime", "Stack underflow")
+            self.stack_underflow()
+
+    def stack_underflow(self) -> None:
+        """Report a pop from an empty operand stack.
+
+        The hottest handlers pop `self.stack` inside their own `try` rather than
+        calling `pop()`, which saves a Python call per operand. They report an
+        empty stack through here, so the message is the same either way:
+        `tests/test_opcode_semantics_core.py` and the regression tests for #479,
+        #624 and ASYNC-MOD-003 key on it.
+        """
+        self.runtime_error("runtime", "Stack underflow")
 
     def current_loc(self) -> tuple[str | None, int | None, int | None]:
         if self.ip < 0 or self.ip >= len(self.code_locs):
@@ -3455,8 +3466,14 @@ class VM:
                 self.runtime_error("call", f"{fn_name} expected {expected_text} args, got {arg_count}")
         elif arg_count != expected:
             self.runtime_error("call", f"{fn_name} expected {expected} args, got {arg_count}")
-        args = [self.pop() for _ in range(arg_count)]
-        args.reverse()
+        stack = self.stack
+        if arg_count > len(stack):
+            self.stack_underflow()
+        if arg_count:
+            args = stack[-arg_count:]
+            del stack[-arg_count:]
+        else:
+            args = []
         # #405: the builtin dispatch site is one of the two chokepoints a guest
         # cannot route around. Only capability-bearing builtins consult the
         # policy — `len` and `push` carry no authority, and making the hottest
@@ -3754,9 +3771,13 @@ class VM:
                 data={"call_type": call_type, "total": float(self.function_calls)},
             )
 
-    def record_vm_return(self, name: str | None) -> None:
+    def record_vm_return(self, name: str | None, *, raw: bool = False) -> None:
+        """Count a return. `raw=True` means `name` is still the internal name;
+        it is turned into a display name only if an event carries it."""
         self.returns += 1
         if self.event_bus.wants("vm_return"):
+            if raw and name is not None:
+                name = self.display_name(name)
             self.event_bus.emit_event(
                 "vm_return",
                 name=name,
@@ -3819,11 +3840,11 @@ class VM:
         the hash computation from the dict-keyed LOAD_LOCAL path.
         Supersedes LOAD_LOCAL for variables whose slot index is known at compile time.
         """
-        slot = instr[1]
-        value = self.frames[-1].locals_array[slot]
-        if isinstance(value, Cell):
+        value = self.frames[-1].locals_array[instr[1]]
+        cls = type(value)
+        if cls is Cell:
             value = value.value
-        elif isinstance(value, LiveBinding):
+        elif cls is LiveBinding:
             value = value.get()
         self.stack.append(value)
         self.ip += 1
@@ -3835,10 +3856,13 @@ class VM:
         captured variables (upvalue capture via MAKE_CLOSURE).
         """
         slot = instr[1]
-        value = self.pop()
+        try:
+            value = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         arr = self.frames[-1].locals_array
         existing = arr[slot]
-        if isinstance(existing, Cell):
+        if type(existing) is Cell:
             existing.value = value
         else:
             arr[slot] = value
@@ -3869,29 +3893,41 @@ class VM:
 
     def _op_store_arg(self, instr):
         name = instr[1]
-        value = self.pop()
-        locals_ = self.current_locals()
-        if locals_ is None:
+        try:
+            value = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        if not self.frames:
             self.runtime_error("runtime", "STORE_ARG used without a call frame")
-        if name in locals_ and isinstance(locals_[name], Cell):
-            locals_[name].value = value
+        frame = self.frames[-1]
+        locals_ = frame.locals
+        existing = locals_.get(name)
+        if type(existing) is Cell:
+            existing.value = value
         else:
             locals_[name] = value
         # Also sync parameter value into locals_array for LOAD_LOCAL_IDX access
-        frame = self.frames[-1]
-        if frame.locals_array is not None and frame.locals_name_to_slot is not None:
-            slot = frame.locals_name_to_slot.get(name)
+        arr = frame.locals_array
+        slots = frame.locals_name_to_slot
+        if arr is not None and slots is not None:
+            slot = slots.get(name)
             if slot is not None:
-                frame.locals_array[slot] = value
+                arr[slot] = value
         self.ip += 1
 
     def _op_pop(self, instr):
-        self.pop()
+        try:
+            self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         self.ip += 1
 
     def _op_add(self, instr):
-        b = self.pop()
-        a = self.pop()
+        try:
+            b = self.stack.pop()
+            a = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         try:
             self.stack.append(a + b)
         except TypeError:
@@ -3970,15 +4006,27 @@ class VM:
         return a == b
 
     def _op_eq(self, instr):
-        b = self.pop()
-        a = self.pop()
-        self.stack.append(self._nodus_eq(a, b))
+        try:
+            b = self.stack.pop()
+            a = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        if type(a) is str and type(b) is str:
+            self.stack.append(a == b)
+        else:
+            self.stack.append(self._nodus_eq(a, b))
         self.ip += 1
 
     def _op_ne(self, instr):
-        b = self.pop()
-        a = self.pop()
-        self.stack.append(not self._nodus_eq(a, b))
+        try:
+            b = self.stack.pop()
+            a = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        if type(a) is str and type(b) is str:
+            self.stack.append(a != b)
+        else:
+            self.stack.append(not self._nodus_eq(a, b))
         self.ip += 1
 
     def _op_lt(self, instr):
@@ -4021,15 +4069,21 @@ class VM:
         self.ip = instr[1]
 
     def _op_jump_if_false(self, instr):
-        cond = self.pop()
-        if not self.is_truthy(cond):
+        try:
+            cond = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        if cond is False or cond is None or (cond is not True and not self.is_truthy(cond)):
             self.ip = instr[1]
         else:
             self.ip += 1
 
     def _op_jump_if_true(self, instr):
-        cond = self.pop()
-        if self.is_truthy(cond):
+        try:
+            cond = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
+        if cond is True or (cond is not False and cond is not None and self.is_truthy(cond)):
             self.ip = instr[1]
         else:
             self.ip += 1
@@ -4207,8 +4261,11 @@ class VM:
         self.ip += 1
 
     def _op_index(self, instr):
-        idx = self.pop()
-        seq = self.pop()
+        try:
+            idx = self.stack.pop()
+            seq = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         self.stack.append(self.read_index(seq, idx))
         self.ip += 1
 
@@ -4221,7 +4278,10 @@ class VM:
 
     def _op_load_field(self, instr):
         name = instr[1]
-        obj = self.pop()
+        try:
+            obj = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         if isinstance(obj, NodusModule):
             if not obj.has_export(name):
                 self.runtime_error("key", f"Missing module export: {name}")
@@ -4948,7 +5008,10 @@ class VM:
         return ("yield", value)
 
     def _op_return(self, instr):
-        ret_value = self.pop()
+        try:
+            ret_value = self.stack.pop()
+        except IndexError:
+            self.stack_underflow()
         if not self.frames:
             self.runtime_error("runtime", "RETURN outside function")
         # If a finally block is pending in the current frame, defer the return.
@@ -4977,7 +5040,7 @@ class VM:
         if frame.cross_module_ctx is not None:
             self._restore_module_ctx(frame.cross_module_ctx)  # ASYNC-MOD-001: restore caller module context
         self._profiler_exit_frame(frame)
-        self.record_vm_return(self.display_name(frame.fn_name))
+        self.record_vm_return(frame.fn_name, raw=True)
         while self.handler_stack and self.handler_stack[-1][3] > len(self.frames):
             self.handler_stack.pop()
         if self.current_coroutine is not None and frame.return_ip is None:
@@ -5114,10 +5177,17 @@ class VM:
         if self._instrumented():
             return self._execute_instrumented()
         dispatch = self._dispatch
+        # `len(self.code)` changes only when a call or return switches to
+        # another chunk, so it is measured only then.
+        code_seen = None
+        code_len = 0
         while True:
             code = self.code
+            if code is not code_seen:
+                code_seen = code
+                code_len = len(code)
             ip = self.ip
-            if ip >= len(code):
+            if ip >= code_len:
                 return ("halt", None)
             count = self.instructions_executed
             if count >= self._next_check:
