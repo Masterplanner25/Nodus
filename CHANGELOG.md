@@ -259,6 +259,18 @@
 
 ### Performance
 
+- **A `let` or `for` variable no closure captures no longer resets its slot.**
+  The compiler emits `RESET_LOCAL_IDX` before every `let` store and `for`
+  variable store in a function. A reset gives a closure made in a loop a fresh
+  variable each iteration, which only matters when a closure captures the slot.
+  The compiler now records which slots each function's closures capture, and
+  the optimizer removes the other resets. Under `--no-opt` they all remain.
+  Over every tracked `.nd` file, the self-hosted frontend runs 3.7% fewer
+  instructions lexing and 4.6% fewer parsing.
+  `tests/test_uncaptured_resets.py` checks per-iteration capture with the
+  optimizer on and off: in `for` and `while` loops, through a nested closure,
+  and with a slot shared by sibling blocks. Part of the work on #173.
+
 - **The VM runs the same instructions 13–17% faster on the self-hosted
   frontend.** No bytecode changed; the work is inside the opcode handlers:
   - The hottest handlers pop the operand stack directly instead of through

@@ -155,6 +155,16 @@ class Compiler:
         self.symbol_tables: dict[str, SymbolTable] = {}
         self.symbols: SymbolTable | None = None
         self.fn_counter = 0
+        #: Instruction indices of `RESET_LOCAL_IDX`s whose slot no closure in
+        #: their function captures. A reset only detaches a `Cell`, and only a
+        #: capture puts one in a slot, so these do nothing; the module loader
+        #: hands them to `optimize_bytecode`, which removes them. They stay in
+        #: the code when the optimizer is off, where they are harmless.
+        self.uncaptured_resets: set[int] = set()
+        # One entry per function being compiled, innermost last: the resets
+        # it emitted as (index, slot), and the slots its closures capture.
+        # None for the slots means unknown, which keeps every reset.
+        self._reset_frames: list[tuple[list[tuple[int, int]], set[int] | None]] = []
         self.temp_counter = 0
         # Stack of loop-compilation frames for break/continue. Each frame is
         # {"breaks": [jump_idx], "continues": [jump_idx], "break_pops": bool,
@@ -480,6 +490,42 @@ class Compiler:
                 self.symbols.define(stmt.expr.name)
                 continue
 
+    def _emit_reset(self, slot: int) -> None:
+        """Emit `RESET_LOCAL_IDX slot`, noting it for the capture check."""
+        index = self.emit("RESET_LOCAL_IDX", slot)
+        if self._reset_frames:
+            self._reset_frames[-1][0].append((index, slot))
+
+    def _close_reset_frame(self, upvalues) -> None:
+        """Finish the capture check for the function just compiled.
+
+        Its closures have all been compiled by now, so the slots they capture
+        are known: each nested function's `is_local` upvalues name slots of
+        this one, and they were added to this frame as each nested function
+        closed. A reset of any other slot can go.
+
+        Then this function's own `is_local` upvalues are slots of the function
+        around it. An upvalue without an index is captured by name at run time
+        (`VM.capture_local`), so the enclosing function keeps every reset.
+        """
+        resets, captured = self._reset_frames.pop()
+        if captured is not None:
+            for index, slot in resets:
+                if slot not in captured:
+                    self.uncaptured_resets.add(index)
+        if not self._reset_frames:
+            return
+        outer_resets, outer_captured = self._reset_frames[-1]
+        if outer_captured is None:
+            return
+        for upvalue in upvalues:
+            if not upvalue.is_local:
+                continue
+            if upvalue.index is None:
+                self._reset_frames[-1] = (outer_resets, None)
+                return
+            outer_captured.add(upvalue.index)
+
     def _is_frame_slot(self, symbol) -> bool:
         """Whether *symbol* lives in a slot of the current function's frame."""
         return (symbol is not None and symbol.scope == "local"
@@ -602,6 +648,7 @@ class Compiler:
         if self.symbols is None:
             self.symbols = SymbolTable()
         self.symbols.enter_scope("function")
+        self._reset_frames.append(([], set()))
         param_slots = {}
         for param in param_names:
             param_slots[param] = self.symbols.define(param).index
@@ -612,6 +659,7 @@ class Compiler:
 
         self.compile_stmt(stmt.body)
         fn_info.upvalues = self.symbols.current_function_upvalues()
+        self._close_reset_frame(fn_info.upvalues)
         # Collect local slot assignments and patch FRAME_SIZE with final count
         func_scope = self.symbols._current_function_scope()
         if func_scope is not None:
@@ -655,7 +703,7 @@ class Compiler:
                 self.symbols.define(stmt.name)
                 symbol = self.resolve_symbol(stmt.name)
                 if self._is_frame_slot(symbol):
-                    self.emit("RESET_LOCAL_IDX", symbol.index)
+                    self._emit_reset(symbol.index)
                 self.compile_expr(stmt.expr)
             else:
                 self.compile_expr(stmt.expr)
@@ -666,7 +714,7 @@ class Compiler:
                     # Reset before storing so that inside loop bodies each
                     # `let` creates a fresh Cell on MAKE_CLOSURE rather than
                     # reusing the Cell left by the previous iteration.
-                    self.emit("RESET_LOCAL_IDX", symbol.index)
+                    self._emit_reset(symbol.index)
             if self._is_frame_slot(symbol):
                 self.emit("STORE_LOCAL_IDX", symbol.index)
             else:
@@ -819,7 +867,7 @@ class Compiler:
                 # value. This detaches any Cell left by MAKE_CLOSURE in the
                 # previous iteration so closures created in each iteration
                 # capture an independent Cell (per-iteration binding semantics).
-                self.emit("RESET_LOCAL_IDX", loop_var_symbol.index)
+                self._emit_reset(loop_var_symbol.index)
                 self.emit("STORE_LOCAL_IDX", loop_var_symbol.index)
             else:
                 self.emit("STORE", stmt.name)
