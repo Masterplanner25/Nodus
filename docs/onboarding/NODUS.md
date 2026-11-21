@@ -101,7 +101,7 @@ Primary extension: `.nd`
 ```
 nodus run [file]       Run a script or project
 nodus check [file]     Validate syntax and imports
-nodus fmt <file>       Format in-place
+nodus fmt <file>...    Format in-place
 nodus repl             Interactive shell
 nodus test [path]      Run .nd test files (*_test.nd / test_*.nd)
 nodus status           Show the project and entry point here
