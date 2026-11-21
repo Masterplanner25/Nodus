@@ -1,6 +1,8 @@
 # Compiling Nodus functions to Python (#173)
 
-**Status: proposed 2026-11-21. Open decisions are listed at the end.**
+**Status: decided 2026-11-21; phase 1 implemented in `nodus/vm/pycompile.py`.
+The decisions are at the end. "Phase 1 as built" records where the implementation
+departs from the plan.**
 
 ## Why
 
@@ -191,19 +193,65 @@ same source, which makes it testable and later cacheable.
 
 | Phase | Adds | Done when |
 |---|---|---|
-| 1 | Everything above, behind a switch, plus the differential CI job | the suite passes in differential mode, and the frontend speedup is measured |
-| 2 | Global `LOAD`/`STORE` with #671's semantics, `BUILD_RECORD`/`BUILD_MAP`, `INDEX_SET`, `MUL`/`DIV`/`MOD`, `GET_ITER` over lists | the lexer's hot functions (`tokenize`, `scan_token`) compile |
+| 1 | Everything above, behind a switch, plus the differential CI job; also global `LOAD`/`STORE`, the `BUILD_*` opcodes, `INDEX_SET`, `MUL`/`DIV`/`MOD` and iteration (see "Phase 1 as built") | the suite passes in differential mode, and the frontend speedup is measured |
+| 2 | Builtins outside the compilable categories, through the may-suspend analysis described under Eligibility | programs that call `http`, `subprocess` or agents in their hot paths compile |
 | 3 | Cells and closures, `CALL_VALUE` with a known compiled target | closure-heavy programs compile |
 | 4 | Deoptimisation: rebuild interpreter frames from a compiled function's state at a block boundary, so it can pause | compiled code runs inside scheduled coroutines |
 
 Phase 4 is the hard one, and it may not be worth doing.
 
-## Open decisions
+## Phase 1 as built
 
-1. **On by default, or opt-in first?** Proposed: opt-in for one release, through
-   `NodusRuntime(compile_functions=True)`, `nodus run --compile` and an environment
-   variable, with the differential job in CI throughout. Then on by default.
-2. **The CI cost.** The differential job is another full suite run, about as long
-   as the `pypy` job.
-3. **The thresholds.** A call count of 32 and a compiled-depth cap of 200 are both
-   proposals, to be measured in phase 1.
+Five places where the implementation departs from the plan above. Each is
+narrower or safer than the plan, not looser.
+
+1. **More opcodes than planned.** Phase 1 was to support only what the
+   self-hosted frontend needed, but the frontend needed more than the plan listed.
+   - **Iteration:** `reach` iterates over pending comments, and `eat` calls
+     `reach`, so without iteration 31 of the frontend's 75 functions could not
+     compile.
+   - **Global `LOAD` and `STORE`:** `tok_name` reads the `TOKEN_NAMES` global.
+
+   Both are exact by construction. `GET_ITER` runs the VM's handler, and
+   `ITER_NEXT` calls the same `Iterator.advance()`. `LOAD` and `STORE` call
+   `load_name` and `store_name`, so #671's semantics come with them. Any opcode
+   without an inlined fast path calls the VM's own handler on `vm.stack`: the
+   `BUILD_*` opcodes, `INDEX_SET`, `MUL`, `DIV`, `MOD`, `NEG` and `THROW`.
+2. **A category allowlist instead of a may-suspend flag.** Compiled code may
+   call only builtins in five `NO_AUTHORITY_BUILTINS` categories:
+   - pure computation;
+   - hashing;
+   - path strings;
+   - clock and randomness;
+   - console I/O.
+
+   These are synchronous, carry no authority, and never suspend. "In-process
+   concurrency" (`sleep`, `recv`, `wait`, `run_loop`) and "orchestration"
+   (`__workflow_checkpoint`, `workflow_wait`, `retry_call`) are excluded. So are
+   all capability-bearing builtins, which makes #405's check unreachable from
+   compiled code in phase 1. It still goes through the shared `invoke_builtin`
+   anyway. The may-suspend analysis moves to phase 2.
+3. **A closed set.** A compiled function calls only builtins and other eligible
+   functions, never an interpreted one. So there is no synchronous interpreter
+   call on the normal path. One exists for the depth cap (`call_interpreted`):
+   - it pushes the frame with a return address one past the end of the code,
+     which ends a nested `execute()`;
+   - it hides `handler_stack`, because nothing in a closed set has a `try`.
+4. **Errors leave frames, as the interpreter does.** A compiled function pops its
+   frame only on a normal return. On an error the frames stay, and
+   `handle_exception` unwinds them, exactly as it does for an interpreted callee.
+   Stack traces and locations then match by construction.
+5. **Counting is corrected on the error path.** A block is counted when it is
+   entered, so if an instruction in it raises, the rest of the block is
+   subtracted. Each instruction that can raise stores its address. Before this,
+   the differential tests found error runs counting a few instructions more than
+   the interpreter, for example 164 against 122.
+
+## Decisions (2026-11-21)
+
+1. **Opt-in for one release**, through `NodusRuntime(compile_functions=True)`,
+   `nodus run --compile` and `NODUS_COMPILE_FUNCTIONS`. On by default after
+   that, if the differential job has stayed green.
+2. **The CI cost is accepted.** The `compiled` job runs the whole suite with
+   `NODUS_COMPILE_FUNCTIONS=always`.
+3. **The thresholds are measured, not assumed.** See "Thresholds, measured".

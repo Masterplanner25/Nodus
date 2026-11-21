@@ -244,6 +244,7 @@ def run_source(
     input_fn=None,
     fs_root: str | None = None,
     stream_output: bool = False,
+    compile_functions: bool = False,
 ):
     import sys as _sys
     _import_stderr = _sys.stderr
@@ -300,6 +301,10 @@ def run_source(
         # VM's attribute count is budgeted for PyPy (#702).
         vm.optimize_bytecode = False
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
+    if compile_functions and vm._pycompile is None:
+        # #173: compile hot functions to Python (opt-in, `nodus run --compile`).
+        from nodus.vm import pycompile
+        pycompile.enable(vm)
     loader = ModuleLoader(
         project_root=project_root,
         vm=vm,

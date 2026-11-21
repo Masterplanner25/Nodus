@@ -221,6 +221,10 @@ class VM:
     #: in __init__ for a few hours, which took a runtime-built VM to 79
     #: attributes, the last slot of headroom.
     optimize_bytecode: bool = True
+    #: #173: the compile-to-Python state (`nodus.vm.pycompile.CompileState`)
+    #: when compiling functions is switched on, else None. A class-level
+    #: default, so a VM that never enables it holds no extra attribute.
+    _pycompile = None
     #: The result of the last workflow or goal *this program* ran (#858). The
     #: `workflow run` / `goal run` entry points (CLI and server) execute the
     #: program and then run the flow it defines; a program that already called
@@ -292,6 +296,15 @@ class VM:
         # #629: set on a child VM built for a resume, carrying what the
         # drift check needs about the module that drove it. None on a VM
         # running its own program.
+        # #173: NODUS_COMPILE_FUNCTIONS switches compile-to-Python on for every
+        # VM; "always" compiles each eligible function on its first call, which
+        # is what CI's differential job runs the suite under. An instance
+        # attribute only when set (#702's budget).
+        if os.environ.get("NODUS_COMPILE_FUNCTIONS"):
+            from nodus.vm import pycompile as _pycompile_module
+            _state = _pycompile_module.from_environment()
+            if _state is not None:
+                self._pycompile = _state
         self.trace = trace
         self.trace_no_loc = trace_no_loc
         self.trace_filter = trace_filter
@@ -3463,23 +3476,24 @@ class VM:
         emit_denied(self.event_bus, request, reason)
         self.runtime_error("sandbox", f"Blocked: {reason}")
 
-    def call_builtin(self, fn_name: str, arg_count: int):
-        builtin = self.builtins[fn_name]
-        expected = builtin.arity
+    def check_builtin_arity(self, fn_name: str, arg_count: int) -> None:
+        """Refuse a builtin call with the wrong number of arguments."""
+        expected = self.builtins[fn_name].arity
         if isinstance(expected, tuple):
             if arg_count not in expected:
                 expected_text = ", ".join(str(value) for value in expected)
                 self.runtime_error("call", f"{fn_name} expected {expected_text} args, got {arg_count}")
         elif arg_count != expected:
             self.runtime_error("call", f"{fn_name} expected {expected} args, got {arg_count}")
-        stack = self.stack
-        if arg_count > len(stack):
-            self.stack_underflow()
-        if arg_count:
-            args = stack[-arg_count:]
-            del stack[-arg_count:]
-        else:
-            args = []
+
+    def invoke_builtin(self, fn_name: str, args: list):
+        """Run a builtin on `args`, after its capability check, and return what
+        it returned, suspend requests included.
+
+        Shared by `call_builtin` (the `CALL` opcode) and compiled functions
+        (#173), so the capability chokepoint below has one copy.
+        """
+        builtin = self.builtins[fn_name]
         # #405: the builtin dispatch site is one of the two chokepoints a guest
         # cannot route around. Only capability-bearing builtins consult the
         # policy — `len` and `push` carry no authority, and making the hottest
@@ -3495,11 +3509,28 @@ class VM:
         if profiler is not None and profiler.enabled:
             profiler.enter_function(fn_name)
             try:
-                result = builtin.fn(*args)
+                return builtin.fn(*args)
             finally:
                 profiler.exit_function(fn_name)
+        return builtin.fn(*args)
+
+    def finish_builtin_value(self, result):
+        """What a builtin's ordinary (non-suspending) result becomes on the stack."""
+        if isinstance(result, Record) and result.kind == "error":
+            return self._augment_stdlib_err(result)
+        return result
+
+    def call_builtin(self, fn_name: str, arg_count: int):
+        self.check_builtin_arity(fn_name, arg_count)
+        stack = self.stack
+        if arg_count > len(stack):
+            self.stack_underflow()
+        if arg_count:
+            args = stack[-arg_count:]
+            del stack[-arg_count:]
         else:
-            result = builtin.fn(*args)
+            args = []
+        result = self.invoke_builtin(fn_name, args)
         if isinstance(result, SleepRequest):
             self.stack.append(None)
             if self.current_coroutine is None:
@@ -3524,10 +3555,29 @@ class VM:
             self.current_coroutine.state = "suspended"
             self.save_current_coroutine_state(self.ip + 1)
             return ("yield", {CHECKPOINT_KEY: result.label})
-        if isinstance(result, Record) and result.kind == "error":
-            result = self._augment_stdlib_err(result)
-        self.stack.append(result)
+        self.stack.append(self.finish_builtin_value(result))
         return None
+
+    def build_call_frame(self, fn_name: str, fn, arg_count: int) -> Frame:
+        """The frame a named `CALL` pushes for a user function, checked against
+        `max_frames`. Shared by the interpreter and compiled functions (#173),
+        so stack traces and the frame limit cannot differ between them."""
+        call_path, call_line, call_col = self.current_loc()
+        frame = Frame(
+            return_ip=self.ip + 1,
+            locals={},
+            fn_name=fn_name,
+            call_line=call_line,
+            call_col=call_col,
+            call_path=call_path,
+            closure=None,
+            stack_base=len(self.stack) - arg_count,
+        )
+        if fn.local_slots:
+            frame.locals_name_to_slot = fn.local_slots
+        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+            self.runtime_error("sandbox", "Call stack overflow")
+        return frame
 
     def call_closure(self, callee, arg_count: int):
         """Set up a call frame and transfer control to a closure's bytecode.
@@ -4441,22 +4491,12 @@ class VM:
                 self.runtime_error("call", f"{fn_name} expected {len(fn.params)} args, got {arg_count}")
             if fn.upvalues:
                 self.runtime_error("call", f"{self.display_name(fn_name)} requires a closure")
-            call_path, call_line, call_col = self.current_loc()
-            frame = Frame(
-                return_ip=self.ip + 1,
-                locals={},
-                fn_name=fn_name,
-                call_line=call_line,
-                call_col=call_col,
-                call_path=call_path,
-                closure=None,
-                stack_base=len(self.stack) - arg_count,
-            )
-            if fn.local_slots:
-                frame.locals_name_to_slot = fn.local_slots
-            if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
-                self.runtime_error("sandbox", "Call stack overflow")
-            self.frames.append(frame)
+            pycompile_state = self._pycompile
+            if pycompile_state is not None:
+                compiled = pycompile_state.target(self, fn_name, fn)
+                if compiled is not None:
+                    return pycompile_state.invoke(self, compiled, fn_name, fn, arg_count)
+            self.frames.append(self.build_call_frame(fn_name, fn, arg_count))
             if self.profiler is not None and self.profiler.enabled:
                 self.profiler.enter_function(self.display_name(fn_name))
             self.ip = fn.addr

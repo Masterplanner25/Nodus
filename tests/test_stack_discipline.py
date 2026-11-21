@@ -195,6 +195,14 @@ class RuntimeSlotDisciplineTests(unittest.TestCase):
         self.violations: list[str] = []
         self.observed = 0
         self._patched: list[tuple[str, object]] = []
+        # This observes the interpreter's slot handlers. A function compiled to
+        # Python (#173) keeps its locals in Python variables and never reaches
+        # them, so under the differential CI job's NODUS_COMPILE_FUNCTIONS this
+        # would see too few accesses to mean anything. Compilation is off here.
+        from unittest import mock
+        env_patch = mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
 
         # Registered *before* anything is patched. These are three of the
         # hottest opcodes in the VM, and they are patched on the class — so a

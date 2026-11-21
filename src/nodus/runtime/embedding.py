@@ -299,6 +299,7 @@ class NodusRuntime:
         coroutine_timeout_ms: int | None = None,
         event_sinks: list | None = None,
         persist_workflow_source: bool = True,
+        compile_functions: bool = False,
     ) -> None:
         """Create a new embedded Nodus runtime.
 
@@ -530,6 +531,9 @@ class NodusRuntime:
         self.allowed_commands = allowed_commands
         self.allowed_hosts = allowed_hosts
         self.max_frames = max_frames
+        # #173: opt-in; private, because a public name here once collided with
+        # a downstream subclass's property (nodus-sdk, 5.0.3).
+        self._compile_functions = bool(compile_functions)
         # #160. Refused at construction when the platform cannot meter, rather
         # than accepted and silently unenforced -- a security control an operator
         # believes they have is worse than none, which is what #473 and #478 were
@@ -1290,6 +1294,9 @@ class NodusRuntime:
         if not optimize:
             # Only when it differs from the class default (#702's budget).
             vm.optimize_bytecode = False
+        if self._compile_functions and vm._pycompile is None:
+            from nodus.vm import pycompile
+            pycompile.enable(vm)
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):

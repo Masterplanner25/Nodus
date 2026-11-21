@@ -152,6 +152,37 @@ jobs:
         # runner timings vary, so the numbers are read, not asserted.
         run: python -m tools.selfhost_check
 
+  # #173: compile-to-Python is opt-in, and a compiled function must be
+  # indistinguishable from the interpreter except in speed
+  # (docs/design/throughput/01-compile-to-python.md). This job runs the whole
+  # suite with every eligible function compiled on its first call, so 4,500
+  # tests written against the interpreter also run against compiled code.
+  # The self-host check then compares tokens, trees and instruction counts.
+  compiled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      NODUS_COMPILE_FUNCTIONS: always
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout v4.3.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # actions/setup-python v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pytest with every eligible function compiled
+        run: python -m pytest -q
+
+      - name: Time the self-hosted frontend compiled
+        # Compare with the same step in `test` (interpreted) and `pypy`.
+        run: python -m tools.selfhost_check
+
   test:
     runs-on: ubuntu-latest
     permissions:
