@@ -2116,14 +2116,21 @@ def _dispatch(argv: list[str] | None = None) -> int:
         flags_with_values, flags_no_values = flags_for("fmt")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         if not positional:
-            _print_stderr("Usage: nodus fmt <script.nd>")
+            _print_stderr("Usage: nodus fmt <file.nd> [more.nd ...]")
             return 1
-        script = positional[0]
-        return _format_file(
-            script,
-            check_only="--check" in flags,
-            keep_trailing="--keep-trailing" in flags,
-        )
+        # #954: every path, not the first. `positional[0]` formatted one file,
+        # dropped the rest without a word, and exited 0, while the format
+        # gate's own advice and CLAUDE.md both pass several. Each file is
+        # handled even after one fails, so `--check` reports all of them.
+        status = 0
+        for script in positional:
+            if _format_file(
+                script,
+                check_only="--check" in flags,
+                keep_trailing="--keep-trailing" in flags,
+            ) != 0:
+                status = 1
+        return status
 
     if command == "ast":
         flags_with_values, flags_no_values = flags_for("ast")

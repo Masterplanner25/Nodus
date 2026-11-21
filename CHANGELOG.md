@@ -4,6 +4,14 @@
 
 ### Fixes
 
+- **#954: `nodus fmt` formats every file it is given.** It used to format the
+  first, silently ignore the rest, and exit 0. `--check` likewise checked only
+  the first. Now every path is handled, each failure is reported, a failure does
+  not stop the files after it, and the exit status is 1 if any file failed or
+  is unformatted. Following the format gate's advice
+  (`Run: python nodus.py fmt <paths>`) or `nodus fmt src/*.nd` used to fix one
+  file. It now fixes all of them.
+
 - **#957: `let` is lexical.** A name means the outer binding until the `let`
   that shadows it, and a function bound by `let` can call itself. Each of these
   used to give `nil`, silently:
