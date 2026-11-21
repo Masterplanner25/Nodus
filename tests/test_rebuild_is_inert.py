@@ -189,7 +189,14 @@ class ADurableResumeDoesNotRepeatThemTests(unittest.TestCase):
             rt = NodusRuntime(timeout_ms=None, max_steps=None,
                               workflow_runner=WorkflowFrameworkRunner(store))
             log = tmp / "log.txt"
-            rt.register_function("note", lambda line: log.open("a", encoding="utf-8").write(line + "\n"))
+            def note(line):
+                # Closed on return. An unclosed append is flushed only when the
+                # GC gets to it, which on PyPy is after `after` is read below
+                # (found by #173's PyPy CI job).
+                with log.open("a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+
+            rt.register_function("note", note)
             rt.register_function("crash", lambda: None)
             report = rt.sweep()
             after = log.read_text(encoding="utf-8").splitlines()[len(before):]

@@ -318,5 +318,68 @@ class DapServerTests(unittest.TestCase):
             client.request("disconnect")
 
 
+class StopIsAnnouncedBeforeItIsCountedTests(unittest.TestCase):
+    """#948: `wait_for_stop` returning True must mean the client has been told.
+
+    It did not. `_pause` counted the stop and woke waiters, and only then sent
+    the `stopped` event, so `launch` could answer ahead of the first stop and a
+    test draining the output could find nothing. That failed once on #173's
+    PyPy CI job. These tests check the ordering and the wait directly, so they
+    do not depend on catching the race."""
+
+    # closes: #948
+    def test_the_stopped_event_is_sent_before_the_stop_is_counted(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "order.nd")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("let x = 1\nx = x + 1\nprint(x)\n")
+
+            client = _Client()
+            client.request("initialize")
+            session = client.server.session
+            counts_when_announced: list[int] = []
+            announce = session.on_paused
+
+            def recording_on_paused(reason, state):
+                counts_when_announced.append(session.debugger.stop_count)
+                announce(reason, state)
+
+            session.on_paused = recording_on_paused
+            client.request("launch", {"program": path})
+            previous = session.debugger.stop_count
+            client.request("stepIn")
+            self.assertTrue(session.debugger.wait_for_stop(previous, timeout=5.0))
+
+            # Each announcement saw the count *before* its own stop: 0, then 1.
+            self.assertEqual([0, 1], counts_when_announced[:2])
+            client.request("disconnect")
+
+    def test_wait_for_stop_is_not_cut_short_by_an_unrelated_wakeup(self):
+        """A single `condition.wait(timeout)` returned False on the first
+        `notify_all`, such as a resume, long before its timeout."""
+        import threading
+        import time
+
+        from nodus.dap.server import ProgrammaticDebugger
+
+        debugger = ProgrammaticDebugger(session=None)
+
+        def other_activity():
+            time.sleep(0.05)
+            with debugger.condition:
+                debugger.condition.notify_all()  # not a stop
+            time.sleep(0.2)
+            with debugger.condition:
+                debugger.stop_count += 1
+                debugger.condition.notify_all()
+
+        worker = threading.Thread(target=other_activity)
+        worker.start()
+        try:
+            self.assertTrue(debugger.wait_for_stop(0, timeout=5.0))
+        finally:
+            worker.join(timeout=5.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,7 +56,48 @@
   Windows in which neither side may fail. The race skips when it sees no
   contention. It caught the 0.2 s budget in 3 runs of 3.
 
+- **#946: under PyPy, `std:json` parse errors keep their reason.** The
+  translation into Nodus wording matched fragments of CPython's `json` messages,
+  and PyPy words them differently, so under PyPy `{1: 2}` gave
+  `invalid JSON at line 1 column 2` with no "expected property name". PyPy's two
+  messages that say what was expected (`Key name must be string`,
+  `No ':' found`) now map to the same reasons. Its messages that do not
+  (`Unexpected ' '`, `Error when decoding null`) still give the location only,
+  rather than a guessed reason. CPython is unchanged.
+
+- **#948: the debug adapter announces a stop before it counts it.** `nodus dap`
+  incremented its stop counter and woke waiters before it wrote the `stopped`
+  event, so `launch` could answer ahead of the first stop, and anything waiting
+  on `wait_for_stop` could read the output too early. That wait also returned
+  False on any unrelated wake-up, such as a resume, before its timeout. Now the
+  event is sent first, and the wait re-checks until its timeout. It surfaced as
+  a once-in-four failure on the PyPy CI job.
+
 ### Tooling
+
+- **CI runs the test suite under PyPy.** A new `pypy` job runs `pytest` on
+  `pypy3.11`. PyPy is 10–12× faster on long Nodus runs, and until now no CI
+  job could see it break: the #702 attribute cliff cost ~9× under PyPy for
+  three releases with every gate green. It also catches what CPython's
+  reference counting hides, a file handle left to the GC (#516, #701).
+
+  Its first run found five failures, none a runtime defect except #946.
+  - **Three tests wrote a file without closing it.** CPython flushes such a
+    write at once; PyPy flushes it when the GC gets to it, so the code under
+    test read an empty file. Two were in the `--shapes` phase's tests, one in
+    `test_rebuild_is_inert.py`. A fourth, in `test_store_clock.py`, passed by
+    luck and is fixed too. The `--shapes` phase also left its own reads
+    unclosed, which failed temp-directory cleanup under PyPy on Windows.
+  - **Two tests assumed CPython's speed.** `test_two_execution_paths.py` relied
+    on a 400,000-iteration loop overrunning the CLI's 200 ms budget, and PyPy
+    finished it inside it. It now loops for 400 ms of wall clock, with the step
+    limit off on both paths: warm PyPy executes about 8M instructions in those
+    400 ms (CPython about 0.5M), so on a fast runner the 10M step limit fired
+    first. `test_server.py`'s runaway-program test likewise saw the step limit
+    before the deadline. It now accepts either sandbox limit; the deadline
+    itself is pinned by `test_serve_execution_budget.py`.
+
+  Part of the work on #173; that issue stays open.
 
 - **#931: `nodus_gate --open-claims` reports a document calling a closed issue
   open.** "The gap is #395", "still open in #380" and "SCHED-002 (#95) open" are

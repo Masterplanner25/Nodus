@@ -272,15 +272,27 @@ class TheDeadlineDiffersTests(unittest.TestCase):
     happens.
     """
 
-    BUSY = "let i = 0i\nwhile (i < 400000i) { i = i + 1i }\nprint(\"finished\")\n"
+    # Busy for 400 ms of wall clock, not for a count of iterations. A count
+    # assumed CPython's speed: PyPy finished the old 400,000-iteration loop
+    # inside the 200 ms budget, on #173's first PyPy CI run.
+    BUSY = (
+        "let start = clock()\n"
+        "let n = 0i\n"
+        "while (clock() - start < 0.4) { n = n + 1i }\n"
+        "print(\"finished\")\n"
+    )
 
     # closes: #192
     def test_the_runner_path_times_out_where_the_embedded_one_does_not(self):
-        cli_result, _vm = runner.run_source(self.BUSY, filename="busy.nd")
+        # The claim is about the *deadline*, so the step limit (10M on both
+        # paths) is taken out of it. Left in, it decides the result by
+        # interpreter speed: a fast PyPy runner executes 10M instructions inside
+        # 400 ms, and the embedded run failed on the step limit instead.
+        cli_result, _vm = runner.run_source(self.BUSY, filename="busy.nd", max_steps=None)
         self.assertFalse(cli_result.get("ok"), "200ms is not enough for this loop")
         self.assertIn("timed out", str(cli_result.get("error")).lower())
 
-        embedded = NodusRuntime().run_source(self.BUSY)
+        embedded = NodusRuntime(max_steps=None).run_source(self.BUSY)
         self.assertTrue(embedded.get("ok"), embedded.get("error"))
         self.assertIn("finished", embedded.get("stdout", ""))
 

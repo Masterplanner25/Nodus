@@ -55,7 +55,6 @@ which is the lesson `tools/dependent_flakes.json` already carries.
 from __future__ import annotations
 
 import ast
-import io
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -142,7 +141,9 @@ def _modules(root):
         if "__pycache__" in path.parts:
             continue
         try:
-            source = io.open(path, encoding="utf-8").read()
+            # read_text closes the file. A bare open().read() leaves that to
+            # the GC, which on PyPy holds it open past a tempdir's cleanup.
+            source = path.read_text(encoding="utf-8")
             yield path.relative_to(root).as_posix(), ast.parse(source)
         except (SyntaxError, UnicodeDecodeError, OSError):
             continue
@@ -417,7 +418,7 @@ def _load_manifest(root) -> tuple[dict, str | None]:
     if not path.is_file():
         return {}, f"{MANIFEST.as_posix()} not found — the baseline is what makes a new shape visible"
     try:
-        data = json.loads(io.open(path, encoding="utf-8").read())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return {}, f"{MANIFEST.as_posix()} could not be read: {exc}"
     entries = data.get("entries")

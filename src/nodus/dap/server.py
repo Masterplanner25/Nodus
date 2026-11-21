@@ -125,11 +125,16 @@ class ProgrammaticDebugger(Debugger):
             self.current_vm = vm
             self.last_pause_state = state
             self.last_reason = reason
-            self.stop_count += 1
             self.waiting = True
-            self.condition.notify_all()
+        # #948: announce the stop, then count it. Counted first, a waiter in
+        # `wait_for_stop` (launch, and every DAP test) woke before the
+        # `stopped` event was written, so `launch` could answer ahead of the
+        # first stop and a test reading the output found nothing. Seen on
+        # #173's PyPy CI job.
         self.session.on_paused(reason, state)
         with self.condition:
+            self.stop_count += 1
+            self.condition.notify_all()
             while self.waiting and not self.terminated:
                 self.condition.wait()
             if self.terminated:
@@ -141,11 +146,14 @@ class ProgrammaticDebugger(Debugger):
             self.condition.notify_all()
 
     def wait_for_stop(self, previous_count: int, timeout: float = 1.0) -> bool:
+        """True once a stop after `previous_count` has been announced, or the
+        run has ended. `wait_for` re-checks after every wake-up: a single
+        `wait` returned False early on any other `notify_all` (#948)."""
         with self.condition:
-            if self.stop_count > previous_count or self.terminated:
-                return True
-            self.condition.wait(timeout)
-            return self.stop_count > previous_count or self.terminated
+            return self.condition.wait_for(
+                lambda: self.stop_count > previous_count or self.terminated,
+                timeout,
+            )
 
     def _resume(self, action: str) -> None:
         with self.condition:

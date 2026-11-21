@@ -5,6 +5,12 @@ import sys
 import traceback
 
 
+# Matched against the interpreter's own `json` message text, so it is
+# interpreter-specific. The first block is CPython's. PyPy's `json` words its
+# errors differently, and without its rows a Nodus program under PyPy lost the
+# reason (#946, found by #173's PyPy CI job). Only PyPy messages that say what was
+# expected are mapped; "Unexpected ' '" and "Error when decoding null" do not,
+# so they keep the reason-less fallback rather than a guess.
 _JSON_REASON_MAP = [
     ("Expecting property name", "expected property name"),
     ("Expecting value", "expected a value"),
@@ -13,6 +19,9 @@ _JSON_REASON_MAP = [
     ("Unterminated string", "unterminated string"),
     ("Invalid \\escape", "invalid escape sequence"),
     ("Extra data", "unexpected content after JSON value"),
+    # PyPy
+    ("Key name must be string", "expected property name"),
+    ("No ':' found", "expected `:` after key"),
 ]
 
 

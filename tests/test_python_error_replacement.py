@@ -72,6 +72,35 @@ class JsonParseErrorTests(unittest.TestCase):
         out = run_program(src)
         self.assertIn("expected property name", out[0])
 
+    # closes: #946
+    def test_pypy_wording_keeps_its_reason(self):
+        """PyPy's `json` words these two errors differently from CPython's, and
+        the translation matched CPython's text only, so under PyPy the reason
+        was dropped. Built directly so this runs on CPython CI as well; the
+        messages are the ones PyPy 7.3.23 raises for `{1: 2}` and `{"a" 1}`."""
+        import json
+
+        from nodus.runtime.error_wrap import translate_json_decode_error
+
+        cases = [
+            ("Key name must be string at char", "{1: 2}", 1, "expected property name"),
+            ("No ':' found at", '{"a" 1}', 5, "expected `:` after key"),
+        ]
+        for msg, doc, pos, reason in cases:
+            with self.subTest(msg=msg):
+                text = translate_json_decode_error(json.JSONDecodeError(msg, doc, pos))
+                self.assertIn(reason, text)
+
+    def test_an_unmapped_message_keeps_the_location_and_drops_only_the_reason(self):
+        """PyPy's "Unexpected ' '" does not say what was expected, so it is
+        deliberately unmapped. The location must survive."""
+        import json
+
+        from nodus.runtime.error_wrap import translate_json_decode_error
+
+        text = translate_json_decode_error(json.JSONDecodeError("Unexpected ' '", "[1,", 3))
+        self.assertEqual("invalid JSON at line 1 column 4", text)
+
     def test_expecting_value_reason(self):
         src = r'import "std:json" as j' + "\n" + r'let r = j.parse("[,]")' + "\n" + r'print(r.message)'
         out = run_program(src)
