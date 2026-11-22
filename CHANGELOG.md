@@ -292,8 +292,8 @@
   ran on a new VM, and building one costs about 1.4 ms: every builtin is
   registered again, paths are resolved and the dispatch table is rebuilt. A
   loop making 2,000 calls to `s.starts_with` took 1.76–2.11 s and now takes
-  0.19–0.27 s, with the same instruction count. Idle VMs are kept on the
-  calling VM, per module and per construction arguments, so a VM built with
+  0.19–0.27 s, with the same instruction count. Idle VMs are kept per calling
+  VM, module and construction arguments, so a VM built with
   different capabilities is never reused. Before each call one is reset to its
   state straight after construction, then given the caller's authority, host
   wiring and what is left of the run's bounds, as a new one is. The step budget
