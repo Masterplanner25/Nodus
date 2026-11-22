@@ -321,6 +321,11 @@
   non-zero divisor are generated inline as well; every other case of `/` and
   `%` still runs the interpreter's handler. An integer arithmetic loop went
   from 1.42–1.84 s to 0.28–0.41 s compiled, against 2.84 s interpreted.
+  Functions that call a module's functions or a record's methods
+  (`s.split(x, " ")`, `counter.inc()`) compile as well; each such call runs
+  the interpreter's own handler, and the function runs compiled only outside a
+  coroutine. Across the repository's `.nd` files, 367 of 492 functions now
+  compile, up from 339.
   A compiled function must behave exactly as interpreted code does. It keeps
   the same results, errors, stack traces, instruction counts, `max_steps` and
   deadline enforcement, capability checks and call events.
