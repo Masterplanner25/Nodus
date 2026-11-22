@@ -112,7 +112,9 @@ _INLINE_EFFECT = {
     "MAKE_CLOSURE": 1, "LOAD_UPVALUE": 1, "STORE_UPVALUE": -1,
 }
 SUPPORTED = (frozenset(_INLINE_EFFECT) | frozenset(_DELEGATED)
-             | {"CALL", "ITER_NEXT", "CALL_VALUE"})
+             | {"CALL", "ITER_NEXT", "CALL_VALUE", "CALL_METHOD"})
+#: Calls whose target is only known at run time: they make a function dynamic.
+DYNAMIC_CALLS = frozenset({"CALL_VALUE", "CALL_METHOD"})
 _TERMINAL = {"RETURN", "THROW", "JUMP"}
 
 
@@ -131,6 +133,8 @@ def _effect(instr) -> int:
         return 1 - instr[2]
     if op == "CALL_VALUE":
         return -instr[1]  # the callee and its arguments, replaced by the result
+    if op == "CALL_METHOD":
+        return -instr[2]  # the receiver and its arguments, replaced by the result
     if op == "ITER_NEXT":
         return 1  # the fall-through edge; the exit edge is handled in _stack_depths
     raise Ineligible(f"opcode {op}")
@@ -191,11 +195,11 @@ def analyze(code: list, functions: dict, builtins: dict) -> tuple[dict, set]:
     eligible: a greatest fixed point, starting from every function that passes
     the local checks and dropping any that calls one no longer in the set.
 
-    `dynamic` holds the eligible functions that can reach a `CALL_VALUE`, whose
-    target is only known at run time and may be anything, including code that
-    would suspend. They run compiled only outside a coroutine, where nothing can
-    suspend: `sleep`, `recv` and `yield` refuse there with their own errors
-    (phase 3).
+    `dynamic` holds the eligible functions that can reach a `CALL_VALUE` or a
+    `CALL_METHOD` (`DYNAMIC_CALLS`), whose target is only known at run time and
+    may be anything, including code that would suspend. They run compiled only
+    outside a coroutine, where nothing can suspend: `sleep`, `recv` and `yield`
+    refuse there with their own errors (phase 3).
     """
     bodies = function_bodies(code, functions)
     reasons: dict = {}
@@ -214,7 +218,7 @@ def analyze(code: list, functions: dict, builtins: dict) -> tuple[dict, set]:
                 op = instr[0]
                 if op not in SUPPORTED:
                     raise Ineligible(f"opcode {op}")
-                if op == "CALL_VALUE":
+                if op in DYNAMIC_CALLS:
                     dynamic.add(name)
                 elif op == "MAKE_CLOSURE":
                     target = functions.get(instr[1])
@@ -527,6 +531,13 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
     elif op == "CALL_VALUE":
         out.append(at)
         _emit_value_call(out, ind, d, instr[1])
+    elif op == "CALL_METHOD":
+        # The VM's own handler decides everything: a module export, a module
+        # function, a record's builtin method or closure (`call_handler_interpreted`).
+        argc = instr[2]
+        args = ", ".join(s(k) for k in range(d - argc, d))
+        out.append(at)
+        out.append(f"{ind}{s(d - argc - 1)} = CALL_METHOD(vm, INSTRS[{addr}], [{s(d - argc - 1)}, {args}])")
     elif op == "LOAD":
         out.append(at)
         out.append(f"{ind}{s(d)} = vm.load_name({instr[1]!r})")
@@ -933,6 +944,7 @@ class CompileState:
         namespace = {
             "Record": Record, "Iterator": Iterator, "count": count, "delegate": delegate,
             "Cell": Cell, "Closure": Closure, "CALL_VALUE": self._value_call(vm, chunk),
+            "CALL_METHOD": call_method_interpreted,
             "CONSTS": {i: chunk.code[i][1] for i in range(start, end)
                        if chunk.code[i][0] in ("PUSH_CONST",)} | {
                 i: chunk.code[i][2] for i in range(start, end)
@@ -1078,10 +1090,25 @@ _NOT_COMPILED = object()
 
 def call_value_interpreted(vm, callee, args: list):
     """Call value `callee` through the VM's own `CALL_VALUE` handler, from
-    compiled code, synchronously.
+    compiled code, synchronously (`call_handler_interpreted`). The handler
+    decides everything: a module function, a proxy for another VM's closure, a
+    closure from another chunk, or a local one."""
+    return call_handler_interpreted(vm, ("CALL_VALUE", len(args)), [callee, *args])
 
-    The handler decides everything: a module function, a proxy for another VM's
-    closure, a closure from another chunk, or a local one. If it pushes a frame,
+
+def call_method_interpreted(vm, instr: tuple, operands: list):
+    """`CALL_METHOD` from compiled code: the receiver, then the arguments.
+    The handler decides everything: a missing export or field, a module
+    function (on a child VM, outside a coroutine), a record's builtin method or
+    closure."""
+    return call_handler_interpreted(vm, instr, operands)
+
+
+def call_handler_interpreted(vm, instr: tuple, operands: list):
+    """Run the VM's own handler for call `instr` (`CALL_VALUE` or
+    `CALL_METHOD`) on `operands`, from compiled code, synchronously.
+
+    The handler decides what is called. If it pushes a frame,
     that frame's return address becomes one past the end of the calling chunk,
     which ends a nested `execute()` once the call returns, after any module
     context the handler switched is restored. If it answers directly, the result
@@ -1099,10 +1126,9 @@ def call_value_interpreted(vm, callee, args: list):
     base = len(stack)
     frames_before = len(vm.frames)
     code_len = len(vm.code)
-    stack.append(callee)
-    stack.extend(args)
+    stack.extend(operands)
     try:
-        status = vm._dispatch["CALL_VALUE"](("CALL_VALUE", len(args)))
+        status = vm._dispatch[instr[0]](instr)
         if status is not None:  # pragma: no cover - cannot suspend outside a coroutine
             vm.runtime_error("runtime", "internal: a call suspended inside compiled code (#173)")
         if len(vm.frames) > frames_before:
