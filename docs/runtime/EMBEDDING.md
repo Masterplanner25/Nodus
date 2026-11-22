@@ -165,9 +165,12 @@ Remaining parameters:
 - `compile_functions` (bool, default `False`): experimental (#173). Compiles hot
   eligible functions to Python, which runs them about 4–5× faster per instruction. A
   compiled function behaves exactly as interpreted code does: the same results,
-  errors, stack traces, instruction counts, limits and capability checks. Functions
-  that can suspend, capture variables, use `try` or call a capability-bearing
-  builtin stay interpreted, as does everything under a debugger, profiler or trace.
+  errors, stack traces, instruction counts, limits and capability checks: a
+  capability-bearing builtin called from compiled code goes through the same
+  check, so a denial is the same denial. Functions that can suspend (including by
+  calling a builtin in `MAY_SUSPEND_BUILTINS`, such as `http_get_async`), capture
+  variables or use `try` stay interpreted, as does everything under a debugger,
+  profiler or trace.
   Design: `docs/design/throughput/01-compile-to-python.md`.
 - `persist_workflow_source` (bool, default `True`): whether a workflow run writes a
   verbatim copy of the whole module source into `.nodus/graphs/`

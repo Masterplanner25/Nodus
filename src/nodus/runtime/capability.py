@@ -352,6 +352,27 @@ NO_AUTHORITY_BUILTIN_NAMES = frozenset(
     name for names in NO_AUTHORITY_BUILTINS.values() for name in names
 )
 
+#: Every builtin that can return a suspend request -- a `SleepRequest`,
+#: `CheckpointRequest` or `ChannelRecvRequest`, subclasses included
+#: (`ChannelSendRequest`, `TaskWaitRequest`) -- which `VM.call_builtin` turns
+#: into a pause of the running coroutine. Orthogonal to authority: `sleep` has
+#: none and `http_get_async` has one. Code compiled to Python (#173) cannot
+#: pause, so it never calls these. `tests/test_pycompile.py` derives the set
+#: from the source -- every function whose `return` can hand back a new request,
+#: or the result of a function that does -- and requires it to equal this one,
+#: so a builtin that learns to suspend fails the suite until it is listed here.
+MAY_SUSPEND_BUILTINS = frozenset({
+    # in-process concurrency
+    "sleep", "sleep_until", "__sleep", "__sleep_until", "recv", "send", "wait",
+    # orchestration
+    "__workflow_checkpoint", "__action_agent",
+    # network, subprocess and agents: the asynchronous variants
+    "http_get_async", "http_post_async", "http_put_async", "http_delete_async",
+    "http_patch_async", "http_head_async", "http_options_async", "http_request_async",
+    "subprocess_run_async", "subprocess_shell_async",
+    "agent_call_async",
+})
+
 
 @dataclass(frozen=True)
 class GatedBuiltinGroup:

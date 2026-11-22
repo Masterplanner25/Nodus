@@ -14,14 +14,22 @@ the whole suite in compile-always mode, which is where most of the coverage
 comes from; these tests are the cases that mode would not reach on purpose.
 """
 
+import ast
 import os
+import pathlib
 import sys
 import unittest
 from unittest import mock
 
+REPO = pathlib.Path(__file__).resolve().parents[1]
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from nodus.runtime.capability import BUILTIN_CAPABILITIES, NO_AUTHORITY_BUILTINS  # noqa: E402
+from nodus.runtime.capability import (  # noqa: E402
+    BUILTIN_CAPABILITIES,
+    MAY_SUSPEND_BUILTINS,
+    NO_AUTHORITY_BUILTINS,
+)
 from nodus.tooling.runner import run_source  # noqa: E402
 from nodus.vm import pycompile  # noqa: E402
 
@@ -279,8 +287,13 @@ class WhatCompiledCodeMayCall(unittest.TestCase):
         self.assertEqual(set(NO_AUTHORITY_BUILTINS["in-process concurrency"])
                          & pycompile.COMPILABLE_BUILTINS, set())
 
-    def test_no_builtin_that_carries_a_capability(self):
-        self.assertEqual(set(BUILTIN_CAPABILITIES) & pycompile.COMPILABLE_BUILTINS, set())
+    def test_capability_builtins_compile_only_if_they_cannot_suspend(self):
+        # Phase 2 (#173): synchronous capability builtins are compilable; the
+        # ones that can pause are not.
+        capable = set(BUILTIN_CAPABILITIES)
+        self.assertEqual(capable & pycompile.COMPILABLE_BUILTINS, capable - set(MAY_SUSPEND_BUILTINS))
+        self.assertIn("http_get", pycompile.COMPILABLE_BUILTINS)
+        self.assertNotIn("http_get_async", pycompile.COMPILABLE_BUILTINS)
 
     def test_a_function_calling_sleep_stays_interpreted(self):
         from nodus.runtime.module_loader import ModuleLoader
@@ -291,6 +304,180 @@ class WhatCompiledCodeMayCall(unittest.TestCase):
         reasons = pycompile.eligible_functions(code["instructions"], functions, vm.builtins)
         self.assertIsNotNone(reasons["nap"])
         self.assertIsNone(reasons["pure"])
+
+
+# --- which builtins can suspend: derived from the source ------------------------
+
+def _request_class_names() -> set:
+    """The classes `VM.call_builtin` treats as a pause, subclasses included."""
+    from nodus.runtime.channel import ChannelRecvRequest
+    from nodus.runtime.scheduler import CheckpointRequest, SleepRequest
+
+    out, todo = set(), [SleepRequest, CheckpointRequest, ChannelRecvRequest]
+    while todo:
+        cls = todo.pop()
+        if cls.__name__ not in out:
+            out.add(cls.__name__)
+            todo.extend(cls.__subclasses__())
+    return out
+
+
+def _call_name(node):
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr
+    return None
+
+
+def _returning_functions() -> set:
+    """Names of functions in src/nodus whose `return` can hand back a suspend
+    request: a new one, the result of a function that returns one, or a local
+    bound to either. A fixed point, resolving calls by name, so a name shared by
+    two functions counts if either returns one (conservative)."""
+    markers = _request_class_names()
+    functions = []
+    for path in sorted((REPO / "src" / "nodus").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+        functions.extend((n.name, n) for n in ast.walk(tree)
+                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+
+    def own_nodes(fn):
+        stack = list(ast.iter_child_nodes(fn))
+        while stack:
+            node = stack.pop()
+            yield node
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                stack.extend(ast.iter_child_nodes(node))
+
+    returners = set(markers)
+    changed = True
+    while changed:
+        changed = False
+        for name, fn in functions:
+            if name in returners:
+                continue
+            bound = {t.id for n in own_nodes(fn) if isinstance(n, ast.Assign)
+                     and _call_name(n.value) in returners
+                     for t in n.targets if isinstance(t, ast.Name)}
+            for node in own_nodes(fn):
+                if not (isinstance(node, ast.Return) and node.value is not None):
+                    continue
+                values = ([node.value.body, node.value.orelse]
+                          if isinstance(node.value, ast.IfExp) else [node.value])
+                if any(_call_name(v) in returners or (isinstance(v, ast.Name) and v.id in bound)
+                       for v in values):
+                    returners.add(name)
+                    changed = True
+                    break
+    return returners - markers
+
+
+def _suspending_builtins() -> set:
+    from nodus.vm.vm import VM
+    vm = VM([], {}, code_locs=[], source_path=None)
+    returners = _returning_functions()
+    out = set()
+    for name, info in vm.builtins.items():
+        fn = getattr(info.fn, "__func__", info.fn)
+        fname = getattr(fn, "__name__", "")
+        if fname in returners or (fname == "<lambda>" and set(fn.__code__.co_names) & returners):
+            out.add(name)
+    return out
+
+
+class WhichBuiltinsCanSuspend(unittest.TestCase):
+    """`MAY_SUSPEND_BUILTINS` is declared; this derives the same set from the
+    source, so a builtin that learns to suspend fails here until it is listed."""
+
+    def test_the_analysis_finds_the_known_ones(self):
+        found = _suspending_builtins()
+        for name in ("sleep", "recv", "send", "wait", "__workflow_checkpoint",
+                     "http_get_async", "subprocess_run_async", "agent_call_async"):
+            self.assertIn(name, found)
+
+    def test_it_flags_nothing_synchronous(self):
+        found = _suspending_builtins()
+        for name in ("len", "str", "read_file", "http_get", "subprocess_run", "agent_call", "env_get"):
+            self.assertNotIn(name, found)
+
+    def test_the_declared_set_is_exactly_what_can_suspend(self):
+        self.assertEqual(_suspending_builtins(), set(MAY_SUSPEND_BUILTINS))
+
+    def test_compiled_code_never_calls_one(self):
+        self.assertEqual(set(MAY_SUSPEND_BUILTINS) & pycompile.COMPILABLE_BUILTINS, set())
+
+
+def run_runtime(src: str, *, compiled: bool, **runtime_kwargs):
+    from nodus.runtime.embedding import NodusRuntime
+    env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}
+    with mock.patch.dict(os.environ, env):
+        runtime = NodusRuntime(timeout_ms=None, **runtime_kwargs)
+        result = runtime.run_source(src)
+    error = result.get("error") or {}
+    vm = runtime.active_vm()
+    return {
+        "ok": result.get("ok"),
+        "stdout": result.get("stdout"),
+        "kind": error.get("kind") or error.get("type"),
+        "message": error.get("message"),
+        "line": error.get("line"),
+        "instructions": runtime.get_execution_stats()["instructions_executed"],
+    }, vm
+
+
+class CapabilityBuiltinsInCompiledCode(unittest.TestCase):
+    """Phase 2: capability-bearing builtins that cannot suspend are called from
+    compiled code through the same `invoke_builtin`, so allowing and denying
+    behave identically."""
+
+    ENV = ('fn read(k) { return env_get(k) }\n'
+           'fn main() {\n    let i = 0i\n    while (i < 2i) { print(read("NODUS_PHASE2_PROBE"))\n i = i + 1i }\n}\n'
+           'main()\n')
+
+    def both(self, src, **kwargs):
+        plain, _ = run_runtime(src, compiled=False, **kwargs)
+        fast, vm = run_runtime(src, compiled=True, **kwargs)
+        self.assertEqual(fast, plain)
+        self.assertGreater(compiled_count(vm), 0, "nothing compiled: the test proves nothing")
+        return fast
+
+    def test_an_allowed_call(self):
+        with mock.patch.dict(os.environ, {"NODUS_PHASE2_PROBE": "seen"}):
+            fast = self.both(self.ENV, allow_env=True)
+        self.assertTrue(fast["ok"], fast)
+        self.assertEqual(fast["stdout"].split(), ["seen", "seen"])
+
+    def test_a_denied_call(self):
+        fast = self.both(self.ENV, allow_env=False)
+        self.assertFalse(fast["ok"])
+        self.assertEqual(fast["kind"], "sandbox")
+        self.assertIn("allow_env", fast["message"])
+
+    def test_a_file_inside_and_outside_the_allowed_paths(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory() as outside:
+            for folder, text in ((inside, "in"), (outside, "out")):
+                with open(os.path.join(folder, "f.txt"), "w", encoding="utf-8") as f:
+                    f.write(text)
+            for folder, allowed in ((inside, True), (outside, False)):
+                path = os.path.join(folder, "f.txt").replace("\\", "/")
+                src = (f'fn load(p) {{ return read_file(p) }}\n'
+                       f'fn main() {{\n    for k in [1i, 2i] {{ print(load("{path}")) }}\n}}\nmain()\n')
+                with self.subTest(allowed=allowed):
+                    fast = self.both(src, allowed_paths=[inside])
+                    self.assertEqual(fast["ok"], allowed, fast)
+
+    def test_a_function_calling_an_async_builtin_stays_interpreted(self):
+        from nodus.runtime.module_loader import ModuleLoader
+        from nodus.vm.vm import VM
+        src = 'fn fetch(u) { return http_get_async(u) }\nfn plain(u) { return http_get(u) }\n'
+        code, functions, _ = ModuleLoader(project_root=None).compile_only(src, module_name="m.nd")
+        vm = VM(code["instructions"], functions, code_locs=[], source_path=None)
+        reasons = pycompile.eligible_functions(code["instructions"], functions, vm.builtins)
+        self.assertIsNotNone(reasons["fetch"])
+        self.assertIsNone(reasons["plain"])
 
 
 if __name__ == "__main__":

@@ -194,7 +194,7 @@ same source, which makes it testable and later cacheable.
 | Phase | Adds | Done when |
 |---|---|---|
 | 1 | Everything above, behind a switch, plus the differential CI job; also global `LOAD`/`STORE`, the `BUILD_*` opcodes, `INDEX_SET`, `MUL`/`DIV`/`MOD` and iteration (see "Phase 1 as built") | the suite passes in differential mode, and the frontend speedup is measured |
-| 2 | Builtins outside the compilable categories, through the may-suspend analysis described under Eligibility | programs that call `http`, `subprocess` or agents in their hot paths compile |
+| 2 | Builtins outside the compilable categories, through the may-suspend analysis described under Eligibility. **Done** (see "Phase 2 as built"): capability-bearing builtins that cannot suspend | programs that call `http`, `subprocess` or agents in their hot paths compile |
 | 3 | Cells and closures, `CALL_VALUE` with a known compiled target | closure-heavy programs compile |
 | 4 | Deoptimisation: rebuild interpreter frames from a compiled function's state at a block boundary, so it can pause | compiled code runs inside scheduled coroutines |
 
@@ -227,10 +227,10 @@ narrower or safer than the plan, not looser.
 
    These are synchronous, carry no authority, and never suspend. "In-process
    concurrency" (`sleep`, `recv`, `wait`, `run_loop`) and "orchestration"
-   (`__workflow_checkpoint`, `workflow_wait`, `retry_call`) are excluded. So are
-   all capability-bearing builtins, which makes #405's check unreachable from
-   compiled code in phase 1. It still goes through the shared `invoke_builtin`
-   anyway. The may-suspend analysis moves to phase 2.
+   (`__workflow_checkpoint`, `workflow_wait`, `retry_call`) are excluded. So were
+   all capability-bearing builtins in phase 1, which made #405's check
+   unreachable from compiled code. Calls still went through the shared
+   `invoke_builtin`. Phase 2 admits them (see "Phase 2 as built").
 3. **A closed set.** A compiled function calls only builtins and other eligible
    functions, never an interpreted one. So there is no synchronous interpreter
    call on the normal path. One exists for the depth cap (`call_interpreted`):
@@ -246,6 +246,43 @@ narrower or safer than the plan, not looser.
    subtracted. Each instruction that can raise stores its address. Before this,
    the differential tests found error runs counting a few instructions more than
    the interpreter, for example 164 against 122.
+
+## Phase 2 as built
+
+Compiled code may call every capability-bearing builtin that cannot suspend:
+- the synchronous `http`, `subprocess`, file, environment, memory, tool and
+  agent builtins;
+- `syscall`.
+
+These are in addition to the five no-authority categories from phase 1.
+
+**The may-suspend set is declared once**, as `MAY_SUSPEND_BUILTINS` in
+`runtime/capability.py`, next to the authority classification, rather than as a
+flag on each registration site.
+
+**A test derives the same set from the source and requires them equal.** It
+starts from the request classes `VM.call_builtin` pauses on, `SleepRequest`,
+`CheckpointRequest` and `ChannelRecvRequest`, with their subclasses
+(`ChannelSendRequest`, `TaskWaitRequest`). It finds every function whose
+`return` hands back a new request, the result of a function that does, or a
+local bound to either, iterated to a fixed point. Then it maps builtins to the
+functions that implement them. A builtin that learns to suspend fails the suite
+until it is declared.
+
+**The analysis found 20 builtins:**
+- the `sleep` family, `recv`, `send` and `wait`;
+- `__workflow_checkpoint` and `__action_agent`;
+- the eight `http_*_async` builtins;
+- `subprocess_run_async` and `subprocess_shell_async`;
+- `agent_call_async`.
+
+It flags nothing synchronous. Dropping one of them from the declared set fails
+three tests. `send` and `wait` were not in the design's first list: they suspend
+through `ChannelSendRequest` and `TaskWaitRequest`, subclasses of
+`ChannelRecvRequest`.
+
+**Concurrency constructors, orchestration and introspection stay out.** They are
+not needed for I/O in hot paths, and each raises its own exactness questions.
 
 ## Decisions (2026-11-21)
 

@@ -412,10 +412,11 @@ class NodusRuntime:
             a function with a loop on its first call, any other after 32 calls.
             A compiled function behaves exactly as interpreted code does, with the
             same results, errors, stack traces, instruction counts and limits, and
-            runs about 4–5× faster per instruction. Functions that can suspend,
-            capture variables, use ``try``, or call capability-bearing builtins
-            stay interpreted, as does everything while a debugger, profiler or
-            trace is attached. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
+            runs about 4–5× faster per instruction. Capability-bearing builtins
+            called from compiled code go through the same capability check.
+            Functions that can suspend (``MAY_SUSPEND_BUILTINS``), capture
+            variables or use ``try`` stay interpreted, as does everything while a
+            debugger, profiler or trace is attached. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
             runtime. See ``docs/design/throughput/01-compile-to-python.md``.
         """
         allowed_paths = resolve_allowed_paths(allowed_paths)
