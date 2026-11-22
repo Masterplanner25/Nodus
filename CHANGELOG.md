@@ -292,8 +292,12 @@
   `NODUS_COMPILE_FUNCTIONS=1`. When it applies:
   - a function with a loop compiles on its first call, any other after 32
     calls;
-  - only functions that cannot suspend, capture no variables, use no `try`,
-    and call only synchronous builtins without a capability are compiled;
+  - only functions that cannot suspend, capture no variables and use no `try`
+    are compiled. They may call synchronous capability-bearing builtins
+    (`http_get`, `read_file`, `subprocess_run`...) through the same capability
+    check as the interpreter. A call to a builtin that can suspend keeps a
+    function interpreted. That set is `MAY_SUSPEND_BUILTINS`, and a test derives
+    it from the source;
   - nothing compiles while a debugger, profiler or trace is attached.
 
   On the self-hosted frontend it runs about 1.9× faster overall (2.30 s to

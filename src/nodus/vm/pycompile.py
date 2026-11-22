@@ -24,8 +24,9 @@ location is the interpreter's.
 **Eligibility is a closed set.** A function compiles only if:
 - every opcode is supported;
 - it has no cells or closures and no `try`;
-- every call is to a builtin in `COMPILABLE_BUILTINS` (synchronous, no
-  authority, never suspending) or to another eligible function in the same
+- every call is to a builtin in `COMPILABLE_BUILTINS` (one that never
+  suspends: five no-authority categories, plus every capability-bearing builtin
+  outside `MAY_SUSPEND_BUILTINS`) or to another eligible function in the same
   chunk, with the right arity.
 
 So compiled code never suspends, and never calls an interpreted function except
@@ -40,7 +41,7 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-from nodus.runtime.capability import NO_AUTHORITY_BUILTINS
+from nodus.runtime.capability import BUILTIN_CAPABILITIES, MAY_SUSPEND_BUILTINS, NO_AUTHORITY_BUILTINS
 from nodus.runtime.channel import ChannelRecvRequest
 from nodus.runtime.scheduler import CheckpointRequest, SleepRequest
 from nodus.vm.types import Record
@@ -60,10 +61,15 @@ COMPILABLE_BUILTIN_CATEGORIES = (
     "process-local clock and randomness",
     "host-mediated console i/o",
 )
+#: Phase 2 adds every capability-bearing builtin that cannot suspend: the
+#: synchronous `http`, `subprocess`, file, environment, memory, tool, agent and
+#: `syscall` builtins. Compiled code calls them through `VM.invoke_builtin`, the
+#: same capability check, approval and rebuild-effect handling the interpreter
+#: uses, so a denial in compiled code is the same denial at the same location.
 COMPILABLE_BUILTINS = frozenset(
     name for category in COMPILABLE_BUILTIN_CATEGORIES
     for name in NO_AUTHORITY_BUILTINS[category]
-)
+) | (frozenset(BUILTIN_CAPABILITIES) - MAY_SUSPEND_BUILTINS)
 
 #: Calls before a function without a loop is compiled. A function with a loop
 #: compiles on its first call: a function called once can hold a program's
