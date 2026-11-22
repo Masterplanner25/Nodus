@@ -346,6 +346,12 @@
 
 ### Tooling
 
+- **`nodus test-examples` gives each example 30 s of wall clock, not `nodus
+  run`'s 200 ms.** The command checks that the shipped examples run; an import
+  compiles inside the deadline, and on a loaded CI runner an example could cross
+  200 ms and fail with nothing but exit 1. #971 widened the deadline in one test;
+  `test_cli_compatibility` runs the command itself and failed the same way on PR
+  #980. The limit is now `EXAMPLE_TIMEOUT_MS` in the command, for every caller.
 - **CI times the self-hosted frontend under PyPy and CPython.** Both the
   `pypy` and the `test` job run `python -m tools.selfhost_check`. Each logs the
   instructions and seconds over every tracked `.nd` file, and fails if the
