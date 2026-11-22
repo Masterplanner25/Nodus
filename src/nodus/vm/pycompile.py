@@ -325,9 +325,10 @@ def _stack_depths(code: list, start: int, end: int) -> dict:
 # --- code generation ----------------------------------------------------------
 
 def generate(name: str, fn, code: list, start: int, end: int, py_name: str,
-             functions: dict | None = None) -> str:
+             functions: dict | None = None, dynamic: frozenset = frozenset()) -> str:
     """Python source for one eligible function. `up` is the closure's upvalue
-    list, or None for a named function."""
+    list, or None for a named function. A call to a function in `dynamic` is
+    not inlined (see `_emit_user_call`)."""
     functions = functions or {}
     cells = cell_slots(code, start, end, functions) if functions else frozenset()
     depth = _stack_depths(code, start, end)
@@ -371,7 +372,7 @@ def generate(name: str, fn, code: list, start: int, end: int, py_name: str,
         ended = False
         for i in range(b0, b1):
             instr = code[i]
-            ended = _emit(out, ind, instr, i, d, cells, functions)
+            ended = _emit(out, ind, instr, i, d, cells, functions, dynamic)
             d += _effect(instr)
             if ended:
                 break
@@ -395,8 +396,46 @@ def _local(slot: int, cells: frozenset) -> str:
     return f"l{slot}"
 
 
+def _emit_user_call(out: list, ind: str, addr: int, d: int, callee: str, params: list) -> None:
+    """A call from compiled code to an eligible user function, inline.
+
+    The same steps as `CompileState._user_call`, which stays the slow path, in
+    the same order: count the call, build the frame (through the site's
+    `VM.call_frame_maker`, the same frame `build_call_frame` makes, so stack
+    traces and the frame limit are the interpreter's), run the compiled callee,
+    pop, count the return. What
+    inlining removes is the helper's own call, the argument list, the `zip`, and
+    the `record_vm_call` / `record_vm_return` calls when nothing is listening;
+    the counters they keep are kept here.
+
+    The fast path needs the callee already compiled and the same conditions as
+    `CompileState.may_run`. Otherwise the helper decides: it compiles the
+    callee, or runs it interpreted past the depth cap or under an observer.
+    """
+    argc = len(params)
+    s = lambda k: f"s{k}"  # noqa: E731
+    args = [s(k) for k in range(d - argc, d)]
+    out.append(f"{ind}f = COMPILED.get({callee!r})")
+    out.append(f"{ind}if (f is not None and ST.depth < ST.depth_cap and vm.task_step_budget is None"
+               f" and not vm._instrumented()):")
+    i2 = ind + "    "
+    out.append(f"{i2}if vm.event_bus.wants('vm_call'): vm.record_vm_call({callee!r}, 'call', raw=True)")
+    out.append(f"{i2}else: vm.function_calls += 1")
+    params_dict = "{" + ", ".join(f"{p!r}: {a}" for p, a in zip(params, args)) + "}"
+    out.append(f"{i2}vm.frames.append(MK{addr}(len(vm.stack), {params_dict}))")
+    out.append(f"{i2}ST.depth += 1")
+    out.append(f"{i2}try: {s(d - argc)} = f(vm, None{''.join(', ' + a for a in args)})")
+    out.append(f"{i2}finally: ST.depth -= 1")
+    out.append(f"{i2}vm.frames.pop()")
+    out.append(f"{i2}if vm.event_bus.wants('vm_return'): vm.record_vm_return({callee!r}, raw=True)")
+    out.append(f"{i2}else: vm.returns += 1")
+    out.append(f"{ind}else:")
+    out.append(f"{i2}{s(d - argc)} = CALLS[{addr}](vm, [{', '.join(args)}])")
+
+
 def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
-          cells: frozenset = frozenset(), functions: dict | None = None) -> bool:
+          cells: frozenset = frozenset(), functions: dict | None = None,
+          dynamic: frozenset = frozenset()) -> bool:
     """Append the code for one instruction; True if it ends the block."""
     op = instr[0]
     s = lambda k: f"s{k}"  # noqa: E731
@@ -504,7 +543,25 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
         argc = instr[2]
         args = ", ".join(s(k) for k in range(d - argc, d))
         out.append(at)
-        out.append(f"{ind}{s(d - argc)} = CALLS[{addr}](vm, [{args}])")
+        callee = instr[1]
+        if callee in functions and callee not in dynamic:
+            _emit_user_call(out, ind, addr, d, callee, list(functions[callee].params))
+        elif callee in functions:
+            # A dynamic callee, whose compiled form may only run outside a
+            # coroutine: the helper checks that.
+            out.append(f"{ind}{s(d - argc)} = CALLS[{addr}](vm, [{args}])")
+        else:
+            # A builtin. `BI{addr}` is bound per VM by `plain_builtin`: the
+            # function itself when the call can skip `invoke_builtin`, else None.
+            out.append(f"{ind}b = BI{addr}")
+            out.append(f"{ind}if b is not None and vm.profiler is None:")
+            out.append(f"{ind}    if vm.event_bus.wants('vm_call'): vm.record_vm_call({callee!r}, 'call', raw=True)")
+            out.append(f"{ind}    else: vm.function_calls += 1")
+            out.append(f"{ind}    r = b({args})")
+            out.append(f"{ind}    {s(d - argc)} = vm._augment_stdlib_err(r) "
+                       f"if isinstance(r, Record) and r.kind == 'error' else r")
+            out.append(f"{ind}else:")
+            out.append(f"{ind}    {s(d - argc)} = CALLS[{addr}](vm, [{args}])")
     elif op == "RETURN":
         out.append(f"{ind}return {s(d - 1)}")
         return True
@@ -586,6 +643,27 @@ def delegate(vm, instr: tuple, operands: list):
 _SUSPEND = (SleepRequest, ChannelRecvRequest, CheckpointRequest)
 
 
+def plain_builtin(vm, name: str, argc: int):
+    """The function behind builtin `name`, if a call with `argc` arguments can
+    skip `VM.invoke_builtin` and `make_builtin_call`; otherwise None.
+
+    It can when the call carries no authority (not in `BUILTIN_CAPABILITIES`,
+    so there is no capability check or rebuild-effect report to make), cannot
+    suspend (not in `MAY_SUSPEND_BUILTINS`), and has the right number of
+    arguments, which is fixed at the call site. Everything else the slow path
+    does, the inline code does too: count the call, emit its event if one is
+    wanted, and turn an error record into the interpreter's. With a profiler
+    present it takes the slow path, which reports the call to it.
+    """
+    builtin = vm.builtins.get(name)
+    if builtin is None or name in BUILTIN_CAPABILITIES or name in MAY_SUSPEND_BUILTINS:
+        return None
+    expected = builtin.arity
+    if (argc not in expected) if isinstance(expected, tuple) else (argc != expected):
+        return None  # the slow path raises the interpreter's arity error
+    return builtin.fn
+
+
 def make_builtin_call(name: str):
     def call(vm, args):
         vm.record_vm_call(name, "call", raw=True)
@@ -615,7 +693,7 @@ _CODE_CACHE_LOCK = threading.Lock()
 
 
 def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str,
-                 functions: dict | None = None) -> tuple:
+                 functions: dict | None = None, dynamic: frozenset = frozenset()) -> tuple:
     """(source, code object) for one function, from the cache when possible."""
     functions = functions or {}
     try:
@@ -624,7 +702,12 @@ def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str,
         captures = tuple(
             (code[i][1], tuple((u.name, u.is_local, u.index) for u in functions[code[i][1]].upvalues))
             for i in range(start, end) if code[i][0] == "MAKE_CLOSURE" and code[i][1] in functions)
-        key = (name, start, end, tuple(code[start:end]), captures)
+        # An inlined call spells out its callee's parameter names, and a
+        # dynamic callee is not inlined: both shape the code.
+        callees = tuple(
+            (code[i][1], tuple(functions[code[i][1]].params), code[i][1] in dynamic)
+            for i in range(start, end) if code[i][0] == "CALL" and code[i][1] in functions)
+        key = (name, start, end, tuple(code[start:end]), captures, callees)
         hash(key)
     except TypeError:  # an unhashable constant: compile without caching
         key = None
@@ -634,7 +717,7 @@ def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str,
             if hit is not None:
                 _CODE_CACHE.move_to_end(key)
                 return hit
-    source = generate(name, fn, code, start, end, py_name, functions)
+    source = generate(name, fn, code, start, end, py_name, functions, dynamic)
     entry = (source, compile(source, f"<nodus compiled {name}>", "exec"))
     if key is not None:
         with _CODE_CACHE_LOCK:
@@ -785,7 +868,8 @@ class CompileState:
         start, end = bodies[name]
         fn = vm.functions[name]
         py_name = "nd_" + "".join(ch if ch.isalnum() else "_" for ch in name)
-        source, code_object = _cached_code(name, fn, chunk.code, start, end, py_name, vm.functions)
+        source, code_object = _cached_code(name, fn, chunk.code, start, end, py_name, vm.functions,
+                                           frozenset(chunk.dynamic))
         from nodus.vm.types import Cell, Closure
         from nodus.vm.vm import Iterator  # here, not at import: vm.py imports this module
 
@@ -799,7 +883,17 @@ class CompileState:
                 if chunk.code[i][0] == "JUMP_IF_LOCAL_NE_CONST"},
             "INSTRS": {i: chunk.code[i] for i in range(start, end)},
             "CALLS": calls,
+            "COMPILED": chunk.compiled, "ST": self,
         }
+        for i in range(start, end):
+            instr = chunk.code[i]
+            if instr[0] != "CALL":
+                continue
+            if instr[1] in vm.functions:
+                if instr[1] not in chunk.dynamic:
+                    namespace[f"MK{i}"] = vm.call_frame_maker(instr[1], vm.functions[instr[1]], i)
+            else:
+                namespace[f"BI{i}"] = plain_builtin(vm, instr[1], instr[2])
         exec(code_object, namespace)  # noqa: S102
         compiled = namespace[py_name]
         chunk.compiled[name] = compiled
