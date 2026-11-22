@@ -686,6 +686,40 @@ class InlineValueCalls(BothWays):
         self.assertNotIn("Frame(", body)
 
 
+class Arithmetic(BothWays):
+    """`*`, `/`, `%` and unary minus are generated inline (#173): `*` and minus
+    as the handler does them, `/` and `%` only for two ints with a non-zero
+    divisor, the handler doing the rest. Each case compares the two ways, and
+    each runs inside a compiled function."""
+
+    VALUES = ["7i", "-7i", "2i", "-2i", "0i", "7.5", "-2.0", "0.0", "true", "false",
+              "\"ab\"", "[1i]", "nil"]
+    OPS = ["*", "/", "%"]
+
+    def test_every_pair_of_operands(self):
+        # 13 x 13 x 3 = 507 cases, each its own program, since an error ends
+        # one. The interpreter decides what each should be; nothing is assumed.
+        for op in self.OPS:
+            for a in self.VALUES:
+                for b in self.VALUES:
+                    with self.subTest(expr=f"{a} {op} {b}"):
+                        fast, vm = self.assert_same(
+                            f"fn f(a, b) {{ return a {op} b }}\nprint(f({a}, {b}))\n")
+                        self.assertEqual(compiled_count(vm), 1)
+
+    def test_negation(self):
+        for v in self.VALUES:
+            with self.subTest(value=v):
+                fast, vm = self.assert_same(f"fn f(a) {{ return -a }}\nprint(f({v}))\n")
+                self.assertEqual(compiled_count(vm), 1)
+
+    def test_large_ints_and_mixed_chains(self):
+        fast, _ = self.assert_same(
+            "fn f(n) {\n    let x = n * n * n\n    return [x / 7i, x % 7i, -x % 5i, (x * 2.5) / 3i, -(-n)]\n}\n"
+            "print(f(123456789i))\n")
+        self.assertTrue(fast["ok"], fast)
+
+
 class TheCodeCache(unittest.TestCase):
     SRC ="fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
 

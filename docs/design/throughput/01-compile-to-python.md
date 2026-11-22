@@ -217,6 +217,7 @@ narrower or safer than the plan, not looser.
    `load_name` and `store_name`, so #671's semantics come with them. Any opcode
    without an inlined fast path calls the VM's own handler on `vm.stack`: the
    `BUILD_*` opcodes, `INDEX_SET`, `MUL`, `DIV`, `MOD`, `NEG` and `THROW`.
+   (The four arithmetic opcodes have been inline since; see "Arithmetic".)
 2. **A category allowlist instead of a may-suspend flag.** Compiled code may
    call only builtins in five `NO_AUTHORITY_BUILTINS` categories:
    - pure computation;
@@ -482,6 +483,39 @@ the profile is `build_closure_frame` (0.86 s of 3.7 s), and `delegate`
 not generate: `*`, `/`, `%` and unary minus (`_DELEGATED`). The benchmark's
 closures are `x * 2i + k` and `y % 3i == 0i`, so every call delegates once.
 That is the next lever for arithmetic-heavy code, and it is not a call cost.
+
+## Arithmetic
+
+**`*`, `/`, `%` and unary minus are generated inline now.** Through `delegate`,
+each one pushed its operands onto `vm.stack`, dispatched the handler and read
+the result back. `+`, `-` and the comparisons were already inline.
+
+- **`*` and unary minus** are generated exactly as `VM._op_mul` and `_op_neg`
+  run them: the Python operator, and on a `TypeError` the same
+  `_binary_type_error` / `_unary_type_error` call.
+- **`/` and `%` are inline only for their commonest case:** two ints (by
+  `type(x) is int`, so not bools) and a non-zero divisor. That is floor division
+  and Python's `%`, which is what the handler does for that case. Everything
+  else still runs the handler: a float, a bool, a zero, a type error. So the
+  float rules and the four division-by-zero messages keep one copy.
+
+**Tested against the interpreter, not against expectations.** `Arithmetic` in
+`tests/test_pycompile.py` runs every pair of 13 operands under each of the three
+binary operators (507 programs), and unary minus on each operand, both ways.
+The operands are positive and negative ints and floats, both zeros, both bools,
+a string, a list and `nil`. Six mutations of the generator each turned tests
+red: dropping the zero check, admitting bools with `isinstance`, true division
+for `/`, the wrong word in `*`'s type error, no `TypeError` handling on minus,
+and no `vm.ip` before `/` and `%`.
+
+Measured interleaved against `main`, best of two or three, with 0.8 GB free:
+
+| | `main` | after |
+|---|---|---|
+| an integer loop of `*`, `/`, `%` and minus, compiled | 1.42–1.84 s | 0.28–0.41 s |
+| the same loop, interpreted | 2.84 s | (unchanged) |
+| map/filter/reduce with closures, compiled | 0.96–1.10 s | 0.69–0.91 s |
+| self-hosted parser, compiled | 1.05–1.19 s | 1.03–1.34 s (noise; it does little arithmetic) |
 
 ## Decisions (2026-11-21)
 
