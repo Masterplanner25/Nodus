@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 import threading
 import weakref
 from dataclasses import dataclass, field
@@ -357,9 +358,10 @@ class ChildVMPool:
             if pools is None:
                 pools = _POOLS[caller_vm] = {}
         try:
-            key = tuple(sorted(
-                (name, tuple(value) if isinstance(value, list) else value)
-                for name, value in construction.items()))
+            # In the dict's own order: `invoke_function` builds it the same way
+            # every time, so no sort is needed.
+            key = tuple((name, tuple(value) if type(value) is list else value)
+                        for name, value in construction.items())
             hash(key)
         except TypeError:
             return None  # an unhashable construction argument: never pooled
@@ -374,15 +376,14 @@ class ChildVMPool:
         module = self.module
         shared = {id(module.bytecode), id(module.functions), id(module.code_locs),
                   id(module.globals), id(module.host_globals)}
-        snapshot = {}
-        for name, value in vars(vm).items():
-            copy = None
-            if id(value) not in shared:
-                kind = type(value)
-                if kind is list or kind is dict or kind is set:
-                    copy = kind(value)
-            snapshot[name] = (value, copy)
-        self._snapshots[id(vm)] = (vm, snapshot)
+        state = vars(vm)
+        # Its own containers: empty when built (the stack, the frames...), or
+        # built with contents (the builtins, the dispatch table).
+        empty = [value for value in state.values()
+                 if id(value) not in shared and type(value) in _CONTAINERS and not value]
+        full = [(value, type(value)(value)) for value in state.values()
+                if id(value) not in shared and type(value) in _CONTAINERS and value]
+        self._snapshots[id(vm)] = _Snapshot(dict(state), tuple(state.values()), empty, full)
 
     def acquire(self):
         """An idle VM, reset, or None."""
@@ -396,29 +397,69 @@ class ChildVMPool:
         if (reusable and len(self.idle) < self.LIMIT
                 and vm not in _COROUTINE_OWNERS
                 and id(vm) in self._snapshots):
-            self.reset(vm)  # drops what the call left referenced
+            # Drop what the call left referenced: the caller (an idle VM must
+            # not keep it alive, its pool is keyed weakly on it), its host
+            # objects, the call's values. `acquire` does the full reset.
+            self._rebind(vm)
             self.idle.append(vm)
         else:
             self._snapshots.pop(id(vm), None)
 
     def reset(self, vm) -> None:
-        """Return `vm` to its state straight after construction."""
-        _, snapshot = self._snapshots[id(vm)]
-        state = vars(vm)
-        for name in [n for n in state if n not in snapshot]:
-            del state[name]
-        for name, (value, copy) in snapshot.items():
-            if state.get(name, _ABSENT) is not value:
-                state[name] = value
-            if copy is not None:
+        """Return `vm` to its state straight after construction.
+
+        The one full reset a call gets, in `acquire`, so it also covers a VM
+        that something touched while idle. Each part costs what it must, and
+        no more (#987): together these were half of a module call.
+        """
+        self._rebind(vm)
+        for value, copy in self._snapshots[id(vm)].full:
+            if type(value) is dict:
+                # Cheaper restored than compared: a dict compares by lookup.
+                value.clear()
+                value.update(copy)
+            elif value != copy:
+                # A list or set that is unchanged compares equal in C, on the
+                # identity shortcut.
                 if type(value) is list:
                     value[:] = copy
                 else:
                     value.clear()
                     value.update(copy)
 
+    def _rebind(self, vm) -> None:
+        """Every attribute back to the very object it held when built, nothing
+        added, and the VM's own empty containers emptied again."""
+        snapshot = self._snapshots[id(vm)]
+        state = vars(vm)
+        # Untouched is the case after `release`, and checking it in C is a
+        # fraction of the loop below: the same objects, in the same order.
+        # Strictly by identity, never by equality: an equal object is not the
+        # same one.
+        if not (len(state) == len(snapshot.values)
+                and all(map(operator.is_, state.values(), snapshot.values))):
+            attributes = snapshot.attributes
+            for name in [n for n in state if n not in attributes]:
+                del state[name]
+            for name, value in attributes.items():
+                if state.get(name, _ABSENT) is not value:
+                    state[name] = value
+        for value in snapshot.empty:
+            if value:
+                value.clear()
+
 
 _ABSENT = object()
+_CONTAINERS = (list, dict, set)
+
+
+@dataclass(frozen=True)
+class _Snapshot:
+    """A pooled VM straight after construction (`ChildVMPool.adopt`)."""
+    attributes: dict  # name -> the object it held
+    values: tuple     # the same objects, in attribute order, for the fast check
+    empty: list       # its own containers that were empty
+    full: list        # (container, copy) for its own containers with contents
 
 #: Caller VM -> {id(module): ChildVMPool}. Weak, so a pool lives exactly as long
 #: as its caller; the lock covers concurrent runtimes on other threads.
