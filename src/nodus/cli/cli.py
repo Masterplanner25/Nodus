@@ -1700,6 +1700,16 @@ def _example_paths() -> list[str]:
     ]
 
 
+#: The wall-clock limit `nodus test-examples` gives each example. The command
+#: checks that the shipped examples run, not that they beat `nodus run`'s 200 ms
+#: default: an import compiles inside that window, and under coverage the
+#: heaviest examples took 75-83 ms cold on the development machine. With the
+#: default, the command failed intermittently on CI -- through `test_examples_shipped`
+#: (fixed in the test in #971) and then through `test_cli_compatibility`, which
+#: runs the command itself. So the limit is set here, once, for every caller.
+EXAMPLE_TIMEOUT_MS = 30_000
+
+
 def _run_examples() -> int:
     failures: list[str] = []
     missing: list[str] = []
@@ -1707,7 +1717,7 @@ def _run_examples() -> int:
         if not os.path.isfile(path):
             missing.append(path)
             continue
-        exit_code = run_file(path)
+        exit_code = run_file(path, timeout_ms=EXAMPLE_TIMEOUT_MS)
         if exit_code != 0:
             failures.append(path)
     if missing:
