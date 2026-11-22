@@ -186,7 +186,7 @@ class TheReset(unittest.TestCase):
         vm.instructions_executed = 999
         vm.max_steps = 5
         vm._caller_vm = object()
-        vm._owns_coroutines = False
+        vm._added_during_the_call = True
         pool.reset(vm)
         self.assertEqual(vm.stack, [])
         self.assertEqual(vm.frames, [])
@@ -197,7 +197,7 @@ class TheReset(unittest.TestCase):
         # Set on the instance during a call; `VM` has a class-level None.
         self.assertNotIn("_caller_vm", vars(vm))
         self.assertIsNone(vm._caller_vm)
-        self.assertFalse(hasattr(vm, "_owns_coroutines"))
+        self.assertFalse(hasattr(vm, "_added_during_the_call"))
 
     def test_an_idle_vm_is_reset_again_when_taken(self):
         # `release` resets too, to drop what the call left referenced; the reset
@@ -217,12 +217,6 @@ class TheReset(unittest.TestCase):
         pool.reset(vm)
         self.assertEqual(module.globals["calls"], 7)
         self.assertIs(vm.functions, module.functions)
-
-    def test_its_own_pool_is_kept(self):
-        module, pool, vm = self.make()
-        vm._child_vms["x"] = "grandchildren"
-        pool.reset(vm)
-        self.assertEqual(vm._child_vms, {"x": "grandchildren"})
 
     def test_different_construction_means_a_different_pool(self):
         module, _, _ = self.make()
@@ -251,9 +245,36 @@ class EveryOwnerSiteMarksTheVM(unittest.TestCase):
                 if ".owner_vm = " in line and "getattr" not in line:
                     window = "\n".join(lines[i:i + 5])
                     sites.append(path.relative_to(REPO).as_posix())
-                    self.assertIn("_owns_coroutines = True", window,
+                    self.assertIn("mark_coroutine_owner(", window,
                                   f"{path}:{i + 1} assigns owner_vm without marking the VM")
         self.assertEqual(len(sites), 2, sites)
+
+
+class NoAttributeOnAnyVM(unittest.TestCase):
+    """The pools and the coroutine owners live outside the VM. A `VM` must stay
+    under PyPy's 80-attribute map limit (#702), and the first version of this
+    change put one attribute on every VM and another on any VM that spawned a
+    coroutine, which `tests/test_vm_attribute_budget.py` caught on CI."""
+
+    def test_module_calls_and_spawns_add_none(self):
+        # The same program, pooled and with the pool switched off: the VM that
+        # ran it must hold exactly the same attributes either way.
+        src = ('import "std:strings" as s\nprint(s.upper("a"))\nprint(s.upper("b"))\n'
+               "let ch = channel()\nspawn(fn() { send(ch, 1i) })\nrun_loop()\nprint(recv(ch))\n")
+        names = []
+        for pooled in (False, True):
+            rt = NodusRuntime(max_steps=None, timeout_ms=None)
+            if pooled:
+                result = rt.run_source(src)
+            else:
+                # Patched where it is called: both sites import it by name.
+                with mock.patch.object(ChildVMPool, "of", _off), \
+                        mock.patch("nodus.builtins.coroutine.mark_coroutine_owner", lambda vm: None), \
+                        mock.patch("nodus.runtime.continuation.mark_coroutine_owner", lambda vm: None):
+                    result = rt.run_source(src)
+            self.assertTrue(result["ok"], result)
+            names.append(sorted(vars(rt.active_vm())))
+        self.assertEqual(names[1], names[0])
 
 
 if __name__ == "__main__":

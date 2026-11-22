@@ -8,6 +8,7 @@ from nodus.runtime.channel import (
     TaskWaitRequest,
 )
 from nodus.runtime.diagnostics import LangRuntimeError
+from nodus.runtime.module import mark_coroutine_owner
 from nodus.runtime.scheduler import SleepRequest
 from nodus.vm.types import Closure
 from nodus.vm.vm_chain import root_vm
@@ -233,7 +234,7 @@ def register(vm, registry) -> None:
         coroutine.owner_vm = vm
         # #987: a VM that owns a coroutine must stay with it; a pooled module
         # VM is not reused once it has spawned one.
-        vm._owns_coroutines = True
+        mark_coroutine_owner(vm)
         vm.scheduler.spawn(coroutine)
         # #395/#157 (D2): return the handle. It used to return nil, and that was
         # the whole mechanical cause of #157 -- the value channel a program needs

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import weakref
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -329,12 +331,16 @@ class ChildVMPool:
     **Not reused**: a VM that is running (a call that re-enters the same module
     gets a new one), one whose call raised, and one that owns a coroutine, which
     must stay with it (#339). Without a caller VM nothing is pooled.
+
+    **Nothing here is stored on a VM.** The pools and the set of coroutine
+    owners are weak maps in this module. A `VM` instance must stay under PyPy's
+    80-attribute map limit (#702, `tests/test_vm_attribute_budget.py`), and an
+    attribute set on the caller, or on whichever VM spawns a coroutine, would
+    push every program that calls a module or spawns one past it.
     """
 
     #: The most idle VMs kept per caller and module.
     LIMIT = 4
-    #: What `reset` leaves alone: the VM's own pool, for its own calls into modules.
-    _KEEP = frozenset({"_child_vms"})
 
     def __init__(self, module: "NodusModule", key: tuple) -> None:
         self.module = module  # held, so `id(module)` in the caller's map stays valid
@@ -344,9 +350,12 @@ class ChildVMPool:
 
     @classmethod
     def of(cls, caller_vm, module: "NodusModule", construction: dict) -> "ChildVMPool | None":
-        pools = getattr(caller_vm, "_child_vms", None)
-        if pools is None:
+        if caller_vm is None:
             return None
+        with _POOLS_LOCK:
+            pools = _POOLS.get(caller_vm)
+            if pools is None:
+                pools = _POOLS[caller_vm] = {}
         try:
             key = tuple(sorted(
                 (name, tuple(value) if isinstance(value, list) else value)
@@ -367,8 +376,6 @@ class ChildVMPool:
                   id(module.globals), id(module.host_globals)}
         snapshot = {}
         for name, value in vars(vm).items():
-            if name in self._KEEP:
-                continue
             copy = None
             if id(value) not in shared:
                 kind = type(value)
@@ -387,7 +394,7 @@ class ChildVMPool:
 
     def release(self, vm, *, reusable: bool) -> None:
         if (reusable and len(self.idle) < self.LIMIT
-                and not getattr(vm, "_owns_coroutines", False)
+                and vm not in _COROUTINE_OWNERS
                 and id(vm) in self._snapshots):
             self.reset(vm)  # drops what the call left referenced
             self.idle.append(vm)
@@ -398,7 +405,7 @@ class ChildVMPool:
         """Return `vm` to its state straight after construction."""
         _, snapshot = self._snapshots[id(vm)]
         state = vars(vm)
-        for name in [n for n in state if n not in snapshot and n not in self._KEEP]:
+        for name in [n for n in state if n not in snapshot]:
             del state[name]
         for name, (value, copy) in snapshot.items():
             if state.get(name, _ABSENT) is not value:
@@ -412,6 +419,19 @@ class ChildVMPool:
 
 
 _ABSENT = object()
+
+#: Caller VM -> {id(module): ChildVMPool}. Weak, so a pool lives exactly as long
+#: as its caller; the lock covers concurrent runtimes on other threads.
+_POOLS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_POOLS_LOCK = threading.Lock()
+#: VMs that own a coroutine, which never go back into a pool.
+_COROUTINE_OWNERS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def mark_coroutine_owner(vm) -> None:
+    """Record that `vm` owns a coroutine (#987). Called wherever `owner_vm` is
+    assigned; `tests/test_module_call_vm_pool.py` holds every such site to it."""
+    _COROUTINE_OWNERS.add(vm)
 
 
 @dataclass(frozen=True)

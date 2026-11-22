@@ -419,10 +419,6 @@ class VM:
         self._tool_deprecated_warned: set = set()
         self._tool_registry_lock = threading.RLock()
         self._spawned_handles: list = []  # (proc, stdout_thread, stderr_thread) per subprocess_spawn
-        # #987: idle child VMs for this VM's calls into modules, by module
-        # (`nodus.runtime.module.ChildVMPool`). A pooled child keeps its own
-        # across calls: it is the one attribute its reset leaves alone.
-        self._child_vms: dict = {}
         self.test_state: dict = {}
         self.on_error: Callable | None = None
         self.coroutine_timeout_ms: int | None = None
