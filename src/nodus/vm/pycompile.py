@@ -652,6 +652,10 @@ class _Chunk:
     reasons: dict
     loops: set = field(default_factory=set)
     dynamic: set = field(default_factory=set)
+    # Calls so far, per function, toward the threshold. Per chunk: one state is
+    # shared by a VM and the child VMs that run its imported modules, and two
+    # modules can each have a `peek`.
+    calls: dict = field(default_factory=dict)
     compiled: dict = field(default_factory=dict)
     sources: dict = field(default_factory=dict)
 
@@ -679,7 +683,6 @@ class CompileState:
         self.depth_cap = (min(DEFAULT_DEPTH_CAP, max(10, sys.getrecursionlimit() // 5))
                           if depth_cap is None else depth_cap)
         self.depth = 0
-        self.calls: dict = {}
         self._chunks: dict = {}
         self.compiled_count = 0
 
@@ -710,8 +713,8 @@ class CompileState:
         if compiled is None:
             if chunk.reasons.get(name) is not None:
                 return None
-            n = self.calls.get(name, 0) + 1
-            self.calls[name] = n
+            n = chunk.calls.get(name, 0) + 1
+            chunk.calls[name] = n
             if n < self.threshold and name not in chunk.loops:
                 return None
             compiled = self._compile(vm, chunk, name)
@@ -725,6 +728,34 @@ class CompileState:
         if vm.functions.get(fn.name) is not fn:
             return None  # another chunk's closure: the interpreter knows its context
         return self.target(vm, fn.name, fn)
+
+    def run_entry(self, vm, closure, frame, args: list):
+        """Run `closure` compiled as the entry of `VM.run_closure`, or return
+        `_NOT_COMPILED` for the interpreter.
+
+        `run_closure` starts a module function's call (each one runs on a child
+        VM), a builtin's callback and the iterator protocol. It jumps straight to
+        `fn.addr`, past the `CALL` hook, so without this the function a module
+        call enters always ran interpreted, however hot: the self-hosted lexer's
+        whole `tokenize` loop did. `frame` is already pushed; the interpreter's
+        `RETURN` would record the return, so this does too.
+        """
+        fn = closure.function
+        if len(args) != len(fn.params):
+            return _NOT_COMPILED  # the interpreter decides what a mismatch means
+        compiled = self.target_closure(vm, closure)
+        if compiled is None:
+            return _NOT_COMPILED
+        for param, value in zip(fn.params, args):
+            frame.locals[param] = value
+        self.depth += 1
+        try:
+            result = compiled(vm, closure.upvalues, *args)
+        finally:
+            self.depth -= 1
+        vm.frames.pop()
+        vm.record_vm_return(fn.name, raw=True)
+        return result
 
     def invoke_closure(self, vm, compiled, callee, args: list):
         """`CALL_VALUE` from the interpreter to a compiled closure. The handler
@@ -889,6 +920,10 @@ def call_interpreted(vm, name: str, fn, args: list):
         # interpreter leaves them.
         vm.handler_stack = saved_handlers
         vm.ip = saved_ip
+
+
+#: `CompileState.run_entry`'s answer when the interpreter should run the call.
+_NOT_COMPILED = object()
 
 
 def call_value_interpreted(vm, callee, args: list):

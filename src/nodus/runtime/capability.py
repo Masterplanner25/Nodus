@@ -953,6 +953,12 @@ HOST_STATE_ATTRIBUTES: tuple[str, ...] = (
     "trace_id",
     "session_id",
     "execution_unit_id",
+    # #173: compile-to-Python. Without it, `NodusRuntime(compile_functions=True)`
+    # and `nodus run --compile` reached the top-level chunk only: every call into
+    # an imported module ran on a child VM with compilation off. Shared, not
+    # copied, so the call counts that decide when to compile, the per-chunk
+    # analysis and the depth cap carry across calls.
+    "_pycompile",
 )
 
 

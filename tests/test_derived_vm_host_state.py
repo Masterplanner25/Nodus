@@ -89,6 +89,8 @@ def _loaded_parent() -> VM:
     vm.trace_id = "trace-marker"
     vm.session_id = "session-marker"
     vm.trace_errors = True
+    from nodus.vm import pycompile
+    pycompile.enable(vm)
     return vm
 
 

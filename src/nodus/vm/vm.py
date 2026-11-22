@@ -3711,6 +3711,15 @@ class VM:
             if fn.local_slots:
                 run_frame.locals_name_to_slot = fn.local_slots
             self.frames.append(run_frame)
+            pycompile_state = self._pycompile
+            if pycompile_state is not None:
+                # #173: the function a module call or a callback enters.
+                from nodus.vm.pycompile import _NOT_COMPILED
+                self.stack.clear()  # it holds exactly the arguments here
+                compiled_result = pycompile_state.run_entry(self, closure, run_frame, list(args))
+                if compiled_result is not _NOT_COMPILED:
+                    return compiled_result
+                self.stack.extend(args)
             if self.profiler is not None and self.profiler.enabled:
                 self.profiler.enter_function(self.display_name(fn.name))
             self.ip = fn.addr
