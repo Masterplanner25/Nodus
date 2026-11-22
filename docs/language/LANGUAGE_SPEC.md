@@ -917,10 +917,11 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
   experimental and opt-in (#173); `NODUS_COMPILE_FUNCTIONS=1` and
   `NodusRuntime(compile_functions=True)` do the same. A compiled function behaves
   as interpreted code does, with the same results, errors, stack traces,
-  instruction counts, limits and capability checks. Only functions that cannot
-  suspend, capture no variables and use no `try` are compiled; a call to a
-  builtin that can suspend (`MAY_SUSPEND_BUILTINS`, such as `sleep` or
-  `http_get_async`) keeps a function interpreted.
+  instruction counts, limits and capability checks. Closures compile, and so do
+  functions that make them. Functions that can suspend or use `try` stay
+  interpreted: a call to a builtin that can suspend (`MAY_SUSPEND_BUILTINS`,
+  such as `sleep` or `http_get_async`) keeps a function interpreted, and a
+  function that calls a value (`f(x)`) runs compiled only outside a coroutine.
   Design: `docs/design/throughput/01-compile-to-python.md`.
 - Service mode: `nodus serve [--port <n>] [--trace]` exposes HTTP endpoints for executing code.
   - `--worker-sweep-interval-ms <ms>` sets the background worker expiry sweep interval.

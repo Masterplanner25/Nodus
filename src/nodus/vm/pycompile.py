@@ -110,8 +110,11 @@ _INLINE_EFFECT = {
     "FRAME_SIZE": 0, "JUMP": 0, "JUMP_IF_LOCAL_NE_CONST": 0,
     "EQ": -1, "NE": -1, "ADD": -1, "SUB": -1, "LT": -1, "GT": -1, "LE": -1, "GE": -1,
     "INDEX": -1, "JUMP_IF_FALSE": -1, "JUMP_IF_TRUE": -1, "RETURN": -1,
+    # phase 3 (#173): closures
+    "MAKE_CLOSURE": 1, "LOAD_UPVALUE": 1, "STORE_UPVALUE": -1,
 }
-SUPPORTED = frozenset(_INLINE_EFFECT) | frozenset(_DELEGATED) | {"CALL", "ITER_NEXT"}
+SUPPORTED = (frozenset(_INLINE_EFFECT) | frozenset(_DELEGATED)
+             | {"CALL", "ITER_NEXT", "CALL_VALUE"})
 _TERMINAL = {"RETURN", "THROW", "JUMP"}
 
 
@@ -128,6 +131,8 @@ def _effect(instr) -> int:
         return pushes - pops
     if op == "CALL":
         return 1 - instr[2]
+    if op == "CALL_VALUE":
+        return -instr[1]  # the callee and its arguments, replaced by the result
     if op == "ITER_NEXT":
         return 1  # the fall-through edge; the exit edge is handled in _stack_depths
     raise Ineligible(f"opcode {op}")
@@ -135,39 +140,97 @@ def _effect(instr) -> int:
 
 # --- eligibility --------------------------------------------------------------
 
+def reachable(code: list, start: int) -> set:
+    """The instructions control can reach from `start`, following jumps,
+    branches and iterator exits, and stopping at RETURN, THROW and HALT.
+
+    A function's body is this set, not an address range: a closure's body is
+    compiled inline in its parent, behind a JUMP over it, so the parent's range
+    contains code that is not the parent's, and the closure's own body ends at
+    its RETURN, in the middle of the parent.
+    """
+    seen: set = set()
+    work = [start]
+    while work:
+        i = work.pop()
+        if i in seen or not (0 <= i < len(code)):
+            continue
+        seen.add(i)
+        instr = code[i]
+        op = instr[0]
+        if op in ("RETURN", "THROW", "HALT"):
+            continue
+        if op == "JUMP":
+            work.append(instr[1])
+            continue
+        pos = JUMP_TARGET.get(op)
+        if pos is not None and isinstance(instr[pos], int):
+            work.append(instr[pos])
+        work.append(i + 1)
+    return seen
+
+
 def function_bodies(code: list, functions: dict) -> dict:
-    """name -> (start, end): each function's instructions in the chunk."""
-    starts = sorted({fn.addr for fn in functions.values()})
-    main = code[0][1] if code and code[0][0] == "JUMP" else len(code)
-    bounds = sorted(set(starts) | {main, len(code)})
+    """name -> (start, end): the span from a function's entry to the last
+    instruction it can reach. Only the reachable instructions in it are the
+    function's own; see `reachable`."""
     out = {}
     for name, fn in functions.items():
-        later = [b for b in bounds if b > fn.addr]
-        out[name] = (fn.addr, later[0] if later else len(code))
+        own = reachable(code, fn.addr)
+        out[name] = (fn.addr, (max(own) + 1) if own else fn.addr)
     return out
 
 
 def eligible_functions(code: list, functions: dict, builtins: dict) -> dict:
-    """name -> reason it is ineligible, or None if eligible. A greatest fixed
-    point: start from every function that passes the local checks, then drop any
-    that calls a function no longer in the set."""
+    """name -> reason it is ineligible, or None if eligible."""
+    return analyze(code, functions, builtins)[0]
+
+
+def analyze(code: list, functions: dict, builtins: dict) -> tuple[dict, set]:
+    """(reasons, dynamic) for every function in the chunk.
+
+    `reasons` maps a name to why it stays interpreted, or None if it is
+    eligible: a greatest fixed point, starting from every function that passes
+    the local checks and dropping any that calls one no longer in the set.
+
+    `dynamic` holds the eligible functions that can reach a `CALL_VALUE`, whose
+    target is only known at run time and may be anything, including code that
+    would suspend. They run compiled only outside a coroutine, where nothing can
+    suspend: `sleep`, `recv` and `yield` refuse there with their own errors
+    (phase 3).
+    """
     bodies = function_bodies(code, functions)
     reasons: dict = {}
     calls: dict = {}
+    dynamic: set = set()
     for name, fn in functions.items():
         start, end = bodies[name]
         try:
-            if fn.upvalues:
-                raise Ineligible("captures upvalues")
             if getattr(fn, "step_owner", None) is not None:
                 raise Ineligible("a workflow step body")
             if not (0 <= start < end <= len(code)):
                 raise Ineligible("no body in this chunk")
             callees = set()
-            for instr in code[start:end]:
+            for i in sorted(reachable(code, start)):
+                instr = code[i]
                 op = instr[0]
                 if op not in SUPPORTED:
                     raise Ineligible(f"opcode {op}")
+                if op == "CALL_VALUE":
+                    dynamic.add(name)
+                elif op == "MAKE_CLOSURE":
+                    target = functions.get(instr[1])
+                    if target is None:
+                        raise Ineligible(f"closure of unknown function {instr[1]}")
+                    for upvalue in target.upvalues:
+                        if upvalue.is_local and upvalue.index is None:
+                            raise Ineligible("a capture without a slot")
+                        if not upvalue.is_local and not (
+                                isinstance(upvalue.index, int) and upvalue.index < len(fn.upvalues)):
+                            raise Ineligible("a capture of an upvalue this function lacks")
+                elif op in ("LOAD_UPVALUE", "STORE_UPVALUE"):
+                    if not (isinstance(instr[1], int) and instr[1] < len(fn.upvalues)):
+                        raise Ineligible("an upvalue out of range")
                 if op == "CALL":
                     callee, argc = instr[1], instr[2]
                     if callee in functions:
@@ -192,7 +255,27 @@ def eligible_functions(code: list, functions: dict, builtins: dict) -> dict:
                 if bad is not None:
                     reasons[name] = f"calls {bad}, which stays interpreted"
                     changed = True
-    return reasons
+    # A function that calls a dynamic one is dynamic too.
+    changed = True
+    while changed:
+        changed = False
+        for name, callees in calls.items():
+            if name not in dynamic and callees & dynamic:
+                dynamic.add(name)
+                changed = True
+    return reasons, {name for name in dynamic if reasons.get(name) is None}
+
+
+def cell_slots(code: list, start: int, end: int, functions: dict) -> frozenset:
+    """The local slots a closure made in this body captures: the only ones that
+    can hold a `Cell`, so the only ones that need Cell-aware code."""
+    out = set()
+    for i in reachable(code, start):
+        if code[i][0] == "MAKE_CLOSURE":
+            for upvalue in functions[code[i][1]].upvalues:
+                if upvalue.is_local:
+                    out.add(upvalue.index)
+    return frozenset(out)
 
 
 def _leaders(code: list, start: int, end: int) -> list:
@@ -241,14 +324,19 @@ def _stack_depths(code: list, start: int, end: int) -> dict:
 
 # --- code generation ----------------------------------------------------------
 
-def generate(name: str, fn, code: list, start: int, end: int, py_name: str) -> str:
-    """Python source for one eligible function."""
+def generate(name: str, fn, code: list, start: int, end: int, py_name: str,
+             functions: dict | None = None) -> str:
+    """Python source for one eligible function. `up` is the closure's upvalue
+    list, or None for a named function."""
+    functions = functions or {}
+    cells = cell_slots(code, start, end, functions) if functions else frozenset()
     depth = _stack_depths(code, start, end)
-    leaders = [b for b in _leaders(code, start, end) if b in depth]
+    all_leaders = _leaders(code, start, end)
+    leaders = [b for b in all_leaders if b in depth]
     first = code[start]
     nslots = first[1] if first[0] in ("ENTER", "FRAME_SIZE") else 0
     params = list(fn.params)
-    out = [f"def {py_name}(vm{''.join(', a' + str(k) for k in range(len(params)))}):"]
+    out = [f"def {py_name}(vm, up{''.join(', a' + str(k) for k in range(len(params)))}):"]
     for slot in range(nslots):
         out.append(f"    l{slot} = None")
     for k, param in enumerate(params):
@@ -266,7 +354,12 @@ def generate(name: str, fn, code: list, start: int, end: int, py_name: str) -> s
     out.append("    try:")
     out.append("        while True:")
     for bi, b0 in enumerate(leaders):
-        b1 = leaders[bi + 1] if bi + 1 < len(leaders) else end
+        # The block ends at the next block start of any kind. Taking it from the
+        # reachable starts only would stretch a block over unreachable code after
+        # it (a nested closure's body, or `--no-opt`'s epilogue after a return)
+        # and count instructions that never run.
+        later = [b for b in all_leaders if b > b0]
+        b1 = later[0] if later else end
         out.append(f"            {'if' if bi == 0 else 'elif'} pc == {b0}:")
         ind = " " * 16
         out.append(f"{ind}be = None")
@@ -278,7 +371,7 @@ def generate(name: str, fn, code: list, start: int, end: int, py_name: str) -> s
         ended = False
         for i in range(b0, b1):
             instr = code[i]
-            ended = _emit(out, ind, instr, i, d)
+            ended = _emit(out, ind, instr, i, d, cells, functions)
             d += _effect(instr)
             if ended:
                 break
@@ -295,7 +388,15 @@ def _field_read(obj: str, name: str) -> str:
     return f"{obj}.fields[{name}] if type({obj}) is Record and {name} in {obj}.fields else vm.read_field({obj}, {name})"
 
 
-def _emit(out: list, ind: str, instr: tuple, addr: int, d: int) -> bool:
+def _local(slot: int, cells: frozenset) -> str:
+    """An expression for local `slot`'s value: unwrapped when it may be a Cell."""
+    if slot in cells:
+        return f"(l{slot}.value if type(l{slot}) is Cell else l{slot})"
+    return f"l{slot}"
+
+
+def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
+          cells: frozenset = frozenset(), functions: dict | None = None) -> bool:
     """Append the code for one instruction; True if it ends the block."""
     op = instr[0]
     s = lambda k: f"s{k}"  # noqa: E731
@@ -304,16 +405,49 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int) -> bool:
     def truthy(c: str) -> str:
         return f"({c} is True or ({c} is not False and {c} is not None and vm.is_truthy({c})))"
 
+    if op == "RESET_LOCAL_IDX" and instr[1] in cells:
+        # Detach the Cell, so the next capture makes a fresh one (per-iteration
+        # binding), exactly as the interpreter's handler does.
+        out.append(f"{ind}l{instr[1]} = None")
+        return False
     if op in ("ENTER", "FRAME_SIZE", "RESET_LOCAL_IDX", "POP"):
-        # Locals are Python locals and no slot holds a Cell (no closures), so
-        # these have nothing to do; POP's operand is simply not used again.
+        # Locals are Python locals, and a slot no closure captures never holds
+        # a Cell, so these have nothing to do; POP's operand is not used again.
         return False
     if op == "PUSH_CONST":
         out.append(f"{ind}{s(d)} = CONSTS[{addr}]")
     elif op == "LOAD_LOCAL_IDX":
-        out.append(f"{ind}{s(d)} = l{instr[1]}")
+        out.append(f"{ind}{s(d)} = {_local(instr[1], cells)}")
     elif op == "STORE_LOCAL_IDX":
-        out.append(f"{ind}l{instr[1]} = {s(d - 1)}")
+        slot = instr[1]
+        if slot in cells:
+            out.append(f"{ind}if type(l{slot}) is Cell: l{slot}.value = {s(d - 1)}")
+            out.append(f"{ind}else: l{slot} = {s(d - 1)}")
+        else:
+            out.append(f"{ind}l{slot} = {s(d - 1)}")
+    elif op == "LOAD_UPVALUE":
+        out.append(f"{ind}{s(d)} = up[{instr[1]}].value")
+    elif op == "STORE_UPVALUE":
+        out.append(f"{ind}up[{instr[1]}].value = {s(d - 1)}")
+    elif op == "MAKE_CLOSURE":
+        # VM._op_make_closure and capture_local: reuse a slot's Cell, or box its
+        # value in a new one and record it in the frame's locals dict too.
+        captured = []
+        for upvalue in functions[instr[1]].upvalues:
+            if upvalue.is_local:
+                slot = upvalue.index
+                out.append(f"{ind}if type(l{slot}) is not Cell:")
+                out.append(f"{ind}    l{slot} = Cell(l{slot})")
+                out.append(f"{ind}    vm.frames[-1].locals[{upvalue.name!r}] = l{slot}")
+                captured.append(f"l{slot}")
+            else:
+                captured.append(f"up[{upvalue.index}]")
+        out.append(f"{ind}{s(d)} = Closure(vm.functions[{instr[1]!r}], [{', '.join(captured)}])")
+    elif op == "CALL_VALUE":
+        argc = instr[1]
+        args = ", ".join(s(k) for k in range(d - argc, d))
+        out.append(at)
+        out.append(f"{ind}{s(d - argc - 1)} = CALL_VALUE(vm, {s(d - argc - 1)}, [{args}])")
     elif op == "LOAD":
         out.append(at)
         out.append(f"{ind}{s(d)} = vm.load_name({instr[1]!r})")
@@ -322,7 +456,7 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int) -> bool:
         out.append(f"{ind}vm.store_name({instr[1]!r}, {s(d - 1)})")
     elif op == "LOAD_LOCAL_FIELD":
         out.append(at)
-        out.append(f"{ind}o = l{instr[1]}")
+        out.append(f"{ind}o = {_local(instr[1], cells)}")
         out.append(f"{ind}{s(d)} = {_field_read('o', repr(instr[2]))}")
     elif op == "LOAD_FIELD":
         out.append(at)
@@ -400,7 +534,8 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int) -> bool:
         out.append(f"{ind}continue")
         return True
     elif op == "JUMP_IF_LOCAL_NE_CONST":
-        v = f"l{instr[1]}"
+        v = "lv"
+        out.append(f"{ind}lv = {_local(instr[1], cells)}")
         out.append(f"{ind}k = CONSTS[{addr}]")
         out.append(f"{ind}if not (({v} == k) if type({v}) is str and type(k) is str else vm._nodus_eq({v}, k)):")
         out.append(f"{ind}    pc = {instr[3]}")
@@ -478,10 +613,17 @@ _CODE_CACHE_LIMIT = 4096
 _CODE_CACHE_LOCK = threading.Lock()
 
 
-def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str) -> tuple:
+def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str,
+                 functions: dict | None = None) -> tuple:
     """(source, code object) for one function, from the cache when possible."""
+    functions = functions or {}
     try:
-        key = (name, start, end, tuple(code[start:end]))
+        # What a MAKE_CLOSURE captures shapes the generated code, and it lives
+        # on the target FunctionInfo, not in this body's instructions.
+        captures = tuple(
+            (code[i][1], tuple((u.name, u.is_local, u.index) for u in functions[code[i][1]].upvalues))
+            for i in range(start, end) if code[i][0] == "MAKE_CLOSURE" and code[i][1] in functions)
+        key = (name, start, end, tuple(code[start:end]), captures)
         hash(key)
     except TypeError:  # an unhashable constant: compile without caching
         key = None
@@ -491,7 +633,7 @@ def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str) 
             if hit is not None:
                 _CODE_CACHE.move_to_end(key)
                 return hit
-    source = generate(name, fn, code, start, end, py_name)
+    source = generate(name, fn, code, start, end, py_name, functions)
     entry = (source, compile(source, f"<nodus compiled {name}>", "exec"))
     if key is not None:
         with _CODE_CACHE_LOCK:
@@ -508,6 +650,7 @@ class _Chunk:
     code: list
     reasons: dict
     loops: set = field(default_factory=set)
+    dynamic: set = field(default_factory=set)
     compiled: dict = field(default_factory=dict)
     sources: dict = field(default_factory=dict)
 
@@ -516,7 +659,7 @@ def functions_with_loops(code: list, functions: dict) -> set:
     """Names of the functions whose body has a backward jump: a loop."""
     out = set()
     for name, (start, end) in function_bodies(code, functions).items():
-        for i in range(max(start, 0), min(end, len(code))):
+        for i in sorted(reachable(code, start)):
             instr = code[i]
             pos = JUMP_TARGET.get(instr[0])
             if pos is not None and isinstance(instr[pos], int) and instr[pos] <= i:
@@ -544,8 +687,8 @@ class CompileState:
         key = id(vm.code)
         chunk = self._chunks.get(key)
         if chunk is None or chunk.code is not vm.code:
-            chunk = _Chunk(vm.code, eligible_functions(vm.code, vm.functions, vm.builtins),
-                           functions_with_loops(vm.code, vm.functions))
+            reasons, dynamic = analyze(vm.code, vm.functions, vm.builtins)
+            chunk = _Chunk(vm.code, reasons, functions_with_loops(vm.code, vm.functions), dynamic)
             self._chunks[key] = chunk
         return chunk
 
@@ -553,6 +696,11 @@ class CompileState:
         return (self.depth < self.depth_cap
                 and vm.task_step_budget is None
                 and not vm._instrumented())
+
+    def allowed(self, vm, chunk: _Chunk, name: str) -> bool:
+        """Whether `name`, compiled, may run now. A dynamic function (one that can
+        reach a CALL_VALUE) only outside a coroutine, where nothing suspends."""
+        return self.may_run(vm) and (name not in chunk.dynamic or vm.current_coroutine is None)
 
     def target(self, vm, name: str, fn):
         """The compiled function to run for this call, or None for the interpreter."""
@@ -566,9 +714,36 @@ class CompileState:
             if n < self.threshold and name not in chunk.loops:
                 return None
             compiled = self._compile(vm, chunk, name)
-        if not self.may_run(vm):
+        if not self.allowed(vm, chunk, name):
             return None
         return compiled
+
+    def target_closure(self, vm, callee):
+        """The compiled function for a call to local closure `callee`, or None."""
+        fn = callee.function
+        if vm.functions.get(fn.name) is not fn:
+            return None  # another chunk's closure: the interpreter knows its context
+        return self.target(vm, fn.name, fn)
+
+    def invoke_closure(self, vm, compiled, callee, args: list):
+        """`CALL_VALUE` from the interpreter to a compiled closure. The handler
+        has already recorded the call."""
+        call_ip = vm.ip
+        fn = callee.function
+        frame = vm.build_closure_frame(callee, len(args), args_on_stack=False)
+        for param, value in zip(fn.params, args):
+            frame.locals[param] = value
+        vm.frames.append(frame)
+        self.depth += 1
+        try:
+            result = compiled(vm, callee.upvalues, *args)
+        finally:
+            self.depth -= 1
+        vm.frames.pop()
+        vm.record_vm_return(fn.name, raw=True)
+        vm.stack.append(result)
+        vm.ip = call_ip + 1
+        return None
 
     def _compile(self, vm, chunk: _Chunk, name: str):
         """Compile `name` and, on demand, everything it calls."""
@@ -578,12 +753,14 @@ class CompileState:
         start, end = bodies[name]
         fn = vm.functions[name]
         py_name = "nd_" + "".join(ch if ch.isalnum() else "_" for ch in name)
-        source, code_object = _cached_code(name, fn, chunk.code, start, end, py_name)
+        source, code_object = _cached_code(name, fn, chunk.code, start, end, py_name, vm.functions)
+        from nodus.vm.types import Cell, Closure
         from nodus.vm.vm import Iterator  # here, not at import: vm.py imports this module
 
         calls: dict = {}
         namespace = {
             "Record": Record, "Iterator": Iterator, "count": count, "delegate": delegate,
+            "Cell": Cell, "Closure": Closure, "CALL_VALUE": self._value_call(vm, chunk),
             "CONSTS": {i: chunk.code[i][1] for i in range(start, end)
                        if chunk.code[i][0] in ("PUSH_CONST",)} | {
                 i: chunk.code[i][2] for i in range(start, end)
@@ -612,7 +789,7 @@ class CompileState:
             fn = vm.functions[callee]
             vm.record_vm_call(callee, "call", raw=True)
             compiled = chunk.compiled.get(callee) or state._compile(vm, chunk, callee)
-            if state.depth >= state.depth_cap or not state.may_run(vm):
+            if not state.allowed(vm, chunk, callee):
                 return call_interpreted(vm, callee, fn, args)
             frame = vm.build_call_frame(callee, fn, 0)
             for param, value in zip(fn.params, args):
@@ -620,12 +797,41 @@ class CompileState:
             vm.frames.append(frame)
             state.depth += 1
             try:
-                result = compiled(vm, *args)
+                result = compiled(vm, None, *args)
             finally:
                 state.depth -= 1
             vm.frames.pop()
             vm.record_vm_return(callee, raw=True)
             return result
+        return call
+
+    def _value_call(self, vm, chunk: _Chunk):
+        """`CALL_VALUE` from compiled code. A local closure whose function is
+        eligible is called directly; anything else goes through the VM's own
+        `CALL_VALUE` handler, synchronously (`call_value_interpreted`)."""
+        state = self
+        from nodus.vm.types import Closure
+
+        def call(vm, callee, args):
+            if type(callee) is Closure:
+                fn = callee.function
+                if (vm.functions.get(fn.name) is fn and chunk.reasons.get(fn.name) is None
+                        and state.allowed(vm, chunk, fn.name)):
+                    vm.record_vm_call(fn.display_name, "call_value")
+                    compiled = chunk.compiled.get(fn.name) or state._compile(vm, chunk, fn.name)
+                    frame = vm.build_closure_frame(callee, len(args), args_on_stack=False)
+                    for param, value in zip(fn.params, args):
+                        frame.locals[param] = value
+                    vm.frames.append(frame)
+                    state.depth += 1
+                    try:
+                        result = compiled(vm, callee.upvalues, *args)
+                    finally:
+                        state.depth -= 1
+                    vm.frames.pop()
+                    vm.record_vm_return(fn.name, raw=True)
+                    return result
+            return call_value_interpreted(vm, callee, args)
         return call
 
     def invoke(self, vm, compiled, name: str, fn, arg_count: int):
@@ -643,7 +849,7 @@ class CompileState:
         vm.frames.append(frame)
         self.depth += 1
         try:
-            result = compiled(vm, *args)
+            result = compiled(vm, None, *args)
         finally:
             self.depth -= 1
         vm.frames.pop()
@@ -680,6 +886,48 @@ def call_interpreted(vm, name: str, fn, args: list):
     finally:
         # On an error the frames stay for handle_exception to unwind, as the
         # interpreter leaves them.
+        vm.handler_stack = saved_handlers
+        vm.ip = saved_ip
+
+
+def call_value_interpreted(vm, callee, args: list):
+    """Call value `callee` through the VM's own `CALL_VALUE` handler, from
+    compiled code, synchronously.
+
+    The handler decides everything: a module function, a proxy for another VM's
+    closure, a closure from another chunk, or a local one. If it pushes a frame,
+    that frame's return address becomes one past the end of the calling chunk,
+    which ends a nested `execute()` once the call returns, after any module
+    context the handler switched is restored. If it answers directly, the result
+    is already on the stack.
+
+    The calling function is dynamic, so it only runs compiled outside a
+    coroutine, where nothing the callee does can suspend. `handler_stack` is
+    hidden for the duration, so an error inside cannot jump to a `catch`
+    outside this call; a `try` inside works on its own entries.
+    """
+    saved_ip = vm.ip
+    saved_handlers = vm.handler_stack
+    vm.handler_stack = []
+    stack = vm.stack
+    base = len(stack)
+    frames_before = len(vm.frames)
+    code_len = len(vm.code)
+    stack.append(callee)
+    stack.extend(args)
+    try:
+        status = vm._dispatch["CALL_VALUE"](("CALL_VALUE", len(args)))
+        if status is not None:  # pragma: no cover - cannot suspend outside a coroutine
+            vm.runtime_error("runtime", "internal: a call suspended inside compiled code (#173)")
+        if len(vm.frames) > frames_before:
+            vm.frames[frames_before].return_ip = code_len
+            status, _ = vm.execute()
+            if status != "halt":  # pragma: no cover - defensive
+                vm.runtime_error("runtime", "internal: a call did not return normally (#173)")
+        if len(stack) != base + 1:  # pragma: no cover - defensive
+            vm.runtime_error("runtime", "internal: a call left the stack unbalanced (#173)")
+        return stack.pop()
+    finally:
         vm.handler_stack = saved_handlers
         vm.ip = saved_ip
 

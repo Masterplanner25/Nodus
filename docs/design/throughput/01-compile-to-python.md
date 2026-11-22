@@ -195,7 +195,7 @@ same source, which makes it testable and later cacheable.
 |---|---|---|
 | 1 | Everything above, behind a switch, plus the differential CI job; also global `LOAD`/`STORE`, the `BUILD_*` opcodes, `INDEX_SET`, `MUL`/`DIV`/`MOD` and iteration (see "Phase 1 as built") | the suite passes in differential mode, and the frontend speedup is measured |
 | 2 | Builtins outside the compilable categories, through the may-suspend analysis described under Eligibility. **Done** (see "Phase 2 as built"): capability-bearing builtins that cannot suspend | programs that call `http`, `subprocess` or agents in their hot paths compile |
-| 3 | Cells and closures, `CALL_VALUE` with a known compiled target | closure-heavy programs compile |
+| 3 | Cells and closures, `CALL_VALUE` with a known compiled target. **Done** (see "Phase 3 as built") | closure-heavy programs compile |
 | 4 | Deoptimisation: rebuild interpreter frames from a compiled function's state at a block boundary, so it can pause | compiled code runs inside scheduled coroutines |
 
 Phase 4 is the hard one, and it may not be worth doing.
@@ -283,6 +283,67 @@ through `ChannelSendRequest` and `TaskWaitRequest`, subclasses of
 
 **Concurrency constructors, orchestration and introspection stay out.** They are
 not needed for I/O in hot paths, and each raises its own exactness questions.
+
+## Phase 3 as built
+
+**Closures compile**, and so do the functions that make them:
+- A compiled function takes its closure's upvalue list (`up`). `LOAD_UPVALUE`
+  and `STORE_UPVALUE` read and write those cells.
+- A slot a closure in the body captures can hold a `Cell`, so its reads, writes,
+  resets, field reads and comparisons are Cell-aware. Every other slot stays a
+  plain Python local.
+- `MAKE_CLOSURE` does what `capture_local` does: reuse a slot's Cell, or box the
+  value in a new one and record it in the frame's locals dict too.
+- Frames for closure calls come from `VM.build_closure_frame`, extracted from
+  `call_closure`. The #394 step-entry guard moved with it, so the guard covers
+  compiled calls as well.
+
+**Calls through values.** A `CALL_VALUE` in compiled code goes one of two ways:
+- A local closure whose function is eligible is called directly.
+- Anything else goes through the VM's own `CALL_VALUE` handler, synchronously:
+  module functions, proxies for another VM's closures, closures from another
+  chunk, and ineligible closures. If the handler pushes a frame, its return
+  address becomes one past the end of the calling chunk, which ends a nested
+  `execute()`.
+
+**Dynamic functions.** A `CALL_VALUE`'s target is only known at run time and
+may be anything, including code that would suspend. So it marks its function
+dynamic, and the mark spreads to every caller. A dynamic function runs compiled
+only when `vm.current_coroutine is None`. That is weaker than phase 1's
+condition, no task step budget, and it has to be: a coroutine resumed with
+`resume(...)`, or the temporary one `run_closure` makes for a builtin's callback,
+has no step budget. Outside a coroutine nothing suspends:
+- `sleep`, `recv` and `yield` refuse with their own errors;
+- `send` buffers.
+
+So a synchronous call from compiled code there behaves exactly as the
+interpreter would.
+
+**A function body is what it can reach.** It is not an address range. A closure's
+body is compiled inline in its parent, behind a `JUMP` over it, which caused two
+problems:
+- The address ranges phases 1 and 2 used cut the parent off at the closure, so
+  every function that made a closure was ineligible.
+- They gave the closure the rest of its parent. A block running on into that
+  unreachable code counted instructions that never execute: the differential
+  tests showed 124 against 106.
+
+Bodies now come from reachability. A block ends at the next block start of any
+kind, not only at reachable ones.
+
+**Measured.** A program running `map`, `filter` and `reduce` written in Nodus,
+with closures, 30 rounds over 2,000 items: 2.34–2.42 s interpreted and
+1.34–1.49 s compiled, about 1.7×, with identical instruction counts. Before
+phase 3 none of it compiled.
+
+**Still interpreted:**
+- `CALL_METHOD`;
+- closures from another chunk (through the handler);
+- anything with `try`.
+
+Without the optimizer (`--no-opt`), functions with parameters stay interpreted:
+their arguments are bound with `STORE_ARG`, and only the optimizer's fused
+`ENTER` is supported.
 
 ## Decisions (2026-11-21)
 
