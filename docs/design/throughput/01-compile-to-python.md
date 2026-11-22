@@ -345,6 +345,43 @@ Without the optimizer (`--no-opt`), functions with parameters stay interpreted:
 their arguments are bound with `STORE_ARG`, and only the optimizer's fused
 `ENTER` is supported.
 
+## Imported modules (after phase 3)
+
+**The two switches users have did not reach imported code.** Every
+measurement above, and CI's `compiled` job, used `NODUS_COMPILE_FUNCTIONS`.
+`NodusRuntime(compile_functions=True)` and `nodus run --compile` attach a
+`CompileState` to the top-level VM only, but a call into an imported module runs
+on a child VM. That child took compilation from the environment variable alone.
+So with the real switches, an imported module ran entirely interpreted.
+
+There was a second gap even with the variable set. The function a module call
+enters is started by `VM.run_closure`, which jumps straight to `fn.addr` and so
+skips the `CALL` hook. Only the functions it called were compiled. In the
+self-hosted lexer, that is the whole `tokenize` loop.
+
+The self-hosted parser, parsing `parser.nd`, best of three:
+
+| Switch | Before | After |
+|---|---|---|
+| off | 2.28 s | 2.36 s |
+| `compile_functions=True` | 2.33 s | 1.37 s |
+| `NODUS_COMPILE_FUNCTIONS=1` | 1.64 s | 1.26 s |
+
+The fix has three parts:
+- **The state is host state.** `_pycompile` is in `HOST_STATE_ATTRIBUTES`, so
+  `derive_child_vm` shares the parent's state with every child: module calls,
+  tool handlers and resumes. It is shared, not copied, so call counts, the
+  per-chunk analysis and the depth cap carry across calls.
+- **Call counts are per chunk**, not per state. A shared state sees several
+  modules, and two can each have a `peek`.
+- **`run_closure` tries `CompileState.run_entry` first.** Its arguments must
+  match the parameters exactly; on a mismatch the interpreter decides what the
+  mismatch means. The temporary coroutine `run_closure` sets up keeps dynamic
+  functions interpreted there, as everywhere inside a coroutine.
+
+The tests run a program that imports a module, through the runtime flag with the
+variable unset. Three of them fail on the unfixed tree.
+
 ## Decisions (2026-11-21)
 
 1. **Opt-in for one release**, through `NodusRuntime(compile_functions=True)`,

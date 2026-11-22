@@ -377,6 +377,110 @@ class DynamicTaint(unittest.TestCase):
         self.assertEqual(dynamic, {"call", "above"})
 
 
+MODULE = (
+    "fn total(xs) {\n    let t = 0i\n    for x in xs { t = t + double(x) }\n    return t\n}\n"
+    "fn double(x) { return x * 2i }\n"
+    "fn broken(r) { return r.missing }\n"
+    "fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+)
+
+
+class ImportedModules(unittest.TestCase):
+    """The switches an embedder and a CLI user actually have reach imported code.
+
+    A call into a module runs on a child VM. Before the fix that VM got
+    compilation only from `NODUS_COMPILE_FUNCTIONS`, so the runtime flag and
+    `--compile` compiled the entry chunk and nothing it imported; and the
+    function a module call enters runs through `run_closure`, which skipped the
+    compile hook even with the variable set. These run with the variable unset.
+    """
+
+    def setUp(self):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = pathlib.Path(tmp.name)
+        (self.dir / "m.nd").write_text(MODULE, encoding="utf-8")
+
+    def run_program(self, body: str, *, compiled: bool):
+        main = self.dir / "main.nd"
+        src = 'import "./m.nd" as m\n' + body
+        main.write_text(src, encoding="utf-8")
+        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""}):
+            result, vm = run_source(src, filename=str(main), max_steps=None, timeout_ms=None,
+                                    compile_functions=compiled)
+        error = result.get("error") or {}
+        names = set()
+        if vm is not None and vm._pycompile is not None:
+            names = {n for chunk in vm._pycompile._chunks.values() for n in chunk.compiled}
+        return {
+            "ok": result.get("ok"),
+            "stdout": result.get("stdout"),
+            "kind": error.get("type") or error.get("kind"),
+            "message": error.get("message"),
+            "line": error.get("line"),
+            "stack": (result.get("errors") or [{}])[0].get("stack"),
+            "instructions": vm.instructions_executed if vm is not None else None,
+            "calls": getattr(vm, "function_calls", None),
+            "returns": getattr(vm, "returns", None),
+        }, names
+
+    def assert_same(self, body: str):
+        plain, _ = self.run_program(body, compiled=False)
+        fast, names = self.run_program(body, compiled=True)
+        self.assertEqual(fast, plain)
+        return fast, names
+
+    def test_a_module_function_with_a_loop_compiles(self):
+        fast, names = self.assert_same("print(m.total([1i, 2i, 3i]))\nprint(m.total([10i]))\n")
+        self.assertEqual(fast["stdout"], "12\n20\n")
+        # `total` is what the module call enters; `double` is what it calls.
+        self.assertIn("total", names)
+        self.assertIn("double", names)
+
+    def test_an_error_in_a_compiled_module_entry(self):
+        fast, _ = self.assert_same("fn main() { print(m.broken(record { a: 1i })) }\nmain()\n")
+        self.assertFalse(fast["ok"])
+        self.assertIn("missing", fast["message"])
+
+    def test_a_module_function_calling_back_into_the_caller(self):
+        fast, _ = self.assert_same(
+            "fn main() {\n    let k = 5i\n    print(m.each(fn(x) { return x + k }, [1i, 2i]))\n}\nmain()\n")
+        self.assertEqual(fast["stdout"], "[6, 7]\n")
+
+    def test_the_child_vm_shares_the_callers_state(self):
+        from nodus.runtime.capability import derive_child_vm
+        from nodus.vm.vm import VM
+        parent = VM([("HALT",)], {}, code_locs=[], source_path=None)
+        state = pycompile.enable(parent)
+        child = VM([("HALT",)], {}, code_locs=[], source_path=None)
+        derive_child_vm(child, parent)
+        self.assertIs(child._pycompile, state)
+
+    def test_two_modules_with_the_same_function_name_count_separately(self):
+        state = pycompile.CompileState(threshold=2)
+
+        class FakeVM:
+            def __init__(self, code, functions):
+                self.code, self.functions, self.builtins = code, functions, {}
+                self.task_step_budget = None
+                self.current_coroutine = None
+
+            def _instrumented(self):
+                return False
+
+        from nodus.runtime.module_loader import ModuleLoader
+        a_code, a_fns, _ = ModuleLoader(project_root=None).compile_only(
+            "fn peek(x) { return x + 1i }\n", module_name="a.nd")
+        b_code, b_fns, _ = ModuleLoader(project_root=None).compile_only(
+            "fn peek(x) { return x + 2i }\n", module_name="b.nd")
+        a = FakeVM(a_code["instructions"], a_fns)
+        b = FakeVM(b_code["instructions"], b_fns)
+        self.assertIsNone(state.target(a, "peek", a_fns["peek"]))
+        # One call in another module must not push a's `peek` over the threshold.
+        self.assertIsNone(state.target(b, "peek", b_fns["peek"]))
+
+
 class TheCodeCache(unittest.TestCase):
     SRC = "fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
 

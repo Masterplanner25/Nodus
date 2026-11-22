@@ -300,7 +300,12 @@
     check as the interpreter. A call to a builtin that can suspend keeps a
     function interpreted. That set is `MAY_SUSPEND_BUILTINS`, and a test derives
     it from the source;
-  - nothing compiles while a debugger, profiler or trace is attached.
+  - nothing compiles while a debugger, profiler or trace is attached;
+  - imported modules compile too, whichever switch turned it on. A call into a
+    module runs on a child VM, which used to get compilation only from the
+    environment variable, so `compile_functions=True` and `--compile` compiled
+    the entry file alone. And the function a module call enters now compiles
+    as well as the ones it calls.
 
   On the self-hosted frontend it runs about 1.9× faster overall (2.30 s to
   1.24 s), with compiled instructions about 4–5× faster than interpreted ones.
