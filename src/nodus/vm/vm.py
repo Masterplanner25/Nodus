@@ -3579,6 +3579,44 @@ class VM:
             self.runtime_error("sandbox", "Call stack overflow")
         return frame
 
+    def call_frame_maker(self, fn_name: str, fn, call_ip: int):
+        """`build_call_frame` for one call site in compiled code (#173).
+
+        Everything about the frame that depends only on the site -- where the
+        call is, where it returns to, the callee's slot map -- is worked out
+        once, here; the returned `make_call_frame(stack_base, locals)` does the
+        per-call part, the `max_frames` check and the `Frame` itself. Building
+        the frame through `build_call_frame` was 0.3 s of a 0.72 s benchmark of
+        257,000 calls.
+
+        It must build the frame `build_call_frame` builds at the same `ip`:
+        `tests/test_pycompile.py` compares the two field by field, and the
+        differential tests compare every stack trace.
+        """
+        if 0 <= call_ip < len(self.code_locs):
+            call_path, call_line, call_col = self.code_locs[call_ip]
+        else:
+            call_path, call_line, call_col = self.source_path, None, None
+        return_ip = call_ip + 1
+        slots = fn.local_slots or None
+        vm = self
+
+        def make_call_frame(stack_base: int, locals_: dict) -> Frame:
+            if vm.max_frames is not None and len(vm.frames) + 1 > vm.max_frames:
+                vm.runtime_error("sandbox", "Call stack overflow")
+            return Frame(
+                return_ip=return_ip,
+                locals=locals_,
+                fn_name=fn_name,
+                call_line=call_line,
+                call_col=call_col,
+                call_path=call_path,
+                closure=None,
+                locals_name_to_slot=slots,
+                stack_base=stack_base,
+            )
+        return make_call_frame
+
     def build_closure_frame(self, callee, arg_count: int, *, args_on_stack: bool = True) -> Frame:
         """The frame a call to closure `callee` pushes, after the arity check, the
         #394 step-entry guard and the `max_frames` check. Shared by `call_closure`

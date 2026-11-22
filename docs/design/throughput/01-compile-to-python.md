@@ -382,6 +382,72 @@ The fix has three parts:
 The tests run a program that imports a module, through the runtime flag with the
 variable unset. Three of them fail on the unfixed tree.
 
+## Call overhead (after phase 3)
+
+**With nearly every function compiled, the cost moved to the calls between
+them.** The self-hosted frontend has 74 of 75 functions eligible. Each call from
+compiled code went through a helper:
+- it built an argument list;
+- it called `record_vm_call`;
+- it ran `CompileState.allowed`;
+- it built the frame with `VM.build_call_frame`, which called `current_loc`;
+- it bound the parameters with a `zip`;
+- it called the compiled function;
+- it popped the frame and called `record_vm_return`.
+
+**Measured by removal, not by profiler.** cProfile charges each small Python
+call heavily, so it overstated every one of these. Instead, each step was taken
+out of the generated code in turn, and a benchmark of 257,000 calls was timed:
+
+| Removed | Time |
+|---|---|
+| nothing (helper inlined) | 0.72 s |
+| the frame | 0.42 s |
+| the run checks | 0.62 s |
+| the event checks | 0.65 s |
+
+**What changed:**
+- **A call to an eligible user function is generated inline at its call site.**
+  The steps are the helper's, in its order, and the helper remains the slow path
+  for an uncompiled callee, past the depth cap or under an observer. The counters
+  are kept inline, and the `record_*` methods are called only when an event is
+  wanted.
+- **The frame comes from `VM.call_frame_maker`.** It is made once per call site
+  when the caller is compiled, and it works out what depends only on the site:
+  the call's location, the return address and the callee's slot map. Per call,
+  it checks `max_frames` and builds the `Frame`. A test requires it to build the
+  frame `build_call_frame` builds at the same `ip`, field by field, with real
+  source locations. With none, every site looks alike, which hid a mutation that
+  read the wrong instruction's location. It is listed in the step-guard site map
+  as a `no-closure` site.
+- **A builtin that carries no authority and cannot suspend is called directly.**
+  That means one not in `BUILTIN_CAPABILITIES` and not in `MAY_SUSPEND_BUILTINS`,
+  with its arity correct at the call site. `plain_builtin` binds the function per
+  VM when the caller compiles, so nothing VM-specific enters the shared code
+  cache. The inline code does what the slow path does around the call: count it,
+  emit its event if one is wanted, and turn an error record into the
+  interpreter's. Capability-bearing builtins keep `invoke_builtin`, so the
+  capability check still has one copy. With a profiler present, the slow path
+  runs.
+
+**Measured interleaved,** on the same source trees in one window, best of
+three: this box had 0.6 GB free and sequential timings drifted by 70%.
+
+| | `main` | after |
+|---|---|---|
+| call benchmark, compiled | 1.30 s | 0.75 s |
+| self-hosted parser, compiled | 1.29–1.33 s | 1.00–1.12 s |
+| self-hosted parser, interpreted | 2.28 s | 2.41 s (no change to that path) |
+| map/filter/reduce with closures | 1.46 s | 1.42 s |
+
+The last row barely moves because its calls go through values (`CALL_VALUE`),
+which still use the helper. `Frame` with `__slots__` was measured too, and saved
+only another 4%. That is not worth changing a core class.
+
+**Still to do:** the `CALL_VALUE` fast path, for closure-heavy code. Its frame
+depends on the closure, so a per-site maker does not apply directly. The #394
+step-entry guard must stay on it.
+
 ## Decisions (2026-11-21)
 
 1. **Opt-in for one release**, through `NodusRuntime(compile_functions=True)`,

@@ -307,8 +307,12 @@
     the entry file alone. And the function a module call enters now compiles
     as well as the ones it calls.
 
-  On the self-hosted frontend it runs about 1.9× faster overall (2.30 s to
-  1.24 s), with compiled instructions about 4–5× faster than interpreted ones.
+  On the self-hosted frontend it runs about 2.3× faster overall: the parser
+  over its own source takes 2.28–2.41 s interpreted and 1.00 s compiled. Calls
+  from compiled code are generated inline at the call site: to a compiled user
+  function through a frame maker per site, and to a builtin that carries no
+  authority and cannot suspend straight to its function. A call-heavy
+  benchmark (257,000 calls) went from 1.30 s to 0.75 s.
   A compiled function must behave exactly as interpreted code does. It keeps
   the same results, errors, stack traces, instruction counts, `max_steps` and
   deadline enforcement, capability checks and call events.

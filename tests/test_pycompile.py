@@ -481,6 +481,83 @@ class ImportedModules(unittest.TestCase):
         self.assertIsNone(state.target(b, "peek", b_fns["peek"]))
 
 
+class InlineCalls(BothWays):
+    """Calls from compiled code are generated inline: to an eligible user
+    function through a frame maker per call site, and to a builtin without
+    authority straight to its function. Each case is something the inline path
+    must still do exactly as the interpreter does."""
+
+    def test_a_builtins_error_record_gets_the_callers_location(self):
+        # `finish_builtin_value`'s job, done inline: an error record from
+        # `json_parse` carries the path, line and stack of the call.
+        fast, _ = self.assert_same(
+            "fn parse(s) {\n    return json_parse(s)\n}\n"
+            "fn main() {\n    let r = parse(\"{bad\")\n    print(r.line)\n    print(r.stack)\n}\nmain()\n")
+        self.assertIn("2", fast["stdout"])
+
+    def test_a_builtins_arity_error(self):
+        fast, _ = self.assert_same("fn f(xs) { return len(xs, 1i) }\nprint(f([1i]))\n")
+        self.assertIn("expected 1 args, got 2", fast["message"])
+
+    def test_the_frame_limit_through_an_inlined_call(self):
+        # 40 frames is far below the depth cap (200), so the overflow happens
+        # in a frame made by `make_call_frame`, not in the interpreter.
+        from nodus.runtime.embedding import NodusRuntime
+        src = "fn down(n) {\n    if (n == 0i) { return 0i }\n    return down(n - 1i) + 1i\n}\nprint(down(100i))\n"
+        out = []
+        for compiled in (False, True):
+            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}):
+                rt = NodusRuntime(max_frames=40, max_steps=None, timeout_ms=None)
+                result = rt.run_source(src)
+            error = result.get("error") or {}
+            out.append((result.get("ok"), error.get("message"), error.get("line"),
+                        rt.get_execution_stats()["instructions_executed"]))
+        self.assertEqual(out[0][:2], (False, "Call stack overflow"))
+        self.assertEqual(out[1], out[0])
+
+    def test_call_events_when_a_host_listens(self):
+        # With nothing listening the inline path only counts; with a listener
+        # it must emit the same events, in the same order, with the same names.
+        src = ("fn inc(x) { return x + 1i }\n"
+               "fn main() {\n    let t = 0i\n    let i = 0i\n"
+               "    while (i < 3i) { t = inc(t)\n i = i + 1i }\n    print(len([t]))\n}\nmain()\n")
+        seen = []
+        for compiled in (False, True):
+            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "",
+                   "NODUS_TRACE_VM_EVENTS": "1"}
+            with mock.patch.dict(os.environ, env):
+                result, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
+            self.assertTrue(result["ok"], result)
+            seen.append([(e.type, e.name) for e in vm.event_bus.events()
+                         if e.type in ("vm_call", "vm_return")])
+            if compiled:
+                self.assertGreater(compiled_count(vm), 0)
+        self.assertIn(("vm_call", "inc"), seen[0])
+        self.assertIn(("vm_call", "len"), seen[0])
+        self.assertEqual(seen[1], seen[0])
+
+    def test_the_frame_maker_builds_the_frame_build_call_frame_builds(self):
+        import dataclasses
+
+        from nodus.runtime.module_loader import ModuleLoader
+        from nodus.vm.vm import VM
+        src = "fn g(a, b) {\n    let c = a + b\n    return c\n}\nfn f(x) {\n    return g(x, 2i)\n}\nprint(f(1i))\n"
+        code, functions, locs = ModuleLoader(project_root=None).compile_only(src, module_name="m.nd")
+        # Real locations: with none, every site looks alike and a maker that
+        # read the wrong instruction's location would pass.
+        self.assertGreater(len({loc for loc in locs if loc[1] is not None}), 3)
+        vm = VM(code["instructions"], functions, code_locs=locs, source_path="m.nd")
+        sites = [i for i, ins in enumerate(vm.code) if ins[0] == "CALL" and ins[1] == "g"]
+        self.assertTrue(sites)
+        for ip in sites:
+            vm.ip = ip
+            expected = vm.build_call_frame("g", functions["g"], 0)
+            made = vm.call_frame_maker("g", functions["g"], ip)(len(vm.stack), {})
+            self.assertEqual(
+                {f.name: getattr(made, f.name) for f in dataclasses.fields(made)},
+                {f.name: getattr(expected, f.name) for f in dataclasses.fields(expected)})
+
+
 class TheCodeCache(unittest.TestCase):
     SRC = "fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
 

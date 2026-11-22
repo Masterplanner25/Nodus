@@ -228,6 +228,9 @@ CLOSURE_ENTRY_SITES = {
     # #173: `_op_call`'s frame construction moved here so compiled functions
     # build the same frame; still a named top-level function, `closure=None`.
     ("src/nodus/vm/vm.py", "build_call_frame"): "no-closure",
+    # #173: the same frame, for one call site of compiled code; named
+    # functions only, so `closure=None`.
+    ("src/nodus/vm/vm.py", "make_call_frame"): "no-closure",
     # #180 stage 3: rebuilding a coroutine's frames from written-down data.
     ("src/nodus/runtime/continuation.py", "restore_continuation"): "guarded",
 }
