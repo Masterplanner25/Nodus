@@ -686,6 +686,92 @@ class InlineValueCalls(BothWays):
         self.assertNotIn("Frame(", body)
 
 
+class MethodCalls(BothWays):
+    """`CALL_METHOD` compiles (#173): the VM's own handler runs each call,
+    synchronously, and a function that reaches one is dynamic, so it runs
+    compiled only outside a coroutine. Every case requires the function holding
+    the method call to have compiled, or it proves nothing."""
+
+    CASES = {
+        "a stdlib module function": (
+            'import "std:strings" as s\n'
+            "fn words(line) { return s.split(line, \" \") }\n"
+            "fn count(lines) {\n    let n = 0i\n    for l in lines { n = n + len(words(l)) }\n    return n\n}\n"
+            "print(count([\"a b c\", \"d e\"]))\n", "count", True),
+        "a builtin method on a returned record": (
+            'import "std:hash" as hash\n'
+            "fn digest(x) { return hash.sha256(x).to_hex() }\nprint(digest(\"abc\"))\n", "digest", True),
+        "a record holding a closure": (
+            # A closure method is passed the record as its first argument.
+            "fn make() {\n    let n = 0i\n    return record { inc: fn(self) { n = n + 1i\n return n } }\n}\n"
+            "fn drive(c) {\n    c.inc()\n    c.inc()\n    return c.inc()\n}\nprint(drive(make()))\n", "drive", True),
+        "a closure method reads the record through `self`": (
+            "fn make() { return record { v: 5i, get: fn(self) { return self.v } } }\n"
+            "fn read(r) { return r.get() }\nprint(read(make()))\n", "read", True),
+        "a call nested in an expression and a loop": (
+            'import "std:strings" as s\n'
+            "fn shout(xs) {\n    let out = []\n    for x in xs { push(out, s.upper(x) + \"!\") }\n    return out\n}\n"
+            "print(shout([\"a\", \"b\"]))\n", "shout", True),
+        "a missing module export": (
+            'import "std:strings" as s\nfn f(x) { return s.nope(x) }\nprint(f(\"a\"))\n', "f", False),
+        "a missing record field": (
+            "fn f(r) { return r.nope() }\nprint(f(record { a: 1i }))\n", "f", False),
+        "a method on something that is not a record": (
+            "fn f(x) { return x.len() }\nprint(f([1i]))\n", "f", False),
+        "a closure method without a `self` parameter": (
+            "fn make() { return record { get: fn() { return 1i } } }\n"
+            "fn f(r) { return r.get() }\nprint(f(make()))\n", "f", False),
+        "an error inside the method": (
+            "fn make() { return record { bad: fn(self) { return record { }.missing } } }\n"
+            "fn f(r) { return r.bad() }\nprint(f(make()))\n", "f", False),
+    }
+
+    def test_each_case(self):
+        for name, (src, holder, ok) in self.CASES.items():
+            with self.subTest(case=name):
+                fast, vm = self.assert_same(src)
+                self.assertEqual(fast["ok"], ok, fast)
+                compiled = {n for chunk in vm._pycompile._chunks.values() for n in chunk.compiled}
+                self.assertIn(holder, compiled, f"{holder} did not compile, so the case proves nothing")
+
+    def test_a_try_around_a_compiled_caller_catches_a_method_error(self):
+        src = ("fn make() { return record { bad: fn(self) { throw \"inner\" } } }\n"
+               "fn f(r) { return r.bad() }\n"
+               "fn main() {\n    try { print(f(make())) } catch (e) { print(\"caught \\(e.message)\") }\n}\nmain()\n")
+        fast, vm = self.assert_same(src)
+        self.assertIn("caught inner", fast["stdout"])
+
+    def test_inside_a_coroutine_it_stays_interpreted(self):
+        src = ('import "std:strings" as s\n'
+               "fn up(x) { return s.upper(x) }\n"
+               "print(up(\"z\"))\n"  # compiled here, outside a coroutine
+               "let ch = channel()\n"
+               "spawn(coroutine(fn() {\n    sleep(1i)\n    send(ch, up(\"a\"))\n}))\n"
+               "spawn(coroutine(fn() { print(recv(ch)) }))\nrun_loop()\n")
+        real = pycompile.CompileState.allowed
+        refused = []
+
+        def watching(state, vm, chunk, name):
+            ok = real(state, vm, chunk, name)
+            if name == "up" and not ok and vm.current_coroutine is not None:
+                refused.append(name)
+            return ok
+        with mock.patch.object(pycompile.CompileState, "allowed", watching):
+            fast, vm = self.assert_same(src)
+        self.assertEqual(fast["stdout"], "Z\nA\n")
+        self.assertIn("up", {n for chunk in vm._pycompile._chunks.values() for n in chunk.compiled})
+        self.assertTrue(refused, "`up` was never refused inside the coroutine")
+
+    def test_a_method_call_makes_its_callers_dynamic(self):
+        from nodus.runtime.module_loader import ModuleLoader
+        src = ("fn leaf(r) { return r.get() }\nfn mid(r) { return leaf(r) }\n"
+               "fn plain(x) { return x + 1i }\n")
+        code, functions, _ = ModuleLoader(project_root=None).compile_only(src, module_name="m.nd")
+        reasons, dynamic = pycompile.analyze(code["instructions"], functions, {})
+        self.assertIsNone(reasons["leaf"])
+        self.assertEqual({"leaf", "mid"}, dynamic & {"leaf", "mid", "plain"})
+
+
 class Arithmetic(BothWays):
     """`*`, `/`, `%` and unary minus are generated inline (#173): `*` and minus
     as the handler does them, `/` and `%` only for two ints with a non-zero

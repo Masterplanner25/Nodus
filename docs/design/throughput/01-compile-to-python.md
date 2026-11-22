@@ -338,7 +338,7 @@ with closures, 30 rounds over 2,000 items: 2.34–2.42 s interpreted and
 phase 3 none of it compiled.
 
 **Still interpreted:**
-- `CALL_METHOD`;
+- `CALL_METHOD` (compiles since; see "Method calls");
 - closures from another chunk (through the handler);
 - anything with `try`.
 
@@ -516,6 +516,38 @@ Measured interleaved against `main`, best of two or three, with 0.8 GB free:
 | the same loop, interpreted | 2.84 s | (unchanged) |
 | map/filter/reduce with closures, compiled | 0.96–1.10 s | 0.69–0.91 s |
 | self-hosted parser, compiled | 1.05–1.19 s | 1.03–1.34 s (noise; it does little arithmetic) |
+
+## Method calls
+
+**What blocked compilation, counted.** Across the 67 tracked `.nd` files that
+compile on their own, 339 of 492 functions were eligible. `CALL_METHOD` blocked
+27 directly, about 1,000 instructions: the largest bodies of any reason. A
+`try` blocked one. Most of the rest call a builtin that can suspend, and stay
+interpreted by design. `CALL_METHOD` is how a module is used (`time.now()`,
+`s.split(line, " ")`, `json.parse(x)`) and how a record's methods are called,
+so every function using the standard library through an import stayed
+interpreted, and so did everything calling it.
+
+**It compiles the way `CALL_VALUE` does.** The VM's own handler runs each call,
+synchronously, through `call_handler_interpreted`, which `call_value_interpreted`
+now shares. The handler decides everything:
+- a missing export or field;
+- a module function, which runs on a child VM outside a coroutine;
+- a record's builtin method, or a closure method, which is passed the record.
+
+A function that reaches a `CALL_METHOD` is dynamic (`DYNAMIC_CALLS`), so it runs
+compiled only outside a coroutine. The one method that can suspend,
+`wait_async`, waits synchronously there.
+
+**Result:** 367 of the 492 functions are eligible, up from 339.
+
+**It does not make module calls faster, and measuring found why.** A loop making
+48,000 calls to `s.starts_with` took 50–54 s, the same before and after. Each
+call to a module function builds a whole new VM (`invoke_function` →
+`VM.__init__`), which re-registers about 257 builtins, resolves paths and
+rebuilds the dispatch table: about 1.4 ms per call, interpreted or compiled.
+That is an interpreter cost, outside this work, and it dwarfs everything
+compilation saves around such a call.
 
 ## Decisions (2026-11-21)
 
