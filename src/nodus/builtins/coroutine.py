@@ -231,6 +231,9 @@ def register(vm, registry) -> None:
         # nested in a container is still recognised as foreign) and its
         # `current_coroutine` consistent while the caller's scheduler drives it.
         coroutine.owner_vm = vm
+        # #987: a VM that owns a coroutine must stay with it; a pooled module
+        # VM is not reused once it has spawned one.
+        vm._owns_coroutines = True
         vm.scheduler.spawn(coroutine)
         # #395/#157 (D2): return the handle. It used to return nil, and that was
         # the whole mechanical cause of #157 -- the value channel a program needs

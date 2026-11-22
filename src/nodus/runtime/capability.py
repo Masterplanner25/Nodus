@@ -923,7 +923,8 @@ AUTHORITY_ATTRIBUTES: tuple[str, ...] = (
 # forgotten:
 #
 # - `scheduler` — `module.py` shares the caller's (ASYNC-MOD-003, #339) because
-#   its VM is detached and discarded; a resume child drives its own flow.
+#   its VM is detached and its own scheduler never driven (#987 pools the VM
+#   between calls, resetting it); a resume child drives its own flow.
 # - `builtins` — each site means something different by it: `module.py` installs
 #   the *module's* host builtins, `_resume_target_vm` back-fills the caller's.
 # - `_caller_vm` — sets up the `root_vm()` chain and feeds foreign-closure

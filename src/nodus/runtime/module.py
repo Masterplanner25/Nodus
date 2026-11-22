@@ -220,13 +220,8 @@ class NodusModule:
         if len(args) < expected:
             args = list(args) + [None] * (expected - len(args))
 
-        vm = VM(
-            self.bytecode,
-            self.functions,
-            code_locs=self.code_locs,
-            module_globals=self.globals,
-            host_globals=self.host_globals,
-            source_path=self.path,
+        # Everything the child's construction depends on: the pool's key too.
+        construction: dict[str, Any] = dict(
             allowed_paths=caller_vm.allowed_paths if caller_vm is not None else None,
             fs_root=caller_vm.fs_root if caller_vm is not None else None,
             allow_subprocess=getattr(caller_vm, "allow_subprocess", True) if caller_vm is not None else True,
@@ -235,6 +230,20 @@ class NodusModule:
             allowed_commands=getattr(caller_vm, "allowed_commands", None) if caller_vm is not None else None,
             allowed_hosts=getattr(caller_vm, "allowed_hosts", None) if caller_vm is not None else None,
         )
+        pool = ChildVMPool.of(caller_vm, self, construction)
+        vm = pool.acquire() if pool is not None else None
+        if vm is None:
+            vm = VM(
+                self.bytecode,
+                self.functions,
+                code_locs=self.code_locs,
+                module_globals=self.globals,
+                host_globals=self.host_globals,
+                source_path=self.path,
+                **construction,
+            )
+            if pool is not None:
+                pool.adopt(vm)
         # #405: authority must not be shed by crossing into a module or a tool
         # handler. A policy that applied only to the top-level VM would be
         # bypassed by `import "std:subprocess"`, which is how everyone calls it.
@@ -261,7 +270,8 @@ class NodusModule:
         if caller_vm is not None:
             setattr(vm, "_caller_vm", caller_vm)
             # ASYNC-MOD-003 (#339): share the caller's scheduler. This VM is
-            # detached and discarded when the call returns, so anything spawned
+            # detached, and its own scheduler never runs once the call returns
+            # (the VM is dropped, or pooled and reset, #987), so anything spawned
             # on its own scheduler is never run — `worker_pool` and `pipeline`
             # spawn workers and hand the channel back for the *caller* to drive,
             # and every job was silently dropped.
@@ -279,12 +289,129 @@ class NodusModule:
             ]
 
         closure = Closure(self.functions[name], [])
+        returned = False
         try:
-            return vm.run_closure(closure, args)
+            result = vm.run_closure(closure, args)
+            returned = True
+            return result
         finally:
             # In `finally`, so a call that raises is charged too: an uncharged
             # failure would be a free retry.
             charge_run_bounds(vm, caller_vm)
+            if pool is not None:
+                pool.release(vm, reusable=returned)
+
+
+class ChildVMPool:
+    """Idle child VMs for one caller VM's calls into one module (#987).
+
+    A call into a module function ran on a new VM, and building one costs about
+    1.4 ms: every builtin is registered again, paths are resolved and the
+    dispatch table is rebuilt. A loop calling `s.starts_with` 48,000 times spent
+    50 s doing it. The builtins close over the VM that registered them, so the
+    construction cannot be shared; the VM can be reused.
+
+    **A reused VM must be indistinguishable from a new one.** The construction
+    arguments are part of the key, so a reused VM was built exactly as a new one
+    would be, the capability groups withheld at registration included. Before
+    each call `reset` returns it to the state it had straight after
+    construction; `invoke_function` then derives it from the caller (authority,
+    host state, what is left of the run's bounds) and sets up the call, the same
+    steps in the same order as for a new VM. The reset works from a snapshot of
+    every attribute, not from a list of the ones a call changes, so an attribute
+    added to `VM` later is covered without anyone remembering it here:
+
+    - an attribute rebound since is bound back, and one added since is deleted;
+    - a list, dict or set the VM built itself is restored in place. One it was
+      handed -- the module's code, functions and globals -- is shared with the
+      module and left alone: module state outlives a call by design.
+
+    **Not reused**: a VM that is running (a call that re-enters the same module
+    gets a new one), one whose call raised, and one that owns a coroutine, which
+    must stay with it (#339). Without a caller VM nothing is pooled.
+    """
+
+    #: The most idle VMs kept per caller and module.
+    LIMIT = 4
+    #: What `reset` leaves alone: the VM's own pool, for its own calls into modules.
+    _KEEP = frozenset({"_child_vms"})
+
+    def __init__(self, module: "NodusModule", key: tuple) -> None:
+        self.module = module  # held, so `id(module)` in the caller's map stays valid
+        self.key = key
+        self.idle: list = []
+        self._snapshots: dict = {}
+
+    @classmethod
+    def of(cls, caller_vm, module: "NodusModule", construction: dict) -> "ChildVMPool | None":
+        pools = getattr(caller_vm, "_child_vms", None)
+        if pools is None:
+            return None
+        try:
+            key = tuple(sorted(
+                (name, tuple(value) if isinstance(value, list) else value)
+                for name, value in construction.items()))
+            hash(key)
+        except TypeError:
+            return None  # an unhashable construction argument: never pooled
+        pool = pools.get(id(module))
+        if pool is None or pool.module is not module or pool.key != key:
+            pool = cls(module, key)
+            pools[id(module)] = pool
+        return pool
+
+    def adopt(self, vm) -> None:
+        """Record new `vm`'s state straight after construction."""
+        module = self.module
+        shared = {id(module.bytecode), id(module.functions), id(module.code_locs),
+                  id(module.globals), id(module.host_globals)}
+        snapshot = {}
+        for name, value in vars(vm).items():
+            if name in self._KEEP:
+                continue
+            copy = None
+            if id(value) not in shared:
+                kind = type(value)
+                if kind is list or kind is dict or kind is set:
+                    copy = kind(value)
+            snapshot[name] = (value, copy)
+        self._snapshots[id(vm)] = (vm, snapshot)
+
+    def acquire(self):
+        """An idle VM, reset, or None."""
+        if not self.idle:
+            return None
+        vm = self.idle.pop()
+        self.reset(vm)
+        return vm
+
+    def release(self, vm, *, reusable: bool) -> None:
+        if (reusable and len(self.idle) < self.LIMIT
+                and not getattr(vm, "_owns_coroutines", False)
+                and id(vm) in self._snapshots):
+            self.reset(vm)  # drops what the call left referenced
+            self.idle.append(vm)
+        else:
+            self._snapshots.pop(id(vm), None)
+
+    def reset(self, vm) -> None:
+        """Return `vm` to its state straight after construction."""
+        _, snapshot = self._snapshots[id(vm)]
+        state = vars(vm)
+        for name in [n for n in state if n not in snapshot and n not in self._KEEP]:
+            del state[name]
+        for name, (value, copy) in snapshot.items():
+            if state.get(name, _ABSENT) is not value:
+                state[name] = value
+            if copy is not None:
+                if type(value) is list:
+                    value[:] = copy
+                else:
+                    value.clear()
+                    value.update(copy)
+
+
+_ABSENT = object()
 
 
 @dataclass(frozen=True)

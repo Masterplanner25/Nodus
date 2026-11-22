@@ -282,6 +282,7 @@ def restore_continuation(vm, data: dict):
     coroutine.deferred_error_depth = data["deferred_error_depth"]
     coroutine.module_ctx = ctx
     coroutine.owner_vm = vm
+    vm._owns_coroutines = True  # #987: see `builtins/coroutine.py`
     coroutine.module = data.get("module")
     return coroutine
 
