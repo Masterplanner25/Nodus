@@ -67,7 +67,8 @@ checklist ends up prescribing the unrecoverable step.
 
 ## Adding a new opcode (post-v1.0 freeze)
 
-The opcode set is frozen at v1.0 — **49 active opcodes**, `BYTECODE_VERSION = 4`.
+The opcode set was frozen at v1.0. Today it holds **49 stable and 3 provisional
+opcodes** (#969), at `BYTECODE_VERSION` 5; `FREEZE_PROPOSAL.md` keeps the count.
 To add one:
 
 1. Open `docs/governance/FREEZE_PROPOSAL.md` and add an "Extension Proposal" entry

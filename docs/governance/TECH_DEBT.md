@@ -448,8 +448,10 @@ drift it was written for.
   is in the record.
 
   Consequence of the missing version bump: the cache is keyed on
-  `BYTECODE_VERSION`, still `4`, so an older 4.x nodus accepts newer bytecode and
-  fails with `Unknown opcode: MOD` instead of the clean recompile path. Docs are
+  `BYTECODE_VERSION`, which stayed `4`, so an older 4.x nodus accepts that
+  bytecode and fails with `Unknown opcode: MOD` instead of the clean recompile
+  path. (#969 moved it to 5 in 5.17.0, through the process this entry says was
+  skipped.) Docs are
   now corrected and the bypass recorded rather than backfilled silently.
 
   **This is the same shape as the pattern above — a check that cannot fail.**

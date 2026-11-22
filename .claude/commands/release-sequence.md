@@ -183,6 +183,9 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.17.0 | code in an imported module, the stdlib included, now runs within the caller's step limit and deadline, so a program that finished under `nodus run`'s 200 ms default only because its stdlib calls went uncounted now times out | intended: a module call's child VM inherited no bounds and its instructions were never counted. `--time-limit N` (seconds), as for anything else needing more than 200 ms; embedded, raise `max_steps` / `timeout_ms` |
+| 5.17.0 | `let` is lexical (#957): a read of a name before a block's own `let` of it sees the outer value, and `fn f(x) { let x = x + 1i }` reads the parameter | intended: each of these read `nil` silently, so nothing that *worked* breaks unless it depended on that `nil`. Two local closures that call each other now fail with `Undefined function` instead of calling `nil`; use top-level `fn`s |
+| 5.17.0 | a durable-coroutine continuation saved by an earlier version refuses to resume (#969) | `BYTECODE_VERSION` moved 4 → 5, which changes the program fingerprint. Durable coroutines are Experimental; finish or cancel parked ones before upgrading. Cached bytecode simply recompiles once |
 | 5.16.0 | `nodus workflow resume` / `replay`, `goal-resume` and the legacy `workflow-resume` **exit 1** when the run is not found, cannot be rebuilt or is not a workflow (#920) | intended: they printed `{"ok": false, ...}` and exited 0, so a script testing the exit code read every failure as success. The answer is still printed. A script that relied on 0 was reading a failure as a pass |
 | 5.16.0 | resuming a stored run prints a `StagedFlipWarning` for each top-level call with an effect (#917) | a warning, not a refusal, until 6.0.0. The call really did run again on every resume; it was silent. Move it into `main()`, register a host function with `rebuild_safe=True`, or pass `rebuild_effects="allow"` to the sweep for a run stored before the fix |
 | 5.16.0 | `let checkpoint = 1; checkpoint "x"` **on one line** is a syntax error | the only program refused: it evaluated a variable and discarded a string. `checkpoint` is otherwise not reserved, so a variable, function, parameter or field of that name still works |
@@ -243,9 +246,17 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.16.0 took its thirteen entries** (six changes, five
-fixes, one performance, one tooling). Its theme is durable coroutines (#180),
-shipped Experimental, plus the follow-ups that writing their guide turned up.
+**`[Unreleased]` is empty — 5.17.0 took its twenty-three entries** (three changes,
+eleven fixes, four performance, five tooling). Its theme is throughput (#173):
+compile-to-Python (Experimental, opt-in), pooled module-call VMs (#987), fused
+instructions (#969), and the defects that writing a Nodus frontend in Nodus
+turned up (#949, #952, #957). It has three rows above, checked rather than
+assumed; `substring`, `str_span` and `str_span_until` were verified shadowable
+by a user `fn` of each name.
+
+5.16.0 took thirteen (six changes, five fixes, one performance, one tooling).
+Its theme was durable coroutines (#180), shipped Experimental, plus the
+follow-ups that writing their guide turned up.
 
 **5.15.0 has three rows, and every one of them came from outside.** A project building on Nodus reported five defects against 5.14.0; all five were real, two of its stated *causes* were not, and fixing them turned up two more (#873, #875). They were invisible here for the same reason in every case: the suite, the gates and the release probes all exercise a program that runs start to finish, and every one of these lives on the far side of a park-and-resume boundary. The lesson is the one #691 already taught in a different place — **a construct documented for use across a resume has to be tested across a resume**, not merely called.
 
@@ -320,8 +331,10 @@ it is the one line that has never gone stale.
 
 **v5.0.0 is the first major.** It carries exactly one breaking change: embedded
 runtimes deny subprocess/network/env by default. The bytecode format did not
-change — `BYTECODE_VERSION` is still **4** and the 49-opcode set is untouched — so
-a major bump does not imply recompilation.
+change — `BYTECODE_VERSION` stayed **4** and the 49-opcode set was untouched — so
+a major bump does not imply recompilation. (`BYTECODE_VERSION` moved to 5 at
+5.17.0, with three provisional fused instructions, #969: a minor, because cached
+bytecode simply recompiles.)
 
 ## Published ecosystem — how to find out, not what it was
 

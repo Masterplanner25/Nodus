@@ -47,7 +47,18 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.16.0 adds durable coroutines: work that survives the process dying,
+**Recent:** 5.17.0 can compile hot functions to Python. It is **Experimental**
+and opt-in (`nodus run --compile`, `NodusRuntime(compile_functions=True)`), and a
+compiled function behaves exactly as interpreted code does, with the same
+results, errors, stack traces, step counts and limits. With it on, the Nodus
+parser written in Nodus parses its own source about 2.3× faster (1.00 s against
+2.28–2.41 s). A call into a module, the standard library included, no longer
+builds a new VM: a loop of 2,000 standard-library calls runs about 8× faster.
+Code in an imported module now counts against the caller's step limit and
+deadline, `let` is lexical (#957), and `substring`, `str_span` and
+`str_span_until` are new string builtins.
+
+5.16.0 added durable coroutines: work that survives the process dying,
 without being written as a workflow.
 
 ```
@@ -444,7 +455,7 @@ installable alongside 5.0.0.
 
 5.0.0 is the first major. It carries exactly one breaking change —
 the deny-by-default above — and the bytecode format is untouched
-(`BYTECODE_VERSION` is still 4, the 49-opcode set unchanged), so the major bump
+(`BYTECODE_VERSION` stayed 4, the 49-opcode set unchanged), so the major bump
 does not imply recompilation. Alongside it: `goal … over …` gives a goal a real
 stopping condition, so it is a workflow *plus a predicate and a budget* rather
 than a workflow with different event names; `retries: N` now means the same thing
@@ -642,9 +653,12 @@ evidence the abstraction level is wrong.
 
 The proof-of-concept exists — [`examples/expr_compiler.nd`](https://github.com/Masterplanner25/Nodus/blob/main/examples/expr_compiler.nd)
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
-semantics are there and the 49-opcode instruction set has been frozen since v1.0.
-Runtime throughput is the honest blocker: on the order of **1M instructions/sec**
-on CPython, a little less on a compiler workload. Nodus runs on **PyPy** unmodified,
+semantics are there, and the 49 stable opcodes have been frozen since v1.0;
+5.17.0 added three provisional fused ones through the post-freeze extension
+process. Runtime throughput is the honest blocker: on the order of **1M
+instructions/sec** on CPython, a little less on a compiler workload. Compiling
+hot functions to Python (Experimental, opt-in since 5.17.0) runs the parser
+written in Nodus about 2.3× faster. Nodus runs on **PyPy** unmodified,
 and once its JIT is warm that is roughly **16× on both** a hot loop and
 `expr_compiler.nd` — though PyPy is slower to start and no faster for short
 programs, so it suits a long run like a compiler compiling itself rather than

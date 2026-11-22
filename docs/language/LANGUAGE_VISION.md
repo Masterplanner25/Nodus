@@ -94,7 +94,7 @@ Source Code
 
 All v1.0 near-term goals are complete as of v2.1.0:
 - Runtime module objects and per-module bytecode caching ✅
-- Stable bytecode versioning (`BYTECODE_VERSION = 4`, frozen) ✅
+- Stable bytecode versioning (`BYTECODE_VERSION` 4 at the time; 5 since 5.17.0, #969) ✅
 - Stable embedding API (`NodusRuntime` in `nodus.__all__`) ✅
 - Debugger (DAP), profiler, and LSP tooling ✅
 - Package management (`nodus install`, `nodus publish`, registry auth) ✅
@@ -211,8 +211,9 @@ otherwise). **Module privacy** exists: `export { … }` restricts what a module
 exposes ([#158](https://github.com/Masterplanner25/Nodus/issues/158)).
 
 What *is* in place is the part usually hardest to retrofit: the semantics are
-stable, and the 49-opcode instruction set has been frozen at
-`BYTECODE_VERSION` 4 since v1.0.
+stable, and the 49 stable opcodes have been frozen since v1.0. Three
+provisional fused instructions were added in 5.17.0 through the post-freeze
+extension process (#969), which moved `BYTECODE_VERSION` from 4 to 5.
 
 ---
 

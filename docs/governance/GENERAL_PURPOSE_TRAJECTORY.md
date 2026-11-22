@@ -13,7 +13,7 @@
 > |---|---|---|
 > | Closure upvalue mutation | ❌ Missing — *"Can't assign outer `let` from closure — workaround: map"* | **Works.** A closure has always been able to mutate a `let` scoped inside a function; the module-top-level case wrote to a frame slot silently and was fixed in 5.8.0 ([#671](https://github.com/Masterplanner25/Nodus/issues/671)). The map workaround is not needed. |
 > | Pattern matching | ❌ Missing — *"No `match/case`"* | **Shipped v4.1.0** ([#308](https://github.com/Masterplanner25/Nodus/issues/308)). Value-matching arms, `_` catch-all last. Still no destructuring patterns or exhaustiveness checking. |
-> | Bytecode stability | *"All 47 opcodes"* | **49.** `MOD` and `RESET_LOCAL_IDX` were added after the v1.0 freeze ([#366](https://github.com/Masterplanner25/Nodus/issues/366)). `BYTECODE_VERSION` is still 4. |
+> | Bytecode stability | *"All 47 opcodes"* | **49 stable**, plus 3 provisional. `MOD` and `RESET_LOCAL_IDX` were added after the v1.0 freeze ([#366](https://github.com/Masterplanner25/Nodus/issues/366)), and three fused instructions arrived in 5.17.0 through the extension process ([#969](https://github.com/Masterplanner25/Nodus/issues/969)), which moved `BYTECODE_VERSION` from 4 to 5. |
 > | Async / coroutines / channels | *"Marked Experimental in stability index"* | **Mostly Stable** since v4.0.5, as are `workflow` / `goal` / `step`. |
 >
 > `LANGUAGE_STABILITY_INDEX.md` is the current classification for any row here.
@@ -56,7 +56,7 @@ DSL
 
 | Capability | Status | Notes |
 |-----------|--------|-------|
-| Variables, functions, modules, errors, closures | ✅ Stable | BYTECODE_VERSION=4, frozen |
+| Variables, functions, modules, errors, closures | ✅ Stable | Opcode set frozen; extended only through `FREEZE_PROPOSAL.md` (BYTECODE_VERSION 5 since 5.17.0) |
 | Async / coroutines / channels | ✅ Stable | Marked Experimental in stability index — the semantics are stable, the surface name isn't |
 | Loops — C-style `for(;;)` | ✅ Complete | Parser: `for_stmt()` |
 | Loops — `for x in iterable` | ✅ Complete | Parser: `for_each_stmt()`, ForEach AST node |
