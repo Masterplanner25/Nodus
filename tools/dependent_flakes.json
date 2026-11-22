@@ -18,13 +18,17 @@
     "not what was assumed -- an entry whose reason is 'seems flaky' is a way to lose",
     "a real break."
   ],
-
   "known_flaky": {
     "nodus-mcp": [
       {
         "match": "test_phase_m.py",
         "why": "Two tests in this file bind ports and fail when another suite holds them. Documented in CLAUDE.md as a pre-existing race, not a code bug. What is established: a serial full-suite run is green (2/2 at v5.4.0, 363 tests each). What is NOT established is that they pass individually -- running the file alone failed 1 in 7 at v5.4.0. So the check that discriminates a flake from a regression here is a serial FULL-SUITE re-run; a green single-file run is weaker evidence than it looks, and a red one is not yet a finding.",
         "recorded": "2026-08-20, during the v5.1.0 Gate 10 run, where this fired while a clean-venv install and probe suite ran alongside it. Three serial re-runs were green. Re-examined 2026-08-25 at v5.4.0 Gate 10a, twelve runs: 2/2 full serial suites green, the file alone 6/7, the single test 3/3, and 3/3 green against the installed 5.0.0 -- which is why the 'pass individually' half of the original reason was withdrawn above."
+      },
+      {
+        "match": "test_streamable_http_end_to_end.py::test_host_routes_and_middleware_share_the_app",
+        "why": "A Windows race in the test's HTTP harness, independent of nodus-lang. The test POSTs a body without a token and expects a 401 from the Starlette authentication middleware; uvicorn answers and closes before reading the body, and Windows aborts the client still sending it (ConnectionAbortedError [WinError 10053]). The request never reaches the tool layer, so no nodus-lang code runs on the failing path. Reproduced with nodus never imported: Starlette, the same middleware and uvicorn on a thread, 500 unauthenticated POSTs -> 23 aborted, 4 reset. A serial full-suite re-run is the discriminating check, as for test_phase_m.py.",
+        "recorded": "2026-11-22, during the v5.17.0 Gate 10a run: 2 of 4 full nodus-mcp runs failed this one test (376/376 otherwise); the single test interleaved 10x each against v5.16.0 and v5.17.0 source failed 0/10 and 1/10, which cannot separate them at this rate; the nodus-free reproduction above is what settled it. Evidence in docs/evals/v5.17.0/CREATOR_VALIDATION.md."
       }
     ]
   }

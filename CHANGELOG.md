@@ -195,6 +195,13 @@
     `std:strings.repeat("a", 200000i)` ran for 2.6 s, and
     `get_execution_stats()` reported 13 instructions. It now stops at step 1,001.
   - `nodus run`'s 200 ms deadline did not stop such a loop either. It does now.
+  - **A program that relied on that can now stop early, on either bound.** Under
+    `nodus run`, raise them with `--time-limit N` (seconds; the default is
+    200 ms) and `--step-limit N` (instructions; the default is 10,000,000). A
+    long stdlib call counts toward both now: `s.repeat("a", 800000i)` runs about
+    10.4 million instructions, and stops with `Execution step limit exceeded`
+    unless the step limit is raised. Embedded, raise `max_steps` and
+    `timeout_ms`.
   - A tool handler run on a child VM, and an expression evaluated in the debug
     console, had the same gap.
 
