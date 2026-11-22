@@ -211,6 +211,32 @@ class TheReset(unittest.TestCase):
         self.assertEqual(vm.stack, [])
         self.assertEqual(vm.instructions_executed, 0)
 
+    def test_an_equal_object_is_not_the_same_object(self):
+        # The untouched check is by identity: a call that rebinds an attribute
+        # to an equal, new container must still get the original back, or
+        # whatever holds the new one shares it with the next call.
+        module, pool, vm = self.make()
+        original = vm.test_state
+        vm.test_state = {}
+        pool.reset(vm)
+        self.assertIs(vm.test_state, original)
+
+    def test_release_drops_the_caller(self):
+        # The pools are keyed weakly on the caller VM; an idle VM still
+        # referring to its caller would keep both alive for good.
+        import gc
+        import weakref
+        rt = NodusRuntime(max_steps=None, timeout_ms=None)
+        result = rt.run_source(
+            'import "std:strings" as s\nfn f(x) { return s.upper(x) }\nprint(f("a"))\nprint(f("b"))\n')
+        self.assertTrue(result["ok"], result)
+        caller = weakref.ref(rt.active_vm())
+        pools = module_runtime._POOLS.get(caller())
+        self.assertTrue(pools and any(p.idle for p in pools.values()), "nothing was pooled")
+        del rt, pools
+        gc.collect()
+        self.assertIsNone(caller(), "the caller VM is still alive")
+
     def test_module_state_is_left_alone(self):
         module, pool, vm = self.make()
         module.globals["calls"] = 7

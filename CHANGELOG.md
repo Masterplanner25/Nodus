@@ -299,7 +299,11 @@
   wiring and what is left of the run's bounds, as a new one is. The step budget
   stays cumulative across calls, and a module's globals persist as before. A VM
   is not reused while it is running (a call that re-enters the module gets
-  another), after its call raised, or once it owns a coroutine.
+  another), after its call raised, or once it owns a coroutine. A follow-up
+  made the reset cheaper: one full reset per call instead of two, an
+  identity check in C that skips the attribute loop when nothing was rebound,
+  and the builtins table restored rather than compared. A module call's cost
+  over a local call fell from about 69 µs to about 52 µs.
 - **Experimental, opt-in: hot functions compile to Python.** Turn it on with
   `nodus run --compile`, `NodusRuntime(compile_functions=True)` or
   `NODUS_COMPILE_FUNCTIONS=1`. When it applies:
