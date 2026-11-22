@@ -92,10 +92,6 @@ JUMP_TARGET = {"JUMP": 1, "JUMP_IF_FALSE": 1, "JUMP_IF_TRUE": 1, "JUMP_IF_LOCAL_
 
 # Operations run by the VM's own handler on `vm.stack`: (pops, pushes) per instruction.
 _DELEGATED = {
-    "MUL": lambda i: (2, 1),
-    "DIV": lambda i: (2, 1),
-    "MOD": lambda i: (2, 1),
-    "NEG": lambda i: (1, 1),
     "GET_ITER": lambda i: (1, 1),
     "INDEX_SET": lambda i: (3, 1),
     "BUILD_LIST": lambda i: (i[1], 1),
@@ -108,7 +104,9 @@ _INLINE_EFFECT = {
     "STORE": -1, "STORE_LOCAL_IDX": -1, "POP": -1, "STORE_FIELD": -1,
     "LOAD_FIELD": 0, "NOT": 0, "TO_BOOL": 0, "RESET_LOCAL_IDX": 0, "ENTER": 0,
     "FRAME_SIZE": 0, "JUMP": 0, "JUMP_IF_LOCAL_NE_CONST": 0,
-    "EQ": -1, "NE": -1, "ADD": -1, "SUB": -1, "LT": -1, "GT": -1, "LE": -1, "GE": -1,
+    "EQ": -1, "NE": -1, "ADD": -1, "SUB": -1, "MUL": -1, "NEG": 0, "LT": -1,
+    # Inline for two non-zero ints; anything else runs the VM's own handler.
+    "DIV": -1, "MOD": -1, "GT": -1, "LE": -1, "GE": -1,
     "INDEX": -1, "JUMP_IF_FALSE": -1, "JUMP_IF_TRUE": -1, "RETURN": -1,
     # phase 3 (#173): closures
     "MAKE_CLOSURE": 1, "LOAD_UPVALUE": 1, "STORE_UPVALUE": -1,
@@ -553,12 +551,29 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
         a, b = s(d - 2), s(d - 1)
         neg = "not " if op == "NE" else ""
         out.append(f"{ind}{a} = {neg}(({a} == {b}) if type({a}) is str and type({b}) is str else vm._nodus_eq({a}, {b}))")
-    elif op in ("ADD", "SUB"):
+    elif op in ("ADD", "SUB", "MUL"):
+        # `VM._op_add`, `_op_sub` and `_op_mul` are exactly this.
         a, b = s(d - 2), s(d - 1)
-        pyop, word = ("+", "add") if op == "ADD" else ("-", "subtract")
+        pyop, word = {"ADD": ("+", "add"), "SUB": ("-", "subtract"), "MUL": ("*", "multiply")}[op]
         out.append(at)
         out.append(f"{ind}try: {a} = {a} {pyop} {b}")
         out.append(f"{ind}except TypeError: vm._binary_type_error({word!r}, {a}, {b})")
+    elif op == "NEG":
+        # `VM._op_neg`.
+        v = s(d - 1)
+        out.append(at)
+        out.append(f"{ind}try: {v} = -{v}")
+        out.append(f"{ind}except TypeError: vm._unary_type_error('negate', {v})")
+    elif op in ("DIV", "MOD"):
+        # `VM._op_div` / `_op_mod` for their commonest case, two ints (not
+        # bools) and a non-zero divisor: floor division and Python's `%`. Every
+        # other case -- a float, a zero, a type error -- runs the handler, so
+        # its float rules and its error messages keep one copy.
+        a, b = s(d - 2), s(d - 1)
+        pyop = "//" if op == "DIV" else "%"
+        out.append(at)
+        out.append(f"{ind}if type({a}) is int and type({b}) is int and {b}: {a} = {a} {pyop} {b}")
+        out.append(f"{ind}else: {a} = delegate(vm, INSTRS[{addr}], [{a}, {b}])")
     elif op in ("LT", "GT", "LE", "GE"):
         a, b = s(d - 2), s(d - 1)
         pyop = {"LT": "<", "GT": ">", "LE": "<=", "GE": ">="}[op]

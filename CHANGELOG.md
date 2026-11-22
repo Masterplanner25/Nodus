@@ -317,7 +317,10 @@
   the interpreter's own `build_closure_frame`, so the arity check, the
   step-entry guard and the frame limit are unchanged. A map/filter/reduce
   benchmark (140,000 calls through closures) went from 1.21–1.32 s to
-  0.99–1.07 s.
+  0.99–1.07 s. Multiplication, unary minus, and integer `/` and `%` with a
+  non-zero divisor are generated inline as well; every other case of `/` and
+  `%` still runs the interpreter's handler. An integer arithmetic loop went
+  from 1.42–1.84 s to 0.28–0.41 s compiled, against 2.84 s interpreted.
   A compiled function must behave exactly as interpreted code does. It keeps
   the same results, errors, stack traces, instruction counts, `max_steps` and
   deadline enforcement, capability checks and call events.
