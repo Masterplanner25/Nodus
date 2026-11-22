@@ -414,9 +414,10 @@ class NodusRuntime:
             same results, errors, stack traces, instruction counts and limits, and
             runs about 4–5× faster per instruction. Capability-bearing builtins
             called from compiled code go through the same capability check.
-            Functions that can suspend (``MAY_SUSPEND_BUILTINS``), capture
-            variables or use ``try`` stay interpreted, as does everything while a
-            debugger, profiler or trace is attached. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
+            Closures compile. Functions that can suspend
+            (``MAY_SUSPEND_BUILTINS``) or use ``try`` stay interpreted, as does
+            everything while a debugger, profiler or trace is attached, and a
+            function that calls a value runs compiled only outside a coroutine. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
             runtime. See ``docs/design/throughput/01-compile-to-python.md``.
         """
         allowed_paths = resolve_allowed_paths(allowed_paths)

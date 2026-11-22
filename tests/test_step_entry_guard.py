@@ -218,7 +218,9 @@ print(anon())
 # fails `test_the_set_of_closure_entry_sites_is_closed` until somebody classifies
 # it, rather than silently reopening #394.
 CLOSURE_ENTRY_SITES = {
-    ("src/nodus/vm/vm.py", "call_closure"): "guarded",
+    # #173: `call_closure`'s frame construction moved here so compiled closure
+    # calls build the same frame; the guard moved with it.
+    ("src/nodus/vm/vm.py", "build_closure_frame"): "guarded",
     ("src/nodus/vm/vm.py", "run_closure"): "guarded",
     ("src/nodus/vm/vm.py", "_try_enter_foreign_closure"): "guarded",
     ("src/nodus/builtins/coroutine.py", "builtin_coroutine_resume"): "guarded",

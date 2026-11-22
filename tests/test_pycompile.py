@@ -249,6 +249,134 @@ class WhenItCompiles(unittest.TestCase):
         self.assertIsNotNone(runtime.active_vm()._pycompile)
 
 
+class Closures(BothWays):
+    """Phase 3 (#173): functions that capture, closures themselves, and calls
+    through values."""
+
+    CASES = {
+        "closures made in a loop capture each iteration": (
+            "fn make() {\n"
+            "    let fns = []\n"
+            "    for i in [1i, 2i, 3i] {\n"
+            "        let k = i * 10i\n"
+            "        push(fns, fn() { return i + k })\n"
+            "    }\n"
+            "    return fns\n"
+            "}\n"
+            "fn run_all(fns) {\n    let out = []\n    for f in fns { push(out, f()) }\n    return out\n}\n"
+            "print(run_all(make()))\n"
+        ),
+        "a counter mutates what it captured": (
+            "fn counter() {\n    let n = 0i\n    return fn() { n = n + 1i\n return n }\n}\n"
+            "fn drive(c, times) {\n    let last = 0i\n    let i = 0i\n"
+            "    while (i < times) { last = c()\n i = i + 1i }\n    return last\n}\n"
+            "let c = counter()\nprint(drive(c, 5i))\nprint(c())\n"
+        ),
+        "two levels of capture": (
+            "fn outer(a) {\n"
+            "    let b = a * 2i\n"
+            "    return fn(x) { return fn(y) { return a + b + x + y } }\n"
+            "}\n"
+            "fn use(n) { return outer(n)(1i)(2i) }\n"
+            "print(use(1i))\nprint(use(5i))\n"
+        ),
+        "higher-order functions and named functions as values": (
+            "fn double(x) { return x * 2i }\n"
+            "fn apply_all(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+            "fn main() {\n"
+            "    let offset = 100i\n"
+            "    print(apply_all(double, [1i, 2i, 3i]))\n"
+            "    print(apply_all(fn(x) { return x + offset }, [1i, 2i]))\n"
+            "}\nmain()\n"
+        ),
+        "the maker reads and writes what a closure changed": (
+            # After capture, `n` is a Cell in the maker's slot: its own reads
+            # must unwrap it and its own writes must go into it.
+            "fn f() {\n"
+            "    let n = 1i\n"
+            "    let add = fn() { n = n + 10i }\n"
+            "    add()\n"
+            "    let seen = n * 2i\n"
+            "    n = n + 100i\n"
+            "    add()\n"
+            "    return [seen, n]\n"
+            "}\nprint(f())\n"
+        ),
+        "a recursive local closure": (
+            "fn f(n) {\n"
+            "    let fact = fn(m) { if (m <= 1i) { return 1i }\n return m * fact(m - 1i) }\n"
+            "    return fact(n)\n"
+            "}\nprint(f(10i))\n"
+        ),
+    }
+
+    def test_each_case(self):
+        for name, src in self.CASES.items():
+            with self.subTest(case=name):
+                fast, vm = self.assert_same(src)
+                self.assertTrue(fast["ok"], fast)
+                compiled = [n for chunk in vm._pycompile._chunks.values() for n in chunk.compiled]
+                self.assertTrue(any(n.startswith("__anon") for n in compiled),
+                                f"no closure body compiled: {compiled}")
+
+    def test_a_closure_with_try_stays_interpreted_and_behaves_the_same(self):
+        src = (
+            "fn risky(x) {\n    if (x == 2i) { throw \"two\" }\n    return x\n}\n"
+            "fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+            "fn main() {\n"
+            "    print(each(fn(x) { try { return risky(x) } catch (e) { return \"caught \\(e.message)\" } }, [1i, 2i, 3i]))\n"
+            "    try { print(each(fn(x) { return risky(x) }, [1i, 2i])) } catch (e) { print(\"outer \\(e.message)\") }\n"
+            "}\nmain()\n"
+        )
+        fast, _ = self.assert_same(src)
+        self.assertIn("caught two", fast["stdout"])
+        self.assertIn("outer two", fast["stdout"])
+
+    def test_an_error_inside_a_compiled_closure(self):
+        src = ("fn make() { return fn(r) { return r.missing } }\n"
+               "fn call_it(f) { return f(record { a: 1i }) }\nprint(call_it(make()))\n")
+        fast, _ = self.assert_same(src)
+        self.assertEqual(fast["kind"], "runtime")
+
+    def test_inside_a_coroutine(self):
+        # Dynamic functions stay interpreted where something could suspend.
+        src = (
+            "fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+            "fn worker(ch) {\n    sleep(1i)\n    send(ch, each(fn(x) { return x * 3i }, [1i, 2i]))\n}\n"
+            "let ch = channel()\nspawn(coroutine(fn() { worker(ch) }))\nrun_loop()\nprint(recv_now(ch))\n"
+        ).replace("recv_now(ch)", "\"done\"")
+        self.assert_same(src)
+
+
+class FunctionBodies(unittest.TestCase):
+    """A function's body is what it can reach, not an address range (phase 3)."""
+
+    def test_a_function_that_makes_a_closure_is_eligible(self):
+        # The closure's body sits inside the parent's code, behind a JUMP. An
+        # address range cut the parent off at the closure and made its JUMP look
+        # like control leaving the function.
+        from nodus.runtime.module_loader import ModuleLoader
+        from nodus.vm.vm import VM
+        src = "fn make(n) {\n    let k = n * 2i\n    let f = fn(x) { return x + k }\n    return f(1i)\n}\n"
+        code, functions, _ = ModuleLoader(project_root=None).compile_only(src, module_name="m.nd")
+        vm = VM(code["instructions"], functions, code_locs=[], source_path=None)
+        reasons = pycompile.eligible_functions(code["instructions"], functions, vm.builtins)
+        self.assertEqual(reasons, {name: None for name in functions})
+
+
+class DynamicTaint(unittest.TestCase):
+    def test_a_call_through_a_value_taints_its_callers(self):
+        from nodus.runtime.module_loader import ModuleLoader
+        from nodus.vm.vm import VM
+        src = ("fn call(f) { return f(1i) }\nfn above(f) { return call(f) }\n"
+               "fn pure(x) { return x + 1i }\n")
+        code, functions, _ = ModuleLoader(project_root=None).compile_only(src, module_name="m.nd")
+        vm = VM(code["instructions"], functions, code_locs=[], source_path=None)
+        reasons, dynamic = pycompile.analyze(code["instructions"], functions, vm.builtins)
+        self.assertIsNone(reasons["call"])
+        self.assertEqual(dynamic, {"call", "above"})
+
+
 class TheCodeCache(unittest.TestCase):
     SRC = "fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
 

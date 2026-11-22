@@ -167,10 +167,11 @@ Remaining parameters:
   compiled function behaves exactly as interpreted code does: the same results,
   errors, stack traces, instruction counts, limits and capability checks: a
   capability-bearing builtin called from compiled code goes through the same
-  check, so a denial is the same denial. Functions that can suspend (including by
-  calling a builtin in `MAY_SUSPEND_BUILTINS`, such as `http_get_async`), capture
-  variables or use `try` stay interpreted, as does everything under a debugger,
-  profiler or trace.
+  check, so a denial is the same denial. Closures compile, and so do functions
+  that make them. Functions that can suspend (including by calling a builtin in
+  `MAY_SUSPEND_BUILTINS`, such as `http_get_async`) or use `try` stay
+  interpreted, as does everything under a debugger, profiler or trace. A
+  function that calls a value (`f(x)`) runs compiled only outside a coroutine.
   Design: `docs/design/throughput/01-compile-to-python.md`.
 - `persist_workflow_source` (bool, default `True`): whether a workflow run writes a
   verbatim copy of the whole module source into `.nodus/graphs/`
