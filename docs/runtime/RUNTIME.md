@@ -401,7 +401,8 @@ Potential runtime improvements include:
 
 These changes should preserve the existing runtime semantics wherever possible.
 
-Note: Bytecode versioning is complete as of v1.0 (`BYTECODE_VERSION = 4`, frozen).
+Note: Bytecode versioning is complete as of v1.0. `BYTECODE_VERSION` is 5 since
+5.17.0 (#969), 4 before that.
 The embedding API is stable (`NodusRuntime` in `nodus.__all__`).
 
 ## Final Principle

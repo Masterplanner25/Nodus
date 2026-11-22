@@ -156,7 +156,8 @@ class ProbeFlagsAreDeclaredTests(unittest.TestCase):
         self.assertEqual(forms, {"cli", "subprocess"})
         self.assertEqual(
             len(sites),
-            15,  # 5.16.0: + `nodus run` (durable refusal) and `nodus workflow resume` (#920)
+            17,  # 5.16.0: + `nodus run` (durable refusal) and `nodus workflow resume` (#920);
+                 # 5.17.0: + `nodus run --compile` (subprocess) and `nodus stability` (cli)
             "the probe's CLI invocation sites changed; check the new one is a "
             "literal argv this test can read before updating the count",
         )
@@ -165,7 +166,7 @@ class ProbeFlagsAreDeclaredTests(unittest.TestCase):
         """Guards the other direction: a parser matching nothing passes vacuously."""
         sites = invocation_sites()
         self.assertGreaterEqual(sum(1 for _, f, _ in sites if f == "cli"), 8)
-        self.assertEqual(sum(1 for _, f, _ in sites if f == "subprocess"), 3)
+        self.assertEqual(sum(1 for _, f, _ in sites if f == "subprocess"), 4)
 
 
 class CIRunsTheProbesTests(unittest.TestCase):

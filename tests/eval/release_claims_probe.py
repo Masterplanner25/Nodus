@@ -3553,6 +3553,179 @@ def probe_no_stale_5_15_1_current(repo: Path):
     return "no document still calls 5.15.1 the current release"
 
 
+# --- 5.17.0 ---------------------------------------------------------------
+
+_COMPILE_PROGRAM = (
+    'import "std:strings" as s\n'
+    "fn total(xs) {\n    let t = 0i\n    for x in xs { t = t + x * 2i % 7i }\n    return t\n}\n"
+    "fn apply(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+    "fn main() {\n    let k = 3i\n    print(total(range(0i, 200i)))\n"
+    "    print(apply(fn(x) { return x + k }, [1i, 2i]))\n    print(s.upper(\"done\"))\n}\nmain()\n"
+)
+
+
+@probe("5.17.0: compile_functions=True runs the same program the same way, compiled")
+def probe_compile_matches_interpreted():
+    from nodus.runtime.embedding import NodusRuntime
+
+    seen = []
+    for compiled in (False, True):
+        rt = NodusRuntime(timeout_ms=None, max_steps=None, compile_functions=compiled)
+        result = rt.run_source(_COMPILE_PROGRAM, filename="<probe>")
+        assert result.get("ok"), f"compiled={compiled}: {result.get('error')}"
+        state = rt.active_vm()._pycompile
+        seen.append((result.get("stdout"), rt.get_execution_stats()["instructions_executed"],
+                     state.compiled_count if state is not None else 0))
+    (out0, steps0, n0), (out1, steps1, n1) = seen
+    assert n0 == 0, "compiled with the switch off"
+    assert n1 > 0, "nothing compiled with the switch on"
+    assert out1 == out0, f"output differs: {out0!r} vs {out1!r}"
+    assert steps1 == steps0, f"instruction counts differ: {steps0} vs {steps1}"
+    return f"{n1} function(s) compiled; same output and {steps0} instructions both ways"
+
+
+@probe("5.17.0: `nodus run --compile` is accepted and runs the program")
+def probe_run_compile_flag():
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        (Path(raw) / "c.nd").write_text("fn f(x) { return x + 1i }\nprint(f(41i))\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, "-m", "nodus", "run", "--compile", "c.nd"],
+                              cwd=raw, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[-400:]}"
+    assert proc.stdout.strip() == "42", f"unexpected output: {proc.stdout!r}"
+    return "exit 0, prints 42"
+
+
+@probe("5.17.0: substring, str_span and str_span_until work, and a user fn can shadow each")
+def probe_string_builtins():
+    result = run_nd('print(substring("hello", 1i, 3i))\nprint(str_span("aab", 0i, "a"))\n'
+                    'print(str_span_until("ab;c", 0i, ";"))\n')
+    assert result.get("ok"), result.get("error")
+    assert result["stdout"] == "el\n2\n2\n", f"unexpected output: {result['stdout']!r}"
+    shadowed = run_nd('fn substring(a, b, c) { return "mine" }\nfn str_span(a, b, c) { return "mine" }\n'
+                      'fn str_span_until(a, b, c) { return "mine" }\n'
+                      'print(substring("x", 0i, 1i))\nprint(str_span("x", 0i, "x"))\n'
+                      'print(str_span_until("x", 0i, "x"))\n')
+    assert shadowed.get("ok"), shadowed.get("error")
+    assert shadowed["stdout"] == "mine\nmine\nmine\n", f"a builtin won: {shadowed['stdout']!r}"
+    return "el / 2 / 2, and all three are shadowable"
+
+
+@probe("5.17.0: code in an imported module runs within the caller's step limit")
+def probe_module_code_is_bounded():
+    from nodus.runtime.embedding import NodusRuntime
+
+    rt = NodusRuntime(max_steps=1000, timeout_ms=None)
+    result = rt.run_source('import "std:strings" as s\nlet x = s.repeat("a", 200000i)\nprint(len(x))\n',
+                           filename="<probe>")
+    assert not result.get("ok"), "the stdlib loop ran past max_steps=1000"
+    assert result["error"].get("kind") == "sandbox" or "step" in str(result["error"]).lower(), (
+        f"stopped for another reason: {result['error']}")
+    steps = rt.get_execution_stats()["instructions_executed"]
+    assert steps > 1000, f"only {steps} instructions were counted"
+    return f"stopped at the limit with {steps} instructions counted"
+
+
+@probe("5.17.0: a loop of module calls reuses one child VM (#987)")
+def probe_module_calls_reuse_a_vm():
+    from nodus.runtime import module as module_runtime
+
+    built = []
+    real = module_runtime.ChildVMPool.adopt
+
+    def counting(pool, vm):
+        built.append(vm)
+        return real(pool, vm)
+    module_runtime.ChildVMPool.adopt = counting
+    try:
+        result = run_nd('import "std:strings" as s\nlet i = 0i\nlet n = 0i\n'
+                        'while (i < 50i) {\n    if (s.starts_with("apple", "a")) { n = n + 1i }\n    i = i + 1i\n}\n'
+                        "print(n)\n")
+    finally:
+        module_runtime.ChildVMPool.adopt = real
+    assert result.get("ok"), result.get("error")
+    assert result["stdout"] == "50\n", f"unexpected output: {result['stdout']!r}"
+    assert len(built) == 1, f"{len(built)} child VMs built for 50 calls"
+    return "50 calls, 1 child VM built"
+
+
+@probe("5.17.0: `let` is lexical (#957)")
+def probe_let_is_lexical():
+    result = run_nd("fn f(x) {\n    let x = x + 1i\n    return x\n}\nprint(f(1i))\n"
+                    "fn g() {\n    let v = 1i\n    if (true) {\n        let w = v\n        let v = 5i\n"
+                    "        return w + v\n    }\n    return 0i\n}\nprint(g())\n"
+                    "fn h() {\n    let fact = fn(n) { if (n <= 1i) { return 1i }\n return n * fact(n - 1i) }\n"
+                    "    return fact(5i)\n}\nprint(h())\n")
+    assert result.get("ok"), result.get("error")
+    assert result["stdout"] == "2\n6\n120\n", f"unexpected output: {result['stdout']!r}"
+    return "a shadowing let reads the parameter, an earlier read sees the outer value, a let-bound fn recurses"
+
+
+@probe("5.17.0: BYTECODE_VERSION is 5, and `nodus stability` says so")
+def probe_bytecode_version_5():
+    from nodus.runtime import NODUS_BYTECODE_VERSION
+
+    assert NODUS_BYTECODE_VERSION == 5, f"NODUS_BYTECODE_VERSION is {NODUS_BYTECODE_VERSION}"
+    code, out = cli(["nodus", "stability"])
+    assert "BYTECODE_VERSION=5" in out, f"`nodus stability` does not say 5: {out[-400:]}"
+    return "5 in the package and in `nodus stability`"
+
+
+@probe("prose: no current document says the bytecode is 4 or the set frozen at 49")
+def probe_no_stale_bytecode_claim(repo: Path):
+    # The phrasings #969 left behind in present tense. Dated history ("v4.0.0:
+    # BYTECODE_VERSION 4") is true and is not matched.
+    stale = ("is still 4", "BYTECODE_VERSION=4, frozen", "frozen at **49**",
+             "49-opcode instruction set has been frozen", "Bytecode version is 4",
+             "**49 active opcodes**", "(`BYTECODE_VERSION = 4`, frozen)",
+             "The bytecode version is `BYTECODE_VERSION = 4`")
+    offenders = []
+    roots = [repo / n for n in ("README.md", "llms.txt", "llms-full.txt", "skills")]
+    roots += [repo / "docs" / d for d in ("governance", "language", "runtime", "guide")]
+    for root in roots:
+        files = [root] if root.is_file() else sorted(root.rglob("*")) if root.is_dir() else []
+        for path in files:
+            if path.suffix not in (".md", ".txt", ".skill") or not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            offenders += [f"{path.relative_to(repo)}: {s!r}" for s in stale if s in text]
+    assert not offenders, "; ".join(offenders)
+    return "none of the stale bytecode phrasings remains"
+
+
+@probe("README names the 5.17.0 surface")
+def probe_readme_names_517_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("5.17.0", "--compile", "compile_functions=True", "substring",
+                           "str_span", "lexical") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 5.17.0 surface appears in the README"
+
+
+@probe("no stale '5.16.0 is current' claim survives")
+def probe_no_stale_5_16_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.16\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.16\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.16.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.16.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -3799,7 +3972,19 @@ def main() -> int:
     probe_readme_names_516_surface(args.repo)
     probe_no_stale_5_15_1_current(args.repo)
 
-    failed = [r for r in RESULTS if not r[0]]
+    # --- 5.17.0 -------------------------------------------------------------
+    probe_compile_matches_interpreted()
+    probe_run_compile_flag()
+    probe_string_builtins()
+    probe_module_code_is_bounded()
+    probe_module_calls_reuse_a_vm()
+    probe_let_is_lexical()
+    probe_bytecode_version_5()
+    probe_no_stale_bytecode_claim(args.repo)
+    probe_readme_names_517_surface(args.repo)
+    probe_no_stale_5_16_0_current(args.repo)
+
+    failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
         mark = "PASS" if ok else "FAIL"
         print(f"[{mark}] {name}")

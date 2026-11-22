@@ -107,7 +107,7 @@ Biggest usability gaps:
 Nodus is a stable practical scripting runtime (v1.0, 2026-03-15) with a strong automation/orchestration tilt.
 
 Justification:
-- Stable: bytecode VM frozen (49 active opcodes, BYTECODE_VERSION=4), embedding API stable (`NodusRuntime`),
+- Stable: bytecode VM frozen (49 stable opcodes, plus 3 provisional since 5.17.0 at BYTECODE_VERSION 5, #969), embedding API stable (`NodusRuntime`),
   package registry with auth/publish, finally blocks, Iterator protocol, LSP/DAP.
 - Still maturing: module isolation (compile-time flattening), runtime service contracts,
   orchestration test coverage.

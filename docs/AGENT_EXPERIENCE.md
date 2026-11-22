@@ -70,10 +70,13 @@ PermissionError: [WinError 5] Access is denied: '...\runs\<id>.json.<hex>.tmp' -
   0.2 s, and a busy reader can outlast that.
 - **Measured:** about 5% of reads failed with a reader polling every 10 ms. With a tight-loop
   reader, the writer's `save_run` failed in 5 of 5 runs, within 1–3 s.
-- **Resolution:** use the SQLite store for anything more than one process touches
-  (`NODUS_WORKFLOW_STORE_BACKEND=sqlite`). The fix in the JSON store is tracked in #939.
+- **Resolution:** fixed in the JSON store by #939 (5.17.0). Reads retry now, and a
+  write retries within a 2-second budget instead of five tries in about 0.2 s. With a
+  reader polling every 10 ms, 113 of 1,374 reads were denied before and 0 of 3,682
+  after. On an earlier version, use the SQLite store for anything more than one process
+  touches (`NODUS_WORKFLOW_STORE_BACKEND=sqlite`).
 - **Evidence:** #939; #376 for the write retry; `OPERATOR_OR_EMBEDDER_RUNBOOK.md` §6.1.
-- **Status:** Open. Expected to be Windows-only; Linux and macOS were not tested.
+- **Status:** Fixed in 5.17.0. Expected to be Windows-only; Linux and macOS were not tested.
 - **Applies when:** a server, sweep or CLI command runs against a store a program is writing.
 
 ## EXP-003: tests skip and pytest reports success in a fresh venv

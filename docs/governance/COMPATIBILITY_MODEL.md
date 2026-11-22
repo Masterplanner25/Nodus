@@ -111,7 +111,10 @@ are pinned by test.
 
 ### 3.1 Bytecode version
 
-The bytecode version is `BYTECODE_VERSION = 4`, located in `src/nodus/compiler/compiler.py`.
+The bytecode version is **5** since 5.17.0 (#969, the three provisional fused
+instructions), and was 4 from v1.0 until then. It is defined once, as
+`NODUS_BYTECODE_VERSION` in `src/nodus/runtime/module.py`; the compiler's
+`BYTECODE_VERSION` and the CLI read it from there.
 When the bytecode format changes (new opcodes, changed operand layout, changed serialization),
 the bytecode version is bumped.
 

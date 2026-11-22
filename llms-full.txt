@@ -23,7 +23,7 @@ Nodus compiles to bytecode and runs on a deterministic stack-based VM with a coo
 scheduler. It embeds in Python via `NodusRuntime`, which denies subprocess/network/env by default, and can sandbox execution, enforce resource
 limits, and wire tool registries.
 
-**Current version:** v5.16.0 — published to PyPI 2026-11-11. Install: `pip install nodus-lang`. Full 36-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
+**Current version:** v5.17.0 — published to PyPI 2026-11-22. Install: `pip install nodus-lang`. Full 36-package companion ecosystem live; unified install: `pip install nodus-sdk[agent,sql,fastapi]`.
 
 ---
 
@@ -49,8 +49,10 @@ as evidence the abstraction level is wrong.
 
 Status: `examples/expr_compiler.nd` is a character-level lexer, recursive-descent parser and
 evaluator written entirely in Nodus, so the shape of the task is already expressible. The
-semantics are stable and the 49-opcode instruction set has been frozen at `BYTECODE_VERSION` 4
-since v1.0. The blocker is runtime throughput — on the order of 1M instructions/sec on CPython
+semantics are stable and the 49 stable opcodes have been frozen since v1.0; 5.17.0 added three
+provisional fused ones through the post-freeze extension process (#969, `BYTECODE_VERSION` 5).
+Compiling hot functions to Python (Experimental, opt-in since 5.17.0) runs the parser written
+in Nodus about 2.3× faster. The blocker is runtime throughput — on the order of 1M instructions/sec on CPython
 (measured 2026-11-11; re-derive with `tools/benchmark_runtime.py` rather than quoting it). PyPy
 runs Nodus with no changes and, once its JIT is warm, is ~16x on both a hot loop and the
 compiler workload; it starts slower and does not help short programs, so it fits a long run

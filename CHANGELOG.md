@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-11-22
+
 ### Changed
 
 - **#969: three fused instructions, and `BYTECODE_VERSION` 5.** The optimizer
@@ -310,9 +312,12 @@
   - a function with a loop compiles on its first call, any other after 32
     calls;
   - only functions that cannot suspend and use no `try` are compiled. Closures
-    and functions that make them compile too, and a function that calls a value
-    (`f(x)`) runs compiled only outside a coroutine, where nothing can
-    suspend. Compiled functions may call synchronous capability-bearing builtins
+    and functions that make them compile too. A function that calls a value
+    (`f(x)`), a module's function or a record's method (`s.split(x, " ")`,
+    `counter.inc()`) runs compiled only outside a coroutine, where nothing can
+    suspend; a module or method call runs the interpreter's own handler. Across
+    the repository's `.nd` files, 367 of 492 functions compile. Compiled
+    functions may call synchronous capability-bearing builtins
     (`http_get`, `read_file`, `subprocess_run`...) through the same capability
     check as the interpreter. A call to a builtin that can suspend keeps a
     function interpreted. That set is `MAY_SUSPEND_BUILTINS`, and a test derives
@@ -324,25 +329,23 @@
     the entry file alone. And the function a module call enters now compiles
     as well as the ones it calls.
 
-  On the self-hosted frontend it runs about 2.3× faster overall: the parser
-  over its own source takes 2.28–2.41 s interpreted and 1.00 s compiled. Calls
-  from compiled code are generated inline at the call site: to a compiled user
-  function through a frame maker per site, and to a builtin that carries no
-  authority and cannot suspend straight to its function. A call-heavy
-  benchmark (257,000 calls) went from 1.30 s to 0.75 s. A call through a value
-  to a compiled closure is generated inline too, with its frame still built by
-  the interpreter's own `build_closure_frame`, so the arity check, the
-  step-entry guard and the frame limit are unchanged. A map/filter/reduce
-  benchmark (140,000 calls through closures) went from 1.21–1.32 s to
-  0.99–1.07 s. Multiplication, unary minus, and integer `/` and `%` with a
-  non-zero divisor are generated inline as well; every other case of `/` and
-  `%` still runs the interpreter's handler. An integer arithmetic loop went
-  from 1.42–1.84 s to 0.28–0.41 s compiled, against 2.84 s interpreted.
-  Functions that call a module's functions or a record's methods
-  (`s.split(x, " ")`, `counter.inc()`) compile as well; each such call runs
-  the interpreter's own handler, and the function runs compiled only outside a
-  coroutine. Across the repository's `.nd` files, 367 of 492 functions now
-  compile, up from 339.
+  **Measured:**
+  - **The self-hosted frontend runs about 2.3× faster overall.** The parser
+    over its own source takes 2.28–2.41 s interpreted and 1.00 s compiled.
+  - **Calls are generated inline at the call site**: to a compiled user function
+    through a frame maker per site, and to a builtin that carries no authority
+    and cannot suspend straight to its function. A call-heavy benchmark
+    (257,000 calls) went from 1.30 s to 0.75 s.
+  - **A call through a value to a compiled closure is inline too**, with its
+    frame still built by the interpreter's own `build_closure_frame`, so the
+    arity check, the step-entry guard and the frame limit are unchanged. A
+    map/filter/reduce benchmark (140,000 calls through closures) went from
+    1.21–1.32 s to 0.99–1.07 s.
+  - **Multiplication, unary minus, and integer `/` and `%` with a non-zero
+    divisor are inline as well**; every other case of `/` and `%` still runs the
+    interpreter's handler. An integer arithmetic loop went from 1.42–1.84 s to
+    0.28–0.41 s compiled, against 2.84 s interpreted.
+
   A compiled function must behave exactly as interpreted code does. It keeps
   the same results, errors, stack traces, instruction counts, `max_steps` and
   deadline enforcement, capability checks and call events.
