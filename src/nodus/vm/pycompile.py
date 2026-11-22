@@ -433,6 +433,49 @@ def _emit_user_call(out: list, ind: str, addr: int, d: int, callee: str, params:
     out.append(f"{i2}{s(d - argc)} = CALLS[{addr}](vm, [{', '.join(args)}])")
 
 
+def _emit_value_call(out: list, ind: str, d: int, argc: int) -> None:
+    """A call through a value from compiled code, inline when it can be.
+
+    The fast path is `CompileState._value_call`'s, which stays the slow path, in
+    the same order: a closure over this chunk's own, already compiled function,
+    under the conditions of `CompileState.allowed`, is counted, gets its frame
+    from `VM.build_closure_frame` (so the arity check, the #394 step-entry
+    guard and the frame limit are the interpreter's, in one copy), and runs
+    compiled. Anything else -- a module function, a builtin, another chunk's
+    closure, one not compiled yet, or a call under an observer -- goes through
+    the helper, which hands what it cannot run to the VM's own handler.
+    """
+    s = lambda k: f"s{k}"  # noqa: E731
+    args = [s(k) for k in range(d - argc, d)]
+    target = s(d - argc - 1)
+    i2 = ind + "    "
+    out.append(f"{ind}cv = {target}")
+    out.append(f"{ind}if type(cv) is Closure:")
+    out.append(f"{i2}fn = cv.function")
+    out.append(f"{i2}f = COMPILED.get(fn.name)")
+    out.append(f"{ind}else: f = None")
+    out.append(f"{ind}if (f is not None and vm.functions.get(fn.name) is fn and ST.depth < ST.depth_cap"
+               f" and vm.task_step_budget is None and not vm._instrumented()"
+               f" and (fn.name not in DYN or vm.current_coroutine is None)):")
+    out.append(f"{i2}if vm.event_bus.wants('vm_call'): vm.record_vm_call(fn.display_name, 'call_value')")
+    out.append(f"{i2}else: vm.function_calls += 1")
+    out.append(f"{i2}fr = vm.build_closure_frame(cv, {argc}, args_on_stack=False)")
+    if argc:
+        out.append(f"{i2}p = fn.params")
+        out.append(f"{i2}lc = fr.locals")
+        for k, a in enumerate(args):
+            out.append(f"{i2}lc[p[{k}]] = {a}")
+    out.append(f"{i2}vm.frames.append(fr)")
+    out.append(f"{i2}ST.depth += 1")
+    out.append(f"{i2}try: {target} = f(vm, cv.upvalues{''.join(', ' + a for a in args)})")
+    out.append(f"{i2}finally: ST.depth -= 1")
+    out.append(f"{i2}vm.frames.pop()")
+    out.append(f"{i2}if vm.event_bus.wants('vm_return'): vm.record_vm_return(fn.name, raw=True)")
+    out.append(f"{i2}else: vm.returns += 1")
+    out.append(f"{ind}else:")
+    out.append(f"{i2}{target} = CALL_VALUE(vm, cv, [{', '.join(args)}])")
+
+
 def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
           cells: frozenset = frozenset(), functions: dict | None = None,
           dynamic: frozenset = frozenset()) -> bool:
@@ -484,10 +527,8 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
                 captured.append(f"up[{upvalue.index}]")
         out.append(f"{ind}{s(d)} = Closure(vm.functions[{instr[1]!r}], [{', '.join(captured)}])")
     elif op == "CALL_VALUE":
-        argc = instr[1]
-        args = ", ".join(s(k) for k in range(d - argc, d))
         out.append(at)
-        out.append(f"{ind}{s(d - argc - 1)} = CALL_VALUE(vm, {s(d - argc - 1)}, [{args}])")
+        _emit_value_call(out, ind, d, instr[1])
     elif op == "LOAD":
         out.append(at)
         out.append(f"{ind}{s(d)} = vm.load_name({instr[1]!r})")
@@ -883,7 +924,7 @@ class CompileState:
                 if chunk.code[i][0] == "JUMP_IF_LOCAL_NE_CONST"},
             "INSTRS": {i: chunk.code[i] for i in range(start, end)},
             "CALLS": calls,
-            "COMPILED": chunk.compiled, "ST": self,
+            "COMPILED": chunk.compiled, "ST": self, "DYN": chunk.dynamic,
         }
         for i in range(start, end):
             instr = chunk.code[i]

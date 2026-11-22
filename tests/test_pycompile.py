@@ -383,6 +383,9 @@ MODULE = (
     "fn broken(r) { return r.missing }\n"
     "fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
 )
+# Two named functions, then a closure: its generated name, `__anon_1__fn2`, is
+# the one the first closure of a main program shaped the same way gets.
+ADDER = "fn ident(x) { return x }\nfn adder(n) { return fn(x) { return x + n } }\n"
 
 
 class ImportedModules(unittest.TestCase):
@@ -401,6 +404,7 @@ class ImportedModules(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = pathlib.Path(tmp.name)
         (self.dir / "m.nd").write_text(MODULE, encoding="utf-8")
+        (self.dir / "adder.nd").write_text(ADDER, encoding="utf-8")
 
     def run_program(self, body: str, *, compiled: bool):
         main = self.dir / "main.nd"
@@ -447,6 +451,18 @@ class ImportedModules(unittest.TestCase):
         fast, _ = self.assert_same(
             "fn main() {\n    let k = 5i\n    print(m.each(fn(x) { return x + k }, [1i, 2i]))\n}\nmain()\n")
         self.assertEqual(fast["stdout"], "[6, 7]\n")
+
+    def test_another_modules_closure_with_a_compiled_name_of_ours(self):
+        # A closure from `adder.nd` carries the same generated name as `mine`,
+        # which is compiled in this chunk by then. A call through it from
+        # compiled code must run the module's function, not ours by name.
+        body = ('import "./adder.nd" as a\n'
+                "fn apply_all(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+                "fn main() {\n    let mine = fn(x) { return x * 100i }\n"
+                "    print(apply_all(mine, [1i, 2i]))\n    print(apply_all(a.adder(5i), [1i, 2i]))\n}\nmain()\n")
+        fast, names = self.assert_same(body)
+        self.assertEqual(fast["stdout"], "[100, 200]\n[6, 7]\n")
+        self.assertIn("__anon_1__fn2", names, "the names no longer collide: the test proves nothing")
 
     def test_the_child_vm_shares_the_callers_state(self):
         from nodus.runtime.capability import derive_child_vm
@@ -558,8 +574,120 @@ class InlineCalls(BothWays):
                 {f.name: getattr(expected, f.name) for f in dataclasses.fields(expected)})
 
 
+class InlineValueCalls(BothWays):
+    """A call through a value (`CALL_VALUE`) from compiled code to a compiled
+    closure of the same chunk is generated inline too. Its frame still comes
+    from `VM.build_closure_frame`, so the arity check, the #394 step-entry
+    guard and the frame limit have one copy. Each case runs the inline path:
+    the helper it replaces is counted, so a case that never left it fails."""
+
+    def _run_counting_the_helper(self, src, **kwargs):
+        real = pycompile.CompileState._value_call
+        helper_calls = []
+
+        def counting(state, vm, chunk):
+            call = real(state, vm, chunk)
+
+            def wrapped(vm, callee, args):
+                helper_calls.append(1)
+                return call(vm, callee, args)
+            return wrapped
+        with mock.patch.object(pycompile.CompileState, "_value_call", counting):
+            fast, vm = self.assert_same(src, **kwargs)
+        return fast, vm, len(helper_calls)
+
+    def test_most_calls_skip_the_helper(self):
+        # The helper still takes each closure's first call, which compiles it.
+        src = ("fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+               "fn main() {\n    let k = 3i\n    print(each(fn(x) { return x * k }, range(0i, 50i)))\n}\nmain()\n")
+        fast, vm, helper = self._run_counting_the_helper(src)
+        self.assertTrue(fast["ok"], fast)
+        self.assertLessEqual(helper, 1)
+
+    def test_a_step_body_through_a_value_is_refused(self):
+        # #394 door 1 from compiled code. A step body is never compiled (it is
+        # ineligible), so the call takes the helper and the VM's own handler;
+        # the inline path's own frame goes through `build_closure_frame`,
+        # pinned by the source test below. Both walls are checked here.
+        src = ("let log = {\"s\": \"\"}\n"
+               "workflow build {\n"
+               "    step lint { log[\"s\"] = log[\"s\"] + \"lint;\" return \"linted\" }\n"
+               "    step test after lint { log[\"s\"] = log[\"s\"] + \"test;\" return \"tested\" }\n"
+               "}\n"
+               "fn call_it(f, x) { return f(x) }\n"
+               "fn main() {\n    run_workflow(build)\n    print(call_it(build[\"steps\"][1][\"fn\"], nil))\n}\nmain()\n")
+        fast, vm, _ = self._run_counting_the_helper(src)
+        self.assertFalse(fast["ok"])
+        self.assertIn("cannot be called directly", fast["message"])
+        self.assertIn("call_it", {n for chunk in vm._pycompile._chunks.values() for n in chunk.compiled})
+        steps = [n for n, fn in vm.functions.items() if fn.step_owner]
+        self.assertTrue(steps)
+        for chunk in vm._pycompile._chunks.values():
+            for name in steps:
+                self.assertEqual(chunk.reasons.get(name), "a workflow step body")
+                self.assertNotIn(name, chunk.compiled)
+
+    def test_an_arity_mismatch_through_a_value(self):
+        src = ("fn call_one(f) { return f(1i) }\nfn call_two(f) { return f(1i, 2i) }\n"
+               "fn main() {\n    let g = fn(x) { return x }\n    print(call_one(g))\n    print(call_two(g))\n}\nmain()\n")
+        fast, _, helper = self._run_counting_the_helper(src)
+        self.assertIn("expected 1 args, got 2", fast["message"])
+        self.assertLessEqual(helper, 1)
+
+    def test_the_frame_limit_through_a_value(self):
+        from nodus.runtime.embedding import NodusRuntime
+        src = ("fn main() {\n"
+               "    let down = fn(n) { if (n == 0i) { return 0i }\n return down(n - 1i) + 1i }\n"
+               "    print(down(100i))\n}\nmain()\n")
+        out = []
+        for compiled in (False, True):
+            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}):
+                rt = NodusRuntime(max_frames=40, max_steps=None, timeout_ms=None)
+                result = rt.run_source(src)
+            error = result.get("error") or {}
+            out.append((result.get("ok"), error.get("message"), error.get("line"),
+                        rt.get_execution_stats()["instructions_executed"]))
+        self.assertEqual(out[0][:2], (False, "Call stack overflow"))
+        self.assertEqual(out[1], out[0])
+
+    def test_call_events_when_a_host_listens(self):
+        src = ("fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+               "fn main() {\n    let double = fn(x) { return x * 2i }\n    print(each(double, [1i, 2i, 3i]))\n}\nmain()\n")
+        seen = []
+        for compiled in (False, True):
+            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "",
+                   "NODUS_TRACE_VM_EVENTS": "1"}
+            with mock.patch.dict(os.environ, env):
+                result, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
+            self.assertTrue(result["ok"], result)
+            seen.append([(e.type, e.name, (e.data or {}).get("call_type")) for e in vm.event_bus.events()
+                         if e.type in ("vm_call", "vm_return")])
+        self.assertTrue(any(t == "call_value" for _, _, t in seen[0]))
+        self.assertEqual(seen[1], seen[0])
+
+    def test_an_error_inside_keeps_the_interpreters_stack(self):
+        # It fails on the third call, so a frame an earlier inline call left
+        # behind would show in the stack.
+        src = ("fn each(f, xs) {\n    let out = []\n    for x in xs { push(out, f(x)) }\n    return out\n}\n"
+               "fn main() {\n    let pick = fn(r) { return r.b }\n"
+               "    print(each(pick, [record { b: 1i }, record { b: 2i }, record { a: 3i }]))\n}\nmain()\n")
+        fast, _, helper = self._run_counting_the_helper(src)
+        self.assertFalse(fast["ok"])
+        self.assertTrue(fast["stack"])
+        self.assertLessEqual(helper, 1)
+
+    def test_the_inline_path_builds_its_frame_through_build_closure_frame(self):
+        # The source half of the #394 guarantee; the step-body case above is
+        # the behavioural half.
+        out = []
+        pycompile._emit_value_call(out, "", 2, 1)
+        body = "\n".join(out)
+        self.assertIn("vm.build_closure_frame(cv, 1, args_on_stack=False)", body)
+        self.assertNotIn("Frame(", body)
+
+
 class TheCodeCache(unittest.TestCase):
-    SRC = "fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
+    SRC ="fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
 
     def test_a_second_vm_reuses_the_compiled_code(self):
         compiles = []

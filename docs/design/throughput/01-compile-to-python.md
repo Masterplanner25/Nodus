@@ -444,9 +444,44 @@ The last row barely moves because its calls go through values (`CALL_VALUE`),
 which still use the helper. `Frame` with `__slots__` was measured too, and saved
 only another 4%. That is not worth changing a core class.
 
-**Still to do:** the `CALL_VALUE` fast path, for closure-heavy code. Its frame
-depends on the closure, so a per-site maker does not apply directly. The #394
-step-entry guard must stay on it.
+## Calls through values (after phase 3)
+
+**The same treatment for `CALL_VALUE`.** In the map/filter/reduce benchmark
+(140,000 calls through closures) the `_value_call` helper was 0.88 s of its own
+time in a 4.6 s profile. A call through a value from compiled code is now
+generated inline when the value is a `Closure` over this chunk's own function,
+that function is already compiled, and `CompileState.allowed` holds. The steps
+are the helper's, in its order, and the helper stays the slow path for
+everything else: a module function, a builtin, another chunk's closure, a
+function not compiled yet, or a call under an observer.
+
+**The frame still comes from `VM.build_closure_frame`.** A per-site maker does
+not fit, because the frame depends on the closure. More to the point,
+`build_closure_frame` is where the arity check, the #394 step-entry guard and
+the frame limit live, and splitting it for the few percent left would make a
+second copy of the guard. A test reads the generated code and requires the call
+there and no `Frame(`. A step body cannot reach the inline path anyway: it is
+ineligible ("a workflow step body"), so it is never compiled.
+
+**The chunk check matters.** Generated closure names repeat across modules: a
+module's first closure after two named functions is `__anon_1__fn2`, and so is
+a main program's. The inline path therefore checks
+`vm.functions.get(fn.name) is fn`, as the helper did, before it trusts a
+compiled function found by name. A test passes such a closure from a module
+into compiled code that has compiled its own `__anon_1__fn2`. Without the check,
+it runs the wrong function.
+
+| | `main` | after |
+|---|---|---|
+| map/filter/reduce with closures, compiled | 1.21–1.32 s | 0.99–1.07 s |
+| self-hosted parser, compiled | 0.96–0.97 s | 0.96–1.05 s (it barely calls through values) |
+
+Measured interleaved, best of two or three, with 0.6 GB free. What remains in
+the profile is `build_closure_frame` (0.86 s of 3.7 s), and `delegate`
+(0.66 s), which runs the VM's own handler for the arithmetic compiled code does
+not generate: `*`, `/`, `%` and unary minus (`_DELEGATED`). The benchmark's
+closures are `x * 2i + k` and `y % 3i == 0i`, so every call delegates once.
+That is the next lever for arithmetic-heavy code, and it is not a call cost.
 
 ## Decisions (2026-11-21)
 

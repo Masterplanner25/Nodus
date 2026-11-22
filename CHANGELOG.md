@@ -312,7 +312,12 @@
   from compiled code are generated inline at the call site: to a compiled user
   function through a frame maker per site, and to a builtin that carries no
   authority and cannot suspend straight to its function. A call-heavy
-  benchmark (257,000 calls) went from 1.30 s to 0.75 s.
+  benchmark (257,000 calls) went from 1.30 s to 0.75 s. A call through a value
+  to a compiled closure is generated inline too, with its frame still built by
+  the interpreter's own `build_closure_frame`, so the arity check, the
+  step-entry guard and the frame limit are unchanged. A map/filter/reduce
+  benchmark (140,000 calls through closures) went from 1.21–1.32 s to
+  0.99–1.07 s.
   A compiled function must behave exactly as interpreted code does. It keeps
   the same results, errors, stack traces, instruction counts, `max_steps` and
   deadline enforcement, capability checks and call events.
