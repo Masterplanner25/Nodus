@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from nodus.runtime.capability import NO_AUTHORITY_BUILTINS
@@ -455,6 +457,44 @@ def make_builtin_call(name: str):
     return call
 
 
+# --- the code cache ---------------------------------------------------------------
+
+#: Generated code, shared across VMs in the process, keyed by the function's
+#: exact bytecode. Python's `compile()` is about 85% of the cost of compiling a
+#: function (96 ms of 113 for the frontend's 75), and an embedder running a
+#: program many times builds a new VM, and so a new CompileState, each time:
+#: without this, the self-hosted check's 190 short runs parsed slower compiled
+#: than interpreted on CI (3.4 s against 2.5 s). Generation is deterministic, so
+#: equal bytecode means equal code; each VM binds its own namespace with `exec`,
+#: about 2.5 microseconds a function. Bounded, oldest out first.
+_CODE_CACHE: "OrderedDict[tuple, tuple]" = OrderedDict()
+_CODE_CACHE_LIMIT = 4096
+_CODE_CACHE_LOCK = threading.Lock()
+
+
+def _cached_code(name: str, fn, code: list, start: int, end: int, py_name: str) -> tuple:
+    """(source, code object) for one function, from the cache when possible."""
+    try:
+        key = (name, start, end, tuple(code[start:end]))
+        hash(key)
+    except TypeError:  # an unhashable constant: compile without caching
+        key = None
+    if key is not None:
+        with _CODE_CACHE_LOCK:
+            hit = _CODE_CACHE.get(key)
+            if hit is not None:
+                _CODE_CACHE.move_to_end(key)
+                return hit
+    source = generate(name, fn, code, start, end, py_name)
+    entry = (source, compile(source, f"<nodus compiled {name}>", "exec"))
+    if key is not None:
+        with _CODE_CACHE_LOCK:
+            _CODE_CACHE[key] = entry
+            while len(_CODE_CACHE) > _CODE_CACHE_LIMIT:
+                _CODE_CACHE.popitem(last=False)
+    return entry
+
+
 # --- per-VM state ---------------------------------------------------------------
 
 @dataclass
@@ -532,7 +572,7 @@ class CompileState:
         start, end = bodies[name]
         fn = vm.functions[name]
         py_name = "nd_" + "".join(ch if ch.isalnum() else "_" for ch in name)
-        source = generate(name, fn, chunk.code, start, end, py_name)
+        source, code_object = _cached_code(name, fn, chunk.code, start, end, py_name)
         from nodus.vm.vm import Iterator  # here, not at import: vm.py imports this module
 
         calls: dict = {}
@@ -545,7 +585,7 @@ class CompileState:
             "INSTRS": {i: chunk.code[i] for i in range(start, end)},
             "CALLS": calls,
         }
-        exec(compile(source, f"<nodus compiled {name}>", "exec"), namespace)  # noqa: S102
+        exec(code_object, namespace)  # noqa: S102
         compiled = namespace[py_name]
         chunk.compiled[name] = compiled
         chunk.sources[name] = source

@@ -241,6 +241,32 @@ class WhenItCompiles(unittest.TestCase):
         self.assertIsNotNone(runtime.active_vm()._pycompile)
 
 
+class TheCodeCache(unittest.TestCase):
+    SRC = "fn total(n) {\n    let t = 0i\n    for i in range(n) { t = t + i }\n    return t\n}\nprint(total(5i))\n"
+
+    def test_a_second_vm_reuses_the_compiled_code(self):
+        compiles = []
+        real = compile
+
+        def counting(*args, **kwargs):
+            if str(args[1]).startswith("<nodus compiled"):
+                compiles.append(args[1])
+            return real(*args, **kwargs)
+
+        pycompile._CODE_CACHE.clear()
+        with mock.patch("builtins.compile", counting):
+            first, _ = run(self.SRC, compiled=True)
+            second, _ = run(self.SRC, compiled=True)
+        self.assertEqual(first["stdout"], second["stdout"])
+        self.assertEqual(len(compiles), 1, compiles)
+
+    def test_different_bytecode_is_not_shared(self):
+        pycompile._CODE_CACHE.clear()
+        run(self.SRC, compiled=True)
+        run(self.SRC.replace("t + i", "t + i + 1i"), compiled=True)
+        self.assertEqual(len(pycompile._CODE_CACHE), 2)
+
+
 class WhatCompiledCodeMayCall(unittest.TestCase):
     def test_the_categories_exist(self):
         for category in pycompile.COMPILABLE_BUILTIN_CATEGORIES:
