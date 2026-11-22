@@ -287,6 +287,19 @@
 
 ### Performance
 
+- **#987: a call into a module reuses an idle child VM instead of building a
+  new one.** Every call to a module function, the standard library included,
+  ran on a new VM, and building one costs about 1.4 ms: every builtin is
+  registered again, paths are resolved and the dispatch table is rebuilt. A
+  loop making 2,000 calls to `s.starts_with` took 1.76–2.11 s and now takes
+  0.19–0.27 s, with the same instruction count. Idle VMs are kept per calling
+  VM, module and construction arguments, so a VM built with
+  different capabilities is never reused. Before each call one is reset to its
+  state straight after construction, then given the caller's authority, host
+  wiring and what is left of the run's bounds, as a new one is. The step budget
+  stays cumulative across calls, and a module's globals persist as before. A VM
+  is not reused while it is running (a call that re-enters the module gets
+  another), after its call raised, or once it owns a coroutine.
 - **Experimental, opt-in: hot functions compile to Python.** Turn it on with
   `nodus run --compile`, `NodusRuntime(compile_functions=True)` or
   `NODUS_COMPILE_FUNCTIONS=1`. When it applies:

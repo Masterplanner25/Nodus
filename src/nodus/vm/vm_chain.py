@@ -17,12 +17,13 @@ from __future__ import annotations
 def root_vm(vm):
     """Follow the `_caller_vm` chain to the root VM.
 
-    `NodusModule.invoke_function()` creates a fresh child VM per call and sets
+    `NodusModule.invoke_function()` runs each call on a child VM (a new one, or
+    an idle one reset to its just-built state, #987) and sets
     `child._caller_vm = caller_vm`. Stdlib builtins (tool, test, …) close over
     whichever VM was current at registration time — and since stdlib methods are
     always called via `invoke_function`, that closing VM is a child, not the
     root. This traversal is what makes a builtin mutate the root VM's shared
-    state rather than a per-call child that is about to be discarded.
+    state rather than a per-call child whose state ends with the call.
 
     That explanation lived beside one of the four copies. It is the load-bearing
     part: without it the walk looks like defensive `getattr` noise, and the next

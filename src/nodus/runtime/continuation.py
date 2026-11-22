@@ -41,6 +41,7 @@ import base64
 import hashlib
 
 from nodus.runtime.durability import DurabilityReport, assess_coroutine
+from nodus.runtime.module import mark_coroutine_owner
 
 # /2 (#911) adds a `for` loop's list iterator. /1 data has none, so it is
 # still read; nothing writes /1 any more.
@@ -282,6 +283,7 @@ def restore_continuation(vm, data: dict):
     coroutine.deferred_error_depth = data["deferred_error_depth"]
     coroutine.module_ctx = ctx
     coroutine.owner_vm = vm
+    mark_coroutine_owner(vm)  # #987: see `builtins/coroutine.py`
     coroutine.module = data.get("module")
     return coroutine
 
