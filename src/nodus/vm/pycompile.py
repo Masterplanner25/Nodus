@@ -401,6 +401,7 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
     op = instr[0]
     s = lambda k: f"s{k}"  # noqa: E731
     at = f"{ind}vm.ip = h = {addr}"
+    functions = functions or {}
 
     def truthy(c: str) -> str:
         return f"({c} is True or ({c} is not False and {c} is not None and vm.is_truthy({c})))"
