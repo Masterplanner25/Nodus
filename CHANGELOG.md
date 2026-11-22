@@ -292,8 +292,10 @@
   `NODUS_COMPILE_FUNCTIONS=1`. When it applies:
   - a function with a loop compiles on its first call, any other after 32
     calls;
-  - only functions that cannot suspend, capture no variables and use no `try`
-    are compiled. They may call synchronous capability-bearing builtins
+  - only functions that cannot suspend and use no `try` are compiled. Closures
+    and functions that make them compile too, and a function that calls a value
+    (`f(x)`) runs compiled only outside a coroutine, where nothing can
+    suspend. Compiled functions may call synchronous capability-bearing builtins
     (`http_get`, `read_file`, `subprocess_run`...) through the same capability
     check as the interpreter. A call to a builtin that can suspend keeps a
     function interpreted. That set is `MAY_SUSPEND_BUILTINS`, and a test derives

@@ -3579,6 +3579,39 @@ class VM:
             self.runtime_error("sandbox", "Call stack overflow")
         return frame
 
+    def build_closure_frame(self, callee, arg_count: int, *, args_on_stack: bool = True) -> Frame:
+        """The frame a call to closure `callee` pushes, after the arity check, the
+        #394 step-entry guard and the `max_frames` check. Shared by `call_closure`
+        and compiled code (#173), so the guard cannot be skipped on either path.
+
+        `args_on_stack` is False when the caller holds the arguments itself
+        (compiled code), so the frame's stack base is the current stack top.
+        """
+        if not isinstance(callee, Closure):
+            self.runtime_error("call", f"Cannot call non-function: {self.value_to_string(callee, quote_strings=True)}")
+        fn = callee.function
+        if arg_count != len(fn.params):
+            self.runtime_error("call", f"{self.display_name(fn.name)} expected {len(fn.params)} args, got {arg_count}")
+        self.guard_step_entry(callee)  # #394: door 1 of 4, never authorized
+        call_path, call_line, call_col = self.current_loc()
+        frame = Frame(
+            return_ip=self.ip + 1,
+            locals={},
+            fn_name=fn.name,
+            call_line=call_line,
+            call_col=call_col,
+            call_path=call_path,
+            closure=callee,
+            # The arguments are on the stack and belong to the callee, which
+            # stores them with STORE_ARG; everything below them is the caller's.
+            stack_base=len(self.stack) - (arg_count if args_on_stack else 0),
+        )
+        if fn.local_slots:
+            frame.locals_name_to_slot = fn.local_slots
+        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
+            self.runtime_error("sandbox", "Call stack overflow")
+        return frame
+
     def call_closure(self, callee, arg_count: int):
         """Set up a call frame and transfer control to a closure's bytecode.
 
@@ -3615,29 +3648,8 @@ class VM:
             arg_count: Number of arguments already pushed onto the stack.  Must match
                 the closure's declared parameter count.
         """
-        if not isinstance(callee, Closure):
-            self.runtime_error("call", f"Cannot call non-function: {self.value_to_string(callee, quote_strings=True)}")
+        frame = self.build_closure_frame(callee, arg_count)
         fn = callee.function
-        if arg_count != len(fn.params):
-            self.runtime_error("call", f"{self.display_name(fn.name)} expected {len(fn.params)} args, got {arg_count}")
-        self.guard_step_entry(callee)  # #394: door 1 of 4, never authorized
-        call_path, call_line, call_col = self.current_loc()
-        frame = Frame(
-            return_ip=self.ip + 1,
-            locals={},
-            fn_name=fn.name,
-            call_line=call_line,
-            call_col=call_col,
-            call_path=call_path,
-            closure=callee,
-            # The arguments are on the stack and belong to the callee, which
-            # stores them with STORE_ARG; everything below them is the caller's.
-            stack_base=len(self.stack) - arg_count,
-        )
-        if fn.local_slots:
-            frame.locals_name_to_slot = fn.local_slots
-        if self.max_frames is not None and len(self.frames) + 1 > self.max_frames:
-            self.runtime_error("sandbox", "Call stack overflow")
         # #691: `fn.addr` indexes the chunk the closure was COMPILED against. If
         # that is not the chunk currently loaded, swap the origin context in for
         # the duration of the frame -- otherwise we jump into unrelated
@@ -4553,6 +4565,12 @@ class VM:
             self.stack.append(self._caller_vm.run_closure(callee, args))
             self.ip += 1
             return None
+        pycompile_state = self._pycompile
+        if pycompile_state is not None and type(callee) is Closure:
+            # #173 phase 3: a local closure whose function is compiled.
+            compiled = pycompile_state.target_closure(self, callee)
+            if compiled is not None:
+                return pycompile_state.invoke_closure(self, compiled, callee, args)
         for arg in args:
             self.stack.append(arg)
         self.call_closure(callee, arg_count)
