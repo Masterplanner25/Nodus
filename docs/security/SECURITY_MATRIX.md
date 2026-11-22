@@ -97,6 +97,7 @@ constructor actually has:
 | `allow_input` | `bool` | **`False`** | reading stdin |
 | `share_process_state` | `bool` | **`False`** (#185) | whether two runtimes in one process share the memory store |
 | `persist_workflow_source` | `bool` | **`True`** (#499) | whether a workflow snapshot stores the program's source on disk |
+| `compile_functions` | `bool` | **`False`** (#173) | whether hot functions run as compiled Python. Not a boundary: compiled code calls no capability-bearing builtin, and builtins go through the same `invoke_builtin` capability check either way |
 
 `tests/test_documented_defaults_agree.py` reads this table and
 `NodusRuntime.__init__` and compares them, so a reversal here fails the suite.

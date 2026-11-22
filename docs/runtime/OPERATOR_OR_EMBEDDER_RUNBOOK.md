@@ -71,6 +71,7 @@ If you need to reset the runtime state (e.g., clear module cache), call `runtime
 | `event_sinks` | `list \| None` | `None` | Attach runtime event sinks for monitoring |
 | `extensions` | `list[str] \| None` | `None` (every surface) | Name the domain surfaces this runtime carries — `workflow`, `tool`, `agent`, `syscall`, `memory`. See §2a |
 | `share_process_state` | `bool` | `False` (isolated, #185) | Leave `False` in any multi-tenant host: `True` restores the pre-5.0.3 process-global memory store, which a guest can *write* via `memory_put`, so two runtimes become a channel between their tenants. Pass `memory_store=` instead to share deliberately |
+| `compile_functions` | `bool` | `False` (#173) | Experimental. Compiles hot eligible functions to Python; behaviour, errors, instruction counts and limits are unchanged, only speed. Leave `False` until it leaves opt-in, or set it to measure a workload. |
 | `persist_workflow_source` | `bool` | `True` (#499) | Set `False` for a runtime running code its host did not author. A workflow run persists a **verbatim copy of the whole module source** under `.nodus/graphs/` as its cross-process rebuild handle; opting out means a run cannot be rebuilt in another process |
 
 > **Event retention is bounded, and VM bookkeeping is off unless observed.** The bus

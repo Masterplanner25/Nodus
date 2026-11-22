@@ -424,6 +424,7 @@ def run_file(
     max_stdout_chars: int | None = None,
     allowed_paths: list[str] | None = None,
     writable_paths: list[str] | None = None,
+    compile_functions: bool = False,
 ) -> int:
     is_project_run = path is None or (path is not None and os.path.isdir(str(path)))
     resolved_path, project_root, err = _resolve_run_target(path, project_root)
@@ -460,6 +461,7 @@ def run_file(
         trace_errors=trace_errors,
         optimize=optimize,
         dump_bytecode=dump_bytecode,
+        compile_functions=compile_functions,
         project_root=project_root,
         max_steps=MAX_STEPS if max_steps is None else max_steps,
         timeout_ms=EXECUTION_TIMEOUT_MS if timeout_ms is None else timeout_ms,
@@ -2077,6 +2079,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
             trace_imports="--trace-imports" in flags,
             trace_errors="--trace-errors" in flags or trace_errors_env,
             optimize="--no-opt" not in flags,
+            compile_functions="--compile" in flags,
             dump_bytecode="--dump-bytecode" in flags,
             project_root=project_root,
             max_steps=step_limit,

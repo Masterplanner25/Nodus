@@ -287,6 +287,30 @@
 
 ### Performance
 
+- **Experimental, opt-in: hot functions compile to Python.** Turn it on with
+  `nodus run --compile`, `NodusRuntime(compile_functions=True)` or
+  `NODUS_COMPILE_FUNCTIONS=1`. When it applies:
+  - a function with a loop compiles on its first call, any other after 32
+    calls;
+  - only functions that cannot suspend, capture no variables, use no `try`,
+    and call only synchronous builtins without a capability are compiled;
+  - nothing compiles while a debugger, profiler or trace is attached.
+
+  On the self-hosted frontend it runs about 1.9× faster overall (2.30 s to
+  1.24 s), with compiled instructions about 4–5× faster than interpreted ones.
+  A compiled function must behave exactly as interpreted code does. It keeps
+  the same results, errors, stack traces, instruction counts, `max_steps` and
+  deadline enforcement, capability checks and call events.
+  - **Tested by comparison.** `tests/test_pycompile.py` runs each case both
+    ways, and a new `compiled` CI job runs the whole suite with
+    `NODUS_COMPILE_FUNCTIONS=always`.
+  - **Docs:** the design and its measurements are in
+    `docs/design/throughput/01-compile-to-python.md`.
+  - **It stays opt-in for one release**, then becomes the default if the
+    differential job has stayed green.
+
+  Part of the work on #173.
+
 - **A `let` or `for` variable no closure captures no longer resets its slot.**
   The compiler emits `RESET_LOCAL_IDX` before every `let` store and `for`
   variable store in a function. A reset gives a closure made in a loop a fresh

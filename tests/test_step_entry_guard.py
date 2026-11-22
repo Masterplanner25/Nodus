@@ -223,7 +223,9 @@ CLOSURE_ENTRY_SITES = {
     ("src/nodus/vm/vm.py", "_try_enter_foreign_closure"): "guarded",
     ("src/nodus/builtins/coroutine.py", "builtin_coroutine_resume"): "guarded",
     ("src/nodus/vm/vm.py", "_try_enter_module_call"): "builds-its-own",
-    ("src/nodus/vm/vm.py", "_op_call"): "no-closure",
+    # #173: `_op_call`'s frame construction moved here so compiled functions
+    # build the same frame; still a named top-level function, `closure=None`.
+    ("src/nodus/vm/vm.py", "build_call_frame"): "no-closure",
     # #180 stage 3: rebuilding a coroutine's frames from written-down data.
     ("src/nodus/runtime/continuation.py", "restore_continuation"): "guarded",
 }
@@ -341,6 +343,7 @@ class ClosureEntrySitesAreEnumeratedTests(unittest.TestCase):
         READS = {
             "src/nodus/vm/vm.py",                    # the entry guard
             "src/nodus/runtime/durability.py",       # reports a step coroutine (#180)
+            "src/nodus/vm/pycompile.py",             # keeps step bodies interpreted (#173)
         }
 
         sites: dict[str, list[int]] = {}
