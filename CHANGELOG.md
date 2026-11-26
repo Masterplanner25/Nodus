@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **#992: `std:strings.repeat` is linear in its output, not quadratic.** It
+  appended one copy per loop pass, and each append recopied everything built so
+  far: two million characters took 536 s. It now builds the result in one step.
+  It returns what it did for every input: a fractional count still rounds up,
+  `true` is still one copy, a count that is not above zero is still `""`, and a
+  non-string is still a type error. It also counts a handful of instructions
+  toward `max_steps` instead of about 13 per copy. Since 5.17.0 that budget
+  includes module code, so a long `repeat` no longer trips `nodus run`'s
+  10,000,000-instruction default.
+
 ### Tooling
 
 - **#978: `nodus_gate --shapes` recognises every standard mutable container as
@@ -15,18 +27,6 @@
   not the one the issue expected: #977's `_CODE_CACHE`, and #988's `_POOLS` and
   `_COROUTINE_OWNERS`, which landed after the issue was filed. All three are
   recorded `intentional` in `tools/shape_manifest.json`, each with its reason.
-
-### Performance
-
-- **#992: `std:strings.repeat` is linear in its output, not quadratic.** It
-  appended one copy per loop pass, and each append recopied everything built so
-  far: two million characters took 536 s. It now builds the result in one step.
-  It returns what it did for every input: a fractional count still rounds up,
-  `true` is still one copy, a count that is not above zero is still `""`, and a
-  non-string is still a type error. It also counts a handful of instructions
-  toward `max_steps` instead of about 13 per copy. Since 5.17.0 that budget
-  includes module code, so a long `repeat` no longer trips `nodus run`'s
-  10,000,000-instruction default.
 
 ## [5.17.0] - 2026-11-22
 
