@@ -59,9 +59,10 @@ If this is a security release, the new section's first subsection must be
 Update `docs/release.md` if the "Release target" version or expected
 `nodus --version` output is stale.
 
-Update `docs/governance/COMPATIBILITY.md`:
-- Remove `(current)` from the previous version entry
-- Add a new entry for X.Y.Z with `(current)` and a one-line summary
+Update `docs/governance/COMPATIBILITY.md` only if this release adds, flips or
+removes a deprecation, and then only its *Deprecated* section. **Do not add a
+timeline entry.** The timeline ends at v5.2.0 by decision (#991): it went stale
+for 22 releases, and `CHANGELOG.md` is the release history.
 
 ## Step 4 — Commit
 
@@ -138,6 +139,6 @@ gh release create vX.Y.Z --title "Nodus vX.Y.Z" --notes-file /tmp/release_notes.
 - [ ] `nodus --version` reports `X.Y.Z` from installed wheel
 - [ ] PyPI page shows new version
 - [ ] GitHub release is published with correct tag
-- [ ] `COMPATIBILITY.md` updated
+- [ ] `COMPATIBILITY.md` *Deprecated* section current (no timeline entry, #991)
 - [ ] `CHANGELOG.md` has `[Unreleased]` section ready for next cycle
 - [ ] `docs/evals/vX.Y.Z/CREATOR_VALIDATION.md` committed and pushed

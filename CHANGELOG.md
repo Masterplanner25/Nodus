@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#991: `COMPATIBILITY.md`'s release timeline is frozen at v5.2.0, and says
+  so.** It still called v5.0.0 current, 22 releases later, and labelled a 5.2.0
+  change "Unreleased". Rather than backfill a second copy of the release
+  history, it now ends with a note pointing to `CHANGELOG.md`, the "not
+  additive" table and the *Deprecated* section, which is still maintained. The
+  old release skill's instruction to add a `(current)` entry is gone, and
+  `tests/closed_issues/issue_991.py` fails if either comes back.
+- **#975: `nodus dis`, `nodus ast` and `nodus run --dump-bytecode` no longer
+  crash on text stdout cannot encode.** On Windows, a redirected stdout uses
+  the system code page, and these three printed with a bare `print()`, so a
+  program holding `"→"` made them exit 1 with `UnicodeEncodeError`. `nodus run`
+  already fell back to writing UTF-8. Every stdout write in the CLI, tooling
+  and `nodus test` code now goes through one helper with that fallback
+  (`nodus.support.console`). It replaces the three copies that existed, two of
+  which could put the fallback bytes ahead of text still buffered. A test fails
+  on any new bare `print()` to stdout in those packages. The console encoding
+  itself is unchanged.
+
 ### Performance
 
 - **#992: `std:strings.repeat` is linear in its output, not quadratic.** It
