@@ -10,6 +10,7 @@ from typing import Any
 
 from nodus.support.config import EXECUTION_TIMEOUT_MS, MAX_STEPS, MAX_STDOUT_CHARS, MAX_STACK_DEPTH
 from nodus.runtime.diagnostics import RuntimeLimitExceeded
+from nodus.support.console import write_stdout
 
 
 class LimitedBuffer(io.StringIO):
@@ -53,16 +54,8 @@ class StreamingLimitedWriter(io.TextIOBase):
         if self.max_chars is not None and self._count + len(s) > self.max_chars:
             raise RuntimeLimitExceeded("stdout limit exceeded")
         self._count += len(s)
-        try:
-            self._target.write(s)
-        except UnicodeEncodeError:
-            # A console that cannot encode the text: the same fallback the CLI
-            # used when it printed captured output after the run.
-            buffer = getattr(self._target, "buffer", None)
-            if buffer is None:
-                raise
-            self._target.flush()
-            buffer.write(s.encode("utf-8", errors="replace"))
+        # A console that cannot encode the text gets UTF-8 bytes (#975).
+        write_stdout(s, self._target)
         if "\n" in s:
             self._target.flush()
         return len(s)
