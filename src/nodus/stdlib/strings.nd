@@ -26,14 +26,20 @@ fn ends_with(s, suffix) {
     return str_endswith(s, suffix)
 }
 
+// `n` copies of `s`, in one step (#992). The loop this replaced appended one
+// copy per pass, recopying everything built so far, so its time was quadratic
+// in the output. The count is still the loop's: one copy for each i in 0, 1,
+// 2, ... with i < n. So a fractional `n` rounds up, `true` is one copy, and an
+// `n` that is not above zero, NaN included, gives "".
 fn repeat(s, n) {
-    let out = ""
-    let i = 0
-    while (i < n) {
-        out = out + s
-        i = i + 1
+    if (!(n > 0i)) {
+        return ""
     }
-    return out
+    let piece = "" + s
+    if (n == true) {
+        return piece
+    }
+    return piece * math_ceil(n)
 }
 
 fn is_blank(s) {
