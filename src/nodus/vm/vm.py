@@ -82,6 +82,20 @@ from nodus.vm.types import Cell, Closure, _ClosureProxy, Record, BuiltinMethod, 
 from nodus.vm.vm_chain import root_vm  # noqa: E402
 
 
+def python_error_message(err: BaseException) -> str:
+    """The message for a Python exception an instruction raised (#999).
+
+    Both dispatch loops wrap one into a Nodus runtime error with this, so the
+    two cannot word it differently. `str()` of some exceptions is empty, and a
+    `MemoryError` always is: an allocation Python could not satisfy, such as
+    `"a" * 100000000000000i`, reached the guest and the host as a runtime error
+    with no message at all.
+    """
+    if isinstance(err, MemoryError):
+        return "Out of memory: the process could not allocate this value"
+    return str(err) or type(err).__name__
+
+
 def _dict_to_record(d: dict[str, Any]) -> "Record":
     """Recursively convert a plain dict to a Nodus Record for field-access."""
     converted: dict[str, object] = {}
@@ -3781,7 +3795,8 @@ class VM:
         allocating concurrently on another thread is counted too.
 
         Polling bounds growth *over time*, not a single allocation: one enormous
-        list is served before the next check runs. That is a real limit of this
+        list is served before the next check runs. The next check is at the
+        next sample or when `execute` returns, whichever is first (#999). That is a real limit of this
         approach and the reason OS-level limits remain the answer for hard memory
         safety.
         """
@@ -5355,7 +5370,25 @@ class VM:
         any of them could fire. `_execute_instrumented` is the loop for a
         debugger, profiler or trace, which see every instruction; this one hands
         over to it if one appears mid-run.
+
+        The memory ceiling at exit (#999)
+        ---------------------------------
+        `max_memory_bytes` is sampled every `MEMORY_CHECK_INTERVAL` instructions,
+        so a run that allocated past it and then ended within one interval was
+        never checked, and reported success: one `"a" * n`, or a doubling loop
+        of a few dozen passes. Every way out of running Nodus code comes back
+        through here (a program halting, a coroutine returning or yielding, a
+        module call returning, a resume), so the ceiling is checked once more on
+        the way out, and no exit can report success past it. It costs one RSS
+        read per call, only when a ceiling is set.
         """
+        status = self._execute_loop()
+        if self._max_memory_bytes is not None:
+            self._check_memory_limit()
+        return status
+
+    def _execute_loop(self):
+        """The body of `execute`: the fast loop, or the instrumented one."""
         if self._instrumented():
             return self._execute_instrumented()
         dispatch = self._dispatch
@@ -5403,7 +5436,7 @@ class VM:
                 raise
             except Exception as _e:
                 self.record_vm_exception(_e)
-                wrapped = self.build_runtime_error("runtime", str(_e))
+                wrapped = self.build_runtime_error("runtime", python_error_message(_e))
                 self.emit_runtime_error(wrapped)
                 if self.handle_exception(wrapped):
                     continue
@@ -5461,7 +5494,7 @@ class VM:
                 raise
             except Exception as _e:
                 self.record_vm_exception(_e)
-                wrapped = self.build_runtime_error("runtime", str(_e))
+                wrapped = self.build_runtime_error("runtime", python_error_message(_e))
                 self.emit_runtime_error(wrapped)
                 if self.handle_exception(wrapped):
                     continue
