@@ -118,7 +118,7 @@ documents have been found carrying superseded content under their own authority:
 | `docs/governance/TECH_DEBT.md` | Open items and known limitations |
 | `docs/governance/VERSIONING.md` | Semver policy |
 | `docs/governance/STABILITY.md` | Stability summary (superseded by LANGUAGE_STABILITY_INDEX.md for detail) |
-| `docs/governance/COMPATIBILITY.md` | Deprecation timeline (complement to COMPATIBILITY_MODEL.md) |
+| `docs/governance/COMPATIBILITY.md` | What is deprecated and when it goes (complement to COMPATIBILITY_MODEL.md); its release timeline is historical and ends at v5.2.0 |
 | `docs/governance/DOCSET_GOVERNANCE.md` | How the docset is governed: frontmatter, adding/superseding a document, where doc changes are recorded |
 | `docs/governance/ECOSYSTEM_BOUNDARY.md` | Where the ecosystem ends; membership and distribution |
 | `docs/governance/STDLIB_PHILOSOPHY.md` | Why capabilities stay narrow |
