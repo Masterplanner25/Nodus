@@ -3618,7 +3618,8 @@ def probe_module_code_is_bounded():
     from nodus.runtime.embedding import NodusRuntime
 
     rt = NodusRuntime(max_steps=1000, timeout_ms=None)
-    result = rt.run_source('import "std:strings" as s\nlet x = s.repeat("a", 200000i)\nprint(len(x))\n',
+    # A loop in the stdlib. This was `strings.repeat` until #992 made it one step.
+    result = rt.run_source('import "std:collections" as c\nprint(c.list_sum([1i] * 200000i))\n',
                            filename="<probe>")
     assert not result.get("ok"), "the stdlib loop ran past max_steps=1000"
     assert result["error"].get("kind") == "sandbox" or "step" in str(result["error"]).lower(), (

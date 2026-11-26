@@ -31,15 +31,23 @@ from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# One stdlib call whose loop runs about 17 instructions per iteration.
-_REPEAT = 'import "std:strings" as s\nlet x = s.repeat("a", {n}i)\nprint(len(x))\n'
+# One stdlib call whose loop runs 16 instructions per list element: about 3 s
+# for 300,000 elements, unbounded. Building the list is a single instruction in
+# the caller, so nearly all the work is inside the module.
+#
+# This was `std:strings.repeat` until #992 made `repeat` one step. Whatever
+# stands here must loop in Nodus once per unit of its argument, or these tests
+# stop measuring the bound; `test_steps_taken_inside_a_module_are_counted`
+# checks that it does.
+_LOOP = 'import "std:collections" as c\nprint(c.list_sum([1i] * {n}i))\n'
 
-# Many cheap stdlib calls. Each fits easily in the budget; the total does not.
+# Many cheap stdlib calls, about 150 instructions each. Each fits easily in the
+# budget; the total does not.
 _MANY_CALLS = (
-    'import "std:strings" as s\n'
+    'import "std:collections" as c\n'
     "let i = 0i\n"
     "while (i < 200i) {\n"
-    '    s.repeat("a", 20i)\n'
+    "    c.list_sum([1i, 2i, 3i, 4i, 5i, 6i, 7i, 8i])\n"
     "    i = i + 1i\n"
     "}\n"
     'print("done")\n'
@@ -66,15 +74,15 @@ def _error(result) -> str:
 
 class AStdlibCallIsBounded(unittest.TestCase):
     def test_the_step_limit_stops_a_loop_inside_a_stdlib_function(self):
-        result = NodusRuntime(max_steps=1000, timeout_ms=None).run_source(_REPEAT.format(n=200000))
+        result = NodusRuntime(max_steps=1000, timeout_ms=None).run_source(_LOOP.format(n=200000))
         self.assertFalse(result.get("ok"), "a stdlib loop ran past max_steps=1000")
         self.assertIn("step limit", _error(result))
 
     def test_the_deadline_stops_a_loop_inside_a_stdlib_function(self):
-        # About 4 s of work without the fix, so the bound is visible in the
+        # About 3 s of work without the fix, so the bound is visible in the
         # elapsed time as well as in the error.
         started = time.monotonic()
-        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_REPEAT.format(n=300000))
+        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_LOOP.format(n=300000))
         elapsed = time.monotonic() - started
         self.assertFalse(result.get("ok"), "a stdlib loop ran past timeout_ms=100")
         self.assertIn("timed out", _error(result))
@@ -82,7 +90,7 @@ class AStdlibCallIsBounded(unittest.TestCase):
 
     def test_steps_taken_inside_a_module_are_counted(self):
         runtime = NodusRuntime(max_steps=None, timeout_ms=None)
-        result = runtime.run_source(_REPEAT.format(n=2000))
+        result = runtime.run_source(_LOOP.format(n=2000))
         self.assertTrue(result.get("ok"), _error(result))
         executed = runtime.get_execution_stats()["instructions_executed"]
         # 2,000 iterations of a loop body of several instructions. Uncounted,
@@ -172,7 +180,7 @@ class TheCliDeadlineHoldsToo(unittest.TestCase):
             with open(script, "w", encoding="utf-8") as handle:
                 # Several seconds of work without the fix; the CLI's default
                 # deadline is 200 ms.
-                handle.write(_REPEAT.format(n=400000))
+                handle.write(_LOOP.format(n=400000))
             env = dict(os.environ)
             env["PYTHONPATH"] = os.path.join(_REPO, "src")
             proc = subprocess.run(
