@@ -223,6 +223,18 @@
     "D:src/nodus/builtins/http_module.py::_ssl_context": {
       "verdict": "intentional",
       "why": "The process-wide TLS trust store (#855). httpx.Client() reloads the certifi CA bundle per construction (380-995 ms) and there is one client per root VM, so every runtime and every serve request paid it. The store is identical for every VM in the process; sharing it is the fix, not a leak -- the per-VM client and its connection pool stay per VM. Read-only after first build, under _client_create_lock."
+    },
+    "D:src/nodus/vm/pycompile.py::_CODE_CACHE": {
+      "verdict": "intentional",
+      "why": "#977's process-wide cache of generated Python code, found once #978 taught species D to recognise OrderedDict. Keyed by a function's exact bytecode, and generation is deterministic, so equal keys mean equal code; each VM binds its own namespace with exec, so no VM's globals or values are in it. Bounded at _CODE_CACHE_LIMIT (4,096), oldest out first, under _CODE_CACHE_LOCK. Sharing it is the point: per VM, an embedder running a program many times recompiled every function each run."
+    },
+    "D:src/nodus/runtime/module.py::_POOLS": {
+      "verdict": "intentional",
+      "why": "#988's idle child-VM pools, found once #978 taught species D to recognise WeakKeyDictionary. The map is process-wide but its key is the caller VM, so each caller gets its own pools and no pooled VM is ever handed to a different caller; weak, so a caller's pools die with it. It is module-level rather than a VM attribute on purpose: an attribute pushed VM past PyPy's 80-attribute cliff (#702), caught by test_vm_attribute_budget.py on the first push. Under _POOLS_LOCK for runtimes on other threads."
+    },
+    "D:src/nodus/runtime/module.py::_COROUTINE_OWNERS": {
+      "verdict": "intentional",
+      "why": "#988: a weak set of VMs that own a coroutine, so they are never returned to a pool. Membership is a fact about one VM, stored out of line for the same PyPy attribute-budget reason as _POOLS (#702); weak, so it holds nothing alive. Every owner_vm assignment site calls mark_coroutine_owner, held by tests/test_module_call_vm_pool.py."
     }
   }
 }
