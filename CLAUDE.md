@@ -157,7 +157,7 @@ Guide files live in `docs/guide/`. The full guide index is in
 |------|-------|
 | Semver policy | `docs/release.md#semantic-versioning` |
 | Compatibility policy | `docs/governance/COMPATIBILITY_MODEL.md` |
-| Deprecation timeline | `docs/governance/COMPATIBILITY.md` |
+| Deprecations (what goes, and when) | `docs/governance/COMPATIBILITY.md` — its release timeline is frozen at v5.2.0 (#991); do not add entries |
 | Stability index (surface-by-surface) | `docs/governance/LANGUAGE_STABILITY_INDEX.md` |
 | Security posture | `docs/governance/SECURITY_POSTURE.md` |
 | Security test matrix | `docs/security/SECURITY_MATRIX.md` |

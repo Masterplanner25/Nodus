@@ -61,7 +61,27 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 > `docs/migration/v6.0-staged-flips.md`, and `nodus check --staged` reports which
 > of these a project is actually exposed to.
 
-## Timeline
+## Timeline (historical, ends at v5.2.0)
+
+**This timeline is no longer kept up, and it ends with the v5.2.0 entry.** It
+was meant to get an entry each release, and from 5.0.1 on it did not, so 22
+releases went by with v5.0.0 still marked current (#991). A second hand-kept
+copy of the release history goes stale, so it stopped here rather than being
+backfilled. The entries below are a record of their releases, not of the
+current state.
+
+For any release:
+
+- **What changed:** `CHANGELOG.md`, which every release is built from. A
+  change that can break a working setup is under that version's `Changed`
+  heading.
+- **What is not additive, from 5.3.0 on:** the table "What is *not* additive"
+  in `.claude/commands/release-sequence.md`. It lists each release that can
+  break a setup that worked, and what to do about it.
+- **What is deprecated now, and when it goes:** the *Deprecated* section above,
+  which is still maintained. What changes at 6.0.0, and what each change costs,
+  is in `V6_0_PLAN.md`. `nodus_gate --flips` checks that every 6.0.0 promise in
+  the code is registered in `src/nodus/support/staged_flips.json`.
 
 - v0.9.x: continued support with warnings.
 - **v1.0.0 (2026-03-15):** `compile_source()` loader body removed.
@@ -83,9 +103,8 @@ Nodus keeps legacy compatibility for now, but the following items are deprecated
 - **v4.1.0 (2026-07-10):** Minor release. New language features: `match` expression for value dispatch (#308) and `break`/`continue` loop control (#309). New `agent_call_async` / `agent.call_async` builtin so agent fan-out overlaps (#294). Fixes: workflow/goal `after` cycles rejected at build time (#323); resume no longer re-executes the workflow or clobbers the caller (#322, #328); async fan-out shares one HTTP client (#295). Doc-vs-code gate now runs in CI (#302). Backward-compatible; no bytecode break.
 - **v4.1.1 (2026-08-05):** Patch release. A closure passed to a module function **inside a list, map, or record** was never wrapped in a `_ClosureProxy`, so it executed the caller's instruction address against the module's bytecode — `Stack underflow` under the CLI, a silent no-op under `NodusRuntime` (ASYNC-MOD-003, #339). This affected every `.nd` library taking callbacks in a container, not only the stdlib. `std:async.parallel` and `std:async.series` work as a result; `worker_pool` and `pipeline` remain broken and are documented as such (#339 stays open). CI now pins `ruff`, which was unpinned and began failing on untouched files when 0.16.1 changed its default rule selection. No bytecode break.
 - **v4.2.0 (2026-08-15):** Minor release. Correctness: `finally` runs when `catch` re-throws (#361); `std:async` worker pools actually run their workers (#339); `--help` no longer executes the command it documents (#353/#345); the embedded runtime applies a call-depth cap by default (#350). Adds an opcode-freeze gate phase (#366) and DAP locals (#106). **Breaking for stderr consumers:** every error now reports a resolved absolute path (#342). No bytecode break. *(Entry added retroactively during the 5.0.0 cut — the 4.2.0 release did not update this file.)*
-- **v5.0.0 (2026-08-17, current):** **Major release — breaking.** `NodusRuntime` denies `allow_subprocess`, `allow_network` and `allow_env` by default (#405); grant them explicitly. `nodus run` is unaffected. A Nodus program can no longer write into `.nodus/`. Adds a capability policy at both host chokepoints with per-call, argument-aware decisions, `capability_denied` events and an unbypassable floor (#405), and `goal … over …` — a goal that declares a stopping condition over a workflow (#409, Experimental). Fixes: step retries honoured on every entry point (#392); `goal`/`workflow` retry unified (#393); concurrent agent steps actually overlap (#398); cross-process resume works when the script reads the result (#399); derived VMs no longer shed the sandbox (#405); `nodus fmt` no longer writes files that stop parsing (#427). No bytecode break — BYTECODE_VERSION stays 4. Migration: `docs/migration/v5.0-deny-by-default.md`.
-
-- **Unreleased:** The concurrent-write warning became precise (#485). It now
+- **v5.0.0 (2026-08-17):** **Major release — breaking.** `NodusRuntime` denies `allow_subprocess`, `allow_network` and `allow_env` by default (#405); grant them explicitly. `nodus run` is unaffected. A Nodus program can no longer write into `.nodus/`. Adds a capability policy at both host chokepoints with per-call, argument-aware decisions, `capability_denied` events and an unbypassable floor (#405), and `goal … over …` — a goal that declares a stopping condition over a workflow (#409, Experimental). Fixes: step retries honoured on every entry point (#392); `goal`/`workflow` retry unified (#393); concurrent agent steps actually overlap (#398); cross-process resume works when the script reads the result (#399); derived VMs no longer shed the sandbox (#405); `nodus fmt` no longer writes files that stop parsing (#427). No bytecode break — BYTECODE_VERSION stays 4. Migration: `docs/migration/v5.0-deny-by-default.md`.
+- **v5.2.0 (2026-08-23):** The concurrent-write warning became precise (#485). It now
   fires only when an update was actually lost -- the writers disagreed, or one
   read the cell before writing it -- and is silent when concurrent branches wrote
   the same value without reading first. Not breaking: nothing that ran now fails,

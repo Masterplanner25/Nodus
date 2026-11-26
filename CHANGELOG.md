@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#991: `COMPATIBILITY.md`'s release timeline is frozen at v5.2.0, and says
+  so.** It still called v5.0.0 current, 22 releases later, and labelled a 5.2.0
+  change "Unreleased". Rather than backfill a second copy of the release
+  history, it now ends with a note pointing to `CHANGELOG.md`, the "not
+  additive" table and the *Deprecated* section, which is still maintained. The
+  old release skill's instruction to add a `(current)` entry is gone, and
+  `tests/closed_issues/issue_991.py` fails if either comes back.
+
 ### Performance
 
 - **#992: `std:strings.repeat` is linear in its output, not quadratic.** It
