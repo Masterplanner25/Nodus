@@ -79,7 +79,26 @@ MAX_MISSING_MEMBERS = 4
 MIN_EQUAL_MEMBERS = 4
 
 MUTATING_METHODS = {"append", "update", "add", "pop", "clear",
-                    "setdefault", "extend", "remove", "discard"}
+                    "setdefault", "extend", "remove", "discard",
+                    # list, OrderedDict and deque (#978)
+                    "insert", "sort", "reverse", "popitem", "move_to_end",
+                    "appendleft", "popleft", "extendleft", "rotate"}
+
+#: Constructors of the standard mutable containers, by final name, so both
+#: `OrderedDict()` and `collections.OrderedDict()` count (#978). Before, only a
+#: bare `dict`/`list`/`set`/`defaultdict` call did, and #977's module-level
+#: `_CODE_CACHE = OrderedDict()` was never asked about.
+CONTAINER_CONSTRUCTORS = {"dict", "list", "set", "bytearray", "defaultdict",
+                          "OrderedDict", "deque", "Counter", "ChainMap",
+                          "WeakKeyDictionary", "WeakValueDictionary", "WeakSet"}
+
+
+def _constructor_name(func) -> str:
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
 
 
 @dataclass
@@ -400,7 +419,7 @@ def _species_d(trees) -> list[Finding]:
                 value = getattr(node, "value", None)
                 container = isinstance(value, (ast.Dict, ast.List, ast.Set)) or (
                     isinstance(value, ast.Call)
-                    and getattr(value.func, "id", "") in {"dict", "list", "set", "defaultdict"})
+                    and _constructor_name(value.func) in CONTAINER_CONSTRUCTORS)
                 if container:
                     why.append("mutable container, mutated in place")
             if why:

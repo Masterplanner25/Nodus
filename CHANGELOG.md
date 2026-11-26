@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Tooling
+
+- **#978: `nodus_gate --shapes` recognises every standard mutable container as
+  process-global state.** Species D counted a module-level container only when it
+  was a literal or a bare `dict`/`list`/`set`/`defaultdict` call. So
+  `OrderedDict()`, `deque()`, `Counter()`, `ChainMap()`, the `weakref`
+  containers and any `collections.X()` form were never findings, however they
+  were mutated. It now matches the constructor's final name, and it counts
+  `insert`, `sort`, `reverse`, `popitem`, `move_to_end`, `appendleft`,
+  `popleft`, `extendleft` and `rotate` as mutations. The first run found three,
+  not the one the issue expected: #977's `_CODE_CACHE`, and #988's `_POOLS` and
+  `_COROUTINE_OWNERS`, which landed after the issue was filed. All three are
+  recorded `intentional` in `tools/shape_manifest.json`, each with its reason.
+
 ### Performance
 
 - **#992: `std:strings.repeat` is linear in its output, not quadratic.** It

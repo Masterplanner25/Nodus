@@ -139,6 +139,34 @@ class SpeciesDDetectionTests(unittest.TestCase):
         keys = [f.key for f in _species_d([("a.py", _tree(src))])]
         self.assertIn("D:a.py::REG", keys)
 
+    # closes: #978
+    def test_any_standard_container_bare_or_qualified_is_a_finding(self):
+        """Only `dict`/`list`/`set`/`defaultdict` called bare used to count, so
+        #977's `_CODE_CACHE = OrderedDict()` and #988's weak maps were never
+        asked about. Each line here mutates in a different way."""
+        cases = {
+            "A": "from collections import OrderedDict\nA = OrderedDict()\n"
+                 "def f(k, v):\n    A[k] = v\n",
+            "B": "import collections\nB = collections.OrderedDict()\n"
+                 "def f():\n    B.popitem(last=False)\n",
+            "C": "from collections import deque\nC = deque()\ndef f(x):\n    C.appendleft(x)\n",
+            "D": "import collections\nD = collections.Counter()\ndef f(x):\n    D.update(x)\n",
+            "E": "import weakref\nE = weakref.WeakKeyDictionary()\ndef f(k):\n    E[k] = 1\n",
+            "F": "import weakref\nF = weakref.WeakSet()\ndef f(x):\n    F.add(x)\n",
+            "G": "from collections import OrderedDict\nG = OrderedDict()\n"
+                 "def f(k):\n    G.move_to_end(k)\n",
+            "H": "from collections import deque\nH = deque()\ndef f():\n    H.rotate(1)\n",
+            "I": "I = []\ndef f(x):\n    I.insert(0, x)\n",
+        }
+        for name, src in cases.items():
+            with self.subTest(name):
+                keys = [f.key for f in _species_d([("a.py", _tree(src))])]
+                self.assertIn(f"D:a.py::{name}", keys)
+
+    def test_an_unmutated_container_still_is_not(self):
+        src = "import collections\nK = collections.OrderedDict(a=1)\ndef f():\n    return K['a']\n"
+        self.assertEqual([], _species_d([("a.py", _tree(src))]))
+
     def test_a_read_only_lookup_table_is_not(self):
         """Subscript *reads* are not shared mutable state.
 
