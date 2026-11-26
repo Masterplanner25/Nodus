@@ -82,6 +82,7 @@ from nodus.cli.flags import CliUsageError, parse_flags
 from nodus.support.staging import StagedFlipWarning
 from nodus_lang_workflow.runner import get_default_workflow_runner
 from nodus_lang_workflow.store import TERMINAL_RUN_STATUSES
+from nodus.support.console import stdout_print, write_stdout
 
 
 def _read_file(path: str) -> str:
@@ -378,11 +379,7 @@ def _print_result_output(result: dict) -> None:
     stdout = result.get("stdout") or ""
     stderr = result.get("stderr") or ""
     if stdout:
-        try:
-            print(stdout, end="")
-        except UnicodeEncodeError:
-            sys.stdout.buffer.write(stdout.encode("utf-8", errors="replace"))
-            sys.stdout.buffer.flush()
+        write_stdout(stdout)
     if stderr:
         _print_stderr(stderr)
 
@@ -474,7 +471,7 @@ def run_file(
         stream_output=not dump_bytecode,
     )
     if dump_bytecode and result.get("disassembly"):
-        print(result["disassembly"])
+        stdout_print(result["disassembly"])
     _print_result_output(result)
     if not result.get("ok", False):
         _print_error(result, path=path)
@@ -571,7 +568,7 @@ def profile_file(
 
     if not json_output:
         _print_result_output(result)
-        print(_format_profile_report(profiler.report()))
+        stdout_print(_format_profile_report(profiler.report()))
         return 0
 
     report = profiler.report()
@@ -612,29 +609,29 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
         _print_stderr(f"Error: {report.error}")
         return 1
 
-    print(f"Staged for {report.target} — checked {', '.join(report.roots)}")
-    print(
+    stdout_print(f"Staged for {report.target} — checked {', '.join(report.roots)}")
+    stdout_print(
         "  (the entry file and what it imports; a file nothing imports is not "
         "compiled, so it cannot fail at the major)"
     )
-    print("")
+    stdout_print("")
     total = 0
     for flip in report.flips:
         label = f"{flip.name} (#{flip.issue})"
         if flip.observed:
             label += "  [from a run]"
         if not flip.checked:
-            print(f"  [not checked] {label}")
-            print(f"                {flip.reason}")
+            stdout_print(f"  [not checked] {label}")
+            stdout_print(f"                {flip.reason}")
             continue
         if not flip.findings:
-            print(f"  [ok]          {label}")
+            stdout_print(f"  [ok]          {label}")
             continue
         total += len(flip.findings)
-        print(f"  [{len(flip.findings):>2} found]   {label}")
+        stdout_print(f"  [{len(flip.findings):>2} found]   {label}")
         for finding in flip.findings:
-            print(f"                {finding.render()}")
-    print("")
+            stdout_print(f"                {finding.render()}")
+    stdout_print("")
     unchecked = len(report.unchecked)
     if total:
         summary = f"{total} thing(s) to fix before {report.target}"
@@ -642,9 +639,9 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
         summary = f"nothing found in the {len(report.flips) - unchecked} flip(s) checked"
     if unchecked:
         summary += f"; {unchecked} could not be checked from source"
-    print(summary)
+    stdout_print(summary)
     if unchecked and not report.observed_report:
-        print(
+        stdout_print(
             "  For the rest, run your program or tests with "
             "NODUS_STAGED_FLIP_REPORT=<path> set, then re-run this."
         )
@@ -685,7 +682,7 @@ def check_file(
             f"{os.path.abspath(path)}:{warning['line']}:{warning['column']}: "
             f"warning: {warning['message']}"
         )
-    print(f"{path}: OK" + (f" ({len(warnings)} warning(s))" if warnings else ""))
+    stdout_print(f"{path}: OK" + (f" ({len(warnings)} warning(s))" if warnings else ""))
     return 0
 
 
@@ -699,7 +696,7 @@ def ast_file(path: str, *, compact: bool = False) -> int:
         _print_error(result, path=path)
         return 1
     pretty = result.get("ast_pretty", "")
-    print(pretty)
+    stdout_print(pretty)
     return 0
 
 
@@ -715,7 +712,7 @@ def dis_file(path: str, *, include_locs: bool = False, project_root: str | None 
     text = "\n".join(result.get("dis_pretty", []))
     if include_locs:
         text = format_disassembly_with_locs(text)
-    print(text)
+    stdout_print(text)
     return 0
 
 
@@ -745,7 +742,7 @@ def debug_file(
 
 
 def _json_print(payload) -> None:
-    print(json.dumps(payload))
+    stdout_print(json.dumps(payload))
 
 
 def _json_load(value: str):
@@ -1035,14 +1032,14 @@ def _workflow_cancel_cli(run_id: str, project_root: str | None) -> int:
             reason = f"{reason} (status: {result['status']})"
         _print_stderr(f"Not cancelled: {run_id} -- {reason}")
         return 1
-    print(f"Cancelled {run_id} (was {result.get('cancelled_from')})")
+    stdout_print(f"Cancelled {run_id} (was {result.get('cancelled_from')})")
     from nodus.orchestration.workflow_state import EXECUTION_KIND_COROUTINE
     if before is not None and before.execution_kind == EXECUTION_KIND_COROUTINE:
         # #912: where a durable coroutine notices is not a step boundary.
-        print("A durable coroutine running in another process stops at its next "
+        stdout_print("A durable coroutine running in another process stops at its next "
               "checkpoint or claim renewal, after running its finally blocks.")
     else:
-        print("A run owned by another process stops at its next step boundary.")
+        stdout_print("A run owned by another process stops at its next step boundary.")
     return 0
 
 
@@ -1475,9 +1472,9 @@ def _show_graph_file(
         except OSError as exc:
             _print_stderr(f"Could not write {output}: {exc}")
             return 1
-        print(f"Wrote {fmt} graph to {output}")
+        stdout_print(f"Wrote {fmt} graph to {output}")
     else:
-        print(rendered)
+        stdout_print(rendered)
     return 0
 
 
@@ -1553,7 +1550,7 @@ def _run_worker(host: str, port: int, *, poll_interval: float = 0.1, token: str 
     if not worker_id:
         _print_stderr("Failed to register worker.")
         return 1
-    print(f"worker_id={worker_id}")
+    stdout_print(f"worker_id={worker_id}")
     try:
         while True:
             job = _json_post(host, port, "/worker/poll", {"worker_id": worker_id}, token=token)
@@ -1738,7 +1735,7 @@ def _run_examples() -> int:
 
 def _print_stability() -> int:
     """Print the language stability surface index."""
-    print("\n".join([
+    stdout_print("\n".join([
         "Nodus Language Stability Index",
         "=" * 46,
         "",
@@ -1785,15 +1782,15 @@ def _nodus_status() -> int:
     cwd = os.path.abspath(os.getcwd())
     project = load_project_from(cwd)
     if project is None:
-        print("No project found in current directory")
-        print(f"{'Working dir:':<14}{cwd}")
+        stdout_print("No project found in current directory")
+        stdout_print(f"{'Working dir:':<14}{cwd}")
         return 0
     abs_root = os.path.abspath(project.root)
     entry = project_entry_path(project)
     rel_entry = os.path.relpath(entry, abs_root)
-    print(f"{'Project root:':<14}{abs_root}")
-    print(f"{'Entry:':<14}{rel_entry}")
-    print(f"{'Working dir:':<14}{cwd}")
+    stdout_print(f"{'Project root:':<14}{abs_root}")
+    stdout_print(f"{'Entry:':<14}{rel_entry}")
+    stdout_print(f"{'Working dir:':<14}{cwd}")
     return 0
 
 
@@ -1804,7 +1801,7 @@ def _package_init(path: str | None) -> int:
     except Exception as _e:
         _print_stderr(str(_e))
         return 1
-    print(f"Initialized Nodus project at {os.path.abspath(root)}/")
+    stdout_print(f"Initialized Nodus project at {os.path.abspath(root)}/")
     return 0
 
 
@@ -1836,7 +1833,7 @@ def _package_list(path: str | None) -> int:
         _print_stderr(str(_e))
         return 1
     for name, status in deps:
-        print(f"{name}: {status}")
+        stdout_print(f"{name}: {status}")
     return 0
 
 
@@ -1866,14 +1863,14 @@ def _run_login(registry_url: str | None = None) -> int:
     try:
         token = getpass.getpass("Registry token: ")
     except (KeyboardInterrupt, EOFError):
-        print("\nLogin cancelled.")
+        stdout_print("\nLogin cancelled.")
         return 1
     if not token.strip():
-        print("Error: token cannot be empty.")
+        stdout_print("Error: token cannot be empty.")
         return 1
     UserConfig().set_registry_token(token.strip(), registry_url=registry_url)
     config_path = str(Path.home() / ".nodus" / "config.toml")
-    print(f"Token saved to {config_path}")
+    stdout_print(f"Token saved to {config_path}")
     return 0
 
 
@@ -1881,7 +1878,7 @@ def _run_logout(registry_url: str | None = None) -> int:
     from nodus.tooling.user_config import UserConfig
     UserConfig().clear_registry_token(registry_url=registry_url)
     config_path = str(Path.home() / ".nodus" / "config.toml")
-    print(f"Token removed from {config_path}")
+    stdout_print(f"Token removed from {config_path}")
     return 0
 
 
@@ -1891,7 +1888,7 @@ def _print_dependency_graph(path: str | None) -> int:
     if graph is None:
         _print_stderr(f"Invalid project root: {root}")
         return 1
-    print(json.dumps(graph.to_dict(), indent=2, sort_keys=True))
+    stdout_print(json.dumps(graph.to_dict(), indent=2, sort_keys=True))
     return 0
 
 
@@ -1901,7 +1898,7 @@ def _cache_clear(path: str | None) -> int:
         project = load_project_from(os.getcwd())
         root = project.root if project is not None else os.getcwd()
     removed = clear_bytecode_cache(root)
-    print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'} from {os.path.join(root, '.nodus', 'cache')}")
+    stdout_print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'} from {os.path.join(root, '.nodus', 'cache')}")
     return 0
 
 
@@ -1978,15 +1975,15 @@ def _dispatch(argv: list[str] | None = None) -> int:
     args = argv[1:]
 
     if not args:
-        print(_render_help())
+        stdout_print(_render_help())
         return 0
 
     if args[0] in ("--help", "-h"):
-        print(_render_help())
+        stdout_print(_render_help())
         return 0
 
     if "--version" in args:
-        print(VERSION)
+        stdout_print(VERSION)
         return 0
 
     command = args[0]
@@ -2017,7 +2014,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
     # traceback, and `nodus login --help` blocked on stdin. --help must never
     # mutate state. Do not re-add per-command guards below; this one covers them.
     if any(flag in cmd_args for flag in _HELP_FLAGS):
-        print(_command_help(command))
+        stdout_print(_command_help(command))
         return 0
 
     # #791: and an undeclared flag is refused here, centrally, for the same
@@ -2251,7 +2248,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
             )
         if cmd_args and cmd_args[0] == "run":
             if len(cmd_args) > 1 and cmd_args[1] in ("--help", "-h"):
-                print("Usage: nodus graph run <script.nd> [--project-root PATH]")
+                stdout_print("Usage: nodus graph run <script.nd> [--project-root PATH]")
                 return 0
             positional, flags = _parse_flags(cmd_args[1:], *flags_for("graph", "run"))
             if not positional:
@@ -2397,13 +2394,13 @@ def _dispatch(argv: list[str] | None = None) -> int:
 
     if command == "workflow":
         if not cmd_args:
-            print(_command_help("workflow"))
+            stdout_print(_command_help("workflow"))
             return 0
         subcommand = cmd_args[0]
         sub_args = cmd_args[1:]
         if subcommand == "run":
             if sub_args and sub_args[0] in ("--help", "-h"):
-                print("Usage: nodus workflow run <script.nd> [--workflow NAME] [--project-root PATH]")
+                stdout_print("Usage: nodus workflow run <script.nd> [--workflow NAME] [--project-root PATH]")
                 return 0
             positional, flags = _parse_flags(sub_args, *flags_for("workflow", "run"))
             if not positional:
@@ -2901,7 +2898,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if "--json" in flags:
             _json_print(data)
         else:
-            print(format_docs(data))
+            stdout_print(format_docs(data))
         return 0
 
     if command == "doctor":
@@ -2913,7 +2910,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if "--json" in flags:
             _json_print(report)
         else:
-            print(format_report(checks))
+            stdout_print(format_report(checks))
         return 0 if report["ok"] else 1
 
     if command == "status":

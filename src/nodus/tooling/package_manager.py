@@ -15,6 +15,7 @@ from nodus.tooling.project import (
 )
 from nodus.tooling.registry import Registry
 from nodus.tooling.resolver import resolve_project_dependencies
+from nodus.support.console import stdout_print
 
 
 def get_registry_token(registry_url: str | None = None, cli_token: str | None = None) -> str | None:
@@ -159,7 +160,7 @@ def publish_package_to_registry(
         or project.registry_url
     )
     if not resolved_url:
-        print(
+        stdout_print(
             "Error: No registry configured. Use --registry or set "
             "registry_url in nodus.toml."
         )
@@ -168,7 +169,7 @@ def publish_package_to_registry(
     # Resolve token
     token = get_registry_token(resolved_url, cli_token=cli_token)
     if not token:
-        print(
+        stdout_print(
             "Error: No registry token found. Run 'nodus login' or "
             "set NODUS_REGISTRY_TOKEN."
         )
@@ -177,24 +178,24 @@ def publish_package_to_registry(
     name = project.name
     version = project.version
     if not name or not version:
-        print("Error: nodus.toml must have [package] name and version.")
+        stdout_print("Error: nodus.toml must have [package] name and version.")
         return 1
 
     client = RegistryClient(resolved_url, token=token)
     tmp_dir = tempfile.mkdtemp(prefix="nodus_publish_")
     archive_path = Path(tmp_dir) / f"{name}-{version}.tar.gz"
     try:
-        print(f"Building archive for {name}@{version}...")
+        stdout_print(f"Building archive for {name}@{version}...")
         sha256 = create_package_archive(
             Path(project_dir), archive_path, name=name, version=version
         )
-        print(f"Publishing to {resolved_url}...")
+        stdout_print(f"Publishing to {resolved_url}...")
         result = client.publish_package(name, version, archive_path, sha256)
         published_url = result.get("url", resolved_url)
-        print(f"Published {name}@{version} → {published_url}")
+        stdout_print(f"Published {name}@{version} → {published_url}")
         return 0
     except RegistryError as err:
-        print(f"Publish failed: {err}")
+        stdout_print(f"Publish failed: {err}")
         return 1
     finally:
         import shutil

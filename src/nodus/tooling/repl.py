@@ -37,6 +37,7 @@ from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.project import load_project_from
 from nodus.vm.vm import VM
 from nodus.vm.types import Closure, Record
+from nodus.support.console import stdout_print
 
 readline: Any = None
 try:
@@ -400,7 +401,7 @@ def run_repl(version: str):
     state = _make_fresh_state()
     loader = ModuleLoader(project_root=project_root)
     _setup_history()
-    print(f"{version} REPL (type 'exit', 'quit', or ':quit' to quit)")
+    stdout_print(f"{version} REPL (type 'exit', 'quit', or ':quit' to quit)")
 
     try:
         while True:
@@ -411,7 +412,7 @@ def run_repl(version: str):
                 try:
                     line = input(active_prompt)
                 except EOFError:
-                    print()
+                    stdout_print()
                     return
 
                 if not lines and line.strip() in {"exit", "quit"}:
@@ -430,17 +431,17 @@ def run_repl(version: str):
                 handled, output, should_exit, should_reload = execute_repl_command(state, src, loader=loader)
                 if handled:
                     if output:
-                        print(output)
+                        stdout_print(output)
                     if should_exit:
                         return
                     if should_reload:
                         state = _make_fresh_state()
                         loader = ModuleLoader(project_root=project_root)
-                        print("REPL session restarted.")
+                        stdout_print("REPL session restarted.")
                     continue
                 _execute_source(state, loader, src)
             except Exception as err:
-                print(format_error(err))
+                stdout_print(format_error(err))
     finally:
         _save_history()
 

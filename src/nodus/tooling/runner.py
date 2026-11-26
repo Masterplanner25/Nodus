@@ -34,6 +34,7 @@ from nodus.services.tool_runtime import call_tool
 from nodus.services.agent_runtime import call_agent
 from nodus.services.memory_runtime import delete_value, export_memory, get_value, list_keys, put_value
 from nodus_lang_workflow.runner import get_default_workflow_runner
+from nodus.support.console import stdout_print
 
 
 def _resolve_import_state(import_state: dict | None, project_root: str | None) -> dict | None:
@@ -67,7 +68,7 @@ def _prepare_event_bus(
     event_file = None
 
     def stdout_writer(line: str) -> None:
-        print(line)
+        stdout_print(line)
 
     if trace_events:
         event_bus.add_sink(HumanReadableEventSink(stdout_writer))

@@ -8,6 +8,7 @@ from typing import cast
 
 from nodus.cli.commands import flags_for
 from nodus.cli.flags import parse_flags
+from nodus.support.console import write_stdout
 from nodus.testing.discovery import (
     describe_test_patterns,
     discover_test_files,
@@ -15,14 +16,6 @@ from nodus.testing.discovery import (
 )
 from nodus.testing.runner import TestResult, TestRunner
 from nodus.testing.formatter import format_text, format_json, format_junit, _is_tty
-
-
-def _safe_write(text: str) -> None:
-    """Write text to stdout, falling back to UTF-8 bytes on Windows cp1252 consoles."""
-    try:
-        sys.stdout.write(text)
-    except UnicodeEncodeError:
-        sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
 
 
 def _find_project_root(start_dir: str) -> str:
@@ -101,14 +94,14 @@ def run_test_command(cmd_args: list[str]) -> int:
     # Output results
     if output_format in ("pretty", "plain"):
         output = format_text(all_results, use_color=use_color, verbose=verbose, quiet=quiet)
-        _safe_write(output)
+        write_stdout(output)
     elif output_format == "json":
-        _safe_write(format_json(all_results))
+        write_stdout(format_json(all_results))
     elif output_format == "junit":
-        _safe_write(format_junit(all_results))
+        write_stdout(format_junit(all_results))
     else:
         output = format_text(all_results, use_color=False, verbose=verbose, quiet=quiet)
-        _safe_write(output)
+        write_stdout(output)
 
     # Coverage reporting
     if do_coverage and coverage_collector is not None:
@@ -120,7 +113,7 @@ def run_test_command(cmd_args: list[str]) -> int:
             test_command=f"nodus test {' '.join(cmd_args)}",
         )
         summary_text = coverage_collector.format_summary(cov_data)
-        sys.stdout.write(summary_text)
+        write_stdout(summary_text)
         coverage_collector.write_reports(cov_data, output_dir=cast(str, coverage_output),
                                          formats=coverage_formats)
         print(f"\nCoverage reports written to: {coverage_output}", file=sys.stderr)
