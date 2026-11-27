@@ -224,7 +224,7 @@ other two guards are gone by design (#350).
 **A memory bound exists — `max_memory_mb` (#160).** An earlier revision listed
 "no memory limit" as an unfiled gap. Verified: `max_memory_mb=1` on a
 list-growing loop failed with *"Memory limit exceeded: this run grew the process
-to 32 MB, past its 32 MB ceiling"*, `kind="sandbox"`, and `max_memory_mb=0` is
+by 1.1 MB, past its 1 MB limit (36 MB resident)"*, `kind="sandbox"`, and `max_memory_mb=0` is
 refused at construction. Two caveats it states about itself, both load-bearing:
 it polls RSS, so it bounds **growth over time and not a single allocation** — one
 enormous allocation succeeds and the check fires afterwards (at the latest when the

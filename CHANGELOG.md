@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#1004: the `max_memory_mb` error quotes the limit the host set.** The
+  ceiling bounds growth in process RSS since the run started, but the message
+  quoted only the absolute figure, the baseline plus the limit. So
+  `max_memory_mb=50` read "past its 76 MB ceiling", and `max_memory_mb=1` read
+  "grew the process to 32 MB, past its 32 MB ceiling". The second case now
+  reads "this run grew the process by 1.1 MB, past its 1 MB limit (36 MB
+  resident)". Growth
+  is rounded up, so the figure shown is always above the limit shown. The
+  message still starts with "Memory limit exceeded", and the kind is still
+  `sandbox`.
+
 ## [5.18.0] - 2026-11-26
 
 ### Security

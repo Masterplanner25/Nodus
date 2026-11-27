@@ -58,8 +58,10 @@ class TheLimitStopsAGrowingProgramTests(unittest.TestCase):
             max_steps=None, timeout_ms=None, max_memory_mb=2
         ).run_source(GROWS_STEADILY)
         message = result["error"]["message"]
-        self.assertIn("grew the process to", message)
-        self.assertIn("MB ceiling", message)
+        # Growth against the limit the host set, then the absolute figure (#1004).
+        self.assertIn("grew the process by", message)
+        self.assertIn("past its 2 MB limit", message)
+        self.assertIn("MB resident", message)
 
     # closes: #160
     def test_a_small_program_is_not_stopped(self):
