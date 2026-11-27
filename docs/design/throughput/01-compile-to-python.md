@@ -572,8 +572,14 @@ one place (`pycompile.enabled_for`):
   `nodus run --no-compile`. `--compile` is still accepted; with `--no-compile`
   it is refused as a contradiction.
 
-The shared runner's own default stays off, so `nodus serve`, `nodus test` and
-the tools layer are unchanged. CI keeps the `compiled` job at `always`, the
+In 5.19.0 the shared runner's own default stayed off, so `nodus serve`,
+`nodus test` and the tools layer were unchanged. After it they compile by
+default too, each through `enabled_for`: the runner (`runner.run_source`, which
+the tools layer and the service's API use), `RuntimeService._apply_runtime_policies`
+(every VM `nodus serve` runs code in, sessions and snapshots included) and
+`nodus test`'s per-file VM. **An observer keeps it off:** the runner skips it
+under a profiler (`nodus profile`), and `nodus test` under `--coverage`, which
+must see every line the interpreter runs. CI keeps the `compiled` job at `always`, the
 strictest setting: under the default threshold most functions in the suite are
 never called often enough to compile, so the `test` job still exercises the
 interpreter broadly.

@@ -1,4 +1,5 @@
-"""Compile-to-Python is on by default for `nodus run` and `NodusRuntime` (5.19.0).
+"""Compile-to-Python is on by default (5.19.0 for `nodus run` and `NodusRuntime`;
+after it for `nodus serve`, `nodus test` and the runner the tools layer uses).
 
 It was opt-in for one release (5.17.0, design decision 1 in
 `docs/design/throughput/01-compile-to-python.md`), with CI's `compiled` job
@@ -133,12 +134,87 @@ class OnePlaceDecides(unittest.TestCase):
                 window = text[max(0, match.start() - 300):match.start()]
                 sites.append((path.relative_to(_REPO).as_posix(), "enabled_for(" in window))
         self.assertEqual(sorted(sites), [("src/nodus/runtime/embedding.py", True),
+                                         ("src/nodus/services/server.py", True),
+                                         ("src/nodus/testing/cli.py", True),
                                          ("src/nodus/tooling/runner.py", True)])
 
     def test_the_runtime_default_is_true(self):
         import inspect
         default = inspect.signature(NodusRuntime.__init__).parameters["compile_functions"].default
         self.assertIs(default, True)
+
+
+class EveryEntryPointCompilesByDefault(unittest.TestCase):
+    """`nodus serve`, `nodus test` and the shared runner, after `nodus run` and
+    `NodusRuntime`. Each still yields to the environment, and an observer
+    (a profiler, coverage) keeps compilation off."""
+
+    def _runner(self, env=None, **kwargs):
+        from nodus.tooling.runner import run_source
+        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": env or ""}):
+            result, vm = run_source(_SRC, filename=None, max_steps=None, timeout_ms=None, **kwargs)
+        self.assertTrue(result.get("ok"), result)
+        return vm._pycompile
+
+    def test_the_runner(self):
+        self.assertIsNotNone(self._runner())
+        self.assertIsNone(self._runner(compile_functions=False))
+        self.assertIsNone(self._runner(env="0"))
+
+    def test_the_runner_not_under_a_profiler(self):
+        from nodus.runtime.profiler import Profiler
+        self.assertIsNone(self._runner(profiler=Profiler()))
+
+    def _service_vm(self, env=None, session=False):
+        from nodus.services.server import RuntimeService
+        with tempfile.TemporaryDirectory() as directory:
+            cwd = os.getcwd()
+            os.chdir(directory)
+            service = RuntimeService()
+            try:
+                with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": env or ""}):
+                    if session:
+                        sid = service.create_session()["session"]
+                        result = service.execute({"code": _SRC, "session": sid})
+                        vm = service.sessions.get(sid).vm
+                    else:
+                        result = service.execute({"code": _SRC})
+                        vm = service.last_vm
+            finally:
+                service.close()
+                os.chdir(cwd)
+        self.assertTrue(result.get("ok"), result)
+        return vm._pycompile
+
+    def test_nodus_serve(self):
+        self.assertIsNotNone(self._service_vm())
+        self.assertIsNone(self._service_vm(env="0"))
+
+    def test_nodus_serve_sessions(self):
+        self.assertIsNotNone(self._service_vm(session=True))
+
+    def _nodus_test(self, flags, env=None):
+        source = ('import "std:test" as test\n' + _SRC.replace("print(total(100i))\n", "")
+                  + 'test.suite("s", fn() {\n    test.case("c", fn() {\n'
+                  '        test.assert_eq(total(100i), 4950i, "sum")\n    })\n})\n')
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "t_test.nd").write_text(source, encoding="utf-8")
+            environ = dict(os.environ, PYTHONPATH=str(_REPO / "src"))
+            environ.pop("NODUS_COMPILE_FUNCTIONS", None)
+            if env is not None:
+                environ["NODUS_COMPILE_FUNCTIONS"] = env
+            proc = subprocess.run([sys.executable, "-c", _SPY, "test", *flags, "t_test.nd"], cwd=directory,
+                                  capture_output=True, text=True, env=environ, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("1 passed", proc.stdout)
+        return "ENABLED" in proc.stderr
+
+    def test_nodus_test(self):
+        self.assertTrue(self._nodus_test([]))
+        self.assertFalse(self._nodus_test([], env="0"))
+
+    def test_nodus_test_not_under_coverage(self):
+        self.assertFalse(self._nodus_test(["--coverage"]))
 
 
 if __name__ == "__main__":

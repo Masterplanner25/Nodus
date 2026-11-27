@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#976: compile-to-Python is on by default for `nodus serve`, `nodus test`
+  and the tools layer too.** 5.19.0 turned it on for `nodus run` and
+  `NodusRuntime` and left these interpreted. Each now goes through the same
+  `pycompile.enabled_for`:
+  - the shared runner, which the tools layer and the service's API use;
+  - every VM `nodus serve` runs code in, sessions and snapshots included;
+  - `nodus test`'s per-file VM.
+
+  `NODUS_COMPILE_FUNCTIONS=0` still turns it off for the whole process. **An
+  observer keeps it off:** `nodus profile` under its profiler, and
+  `nodus test --coverage`, which has to see every line the interpreter runs.
+  Results are unchanged by design, as for 5.19.0; only speed differs.
+
 ## [5.19.0] - 2026-11-26
 
 ### Changed
