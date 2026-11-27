@@ -126,14 +126,20 @@ def test_a_dependent_joins_the_declared_node_and_receives_the_list():
 def test_instances_run_concurrently():
     """The reason to write a fan-out at all.
 
-    Four 120ms sleeps: ~480ms in sequence, ~120ms together. The threshold is
-    deliberately loose, since this box's timing is unreliable under load -- it
-    only has to separate "concurrent" from "serial".
+    Four 300ms sleeps: 1.2 s in sequence at the least, ~0.3 s together. The
+    threshold only has to separate "concurrent" from "serial", so it sits in
+    the gap: 0.6 s above concurrent for overhead, 0.3 s below serial.
+
+    It was four 120ms sleeps under 0.4 s, which left 0.08 s between the
+    threshold and a serial run. A slow CI runner measured 0.61 s, a
+    concurrent run slower than serial would have been, and failed it
+    (PR #1012). Run here, the fan-out takes about 0.18 s whether compiled or
+    interpreted, so that was load, not serialisation.
     """
     src = """
 workflow w {
     step plan { return [1i, 2i, 3i, 4i] }
-    step process each item in plan { sleep(120); return item }
+    step process each item in plan { sleep(300); return item }
 }
 fn main() {
     let started = clock()
@@ -144,7 +150,7 @@ fn main() {
     result = _run(src)
     assert result["ok"], _error(result)
     elapsed = float(_out(result).strip().splitlines()[-1])
-    assert elapsed < 0.4, f"{elapsed}s suggests the items ran in sequence"
+    assert elapsed < 0.9, f"{elapsed}s suggests the items ran in sequence (1.2 s or more)"
 
 
 def test_an_empty_producer_skips_the_step_and_reports_an_empty_list():
