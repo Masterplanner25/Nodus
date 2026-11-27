@@ -31,6 +31,20 @@ def register(vm, registry) -> None:
         vm.ensure_string(delimiter, "split(x, delimiter)")
         return value.split(delimiter)
 
+    def builtin_str_join(items, sep):
+        """The items of `items`, each through `str()`, with `sep` between them.
+
+        `items` is a list, or a string, whose characters are the items. One
+        call, and linear in the result: `std:strings.join` built its result one
+        `+` at a time, which copied everything built so far at every step (#998).
+        """
+        vm.ensure_string(sep, "str_join(items, sep)")
+        if isinstance(items, str):
+            return sep.join(items)
+        if not isinstance(items, list):
+            vm.runtime_error("type", "str_join(items, sep): items must be a list or a string")
+        return sep.join([vm.value_to_string(item, quote_strings=False) for item in items])
+
     def builtin_contains(value, needle):
         vm.ensure_string(value, "contains(x, needle)")
         vm.ensure_string(needle, "contains(x, needle)")
@@ -384,6 +398,7 @@ def register(vm, registry) -> None:
     registry.add("str_lower", 1, builtin_lower)
     registry.add("str_trim", 1, builtin_trim)
     registry.add("str_split", 2, builtin_split)
+    registry.add("str_join", 2, builtin_str_join)
     registry.add("str_contains", 2, builtin_contains)
     registry.add("str_startswith", 2, builtin_startswith)
     registry.add("str_endswith", 2, builtin_endswith)

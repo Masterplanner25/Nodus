@@ -189,7 +189,7 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
         "last_index_of", "len", "list_pop", "list_push", "map_has_key", "push",
         "copy",
         "range", "str", "str_contains", "str_endswith", "str_lower",
-        "str_replace", "str_split", "str_startswith", "str_trim", "str_upper",
+        "str_replace", "str_join", "str_split", "str_startswith", "str_trim", "str_upper",
         "substring", "str_substring", "str_span", "str_span_until",
         "values", "type", "type_eq",
         "math_abs", "math_bit_and", "math_bit_lshift", "math_bit_not",

@@ -328,6 +328,9 @@ Stability: Mixed. Core built-ins stable; orchestration/tooling built-ins experim
   including, `end`. `end` defaults to `len(s)`. Bounds are refused, not
   clamped: a negative bound, `start` after `end`, or `end` past the length is
   an index error, as `s[i]` is. Also available as `std:strings.substring`.
+- `str_join(items, sep)`: the items of a list, each through `str()`, with
+  `sep` (a string) between them. A string's characters are its items. Also
+  available as `std:strings.join`.
 - `str_span(s, start, chars)`: the index after the run of characters in
   `chars` that starts at `start`, which is `start` itself if the character
   there is not in `chars`.

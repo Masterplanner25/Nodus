@@ -68,15 +68,16 @@ fn span_until(s, start, chars) {
     return str_span_until(s, start, chars)
 }
 
+// Each item through `str()`, with `sep` between them. One builtin call: the
+// loop this replaced copied the result so far at every item (#998). With fewer
+// than two items `sep` is never used, so it is not checked, as before.
 fn join(items, sep) {
-    let out = ""
-    let i = 0
-    while (i < len(items)) {
-        if (i > 0) {
-            out = out + sep
-        }
-        out = out + str(items[i])
-        i = i + 1
+    let n = len(items)
+    if (n == 0i) {
+        return ""
     }
-    return out
+    if (n == 1i) {
+        return str(items[0i])
+    }
+    return str_join(items, sep)
 }

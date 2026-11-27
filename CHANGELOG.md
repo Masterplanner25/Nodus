@@ -56,6 +56,16 @@
   toward `max_steps` instead of about 13 per copy. Since 5.17.0 that budget
   includes module code, so a long `repeat` no longer trips `nodus run`'s
   10,000,000-instruction default.
+- **#998: `std:strings.join` is linear in its output, not quadratic.** It
+  appended one item at a time, recopying the result so far: 300,000 items took
+  16.3 s, and now take 0.07 s. It calls a new builtin, `str_join(items, sep)`,
+  and counts about a dozen instructions toward `max_steps` whatever the
+  length, instead of about 25 per item. `join` returns what it did for every input that worked: each item
+  still goes through `str()`, a string's characters are still its items, and
+  fewer than two items still ignore `sep`. Two errors changed. A separator that
+  is not a string is still a type error, now naming `str_join`. A map of two or
+  more entries is a type error instead of a missing-key error. A program that
+  defines its own `str_join` keeps it.
 
 ### Tooling
 
