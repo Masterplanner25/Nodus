@@ -3727,6 +3727,112 @@ def probe_no_stale_5_16_0_current(repo: Path):
     return "no document still calls 5.16.0 the current release"
 
 
+# --- 5.18.0 ---------------------------------------------------------------
+
+
+@probe("5.18.0: max_memory_mb stops a run that ends within one sampling interval (#999)")
+def probe_memory_ceiling_checked_on_exit():
+    import gc
+
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.runtime.memory import memory_metering_available
+
+    if not memory_metering_available():
+        return "SKIP: max_memory_mb is not enforceable on this platform"
+    gc.collect()
+    rt = NodusRuntime(max_memory_mb=16, timeout_ms=None, max_steps=None)
+    # One allocation and the end of the program: a few instructions, far fewer
+    # than the 256 between samples. Before #999 this returned ok=True.
+    result = rt.run_source('let x = "a" * 64000000i\nprint(len(x))\n', filename="<probe>")
+    assert not result.get("ok"), f"ran past a 16 MB ceiling: {result.get('stdout')!r}"
+    error = result.get("error") or {}
+    assert error.get("kind") == "sandbox", f"stopped for another reason: {error}"
+    assert "Memory limit exceeded" in error.get("message", ""), error
+    return "64 MB against a 16 MB ceiling: refused, kind sandbox"
+
+
+@probe("5.18.0: an allocation Python cannot satisfy says 'Out of memory' (#999)")
+def probe_out_of_memory_message():
+    result = run_nd('let x = "a" * 100000000000000i\n')
+    assert not result.get("ok"), "an impossible allocation succeeded"
+    message = (result.get("error") or {}).get("message", "")
+    assert "Out of memory" in message, f"message was {message!r}"
+    return "the runtime error names the cause"
+
+
+@probe("5.18.0: strings.join and strings.repeat cost the same steps at any length (#998, #992)")
+def probe_join_and_repeat_are_linear():
+    from nodus.runtime.embedding import NodusRuntime
+
+    # The loops they replaced took about 25 instructions per item and 13 per copy.
+    rt = NodusRuntime(max_steps=500, timeout_ms=None)
+    result = rt.run_source('import "std:strings" as s\n'
+                           'print(len(s.join(["ab"] * 100000i, ",")))\n'
+                           'print(len(s.repeat("ab", 100000i)))\n', filename="<probe>")
+    assert result.get("ok"), result.get("error")
+    assert result["stdout"] == "299999\n200000\n", f"unexpected output: {result['stdout']!r}"
+    steps = rt.get_execution_stats()["instructions_executed"]
+    return f"100,000 items and 100,000 copies in {steps} instructions"
+
+
+@probe("5.18.0: str_join works, keeps join's results, and a user fn can shadow it")
+def probe_str_join_builtin():
+    result = run_nd('import "std:strings" as s\nprint(str_join(["a", 1i, true], "-"))\n'
+                    'print(s.join("abc", ","))\nprint(s.join(["x"], nil))\n')
+    assert result.get("ok"), result.get("error")
+    assert result["stdout"] == "a-1-true\na,b,c\nx\n", f"unexpected output: {result['stdout']!r}"
+    shadowed = run_nd('fn str_join(a, b) { return "mine" }\nprint(str_join([1i], ","))\n')
+    assert shadowed.get("ok"), shadowed.get("error")
+    assert shadowed["stdout"] == "mine\n", f"the builtin won: {shadowed['stdout']!r}"
+    return "a-1-true / a,b,c / x, and shadowable"
+
+
+@probe("5.18.0: `nodus dis` prints non-ASCII to a cp1252 stdout instead of crashing (#975)")
+def probe_dis_survives_narrow_stdout():
+    import os
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        (Path(raw) / "a.nd").write_text('print("→")\n', encoding="utf-8")
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        proc = subprocess.run([sys.executable, "-m", "nodus", "dis", "a.nd"],
+                              cwd=raw, capture_output=True, env=env, timeout=120)
+    assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[-400:]!r}"
+    assert "→".encode("utf-8") in proc.stdout, "the arrow is not in the output"
+    return "exit 0, the arrow written as UTF-8"
+
+
+@probe("README names the 5.18.0 surface")
+def probe_readme_names_518_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("5.18.0", "max_memory_mb", "str_join") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 5.18.0 surface appears in the README"
+
+
+@probe("no stale '5.17.0 is current' claim survives")
+def probe_no_stale_5_17_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.17\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.17\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.17.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.17.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -3984,6 +4090,15 @@ def main() -> int:
     probe_no_stale_bytecode_claim(args.repo)
     probe_readme_names_517_surface(args.repo)
     probe_no_stale_5_16_0_current(args.repo)
+
+    # --- 5.18.0 -------------------------------------------------------------
+    probe_memory_ceiling_checked_on_exit()
+    probe_out_of_memory_message()
+    probe_join_and_repeat_are_linear()
+    probe_str_join_builtin()
+    probe_dis_survives_narrow_stdout()
+    probe_readme_names_518_surface(args.repo)
+    probe_no_stale_5_17_0_current(args.repo)
 
     failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
