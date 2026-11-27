@@ -50,7 +50,7 @@ absolute figure: the process's RSS at the start, about 26 MB here, plus the limi
 That is accurate, but a reader who passed 50 sees 76 and has to work out why.
 
 This predates 5.18.0. The wording dates from #160, and #999 only added a place
-where the check runs. It is not filed yet.
+where the check runs. Filed as #1004.
 
 ## Verdict
 
