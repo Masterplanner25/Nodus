@@ -1,7 +1,8 @@
 """Compile eligible Nodus functions to Python functions (#173, phase 1).
 
-Design: `docs/design/throughput/01-compile-to-python.md`. On by default since
-5.19.0 for `nodus run` and `NodusRuntime`; `--no-compile`,
+Design: `docs/design/throughput/01-compile-to-python.md`. On by default: since
+5.19.0 for `nodus run` and `NodusRuntime`, and after it for `nodus serve`,
+`nodus test` and the shared runner, except under a profiler or coverage; `--no-compile`,
 `compile_functions=False` or `NODUS_COMPILE_FUNCTIONS=0` turn it off, and
 `NODUS_COMPILE_FUNCTIONS=1` turns it on for every VM. `NODUS_COMPILE_FUNCTIONS=always`
 compiles every eligible function on its first call, which is what the
