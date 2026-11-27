@@ -80,6 +80,15 @@ The frozen-bytecode contract from v1.0 is preserved.
 
 ### Event-based line tracking
 
+> **As built (#1015, after 5.19.0):** no event is emitted. Until #1015 the
+> collector subscribed to a `line_executed` event that nothing emitted, so
+> `--coverage` reported 0/0 from v4.0.0 on. The VM now calls a
+> `line_observer(vm, path, line)` attribute directly, from its instrumented
+> loop, and `derive_child_vm` carries it into module and tool VMs. The
+> executable lines are those the location tables of the programs it sees
+> name, not a separate compiler annotation. The design below is the original
+> plan.
+
 The VM emits a `line_executed` event whenever execution crosses to a
 new source line. The event carries:
 

@@ -1078,6 +1078,11 @@ def derive_child_vm(child, parent) -> None:
     inherit_authority(child, parent)
     inherit_host_state(child, parent)
     inherit_run_bounds(child, parent)
+    # #1015: a coverage observer sees module code too, which runs here. Set
+    # even when the parent's is None, so a pooled child (#987) reused after
+    # coverage detached does not keep reporting to it.
+    if parent is not None and child is not None:
+        child.line_observer = getattr(parent, "line_observer", None)
 
 
 def inherit_host_state(child, parent) -> None:

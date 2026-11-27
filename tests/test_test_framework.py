@@ -533,9 +533,9 @@ class CoverageTests(unittest.TestCase):
         vm = nodus.VM([], {}, code_locs=[], source_path="test.nd")
         collector = CoverageCollector()
         collector.attach(vm)
-        self.assertIn(collector, vm.event_bus._sinks)
+        self.assertEqual(vm.line_observer, collector.record_line)
         collector.detach(vm)
-        self.assertNotIn(collector, vm.event_bus._sinks)
+        self.assertIsNone(vm.line_observer)
 
     def test_collector_builds_report(self):
         from nodus.testing.coverage import CoverageCollector
