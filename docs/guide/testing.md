@@ -631,6 +631,13 @@ nodus test --verbose               # show passing tests too
 
 Exit codes: `0` = all pass, `1` = failures, `2` = no tests found.
 
+`--coverage` counts the lines your tests execute in the modules they import.
+A line counts as executable when the compiler emitted code for it, so blank
+lines and lone braces are left out. The report also leaves out `_test.nd` files
+and the `std:` modules. Coverage runs every function interpreted, so a run with
+it is slower. Before #1015 (fixed after 5.19.0) every report read
+`0.0% (0/0 lines)`.
+
 ---
 
 <!-- TESTED 2026-08-05 against Nodus 4.1.1 (dev source)

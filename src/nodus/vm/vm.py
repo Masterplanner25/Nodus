@@ -239,6 +239,13 @@ class VM:
     #: when compiling functions is switched on, else None. A class-level
     #: default, so a VM that never enables it holds no extra attribute.
     _pycompile = None
+    #: #1015: called as ``line_observer(vm, path, line)`` each time execution
+    #: moves to another source line, or None. Coverage sets it. Like a
+    #: profiler it makes the VM run `_execute_instrumented`, so the fast loop
+    #: pays nothing when it is unset, and compiled functions defer to the
+    #: interpreter. `derive_child_vm` carries it into module and tool VMs.
+    line_observer: Any = None
+    _line_seen: tuple | None = None
     #: The result of the last workflow or goal *this program* ran (#858). The
     #: `workflow run` / `goal run` entry points (CLI and server) execute the
     #: program and then run the flow it defines; a program that already called
@@ -5445,7 +5452,24 @@ class VM:
             (self.debug and self.debugger is not None)
             or (self.profiler is not None and self.profiler.enabled)
             or self.trace
+            or self.line_observer is not None
         )
+
+    def _observe_line(self) -> None:
+        """Tell `line_observer` when the current instruction is on a new line (#1015)."""
+        ip = self.ip
+        locs = self.code_locs
+        if ip >= len(locs):
+            return
+        path, line, _col = locs[ip]
+        if line is None:
+            return
+        if path is None:
+            path = self.source_path
+        key = (path, line)
+        if key != self._line_seen:
+            self._line_seen = key
+            self.line_observer(self, path, line)
 
     def _execute_instrumented(self):
         """`execute` with the per-instruction hooks: debugger, profiler, trace (#927)."""
@@ -5468,6 +5492,8 @@ class VM:
                 self.profiler.record_opcode(op)
             if self.debug and self.debugger is not None:
                 self.debugger.before_instruction(self, instr)
+            if self.line_observer is not None:
+                self._observe_line()
             self.record_instruction()
             if self.trace and self.should_trace(instr):
                 print(self.format_trace(instr), file=sys.stderr)

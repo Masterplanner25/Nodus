@@ -10,31 +10,47 @@ from collections import defaultdict
 
 
 class CoverageCollector:
-    """Subscribes to VM line-execution events and aggregates hit counts."""
+    """Counts the source lines a run executes (#1015).
+
+    `attach` sets itself as the VM's `line_observer`, which the interpreter
+    calls each time execution moves to another line, and which every child VM
+    built on the VM's behalf (module calls, tool handlers) inherits. So code in
+    imported modules is counted, not only the test file's own.
+
+    The denominator comes from the same place: each program the observer sees
+    contributes every line its location table names, so a line is "executable"
+    when the compiler emitted an instruction for it. Before #1015 nothing called
+    the collector at all, and every report read 0/0.
+    """
 
     def __init__(self) -> None:
         # path -> line_number -> hit_count
         self.hits: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        # path -> the lines an instruction is attributed to
+        self.executable: dict[str, set[int]] = defaultdict(set)
+        # id -> location table already read; kept so the id is not reused
+        self._tables: dict[int, list] = {}
         self._start_ms = time.monotonic() * 1000
 
-    def emit(self, event) -> None:
-        """Called by the RuntimeEventBus for each event."""
-        if event.type == "line_executed" and event.data:
-            path = event.data.get("path")
-            line = event.data.get("line")
-            if path and line:
-                self.hits[path][line] += 1
+    def record_line(self, vm, path: str | None, line: int) -> None:
+        """The VM's `line_observer`: one entry onto *line* of *path*."""
+        locs = vm.code_locs
+        if id(locs) not in self._tables:
+            self._tables[id(locs)] = locs
+            for loc_path, loc_line, _col in locs:
+                if loc_line is not None:
+                    self.executable[loc_path or vm.source_path or ""].add(loc_line)
+        if path:
+            self.hits[path][line] += 1
 
     def attach(self, vm) -> None:
-        """Subscribe to a VM's event bus."""
-        vm.event_bus._sinks.append(self)
+        """Observe every line *vm*, and the VMs it derives, execute."""
+        vm.line_observer = self.record_line
 
     def detach(self, vm) -> None:
-        """Unsubscribe from a VM's event bus."""
-        try:
-            vm.event_bus._sinks.remove(self)
-        except ValueError:
-            pass
+        """Stop observing *vm*."""
+        if vm.line_observer == self.record_line:
+            vm.line_observer = None
 
     def build_report(
         self,
@@ -46,8 +62,14 @@ class CoverageCollector:
         """Build the coverage data structure from collected hits."""
         import fnmatch
 
+        if executable_lines is None and self.executable:
+            executable_lines = {p: sorted(ls) for p, ls in self.executable.items()}
         files: dict[str, dict] = {}
-        for path, line_hits in self.hits.items():
+        paths = set(self.hits) | set(executable_lines or {})
+        for path in sorted(paths):
+            line_hits = self.hits.get(path, {})
+            if not path or _is_stdlib(path):
+                continue
             # Apply exclusions
             if exclude_patterns:
                 norm = path.replace("\\", "/")
@@ -61,7 +83,7 @@ class CoverageCollector:
             if path.endswith("_test.nd"):
                 continue
 
-            exe = set(executable_lines.get(path, [])) if executable_lines else set(line_hits.keys())
+            exe = set((executable_lines or {}).get(path) or line_hits.keys())
             covered = {k: v for k, v in line_hits.items() if k in exe}
             uncovered = sorted(exe - set(covered.keys()))
             total = len(exe)
@@ -138,6 +160,15 @@ class CoverageCollector:
                     nums += f" ... (+{len(info['uncovered_lines']) - 20} more)"
                 lines.append(f"  {short}: {nums}")
         return "\n".join(lines) + "\n"
+
+
+def _is_stdlib(path: str) -> bool:
+    """Whether *path* is one of Nodus's own `std:` modules, which a report leaves out."""
+    stdlib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stdlib")
+    try:
+        return os.path.commonpath([os.path.abspath(path), stdlib]) == stdlib
+    except ValueError:
+        return False
 
 
 def _iso_now() -> str:

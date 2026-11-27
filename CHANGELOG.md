@@ -17,6 +17,19 @@
   `nodus test --coverage`, which has to see every line the interpreter runs.
   Results are unchanged by design, as for 5.19.0; only speed differs.
 
+### Fixes
+
+- **#1015: `nodus test --coverage` counts lines.** It had never collected
+  anything: the collector listened for a `line_executed` event that nothing
+  emitted, so every report read `0.0% (0/0 lines)` and `--coverage-min`
+  failed every run that set it. The VM now calls a line observer each time
+  execution moves to another line. It runs in the instrumented loop the
+  debugger and profiler already use, so a run without coverage pays nothing.
+  Module VMs inherit it, so the module under test is counted, not only the
+  test file. The totals are the lines the compiler emitted code for. A report
+  leaves out `_test.nd` files, as before, and now the `std:` modules too.
+  Present since v4.0.0.
+
 ## [5.19.0] - 2026-11-26
 
 ### Changed
