@@ -284,12 +284,16 @@ class RuntimeSlotDisciplineTests(unittest.TestCase):
             "fn main() {\n"
             '    print(strings.join(["a", "b", "c"], "-"))\n'
             "    print(coll.len([1i, 2i, 3i]))\n"
+            # A stdlib loop over locals. `strings.join` was one until #998
+            # made it a builtin call, and without a loop too few slot accesses
+            # happen for the count below to mean anything.
+            "    print(coll.list_sum([1i, 2i, 3i, 4i, 5i]))\n"
             "    print(math.pow(2, 8))\n"
             '    print(json.stringify({"k": 1i}))\n'
             "}\n"
         )
         self.assertEqual([], self.violations)
-        self.assertGreater(self.observed, 20)
+        self.assertGreater(self.observed, 20, self.observed)
 
     def test_a_workflow_run_keeps_slot_discipline(self):
         """Step bodies run in their own coroutines with their own frames — the
