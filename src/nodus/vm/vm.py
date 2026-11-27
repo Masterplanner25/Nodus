@@ -56,7 +56,7 @@ from nodus.services.agent_runtime import (
     _effective_timeout_ms,  # #596: read the step budget before suspending
 )
 from nodus.services.memory_runtime import GLOBAL_MEMORY_STORE, MemoryStore, delete_value, get_value, has_value, list_keys, put_value
-from nodus.runtime.memory import rss_bytes
+from nodus.runtime.memory import limit_exceeded_message, rss_bytes
 from nodus.runtime.runtime_stats import runtime_time_ms, scheduler_stats, task_snapshot
 from nodus.runtime.runtime_events import RuntimeEventBus
 from nodus.runtime.capability import ALLOW, ASK, BUILTIN_CAPABILITIES, DEFAULT_FLOOR, ApprovalChannel, CapabilityPolicy, CapabilityRequest, charge_run_bounds, derive_child_vm, emit_denied
@@ -3811,10 +3811,7 @@ class VM:
         if current is None:
             return  # metering vanished mid-run; refused at construction, not here
         if current > ceiling:
-            err = RuntimeLimitExceeded(
-                f"Memory limit exceeded: this run grew the process to "
-                f"{current // 1048576} MB, past its {ceiling // 1048576} MB ceiling"
-            )
+            err = RuntimeLimitExceeded(limit_exceeded_message(current, ceiling))
             self.emit_runtime_error(err)
             raise err
 

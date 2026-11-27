@@ -13,7 +13,7 @@ from nodus.result import Result, normalize_filename
 from nodus.runtime.errors import coerce_error, legacy_error_dict
 from nodus.runtime.diagnostics import LangRuntimeError, LangSyntaxError, HostFunctionError
 from nodus.support.config import MAX_STDOUT_CHARS, MAX_STEPS
-from nodus.runtime.memory import memory_metering_available, rss_bytes
+from nodus.runtime.memory import MemoryCeiling, memory_metering_available, rss_bytes
 from nodus.runtime.module_loader import ModuleLoader
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.runtime.schema_contract import (
@@ -1486,10 +1486,11 @@ class NodusRuntime:
             # do, and PyPy's 80-attribute map limit made that difference matter
             # (#702). Reading it now rather than at construction also means the
             # budget covers what *this call* grows, not whatever the host
-            # allocated in between.
+            # allocated in between. A `MemoryCeiling` is that one int, carrying
+            # its two parts so the error can say what the host set (#1004).
             baseline = rss_bytes()
             if baseline is not None:
-                vm.max_memory_bytes = baseline + int(self.max_memory_mb * 1048576)
+                vm.max_memory_bytes = MemoryCeiling(baseline, int(self.max_memory_mb * 1048576))
 
         vm.builtins.update(host_builtins)
         return vm, host_builtins

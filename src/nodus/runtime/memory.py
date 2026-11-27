@@ -31,6 +31,7 @@ container memory cap) prevents that, and `SECURITY_POSTURE.md §5` says so.
 
 from __future__ import annotations
 
+import math
 import sys
 
 _PAGE_SIZE = 4096
@@ -135,6 +136,65 @@ def rss_bytes() -> int | None:
     if _READER is None:
         return None
     return _READER()
+
+
+_MB = 1048576
+
+
+class MemoryCeiling(int):
+    """An absolute RSS ceiling that remembers the limit it was set from (#1004).
+
+    The VM compares RSS against one number, `baseline + limit`, so it carries
+    one attribute rather than three (PyPy's 80-attribute limit, #702). But the
+    host set the *limit*, and a message quoting only the sum told someone who
+    passed `max_memory_mb=50` that the run was "past its 76 MB ceiling".
+
+    As an `int` it compares, inherits into child VMs and prints as the
+    ceiling did. The two parts ride along for the message.
+    """
+
+    baseline: int
+    limit: int
+
+    def __new__(cls, baseline: int, limit: int) -> MemoryCeiling:
+        ceiling = super().__new__(cls, baseline + limit)
+        ceiling.baseline = baseline
+        ceiling.limit = limit
+        return ceiling
+
+
+def _limit_mb(n: int) -> str:
+    """The limit as the host wrote it: `50`, or `0.5` (fractions are accepted)."""
+    return f"{round(n / _MB, 3):g}"  # 0.55 MB is stored as a truncated byte count
+
+
+def _growth_mb(n: int) -> str:
+    """Growth, rounded **up** to 0.1 MB.
+
+    The check fires only when growth is past the limit, so rounding to nearest
+    printed "grew the process by 1 MB, past its 1 MB limit" for 1.03 MB. Rounded
+    up, the figure shown is always above the limit shown.
+    """
+    return f"{math.ceil(n * 10 / _MB) / 10:.1f}".removesuffix(".0")
+
+
+def limit_exceeded_message(current: int, ceiling: int) -> str:
+    """The `RuntimeLimitExceeded` text, in the terms the host set (#1004).
+
+    Starts with "Memory limit exceeded" whatever the form: embedders and tests
+    match on it. A plain-int ceiling (set on a VM directly, with no limit
+    recorded) keeps the absolute wording, since growth cannot be known.
+    """
+    if isinstance(ceiling, MemoryCeiling):
+        return (
+            f"Memory limit exceeded: this run grew the process by "
+            f"{_growth_mb(current - ceiling.baseline)} MB, past its "
+            f"{_limit_mb(ceiling.limit)} MB limit ({current // _MB} MB resident)"
+        )
+    return (
+        f"Memory limit exceeded: the process reached {current // _MB} MB, "
+        f"past its {ceiling // _MB} MB ceiling"
+    )
 
 
 def memory_metering_available() -> bool:
