@@ -183,6 +183,7 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.20.0 | `nodus serve`, `nodus test` and the tools layer (`runner.run_source`, which the service's API uses too) compile hot functions to Python by default (#976 follow-up, PR #1013) | intended, and as for 5.19.0 results are unchanged by design; timing differs, and so does `vm._pycompile` on those VMs. `NODUS_COMPILE_FUNCTIONS=0` restores the old behaviour for the whole process. An observer keeps it off: `nodus profile`, and `nodus test --coverage` |
 | 5.19.0 | `nodus run` and `NodusRuntime` compile hot functions to Python by default (#976) | intended, and results are unchanged by design: the same output, errors, stack traces, instruction counts and limits. What can differ is timing, and anything reading `active_vm()._pycompile`, which is now set. To restore the old behaviour: `nodus run --no-compile`, `NodusRuntime(compile_functions=False)`, or `NODUS_COMPILE_FUNCTIONS=0` for the whole process. A suspected compiled-code bug is the case to reach for the variable: if a program behaves differently with it set, that is a defect to report |
 | 5.18.0 | an embedded run with `max_memory_mb` that goes past the ceiling and then ends, or returns from a coroutine or module call, within 256 instructions now fails with kind `sandbox` (#999) | intended: it returned `ok=True` with the oversized value, so the ceiling was not a ceiling. Raise `max_memory_mb` if the run genuinely needs the memory. The CLI has no memory flag, so `nodus run` is unaffected |
 | 5.18.0 | `std:strings.join` on a map of two or more entries is a `type` error, not a `key` error; a non-string separator's message names `str_join` (#998) | the kinds of every other error, and every result that worked, are unchanged. Nothing could depend on joining a map: it failed either way |
@@ -249,7 +250,15 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.19.0 took its four entries** (two changes, two
+**`[Unreleased]` is empty — 5.20.0 took its two entries** (one change, one
+fix). Compile-to-Python reaches the remaining entry points (`nodus serve`,
+`nodus test`, the shared runner), and `nodus test --coverage` works for the
+first time (#1015): nothing had ever sent the collector a line. It has one row
+above. #1015 was checked and is not a row: a coverage run is slower now, since
+it runs the instrumented loop, but nothing that worked stops working. A
+`--coverage-min` that failed every run on 0% now judges real figures.
+
+5.19.0 took four entries (two changes, two
 fixes). Its theme is compile-to-Python graduating: on by default for `nodus run`
 and `NodusRuntime` (#976), Mostly Stable, with `--no-compile`,
 `compile_functions=False` and `NODUS_COMPILE_FUNCTIONS=0` as the opt-outs; the

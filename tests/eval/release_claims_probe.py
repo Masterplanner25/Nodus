@@ -3958,6 +3958,112 @@ def probe_no_stale_5_18_0_current(repo: Path):
     return "no document still calls 5.18.0 the current release"
 
 
+# --- 5.20.0 ---------------------------------------------------------------
+
+
+@probe("5.20.0: the shared runner behind `nodus test` and the tools layer compiles by default (#976)")
+def probe_runner_compiles_by_default():
+    import os
+    from unittest import mock
+
+    from nodus.tooling.runner import run_source
+
+    seen = []
+    for env in ("", "0"):
+        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": env}):
+            result, vm = run_source(_HOT, filename=None, max_steps=None, timeout_ms=None)
+        assert result.get("ok"), result
+        seen.append((vm._pycompile is not None, result.get("stdout")))
+    assert seen[0][0] and not seen[1][0], f"compiled by default / with =0: {seen}"
+    assert seen[0][1] == seen[1][1], f"output differs: {seen}"
+    return "compiled by default, interpreted with NODUS_COMPILE_FUNCTIONS=0, same output"
+
+
+@probe("5.20.0: `nodus serve` compiles by default (#976)")
+def probe_serve_compiles_by_default():
+    import os
+    import tempfile
+
+    from nodus.services.server import RuntimeService
+
+    with tempfile.TemporaryDirectory() as directory:
+        cwd = os.getcwd()
+        os.chdir(directory)
+        service = RuntimeService()
+        try:
+            result = service.execute({"code": _HOT})
+            vm = service.last_vm
+        finally:
+            service.close()
+            os.chdir(cwd)
+    assert result.get("ok"), result
+    assert vm._pycompile is not None, "the service's VM did not compile"
+    return "the service's VM has compilation on"
+
+
+@probe("5.20.0: `nodus test --coverage` counts the lines of the module under test (#1015)")
+def probe_coverage_counts_lines():
+    import json
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        Path(raw, "calc.nd").write_text(
+            "export fn add(a, b) {\n    let t = a + b\n    return t\n}\n\n"
+            "export fn unused(x) {\n    let y = x * 2i\n    return y\n}\n",
+            encoding="utf-8")
+        test_path = os.path.join(raw, "calc_test.nd")
+        Path(test_path).write_text(
+            'import "std:test" as test\nimport "./calc.nd" as calc\n'
+            'test.suite("s", fn() {\n    test.case("c", fn() {\n'
+            '        test.assert_eq(calc.add(1i, 2i), 3i, "sum")\n    })\n})\n',
+            encoding="utf-8")
+        out_dir = os.path.join(raw, "cov")
+        code, _ = cli(["nodus", "test", "--coverage", "--coverage-output", out_dir, test_path])
+        assert code == 0, f"nodus test exited {code}"
+        report = json.loads(Path(out_dir, "coverage.json").read_text(encoding="utf-8"))
+    files = {os.path.basename(p): info for p, info in report["files"].items()}
+    assert list(files) == ["calc.nd"], f"files in the report: {list(files)}"
+    calc = files["calc.nd"]
+    covered = {int(k) for k in calc["covered_lines"]}
+    assert {2, 3} <= covered, f"covered: {sorted(covered)}"
+    # Line 7, the uncalled function's body. Its `return y` (line 8) may have no
+    # instruction of its own once the optimizer folds the store and return.
+    assert 7 in calc["uncovered_lines"], f"uncovered: {calc['uncovered_lines']}"
+    s = report["summary"]
+    return f"{s['total_covered_lines']}/{s['total_executable_lines']} lines, {s['overall_coverage_pct']}%"
+
+
+@probe("README names the 5.20.0 surface")
+def probe_readme_names_520_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("5.20.0", "nodus serve", "nodus test --coverage") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 5.20.0 surface appears in the README"
+
+
+@probe("no stale '5.19.0 is current' claim survives")
+def probe_no_stale_5_19_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.19\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.19\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.19.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.19.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -4234,6 +4340,13 @@ def main() -> int:
     probe_fused_opcodes_stable(args.repo)
     probe_readme_names_519_surface(args.repo)
     probe_no_stale_5_18_0_current(args.repo)
+
+    # --- 5.20.0 -------------------------------------------------------------
+    probe_runner_compiles_by_default()
+    probe_serve_compiles_by_default()
+    probe_coverage_counts_lines()
+    probe_readme_names_520_surface(args.repo)
+    probe_no_stale_5_19_0_current(args.repo)
 
     failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

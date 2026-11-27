@@ -156,10 +156,11 @@ class ProbeFlagsAreDeclaredTests(unittest.TestCase):
         self.assertEqual(forms, {"cli", "subprocess"})
         self.assertEqual(
             len(sites),
-            20,  # 5.16.0: + `nodus run` (durable refusal) and `nodus workflow resume` (#920);
+            21,  # 5.16.0: + `nodus run` (durable refusal) and `nodus workflow resume` (#920);
                  # 5.17.0: + `nodus run --compile` (subprocess) and `nodus stability` (cli)
                  # 5.18.0: + `nodus dis` under a cp1252 stdout (subprocess, #975)
                  # 5.19.0: + `nodus run --no-compile` and the refused `--compile --no-compile` (cli)
+                 # 5.20.0: + `nodus test --coverage` (cli, #1015)
             "the probe's CLI invocation sites changed; check the new one is a "
             "literal argv this test can read before updating the count",
         )

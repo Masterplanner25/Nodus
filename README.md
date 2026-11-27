@@ -47,16 +47,22 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.19.0 compiles hot functions to Python **by default**, in
-`nodus run` and `NodusRuntime`. It was opt-in in 5.17.0 and 5.18.0. A compiled
-function behaves exactly as interpreted code does, with the same results,
-errors, stack traces, step counts and limits; only speed differs. A
-300,000-iteration loop runs in 0.91 s instead of 2.08 s, and a short program's
-time is within about 20 ms of what it was. To run interpreted, use
-`nodus run --no-compile` or `NodusRuntime(compile_functions=False)`, or set
-`NODUS_COMPILE_FUNCTIONS=0` to turn it off for a whole process without changing
-code. The three fused instructions from 5.17.0 are now stable, and the
-`max_memory_mb` error quotes the limit you set.
+**Recent:** 5.20.0 compiles hot functions to Python by default in
+`nodus serve`, `nodus test` and the tools layer too, as 5.19.0 did for
+`nodus run` and `NodusRuntime`. Results are unchanged; only speed differs, and
+`NODUS_COMPILE_FUNCTIONS=0` still turns it off for a whole process.
+`nodus test --coverage` now measures coverage. It had reported
+`0.0% (0/0 lines)` for every program since 4.0.0, because nothing sent it the
+lines that ran. It now counts the lines your tests execute in the modules they
+import, and `--coverage-min` judges real figures.
+
+5.19.0 made compiling hot functions to Python the default, in `nodus run` and
+`NodusRuntime`. A compiled function behaves exactly as interpreted code does,
+with the same results, errors, stack traces, step counts and limits. A
+300,000-iteration loop runs in 0.91 s instead of 2.08 s. To run interpreted,
+use `nodus run --no-compile`, `NodusRuntime(compile_functions=False)` or
+`NODUS_COMPILE_FUNCTIONS=0`. The three fused instructions from 5.17.0 became
+stable, and the `max_memory_mb` error quotes the limit you set.
 
 5.18.0 closed a gap in `max_memory_mb`. The ceiling was checked
 every 256 instructions and nowhere else, so a program that went past it and

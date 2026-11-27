@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-11-27
+
 ### Changed
 
 - **#976: compile-to-Python is on by default for `nodus serve`, `nodus test`

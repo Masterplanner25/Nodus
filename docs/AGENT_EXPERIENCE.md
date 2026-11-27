@@ -246,3 +246,21 @@ There is no error message. The program behaves as it did before the edit to
 - **Status:** Inferred: it follows from the cache key, read on 2026-11-11, but was not
   re-run for a dev-tree edit.
 - **Applies when:** working on the compiler or the lowering of a construct.
+
+## EXP-013: the doc gate fails `standard-library.md`'s `std:subprocess` block from PowerShell
+
+```
+FAIL docs\guide\standard-library.md:1405
+    Block raised error: Missing record field: stdout
+```
+
+- **Cause:** the block runs `sp.run(["echo", "hello"])`, which needs an `echo` executable
+  on `PATH`. Git Bash has `/usr/bin/echo`. PowerShell's `PATH` has none, because `echo` is
+  a shell builtin there, so `sp.run` returns its not-found error record, which has no
+  `stdout`. The runtime is behaving as documented.
+- **Resolution:** run `nodus_gate` from the Bash tool, or from any shell with `echo` on
+  `PATH`. CI runs on Linux and is unaffected.
+- **Evidence:** at the 5.20.0 cut on 2026-11-27, `--all` from PowerShell failed 302/303,
+  and `--runtime` from Git Bash passed 303/303 on the same tree.
+- **Status:** Verified.
+- **Applies when:** running the doc gate on this Windows box outside Git Bash.
