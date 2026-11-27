@@ -126,6 +126,7 @@ BUILTIN_NAMES = {
     "str_lower",
     "str_trim",
     "str_split",
+    "str_join",
     "str_contains",
     "str_startswith",
     "str_endswith",
