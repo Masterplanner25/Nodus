@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Security
+
+- **#999: `max_memory_mb` is checked before a run can report success.** The
+  ceiling was sampled every 256 instructions and nowhere else. So a run that went
+  past it and then ended within one interval was never checked, and returned
+  `ok=True` with the oversized value. Measured against a 50 MB ceiling, the
+  escapes were:
+  - one `"a" * 200000000i` (200 MB);
+  - a 28-pass doubling loop reaching 268 MB;
+  - a spawned coroutine or an imported module function that allocated and
+    returned.
+
+  `VM.execute` now checks the ceiling once more on the way out. Every exit from
+  running Nodus code passes through it: a program ending, a coroutine yielding or
+  returning, a module call returning, a resume. The check costs one RSS read per
+  `execute`, only when a ceiling is set, and the guest cannot catch it.
+
+  A single allocation is still served before it is checked; only an OS limit
+  prevents that, as `SECURITY_POSTURE.md` §5 says. Also fixed: an allocation
+  Python cannot satisfy reported a `runtime` error with an empty message. It
+  now says "Out of memory: …" and a guest `try` can still catch it, and any
+  other Python exception with no message is named by its type.
+
 ### Fixes
 
 - **#991: `COMPATIBILITY.md`'s release timeline is frozen at v5.2.0, and says

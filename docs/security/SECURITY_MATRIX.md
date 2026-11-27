@@ -227,7 +227,9 @@ list-growing loop failed with *"Memory limit exceeded: this run grew the process
 to 32 MB, past its 32 MB ceiling"*, `kind="sandbox"`, and `max_memory_mb=0` is
 refused at construction. Two caveats it states about itself, both load-bearing:
 it polls RSS, so it bounds **growth over time and not a single allocation** — one
-enormous allocation succeeds and the check fires afterwards; and an unenforceable
+enormous allocation succeeds and the check fires afterwards (at the latest when the
+VM stops running Nodus code; before #999 a run that ended within 256 instructions
+of the allocation was never checked); and an unenforceable
 limit is **refused** at construction rather than accepted and ignored, on the
 grounds that a declared-but-unenforced control is worse than none (the shape #473
 and #478 were filed for).

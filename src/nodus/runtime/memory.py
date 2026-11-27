@@ -24,7 +24,8 @@ is a few nanoseconds per instruction. That is the trade this module exists to ma
 **What this cannot do**, stated because a memory limit implies more than it
 delivers: polling bounds *growth over time*, not a single allocation. A program
 that asks for one enormous list gets it, and the check fires afterwards — by which
-point the process may already be dead. Only an OS-level limit (ulimit, cgroups, a
+point the process may already be dead. "Afterwards" is at the next sample or when
+`VM.execute` returns, whichever comes first (#999). Only an OS-level limit (ulimit, cgroups, a
 container memory cap) prevents that, and `SECURITY_POSTURE.md §5` says so.
 """
 

@@ -243,18 +243,29 @@ The Nodus sandbox is not a full security sandbox. It does not protect against:
   CPU time; a tight loop can consume significant CPU before the step limit fires.
   Use `timeout_ms` in addition to `max_steps`.
 - **Memory exhaustion, in one direction only.** `max_memory_mb` (#160) bounds how
-  much a run may grow the process, polled every 256 instructions against the OS's
-  own RSS reading. It stops the case it was filed for — a script that grows a list
-  in a loop — and it is **off by default**, like `max_steps` and `timeout_ms`.
+  much a run may grow the process. It reads the OS's own RSS every 256
+  instructions, and once more whenever the VM stops running Nodus code: the
+  program ending, a coroutine yielding or returning, a module call returning. It
+  stops the case it was filed for — a script that grows a list in a loop — and it
+  is **off by default**, like `max_steps` and `timeout_ms`.
 
-  What it cannot do: polling bounds growth *over time*, not a **single**
-  allocation. A program that asks for one enormous list gets it, and the check
-  fires afterwards if the process survives. Only an OS-level limit (`ulimit -v`, a
+  The exit check is since #999. Before it, a run that went past the ceiling and
+  finished within 256 instructions was never checked and reported success. One
+  `"a" * n` did that, and so did a 28-pass doubling loop reaching 268 MB against
+  a 50 MB limit.
+
+  What it cannot do: it bounds growth by checking *after* it happens, not a
+  **single** allocation. A program that asks for one enormous list gets it, and
+  the check fires afterwards, before the run can report success, if the process
+  survives. Only an OS-level limit (`ulimit -v`, a
   cgroup, a container memory cap) prevents that, and for untrusted code it remains
   the answer rather than something this replaces.
 
   Two more caveats before relying on it. It measures **process** RSS, so a host
   allocating concurrently on another thread is counted against the guest's budget.
+  It works in the other direction too: memory the process frees during the run,
+  such as an earlier run's values being garbage-collected, offsets what the
+  guest grows.
   And it is refused at construction where the platform cannot be metered, rather
   than accepted and silently unenforced.
 - **Subprocess execution** — `std:subprocess` (v4.0+) allows arbitrary process execution.
