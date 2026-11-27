@@ -3,15 +3,15 @@
 **Last reviewed:** 2026-09-07, against 5.12.0
 
 > **The Nodus opcode set was frozen at v1.0 (2026-03-15).**
-> 52 active opcodes, 49 of them stable and 3 provisional (#969).
+> 52 active opcodes, 52 of them stable and 0 provisional (the three from #969 were promoted 2026-11-26).
 > Post-freeze additions follow the extension process in
 > [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md) — though
 > two of the 49 did not follow it; see §3.1.
 
 ## 1. Executive Summary
-Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The instruction set is **frozen at v1.0**: 49 stable opcodes, plus 3 provisional ones added through the extension process (#969), `BYTECODE_VERSION = 5`.
+Nodus uses bytecode as the execution contract between the parser/compiler front-end and the stack VM runtime (`compiler.py` -> `optimizer.py` -> `vm.py`). The compiler lowers AST nodes into tuple instructions, the optimizer rewrites bytecode without changing semantics, and the VM dispatch loop executes the optimized instruction stream with a value stack plus call frames. The instruction set is **frozen at v1.0**: 52 stable opcodes, the last three promoted after one release cycle through the extension process (#969), `BYTECODE_VERSION = 5`.
 
-**Opcode stability classifications** (stable / removed) and the v1.0 freeze declaration are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: **47 stable**, 0 provisional, 1 removed (`LOAD_LOCAL`). Two further opcodes were added after the freeze without the extension process (`MOD`, `RESET_LOCAL_IDX`) — see §3.1 — and three provisional ones through it (#969: `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER`), bringing the total active opcodes in the dispatch table to **52**.
+**Opcode stability classifications** (stable / removed) and the v1.0 freeze declaration are documented in [`docs/governance/FREEZE_PROPOSAL.md`](../governance/FREEZE_PROPOSAL.md). As of v1.0: **47 stable**, 0 provisional, 1 removed (`LOAD_LOCAL`). Two further opcodes were added after the freeze without the extension process (`MOD`, `RESET_LOCAL_IDX`) — see §3.1 — and three through it (#969: `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER`), stable since 2026-11-26, bringing the total active opcodes in the dispatch table to **52**.
 
 ## 2. VM Model Overview
 - Stack model:
@@ -718,7 +718,7 @@ STORE x
 
 ### LOAD_LOCAL_FIELD
 - Category: variable access (slot-indexed)
-- Stability: provisional (#969)
+- Stability: stable (#969, promoted 2026-11-26)
 - Stack behavior: pushes the field's value
 - Operands: slot (integer), field name
 - Emitted by compiler: no — by the optimizer, for `LOAD_LOCAL_IDX slot; LOAD_FIELD name`
@@ -730,7 +730,7 @@ STORE x
   instruction carries the field read's source location.
 ### JUMP_IF_LOCAL_NE_CONST
 - Category: control flow
-- Stability: provisional (#969)
+- Stability: stable (#969, promoted 2026-11-26)
 - Stack behavior: none
 - Operands: slot (integer), constant (immutable scalar), target address
 - Emitted by compiler: no — by the optimizer, for
@@ -743,7 +743,7 @@ STORE x
   `ADDRESS_OPERANDS` table.
 ### ENTER
 - Category: frame setup
-- Stability: provisional (#969)
+- Stability: stable (#969, promoted 2026-11-26)
 - Stack behavior: pops one value per parameter
 - Operands: frame size (integer), parameter names in declaration order (tuple)
 - Emitted by compiler: no — by the optimizer, for a function's
@@ -794,7 +794,7 @@ does not check that field, so it can still pick up a newer release's cache. Dele
   - `STORE`, `STORE_ARG`, plus expression cleanup via `POP`
 - Branching:
   - `JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`, `HALT`
-- Fused (optimizer only, provisional, #969):
+- Fused (optimizer only, #969):
   - `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER`
 - Iteration:
   - `GET_ITER`, `ITER_NEXT`
@@ -996,7 +996,7 @@ High-level construct to opcode shape (actual lowering patterns):
   - Keeps bytecode contract stable while module system evolves.
 
 ## 10. Final Verdict
-- Estimated opcode count (exact from VM dispatch): **52** (47 at the v1.0 freeze, the two post-freeze additions `MOD` and `RESET_LOCAL_IDX` — see §3.1 — and the three provisional fused instructions from #969).
+- Estimated opcode count (exact from VM dispatch): **52** (47 at the v1.0 freeze, the two post-freeze additions `MOD` and `RESET_LOCAL_IDX` — see §3.1 — and the three fused instructions from #969).
 - Current maturity of instruction set: **maturing and still disciplined**.
 - Structural status: VM feels **largely complete for early practical scripting**, not rapidly chaotic; next pressure point is less “new core opcodes” and more modular/runtime refactoring around loader, diagnostics, and call semantics.
 
@@ -1053,13 +1053,13 @@ High-level construct to opcode shape (actual lowering patterns):
 | RETURN | calls | return value passed to caller | yes |
 | MAKE_CLOSURE | closures | `... -> ..., closure` | yes |
 | HALT | control flow | terminate VM | yes |
-| LOAD_LOCAL_FIELD | variable access (slot-indexed) | `... -> ..., local.field` | optimizer only (provisional, #969) |
-| JUMP_IF_LOCAL_NE_CONST | control flow | no stack change; jump if local != const | optimizer only (provisional, #969) |
-| ENTER | frame setup | pops the arguments | optimizer only (provisional, #969) |
+| LOAD_LOCAL_FIELD | variable access (slot-indexed) | `... -> ..., local.field` | optimizer only (#969) |
+| JUMP_IF_LOCAL_NE_CONST | control flow | no stack change; jump if local != const | optimizer only (#969) |
+| ENTER | frame setup | pops the arguments | optimizer only (#969) |
 
 ## Opcode Maturity Snapshot
 - Instruction-set classification: **frozen at v1.0**.
-- 52 active opcodes, 49 of them stable and 3 provisional (#969).
+- 52 active opcodes, 52 of them stable and 0 provisional.
 - `BYTECODE_VERSION = 5`. Future opcodes require a version bump and FREEZE_PROPOSAL.md amendment.
 - Most load-bearing opcode families/opcodes:
 1. `CALL`/`RETURN`/`STORE_ARG` (function model, builtins, recursion)

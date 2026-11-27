@@ -569,7 +569,7 @@ These changes should preserve compatibility where possible.
 (Note: bytecode version headers are already implemented as of v0.7.0; slot-indexed locals
 are implemented as of v0.8.0. See the versioning section above.)
 
-## 15. Fused Instructions (provisional, #969)
+## 15. Fused Instructions (#969)
 
 Three instructions the optimizer emits in place of common sequences, to run fewer
 instructions per program (#173). The compiler never emits them; `--no-opt` and a

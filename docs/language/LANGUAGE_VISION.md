@@ -211,9 +211,9 @@ otherwise). **Module privacy** exists: `export { … }` restricts what a module
 exposes ([#158](https://github.com/Masterplanner25/Nodus/issues/158)).
 
 What *is* in place is the part usually hardest to retrofit: the semantics are
-stable, and the 49 stable opcodes have been frozen since v1.0. Three
-provisional fused instructions were added in 5.17.0 through the post-freeze
-extension process (#969), which moved `BYTECODE_VERSION` from 4 to 5.
+stable, and the opcode set has been frozen since v1.0. Three fused
+instructions were added in 5.17.0 through the post-freeze extension process
+(#969), which moved `BYTECODE_VERSION` from 4 to 5; all 52 are stable.
 
 ---
 

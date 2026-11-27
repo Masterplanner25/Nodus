@@ -140,7 +140,7 @@ originally named:
 |------|--------|
 | Registers tools through `std:tool`, not a private mechanism | Required |
 | No protocol-specific language syntax | Enforced — no companion has ever added grammar |
-| No new opcodes | Enforced — no companion has added one. The set changes only through the post-freeze extension process (`FREEZE_PROPOSAL.md`), which added three provisional instructions in 5.17.0 (#969, `BYTECODE_VERSION` 5); checked by `nodus_gate --opcodes` |
+| No new opcodes | Enforced — no companion has added one. The set changes only through the post-freeze extension process (`FREEZE_PROPOSAL.md`), which added three instructions in 5.17.0 (#969, `BYTECODE_VERSION` 5), stable since; checked by `nodus_gate --opcodes` |
 | Adapter only — does not own the architecture | Required |
 | Does not cap `nodus-lang` | Required — decided 2026-08-17; a hard upper bound turns every major into a two-repo release train. See `tools/check_downstream_constraints.py` |
 

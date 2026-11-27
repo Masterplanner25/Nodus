@@ -111,7 +111,7 @@ are pinned by test.
 
 ### 3.1 Bytecode version
 
-The bytecode version is **5** since 5.17.0 (#969, the three provisional fused
+The bytecode version is **5** since 5.17.0 (#969, the three fused
 instructions), and was 4 from v1.0 until then. It is defined once, as
 `NODUS_BYTECODE_VERSION` in `src/nodus/runtime/module.py`; the compiler's
 `BYTECODE_VERSION` and the CLI read it from there.

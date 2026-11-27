@@ -661,9 +661,9 @@ evidence the abstraction level is wrong.
 
 The proof-of-concept exists — [`examples/expr_compiler.nd`](https://github.com/Masterplanner25/Nodus/blob/main/examples/expr_compiler.nd)
 is a lexer, recursive-descent parser and evaluator written entirely in Nodus. The
-semantics are there, and the 49 stable opcodes have been frozen since v1.0;
-5.17.0 added three provisional fused ones through the post-freeze extension
-process. Runtime throughput is the honest blocker: on the order of **1M
+semantics are there, and the opcode set has been frozen since v1.0; 5.17.0
+added three fused instructions through the post-freeze extension process, and
+all 52 are stable. Runtime throughput is the honest blocker: on the order of **1M
 instructions/sec** on CPython, a little less on a compiler workload. Compiling
 hot functions to Python (Experimental, opt-in since 5.17.0) runs the parser
 written in Nodus about 2.3× faster. Nodus runs on **PyPy** unmodified,
