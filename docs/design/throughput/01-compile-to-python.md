@@ -342,9 +342,11 @@ phase 3 none of it compiled.
 - closures from another chunk (through the handler);
 - anything with `try`.
 
-Without the optimizer (`--no-opt`), functions with parameters stay interpreted:
-their arguments are bound with `STORE_ARG`, and only the optimizer's fused
-`ENTER` is supported.
+Without the optimizer (`--no-opt`), functions with parameters stayed
+interpreted until #1007: their arguments are bound with `STORE_ARG`, and only
+the optimizer's fused `ENTER` was supported. `STORE_ARG` is now handled in the
+prologue, and `tests/closed_issues/issue_1007.py` fails if any function's
+eligibility depends on the optimizer.
 
 ## Imported modules (after phase 3)
 
@@ -557,6 +559,24 @@ compilation saves around such a call.
 2. **The CI cost is accepted.** The `compiled` job runs the whole suite with
    `NODUS_COMPILE_FUNCTIONS=always`.
 3. **The thresholds are measured, not assumed.** See "Thresholds, measured".
+
+**Decision 1 carried out (2026-11-26), for 5.19.0.** The `compiled` job stayed
+green through 5.17.0 and 5.18.0, so compilation is on by default for `nodus run`
+and `NodusRuntime`, and the surface is Mostly Stable. The switches, decided in
+one place (`pycompile.enabled_for`):
+
+- `NODUS_COMPILE_FUNCTIONS`, when set, decides for every VM: a true value or
+  `always` turns it on, any other value turns it off. That is the operator's
+  switch, and what an unrecognised value always meant;
+- otherwise `NodusRuntime(compile_functions=...)`, default `True`, or
+  `nodus run --no-compile`. `--compile` is still accepted; with `--no-compile`
+  it is refused as a contradiction.
+
+The shared runner's own default stays off, so `nodus serve`, `nodus test` and
+the tools layer are unchanged. CI keeps the `compiled` job at `always`, the
+strictest setting: under the default threshold most functions in the suite are
+never called often enough to compile, so the `test` job still exercises the
+interpreter broadly.
 
 ## Thresholds, measured (2026-11-21)
 

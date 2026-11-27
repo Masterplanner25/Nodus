@@ -2029,6 +2029,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
         flags_with_values, flags_no_values = flags_for("run")
         positional, flags = _parse_flags(cmd_args, flags_with_values, flags_no_values)
         script = positional[0] if positional else None
+        # Compiling is the default since 5.19.0, so `--compile` alone asks for
+        # what happens anyway and is accepted. With `--no-compile` it is a
+        # contradiction, refused rather than settled silently (#490's rule).
+        if "--compile" in flags and "--no-compile" in flags:
+            _print_stderr("Error: --compile and --no-compile contradict each other; give one.")
+            return 2
         if "--strict" in flags:
             if script is None:
                 _print_stderr("Error: --strict mode requires an explicit file path.")
@@ -2086,7 +2092,9 @@ def _dispatch(argv: list[str] | None = None) -> int:
             trace_imports="--trace-imports" in flags,
             trace_errors="--trace-errors" in flags or trace_errors_env,
             optimize="--no-opt" not in flags,
-            compile_functions="--compile" in flags,
+            # On by default since 5.19.0; `--compile` asks for the default, and
+            # both together were refused above.
+            compile_functions="--no-compile" not in flags,
             dump_bytecode="--dump-bytecode" in flags,
             project_root=project_root,
             max_steps=step_limit,

@@ -1,10 +1,12 @@
 """Compile eligible Nodus functions to Python functions (#173, phase 1).
 
-Design: `docs/design/throughput/01-compile-to-python.md`. Opt-in.
-`NodusRuntime(compile_functions=True)`, `nodus run --compile`, or
-`NODUS_COMPILE_FUNCTIONS=1` switch it on. `NODUS_COMPILE_FUNCTIONS=always`
+Design: `docs/design/throughput/01-compile-to-python.md`. On by default since
+5.19.0 for `nodus run` and `NodusRuntime`; `--no-compile`,
+`compile_functions=False` or `NODUS_COMPILE_FUNCTIONS=0` turn it off, and
+`NODUS_COMPILE_FUNCTIONS=1` turns it on for every VM. `NODUS_COMPILE_FUNCTIONS=always`
 compiles every eligible function on its first call, which is what the
-differential CI job runs the suite under.
+differential CI job runs the suite under. `environment_setting` and
+`enabled_for` are the one place the precedence is decided.
 
 A compiled function must be indistinguishable from the interpreter except in
 speed. So it uses the interpreter's own machinery wherever the interpreter
@@ -1164,21 +1166,54 @@ def call_handler_interpreted(vm, instr: tuple, operands: list):
         vm.ip = saved_ip
 
 
-def from_environment() -> CompileState | None:
-    """The state `NODUS_COMPILE_FUNCTIONS` asks for, or None.
+def environment_setting() -> str | None:
+    """What `NODUS_COMPILE_FUNCTIONS` asks for: "always", "on", "off" or None.
 
-    `always` compiles every eligible function on its first call; any value the
-    runtime already reads as true (`runtime_events._TRUTHY`) uses the default
-    threshold; anything else leaves compilation off.
+    None, when it is unset or empty, means the caller's own setting decides:
+    compile-to-Python is on by default since 5.19.0, and `--no-compile` or
+    `compile_functions=False` turn it off. A set value overrides that in either
+    direction, for every VM:
+
+    - `always` compiles every eligible function on its first call;
+    - a value the runtime reads as true (`runtime_events._TRUTHY`) turns it on
+      at the default threshold;
+    - **any other value turns it off.** That is the operator's switch: `0`,
+      `false` or `off` disable it without a code change. It is also what any
+      unrecognised value did before 5.19.0, so a typo cannot leave it on.
     """
     from nodus.runtime.runtime_events import _TRUTHY
 
     value = os.environ.get(ENV_VAR, "").strip().lower()
+    if not value:
+        return None
     if value == "always":
-        return CompileState(threshold=0)
+        return "always"
     if value in _TRUTHY:
+        return "on"
+    return "off"
+
+
+def from_environment() -> CompileState | None:
+    """The state `NODUS_COMPILE_FUNCTIONS` turns on for every VM, or None."""
+    setting = environment_setting()
+    if setting == "always":
+        return CompileState(threshold=0)
+    if setting == "on":
         return CompileState()
     return None
+
+
+def enabled_for(requested: bool) -> bool:
+    """Whether a caller asking for `requested` gets compilation.
+
+    The one place `NodusRuntime`, the runner and `nodus run` decide it. The
+    environment wins when set; otherwise the caller's flag, whose default is
+    now on.
+    """
+    setting = environment_setting()
+    if setting is None:
+        return requested
+    return setting != "off"
 
 
 def enable(vm, *, threshold: int | None = None, depth_cap: int | None = None) -> CompileState:

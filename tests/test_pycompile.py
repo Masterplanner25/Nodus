@@ -35,7 +35,7 @@ from nodus.vm import pycompile  # noqa: E402
 
 
 def run(src: str, *, compiled: bool, max_steps=None, depth_cap=None):
-    env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}
+    env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0"}
     with mock.patch.dict(os.environ, env):
         if depth_cap is not None and compiled:
             with mock.patch.object(pycompile, "DEFAULT_DEPTH_CAP", depth_cap):
@@ -236,7 +236,10 @@ class WhenItCompiles(unittest.TestCase):
         profiler.stop()
         self.assertEqual(profiler.function_calls.get("f"), 1, "the call was not seen by the profiler")
 
-    def test_off_by_default(self):
+    def test_the_runner_alone_stays_off(self):
+        # `nodus run` and `NodusRuntime` compile by default since 5.19.0; the
+        # runner they share does not, so `nodus serve` and the tools layer keep
+        # their behaviour (tests/test_compile_default.py covers the rest).
         with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""}):
             _, vm = run_source("print(1i)", filename=None, max_steps=None, timeout_ms=None)
         self.assertIsNone(vm._pycompile)
@@ -522,7 +525,7 @@ class InlineCalls(BothWays):
         src = "fn down(n) {\n    if (n == 0i) { return 0i }\n    return down(n - 1i) + 1i\n}\nprint(down(100i))\n"
         out = []
         for compiled in (False, True):
-            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}):
+            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0"}):
                 rt = NodusRuntime(max_frames=40, max_steps=None, timeout_ms=None)
                 result = rt.run_source(src)
             error = result.get("error") or {}
@@ -539,7 +542,7 @@ class InlineCalls(BothWays):
                "    while (i < 3i) { t = inc(t)\n i = i + 1i }\n    print(len([t]))\n}\nmain()\n")
         seen = []
         for compiled in (False, True):
-            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "",
+            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0",
                    "NODUS_TRACE_VM_EVENTS": "1"}
             with mock.patch.dict(os.environ, env):
                 result, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
@@ -641,7 +644,7 @@ class InlineValueCalls(BothWays):
                "    print(down(100i))\n}\nmain()\n")
         out = []
         for compiled in (False, True):
-            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}):
+            with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0"}):
                 rt = NodusRuntime(max_frames=40, max_steps=None, timeout_ms=None)
                 result = rt.run_source(src)
             error = result.get("error") or {}
@@ -655,7 +658,7 @@ class InlineValueCalls(BothWays):
                "fn main() {\n    let double = fn(x) { return x * 2i }\n    print(each(double, [1i, 2i, 3i]))\n}\nmain()\n")
         seen = []
         for compiled in (False, True):
-            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "",
+            env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0",
                    "NODUS_TRACE_VM_EVENTS": "1"}
             with mock.patch.dict(os.environ, env):
                 result, vm = run_source(src, filename=None, max_steps=None, timeout_ms=None)
@@ -968,7 +971,7 @@ class WhichBuiltinsCanSuspend(unittest.TestCase):
 
 def run_runtime(src: str, *, compiled: bool, **runtime_kwargs):
     from nodus.runtime.embedding import NodusRuntime
-    env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else ""}
+    env = {"NODUS_COMPILE_FUNCTIONS": "always" if compiled else "0"}
     with mock.patch.dict(os.environ, env):
         runtime = NodusRuntime(timeout_ms=None, **runtime_kwargs)
         result = runtime.run_source(src)

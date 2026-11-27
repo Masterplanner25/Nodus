@@ -299,7 +299,7 @@ class NodusRuntime:
         coroutine_timeout_ms: int | None = None,
         event_sinks: list | None = None,
         persist_workflow_source: bool = True,
-        compile_functions: bool = False,
+        compile_functions: bool = True,
     ) -> None:
         """Create a new embedded Nodus runtime.
 
@@ -408,7 +408,9 @@ class NodusRuntime:
             subprocess and network capability use, and VM errors.  Simple
             arithmetic and variable assignments emit no events.
         compile_functions:
-            Experimental, opt-in (#173). Compile hot eligible functions to Python:
+            On by default since 5.19.0 (#173); ``False`` turns it off, and so does
+            ``NODUS_COMPILE_FUNCTIONS=0``, which overrides this for every runtime
+            in the process. Compile hot eligible functions to Python:
             a function with a loop on its first call, any other after 32 calls.
             A compiled function behaves exactly as interpreted code does, with the
             same results, errors, stack traces, instruction counts and limits, and
@@ -418,7 +420,7 @@ class NodusRuntime:
             (``MAY_SUSPEND_BUILTINS``) or use ``try`` stay interpreted, as does
             everything while a debugger, profiler or trace is attached, and a
             function that calls a value runs compiled only outside a coroutine. ``NODUS_COMPILE_FUNCTIONS=1`` turns it on for every
-            runtime. See ``docs/design/throughput/01-compile-to-python.md``.
+            runtime, whatever this says. See ``docs/design/throughput/01-compile-to-python.md``.
         """
         allowed_paths = resolve_allowed_paths(allowed_paths)
         self.max_steps = max_steps
@@ -1306,9 +1308,12 @@ class NodusRuntime:
         if not optimize:
             # Only when it differs from the class default (#702's budget).
             vm.optimize_bytecode = False
-        if self._compile_functions and vm._pycompile is None:
+        if vm._pycompile is None:
+            # On by default since 5.19.0; `NODUS_COMPILE_FUNCTIONS` overrides
+            # either way, decided in one place (`pycompile.enabled_for`).
             from nodus.vm import pycompile
-            pycompile.enable(vm)
+            if pycompile.enabled_for(self._compile_functions):
+                pycompile.enable(vm)
         resolved_stdout = self.max_stdout_chars if max_stdout_chars is None else max_stdout_chars
 
         with capture_output(max_stdout_chars=resolved_stdout) as (stdout, stderr):

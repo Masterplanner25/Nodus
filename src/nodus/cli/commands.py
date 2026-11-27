@@ -125,7 +125,7 @@ COMMANDS: dict[str, Command] = {
         ),
         no_values=_TRACE_NO_VALUE
         | frozenset({"--trace-errors", "--dump-bytecode", "--strict", "--trace-imports",
-                     "--compile"}),
+                     "--compile", "--no-compile"}),
     ),
     "check": _c(
         "check",
@@ -658,7 +658,7 @@ _DETAILED_HELP: dict[str, str] = {
         "  --trace-events             Include runtime event bus entries in trace output",
         "  --dump-bytecode            Print compiled bytecode before executing",
         "  --no-opt                   Disable the bytecode optimizer",
-        "  --compile                  Compile hot functions to Python (experimental, #173)",
+        "  --no-compile               Run every function interpreted (compiling hot ones to Python is the default, #173)",
         "  --project-root PATH        Override the project root directory",
         "  --step-limit N             Abort after N VM instructions",
         "  --time-limit SECS          Abort after SECS seconds of wall time",
