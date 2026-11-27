@@ -97,7 +97,7 @@ constructor actually has:
 | `allow_input` | `bool` | **`False`** | reading stdin |
 | `share_process_state` | `bool` | **`False`** (#185) | whether two runtimes in one process share the memory store |
 | `persist_workflow_source` | `bool` | **`True`** (#499) | whether a workflow snapshot stores the program's source on disk |
-| `compile_functions` | `bool` | **`False`** (#173) | whether hot functions run as compiled Python. Not a boundary: compiled code calls builtins through the same `VM.invoke_builtin` the interpreter uses, so the capability check, approval and rebuild-effect handling are one copy; `tests/test_pycompile.py` compares allowed and denied calls both ways |
+| `compile_functions` | `bool` | **`True`** (#173, since 5.19.0) | whether hot functions run as compiled Python; `NODUS_COMPILE_FUNCTIONS=0` turns it off process-wide. Not a boundary: compiled code calls builtins through the same `VM.invoke_builtin` the interpreter uses, so the capability check, approval and rebuild-effect handling are one copy; `tests/test_pycompile.py` compares allowed and denied calls both ways |
 
 `tests/test_documented_defaults_agree.py` reads this table and
 `NodusRuntime.__init__` and compares them, so a reversal here fails the suite.

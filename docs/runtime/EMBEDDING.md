@@ -162,7 +162,10 @@ Remaining parameters:
   pass the same `memory_store=` to both rather than turning this on. Agents are
   deliberately *not* isolated the same way — a guest cannot register one, so the registry
   holds only what the host put there; scope it with `agent_registry=` if you want to.
-- `compile_functions` (bool, default `False`): experimental (#173). Compiles hot
+- `compile_functions` (bool, default `True` since 5.19.0; `False` before): Mostly
+  Stable (#173). Pass `False` to run everything interpreted, or set
+  `NODUS_COMPILE_FUNCTIONS=0` to turn it off for every runtime in the process;
+  a set variable overrides this argument either way. Compiles hot
   eligible functions to Python, which runs them about 4–5× faster per instruction. A
   compiled function behaves exactly as interpreted code does: the same results,
   errors, stack traces, instruction counts, limits and capability checks: a

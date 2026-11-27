@@ -57,7 +57,7 @@ class PooledModuleCalls(unittest.TestCase):
         src = 'import "./m.nd" as m\n' + body
         main.write_text(src, encoding="utf-8")
         kwargs = {"max_steps": None, "timeout_ms": None} | limits
-        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""}):
+        with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "0"}):
             if pooled:
                 result, vm = run_source(src, filename=str(main), **kwargs)
             else:

@@ -4,6 +4,31 @@
 
 ### Changed
 
+- **#976: compile-to-Python is on by default for `nodus run` and
+  `NodusRuntime`.** It was opt-in for one release (5.17.0), as the design
+  decided, and CI's `compiled` job stayed green throughout. Hot functions now
+  run as generated Python unless turned off. The design contract is unchanged:
+  the same results, errors, stack traces, instruction counts and limits as
+  interpreted code, with only speed different. Measured over a whole
+  `nodus run`, a 300,000-iteration loop takes 0.91 s instead of 2.08 s, and
+  short programs take within about 20 ms of what they did.
+
+  **To turn it off:**
+  - `nodus run --no-compile` for one run;
+  - `NodusRuntime(compile_functions=False)` for one runtime;
+  - `NODUS_COMPILE_FUNCTIONS=0` for every runtime in the process, with no code
+    change.
+
+  The variable, when set, overrides the other two either way. Any value other
+  than a true one or `always` turns compilation off, which is what an
+  unrecognised value always meant, so a typo cannot leave it on. `--compile`
+  is still accepted and asks for the default. Given together with
+  `--no-compile`, it is refused as a contradiction.
+
+  The surface moves from Experimental to **Mostly Stable**. The contract above
+  is stable. Which functions compile, the thresholds and the depth cap may
+  change in any minor. `nodus serve`, `nodus test` and the tools layer are
+  unchanged: they don't go through `nodus run` or `NodusRuntime`.
 - **#969: the three fused instructions are stable.** `LOAD_LOCAL_FIELD`,
   `JUMP_IF_LOCAL_NE_CONST` and `ENTER` were added as provisional in 5.17.0. This
   is step 6 of the post-freeze extension process, after one release cycle. None

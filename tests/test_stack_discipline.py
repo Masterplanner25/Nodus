@@ -200,7 +200,7 @@ class RuntimeSlotDisciplineTests(unittest.TestCase):
         # them, so under the differential CI job's NODUS_COMPILE_FUNCTIONS this
         # would see too few accesses to mean anything. Compilation is off here.
         from unittest import mock
-        env_patch = mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""})
+        env_patch = mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": "0"})
         env_patch.start()
         self.addCleanup(env_patch.stop)
 

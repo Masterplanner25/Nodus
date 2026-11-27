@@ -916,9 +916,11 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
   instructions a breakpoint binds to.
 - Between v1.0 and #964 the optimizer was disconnected, and `--no-opt` changed
   nothing.
-- `nodus run --compile script.nd` compiles hot functions to Python. It is
-  experimental and opt-in (#173); `NODUS_COMPILE_FUNCTIONS=1` and
-  `NodusRuntime(compile_functions=True)` do the same. A compiled function behaves
+- `nodus run` compiles hot functions to Python, by default since 5.19.0 (#173).
+  `nodus run --no-compile` runs everything interpreted, as do
+  `NodusRuntime(compile_functions=False)` and `NODUS_COMPILE_FUNCTIONS=0`; the
+  variable, when set, decides for every VM in the process. `--compile` is still
+  accepted and asks for the default; given with `--no-compile`, it is refused. A compiled function behaves
   as interpreted code does, with the same results, errors, stack traces,
   instruction counts, limits and capability checks. Closures compile, and so do
   functions that make them. Functions that can suspend or use `try` stay
