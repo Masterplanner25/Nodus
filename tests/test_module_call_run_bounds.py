@@ -41,6 +41,14 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # checks that it does.
 _LOOP = 'import "std:collections" as c\nprint(c.list_sum([1i] * {n}i))\n'
 
+# A size no mode finishes inside a deadline, for the two tests that need the
+# deadline to be what stops the run. About 80M instructions; the list is one
+# reference per element, about 40 MB. One constant so the embedded and CLI
+# tests cannot drift apart: since 5.19.0 compiles hot functions by default,
+# PyPy finished first 300,000 and then 400,000 elements inside the deadline,
+# one test at a time, and each showed up as a race on CI.
+_OUTLASTS_ANY_DEADLINE = 5000000
+
 # Many cheap stdlib calls, about 150 instructions each. Each fits easily in the
 # budget; the total does not.
 _MANY_CALLS = (
@@ -85,7 +93,7 @@ class AStdlibCallIsBounded(unittest.TestCase):
         # 5.19.0) under PyPy it finished inside 100 ms. 5,000,000 is about 80M
         # instructions; the list is one reference per element, about 40 MB.
         started = time.monotonic()
-        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_LOOP.format(n=5000000))
+        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_LOOP.format(n=_OUTLASTS_ANY_DEADLINE))
         elapsed = time.monotonic() - started
         self.assertFalse(result.get("ok"), "a stdlib loop ran past timeout_ms=100")
         self.assertIn("timed out", _error(result))
@@ -181,9 +189,8 @@ class TheCliDeadlineHoldsToo(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             script = os.path.join(directory, "t.nd")
             with open(script, "w", encoding="utf-8") as handle:
-                # Several seconds of work without the fix; the CLI's default
-                # deadline is 200 ms.
-                handle.write(_LOOP.format(n=400000))
+                # The CLI's default deadline is 200 ms; see _OUTLASTS_ANY_DEADLINE.
+                handle.write(_LOOP.format(n=_OUTLASTS_ANY_DEADLINE))
             env = dict(os.environ)
             env["PYTHONPATH"] = os.path.join(_REPO, "src")
             proc = subprocess.run(
