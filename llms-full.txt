@@ -49,8 +49,8 @@ as evidence the abstraction level is wrong.
 
 Status: `examples/expr_compiler.nd` is a character-level lexer, recursive-descent parser and
 evaluator written entirely in Nodus, so the shape of the task is already expressible. The
-semantics are stable and the 49 stable opcodes have been frozen since v1.0; 5.17.0 added three
-provisional fused ones through the post-freeze extension process (#969, `BYTECODE_VERSION` 5).
+semantics are stable and the opcode set has been frozen since v1.0; 5.17.0 added three fused
+instructions through the post-freeze extension process (#969, `BYTECODE_VERSION` 5), and all 52 are stable.
 Compiling hot functions to Python (Experimental, opt-in since 5.17.0) runs the parser written
 in Nodus about 2.3× faster. The blocker is runtime throughput — on the order of 1M instructions/sec on CPython
 (measured 2026-11-11; re-derive with `tools/benchmark_runtime.py` rather than quoting it). PyPy

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#969: the three fused instructions are stable.** `LOAD_LOCAL_FIELD`,
+  `JUMP_IF_LOCAL_NE_CONST` and `ENTER` were added as provisional in 5.17.0. This
+  is step 6 of the post-freeze extension process, after one release cycle. None
+  changed or was reported broken in that time. All 52 opcodes are now stable,
+  so their names, operands and stack effects are frozen, and a breaking change
+  needs a major version. `BYTECODE_VERSION` stays 5, and the optimizer is still
+  the only thing that emits them.
+
+  Measured as #969 required before promotion: the self-hosted frontend parsing
+  `parser.nd`, seven alternating runs each way. Fused, it runs 17.7% fewer
+  instructions (2,857,900 against 3,471,761) and is 5.4% faster at the median
+  (2.648 s against 2.800 s). Compile-to-Python relies on `ENTER`: without
+  fusion it compiled none of the frontend's 42 hot functions.
+
 ### Fixes
 
 - **#1004: the `max_memory_mb` error quotes the limit the host set.** The

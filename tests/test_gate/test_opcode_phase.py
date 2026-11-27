@@ -324,7 +324,7 @@ class ClaimAnchorTests(unittest.TestCase):
     def test_a_stale_provisional_count_is_reported(self):
         root = self._fixture_root()
         dispatch, version = load_dispatch_opcodes(str(_ROOT))
-        result = self._run(root, count=len(dispatch), version=version, provisional=0)
+        result = self._run(root, count=len(dispatch), version=version, provisional=1)  # 0 since the #969 promotion
         self.assertTrue(
             any("wrong provisional-opcode count" in f.message for f in result.findings),
             [f.message for f in result.findings],
@@ -355,21 +355,29 @@ class ProvisionalMarkingTests(unittest.TestCase):
         check_provisional_marking(result, provisional, _reference_text())
         self.assertEqual([], [f.detail for f in result.findings])
 
-    def test_a_provisional_opcode_not_marked_in_the_reference_is_reported(self):
+    # Since #969's three were promoted (2026-11-26) nothing is provisional, so
+    # both directions are driven from a provisional state built here rather
+    # than read from the repo. The next opcode through the process makes the
+    # repo itself the case again, and `test_the_repo_agrees` covers it then.
+    _MARKED = "### ENTER\n- Category: frame setup\n- Stability: stable (#969, promoted 2026-11-26)\n"
+
+    def test_nothing_is_provisional_today(self):
         _, provisional, _ = parse_freeze_stability_tables(_freeze_text())
-        self.assertIn("ENTER", provisional)
-        marked = "### ENTER\n- Category: frame setup\n- Stability: provisional (#969)\n"
-        text = _reference_text().replace(marked, "### ENTER\n- Category: frame setup\n")
-        self.assertNotEqual(text, _reference_text())
+        self.assertEqual(set(), provisional)
+        self.assertIn(self._MARKED, _reference_text())
+
+    def test_a_provisional_opcode_not_marked_in_the_reference_is_reported(self):
         result = OpcodeResult()
-        check_provisional_marking(result, provisional, text)
+        check_provisional_marking(result, {"ENTER"}, _reference_text())
         self.assertEqual(1, len(result.findings))
         self.assertIn("ENTER", result.findings[0].detail)
 
     def test_an_opcode_marked_provisional_only_in_the_reference_is_reported(self):
-        _, provisional, _ = parse_freeze_stability_tables(_freeze_text())
+        text = _reference_text().replace(
+            self._MARKED, "### ENTER\n- Category: frame setup\n- Stability: provisional (#969)\n")
+        self.assertNotEqual(text, _reference_text())
         result = OpcodeResult()
-        check_provisional_marking(result, provisional - {"ENTER"}, _reference_text())
+        check_provisional_marking(result, set(), text)
         self.assertEqual(1, len(result.findings))
         self.assertIn("ENTER", result.findings[0].detail)
 

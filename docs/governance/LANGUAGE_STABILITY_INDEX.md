@@ -149,7 +149,7 @@ our source for want of it.
 
 | Surface | Tier | Notes |
 |---------|------|-------|
-| Opcode set (52 opcodes) | Stable | Frozen at v1.0 (2026-03-15) with 47; `MOD` and `RESET_LOCAL_IDX` added post-freeze — see [#366](https://github.com/Masterplanner25/Nodus/issues/366). 49 stable; the 3 fused instructions from #969 are provisional and emitted only by the optimizer |
+| Opcode set (52 opcodes) | Stable | Frozen at v1.0 (2026-03-15) with 47; `MOD` and `RESET_LOCAL_IDX` added post-freeze — see [#366](https://github.com/Masterplanner25/Nodus/issues/366). all 52 stable. The 3 fused instructions from #969, emitted only by the optimizer, were promoted from provisional on 2026-11-26 |
 | `BYTECODE_VERSION = 5` | Stable | 4 for `finally` support; 5 for the fused instructions (#969). Any change makes an older VM refuse the bytecode cleanly |
 | Bytecode cache format | Mostly Stable | Uses `marshal` + SHA-256 + `NDSC` magic; invalidated on version change |
 | `FunctionInfo` serialization | Internal | Cache format; may change without notice on `BYTECODE_VERSION` bump |

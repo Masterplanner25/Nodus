@@ -15,8 +15,8 @@ The Nodus opcode set is hereby frozen.
 | Metric | At v1.0 freeze | Today |
 |---|---|---|
 | Total opcodes (active) | **47** | **52** |
-| Stable | **47** | **49** |
-| Provisional | **0** | **3** |
+| Stable | **47** | **52** |
+| Provisional | **0** | **0** |
 | Removed | 1 (`LOAD_LOCAL`) | 1 (`LOAD_LOCAL`) |
 | Total in opcode space | 48 | 50 |
 
@@ -92,7 +92,7 @@ Items marked ✅ were completed in v0.8.
 
 ## Opcode Stability Table
 
-48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.) `MOD` and `RESET_LOCAL_IDX` were added later and are included in the tables below, as are the three provisional fused instructions from #969 — 52 active today, 53 total.
+48 total opcodes as of v1.0 (`BYTECODE_VERSION = 4`). (v0.8.0 had 47; FINALLY_END added at v1.0; LOAD_LOCAL removed = net 47 active.) `MOD` and `RESET_LOCAL_IDX` were added later and are included in the tables below, as are the three fused instructions from #969 — 52 active today, 53 total, all stable since 2026-11-26.
 
 ### Constants / Literals
 
@@ -235,9 +235,9 @@ Emitted by the optimizer only. `--no-opt` and a debugged run execute the stable 
 
 | Opcode | Stack effect | Classification | Notes |
 |---|---|---|---|
-| `LOAD_LOCAL_FIELD` | `→ val` | **provisional** | `LOAD_LOCAL_IDX slot; LOAD_FIELD name`. Added 2026-11-21 through the extension process (#969). |
-| `JUMP_IF_LOCAL_NE_CONST` | none | **provisional** | `LOAD_LOCAL_IDX slot; PUSH_CONST c; EQ; JUMP_IF_FALSE t`. Added 2026-11-21 (#969). |
-| `ENTER` | `args… →` | **provisional** | A function's `FRAME_SIZE n; STORE_ARG…` prologue. Added 2026-11-21 (#969). |
+| `LOAD_LOCAL_FIELD` | `→ val` | **stable** | `LOAD_LOCAL_IDX slot; LOAD_FIELD name`. Added 2026-11-21 through the extension process (#969); promoted 2026-11-26 after one release cycle. |
+| `JUMP_IF_LOCAL_NE_CONST` | none | **stable** | `LOAD_LOCAL_IDX slot; PUSH_CONST c; EQ; JUMP_IF_FALSE t`. Added 2026-11-21 (#969); promoted 2026-11-26. |
+| `ENTER` | `args… →` | **stable** | A function's `FRAME_SIZE n; STORE_ARG…` prologue. Added 2026-11-21 (#969); promoted 2026-11-26. |
 
 ---
 
@@ -245,13 +245,14 @@ Emitted by the optimizer only. `--no-opt` and a debugged run execute the stable 
 
 | Classification | Count |
 |---|---|
-| **stable** | **49** |
-| **provisional** | **3** |
+| **stable** | **52** |
+| **provisional** | **0** |
 | removed | 1 (`LOAD_LOCAL`) |
 | **Total (active)** | **52** |
 
 (47 at the v1.0 freeze, plus the two post-freeze additions `MOD` and
-`RESET_LOCAL_IDX` — see the amendment below.)
+`RESET_LOCAL_IDX` and the three fused instructions from #969 — see the
+amendments below.)
 
 (Stable count — the 47 opcodes active at the v1.0 freeze:
 PUSH_CONST, FRAME_SIZE, LOAD, STORE, LOAD_LOCAL_IDX, STORE_LOCAL_IDX,
@@ -261,12 +262,12 @@ MAKE_CLOSURE, RETURN, BUILD_LIST, BUILD_MAP, BUILD_RECORD, INDEX, INDEX_SET,
 LOAD_FIELD, STORE_FIELD, HALT, BUILD_MODULE, YIELD, GET_ITER, ITER_NEXT,
 SETUP_TRY, POP_TRY, FINALLY_END, THROW = **47 stable at freeze**.)
 
-Plus two added after the freeze — `MOD` and `RESET_LOCAL_IDX` — and three provisional
-fused instructions through the extension process (#969), for **52 active today**.
+Plus two added after the freeze — `MOD` and `RESET_LOCAL_IDX` — and three fused
+instructions through the extension process (#969), for **52 active today**, all stable.
 See the amendment below.
 
 Totals at freeze: **47 stable**, **0 provisional**, **1 removed** = 47 active + 1 removed = 48 total.
-Totals today: **49 stable**, **3 provisional**, **1 removed** = 52 active + 1 removed = 53 total.
+Totals today: **52 stable**, **0 provisional**, **1 removed** = 52 active + 1 removed = 53 total.
 (v1.0: YIELD, BUILD_MODULE, GET_ITER, ITER_NEXT promoted to stable. LOAD_LOCAL removed.
  BYTECODE_VERSION bumped 2→3 (LOAD_LOCAL removal) then 3→4 (finally support).
  FINALLY_END added; SETUP_TRY/POP_TRY extended. SETUP_TRY, POP_TRY, FINALLY_END, THROW
@@ -521,7 +522,7 @@ The first additions since the freeze to go through the extension process above:
 4. **Handlers implemented** and registered.
 5. **This document updated:** the "Fused Instructions" table above.
 
-Steps 6 and 7 come after one full release cycle. For each opcode, promotion to `stable` is a decision to make then.
+Steps 6 and 7 came after one full release cycle; see the next amendment.
 
 **All three are emitted by the optimizer only, never by the compiler.** Their purpose is to run fewer instructions (#173): about 17–18% fewer on the self-hosted frontend.
 
@@ -531,6 +532,39 @@ Steps 6 and 7 come after one full release cycle. For each opcode, promotion to `
 - each stable and provisional count stated in prose to match the tables.
 
 ---
+
+## Amendment 2026-11-26 — the three fused instructions promoted to stable (#969)
+
+Steps 6 and 7 of the extension process, after one full release cycle: the three
+shipped in 5.17.0, and 5.18.0 went out with them unchanged. Each was a decision,
+and each rests on the same three facts.
+
+- **No change and no defect during the cycle.** No commit touched their handlers or
+  the optimizer patterns that emit them between `v5.17.0` and the promotion, and no
+  issue reported one. `tests/test_opcode_semantics_fused.py` compares each against
+  the sequence it replaces.
+- **Measured, as #969 asked before promotion.** The self-hosted frontend parsing
+  `examples/selfhost/parser.nd`, on `main` after 5.18.0, fused and unfused alternately
+  in one window, seven runs each, with the bytecode cache bypassed:
+
+  | | instructions | median | best |
+  |---|---|---|---|
+  | unfused | 3,471,761 | 2.800 s | 2.776 s |
+  | fused | 2,857,900 (−17.7%) | 2.648 s (−5.4%) | 2.615 s (−5.8%) |
+
+  The issue's estimate of 17–18% fewer instructions holds. Time falls by less, as
+  it predicted, since a fused handler does more work than any one instruction it
+  replaces. That is less than the 8–9% measured when they landed (#970).
+- **Compile-to-Python depends on `ENTER`.** It does not translate `STORE_ARG`, so
+  with fusion off it compiled **0** of the frontend's functions, against 42 with it
+  on (2.95 s against 1.48 s). Whatever fusion's own value, the Experimental compiler
+  is built on it.
+
+Promotion makes them **stable** in the sense this document gives the word: their
+names, operands and stack effects are frozen, and a breaking change needs a major
+version. `BYTECODE_VERSION` does not move, since nothing about the encoding changed.
+They are still emitted by the optimizer only, so `--no-opt` and a debugged run
+execute the stable sequences they replace.
 
 ## Version History
 
@@ -542,3 +576,4 @@ Steps 6 and 7 come after one full release cycle. For each opcode, promotion to `
 | v4.0.x | `RESET_LOCAL_IDX` added 2026-06-10 (`53da7f7`) outside the extension process. Not recorded at the time. |
 | — | 2026-08-07 doc sweep found both. Inventory corrected to 49 active; amendment added above; #366 filed. BYTECODE_VERSION deliberately left at 4. |
 | 5.x | 2026-11-21: `LOAD_LOCAL_FIELD`, `JUMP_IF_LOCAL_NE_CONST`, `ENTER` added as **provisional** through the extension process (#969). BYTECODE_VERSION 4 → 5. 52 active. |
+| 5.x | 2026-11-26: the three promoted to **stable** after one release cycle (#969). 52 active, all stable. BYTECODE_VERSION stays 5. |

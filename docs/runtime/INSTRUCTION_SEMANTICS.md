@@ -3,7 +3,7 @@
 **Last reviewed:** 2026-09-07, against 5.12.0
 
 > The opcode semantics in this document are frozen at v1.0 (2026-03-15).
-> 52 active opcodes, 49 of them stable and 3 provisional (#969). See `docs/governance/FREEZE_PROPOSAL.md`
+> 52 active opcodes, 52 of them stable (the three from #969 were promoted 2026-11-26). See `docs/governance/FREEZE_PROPOSAL.md`
 > for the freeze declaration and post-freeze extension process.
 
 This document defines the precise behavior of each Nodus bytecode instruction.
@@ -726,7 +726,7 @@ are accessible; missing exports raise a "key" error rather than a generic field
 error). This opcode is emitted by the module loader pipeline to construct the
 runtime module value; it is not emitted directly from user-authored Nodus source.
 
-## 17. Fused Instructions (provisional, #969)
+## 17. Fused Instructions (#969)
 
 The optimizer emits these in place of common sequences; the compiler never does.
 Each is defined as the sequence it replaces, and `--no-opt` runs that sequence.
