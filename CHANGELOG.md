@@ -20,6 +20,17 @@
 
 ### Fixes
 
+- **#1007: compile-to-Python works without the optimizer.** Under `nodus run
+  --no-opt --compile`, or `run_source(..., optimize=False)` with
+  `compile_functions=True`, every function with a parameter stayed interpreted,
+  with no notice. Compile-to-Python translated `ENTER`, the fused prologue, but
+  not the `FRAME_SIZE; STORE_ARG…` sequence `ENTER` replaces, which is what runs
+  without the optimizer. With fusion off, the self-hosted frontend compiled 0
+  of its 42 hot functions. `STORE_ARG` is now handled in a function's prologue
+  and still refused anywhere else. Across 617 functions in the tracked `.nd`
+  files, the same 489 are eligible with the optimizer on and off. A test now
+  fails if any function's eligibility depends on the optimizer. Results were
+  never wrong: the skipped functions ran interpreted.
 - **#1004: the `max_memory_mb` error quotes the limit the host set.** The
   ceiling bounds growth in process RSS since the run started, but the message
   quoted only the absolute figure, the baseline plus the limit. So

@@ -104,6 +104,10 @@ _INLINE_EFFECT = {
     "STORE": -1, "STORE_LOCAL_IDX": -1, "POP": -1, "STORE_FIELD": -1,
     "LOAD_FIELD": 0, "NOT": 0, "TO_BOOL": 0, "RESET_LOCAL_IDX": 0, "ENTER": 0,
     "FRAME_SIZE": 0, "JUMP": 0, "JUMP_IF_LOCAL_NE_CONST": 0,
+    # The unfused prologue, `FRAME_SIZE n; STORE_ARG…`, which `ENTER` replaces
+    # when the optimizer runs (#1007). The arguments arrive as Python
+    # parameters, not on the compiled stack, so nothing is popped.
+    "STORE_ARG": 0,
     "EQ": -1, "NE": -1, "ADD": -1, "SUB": -1, "MUL": -1, "NEG": 0, "LT": -1,
     # Inline for two non-zero ints; anything else runs the VM's own handler.
     "DIV": -1, "MOD": -1, "GT": -1, "LE": -1, "GE": -1,
@@ -120,6 +124,16 @@ _TERMINAL = {"RETURN", "THROW", "JUMP"}
 
 class Ineligible(Exception):
     """Why a function stays interpreted."""
+
+
+def _in_prologue(code: list, start: int, i: int, fn) -> bool:
+    """Is `code[i]` one of the `STORE_ARG`s right after the body's `FRAME_SIZE`?
+
+    That is the only place the compiler emits them: one per parameter, in
+    reverse. The generated function binds its parameters itself, so there they
+    have nothing to do. Anywhere else one would pop a real value.
+    """
+    return code[start][0] == "FRAME_SIZE" and start < i <= start + len(fn.params)
 
 
 def _effect(instr) -> int:
@@ -218,6 +232,10 @@ def analyze(code: list, functions: dict, builtins: dict) -> tuple[dict, set]:
                 op = instr[0]
                 if op not in SUPPORTED:
                     raise Ineligible(f"opcode {op}")
+                if op == "STORE_ARG" and not _in_prologue(code, start, i, fn):
+                    # Compiled as a no-op, which is right only where the
+                    # prologue binds the arguments (#1007).
+                    raise Ineligible("STORE_ARG outside the prologue")
                 if op in DYNAMIC_CALLS:
                     dynamic.add(name)
                 elif op == "MAKE_CLOSURE":
@@ -495,9 +513,11 @@ def _emit(out: list, ind: str, instr: tuple, addr: int, d: int,
         # binding), exactly as the interpreter's handler does.
         out.append(f"{ind}l{instr[1]} = None")
         return False
-    if op in ("ENTER", "FRAME_SIZE", "RESET_LOCAL_IDX", "POP"):
+    if op in ("ENTER", "FRAME_SIZE", "STORE_ARG", "RESET_LOCAL_IDX", "POP"):
         # Locals are Python locals, and a slot no closure captures never holds
         # a Cell, so these have nothing to do; POP's operand is not used again.
+        # STORE_ARG is admitted only in the prologue, which binds the
+        # arguments before this code runs (#1007).
         return False
     if op == "PUSH_CONST":
         out.append(f"{ind}{s(d)} = CONSTS[{addr}]")
