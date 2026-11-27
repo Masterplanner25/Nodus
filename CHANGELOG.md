@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.19.0] - 2026-11-26
+
 ### Changed
 
 - **#976: compile-to-Python is on by default for `nodus run` and
