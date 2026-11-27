@@ -79,10 +79,13 @@ class AStdlibCallIsBounded(unittest.TestCase):
         self.assertIn("step limit", _error(result))
 
     def test_the_deadline_stops_a_loop_inside_a_stdlib_function(self):
-        # About 3 s of work without the fix, so the bound is visible in the
-        # elapsed time as well as in the error.
+        # Sized so no mode can finish inside the deadline, so the bound is
+        # visible in the elapsed time as well as in the error. 300,000 elements
+        # was about 3 s interpreted, but compiled to Python (the default since
+        # 5.19.0) under PyPy it finished inside 100 ms. 5,000,000 is about 80M
+        # instructions; the list is one reference per element, about 40 MB.
         started = time.monotonic()
-        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_LOOP.format(n=300000))
+        result = NodusRuntime(max_steps=None, timeout_ms=100).run_source(_LOOP.format(n=5000000))
         elapsed = time.monotonic() - started
         self.assertFalse(result.get("ok"), "a stdlib loop ran past timeout_ms=100")
         self.assertIn("timed out", _error(result))
