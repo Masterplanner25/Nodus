@@ -183,6 +183,8 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.18.0 | an embedded run with `max_memory_mb` that goes past the ceiling and then ends, or returns from a coroutine or module call, within 256 instructions now fails with kind `sandbox` (#999) | intended: it returned `ok=True` with the oversized value, so the ceiling was not a ceiling. Raise `max_memory_mb` if the run genuinely needs the memory. The CLI has no memory flag, so `nodus run` is unaffected |
+| 5.18.0 | `std:strings.join` on a map of two or more entries is a `type` error, not a `key` error; a non-string separator's message names `str_join` (#998) | the kinds of every other error, and every result that worked, are unchanged. Nothing could depend on joining a map: it failed either way |
 | 5.17.0 | code in an imported module, the stdlib included, now runs within the caller's step limit and deadline, so a program that finished under `nodus run` only because its stdlib calls went uncounted now stops: on the 200 ms deadline, or on the 10,000,000-instruction step budget | intended: a module call's child VM inherited no bounds and its instructions were never counted. `--time-limit N` (seconds) **and** `--step-limit N`: Stage 5 found the second one missing from the release notes, because `s.repeat("a", 800000i)` (~10.4M instructions) stops on the step budget even with a generous time limit. Embedded, raise `max_steps` / `timeout_ms` |
 | 5.17.0 | `let` is lexical (#957): a read of a name before a block's own `let` of it sees the outer value, and `fn f(x) { let x = x + 1i }` reads the parameter | intended: each of these read `nil` silently, so nothing that *worked* breaks unless it depended on that `nil`. Two local closures that call each other now fail with `Undefined function` instead of calling `nil`; use top-level `fn`s |
 | 5.17.0 | a durable-coroutine continuation saved by an earlier version refuses to resume (#969) | `BYTECODE_VERSION` moved 4 → 5, which changes the program fingerprint. Durable coroutines are Experimental; finish or cancel parked ones before upgrading. Cached bytecode simply recompiles once |
@@ -246,7 +248,13 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.17.0 took its twenty-three entries** (three changes,
+**`[Unreleased]` is empty — 5.18.0 took its six entries** (one security, two
+fixes, two performance, one tooling). No single theme: the four smaller issues
+left after 5.17.0 (#975, #978, #991, #992), plus #998 and #999, both found while
+fixing them. It has two rows above, checked rather than assumed; `str_join` was
+verified shadowable by a user `fn` of that name.
+
+5.17.0 took twenty-three entries (three changes,
 eleven fixes, four performance, five tooling). Its theme is throughput (#173):
 compile-to-Python (Experimental, opt-in), pooled module-call VMs (#987), fused
 instructions (#969), and the defects that writing a Nodus frontend in Nodus

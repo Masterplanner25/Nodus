@@ -47,7 +47,15 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.17.0 can compile hot functions to Python. It is **Experimental**
+**Recent:** 5.18.0 closes a gap in `max_memory_mb`. The ceiling was checked
+every 256 instructions and nowhere else, so a program that went past it and
+ended within one interval reported success. Every return from running Nodus
+code is now checked too. `std:strings.join` and `std:strings.repeat` are
+linear instead of quadratic: 300,000 items joined in 16 s now take 0.07 s,
+through a new `str_join` builtin. `nodus dis`, `nodus ast` and
+`--dump-bytecode` no longer crash when stdout cannot encode a character.
+
+5.17.0 can compile hot functions to Python. It is **Experimental**
 and opt-in (`nodus run --compile`, `NodusRuntime(compile_functions=True)`), and a
 compiled function behaves exactly as interpreted code does, with the same
 results, errors, stack traces, step counts and limits. With it on, the Nodus
