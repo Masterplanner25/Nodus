@@ -236,13 +236,15 @@ class WhenItCompiles(unittest.TestCase):
         profiler.stop()
         self.assertEqual(profiler.function_calls.get("f"), 1, "the call was not seen by the profiler")
 
-    def test_the_runner_alone_stays_off(self):
-        # `nodus run` and `NodusRuntime` compile by default since 5.19.0; the
-        # runner they share does not, so `nodus serve` and the tools layer keep
-        # their behaviour (tests/test_compile_default.py covers the rest).
+    def test_the_runner_compiles_by_default_and_honours_false(self):
+        # On by default for every entry point since 5.19.0, the shared runner
+        # included (tests/test_compile_default.py covers each surface).
         with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": ""}):
             _, vm = run_source("print(1i)", filename=None, max_steps=None, timeout_ms=None)
-        self.assertIsNone(vm._pycompile)
+            _, off = run_source("print(1i)", filename=None, max_steps=None, timeout_ms=None,
+                                compile_functions=False)
+        self.assertIsNotNone(vm._pycompile)
+        self.assertIsNone(off._pycompile)
 
     def test_the_cli_and_runtime_switches(self):
         from nodus.runtime.embedding import NodusRuntime

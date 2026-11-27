@@ -151,6 +151,13 @@ def _run_one_file(
     # Attach coverage collector if active
     if coverage_collector is not None:
         coverage_collector.attach(vm)
+    elif vm._pycompile is None:
+        # Compile hot functions to Python, as `nodus run` does. Not with
+        # coverage, which is an observer: it must see every line the
+        # interpreter runs. `NODUS_COMPILE_FUNCTIONS=0` turns it off.
+        from nodus.vm import pycompile
+        if pycompile.enabled_for(True):
+            pycompile.enable(vm)
 
     try:
         test_dir = os.path.dirname(os.path.abspath(path))

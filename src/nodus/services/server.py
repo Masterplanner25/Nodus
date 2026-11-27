@@ -617,6 +617,14 @@ class RuntimeService:
         vm.allowed_hosts = self.allowed_hosts
         if not self.allow_input:
             vm.input_fn = self._blocked_input
+        # Compile hot functions to Python, as `nodus run` and `NodusRuntime` do.
+        # Here because every VM the service runs code in passes through here,
+        # session and snapshot VMs included; `NODUS_COMPILE_FUNCTIONS=0` turns
+        # it off for the service.
+        if vm._pycompile is None:
+            from nodus.vm import pycompile
+            if pycompile.enabled_for(True):
+                pycompile.enable(vm)
 
     def _blocked_input(self, _prompt: str):
         raise LangRuntimeError("sandbox", "input() is not available in server mode")

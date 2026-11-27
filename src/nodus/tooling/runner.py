@@ -245,7 +245,7 @@ def run_source(
     input_fn=None,
     fs_root: str | None = None,
     stream_output: bool = False,
-    compile_functions: bool = False,
+    compile_functions: bool = True,
 ):
     import sys as _sys
     _import_stderr = _sys.stderr
@@ -302,9 +302,12 @@ def run_source(
         # VM's attribute count is budgeted for PyPy (#702).
         vm.optimize_bytecode = False
     configure_vm_limits(vm, max_steps=max_steps, timeout_ms=timeout_ms)
-    if vm._pycompile is None:
-        # #173: compile hot functions to Python. `nodus run` asks for it unless
-        # given `--no-compile`; `NODUS_COMPILE_FUNCTIONS` overrides either way.
+    if vm._pycompile is None and profiler is None:
+        # #173: compile hot functions to Python, by default since 5.19.0. Every
+        # caller gets it unless it passes `compile_functions=False` (`nodus run
+        # --no-compile`); `NODUS_COMPILE_FUNCTIONS` overrides either way. Not
+        # under a profiler (`nodus profile`), which is an observer: compiled code
+        # never runs under one, so the analysis would be wasted.
         from nodus.vm import pycompile
         if pycompile.enabled_for(compile_functions):
             pycompile.enable(vm)
