@@ -3699,7 +3699,9 @@ def probe_no_stale_bytecode_claim(repo: Path):
 @probe("README names the 5.17.0 surface")
 def probe_readme_names_517_surface(repo: Path):
     text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
-    missing = [n for n in ("5.17.0", "--compile", "compile_functions=True", "substring",
+    # The opt-in switches (`--compile`, `compile_functions=True`) left the README
+    # when 5.19.0 made compiling the default; the feature itself is still named.
+    missing = [n for n in ("5.17.0", "compiling hot functions to Python", "substring",
                            "str_span", "lexical") if n not in text]
     assert not missing, f"README does not mention: {', '.join(missing)}"
     return "the 5.17.0 surface appears in the README"
@@ -3831,6 +3833,129 @@ def probe_no_stale_5_17_0_current(repo: Path):
                 offenders.append(f"{name}:{i}")
     assert not offenders, f"still calls 5.17.0 current: {', '.join(offenders)}"
     return "no document still calls 5.17.0 the current release"
+
+
+# --- 5.19.0 ---------------------------------------------------------------
+
+_HOT = "fn total(n) {\n    let t = 0i\n    for x in range(0i, n) { t = t + x }\n    return t\n}\nprint(total(100i))\n"
+
+
+def _compiled_run(env: str | None, **kwargs):
+    import os
+    from unittest import mock
+
+    from nodus.runtime.embedding import NodusRuntime
+
+    with mock.patch.dict(os.environ, {"NODUS_COMPILE_FUNCTIONS": env or ""}):
+        rt = NodusRuntime(timeout_ms=None, max_steps=None, **kwargs)
+        result = rt.run_source(_HOT, filename="<probe>")
+    assert result.get("ok"), result.get("error")
+    state = rt.active_vm()._pycompile
+    return (result["stdout"], rt.get_execution_stats()["instructions_executed"],
+            state.compiled_count if state is not None else 0)
+
+
+@probe("5.19.0: NodusRuntime compiles hot functions by default, and the results do not change (#976)")
+def probe_compiles_by_default():
+    on, off = _compiled_run(None), _compiled_run(None, compile_functions=False)
+    assert on[2] == 1, f"{on[2]} functions compiled by default"
+    assert off[2] == 0, "compile_functions=False still compiled"
+    assert on[:2] == off[:2], f"output or steps differ: {on[:2]} vs {off[:2]}"
+    return f"1 function compiled by default, 0 with False; same output and {on[1]} steps"
+
+
+@probe("5.19.0: NODUS_COMPILE_FUNCTIONS=0 turns it off whatever the code asks (#976)")
+def probe_environment_turns_it_off():
+    for value in ("0", "off", "a typo"):
+        n = _compiled_run(value, compile_functions=True)[2]
+        assert n == 0, f"NODUS_COMPILE_FUNCTIONS={value!r} left {n} compiled"
+    assert _compiled_run("1", compile_functions=False)[2] == 1, "=1 did not override False"
+    return "0, off and a typo all turn it off; 1 overrides False"
+
+
+@probe("5.19.0: `nodus run --no-compile` runs; --compile with --no-compile is refused (#976)")
+def probe_no_compile_flag():
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        path = os.path.join(raw, "p.nd")
+        Path(path).write_text(_HOT, encoding="utf-8")
+        code, out = cli(["nodus", "run", "--no-compile", path])
+        assert code == 0 and out.strip() == "4950", f"--no-compile: exit {code}, {out!r}"
+        code, _ = cli(["nodus", "run", "--compile", "--no-compile", path])
+        assert code == 2, f"the contradiction exited {code}"
+    return "--no-compile prints 4950; both flags exit 2"
+
+
+@probe("5.19.0: the memory-limit error quotes the limit the host set (#1004)")
+def probe_memory_message_quotes_the_limit():
+    import gc
+
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.runtime.memory import memory_metering_available
+
+    if not memory_metering_available():
+        return "SKIP: max_memory_mb is not enforceable on this platform"
+    gc.collect()
+    result = NodusRuntime(max_memory_mb=16, timeout_ms=None, max_steps=None).run_source(
+        'let x = "a" * 64000000i\nprint(len(x))\n', filename="<probe>")
+    message = (result.get("error") or {}).get("message", "")
+    assert "past its 16 MB limit" in message and "MB resident" in message, message
+    return message
+
+
+@probe("5.19.0: without the optimizer, functions with parameters still compile (#1007)")
+def probe_no_opt_compiles():
+    from nodus.runtime.embedding import NodusRuntime
+
+    counts = []
+    for optimize in (True, False):
+        rt = NodusRuntime(timeout_ms=None, max_steps=None, compile_functions=True)
+        result = rt.run_source(_HOT, filename="<probe>", optimize=optimize)
+        assert result.get("ok"), result.get("error")
+        counts.append(rt.active_vm()._pycompile.compiled_count)
+    assert counts == [1, 1], f"compiled with/without the optimizer: {counts}"
+    return "the same function compiles with and without the optimizer"
+
+
+@probe("5.19.0: the three fused instructions are documented as stable (#969)")
+def probe_fused_opcodes_stable(repo: Path):
+    text = (repo / "docs" / "runtime" / "BYTECODE_REFERENCE.md").read_text(encoding="utf-8")
+    assert "52 of them stable and 0 provisional" in text, "the header still counts provisional opcodes"
+    assert "- Stability: provisional" not in text, "an entry is still marked provisional"
+    return "52 stable, 0 provisional"
+
+
+@probe("README names the 5.19.0 surface")
+def probe_readme_names_519_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("5.19.0", "--no-compile", "NODUS_COMPILE_FUNCTIONS=0",
+                           "compile_functions=False") if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 5.19.0 surface appears in the README"
+
+
+@probe("no stale '5.18.0 is current' claim survives")
+def probe_no_stale_5_18_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.18\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.18\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.18.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.18.0 the current release"
 
 
 def main() -> int:
@@ -4099,6 +4224,16 @@ def main() -> int:
     probe_dis_survives_narrow_stdout()
     probe_readme_names_518_surface(args.repo)
     probe_no_stale_5_17_0_current(args.repo)
+
+    # --- 5.19.0 -------------------------------------------------------------
+    probe_compiles_by_default()
+    probe_environment_turns_it_off()
+    probe_no_compile_flag()
+    probe_memory_message_quotes_the_limit()
+    probe_no_opt_compiles()
+    probe_fused_opcodes_stable(args.repo)
+    probe_readme_names_519_surface(args.repo)
+    probe_no_stale_5_18_0_current(args.repo)
 
     failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

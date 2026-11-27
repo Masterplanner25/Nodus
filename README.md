@@ -47,19 +47,25 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.18.0 closes a gap in `max_memory_mb`. The ceiling was checked
-every 256 instructions and nowhere else, so a program that went past it and
-ended within one interval reported success. Every return from running Nodus
-code is now checked too. `std:strings.join` and `std:strings.repeat` are
-linear instead of quadratic: 300,000 items joined in 16 s now take 0.07 s,
-through a new `str_join` builtin. `nodus dis`, `nodus ast` and
-`--dump-bytecode` no longer crash when stdout cannot encode a character.
+**Recent:** 5.19.0 compiles hot functions to Python **by default**, in
+`nodus run` and `NodusRuntime`. It was opt-in in 5.17.0 and 5.18.0. A compiled
+function behaves exactly as interpreted code does, with the same results,
+errors, stack traces, step counts and limits; only speed differs. A
+300,000-iteration loop runs in 0.91 s instead of 2.08 s, and a short program's
+time is within about 20 ms of what it was. To run interpreted, use
+`nodus run --no-compile` or `NodusRuntime(compile_functions=False)`, or set
+`NODUS_COMPILE_FUNCTIONS=0` to turn it off for a whole process without changing
+code. The three fused instructions from 5.17.0 are now stable, and the
+`max_memory_mb` error quotes the limit you set.
 
-5.17.0 can compile hot functions to Python. It is **Experimental**
-and opt-in (`nodus run --compile`, `NodusRuntime(compile_functions=True)`), and a
-compiled function behaves exactly as interpreted code does, with the same
-results, errors, stack traces, step counts and limits. With it on, the Nodus
-parser written in Nodus parses its own source about 2.3× faster (1.00 s against
+5.18.0 closed a gap in `max_memory_mb`. The ceiling was checked
+every 256 instructions and nowhere else, so a program that went past it and
+ended within one interval reported success; every return from running Nodus
+code is now checked too. `std:strings.join` and `std:strings.repeat` became
+linear instead of quadratic, through a new `str_join` builtin.
+
+5.17.0 added compiling hot functions to Python, opt-in until 5.19.0. With it
+on, the Nodus parser written in Nodus parses its own source about 2.3× faster (1.00 s against
 2.28–2.41 s). A call into a module, the standard library included, no longer
 builds a new VM: a loop of 2,000 standard-library calls runs about 8× faster.
 Code in an imported module now counts against the caller's step limit and

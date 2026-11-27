@@ -249,7 +249,15 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.18.0 took its six entries** (one security, two
+**`[Unreleased]` is empty — 5.19.0 took its four entries** (two changes, two
+fixes). Its theme is compile-to-Python graduating: on by default for `nodus run`
+and `NodusRuntime` (#976), Mostly Stable, with `--no-compile`,
+`compile_functions=False` and `NODUS_COMPILE_FUNCTIONS=0` as the opt-outs; the
+fused instructions it depends on promoted to stable (#969); and the gap without
+the optimizer closed first (#1007). It has one row above. #1004 is a message
+change that keeps the prefix and kind embedders match on.
+
+5.18.0 took six entries (one security, two
 fixes, two performance, one tooling). No single theme: the four smaller issues
 left after 5.17.0 (#975, #978, #991, #992), plus #998 and #999, both found while
 fixing them. It has two rows above, checked rather than assumed; `str_join` was
