@@ -289,9 +289,12 @@ let _ = run_workflow(demo)
         Workflow: a → b (checkpoint "cp"), a → c
         Resume from "cp": only b re-runs; c (sibling) is NOT re-run.
         """
+        # `merge: "any"`: b and c are unordered read-modify-writes of `sum`,
+        # refused since 6.0.0 (#547). This test is about rollback scope, and
+        # the steps never yield, so the serialised values it asserts hold.
         src = """
 workflow demo {
-    state sum = 0
+    state sum = 0 with { merge: "any" }
 
     step a {
         sum = sum + 1

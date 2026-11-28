@@ -130,7 +130,7 @@ class IndexedWritesAreRecordedTests(unittest.TestCase):
     """The half that was missing: the tracker sees them."""
 
     def _stderr(self, src: str) -> str:
-        """The conflict report lands in the run result's `stderr`, not `warnings`.
+        """The conflict report: stderr, plus the error since 6.0.0 refuses it (#547).
 
         Same harness as `tests/test_state_write_conflicts.py`, and run in a temp
         cwd so the workflow store does not write into the repo.
@@ -147,7 +147,8 @@ class IndexedWritesAreRecordedTests(unittest.TestCase):
                 result = NodusRuntime(timeout_ms=None, max_steps=None).run_source(src)
             finally:
                 os.chdir(cwd)
-        return result.get("stderr") or ""
+        error = result.get("error") or {}
+        return (result.get("stderr") or "") + (error.get("message", "") if isinstance(error, dict) else "")
 
     _CONCURRENT_INDEXED = """
 workflow w {

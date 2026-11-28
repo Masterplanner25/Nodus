@@ -35,9 +35,17 @@ from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 
 
 def _run(src: str):
+    """`(stdout, report)`, where the report is stderr plus any error's message.
+
+    A lost update warned through 5.x and is refused since 6.0.0 (#547), so the
+    report is where it lands either way; `out` is empty once it refuses.
+    """
     result = NodusRuntime(timeout_ms=None, max_steps=None).run_source(src, filename="<cp>")
-    assert result.get("ok"), result.get("errors")
-    return (result.get("stdout") or "").strip(), (result.get("stderr") or "")
+    error = result.get("error") or {}
+    message = error.get("message", "") if isinstance(error, dict) else ""
+    if not result.get("ok"):
+        assert error.get("kind") == "workflow_error", result
+    return (result.get("stdout") or "").strip(), (result.get("stderr") or "") + message
 
 
 RACE = """
@@ -62,12 +70,14 @@ class WhatWarnsTests(unittest.TestCase):
         self.assertIn("X=5", out)
         self.assertNotIn("both wrote state", err)
 
-    def test_disagreeing_writes_warn(self):
+    # closes: #547
+    def test_disagreeing_writes_are_refused(self):
         out, err = _race("x = 7i", "x = 9i")
         self.assertIn("both wrote state 'x'", err)
         self.assertIn("different values", err)
+        self.assertEqual("", out, "the run carried on past a lost update")
 
-    def test_a_read_modify_write_warns_even_when_the_values_agree(self):
+    def test_a_read_modify_write_is_refused_even_when_the_values_agree(self):
         """The case value-comparison alone gets wrong.
 
         The suspension has to sit *between* the read and the write -- that is
@@ -86,26 +96,24 @@ workflow w {
 fn main() { let r = run_workflow(w); print("X=\\(r["state"]["x"])") }
 """
         )
-        self.assertIn("X=1", out, "the update is still lost")
+        self.assertEqual("", out, "the lost update was reported as a result")
         self.assertIn("both wrote state 'x'", err)
         self.assertIn("read it before writing", err)
 
-    def test_the_serialised_read_modify_write_still_warns(self):
-        """Right answer today, wrong the moment either step yields.
+    def test_the_serialised_read_modify_write_is_still_refused(self):
+        """Right answer this time, wrong the moment either step yields.
 
-        Warning here is the whole point -- it arrives before the step grows its
-        first `sleep` or agent call, which is the only moment it is cheap to act
-        on.
+        Refusing here is the point -- it arrives before the step grows its first
+        `sleep` or agent call, which is the only moment it is cheap to act on.
         """
         out, err = _race("let seen = x; x = seen + 1i", "let seen = x; x = seen + 1i")
-        self.assertIn("X=2", out, "serialised, so the answer happens to be right")
+        self.assertEqual("", out)
         self.assertIn("read it before writing", err)
 
-    def test_the_warning_names_the_fix_and_the_flag_day(self):
+    def test_the_refusal_names_the_fix(self):
         _out, err = _race("x = 7i", "x = 9i")
         self.assertIn('merge: "sum"', err)
         self.assertIn('merge: "any"', err)
-        self.assertIn("6.0.0", err)
 
     def test_declaring_any_still_silences_it(self):
         _out, err = _race("x = 7i", "x = 9i", policy=' with { merge: "any" }')

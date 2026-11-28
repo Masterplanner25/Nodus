@@ -193,11 +193,15 @@ class NoBehaviourChangeTests(unittest.TestCase):
         answer is 2. A snapshot-at-step-start overlay makes both read 0 and the
         answer 1 — introducing the very lost update #485 is about, in the case
         that did not have it.
+
+        `merge: "any"` because since 6.0.0 an undeclared read-modify-write by
+        two unordered steps is refused even when the scheduler serialises it
+        (#547); what this test is about is what the serialised steps *see*.
         """
         result = _run(
             """
 workflow latent {
-    state counter = 0i
+    state counter = 0i with { merge: "any" }
     step a { counter = counter + 1i; return 1i }
     step b { counter = counter + 1i; return 2i }
     step j after a, b { return 0i }
@@ -227,10 +231,11 @@ fn main() { let r = run_workflow(demo); print("X=\\(r["state"]["x"])") }
         self.assertTrue(result.get("ok"), result)
         self.assertIn("X=2", result.get("stdout") or "")
 
-    def test_the_lost_update_is_still_lost_and_still_warned(self):
-        """Step 2 does not fix #485 — it builds what the fix needs.
+    def test_the_lost_update_is_refused_not_repaired(self):
+        """Step 2 did not fix #485 — it built what the fix needed.
 
-        Claiming otherwise would be worse than not shipping it.
+        The lost update is not repaired: through 5.x it was lost and warned
+        about, and since 6.0.0 the run is refused instead (#547).
         """
         result = _run(
             """
@@ -243,8 +248,9 @@ workflow race {
 fn main() { let r = run_workflow(race); print("C=\\(r["state"]["counter"])") }
 """
         )
-        self.assertTrue(result.get("ok"), result)
-        self.assertIn("C=1", result.get("stdout") or "")
+        self.assertFalse(result.get("ok"), result)
+        self.assertEqual("workflow_error", result["error"]["kind"])
+        self.assertNotIn("C=", result.get("stdout") or "")
 
 
 class SourceTests(unittest.TestCase):

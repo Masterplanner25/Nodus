@@ -51,6 +51,14 @@
       "check": "error",
       "why_check": "`nodus check` errs: the scan is exact. A run_loop() call in an imported file is library code wherever it is, and fails whenever it runs.",
       "sites": 2
+    },
+    "concurrent-write": {
+      "issue": 547,
+      "summary": "A concurrent state write that loses an update is refused instead of warned about",
+      "landed_in": "6.0.0",
+      "check": "warning",
+      "why_check": "`nodus check` warns rather than errs: the static answer is a superset. It reports every unordered pair of writers, and whether one update is lost depends on the values and the interleaving at run time.",
+      "sites": 3
     }
   },
   "flips": {
@@ -69,14 +77,6 @@
       "signal": "ok -- stderr, once per process, when a comparison whose answer will change actually happens",
       "why": "Records are the only non-structural value, and the exception has exceptions (datetime and duration compare by value). The 6.0.0 semantics already exist as `structural_eq`; the flip is to delegate to it. Design: docs/design/v6/00-record-equality.md.",
       "sites": 4
-    },
-    "concurrent-write": {
-      "issue": 547,
-      "summary": "A concurrent state write that loses an update becomes an error",
-      "warns_since": "5.2.0",
-      "signal": "ok -- stderr, names both remedies",
-      "why": "Since #544 the warning fires only when an update was actually lost, so the error can only reject a program that is genuinely wrong. The remedies (`merge: \"sum\"` / `\"append\"` to combine, `merge: \"any\"` for deliberate last-write-wins) predate the flip.",
-      "sites": 3
     },
     "default-store-sqlite": {
       "issue": 797,

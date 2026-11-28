@@ -49,8 +49,11 @@ RECORDS = """fn main() {
 }
 """
 
+#: A workflow that runs and stores a run. It used to be a lost update too, the
+#: concurrent-write flip's warning; that landed in 6.0.0 (#547) as a refusal,
+#: so the cell declares last-write-wins. `LOST_UPDATE` is the undeclared form.
 RACE = """workflow race {
-    state total = 0i
+    state total = 0i with { merge: "any" }
 
     step a {
         total = 1i
@@ -171,13 +174,15 @@ class SitesRecordTests(_Env):
         self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
         self.assertIn("record-equality", self.flips_in_report())
 
-    def test_concurrent_write_is_recorded(self):
-        """The worker flip used to be recorded here too. It landed in 6.0.0
-        (#798): a refusal now, so there is no warning left to record."""
-        self.write("race.nd", RACE)
+    def test_a_landed_flip_records_nothing(self):
+        """concurrent-write (#547) and worker-dispatcher (#798) were recorded
+        here. Both landed in 6.0.0 as refusals, so there is no warning left to
+        record -- and a run that is refused must not leave a stale entry."""
+        self.write("race.nd", RACE.replace(' with { merge: "any" }', "")
+                   .replace("step a {", 'step a with { worker: "remote" } {'))
         self.run_nodus("run", "race.nd", "--time-limit", "20", report=self.report)
         found = self.flips_in_report()
-        self.assertIn("concurrent-write", found)
+        self.assertNotIn("concurrent-write", found)
         self.assertNotIn("worker-dispatcher", found)
 
     def test_unknown_type_name_is_recorded(self):
@@ -208,11 +213,11 @@ class EmissionIsUnchangedTests(_Env):
     """
 
     def test_the_warnings_still_print_with_a_report_configured(self):
-        self.write("race.nd", RACE)
+        self.write("eq.nd", RECORDS)
         with_report = self.run_nodus(
-            "run", "race.nd", "--time-limit", "20", report=self.report
+            "run", "eq.nd", "--time-limit", "20", report=self.report
         )
-        self.assertIn("both wrote state", with_report.stderr)
+        self.assertIn("two distinct records with equal fields", with_report.stderr)
 
     def test_the_warnings_are_identical_with_and_without_a_report(self):
         """Each run gets its own directory, or the comparison is not one.
@@ -226,8 +231,8 @@ class EmissionIsUnchangedTests(_Env):
         for name in ("no-report", "with-report"):
             work = os.path.join(self.dir, name)
             os.makedirs(work)
-            with open(os.path.join(work, "race.nd"), "w", encoding="utf-8") as handle:
-                handle.write(RACE)
+            with open(os.path.join(work, "eq.nd"), "w", encoding="utf-8") as handle:
+                handle.write(RECORDS)
             env = dict(os.environ)
             env["PYTHONPATH"] = str(REPO / "src")
             env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
@@ -235,11 +240,11 @@ class EmissionIsUnchangedTests(_Env):
             if name == "with-report":
                 env[REPORT_ENV] = self.report
             outputs.append(subprocess.run(
-                [PYTHON, "-m", "nodus", "run", "race.nd", "--time-limit", "20"],
+                [PYTHON, "-m", "nodus", "run", "eq.nd", "--time-limit", "20"],
                 cwd=work, capture_output=True, text=True, env=env, timeout=120,
             ))
         without, with_report = outputs
-        self.assertIn("both wrote state", without.stderr, "setup: the warning must fire")
+        self.assertIn("two distinct records", without.stderr, "setup: the warning must fire")
         self.assertEqual(without.stderr, with_report.stderr)
         self.assertEqual(without.returncode, with_report.returncode)
         self.assertTrue(os.path.exists(self.report), "setup: the report must be written")

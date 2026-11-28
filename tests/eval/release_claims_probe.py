@@ -205,10 +205,14 @@ workflow w {
 fn main() { run_workflow(w) }
 """
     )
-    stderr = lost.get("stderr") or ""
-    assert "read it before writing" in stderr, stderr[:200]
-    assert "6.0.0" in stderr, "the warning does not announce the flag day"
-    return "read-modify-write named; agreement silent"
+    # Warned through 5.x; refused since 6.0.0 (#547).
+    assert agree.get("ok"), agree.get("error")
+    error = lost.get("error") or {}
+    message = error.get("message", "") if isinstance(error, dict) else ""
+    assert not lost.get("ok"), "a lost update was reported as success"
+    assert error.get("kind") == "workflow_error", error
+    assert "read it before writing" in message, message[:200]
+    return "read-modify-write refused and named; agreement silent"
 
 
 @probe("cli: graph show renders mermaid and dot")
@@ -2699,7 +2703,9 @@ def probe_clean_staged_report_is_honest():
 
 @probe("concurrent-write is found statically, and ordered pairs are not")
 def probe_static_concurrent_write():
-    from nodus.tooling.staged_readiness import scan
+    # A landed flip since 6.0.0 (#547): plain `nodus check` reports it, as a
+    # warning, through `landed_findings`; `--staged` no longer lists it.
+    from nodus.tooling.staged_readiness import landed_findings
 
     source = (
         "workflow race {\n"
@@ -2710,8 +2716,10 @@ def probe_static_concurrent_write():
         "    step c after a { total = 3i; return \"c\" }\n"
         "}\n"
     )
-    report = scan(sources=[("race.nd", source)])
-    found = next(f for f in report.flips if f.name == "concurrent-write").findings
+    pairs = [(sev, f) for sev, f in landed_findings([("race.nd", source)])
+             if f.flip == "concurrent-write"]
+    assert all(sev == "warning" for sev, _ in pairs), pairs
+    found = [f for _, f in pairs]
     text = " ".join(f.message for f in found)
     assert "'a' and 'b'" in text, f"the unordered pair was not found: {text}"
     assert "'a' and 'c'" not in text, "reported a pair that `after` orders"
@@ -4120,23 +4128,26 @@ def probe_parallel_keeps_contract():
 
 @probe("5.21.0: `nodus check --staged` scans the files the entry imports (#1022)")
 def probe_staged_scans_imports():
+    import subprocess
     import tempfile
 
-    # A race in the imported file: concurrent-write is still a staged flip.
-    flows = ("workflow race {\n    state total = 0i\n"
-             "    step a { total = 1i\n return 1i }\n"
-             "    step b { total = 2i\n return 2i }\n}\n"
-             "export fn noop() {\n    return 1\n}\n")
+    # The import list `--staged` walks is the one plain `nodus check` walks for
+    # landed flips. A library run_loop() is a landed flip whose check is exact,
+    # so it is the evidence that the imported file's contents are read.
+    lib = "export fn drive() {\n    run_loop()\n    return 1\n}\n"
     with tempfile.TemporaryDirectory() as raw:
         Path(raw, "nodus.toml").write_text('[project]\nname = "p"\n', encoding="utf-8")
-        Path(raw, "flows.nd").write_text(flows, encoding="utf-8")
+        Path(raw, "lib.nd").write_text(lib, encoding="utf-8")
         main = Path(raw, "main.nd")
-        main.write_text('import "./flows.nd" as f\nprint(f.noop())\n', encoding="utf-8")
+        main.write_text('import "./lib.nd" as lib\nprint(1)\n', encoding="utf-8")
         code, out = cli(["nodus", "check", "--staged", str(main)])
+        plain = subprocess.run([sys.executable, "-m", "nodus", "check", str(main)],
+                               cwd=raw, capture_output=True, text=True, timeout=120)
     assert code == 0, f"exited {code}: {out}"
     assert "and 1 file(s) it imports" in out, out
-    assert "[ 1 found]   concurrent-write (#547)" in out, out
-    return "the imported file is scanned, and its race is found"
+    assert plain.returncode == 1, plain.stdout + plain.stderr
+    assert "lib.nd:2:5: error: run_loop()" in plain.stderr, plain.stderr
+    return "the imported file is walked, and its contents are checked"
 
 
 @probe("5.21.0: the register stages seven flips for 6.0.0, library-run-loop among them (#1021)")

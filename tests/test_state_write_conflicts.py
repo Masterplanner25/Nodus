@@ -48,32 +48,37 @@ fn main() { let r = run_workflow(race); let s = r["state"]; print("STATE=\\(s)")
 """
 
 
-class TheLostUpdateIsAnnouncedTests(unittest.TestCase):
+def _message(result: dict) -> str:
+    error = result.get("error") or {}
+    return error.get("message", "") if isinstance(error, dict) else ""
+
+
+class TheLostUpdateIsRefusedTests(unittest.TestCase):
     """Falsifiable: without the `TrackedState` wrap the run is silent, and the
-    only evidence of a lost write is a wrong number nobody is looking at."""
+    only evidence of a lost write is a wrong number nobody is looking at.
+
+    Through 5.x it warned and the run succeeded with the update lost. Since
+    6.0.0 it is refused (#547). Refusing could not have been done earlier:
+    `merge: "any"` is how an author says two branches agree, and #544 narrowed
+    the detection to updates that were really lost.
+    """
 
     def setUp(self):
         self.result = _run(RACE)
 
-    def test_the_write_is_still_lost(self):
-        """Recorded deliberately. This reports; it does not repair, and a later
-        change that starts repairing should fail here and be looked at."""
-        self.assertIn('STATE={"counter": 1}', self.result.get("stdout") or "")
+    def test_the_run_fails_with_a_workflow_error(self):
+        self.assertFalse(self.result.get("ok"))
+        self.assertEqual("workflow_error", self.result["error"]["kind"])
 
-    def test_a_warning_names_both_steps_and_the_winner(self):
-        stderr = self.result.get("stderr") or ""
-        self.assertIn("both wrote state 'counter'", stderr)
-        self.assertIn("a", stderr)
-        self.assertIn("b", stderr)
-        self.assertIn("write survives", stderr)
+    def test_the_error_names_both_steps_and_the_winner(self):
+        message = _message(self.result)
+        self.assertIn("both wrote state 'counter'", message)
+        self.assertIn("steps a and b", message)
+        self.assertIn("write would survive", message)
 
-    def test_the_run_still_succeeds(self):
-        """A warning, not a failure. Two branches writing one key can be
-        deliberate when the author knows they agree, and there is currently no
-        way to say so — refusing would break correct workflows to catch
-        incorrect ones."""
-        self.assertIsNone(self.result.get("error"))
-        self.assertNotIn('"counter"', (self.result.get("stdout") or "").split("STATE=")[0])
+    def test_no_result_is_reported_with_the_update_lost(self):
+        """The 5.x answer, `{"counter": 1}`, was wrong and reported as success."""
+        self.assertNotIn("STATE=", self.result.get("stdout") or "")
 
 
 class OrderedStepsAreNotReportedTests(unittest.TestCase):
@@ -155,9 +160,10 @@ workflow latent {
 fn main() { let r = run_workflow(latent); let s = r["state"]; print("STATE=\\(s)") }
 """
         )
-        # No yield, so both increments actually land -- the answer is right today.
-        self.assertIn('STATE={"counter": 2}', result.get("stdout") or "")
-        self.assertIn("both wrote state 'counter'", result.get("stderr") or "")
+        # No yield, so both increments would land -- the answer is right this
+        # time -- and it is refused anyway, before a `sleep` makes it wrong.
+        self.assertIn("both wrote state 'counter'", _message(result))
+        self.assertNotIn("STATE=", result.get("stdout") or "")
 
 
 class TheDetectorItselfTests(unittest.TestCase):

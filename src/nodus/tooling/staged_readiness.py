@@ -51,7 +51,6 @@ _REGISTER = Path(__file__).resolve().parent.parent / "support" / "staged_flips.j
 #: register makes the report say "nobody looked at this" rather than omit it.
 _STATIC = {
     "unknown-type-name",
-    "concurrent-write",
     "default-store-sqlite",
 }
 
@@ -433,7 +432,7 @@ def _scan_source(path: str, code: str, *, imported: bool = False) -> dict:
                     "concurrent-write", path,
                     f"in workflow '{flow_name}', steps '{a}' and '{b}' both write "
                     f"state '{cell}' and nothing orders them. If they disagree, one "
-                    f"update is lost -- an error at 6.0.0. Declare "
+                    f"update is lost, and the run is refused (#547, since 6.0.0). Declare "
                     f"`with {{ merge: \"sum\" }}` (or \"append\") to combine them, "
                     f"or `merge: \"any\"` for deliberate last-write-wins.",
                 )
