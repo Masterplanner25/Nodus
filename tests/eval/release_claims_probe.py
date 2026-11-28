@@ -495,17 +495,20 @@ def probe_manifest():
     return "[project] refused with the fix named; entry selects the file"
 
 
-@probe("5.3.0: an unhonoured worker: declaration warns")
+@probe("6.0.0: an unhonoured worker: declaration is refused (it warned from 5.3.0, #798)")
 def probe_worker_warns():
     result = run_nd(
-        'workflow w { step s with { worker: "hardened-sandbox" } { return 1i } }\n'
+        'workflow w { step s with { worker: "hardened-sandbox" } { print("RAN") return 1i } }\n'
         "fn main() { let r = run_workflow(w) }"
     )
-    stderr = result.get("stderr") or ""
-    assert "no worker dispatcher is registered" in stderr, repr(stderr)
-    assert "6.0.0" in stderr, "the flag day is not announced"
-    assert "worker_dispatcher=" in stderr, "the embedded remedy is not named"
-    return "warns, names both remedies, announces the flag day"
+    error = result.get("error") or {}
+    message = error.get("message", "") if isinstance(error, dict) else str(error)
+    assert not result.get("ok"), "the step ran in-process, as 5.x did"
+    assert error.get("kind") == "workflow_error", error
+    assert "no worker dispatcher is registered" in message, repr(message)
+    assert "worker_dispatcher=" in message, "the embedded remedy is not named"
+    assert "RAN" not in (result.get("stdout") or ""), "the body ran before the refusal"
+    return "refused before the step runs, naming the remedies"
 
 
 @probe("5.3.0: a conditional edge is marked in the plan and drawn")

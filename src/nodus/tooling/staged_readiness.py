@@ -52,7 +52,6 @@ _REGISTER = Path(__file__).resolve().parent.parent / "support" / "staged_flips.j
 _STATIC = {
     "unknown-type-name",
     "concurrent-write",
-    "worker-dispatcher",
     "default-store-sqlite",
     "library-run-loop",
 }
@@ -449,9 +448,9 @@ def _scan_source(path: str, code: str, *, imported: bool = False) -> dict:
                 Finding(
                     "worker-dispatcher", path,
                     f"in workflow '{flow_name}', step '{step.name}' declares "
-                    f"worker '{worker}'. Run without a registered dispatcher it "
-                    f"executes in-process with no isolation, which is an error at "
-                    f"6.0.0. Run under `nodus serve` with a registered worker, or "
+                    f"worker '{worker}'. Run without a registered dispatcher the "
+                    f"workflow is refused before any step runs (#798, since "
+                    f"6.0.0). Run under `nodus serve` with a registered worker, or "
                     f"pass `worker_dispatcher=` to NodusRuntime.",
                 )
             )

@@ -35,6 +35,14 @@
       "why_check": "`nodus check` warns rather than errs: the refusal happens only when a stored run is resumed, so a program that is never resumed runs correctly.",
       "override": "NODUS_REBUILD_EFFECTS=allow, or rebuild_effects=\"allow\" on sweep/new_vm, for a run whose stored source predates its fix",
       "sites": 4
+    },
+    "worker-dispatcher": {
+      "issue": 798,
+      "summary": "A `worker:` declaration with no registered dispatcher is refused instead of running in-process",
+      "landed_in": "6.0.0",
+      "check": "warning",
+      "why_check": "`nodus check` warns rather than errs: whether a dispatcher is registered is a deployment fact the source cannot see.",
+      "sites": 2
     }
   },
   "flips": {
@@ -60,14 +68,6 @@
       "warns_since": "5.2.0",
       "signal": "ok -- stderr, names both remedies",
       "why": "Since #544 the warning fires only when an update was actually lost, so the error can only reject a program that is genuinely wrong. The remedies (`merge: \"sum\"` / `\"append\"` to combine, `merge: \"any\"` for deliberate last-write-wins) predate the flip.",
-      "sites": 3
-    },
-    "worker-dispatcher": {
-      "issue": 798,
-      "summary": "A `worker:` declaration with no registered dispatcher becomes an error",
-      "warns_since": "5.3.0",
-      "signal": "ok -- stderr, names both remedies",
-      "why": "DECIDED 2026-09-06 (D1): honour it. The code has promised this since 5.3.0 and docs/design/v6/00-record-equality.md had recorded it as dropped when #492 closed; closing an issue did not retract the promise. A `worker:` declaration is an isolation intent, and running in-process while reporting success is the worst available answer -- the same reasoning that made it a warning rather than a silent no-op. Second-oldest signal in the cohort, so notice is not a blocker.",
       "sites": 3
     },
     "default-store-sqlite": {

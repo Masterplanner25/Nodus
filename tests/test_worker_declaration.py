@@ -7,10 +7,11 @@ to in-process execution and reported success, so `worker: "hardened-sandbox"`
 behaved exactly like no declaration at all.
 
 The check existed; only one of the two paths reached it. That is the shape
-recorded in CLAUDE.md, and the reason the test asserts the warning fires from
-*both* the CLI and an embedded runtime rather than trusting one to stand for
-the other -- they capture stderr differently, which is itself easy to mistake
-for the bug.
+recorded in CLAUDE.md, and the reason the tests assert from *both* the CLI and
+an embedded runtime rather than trusting one to stand for the other.
+
+5.3.0 through 5.21.0 warned and ran the step in-process. Since 6.0.0 the
+workflow is refused before any step runs (#798).
 """
 
 import os
@@ -55,6 +56,11 @@ fn main() {
 WARNING = "no worker dispatcher is registered"
 
 
+def _error(result) -> str:
+    error = result.get("error") or {}
+    return error.get("message", "") if isinstance(error, dict) else str(error)
+
+
 class RecordingDispatcher:
     """The minimum a dispatcher is: something with a compatible `.submit`."""
 
@@ -71,19 +77,22 @@ class RecordingDispatcher:
 
 
 class EmbeddedWorkerTests(unittest.TestCase):
-    # closes: #492
-    def test_unhonoured_worker_warns(self):
-        result = NodusRuntime(timeout_ms=None).run_source(WORKER_SOURCE)
-        self.assertTrue(result["ok"])
-        self.assertIn(WARNING, result["stderr"])
-        self.assertIn("hardened-sandbox", result["stderr"])
+    # closes: #798
+    def test_an_unhonoured_worker_is_refused_before_the_step_runs(self):
+        source = WORKER_SOURCE.replace('return "done"', 'print("BODY RAN")\n        return "done"')
+        result = NodusRuntime(timeout_ms=None).run_source(source)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["kind"], "workflow_error")
+        self.assertIn(WARNING, _error(result))
+        self.assertIn("hardened-sandbox", _error(result))
+        self.assertNotIn("BODY RAN", result["stdout"])
 
-    def test_the_warning_names_both_remedies_and_the_flag_day(self):
-        """A warning with no remedy is a warning people learn to scroll past."""
-        stderr = NodusRuntime(timeout_ms=None).run_source(WORKER_SOURCE)["stderr"]
-        self.assertIn("nodus serve", stderr)
-        self.assertIn("worker_dispatcher=", stderr)
-        self.assertIn("6.0.0", stderr)
+    def test_the_refusal_names_every_remedy(self):
+        """A refusal with no remedy leaves the reader nowhere to go."""
+        message = _error(NodusRuntime(timeout_ms=None).run_source(WORKER_SOURCE))
+        self.assertIn("nodus serve", message)
+        self.assertIn("worker_dispatcher=", message)
+        self.assertIn("remove the declaration", message)
 
     # closes: #492
     def test_a_dispatcher_can_be_supplied_to_an_embedded_runtime(self):
@@ -102,12 +111,13 @@ class EmbeddedWorkerTests(unittest.TestCase):
             ["hardened-sandbox"],
         )
 
-    def test_a_supplied_dispatcher_silences_the_warning(self):
+    def test_a_supplied_dispatcher_is_not_refused(self):
         dispatcher = RecordingDispatcher()
         result = NodusRuntime(
             timeout_ms=None, worker_dispatcher=dispatcher
         ).run_source(WORKER_SOURCE)
-        self.assertNotIn(WARNING, result["stderr"])
+        self.assertTrue(result["ok"], result)
+        self.assertNotIn(WARNING, result["stderr"] + _error(result))
 
     def test_a_workflow_with_no_worker_is_silent(self):
         """The warning must not fire for every workflow ever run."""
@@ -144,12 +154,13 @@ class CliWorkerTests(unittest.TestCase):
         output = (completed.stdout + completed.stderr).decode("utf-8", "replace")
         return output, completed.returncode
 
-    # closes: #492
-    def test_cli_warns_for_an_unhonoured_worker(self):
+    # closes: #798
+    def test_cli_refuses_an_unhonoured_worker(self):
         output, code = self.run_source(WORKER_SOURCE)
         self.assertIn(WARNING, output)
         self.assertIn("hardened-sandbox", output)
-        self.assertEqual(code, 0, "5.x still runs the step; 6.0.0 refuses it")
+        self.assertEqual(code, 1, "the step ran in-process: the 5.x behaviour")
+        self.assertNotIn("steps:", output)
 
     def test_cli_is_silent_without_a_worker(self):
         output, code = self.run_source(PLAIN_SOURCE)

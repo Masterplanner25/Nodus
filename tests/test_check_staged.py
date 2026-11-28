@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))  # noqa: E402
 
-from nodus.tooling.staged_readiness import load_register, scan  # noqa: E402
+from nodus.tooling.staged_readiness import landed_findings, load_register, scan  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
@@ -174,13 +174,19 @@ class ConcurrentWriteTests(unittest.TestCase):
 
 
 class WorkerAndTypeNameTests(unittest.TestCase):
+    # The worker flip landed in 6.0.0 (#798): plain `nodus check` reports it, as
+    # a warning, and `--staged` no longer lists it.
     def test_a_worker_declaration_is_reported(self):
-        found = _findings(_scan(RACE), "worker-dispatcher")
+        found = [(sev, f) for sev, f in landed_findings([("probe.nd", RACE)])
+                 if f.flip == "worker-dispatcher"]
         self.assertEqual(len(found), 1)
-        self.assertIn("worker 'remote'", found[0].message)
+        self.assertEqual(found[0][0], "warning")
+        self.assertIn("worker 'remote'", found[0][1].message)
+        self.assertNotIn("worker-dispatcher", [f.name for f in _scan(RACE).flips])
 
     def test_a_workflow_with_no_worker_is_clean(self):
-        self.assertEqual(_findings(_scan(CLEAN), "worker-dispatcher"), [])
+        self.assertEqual([f for _, f in landed_findings([("probe.nd", CLEAN)])
+                          if f.flip == "worker-dispatcher"], [])
 
     def test_type_warnings_are_passed_through_not_recomputed(self):
         report = _scan(
@@ -279,7 +285,10 @@ class CliTests(unittest.TestCase):
         self._write("race.nd", RACE)
         result = self._run("check", "race.nd")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("OK (1 warning(s))", result.stdout)
+        # The type name, and the worker declaration since #798 landed.
+        self.assertIn("OK (2 warning(s))", result.stdout)
+        self.assertIn("warning: in workflow 'race', step 'a' declares worker 'remote'",
+                      result.stderr)
         self.assertNotIn("Staged for", result.stdout)
 
     def test_trace_flags_are_still_refused(self):
