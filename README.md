@@ -47,7 +47,17 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.20.0 compiles hot functions to Python by default in
+**Recent:** 5.21.0 is the last 5.x release, and it carries the notice for one
+more change coming in 6.0.0. A `run_loop()` call from library code (any module
+but your program's entry file) now prints a warning, and becomes an error at
+6.0.0, because it runs every coroutine the caller has spawned, not only the
+library's own. Use `wait(task)` instead. `std:async.parallel` and `series` no
+longer call it themselves. `nodus check --staged` now scans the files your
+program imports as well as the entry file, as it always said it did. `nodus test
+--coverage` no longer counts a line that never ran. What 6.0.0 changes is listed
+in `docs/migration/v6.0-staged-flips.md`.
+
+5.20.0 compiles hot functions to Python by default in
 `nodus serve`, `nodus test` and the tools layer too, as 5.19.0 did for
 `nodus run` and `NodusRuntime`. Results are unchanged; only speed differs, and
 `NODUS_COMPILE_FUNCTIONS=0` still turns it off for a whole process.

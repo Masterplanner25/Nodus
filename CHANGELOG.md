@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-11-27
+
 ### Changed
 
 - **#1021: `run_loop()` called from library code warns, and becomes an error at

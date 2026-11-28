@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "5.20.0"
+version: "5.21.0"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Package version is 5.20.0. Bytecode version is 5** — it moved from 4 at 5.17.0 (#969),
+**Package version is 5.21.0. Bytecode version is 5** — it moved from 4 at 5.17.0 (#969),
 so bytecode an earlier version cached is recompiled once; a package version bump
 does not otherwise imply recompilation. Installed via `pip install nodus-lang`.
 
@@ -931,6 +931,12 @@ run_loop()   // required: runs the scheduler until all spawned tasks finish
 
 **Why:** `spawn()` schedules a coroutine on the event loop. `run_loop()` then drives
 it to completion. Skip `run_loop()` and the task never runs.
+
+**But not in a library.** `run_loop()` drains the whole program's queue, so in a
+module someone imports it runs their coroutines too. There, return the task for
+the caller to drive, or use `wait(task)`, which returns the task's value and
+stops when that task settles. Since 5.21.0 a library's `run_loop()` warns, and it
+is an error at 6.0.0 (#1021). In the entry file `run_loop()` is fine.
 
 ---
 
