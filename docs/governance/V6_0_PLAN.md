@@ -60,7 +60,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 | 2 | Record `==` becomes structural (**landed**) | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error (**landed**) | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error (**landed**) | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
-| 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
+| 5 | The default workflow store becomes SQLite (**landed**) | `nodus_lang_workflow/store.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
 | 6 | A rebuild that re-runs a top-level effect refuses it (**landed**) | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
 | 7 | `run_loop()` called from library code becomes an error (**landed**) | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |
 
@@ -128,6 +128,19 @@ All but one are small. The exception is #174.
 - **D2 and D3 removals**: delete `.tl` acceptance (`cli.py`, `module_loader.py`),
   `language.py` / `language.bat`, `tooling/tiny_vm_lang_functions.py`, and the
   `_last_vm` property. Gate 10a answers whether anything downstream used them.
+- **#797 / #174 (default store): LANDED.** `create_workflow_store` with no backend
+  builds SQLite, and is the one place every default path goes through: the default
+  runner, `configure_default_workflow_runner`, and a bare `WorkflowFrameworkRunner()`,
+  which used to build its own `LocalWorkflowStore`. If the JSON store holds runs SQLite
+  lacks, it raises `StrandedRunsError`, which the CLI prints and exits 1 on.
+  `migrate-store` builds with `refuse_stranded=False`, since it is the remedy; its source
+  used to be "the default runner's store", which is SQLite now and would have refused.
+  Landing it found that an unchosen SQLite store ignored `root=` and
+  `NODUS_WORKFLOW_STORE_ROOT`, so a host that had moved the JSON store would have got a
+  database in the working directory. The unchosen file now sits beside the JSON root,
+  which for the default root is the path SQLite always used. An explicit `sqlite` keeps
+  its 5.x path and still only warns. The transitional notice and the `--staged`
+  filesystem scan are deleted. Original note:
 - **#174 is the outlier.** It changes a *default that owns state*, not a
   behaviour. Runs recorded in the JSON store are invisible to a SQLite one, so
   an in-flight `waiting` run becomes unresumable rather than moving.

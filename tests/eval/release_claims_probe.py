@@ -1050,10 +1050,9 @@ def probe_run_state_root():
         )
         assert proc.returncode == 0, proc.stderr[-400:]
         graphs = list((state / "graphs").glob("*.json")) if (state / "graphs").is_dir() else []
-        runs_dir = state / "workflow_framework" / "runs"
-        records = list(runs_dir.glob("*.json")) if runs_dir.is_dir() else []
+        # The record half is the default store: SQLite since 6.0.0 (#797).
         assert graphs, "the graph half did not follow the root"
-        assert records, "the record half did not follow the root"
+        assert (state / "workflow_framework.sqlite3").is_file(), "the record half did not follow the root"
         assert not (work / ".nodus" / "graphs").exists(), "graphs stayed in the CWD"
     return "graph state and run record both land under the one variable"
 
@@ -2325,52 +2324,54 @@ def probe_deliver_by_event_type():
     return "found by event type, carried the run forward, and matching nothing is not an error"
 
 
-@probe("#174: an unconfigured local store holding runs says so, once")
+@probe("#797: the default store is SQLite, and JSON runs it lacks are refused, not hidden")
 def probe_store_transition_warning():
     import os
     import tempfile
-    import warnings as _warnings
 
     from nodus_lang_workflow.runner import (
         get_default_workflow_runner,
-        reset_default_store_warning,
         reset_default_workflow_runner,
     )
-    from nodus_lang_workflow.store import WORKFLOW_STORE_BACKEND_ENV
+    from nodus_lang_workflow.store import (
+        WORKFLOW_STORE_BACKEND_ENV,
+        LocalWorkflowStore,
+        StrandedRunsError,
+    )
 
     cwd = os.getcwd()
     saved = os.environ.pop(WORKFLOW_STORE_BACKEND_ENV, None)
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         os.chdir(td)
         try:
             reset_default_workflow_runner()
-            reset_default_store_warning()
-            with _warnings.catch_warnings(record=True) as quiet:
-                _warnings.simplefilter("always")
-                get_default_workflow_runner()
-            assert not [w for w in quiet if issubclass(w.category, DeprecationWarning)], (
-                "an empty store must stay quiet"
-            )
+            store = get_default_workflow_runner().store
+            assert type(store).__name__ == "SQLiteWorkflowStore", type(store).__name__
 
-            get_default_workflow_runner().store.create_run(
+            LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework")).create_run(
                 run_id="g_probe", graph_id="g_probe",
                 workflow_name="probe", execution_kind="workflow",
             )
             reset_default_workflow_runner()
-            reset_default_store_warning()
-            with _warnings.catch_warnings(record=True) as loud:
-                _warnings.simplefilter("always")
+            try:
                 get_default_workflow_runner()
-            found = [w for w in loud if issubclass(w.category, DeprecationWarning)]
-            assert len(found) == 1, [str(w.message) for w in found]
-            assert "migrate-store" in str(found[0].message), str(found[0].message)
-            assert "6.0.0" in str(found[0].message), str(found[0].message)
+            except StrandedRunsError as exc:
+                message = str(exc)
+            else:
+                raise AssertionError("a JSON run SQLite lacks was hidden, not refused")
+            assert "g_probe" in message and "migrate-store" in message, message
+
+            os.environ[WORKFLOW_STORE_BACKEND_ENV] = "local"
+            reset_default_workflow_runner()
+            kept = get_default_workflow_runner().store
+            assert [r.run_id for r in kept.list_runs()] == ["g_probe"], "local no longer keeps the JSON store"
         finally:
             reset_default_workflow_runner()
+            os.environ.pop(WORKFLOW_STORE_BACKEND_ENV, None)
             if saved is not None:
                 os.environ[WORKFLOW_STORE_BACKEND_ENV] = saved
             os.chdir(cwd)
-    return "quiet when empty, one actionable warning when runs are at risk"
+    return "SQLite by default; a stranded run is named with the command that moves it; local keeps JSON"
 
 
 @probe("prose: nothing still calls 5.9.0 the current release")
@@ -2738,7 +2739,7 @@ def probe_clean_staged_report_is_honest():
             cwd=tmp, capture_output=True, text=True, env=env, timeout=120,
         )
     assert done.returncode == 0, done.stderr
-    assert "nothing found in the" in done.stdout, done.stdout
+    assert "No behaviour changes are staged" in done.stdout, done.stdout
     assert "ready" not in done.stdout.lower(), done.stdout
     return "says what it checked, never 'ready'"
 
@@ -2803,11 +2804,16 @@ def probe_register_ships():
 
     data, error = load_register()
     assert error is None, error
-    assert data.get("flips"), "the register shipped empty"
+    # Every 6.0.0 flip has landed, so `flips` is empty and `landed` holds them.
+    assert data.get("landed"), "the register shipped empty"
     for name, entry in data["flips"].items():
         for field in ("issue", "summary", "warns_since", "signal", "why"):
             assert entry.get(field), f"{name} is missing '{field}' in the shipped register"
-    return f"{len(data['flips'])} flips readable from the installed package"
+    for name, entry in data["landed"].items():
+        for field in ("issue", "summary", "landed_in", "check", "why_check"):
+            assert entry.get(field), f"{name} is missing '{field}' in the shipped register"
+    return (f"{len(data['flips'])} staged and {len(data['landed'])} landed flips "
+            f"readable from the installed package")
 
 
 @probe("nodus test no longer advertises flags it does not read")
@@ -3533,17 +3539,22 @@ def probe_durable_refuses_local_store():
     import tempfile
 
     env = dict(os.environ)
-    env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
-    with tempfile.TemporaryDirectory() as raw:
+    # The JSON store is no longer the default (#797), so choose it.
+    env["NODUS_WORKFLOW_STORE_BACKEND"] = "local"
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
         (Path(raw) / "d.nd").write_text(
             'fn w() { checkpoint "a"; return 1i }\ndurable_spawn("k", w, [])\nrun_loop()\n',
             encoding="utf-8")
         proc = subprocess.run([sys.executable, "-m", "nodus", "run", "d.nd"], cwd=raw,
                               env=env, capture_output=True, text=True, timeout=120)
+        env.pop("NODUS_WORKFLOW_STORE_BACKEND")
+        default = subprocess.run([sys.executable, "-m", "nodus", "run", "d.nd"], cwd=raw,
+                                 env=env, capture_output=True, text=True, timeout=120)
     out = proc.stdout + proc.stderr
     assert proc.returncode != 0, "the JSON store was accepted"
     assert "NODUS_WORKFLOW_STORE_BACKEND=sqlite" in out, f"the refusal names no fix: {out[-400:]}"
-    return "refused, and the message names NODUS_WORKFLOW_STORE_BACKEND=sqlite"
+    assert default.returncode == 0, f"the default store refused: {default.stderr[-400:]}"
+    return "the JSON store is refused, naming the fix; the 6.0.0 default store is accepted"
 
 
 @probe("5.16.0: checkpoint where it records nothing names durable_spawn")

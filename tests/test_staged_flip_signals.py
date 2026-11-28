@@ -230,8 +230,10 @@ class UnknownTypeNameOnRunTests(_ProjectCase):
         self.assertIn("Unknown type name 'itn'", result.stderr)
 
 
-class DefaultStoreNoticeTests(_ProjectCase):
-    """#797: the notice a CLI user could not see."""
+class DefaultStoreRefusalTests(_ProjectCase):
+    """#797: the notice a CLI user could not see became a refusal they cannot
+    miss. Through 5.x it was a notice; since 6.0.0 the default store is SQLite
+    and refuses to hide runs the JSON store holds."""
 
     WORKFLOW = (
         "workflow demo {\n"
@@ -246,33 +248,44 @@ class DefaultStoreNoticeTests(_ProjectCase):
         "}\n"
     )
 
-    # closes: #797
-    def test_the_notice_reaches_a_plain_cli_run(self):
-        self.write("wf.nd", self.WORKFLOW)
-        # First run creates the records; the notice fires once there is state.
-        _run_nodus(self.dir, "run", "wf.nd", "--time-limit", "20")
-        result = _run_nodus(self.dir, "run", "wf.nd", "--time-limit", "20")
-        self.assertIn("becomes SQLite at 6.0.0", result.stderr)
-        self.assertIn("migrate-store", result.stderr, "a notice must say what to type")
-
-    def test_a_project_with_no_runs_hears_nothing(self):
-        """The narrowing has to survive being made visible."""
-        self.write("clean.nd", CLEAN)
-        result = _run_nodus(self.dir, "run", "clean.nd", "--time-limit", "20")
-        self.assertNotIn("becomes SQLite", result.stderr)
-
-    def test_choosing_the_local_backend_silences_it(self):
-        """Saying `local` is an answer, not an oversight."""
-        self.write("wf.nd", self.WORKFLOW)
-        _run_nodus(self.dir, "run", "wf.nd", "--time-limit", "20")
+    def _run_with(self, backend):
         env = dict(os.environ)
         env["PYTHONPATH"] = str(REPO / "src")
-        env["NODUS_WORKFLOW_STORE_BACKEND"] = "local"
-        result = subprocess.run(
+        env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
+        if backend is not None:
+            env["NODUS_WORKFLOW_STORE_BACKEND"] = backend
+        return subprocess.run(
             [PYTHON, "-m", "nodus", "run", "wf.nd", "--time-limit", "20"],
             cwd=self.dir, capture_output=True, text=True, env=env, timeout=120,
         )
-        self.assertNotIn("becomes SQLite", result.stderr)
+
+    # closes: #797
+    def test_the_refusal_reaches_a_plain_cli_run(self):
+        self.write("wf.nd", self.WORKFLOW)
+        # A 5.x project: its runs are in the JSON store.
+        seeded = self._run_with("local")
+        self.assertEqual(seeded.returncode, 0, seeded.stderr)
+        result = self._run_with(None)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("the default workflow store is SQLite", result.stderr)
+        self.assertIn("migrate-store", result.stderr, "a refusal must say what to type")
+        self.assertNotIn("done", result.stdout)
+
+    def test_a_project_with_no_runs_hears_nothing(self):
+        """The narrowing has to survive the flip."""
+        self.write("wf.nd", self.WORKFLOW)
+        result = self._run_with(None)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("done", result.stdout)
+        self.assertNotIn("workflow store", result.stderr)
+
+    def test_choosing_the_local_backend_keeps_the_json_store(self):
+        """Saying `local` is an answer, not an oversight."""
+        self.write("wf.nd", self.WORKFLOW)
+        self._run_with("local")
+        result = self._run_with("local")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("workflow store", result.stderr)
 
 
 if __name__ == "__main__":

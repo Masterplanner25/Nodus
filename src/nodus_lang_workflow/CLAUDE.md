@@ -14,6 +14,11 @@
   moved underneath it (#174 answered part of the SQLite question, #380 part of
   the scan-cost one) and the header says which.
 
+**The default store is SQLite since 6.0.0 (#797)**, at `.nodus/workflow_framework.sqlite3`.
+With no backend set it refuses (`StrandedRunsError`) while the JSON store holds runs it
+lacks; `docs/AGENT_EXPERIENCE.md` EXP-014 covers meeting that in this repo. The JSON
+store notes below apply under `NODUS_WORKFLOW_STORE_BACKEND=local`, and to tests that pin it.
+
 **Operational gotcha — local store scan performance:**
 `LocalWorkflowStore.list_runs()` reads every `.nodus/workflow_framework/runs/*.json`
 on every sweep, so **cost is linear in the number of accumulated runs**. #380 made it

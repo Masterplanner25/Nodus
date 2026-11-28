@@ -1,64 +1,69 @@
-"""The default workflow runner honours the store-backend environment (#174).
+"""Which workflow store backs a run when nothing chose one (#174, #797).
 
-`get_default_workflow_runner()` hardcoded `LocalWorkflowStore`, the file-backed
-JSON store whose claims are exclusive only within one process (#937; it is
-crash-safe, writing each record atomically). `nodus serve` had honoured
-`NODUS_WORKFLOW_STORE_BACKEND` for a long time, so the same question — *which
-store backs this run?* — had two answers, and the half every embedder reaches by
-calling `run_workflow()` was the one that could not be configured at all short of
-`configure_default_workflow_runner()`.
+**The default is SQLite since 6.0.0.** Through 5.x it was `LocalWorkflowStore`,
+the file-backed JSON store whose claims are exclusive only within one process
+(#937; it is crash-safe, writing each record atomically).
 
-Both halves read the same two variables now, through one pair of readers in
-`store.py`.
+The flip was staged for a long time for one reason: runs recorded in the JSON
+store are invisible to a SQLite one, so switching silently would make an
+in-flight `waiting` run stop existing. So it landed as a **refusal**: with no
+backend configured, a JSON store holding runs SQLite lacks raises
+`StrandedRunsError`, naming them and the command that copies them
+(`nodus workflow migrate-store --to sqlite`). Choosing a backend is an answer:
+`local` keeps the JSON store, and an explicit `sqlite` is warned rather than
+stopped.
 
-**The default is deliberately unchanged.** Flipping it to SQLite is a 6.0.0
-change, and not merely because the file location moves: runs already recorded in
-the JSON store are invisible to a SQLite one, so an in-flight `waiting` run would
-silently become unresumable. `test_the_default_backend_is_still_local` is what
-fails if that is flipped.
-
-**The blocker that deferred it is now gone, and this paragraph used to say
-otherwise.** It read *"`nodus workflow migrate-state` migrates graph snapshots,
-not store backends, so there is no migration path to offer yet."* True when
-written; `nodus workflow migrate-store --to sqlite` now copies run records
-between backends. Verified end to end rather than assumed: a run parked
-`waiting` in the local store arrives in SQLite still `waiting` with its
-`wait.event_type` intact, the local copy is left in place, and `--dry-run`
-reports the plan without writing.
-
-So what remains is the breaking-change gate, not a missing tool — and the flip
-is staged the way this repo stages #545, #547 and #609: warn now, change at the
-major. `TheTransitionalWarningTests` below pins that warning, including the
-cases where it must stay quiet.
+Both `nodus serve` and the default runner read the backend from the same two
+variables, through one pair of readers in `store.py`.
 """
+import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 import warnings
+from contextlib import redirect_stderr
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))  # noqa: E402
 
 from nodus_lang_workflow.runner import (  # noqa: E402
+    WorkflowFrameworkRunner,
     get_default_workflow_runner,
-    reset_default_store_warning,
     reset_default_workflow_runner,
+    reset_stranded_runs_warning,
 )
 from nodus_lang_workflow.store import (  # noqa: E402
+    DEFAULT_WORKFLOW_STORE_BACKEND,
     WORKFLOW_STORE_BACKEND_ENV,
     WORKFLOW_STORE_PATH_ENV,
+    LocalWorkflowStore,
+    StrandedRunsError,
+    create_workflow_store,
 )
 
-_ENV_KEYS = (WORKFLOW_STORE_BACKEND_ENV, WORKFLOW_STORE_PATH_ENV)
+REPO = Path(__file__).resolve().parents[1]
+_ENV_KEYS = (
+    WORKFLOW_STORE_BACKEND_ENV,
+    WORKFLOW_STORE_PATH_ENV,
+    "NODUS_WORKFLOW_STORE_ROOT",
+    "NODUS_RUN_STATE_ROOT",
+)
 
 
-class DefaultStoreBackendTests(unittest.TestCase):
+class _Isolated(unittest.TestCase):
+    """A temporary working directory and a clean store environment."""
+
     def setUp(self):
         self._saved = {k: os.environ.get(k) for k in _ENV_KEYS}
+        for key in _ENV_KEYS:
+            os.environ.pop(key, None)
         self._cwd = os.getcwd()
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         os.chdir(self._tmp.name)
         reset_default_workflow_runner()
+        reset_stranded_runs_warning()
 
     def tearDown(self):
         for key, value in self._saved.items():
@@ -67,6 +72,7 @@ class DefaultStoreBackendTests(unittest.TestCase):
             else:
                 os.environ[key] = value
         reset_default_workflow_runner()
+        reset_stranded_runs_warning()
         os.chdir(self._cwd)
         self._tmp.cleanup()
 
@@ -74,22 +80,51 @@ class DefaultStoreBackendTests(unittest.TestCase):
         reset_default_workflow_runner()
         return get_default_workflow_runner().store
 
-    def test_the_default_backend_is_still_local(self):
-        """Unset environment must not change what an existing embedder gets.
+    def _json_root(self) -> str:
+        return os.path.join(self._tmp.name, ".nodus", "workflow_framework")
 
-        Fails if the default is flipped to SQLite. Read the module docstring
-        before changing it: the blocker is that JSON-recorded runs are invisible
-        to a SQLite store, not that the path moves.
-        """
-        for key in _ENV_KEYS:
-            os.environ.pop(key, None)
-        self.assertEqual(type(self._store()).__name__, "LocalWorkflowStore")
+    def _record_a_json_run(self, run_id: str = "g_probe") -> None:
+        """Put one run in the JSON store, the way a 5.x project has them."""
+        LocalWorkflowStore(root=self._json_root()).create_run(
+            run_id=run_id, graph_id=run_id,
+            workflow_name="probe", execution_kind="workflow",
+        )
 
-    def test_sqlite_can_be_selected_by_environment(self):
-        os.environ[WORKFLOW_STORE_BACKEND_ENV] = "sqlite"
+
+class DefaultStoreBackendTests(_Isolated):
+    # closes: #797
+    def test_the_default_backend_is_sqlite(self):
+        self.assertEqual(DEFAULT_WORKFLOW_STORE_BACKEND, "sqlite")
         store = self._store()
         self.assertEqual(type(store).__name__, "SQLiteWorkflowStore")
-        self.assertEqual(store.store_info().get("backend"), "sqlite")
+
+    def test_the_default_sqlite_file_sits_beside_the_json_root(self):
+        """Where the default SQLite file always was, so a host that already
+        chose `sqlite` and the default now agree on one database."""
+        expected = os.path.abspath(self._json_root()) + ".sqlite3"
+        self.assertEqual(self._store().store_info().get("path"), expected)
+        os.environ[WORKFLOW_STORE_BACKEND_ENV] = "sqlite"
+        self.assertEqual(self._store().store_info().get("path"), expected)
+
+    def test_a_relocated_json_root_moves_the_default_sqlite_file(self):
+        """`NODUS_WORKFLOW_STORE_ROOT` relocated the default store in 5.x. With
+        the default now SQLite, ignoring it would put the database in the
+        working directory while the host believes it moved."""
+        moved = os.path.join(self._tmp.name, "elsewhere", "runs")
+        os.environ["NODUS_WORKFLOW_STORE_ROOT"] = moved
+        self.assertEqual(
+            self._store().store_info().get("path"), os.path.abspath(moved) + ".sqlite3"
+        )
+
+    def test_an_explicit_root_argument_moves_it_too(self):
+        moved = os.path.join(self._tmp.name, "explicit")
+        store = create_workflow_store(root=moved)
+        self.assertEqual(store.store_info().get("path"), os.path.abspath(moved) + ".sqlite3")
+
+    def test_a_runner_built_with_no_store_gets_the_default(self):
+        """`WorkflowFrameworkRunner()` built a `LocalWorkflowStore` of its own,
+        a second answer to "what is the default store"."""
+        self.assertEqual(type(WorkflowFrameworkRunner().store).__name__, "SQLiteWorkflowStore")
 
     def test_an_explicit_local_is_honoured(self):
         os.environ[WORKFLOW_STORE_BACKEND_ENV] = "local"
@@ -101,28 +136,27 @@ class DefaultStoreBackendTests(unittest.TestCase):
         os.environ[WORKFLOW_STORE_PATH_ENV] = target
         self.assertEqual(self._store().store_info().get("path"), os.path.abspath(target))
 
-    def test_an_unknown_backend_is_refused(self):
-        """A misspelling must not silently fall back to the JSON store.
+    def test_the_store_path_is_honoured_with_no_backend_set(self):
+        target = os.path.join(self._tmp.name, "custom", "default.db")
+        os.environ[WORKFLOW_STORE_PATH_ENV] = target
+        self.assertEqual(self._store().store_info().get("path"), os.path.abspath(target))
 
-        Falling back would be the declared-but-not-enforced shape: the operator
-        asked for durability and would get JSON files with no signal.
-        """
+    def test_an_unknown_backend_is_refused(self):
+        """A misspelling must not silently fall back to the default store."""
         os.environ[WORKFLOW_STORE_BACKEND_ENV] = "postgres"
         with self.assertRaises(ValueError) as caught:
             self._store()
         self.assertIn("postgres", str(caught.exception))
 
     # closes: #174
-    def test_a_run_is_recorded_in_the_selected_backend(self):
-        """End to end: selecting sqlite actually records the run there.
+    def test_a_run_is_recorded_in_the_default_backend(self):
+        """End to end: the run lands in SQLite, and nothing in the JSON store.
 
         A store-type assertion alone would pass on a runner that built the right
         object and then wrote somewhere else.
         """
         from nodus.runtime.embedding import NodusRuntime
 
-        os.environ[WORKFLOW_STORE_BACKEND_ENV] = "sqlite"
-        reset_default_workflow_runner()
         result = NodusRuntime(timeout_ms=None).run_source(
             "workflow saga {\n"
             '    step a { checkpoint "cp"; return "A" }\n'
@@ -136,13 +170,10 @@ class DefaultStoreBackendTests(unittest.TestCase):
         store = get_default_workflow_runner().store
         self.assertEqual(type(store).__name__, "SQLiteWorkflowStore")
         self.assertEqual(len(store.list_runs()), 1)
-        # and nothing landed in the JSON store it replaced
-        json_runs = os.path.join(
-            self._tmp.name, ".nodus", "workflow_framework", "runs"
-        )
+        json_runs = os.path.join(self._json_root(), "runs")
         self.assertFalse(
             os.path.isdir(json_runs) and os.listdir(json_runs),
-            "run records leaked into the local store while sqlite was selected",
+            "run records leaked into the JSON store while SQLite was the default",
         )
 
     def test_the_environment_is_read_in_one_place(self):
@@ -165,82 +196,13 @@ class DefaultStoreBackendTests(unittest.TestCase):
         )
         self.assertNotIn('os.environ.get("NODUS_WORKFLOW_STORE_PATH")', cli_src)
 
-
-
-class TheTransitionalWarningTests(unittest.TestCase):
-    """The "warn now, flip at the major" half of #174.
-
-    Deliberately narrow, and the quiet cases are the ones worth pinning: a
-    warning everybody sees is a warning everybody filters. It fires only when a
-    host has state that the 6.0.0 flip would not carry — an *unconfigured*
-    local store that already holds runs. Choosing `local` explicitly is an
-    answer, not an oversight, and silences it.
-    """
-
-    def setUp(self):
-        self._saved = {k: os.environ.get(k) for k in _ENV_KEYS}
-        self._cwd = os.getcwd()
-        self._tmp = tempfile.TemporaryDirectory()
-        os.chdir(self._tmp.name)
-        for key in _ENV_KEYS:
-            os.environ.pop(key, None)
-        reset_default_workflow_runner()
-        reset_default_store_warning()
-
-    def tearDown(self):
-        for key, value in self._saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        reset_default_workflow_runner()
-        os.chdir(self._cwd)
-        self._tmp.cleanup()
-
-    def _record_a_run(self):
-        """Put one run in the default (local) store."""
-        runner = get_default_workflow_runner()
-        runner.store.create_run(
-            run_id="g_probe", graph_id="g_probe",
-            workflow_name="probe", execution_kind="workflow",
-        )
-        reset_default_workflow_runner()
-        reset_default_store_warning()
-
-    def _warnings_from_building_the_runner(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            get_default_workflow_runner()
-        return [w for w in caught if issubclass(w.category, DeprecationWarning)]
-
-    # closes: #174
-    def test_it_warns_when_an_unconfigured_local_store_holds_runs(self):
-        self._record_a_run()
-        found = self._warnings_from_building_the_runner()
-        self.assertEqual(1, len(found), [str(w.message) for w in found])
-        message = str(found[0].message)
-        self.assertIn("migrate-store", message, "a warning must say what to type")
-        self.assertIn("6.0.0", message)
-
-    # closes: #937
-    def test_it_gives_the_real_reason_not_crash_safety(self):
-        """The JSON store writes every record atomically (fsync + rename), so a
-        kill cannot corrupt one. What it lacks is a claim another process can
-        see, and that is what the warning must say. It said "not crash-safe"
-        from 5.10.0 until #937, after the store's own docstring had been
-        corrected."""
-        self._record_a_run()
-        message = str(self._warnings_from_building_the_runner()[0].message)
-        self.assertNotIn("crash", message.lower())
-        self.assertIn("one process", message)
-        self.assertIn("durable coroutines", message)
-
     # closes: #937
     def test_the_json_store_writes_records_atomically(self):
-        """The fact the corrected reason rests on, pinned at the source: every
-        record write goes through `_atomic_write_json`, which fsyncs a temp file
-        and renames it over the record. A new write path that bypassed it would
-        make the old warning true, and this is what would notice."""
+        """The JSON store is crash-safe: every record write goes through
+        `_atomic_write_json`, which fsyncs a temp file and renames it over the
+        record. What it lacks is a claim another process can see. A new write
+        path that bypassed the temp file would make "not crash-safe" true, and
+        this is what would notice."""
         import inspect
         import re
 
@@ -250,60 +212,139 @@ class TheTransitionalWarningTests(unittest.TestCase):
         writer = inspect.getsource(store_module.LocalWorkflowStore._atomic_write_json)
         self.assertIn("os.fsync", writer)
         self.assertIn("_replace_with_retry", writer)
-        # Every open() in a writing mode, however it is spelled: the temp file
-        # in `_atomic_write_json` must be the only one.
         writes = re.findall(
             r"open\(\s*([\w.]+)\s*,\s*[\"'](?:w|a|x|r\+)[bt+]*[\"']", source)
         self.assertEqual(["tmp_path"], writes)
         self.assertNotIn("write_text(", source)
         self.assertNotIn("write_bytes(", source)
 
-    # closes: #174
-    def test_it_is_quiet_when_the_store_is_empty(self):
-        """A short script that has never run a workflow has nothing to lose, and
-        the local store is genuinely right for it."""
-        self.assertEqual([], self._warnings_from_building_the_runner())
 
-    # closes: #174
-    def test_choosing_local_explicitly_silences_it(self):
-        """`NODUS_WORKFLOW_STORE_BACKEND=local` is a host saying it means this."""
-        self._record_a_run()
+class StrandedRunsRefusalTests(_Isolated):
+    """The flip lands as a refusal, not a silent switch (#797)."""
+
+    # closes: #797
+    def test_unconfigured_with_json_runs_is_refused_naming_them(self):
+        self._record_a_json_run("g_parked")
+        with self.assertRaises(StrandedRunsError) as caught:
+            self._store()
+        message = str(caught.exception)
+        self.assertIn("g_parked", message)
+        self.assertIn("migrate-store --to sqlite", message)
+        self.assertIn("NODUS_WORKFLOW_STORE_BACKEND=local", message)
+        self.assertEqual(caught.exception.run_ids, ["g_parked"])
+
+    def test_it_is_quiet_when_the_json_store_is_empty(self):
+        """A project with no state has nothing to lose: no refusal, no notice."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self._store()
+        self.assertEqual([], [str(w.message) for w in caught])
+
+    def test_choosing_local_keeps_the_json_store(self):
+        self._record_a_json_run()
         os.environ[WORKFLOW_STORE_BACKEND_ENV] = "local"
-        self.assertEqual([], self._warnings_from_building_the_runner())
+        store = self._store()
+        self.assertEqual(type(store).__name__, "LocalWorkflowStore")
+        self.assertEqual([r.run_id for r in store.list_runs()], ["g_probe"])
 
-    # closes: #174
-    def test_choosing_sqlite_silences_the_transitional_notice(self):
-        """It silences *this* warning, not every warning.
-
-        This asserted `[] == warnings` and meant "the transitional notice is
-        pointless once you have chosen SQLite" -- which is right. But the
-        scenario it sets up (a run recorded in the JSON store, then SQLite
-        selected) is exactly the one where those runs become invisible, and a
-        warning about *that* is not noise, it is the point. The blanket
-        assertion turned the stranded-runs check into a regression the moment
-        it shipped.
-        """
-        self._record_a_run()
+    def test_choosing_sqlite_warns_instead_of_refusing(self):
+        """A host that set the backend itself chose the switch; it is told
+        which runs it left behind, as in 5.x, and not stopped."""
+        self._record_a_json_run()
         os.environ[WORKFLOW_STORE_BACKEND_ENV] = "sqlite"
-        messages = [str(w.message) for w in self._warnings_from_building_the_runner()]
-        self.assertEqual(
-            [], [m for m in messages if "The default workflow store is" in m],
-            f"the transitional notice fired after SQLite was chosen: {messages}",
-        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            store = self._store()
+        self.assertEqual(type(store).__name__, "SQLiteWorkflowStore")
+        messages = [str(w.message) for w in caught]
         self.assertTrue(
-            [m for m in messages if "not in the SQLite store" in m],
-            f"the run recorded in the JSON store is now invisible and nothing "
-            f"said so: {messages}",
+            [m for m in messages if "not in the SQLite store" in m and "g_probe" in m],
+            messages,
+        )
+        self.assertFalse([m for m in messages if "6.0.0" in m], messages)
+
+    def test_a_migrated_run_is_not_stranded(self):
+        """The migration copies and leaves the JSON store intact, so a JSON
+        store that still has records is the expected state afterwards."""
+        from nodus_lang_workflow.store import migrate_workflow_store
+
+        self._record_a_json_run()
+        source = LocalWorkflowStore(root=self._json_root())
+        target = create_workflow_store(root=self._json_root(), refuse_stranded=False)
+        report = migrate_workflow_store(source, target)
+        self.assertEqual(report["migrated_count"], 1)
+        store = self._store()
+        self.assertEqual([r.run_id for r in store.list_runs()], ["g_probe"])
+        self.assertTrue(os.listdir(os.path.join(self._json_root(), "runs")))
+
+    def test_the_refusal_is_in_the_factory_every_path_shares(self):
+        """Source assertion, paired with the behavioural tests above: the
+        default runner, `configure_default_workflow_runner` and a bare
+        `WorkflowFrameworkRunner()` all build through `create_workflow_store`,
+        so none of them can switch silently."""
+        import inspect
+
+        from nodus_lang_workflow import runner as runner_module
+
+        source = inspect.getsource(runner_module)
+        self.assertNotIn("LocalWorkflowStore(", source)
+        self.assertIn("store or create_workflow_store()", source)
+        self._record_a_json_run()
+        with self.assertRaises(StrandedRunsError):
+            WorkflowFrameworkRunner()
+        with self.assertRaises(StrandedRunsError):
+            runner_module.configure_default_workflow_runner(root=self._json_root())
+
+
+class CliTests(_Isolated):
+    """The refusal and its remedy, as an operator meets them."""
+
+    def _nodus(self, *args: str) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(REPO / "src")
+        return subprocess.run(
+            [sys.executable, "-m", "nodus", *args],
+            cwd=self._tmp.name, capture_output=True, text=True, env=env, timeout=120,
         )
 
-    # closes: #174
-    def test_it_fires_once_per_process(self):
-        """Repeated on every `run_workflow()` it would be noise, and the runner
-        is rebuilt whenever the working directory changes."""
-        self._record_a_run()
-        self.assertEqual(1, len(self._warnings_from_building_the_runner()))
-        reset_default_workflow_runner()
-        self.assertEqual([], self._warnings_from_building_the_runner())
+    # closes: #797
+    def test_a_command_is_refused_then_migrate_store_clears_it(self):
+        self._record_a_json_run("g_parked")
+
+        refused = self._nodus("workflow", "runs")
+        self.assertEqual(refused.returncode, 1, refused.stdout)
+        self.assertIn("Error: the default workflow store is SQLite", refused.stderr)
+        self.assertIn("g_parked", refused.stderr)
+        self.assertNotIn("Traceback", refused.stderr)
+
+        dry = self._nodus("workflow", "migrate-store", "--to", "sqlite", "--dry-run")
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertIn('"migrated_count": 1', dry.stdout)
+        self.assertEqual(self._nodus("workflow", "runs").returncode, 1)
+
+        moved = self._nodus("workflow", "migrate-store", "--to", "sqlite")
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        self.assertIn('"backend": "local"', moved.stdout)
+
+        listed = self._nodus("workflow", "runs")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn("g_parked", listed.stdout)
+
+    def test_the_migration_targets_the_store_the_runtime_will_open(self):
+        moved = os.path.join(self._tmp.name, "moved")
+        os.environ["NODUS_WORKFLOW_STORE_ROOT"] = moved
+        LocalWorkflowStore(root=moved).create_run(
+            run_id="g_moved", graph_id="g_moved",
+            workflow_name="probe", execution_kind="workflow",
+        )
+        done = self._nodus("workflow", "migrate-store", "--to", "sqlite")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("moved.sqlite3", done.stdout.replace("\\\\", "/"))
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            store = self._store()
+        self.assertEqual([r.run_id for r in store.list_runs()], ["g_moved"])
+
 
 if __name__ == "__main__":
     unittest.main()

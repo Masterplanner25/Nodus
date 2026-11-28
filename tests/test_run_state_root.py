@@ -181,16 +181,18 @@ class EndToEndTests(_CleanEnv):
             self.assertIn("steps=", proc.stdout)
 
             graphs = list((state / "graphs").glob("*.json")) if (state / "graphs").is_dir() else []
-            runs_dir = state / "workflow_framework" / "runs"
-            records = list(runs_dir.glob("*.json")) if runs_dir.is_dir() else []
+            # The record half is the default store: SQLite since 6.0.0 (#797),
+            # one file beside the JSON store's root.
             self.assertTrue(graphs, "the graph half did not follow the root")
-            self.assertTrue(records, "the record half did not follow the root")
+            self.assertTrue((state / "workflow_framework.sqlite3").is_file(),
+                            "the record half did not follow the root")
 
             # And nothing run-shaped stayed behind. `.nodus/` may still exist for
             # the *project* family (cache, deps.json), which is a different root
             # and deliberately not moved by this variable.
             self.assertFalse((workdir / ".nodus" / "graphs").exists())
             self.assertFalse((workdir / ".nodus" / "workflow_framework").exists())
+            self.assertFalse((workdir / ".nodus" / "workflow_framework.sqlite3").exists())
 
 
 if __name__ == "__main__":

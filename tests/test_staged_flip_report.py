@@ -196,71 +196,70 @@ class SitesRecordTests(_Env):
         self.run_nodus("run", "bad.nd", "--time-limit", "20", report=self.report)
         self.assertNotIn("unknown-type-name", self.flips_in_report())
 
-    def test_the_default_store_notice_is_recorded(self):
+    def test_the_default_store_records_nothing(self):
+        """default-store-sqlite was recorded here, from a notice the runner
+        printed. It landed in 6.0.0 (#797) as a refusal, so no notice is left."""
         self.write("race.nd", RACE)
-        # First run creates the records; the notice fires once there is state.
         self.run_nodus("run", "race.nd", "--time-limit", "20")
         self.run_nodus("run", "race.nd", "--time-limit", "20", report=self.report)
-        self.assertIn("default-store-sqlite", self.flips_in_report())
+        self.assertNotIn("default-store-sqlite", self.flips_in_report())
 
     def test_a_clean_program_records_nothing(self):
         self.write("clean.nd", 'fn main() {\n    print("ok")\n}\n')
         self.run_nodus("run", "clean.nd", "--time-limit", "20", report=self.report)
         self.assertEqual(read_staged_flip_report(self.report), [])
 
+    def test_no_site_in_src_records_or_warns(self):
+        """Every 6.0.0 flip has landed, so nothing calls the recorder or the
+        warning. The next major's first staged flip changes this deliberately."""
+        src = REPO / "src"
+        callers = []
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for name in ("record_staged_flip(", "warn_staged_flip("):
+                for line in text.splitlines():
+                    if name in line and not line.lstrip().startswith("def "):
+                        callers.append(f"{path.relative_to(REPO)}: {line.strip()}")
+        self.assertEqual(callers, [])
+
 
 class EmissionIsUnchangedTests(_Env):
     """The recorder records. It must not have become the emitter.
 
-    Two of these warnings reach an embedder through `result["stderr"]`, and the
-    text is asserted on in other suites. Recording alongside is the whole design
-    -- if these go quiet, the recorder took over emission and every consumer of
-    that stderr changed at once.
+    A staged-flip site announces itself (`warn_staged_flip`, or its own stderr
+    line) and records alongside. If recording took over emission, every
+    consumer of that stderr would change at once. No site is live since the
+    6.0.0 cohort landed, so this drives the two functions directly.
     """
 
-    def test_the_warnings_still_print_with_a_report_configured(self):
-        self.write("race.nd", RACE)
-        # The first run leaves a stored run; the default-store notice needs one.
-        self.run_nodus("run", "race.nd", "--time-limit", "20")
-        with_report = self.run_nodus(
-            "run", "race.nd", "--time-limit", "20", report=self.report
-        )
-        self.assertIn("default workflow store", with_report.stderr)
-        self.assertIn("default-store-sqlite", self.flips_in_report())
+    def test_recording_does_not_emit(self):
+        import warnings as _warnings
 
-    def test_the_warnings_are_identical_with_and_without_a_report(self):
-        """Each run gets its own directory, or the comparison is not one.
+        os.environ[REPORT_ENV] = self.report
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            record_staged_flip("next-flip", "recorded")
+        self.assertEqual([], [str(w.message) for w in caught])
+        self.assertEqual(self.flips_in_report(), {"next-flip"})
 
-        Run twice in one directory and the second additionally emits the
-        default-store notice, because the first run left records behind. That
-        difference is accumulated state, not the report -- and it made this
-        test fail for a reason that had nothing to do with what it asserts.
-        """
-        outputs = []
-        for name in ("no-report", "with-report"):
-            work = os.path.join(self.dir, name)
-            os.makedirs(work)
-            with open(os.path.join(work, "race.nd"), "w", encoding="utf-8") as handle:
-                handle.write(RACE)
-            env = dict(os.environ)
-            env["PYTHONPATH"] = str(REPO / "src")
-            env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
-            env.pop(REPORT_ENV, None)
-            command = [PYTHON, "-m", "nodus", "run", "race.nd", "--time-limit", "20"]
-            # Seed a stored run, identically in both directories, so the
-            # second run emits the default-store notice.
-            subprocess.run(command, cwd=work, capture_output=True, text=True,
-                           env=env, timeout=120)
-            if name == "with-report":
-                env[REPORT_ENV] = self.report
-            outputs.append(subprocess.run(
-                command, cwd=work, capture_output=True, text=True, env=env, timeout=120,
-            ))
-        without, with_report = outputs
-        self.assertIn("default workflow store", without.stderr, "setup: the warning must fire")
-        self.assertEqual(without.stderr, with_report.stderr)
-        self.assertEqual(without.returncode, with_report.returncode)
-        self.assertTrue(os.path.exists(self.report), "setup: the report must be written")
+    def test_warning_is_the_same_with_and_without_a_report(self):
+        import warnings as _warnings
+
+        from nodus.support.staging import StagedFlipWarning, warn_staged_flip
+
+        seen = []
+        for configured in (False, True):
+            if configured:
+                os.environ[REPORT_ENV] = self.report
+            else:
+                os.environ.pop(REPORT_ENV, None)
+            with _warnings.catch_warnings(record=True) as caught:
+                _warnings.simplefilter("always")
+                warn_staged_flip("this changes at the next major")
+            seen.append([(w.category, str(w.message)) for w in caught])
+        self.assertEqual(seen[0], seen[1])
+        self.assertEqual(seen[0], [(StagedFlipWarning, "this changes at the next major")])
+        self.assertFalse(os.path.exists(self.report), "warning must not record")
 
 
 class CheckStagedMergesTests(_Env):

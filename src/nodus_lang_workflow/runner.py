@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import warnings
 from contextlib import contextmanager
 
 from nodus.orchestration.workflow_state import (
@@ -23,7 +24,6 @@ from nodus.orchestration.task_graph import (
     run_task_graph,
 )
 from nodus.runtime.state_paths import workflow_store_root
-from nodus.support.staging import record_staged_flip, warn_staged_flip
 
 from .models import (
     REHYDRATABLE_RUN_STATUSES,
@@ -39,9 +39,10 @@ from .models import (
     WorkflowRunRecord,
 )
 from .store import (
-    LocalWorkflowStore,
     WorkflowStore,
+    StrandedRunsWarning,
     create_workflow_store,
+    unmigrated_local_runs,
     workflow_store_backend_from_env,
     workflow_store_path_from_env,
 )
@@ -493,7 +494,8 @@ def _metadata_from_graph(graph: TaskGraph, vm) -> dict[str, object]:
 
 class WorkflowFrameworkRunner:
     def __init__(self, store: WorkflowStore | None = None) -> None:
-        self.store = store or LocalWorkflowStore()
+        # The default store, built the way the default runner builds it.
+        self.store = store or create_workflow_store()
         self._sweeper_lock = threading.Lock()
         self._sweeper_count = 0
 
@@ -1493,79 +1495,6 @@ def default_store_root() -> str:
     return workflow_store_root()
 
 
-_WARNED_DEFAULT_STORE = False
-
-
-# v6-flip: default-store-sqlite
-def _warn_default_store_is_transitional(backend_from_env, store) -> None:
-    """Say, once, that an unconfigured local store has records the 6.0.0 flip will not carry (#174).
-
-    Narrow on purpose, because a warning nobody can act on is noise and a warning
-    everybody sees is ignored. Three conditions, all required:
-
-    - **The backend was not chosen.** Setting `NODUS_WORKFLOW_STORE_BACKEND=local`
-      is a host saying *I know, I want the JSON store* — that is an answer, not an
-      oversight, and it silences this. Only the unconfigured case is warned about.
-    - **The store is local.** SQLite is where the flip is heading.
-    - **It already holds runs.** A short script that has never run a workflow has
-      nothing to lose and hears nothing; the local store is genuinely appropriate
-      there. The warning is for someone with state.
-
-    Once per process, and a `StagedFlipWarning` rather than a plain
-    `DeprecationWarning` -- which is what makes it visible. As a
-    `DeprecationWarning` it was raised outside `__main__`, so Python's default
-    filters discarded it and **no CLI user ever saw it** (#797): measured, with
-    runs in the store, `nodus run` printed nothing while the same command under
-    `-W always` printed this in full. The CLI unsuppresses `StagedFlipWarning`
-    specifically; an embedder's existing `DeprecationWarning` filters still
-    catch it, because it subclasses that.
-
-    The message names `nodus workflow migrate-store --to sqlite` because a warning
-    that does not say what to type is a warning people learn to skip.
-    """
-    global _WARNED_DEFAULT_STORE
-    if _WARNED_DEFAULT_STORE or backend_from_env is not None:
-        return
-    if type(store).__name__ != "LocalWorkflowStore":
-        return
-    try:
-        has_runs = bool(store.list_runs())
-    except OSError:
-        # Never let a warning break a runtime. An unreadable store is a real
-        # problem, but it is not this function's to report.
-        return
-    if not has_runs:
-        return
-    # v6-flip: default-store-sqlite
-    _WARNED_DEFAULT_STORE = True
-    record_staged_flip(
-        "default-store-sqlite",
-        "an unconfigured local workflow store holds runs; the default becomes SQLite at 6.0.0",
-    )
-    warn_staged_flip(
-        # #937: the reason is cross-process claims, not crash safety. Every
-        # record write is atomic (fsync + rename), so a kill corrupts nothing.
-        "The default workflow store is LocalWorkflowStore (file-backed JSON), "
-        "whose claims are exclusive only within one process, so two processes "
-        "(a sweep and a restarted program, or two workers) can both resume one "
-        "run; durable coroutines refuse it for that reason. This store already "
-        "holds runs. The default "
-        "becomes SQLite at 6.0.0, and runs recorded in the JSON store are not "
-        "visible to a SQLite one -- an in-flight waiting run would become "
-        "unresumable. Migrate with `nodus workflow migrate-store --to sqlite` "
-        "(non-destructive; supports --dry-run), or set "
-        "NODUS_WORKFLOW_STORE_BACKEND=local to keep the JSON store and silence "
-        "this.",
-        stacklevel=3,
-    )
-
-
-def reset_default_store_warning() -> None:
-    """Test seam: re-arm the one-shot warning above."""
-    global _WARNED_DEFAULT_STORE
-    _WARNED_DEFAULT_STORE = False
-
-
 _WARNED_STRANDED_RUNS = False
 
 
@@ -1575,87 +1504,33 @@ def reset_stranded_runs_warning() -> None:
     _WARNED_STRANDED_RUNS = False
 
 
-def _unmigrated_local_runs(root: str) -> list[str]:
-    """Run ids sitting in the JSON store that a SQLite store does not have.
-
-    Read off the filesystem rather than by constructing the local store: this
-    runs while the *SQLite* store is being set up, and building a second live
-    store to ask it a question is how two sweepers came to race one directory
-    (#632).
-
-    Only ids the SQLite store lacks count. The migration is deliberately
-    non-destructive and `docs/migration/v6.0-staged-flips.md` tells people to
-    keep the old store until they have checked the new one -- so a JSON store
-    that still has records is the *expected* state after a correct migration,
-    and warning about it then would train people to ignore this.
-    """
-    runs_dir = os.path.join(root, "runs")
-    try:
-        local_ids = {
-            os.path.splitext(name)[0]
-            for name in os.listdir(runs_dir)
-            if name.endswith(".json")
-        }
-    except OSError:
-        return []
-    if not local_ids:
-        return []
-    return sorted(local_ids)
-
-
-# v6-flip: default-store-sqlite
 def _warn_runs_stranded_by_backend(store, root: str) -> None:
-    """Say so when SQLite is in effect and the JSON store still holds runs.
+    """Say so when SQLite was *chosen* and the JSON store still holds runs.
 
-    **This is the harm #174 is actually about**, and it is reachable today --
-    not only at 6.0.0. Measured on 5.11.0: park a run at `workflow_wait` under
-    the default local store, set `NODUS_WORKFLOW_STORE_BACKEND=sqlite`, and
-    `nodus workflow runs` reports **0 runs and exits 0**. The parked run still
-    exists; nothing says so; it is simply not there any more as far as every
-    command is concerned.
+    When nothing chose the backend, the default store is SQLite and this case is
+    refused outright, by `create_workflow_store` raising `StrandedRunsError`
+    (#797). What reaches here is a host that set
+    `NODUS_WORKFLOW_STORE_BACKEND=sqlite` itself: it chose the switch, so it is
+    told which runs it left behind rather than stopped.
 
-    At 6.0.0 that switch happens *by default*, which is why the flip has needed
-    a long deprecation clock: the failure is silent, and a silent failure needs
-    notice in a way a loud one does not.
-
-    So this is the fix that shortens the clock rather than waiting it out.
-    **A warning in 5.x, because the backend was opted into explicitly and
-    turning a working configuration into an error is a major-only change; an
-    error at 6.0.0**, where the switch is the default and nobody chose it. Same
-    condition either way -- "SQLite is in effect and these runs are not in it"
-    -- so the flip does not need a second implementation to become a refusal.
+    Measured on 5.11.0, the case this exists for: park a run at `workflow_wait`
+    under the local store, set the backend to `sqlite`, and `nodus workflow
+    runs` reported **0 runs and exited 0**, with the parked run still on disk.
     """
     global _WARNED_STRANDED_RUNS
     # Both of these are early-outs, and neither is load-bearing -- said plainly
-    # because neutering them left the suite green, and an unconstrained line
-    # that *looks* like a guard is worse than no line. The one-shot flag saves a
-    # repeat if a process ever builds two runners (today it builds one); the
-    # store-type check saves the work on a local store, which the `known` set
-    # below would exclude anyway, since a local store lists its own runs.
-    # Correctness lives in `stranded`, not here.
+    # because neutering them left the suite green. The one-shot flag saves a
+    # repeat if a process ever builds two runners; the store-type check saves
+    # the work on a local store, which lists its own runs anyway. Correctness
+    # lives in `unmigrated_local_runs`.
     if _WARNED_STRANDED_RUNS:
         return
     if type(store).__name__ != "SQLiteWorkflowStore":
         return
-    # `list_runs` returns `WorkflowRunRecord` objects, not dicts. Writing
-    # `record.get("run_id")` here made every call raise `AttributeError` into
-    # the swallow below, so the check silently did nothing -- and it *looked*
-    # correct, because an empty SQLite store never runs the comprehension body
-    # and so warns fine. It only broke in the case that matters: once SQLite has
-    # records, which is exactly when "is this run already migrated?" is the
-    # question. Caught by neutering the check, not by reading it.
-    try:
-        known = {str(record.run_id) for record in store.list_runs()}
-    except OSError:
-        # An unreadable store is a real problem and not this function's to
-        # report. Deliberately narrow: a broad `except Exception` is what hid
-        # the bug above.
-        return
-    stranded = [rid for rid in _unmigrated_local_runs(root) if rid not in known]
+    stranded = unmigrated_local_runs(root, store)
     if not stranded:
         return
     _WARNED_STRANDED_RUNS = True
-    # v6-flip: default-store-sqlite
     shown = ", ".join(stranded[:5]) + ("..." if len(stranded) > 5 else "")
     message = (
         f"{len(stranded)} run record(s) in the file-backed JSON store are not "
@@ -1663,12 +1538,9 @@ def _warn_runs_stranded_by_backend(store, root: str) -> None:
         f"`nodus workflow` command and a parked run among them cannot be "
         f"resumed: {shown}. Copy them with `nodus workflow migrate-store "
         f"--to sqlite` (non-destructive), or set "
-        f"NODUS_WORKFLOW_STORE_BACKEND=local to go back to the JSON store. "
-        f"This becomes an error in 6.0.0, where SQLite is the default and "
-        f"nothing was chosen."
+        f"NODUS_WORKFLOW_STORE_BACKEND=local to go back to the JSON store."
     )
-    record_staged_flip("default-store-sqlite", message)
-    warn_staged_flip(message, stacklevel=3)
+    warnings.warn(message, StrandedRunsWarning, stacklevel=3)
 
 
 def get_default_workflow_runner() -> WorkflowFrameworkRunner:
@@ -1683,31 +1555,12 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
             # #174: built through the same factory and the same environment
             # overrides `nodus serve` honours. This used to hardcode
             # `LocalWorkflowStore`, so an embedder calling `run_workflow()`
-            # without configuring a runner got the JSON store (claims exclusive
-            # within one process only, #937) with
-            # no way to say otherwise short of `configure_default_workflow_runner`
-            # — while `NODUS_WORKFLOW_STORE_BACKEND` sat there working for the
-            # server and doing nothing here.
+            # without configuring a runner got the JSON store with no way to
+            # say otherwise short of `configure_default_workflow_runner`.
             #
-            # v6-flip: default-store-sqlite
-            # The default is still `local`, and flipping it is a 6.0.0 change --
-            # not because the file location moves but because runs already
-            # recorded in the JSON store are invisible to a SQLite one, so an
-            # in-flight waiting run would silently become unresumable.
-            #
-            # **The blocker that deferred it is gone.** This comment used to end
-            # "there is no backend migration today (`nodus workflow
-            # migrate-state` migrates graph *snapshots*, not stores)". That was
-            # true when written; `nodus workflow migrate-store --to sqlite` now
-            # copies run records between backends, is non-destructive, and has a
-            # `--dry-run`. Verified end to end: a run parked `waiting` in the
-            # local store arrives in SQLite still `waiting`, with its
-            # `wait.event_type` intact, and the local copy is left alone.
-            #
-            # So what remains is the breaking-change gate, not a missing tool.
-            # `_warn_default_store_is_transitional` below is the "warn now, flip
-            # at the major" half this repo already applies to #545, #547 and
-            # #609.
+            # With no backend set, the factory builds SQLite (#797) beside the
+            # JSON store's root, and refuses with `StrandedRunsError` if that
+            # JSON store holds runs SQLite lacks.
             backend_from_env = workflow_store_backend_from_env()
             _DEFAULT_RUNNER = WorkflowFrameworkRunner(
                 create_workflow_store(
@@ -1716,7 +1569,6 @@ def get_default_workflow_runner() -> WorkflowFrameworkRunner:
                     path=workflow_store_path_from_env(),
                 )
             )
-            _warn_default_store_is_transitional(backend_from_env, _DEFAULT_RUNNER.store)
             _warn_runs_stranded_by_backend(_DEFAULT_RUNNER.store, default_store_root())
             _DEFAULT_RUNNER_ROOT = root
             # Auto-start a daemon thread that expires wait-timeouts periodically so

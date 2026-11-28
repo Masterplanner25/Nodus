@@ -1,18 +1,15 @@
 """Switching to SQLite must not silently hide the runs you already have (#174).
 
-**This is the harm #174 is about, and it is reachable today.** Measured on
-5.11.0: park a run at `workflow_wait` under the default local store, set
-`NODUS_WORKFLOW_STORE_BACKEND=sqlite`, and `nodus workflow runs` reports **0
-runs and exits 0**. The parked run still exists. Nothing says so. As far as
-every `nodus workflow` command is concerned it is gone.
+**This is the harm #174 is about.** Measured on 5.11.0: park a run at
+`workflow_wait` under the local store, set `NODUS_WORKFLOW_STORE_BACKEND=sqlite`,
+and `nodus workflow runs` reported **0 runs and exited 0**. The parked run still
+existed. Nothing said so.
 
-At 6.0.0 that switch happens *by default*, which is why the flip carried a long
-deprecation clock — a silent failure needs notice in a way a loud one does not.
-Making it loud is what shortens the clock rather than waiting it out.
-
-Warning in 5.x, error at 6.0.0. The condition is the same either way — "SQLite
-is in effect and these runs are not in it" — so the flip does not need a second
-implementation to become a refusal.
+Since 6.0.0 (#797) SQLite is the default, and the case splits by who chose it.
+Nothing chosen: the default store refuses (`StrandedRunsError`, exit 1), which
+`test_default_store_backend.py` covers. SQLite chosen explicitly: the host
+chose the switch, so it is warned, naming the runs, and not stopped. That half
+is here.
 
 The quiet cases matter as much as the loud one. `docs/migration/v6.0-staged-flips.md`
 tells people to keep the JSON store until they have checked the new one, so a
@@ -65,8 +62,8 @@ class _Project(unittest.TestCase):
         )
 
     def park_a_run(self) -> str:
-        """Leave one `waiting` run in the default (local) store."""
-        self.nodus("workflow", "run", "approval.nd", "--workflow", "approval")
+        """Leave one `waiting` run in the JSON store, as a 5.x project has."""
+        self.nodus("workflow", "run", "approval.nd", "--workflow", "approval", backend="local")
         runs = Path(self.dir) / ".nodus" / "workflow_framework" / "runs"
         ids = [p.stem for p in runs.glob("*.json")]
         self.assertEqual(len(ids), 1, f"setup: expected one parked run, got {ids}")
@@ -87,16 +84,19 @@ class StrandedRunsAreAnnouncedTests(_Project):
         self.assertIn(run_id, result.stderr, "the warning must name what is stranded")
         self.assertIn("migrate-store", result.stderr, "and what to type")
 
-    def test_the_warning_says_it_becomes_an_error_at_the_major(self):
-        self.park_a_run()
-        result = self.nodus("workflow", "runs", backend="sqlite")
-        self.assertIn("error in 6.0.0", result.stderr)
-
     def test_it_does_not_fail_the_command(self):
-        """A warning in 5.x. The refusal is the 6.0.0 half."""
+        """Chosen explicitly, so a warning. Nothing chosen is the refusal."""
         self.park_a_run()
         result = self.nodus("workflow", "runs", backend="sqlite")
         self.assertEqual(result.returncode, 0)
+        self.assertIn("warning: ", result.stderr)
+        self.assertNotIn("6.0.0", result.stderr)
+
+    def test_with_nothing_chosen_it_is_refused(self):
+        run_id = self.park_a_run()
+        result = self.nodus("workflow", "runs")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(run_id, result.stderr)
 
 
 class QuietCasesTests(_Project):
@@ -123,27 +123,6 @@ class QuietCasesTests(_Project):
         self.park_a_run()
         result = self.nodus("workflow", "runs", backend="sqlite")
         self.assertEqual(result.stderr.count("not in the SQLite store"), 1)
-
-
-class RecordedForReadinessTests(_Project):
-    """It joins the staged-flip report, like every other flip (R2)."""
-
-    def test_it_is_recorded_when_a_report_is_configured(self):
-        self.park_a_run()
-        report = os.path.join(self.dir, "staged.jsonl")
-        env = dict(os.environ)
-        env["PYTHONPATH"] = str(REPO / "src")
-        env["NODUS_WORKFLOW_STORE_BACKEND"] = "sqlite"
-        env["NODUS_STAGED_FLIP_REPORT"] = report
-        subprocess.run(
-            [PYTHON, "-m", "nodus", "workflow", "runs"],
-            cwd=self.dir, capture_output=True, text=True, env=env, timeout=120,
-        )
-        sys.path.insert(0, str(REPO / "src"))
-        from nodus.support.staging import read_staged_flip_report
-
-        flips = {r["flip"] for r in read_staged_flip_report(report)}
-        self.assertIn("default-store-sqlite", flips)
 
 
 if __name__ == "__main__":

@@ -60,8 +60,9 @@ class SweepRunsWithoutAServerTests(unittest.TestCase):
         reading is comparable with any other's — which is what makes this two
         lines instead of twenty.
         """
+        # The default store, as the sweep subprocess opens it.
         store = create_workflow_store(
-            backend="local", root=os.path.join(self.cwd, ".nodus", "workflow_framework")
+            root=os.path.join(self.cwd, ".nodus", "workflow_framework")
         )
         store.create_run(
             run_id=run_id, graph_id=f"g_{run_id}",
@@ -85,8 +86,9 @@ class SweepRunsWithoutAServerTests(unittest.TestCase):
         self._stranded_wait("stranded", deadline_ms=1.0)
         code, _report = sweep_in(self.cwd)
         self.assertEqual(0, code)
+        # The default store, as the sweep subprocess opens it.
         store = create_workflow_store(
-            backend="local", root=os.path.join(self.cwd, ".nodus", "workflow_framework")
+            root=os.path.join(self.cwd, ".nodus", "workflow_framework")
         )
         self.assertNotEqual("waiting", store.get_run("stranded").status)
 

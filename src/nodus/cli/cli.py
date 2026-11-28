@@ -81,6 +81,7 @@ from nodus.cli.commands import (
 from nodus.cli.flags import CliUsageError, parse_flags
 from nodus.support.staging import StagedFlipWarning
 from nodus_lang_workflow.runner import get_default_workflow_runner
+from nodus_lang_workflow.store import StrandedRunsError, StrandedRunsWarning
 from nodus_lang_workflow.store import TERMINAL_RUN_STATUSES
 from nodus.support.console import stdout_print, write_stdout
 
@@ -125,7 +126,8 @@ def _show_staged_flip_warnings() -> None:
     previous = warnings.showwarning
 
     def show(message, category, filename, lineno, file=None, line=None):
-        if issubclass(category, StagedFlipWarning):
+        # #797: the explicit-SQLite stranded-runs notice reads the same way.
+        if issubclass(category, (StagedFlipWarning, StrandedRunsWarning)):
             print(f"warning: {message}", file=sys.stderr)
             return
         previous(message, category, filename, lineno, file, line)
@@ -626,6 +628,16 @@ def _report_staged(
         "compiled, so it cannot fail at the major)"
     )
     stdout_print("")
+    if not report.flips:
+        # Every flip has landed and left the register's `flips` section. Say
+        # that, rather than "nothing found in the 0 flip(s) checked", which
+        # reads as a scan that ran and passed. Landed flips' scans run under
+        # plain `nodus check`.
+        stdout_print(
+            f"No behaviour changes are staged for {report.target}. Plain "
+            f"`nodus check` reports what the landed ones find."
+        )
+        return 0
     total = 0
     for flip in report.flips:
         label = f"{flip.name} (#{flip.issue})"
@@ -1258,21 +1270,47 @@ def _workflow_migrate_store(
 ) -> int:
     """Copy run records between store backends (#174).
 
-    The source defaults to the store the default runner is *currently* using, so
-    the common case — "I have been running on `local` and want `sqlite`" — needs
-    only `--to sqlite`. Naming it explicitly is for the case where the default
-    has already been switched and the old store still holds runs.
+    The source defaults to the *other* backend, so the common case, "I have been
+    running on `local` and want `sqlite`", needs only `--to sqlite`.
+
+    It used to default to the store the default runner was using. Now
+    that is SQLite (#797), and building it refuses while the JSON store holds
+    runs SQLite lacks, which is exactly the state this command repairs. So no
+    store here is built through the refusing path: the migration is the remedy
+    the refusal names, and it must be able to run.
+
+    The target is the store the runtime will open afterwards: with no backend
+    configured and `--to sqlite`, the default SQLite file beside the JSON store.
     """
-    from nodus_lang_workflow.store import create_workflow_store, migrate_workflow_store
+    from nodus_lang_workflow.runner import default_store_root
+    from nodus_lang_workflow.store import (
+        DEFAULT_WORKFLOW_STORE_BACKEND,
+        create_workflow_store,
+        migrate_workflow_store,
+        workflow_store_backend_from_env,
+        workflow_store_path_from_env,
+    )
 
     with _project_root_context(project_root):
-        try:
-            source = (
-                get_default_workflow_runner().store
-                if from_backend is None
-                else create_workflow_store(backend=from_backend)
+        env_backend = workflow_store_backend_from_env()
+        root = default_store_root()
+        to_name = to_backend.strip().lower()
+        from_name = from_backend or ("local" if to_name == "sqlite" else "sqlite")
+
+        def _build(name: str, path: str | None):
+            # The unchosen default resolves its path beside the JSON store; an
+            # explicit backend keeps the meaning it had in 5.x.
+            unchosen = name == DEFAULT_WORKFLOW_STORE_BACKEND and env_backend is None
+            return create_workflow_store(
+                backend=None if unchosen else name,
+                root=root,
+                path=path,
+                refuse_stranded=False,
             )
-            target = create_workflow_store(backend=to_backend, path=store_path)
+
+        try:
+            source = _build(from_name, workflow_store_path_from_env())
+            target = _build(to_name, store_path or workflow_store_path_from_env())
         except ValueError as exc:
             _print_stderr(str(exc))
             return 1
@@ -1994,6 +2032,12 @@ def main(argv: list[str] | None = None) -> int:
         # A "did you mean ...?" hint already ends the sentence.
         _print_stderr(f"Error: {message}" + ("" if message.endswith(("?", ".")) else "."))
         _print_stderr(f"Run '{label} --help' to see the flags it takes.")
+        return 1
+    except StrandedRunsError as exc:
+        # #797: any command that opens the default workflow store refuses while
+        # the JSON store holds runs SQLite lacks. One boundary here, rather than
+        # a guard at each of the commands that build the runner.
+        _print_stderr(f"Error: {exc}")
         return 1
 
 

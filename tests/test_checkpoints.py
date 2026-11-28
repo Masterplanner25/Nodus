@@ -30,7 +30,7 @@ from nodus.orchestration import task_graph  # noqa: E402
 from nodus.runtime.embedding import NodusRuntime  # noqa: E402
 from nodus.tooling.runner import resume_workflow, run_workflow_code  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
-from nodus_lang_workflow.store import LocalWorkflowStore  # noqa: E402
+from nodus_lang_workflow.store import create_workflow_store  # noqa: E402
 
 
 def _run(src: str, td: str):
@@ -167,7 +167,7 @@ let _ = run_workflow(demo)
             result, _vm = _run(src, td)
             self.assertTrue(result.get("ok"), result)
             graph_id = result["result"]["graph_id"]
-            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            store = create_workflow_store(root=os.path.join(td, ".nodus", "workflow_framework"))
             record_before = store.get_run(graph_id)
             self.assertIsNotNone(record_before)
             task_graph._GRAPH_REGISTRY.pop(graph_id, None)

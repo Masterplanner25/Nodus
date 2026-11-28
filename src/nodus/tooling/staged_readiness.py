@@ -10,13 +10,13 @@ gate G3): a report that looks complete and is not would be the failure #797
 already taught this project to distrust -- a notice can be careful, correct,
 and still leave someone believing something false.
 
-One flip is still staged; the rest have landed and left the `flips`
-section of the register. A landed flip whose scan still finds code that now
-fails is reported by plain `nodus check` instead (`landed_findings`).
+Every flip of the current cohort has landed and left the `flips` section of
+the register, so `--staged` reports none until the next major stages one. A
+landed flip whose scan still finds code that now fails is reported by plain
+`nodus check` instead (`landed_findings`).
 
 | flip | how |
 |---|---|
-| `default-store-sqlite` | a filesystem question: does the local store hold runs |
 | `concurrent-write` (landed) | which step writes which cell, against the graph's ordering |
 | `worker-dispatcher` (landed) | `worker:` declarations, reported rather than judged |
 | `rebuild-effect` (landed) | top-level effects outside `main` in a file that can be rebuilt: builtins, stdlib wrappers, declared `extern` host functions |
@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -51,9 +50,7 @@ _REGISTER = Path(__file__).resolve().parent.parent / "support" / "staged_flips.j
 #: Flips this module can answer from source. Anything in the register and not
 #: here is reported as unchecked -- deliberately, so adding a sixth flip to the
 #: register makes the report say "nobody looked at this" rather than omit it.
-_STATIC = {
-    "default-store-sqlite",
-}
+_STATIC: set[str] = set()
 
 
 def landed_checks(register_path: Path | None = None) -> dict[str, str]:
@@ -450,38 +447,6 @@ def _scan_source(path: str, code: str, *, imported: bool = False) -> dict:
     return findings
 
 
-def _local_store_findings(project_root: str | None) -> list:
-    """Does an unconfigured local workflow store hold runs? (#174/#797)
-
-    Not a source question. The same three conditions the runtime notice uses,
-    asked of the filesystem instead of a live store -- a project that chose
-    `local` means it, and one with no runs has nothing to migrate.
-    """
-    if os.environ.get("NODUS_WORKFLOW_STORE_BACKEND"):
-        return []
-    root = project_root or os.getcwd()
-    runs = Path(root) / ".nodus" / "workflow_framework" / "runs"
-    try:
-        count = sum(1 for entry in runs.iterdir() if entry.suffix == ".json")
-    except OSError:
-        return []
-    if not count:
-        return []
-    # v6-flip: default-store-sqlite
-    return [
-        Finding(
-            "default-store-sqlite", str(runs),
-            f"{count} run record(s) in the file-backed JSON store, which is not "
-            f"the default at 6.0.0. Runs recorded here are not visible to a "
-            f"SQLite store, so an in-flight waiting run would become unresumable "
-            f"rather than move. Migrate with "
-            f"`nodus workflow migrate-store --to sqlite` (non-destructive, has a "
-            f"real --dry-run), or set NODUS_WORKFLOW_STORE_BACKEND=local to keep "
-            f"the JSON store deliberately.",
-        )
-    ]
-
-
 def scan(
     *,
     sources: list[tuple[str, str]],
@@ -493,7 +458,10 @@ def scan(
 
     `sources` is `(path, code)` for each file walked, the entry first.
     `dynamic_report` overrides `NODUS_STAGED_FLIP_REPORT` for tests.
+    `project_root` is accepted and unused: it located the JSON store for the
+    default-store flip, which landed (#797) as a refusal at run time.
     """
+    del project_root
     report = ReadinessReport()
     data, error = load_register(register_path)
     if error:
@@ -513,8 +481,6 @@ def scan(
             continue
         for flip, items in found.items():
             collected.setdefault(flip, []).extend(items)
-
-    collected["default-store-sqlite"] = _local_store_findings(project_root)
 
     # What earlier runs actually hit, if anyone asked for a report. This is the
     # only answer #545 has, and it *upgrades* a flip from "not checked" to

@@ -94,6 +94,34 @@
   - There is no scan: whether a comparison's answer changed depends on the
     runtime types of both operands.
   - Migration: `docs/migration/v6.0-staged-flips.md` §5.
+- **#797: the default workflow store is SQLite, and it refuses rather than hiding
+  runs.** This is a 6.0.0 flip (#174), staged since 5.10.0. With no backend
+  configured, runs are recorded in `.nodus/workflow_framework.sqlite3` instead of
+  the JSON store in `.nodus/workflow_framework/runs/`. Runs in the JSON store are
+  invisible to SQLite, so if it holds runs SQLite lacks, opening the default store
+  raises `StrandedRunsError`, naming them. That covers `nodus run` on a program that
+  runs a workflow, `nodus workflow ...`, `nodus serve` and an embedded
+  `run_workflow()`. The CLI prints the message and exits 1.
+  - **To fix it:** `nodus workflow migrate-store --to sqlite` (non-destructive, with
+    `--dry-run`), which the refusal does not stop. Or set
+    `NODUS_WORKFLOW_STORE_BACKEND=local` to keep the JSON store, which stays
+    supported. A project with no runs sees nothing.
+  - **Where the file goes:** beside the JSON store's root, so `root=` and
+    `NODUS_WORKFLOW_STORE_ROOT` still relocate the default store. For the default
+    root that is the path SQLite always had, so a host that already set
+    `NODUS_WORKFLOW_STORE_BACKEND=sqlite` and the default share one database. An
+    explicit `sqlite` keeps its 5.x meaning, and with stranded runs it warns
+    instead of refusing, since the host chose the switch.
+  - **`migrate-store --to sqlite`** copies from the JSON store into the file the
+    runtime will open. Its source used to be the default runner's store, which is
+    SQLite now.
+  - **`WorkflowFrameworkRunner()`** with no store builds the default store. It used
+    to build a `LocalWorkflowStore` of its own.
+  - **Durable coroutines need no setup:** `durable_spawn` refused the JSON store,
+    and it is no longer the default.
+  - **Removed:** the 5.x transitional notice, and the `nodus check --staged` scan
+    of the JSON store. No staged flips remain, so `--staged` reports none.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §1.
 
 ## [5.21.0] - 2026-11-27
 

@@ -301,7 +301,7 @@ class GoalFrameworkRegistrationTests(unittest.TestCase):
 
     def test_run_goal_creates_framework_run_record(self):
         """run_goal() must register the run in the WorkflowFrameworkRunner store."""
-        from nodus_lang_workflow.store import LocalWorkflowStore
+        from nodus_lang_workflow.store import create_workflow_store
 
         src = """
 goal demo {
@@ -314,7 +314,7 @@ let result = run_goal(demo)
             result, _vm, _path = self._run_goal(src, td)
             self.assertTrue(result.get("ok"), result)
             graph_id = result["result"]["graph_id"]
-            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            store = create_workflow_store(root=os.path.join(td, ".nodus", "workflow_framework"))
             record = store.get_run(graph_id)
             self.assertIsNotNone(record, "run_goal() should create a WorkflowFrameworkRunner record")
             self.assertEqual(record.execution_kind, "goal")
@@ -324,7 +324,7 @@ let result = run_goal(demo)
     def test_resume_goal_routes_through_framework_and_updates_resume_count(self):
         """resume_goal() must go through WorkflowFrameworkRunner and update resume_count."""
         from nodus.cli import cli as nodus_cli
-        from nodus_lang_workflow.store import LocalWorkflowStore
+        from nodus_lang_workflow.store import create_workflow_store
 
         src = """
 goal demo {
@@ -355,14 +355,14 @@ let result = run_goal(demo)
                 resumed = resumed_vm.builtin_resume_goal(graph_id, "after_a")
             self.assertTrue(isinstance(resumed, dict) and resumed.get("goal") == "demo", resumed)
 
-            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            store = create_workflow_store(root=os.path.join(td, ".nodus", "workflow_framework"))
             record = store.get_run(graph_id)
             self.assertIsNotNone(record)
             self.assertEqual(record.resume_count, 1, "resume_goal() must increment resume_count")
 
     def test_run_goal_execution_kind_is_goal(self):
         """execution_kind in the framework record must be 'goal', not 'workflow'."""
-        from nodus_lang_workflow.store import LocalWorkflowStore
+        from nodus_lang_workflow.store import create_workflow_store
 
         src = """
 goal my_task {
@@ -374,7 +374,7 @@ let _ = run_goal(my_task)
             result, _vm, _path = self._run_goal(src, td)
             self.assertTrue(result.get("ok"), result)
             graph_id = result["result"]["graph_id"]
-            store = LocalWorkflowStore(root=os.path.join(td, ".nodus", "workflow_framework"))
+            store = create_workflow_store(root=os.path.join(td, ".nodus", "workflow_framework"))
             record = store.get_run(graph_id)
             self.assertIsNotNone(record)
             self.assertEqual(record.execution_kind, "goal")

@@ -206,12 +206,13 @@ CI reports this, and the local run of the same command does not.
 durable_spawn needs a workflow store whose claims are exclusive across processes, ... LocalWorkflowStore is not
 ```
 
-- **Cause:** the default JSON store's claims hold only within one process, so it cannot
+- **Cause:** the JSON store's claims hold only within one process, so it cannot
   guarantee that a sweep and a restarted program do not both resume one run.
 - **Resolution:** `NODUS_WORKFLOW_STORE_BACKEND=sqlite`. Move existing runs with
   `nodus workflow migrate-store --to sqlite`.
 - **Evidence:** #180, #937, `docs/guide/durable-coroutines.md`.
-- **Status:** Verified. It is by design until the default flips at 6.0.0.
+- **Status:** Verified. By design. Since 6.0.0 the default store is SQLite (#797), so this
+  appears only where `NODUS_WORKFLOW_STORE_BACKEND=local` chose the JSON store.
 - **Applies when:** running a durable coroutine on a default setup.
 
 ## EXP-011: `git add` refuses a path under `.claude/`
@@ -264,3 +265,24 @@ FAIL docs\guide\standard-library.md:1405
   and `--runtime` from Git Bash passed 303/303 on the same tree.
 - **Status:** Verified.
 - **Applies when:** running the doc gate on this Windows box outside Git Bash.
+
+## EXP-014: a workflow, `nodus workflow` or the suite fails with "the default workflow store is SQLite"
+
+```
+Error: the default workflow store is SQLite (...workflow_framework.sqlite3), and 1194 run
+record(s) in the file-backed JSON store at ...workflow_framework are not in it, ...
+```
+
+- **Cause:** since 6.0.0 the default store is SQLite (#797), and with no backend
+  configured it refuses to open while the JSON store holds runs SQLite lacks. A checkout
+  used under 5.x has such runs: this repo's root held 1194 and `tests/` held 362, all
+  suite artifacts. In a full suite run, any test that leaves JSON runs in the repo root
+  makes every later test that opens the default store from there fail, so a refusal in
+  an unrelated test is usually this.
+- **Resolution:** for real runs, `nodus workflow migrate-store --to sqlite`. For suite
+  artifacts in this repo, move `.nodus/workflow_framework/runs` aside. They are test
+  output, and CLAUDE.md records deleting them as safe here.
+- **Evidence:** the #797 flip PR, 2026-11-28: `test_cli_serve_command_starts_and_stops`
+  failed in the full suite and passed alone.
+- **Status:** Verified.
+- **Applies when:** working in a checkout, or a project, that ran workflows under 5.x.

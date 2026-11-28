@@ -85,7 +85,8 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["runtime"], "nodus")
-        self.assertEqual(payload["workflow_store"]["backend"], "local")
+        # The default store is SQLite since 6.0.0 (#797).
+        self.assertEqual(payload["workflow_store"]["backend"], "sqlite")
 
     def test_execute(self):
         status, payload = self.request("POST", "/execute", {"code": "print(1 + 1)", "filename": "inline.nd"})
