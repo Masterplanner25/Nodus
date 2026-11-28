@@ -2219,17 +2219,24 @@ def probe_serve_denies_submitted_code():
         'print("exit=\\(r.exit_code)")\n' % sys.executable.replace("\\", "/")
     )
     cwd = os.getcwd()
-    with tempfile.TemporaryDirectory() as td:
+    # Each service is closed before the directory goes. Left open, their
+    # sweepers outlived it; on the SQLite default store (6.0.0) the next sweep
+    # reconnected to a new, empty file and the thread died on the missing table.
+    services = []
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         os.chdir(td)
         try:
-            control = RuntimeService().execute(
+            # Built inside the directory: the default runner binds to the CWD.
+            services = [RuntimeService(), RuntimeService(),
+                        RuntimeService(allow_subprocess=True)]
+            control = services[0].execute(
                 {"code": 'print("ran")\n', "filename": "<probe>"}
             )
-            denied = RuntimeService().execute({"code": source, "filename": "<probe>"})
-            granted = RuntimeService(allow_subprocess=True).execute(
-                {"code": source, "filename": "<probe>"}
-            )
+            denied = services[1].execute({"code": source, "filename": "<probe>"})
+            granted = services[2].execute({"code": source, "filename": "<probe>"})
         finally:
+            for service in services:
+                service.close()
             os.chdir(cwd)
 
     assert control.get("ok") and "ran" in (control.get("stdout") or ""), (
