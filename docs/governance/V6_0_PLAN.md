@@ -59,7 +59,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 | 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | yes, since G2 (`nodus run` too, cold and warm) | #609 |
 | 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
-| 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
+| 4 | A `worker:` declaration with no dispatcher becomes an error (**landed**) | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
 | 6 | A rebuild that re-runs a top-level effect refuses it (**landed**) | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
 | 7 | `run_loop()` called from library code becomes an error | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |

@@ -671,19 +671,20 @@ registered by `nodus serve`, or passed to an embedded runtime as
 `NodusRuntime(worker_dispatcher=…)`. With one registered, a name no worker
 advertises fails the step: `No workers registered with capability: gpu`.
 
-With **no** dispatcher registered, there is nowhere to send the step. It runs in
-the calling process, with no isolation, and warns:
+With **no** dispatcher registered, there is nowhere to send the step, so the
+workflow is refused before any step runs (`kind: "workflow_error"`). Under
+`nodus run`, with the path shortened:
 
 ```
-warning: step declares worker 'hardened-sandbox', but no worker dispatcher is
-registered, so it runs in this process with no isolation. Run under `nodus serve`
-with a registered worker, or pass `worker_dispatcher=` to NodusRuntime. This
-becomes an error in 6.0.0.
+Workflow_error error at w.nd:8:13: a step declares worker 'hardened-sandbox', but no worker dispatcher is registered, so it cannot run with the isolation it asked for. Run under `nodus serve` with a registered worker, pass `worker_dispatcher=` to NodusRuntime, or remove the declaration to run in-process.
 ```
 
 Through 5.2.0 that case was silent, so a step declaring an isolation intent got
-none and said nothing (#492). Treat `worker` as a requirement that must be
-satisfied, not a hint.
+none and said nothing (#492). From 5.3.0 through 5.x it ran in-process with a
+warning, and it has been refused since 6.0.0 (#798). Treat `worker` as a
+requirement that must be satisfied, not a hint. `nodus check` warns about every
+`worker:` declaration, since only the deployment knows whether a dispatcher will
+be registered.
 
 ## Goal DSL
 

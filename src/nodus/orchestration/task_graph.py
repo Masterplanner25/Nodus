@@ -960,27 +960,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
     # paths reaches it. The declaration is an isolation intent, so silently
     # running here is the worst available answer.
     #
-    # Warned rather than refused for 5.x because running in-process is what every
-    # prior release did and a CLI author may be relying on it; 6.0.0 makes it an
-    # error, matching how the concurrent-write conflict was staged (#547).
+    # Warned through 5.x, because running in-process was what every prior release
+    # did; since 6.0.0 it is refused (#798), before any step runs, so nothing the
+    # workflow does happens without the isolation it asked for.
     if dispatcher is None:
         _unhonoured = sorted({t.worker for t in tasks if t.worker is not None})
         if _unhonoured:
             _names = ", ".join(f"'{w}'" for w in _unhonoured)
-            print(
-                f"warning: {'step declares' if len(_unhonoured) == 1 else 'steps declare'} "
-                f"worker {_names}, but no worker dispatcher is registered, so "
-                f"{'it runs' if len(_unhonoured) == 1 else 'they run'} in this "
-                f"process with no isolation. Run under `nodus serve` with a "
-                f"registered worker, or pass `worker_dispatcher=` to "
-                f"NodusRuntime. This becomes an error in 6.0.0.",
-                file=sys.stderr,
-            )
-            record_staged_flip(
-                "worker-dispatcher",
-                f"{'step declares' if len(_unhonoured) == 1 else 'steps declare'} "
-                f"worker {_names} with no dispatcher registered",
-            )
+            # The event first, so an embedder watching for it still sees it.
             vm.event_bus.emit_event(
                 "workflow_worker_unhonoured",
                 data={
@@ -992,6 +979,14 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     "graph_id": graph.graph_id,
                     "workers": _unhonoured,
                 },
+            )
+            vm.runtime_error(
+                "workflow_error",
+                f"{'a step declares' if len(_unhonoured) == 1 else 'steps declare'} "
+                f"worker {_names}, but no worker dispatcher is registered, so it "
+                f"cannot run with the isolation it asked for. Run under `nodus serve` "
+                f"with a registered worker, pass `worker_dispatcher=` to NodusRuntime, "
+                f"or remove the declaration to run in-process.",
             )
 
     vm.event_bus.emit_event("task_graph_start", data={"tasks": float(len(tasks))})

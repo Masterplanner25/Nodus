@@ -52,7 +52,7 @@ RECORDS = """fn main() {
 RACE = """workflow race {
     state total = 0i
 
-    step a with { worker: "remote" } {
+    step a {
         total = 1i
         return "a"
     }
@@ -171,12 +171,14 @@ class SitesRecordTests(_Env):
         self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
         self.assertIn("record-equality", self.flips_in_report())
 
-    def test_concurrent_write_and_worker_are_recorded(self):
+    def test_concurrent_write_is_recorded(self):
+        """The worker flip used to be recorded here too. It landed in 6.0.0
+        (#798): a refusal now, so there is no warning left to record."""
         self.write("race.nd", RACE)
         self.run_nodus("run", "race.nd", "--time-limit", "20", report=self.report)
         found = self.flips_in_report()
         self.assertIn("concurrent-write", found)
-        self.assertIn("worker-dispatcher", found)
+        self.assertNotIn("worker-dispatcher", found)
 
     def test_unknown_type_name_is_recorded(self):
         self.write("bad.nd", BAD_TYPE)
@@ -211,7 +213,6 @@ class EmissionIsUnchangedTests(_Env):
             "run", "race.nd", "--time-limit", "20", report=self.report
         )
         self.assertIn("both wrote state", with_report.stderr)
-        self.assertIn("no worker dispatcher is registered", with_report.stderr)
 
     def test_the_warnings_are_identical_with_and_without_a_report(self):
         """Each run gets its own directory, or the comparison is not one.

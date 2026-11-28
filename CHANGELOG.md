@@ -23,6 +23,16 @@
     program that is never resumed runs correctly. `nodus check --staged` no
     longer lists the flip, because it has landed.
   - Migration: `docs/migration/v6.0-staged-flips.md` §6.
+- **#798: a `worker:` declaration with no registered dispatcher is refused.** This
+  is a 6.0.0 flip, staged since 5.3.0. `step s with { worker: "gpu" }` asks for
+  the step to run somewhere else. With no dispatcher it ran in-process, with no
+  isolation, and warned. Now the workflow fails with `kind: "workflow_error"`
+  before any step runs. To fix it, run under `nodus serve` with a registered
+  worker, pass `worker_dispatcher=` to `NodusRuntime`, or remove the declaration.
+  - The `workflow_worker_unhonoured` event still fires, just before the refusal.
+  - `nodus check` warns about each `worker:` declaration, since whether a
+    dispatcher is registered is a deployment fact the source cannot show.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §4.
 
 ## [5.21.0] - 2026-11-27
 
