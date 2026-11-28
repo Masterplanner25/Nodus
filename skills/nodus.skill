@@ -1,6 +1,6 @@
 ---
 name: nodus
-version: "5.21.0"
+version: "6.0.0"
 description: >
   Use this skill whenever writing, editing, or debugging Nodus (.nd) code.
   Triggers on: any .nd file, workflow DSL tasks, the `nodus` CLI, importing
@@ -26,7 +26,7 @@ The most common failure mode: writing Python-shaped Nodus. A script full of
 functions and for-loops that happens to parse is not idiomatic Nodus. Reach for
 `workflow { step … }` whenever there is sequencing, dependency, or retry involved.
 
-**Package version is 5.21.0. Bytecode version is 5** — it moved from 4 at 5.17.0 (#969),
+**Package version is 6.0.0. Bytecode version is 5** — it moved from 4 at 5.17.0 (#969),
 so bytecode an earlier version cached is recompiled once; a package version bump
 does not otherwise imply recompilation. Installed via `pip install nodus-lang`.
 
@@ -131,7 +131,10 @@ print("total=\(r["state"]["total"])")       // total=3
 
 A folded cell is written with `+=`, which **contributes** a value. A plain
 `total = …` sets a final value and cannot be combined with another branch's, so
-the compiler refuses it and says exactly that. No type annotation on `state`:
+the compiler refuses it and says exactly that. Two unordered steps writing an
+*undeclared* cell, where an update is lost, fail the run since 6.0.0: declare
+`merge:` (`"sum"`/`"append"` to combine, `"any"` for deliberate last-write-wins).
+No type annotation on `state`:
 `state x: int = …` is a syntax error, the `: type` slot is unused.
 
 ### Smaller things that change what you write
@@ -266,7 +269,8 @@ workflow w {
 ```
 
 Since 5.16.0 a function started with `durable_spawn(key, fn, args)` can
-checkpoint too (Experimental; needs `NODUS_WORKFLOW_STORE_BACKEND=sqlite`).
+checkpoint too (Experimental; works on the default SQLite store since 6.0.0, and
+is refused under `NODUS_WORKFLOW_STORE_BACKEND=local`).
 Re-running the program with the same key resumes after the last checkpoint:
 
 ```nd
@@ -397,7 +401,7 @@ type(len([1,2,3]))  // "int"  — len() returns int
 ```nd
 let x = 42i           // declare (works as mutable in regular scope)
 x = x + 1i            // reassign — no += operator
-let y: int = 0i       // type annotation (hint only, not enforced)
+let y: int = 0i       // type annotation; an unknown type name is a syntax error (6.0.0)
 ```
 
 **Module-scope restriction (#671):** assigning to a **top-level** `let` from inside a
@@ -491,6 +495,10 @@ let data = json.parse(some_json_string)
 data["field"]   // ✅  bracket notation
 data.field      // ❌  runtime error
 ```
+
+**Records compare by value since 6.0.0**, like maps and lists:
+`{x: 1i} == {x: 1i}` is `true`. (Through 5.x it was `false`: records compared by
+identity.) `==` still never makes a record equal to a map with the same entries.
 
 ---
 

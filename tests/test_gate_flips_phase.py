@@ -106,6 +106,24 @@ class AttributionTests(unittest.TestCase):
         self.assertFalse(result.has_failure, result)
 
 
+class VersionFileTests(unittest.TestCase):
+    def test_the_version_file_is_not_a_promise(self):
+        """At the cut, `version.py` names the target: that is the release."""
+        with _Tree({}, "X = 1\n") as t:
+            (t.root / "src" / "nodus" / "support" / "version.py").write_text(
+                '__version__ = "6.0.0"\n', encoding="utf-8")
+            result = t.run()
+        self.assertEqual(result.mentions, 0)
+        self.assertFalse(result.has_failure, result)
+
+    def test_the_same_line_elsewhere_still_is(self):
+        """The exemption is one file, not a pattern: the same text in another
+        module is still an unregistered promise."""
+        with _Tree({}, '__version__ = "6.0.0"\n') as t:
+            result = t.run()
+        self.assertEqual(len(result.unattributed), 1)
+
+
 class RegisterTests(unittest.TestCase):
     def test_a_declared_flip_with_no_promise_fails(self):
         """Honoured, or retracted in silence — the second is why this fails."""

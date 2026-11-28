@@ -11,6 +11,34 @@
 > of the 5.0.0 cycle. A doc that cannot go stale beats a gate that catches it going stale.</sub>
 
 > [!IMPORTANT]
+> ### Breaking in v6.0.0: seven behaviours that warned through 5.x now apply
+>
+> 6.0.0 adds no features. Each change below warned on the path you run, for at
+> least one 5.x release:
+>
+> - **The default workflow store is SQLite.** If your project has runs in the
+>   JSON store (`.nodus/workflow_framework/runs/`), the default store refuses
+>   to open and names them, so a parked run is never silently lost. Run
+>   `nodus workflow migrate-store --to sqlite`, or set
+>   `NODUS_WORKFLOW_STORE_BACKEND=local` to keep the JSON store. **Do this one
+>   first: it is about state you already have.**
+> - **An unknown type name is a syntax error** (`fn f(a: itn)`).
+> - **Record `==` compares by value**, like maps and lists.
+> - **A concurrent state write that loses an update is refused.**
+> - **A `worker:` declaration with no registered dispatcher is refused.**
+> - **Resuming a stored run refuses a top-level effect** instead of repeating
+>   it. `NODUS_REBUILD_EFFECTS=allow` lets through a run stored before you fixed
+>   its program.
+> - **`run_loop()` from library code is an error.** Use `wait(task)`.
+>
+> Also removed: `.tl` source files, the `language.py` / `language.bat`
+> launchers, `nodus.tooling.tiny_vm_lang_functions` and `NodusRuntime._last_vm`
+> (use `active_vm()`).
+>
+> Every change, with the error you will see and the fix, is in
+> [the 6.0.0 migration guide](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v6.0-staged-flips.md).
+
+> [!NOTE]
 > ### Breaking in v5.0.0: `NodusRuntime` denies capabilities by default
 >
 > **Embedding only.** A `NodusRuntime()` can no longer run subprocesses, open
@@ -47,7 +75,13 @@
 > [the migration note](https://github.com/Masterplanner25/Nodus/blob/main/docs/migration/v5.0-deny-by-default.md) and
 > [#405](https://github.com/Masterplanner25/Nodus/issues/405).
 
-**Recent:** 5.21.0 is the last 5.x release, and it carries the notice for one
+**Recent:** 6.0.0 is the major the 5.x warnings were for: see the box above
+and the migration guide. Plain `nodus check` now reports what the old staged
+scans found, as an error where the scan is exact and a warning where the run
+decides. Durable coroutines need no setup now that SQLite is the default
+store.
+
+5.21.0 is the last 5.x release, and it carries the notice for one
 more change coming in 6.0.0. A `run_loop()` call from library code (any module
 but your program's entry file) now prints a warning, and becomes an error at
 6.0.0, because it runs every coroutine the caller has spawned, not only the

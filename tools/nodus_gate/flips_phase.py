@@ -174,9 +174,18 @@ def _load_manifest(root: Path) -> tuple[dict, str | None]:
     return data, None
 
 
+#: The file that declares the package version. At the cut it says the target
+#: itself (`__version__ = "6.0.0"`), which is the release, not a promise about
+#: it, so it is not scanned.
+_VERSION_FILE = Path("src") / "nodus" / "support" / "version.py"
+
+
 def _python_sources(root: Path):
+    version_file = (root / _VERSION_FILE).resolve()
     for path in sorted((root / _SRC).rglob("*.py")):
         if "__pycache__" in path.parts:
+            continue
+        if path.resolve() == version_file:
             continue
         yield path
 

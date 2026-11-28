@@ -183,6 +183,14 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 6.0.0 | with no backend configured, workflow runs go to SQLite, and if the JSON store holds runs SQLite lacks, opening the default store fails with `StrandedRunsError` (every `nodus workflow` command, `nodus run` of a workflow, `nodus serve`, embedded `run_workflow()`) (#797) | intended, and the one row about *state*. `nodus workflow migrate-store --to sqlite` (non-destructive; the refusal does not stop it), or `NODUS_WORKFLOW_STORE_BACKEND=local` to keep the JSON store. An explicit `sqlite` keeps its 5.x path and only warns. **On this box the release probes run from `%TEMP%`: move stale JSON runs there aside first** (EXP-014) |
+| 6.0.0 | an unrecognised type name is a syntax error (`fn f(a: itn)`) (#609) | fix the spelling; the error names the near miss and the known types |
+| 6.0.0 | two distinct records with equal fields are `==` (#545) | intended; only `false` becomes `true`. Code using `==` as an identity test compares a unique field. `Record` is unhashable on the Python side; use `id(record)` |
+| 6.0.0 | two unordered steps writing one undeclared cell, losing an update, fail the run with `workflow_error` (#547) | declare `with { merge: "sum" }` / `"append"` to combine, or `merge: "any"` for deliberate last-write-wins |
+| 6.0.0 | a `worker:` declaration with no registered dispatcher fails the workflow before any step runs (#798) | run under `nodus serve` with a worker, pass `worker_dispatcher=`, or remove the declaration |
+| 6.0.0 | resuming a stored run refuses a top-level effect instead of repeating it (#917) | move the effect into `main()` or mark the host function `rebuild_safe=True`; `NODUS_REBUILD_EFFECTS=allow` for a run stored before the fix |
+| 6.0.0 | `run_loop()` from library code raises a runtime error (#1021) | `wait(task)`; `run_loop()` in the entry file is unchanged |
+| 6.0.0 | `.tl` files, `language.py` / `.bat` / `nodus.main.language`, `nodus.tooling.tiny_vm_lang_functions` and `NodusRuntime._last_vm` are gone (D2, D3) | rename to `.nd`; use the `nodus` command; import from `nodus`; `active_vm()` |
 | 5.21.0 | `std:async.parallel` and `series` no longer finish the caller's other coroutines: a coroutine spawned before the call may still be pending when they return (#1021) | intended. They called `run_loop()`, which drained the whole program's queue; they now stop when their own tasks settle. Return value, failure reporting and the running of every task are unchanged. Call `run_loop()` (or `wait(task)`) yourself after them for work of your own. Inside a coroutine they now park instead of re-entering the scheduler |
 | 5.20.0 | `nodus serve`, `nodus test` and the tools layer (`runner.run_source`, which the service's API uses too) compile hot functions to Python by default (#976 follow-up, PR #1013) | intended, and as for 5.19.0 results are unchanged by design; timing differs, and so does `vm._pycompile` on those VMs. `NODUS_COMPILE_FUNCTIONS=0` restores the old behaviour for the whole process. An observer keeps it off: `nodus profile`, and `nodus test --coverage` |
 | 5.19.0 | `nodus run` and `NodusRuntime` compile hot functions to Python by default (#976) | intended, and results are unchanged by design: the same output, errors, stack traces, instruction counts and limits. What can differ is timing, and anything reading `active_vm()._pycompile`, which is now set. To restore the old behaviour: `nodus run --no-compile`, `NodusRuntime(compile_functions=False)`, or `NODUS_COMPILE_FUNCTIONS=0` for the whole process. A suspected compiled-code bug is the case to reach for the variable: if a program behaves differently with it set, that is a defect to report |
@@ -226,17 +234,15 @@ is not even a row in the table.)
 - **#616 is why 5.6.0 should not be skipped by an embedder** (`severity:high`): a
   capability policy could be bypassed by writing the **async form** of a call.
   Anything embedding a `NodusRuntime` with a policy should be on 5.6.0 or later.
-- **#609 is staged, not done.** An unrecognised type name warns today and becomes
-  an error at **6.0.0**, alongside #547 and #492. A project that is "clean" now can
-  still be red at the major, so treat those warnings as a to-do list.
-- **#174 joins that cohort, and it is the one that costs *state* rather than a
-  build.** The default workflow store becomes `SQLiteWorkflowStore` at **6.0.0**.
-  Runs recorded in the JSON store are invisible to a SQLite one, so an in-flight
-  `waiting` run would become unresumable rather than move. Migrate before the
-  major with `nodus workflow migrate-store --to sqlite` — non-destructive, has a
-  `--dry-run`, and preserves a parked run's wait. An unconfigured local store
-  holding runs warns once per process; `NODUS_WORKFLOW_STORE_BACKEND=local`
-  silences it and is the supported way to keep the JSON store.
+- **The 6.0.0 cohort landed** (#609, #545, #547, #798, #797, #917, #1021, plus
+  the D2/D3 removals). A project that was "clean" on 5.x could still be red at
+  the major; `docs/migration/v6.0-staged-flips.md` is the to-do list.
+- **#174 / #797 is the row that costs *state* rather than a build.** The default
+  workflow store is `SQLiteWorkflowStore` since 6.0.0, and it refuses to open
+  while the JSON store holds runs it lacks, rather than hiding them. Migrate with
+  `nodus workflow migrate-store --to sqlite` (non-destructive, has a `--dry-run`,
+  preserves a parked run's wait); `NODUS_WORKFLOW_STORE_BACKEND=local` keeps the
+  JSON store.
 
   Do not repeat the reason this sat blocked. Three places — the runner comment,
   the test docstring and the runbook — each said *"there is no backend
@@ -251,7 +257,12 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.21.0 took its three entries** (one change, two
+**`[Unreleased]` is empty — 6.0.0 took its eight entries** (seven flips and
+one removal entry, all under Changed). It is the major the 5.x staged warnings
+were for, and it adds no features, so it is all rows: eight above, one per
+entry. The staged-flip register is empty after it (0 staged, 7 landed).
+
+5.21.0 took three entries (one change, two
 fixes). It is the last 5.x release by decision (D4, 2026-11-27): it carries the
 seventh 6.0.0 flip's notice, a `run_loop()` call from library code (#1021),
 and `std:async` stops being an instance of it. `nodus check --staged` scans

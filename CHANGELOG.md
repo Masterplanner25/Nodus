@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-11-28
+
+The major the 5.x staged warnings were for. It adds no features: seven
+behaviours that warned through 5.x now apply, and four surfaces deprecated for
+years are removed. Every change, with the error you will see and the fix, is in
+`docs/migration/v6.0-staged-flips.md`. Migrate workflow run state first (#797).
+
 ### Changed
 
 - **#917: a rebuild refuses a top-level effect instead of repeating it.** This is a
@@ -138,6 +145,13 @@
     the resolver searches. It used to be a hand-written copy, and it omitted
     the stdlib `index.nd` candidate.
   - Migration: `docs/migration/v6.0-staged-flips.md` "Surfaces removed".
+
+### Tooling
+
+- **`nodus_gate --flips` no longer reads `version.py` as a promise.** At the cut
+  it declares the target version itself (`__version__ = "6.0.0"`), which is the
+  release, not a promise about it. The exemption is that one file; the same
+  line anywhere else in `src/` is still an unregistered promise.
 
 ## [5.21.0] - 2026-11-27
 
