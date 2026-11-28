@@ -22,26 +22,26 @@ REBUILD_INERT_BUILTINS: tuple[str, ...] = (
 )
 
 
-def _warn_library_run_loop(vm) -> None:
-    """A library drove the caller's whole scheduler (#1021).
+def _refuse_library_run_loop(vm) -> None:
+    """A library may not drive the caller's whole scheduler (#1021).
 
     `run_loop()` drains every coroutine in the ready deque, and the deque is
     shared by the whole VM chain, so a library that calls it runs work its
     caller spawned and had not chosen to start yet. The entry file may: it owns
     that work. A library has `wait(task)`, which stops when its own task settles.
+    5.21.0 warned; this is the refusal it announced.
     """
-    from nodus.support.staging import record_staged_flip, warn_staged_flip
-
     path, line, col = vm.current_loc()
     path = path or vm.source_path
     where = f"{path}:{line}:{col}" if path and line is not None else (path or "a library")
     # v6-flip: library-run-loop
-    message = (f"run_loop() was called from library code at {where}. It runs every "
-               f"coroutine its caller has spawned, not only the library's own. In "
-               f"6.0.0 this is an error; return the task for the caller to drive, "
-               f"or call wait(task), which stops when that task settles (#1021).")
-    record_staged_flip("library-run-loop", message, where=where)
-    warn_staged_flip(message, stacklevel=3)
+    vm.runtime_error(
+        "runtime",
+        f"run_loop() was called from library code at {where}. It runs every "
+        f"coroutine its caller has spawned, not only the library's own, so only "
+        f"the program's entry file may call it (#1021, since 6.0.0). Return the "
+        f"task for the caller to drive, or call wait(task), which stops when that "
+        f"task settles.")
 
 
 def cancel_coroutine(vm, scheduler, coroutine, err) -> bool:
@@ -399,7 +399,7 @@ def register(vm, registry) -> None:
 
     def builtin_run_loop():
         if vm.running_library_code():
-            _warn_library_run_loop(vm)
+            _refuse_library_run_loop(vm)
         on_error = getattr(vm, "on_error", None)
         scheduler = vm.scheduler
         scheduler._coroutine_errors = []

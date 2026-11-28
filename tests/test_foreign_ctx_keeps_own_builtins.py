@@ -40,24 +40,27 @@ from nodus.vm.vm import VM  # noqa: E402
 
 
 MODULE_A = """\
-    // A: a function whose local is written by a coroutine it spawns.
+    // A: a function whose local is written by a coroutine it spawns. A library
+    // waits on its own tasks: run_loop() here is refused since 6.0.0 (#1021).
     export fn collect(worker) {
         let bucket = {}
-        spawn(coroutine(fn() { bucket["k"] = worker(1) }))
-        run_loop()
+        wait(spawn(coroutine(fn() { bucket["k"] = worker(1) })))
         return bucket
     }
     export fn fan_out(items, worker) {
         let n = len(items)
         let bucket = {}
+        let tasks = []
         let i = 0
         while (i < n) {
             let idx = i
             let item = items[i]
-            spawn(coroutine(fn() { bucket[str(idx)] = worker(item) }))
+            list_push(tasks, spawn(coroutine(fn() { bucket[str(idx)] = worker(item) })))
             i = i + 1
         }
-        run_loop()
+        for t in tasks {
+            wait(t)
+        }
         let results = []
         let k = 0
         while (k < n) {

@@ -241,8 +241,9 @@ class ModuleLocalClosuresUnaffectedTests(unittest.TestCase):
             textwrap.dedent(
                 """
                 fn spawn_and_drive() {
-                    spawn(coroutine(fn() { print("module-local-ran") }))
-                    run_loop()
+                    // wait, not run_loop: a library's run_loop() is refused
+                    // since 6.0.0 (#1021).
+                    wait(spawn(coroutine(fn() { print("module-local-ran") })))
                     return "done"
                 }
 
