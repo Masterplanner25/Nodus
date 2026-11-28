@@ -93,6 +93,9 @@ class Coroutine:
     # so a joined failure is reported ONCE -- to the waiter, not also to
     # stderr and `_coroutine_errors`. An UNjoined failure is untouched.
     waited_on: bool = False
+    # #1021: while parked on a task, whether this coroutine is to be handed
+    # that task's outcome (`wait`) or only woken when it settles (`__settle`).
+    wait_takes_outcome: bool = True
     workflow_context: dict | None = None
     # #394: set by the graph runner on the coroutine it creates for a step, and
     # by nothing else. A guest's own `coroutine(step_fn)` carries False, so the

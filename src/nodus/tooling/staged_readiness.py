@@ -55,6 +55,7 @@ _STATIC = {
     "worker-dispatcher",
     "default-store-sqlite",
     "rebuild-effect",
+    "library-run-loop",
 }
 
 #: Checked from source *and* merged with what runs observed. A static check
@@ -357,11 +358,51 @@ def _rebuild_effect_findings(path: str, tree) -> list:
     return found
 
 
-def _scan_source(path: str, code: str) -> dict:
-    """Per-flip findings for one file's source."""
+def _library_run_loop_findings(path: str, tree) -> list:
+    """Every `run_loop()` call in a file the program imports (#1021).
+
+    Static and exact for this file: the runtime warns for a library's call
+    wherever it is, so any call in an imported file is one, whether or not a
+    given run reaches it. A program's own entry file is never passed here.
+    """
+    from nodus.frontend.ast.ast_nodes import Call, Var
+
+    found = []
+    for root in tree:
+        for node in _walk_ast(root):
+            if not (isinstance(node, Call) and isinstance(node.callee, Var)
+                    and node.callee.name == "run_loop"):
+                continue
+            line, col = _call_start(node)
+            # v6-flip: library-run-loop
+            found.append(Finding(
+                "library-run-loop", path,
+                "run_loop() in a module the program imports runs every coroutine "
+                "its caller has spawned, not only its own, which is an error at "
+                "6.0.0. Return the task for the caller to drive, or call "
+                "wait(task), which stops when that task settles.",
+                line=line, col=col,
+            ))
+    return found
+
+
+def _scan_source(path: str, code: str, *, imported: bool = False) -> dict:
+    """Per-flip findings for one file's source.
+
+    `imported` is every file but the entry (#1022). Two things differ for one:
+    its `run_loop()` calls are a library's, and its unknown type names were not
+    reported by `check_source`, which parsed only the entry.
+    """
     findings: dict[str, list] = {"concurrent-write": [], "worker-dispatcher": []}
-    ast = Parser(tokenize(code)).parse()
+    parser = Parser(tokenize(code))
+    ast = parser.parse()
     findings["rebuild-effect"] = _rebuild_effect_findings(path, ast)
+    if imported:
+        findings["library-run-loop"] = _library_run_loop_findings(path, ast)
+        findings["unknown-type-name"] = [
+            Finding("unknown-type-name", path, u.message(), line=u.line, col=u.col)
+            for u in parser.unknown_type_names
+        ]
     for flow in _flow_defs(ast):
         flow_name = getattr(flow, "name", "?")
         silenced = {
@@ -460,9 +501,9 @@ def scan(
     report.roots = [path for path, _ in sources]
 
     collected: dict[str, list] = {}
-    for path, code in sources:
+    for index, (path, code) in enumerate(sources):
         try:
-            found = _scan_source(path, code)
+            found = _scan_source(path, code, imported=index > 0)
         except Exception:
             # A file that does not parse is `check`'s own error to report, and
             # it has already reported it. Readiness says nothing about it rather
@@ -471,7 +512,7 @@ def scan(
         for flip, items in found.items():
             collected.setdefault(flip, []).extend(items)
 
-    collected["unknown-type-name"] = [
+    collected["unknown-type-name"] = collected.get("unknown-type-name", []) + [
         Finding(
             "unknown-type-name",
             str(warning.get("file", report.roots[0] if report.roots else "?")),

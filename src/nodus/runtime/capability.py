@@ -244,6 +244,8 @@ NO_AUTHORITY_BUILTINS: dict[str, tuple[str, ...]] = {
     "in-process concurrency": (
         "__sleep", "__sleep_until", "cancel", "channel", "close", "coroutine",
         "coroutine_status", "wait", "recv", "resume", "run_loop", "send",
+        # #1021: `wait` without taking the outcome, for `std:async`.
+        "__settle",
         # #182: `sleep_until` reaches nothing `sleep` does not. It is the same
         # cooperative yield with the deadline computed rather than supplied.
         "sleep", "sleep_until", "spawn", "spawn_after", "__spawn_after",
@@ -364,6 +366,7 @@ NO_AUTHORITY_BUILTIN_NAMES = frozenset(
 MAY_SUSPEND_BUILTINS = frozenset({
     # in-process concurrency
     "sleep", "sleep_until", "__sleep", "__sleep_until", "recv", "send", "wait",
+    "__settle",
     # orchestration
     "__workflow_checkpoint", "__action_agent",
     # network, subprocess and agents: the asynchronous variants

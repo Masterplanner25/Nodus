@@ -2,7 +2,38 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#1021: `run_loop()` called from library code warns, and becomes an error at
+  6.0.0.** It is the seventh staged flip, decided as D4 of
+  `docs/governance/V6_0_PLAN.md`. `run_loop()` drains the scheduler's whole
+  queue, which the program shares, so a library that calls it runs every
+  coroutine its caller spawned and had not started. Each call site now prints a
+  `StagedFlipWarning` naming `wait(task)`, which stops when that task settles,
+  and records it in the staged-flip report.
+
+  "Library code" is any module but the program's entry file: a module function,
+  called inside a coroutine or not, and an imported module's own top level.
+  `run_loop()` in the entry file is unchanged, and so is a closure the program
+  hands to a library. Migration: `docs/migration/v6.0-staged-flips.md` §7.
+
+  **`std:async.parallel` and `series` no longer call `run_loop()`.** They drive
+  with a new internal builtin, `__settle(task)`, which is `wait` without taking
+  the task's outcome. Their contract holds: they return nil, a failing task is
+  reported as before, and the others still run. One thing differs: the caller's
+  unrelated coroutines are no longer guaranteed to have finished when they
+  return. Inside a coroutine they now park until their tasks settle instead of
+  re-entering the scheduler. `__settle` joins `BUILTIN_NAMES`, so a host can no
+  longer register a function under that name. No companion uses it.
+
 ### Fixes
+
+- **#1022: `nodus check --staged` scans the files the entry imports.** Its report
+  has always said it checked "the entry file and what it imports", and it
+  scanned only the entry. A workflow race, a `worker:` declaration, a top-level
+  effect or an unknown type name in an imported module was reported `[ok]`. It
+  walks each module's recorded imports now, so a warm bytecode cache gives the
+  same answer as a cold one. The stdlib is left out.
 
 - **#1018: `nodus test --coverage` no longer counts a line that never ran.**
   An instruction a statement emits after a nested block (a function's implicit

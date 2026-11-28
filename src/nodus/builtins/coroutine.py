@@ -18,8 +18,30 @@ from nodus.vm.vm_chain import root_vm
 #: top level (#909). Everything here starts or drives work; nothing here
 #: defines anything a resumed run could need.
 REBUILD_INERT_BUILTINS: tuple[str, ...] = (
-    "spawn", "spawn_after", "__spawn_after", "run_loop", "wait",
+    "spawn", "spawn_after", "__spawn_after", "run_loop", "wait", "__settle",
 )
+
+
+def _warn_library_run_loop(vm) -> None:
+    """A library drove the caller's whole scheduler (#1021).
+
+    `run_loop()` drains every coroutine in the ready deque, and the deque is
+    shared by the whole VM chain, so a library that calls it runs work its
+    caller spawned and had not chosen to start yet. The entry file may: it owns
+    that work. A library has `wait(task)`, which stops when its own task settles.
+    """
+    from nodus.support.staging import record_staged_flip, warn_staged_flip
+
+    path, line, col = vm.current_loc()
+    path = path or vm.source_path
+    where = f"{path}:{line}:{col}" if path and line is not None else (path or "a library")
+    # v6-flip: library-run-loop
+    message = (f"run_loop() was called from library code at {where}. It runs every "
+               f"coroutine its caller has spawned, not only the library's own. In "
+               f"6.0.0 this is an error; return the task for the caller to drive, "
+               f"or call wait(task), which stops when that task settles (#1021).")
+    record_staged_flip("library-run-loop", message, where=where)
+    warn_staged_flip(message, stacklevel=3)
 
 
 def cancel_coroutine(vm, scheduler, coroutine, err) -> bool:
@@ -345,7 +367,39 @@ def register(vm, registry) -> None:
             )
         return _settled_outcome(coroutine)
 
+    def builtin_settle(value):
+        """Drive until a task settles, and take nothing from it (#1021).
+
+        What `std:async.parallel` and `series` call instead of `run_loop()`.
+        `wait` would do, except that it *claims* the outcome: it raises a
+        failure into the waiter and the scheduler stops reporting it. Their
+        documented contract is the opposite -- nil back, a failing task reported
+        the way an un-waited one always was, the rest still run -- so this is
+        `wait` with the claim left out, and nothing else changed. The same two
+        contexts: inside a coroutine it parks, at top level it drives until the
+        task settles. Bounded, as `wait` is: it stops when its task settles,
+        rather than running the caller's other work to the end.
+        """
+        coroutine = vm.ensure_coroutine(value, "__settle(task)")
+        if coroutine.id is None or coroutine.state == "finished":
+            return None
+        scheduler = vm.scheduler
+        waiter = vm.current_coroutine
+        if waiter is not None and waiter is getattr(scheduler, "current_task", None):
+            if waiter is coroutine:
+                vm.runtime_error("runtime", "__settle(task) on the task doing the waiting")
+            vm.stack.append(None)
+            vm.save_current_coroutine_state(vm.ip + 1)
+            scheduler.park_waiter(waiter, coroutine, takes_outcome=False)
+            return TaskWaitRequest(coroutine)
+        caller_ctx = vm._capture_module_ctx()
+        scheduler.drive_until_settled(coroutine)
+        vm._restore_module_ctx(caller_ctx)
+        return None
+
     def builtin_run_loop():
+        if vm.running_library_code():
+            _warn_library_run_loop(vm)
         on_error = getattr(vm, "on_error", None)
         scheduler = vm.scheduler
         scheduler._coroutine_errors = []
@@ -655,6 +709,7 @@ def register(vm, registry) -> None:
         "__spawn_after": lambda ms, value: _unscheduled(value, "spawn_after(ms, fn)"),
         "run_loop": lambda: None,
         "wait": lambda value: None,
+        "__settle": lambda value: None,
     }
     assert set(rebuild_stand_ins) == set(REBUILD_INERT_BUILTINS)
 
@@ -671,6 +726,7 @@ def register(vm, registry) -> None:
 
     builtin_spawn = _inert_during_rebuild("spawn", builtin_spawn)
     builtin_wait = _inert_during_rebuild("wait", builtin_wait)
+    builtin_settle = _inert_during_rebuild("__settle", builtin_settle)
     builtin_run_loop = _inert_during_rebuild("run_loop", builtin_run_loop)
     _spawn_after_inert = _inert_during_rebuild("spawn_after", builtin_spawn_after)
     _dunder_spawn_after_inert = _inert_during_rebuild("__spawn_after", builtin_spawn_after)
@@ -684,6 +740,7 @@ def register(vm, registry) -> None:
     # two answers to one question.
     registry.add("cancel", 1, builtin_cancel)
     registry.add("wait", 1, builtin_wait)
+    registry.add("__settle", 1, builtin_settle)
     registry.add("run_loop", 0, builtin_run_loop)
     registry.add("sleep", 1, builtin_sleep)
     registry.add("__sleep", 1, builtin_sleep)

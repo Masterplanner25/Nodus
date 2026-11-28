@@ -5,25 +5,33 @@ fn sleep(ms) {
 fn _spawn_task(task) {
     if (type(task) == "coroutine") {
         spawn(task)
-        return
+        return task
     }
-    spawn(coroutine(task))
+    return spawn(coroutine(task))
 }
 
+// #1021: these drive their own tasks, not the caller's scheduler. They called
+// run_loop(), which also ran every coroutine the caller had spawned and not
+// yet started. __settle(t) is wait(t) without taking the outcome: a failing
+// task is reported as it always was, and the rest still run.
 fn parallel(tasks) {
+    let started = []
     let i = 0
     while (i < len(tasks)) {
-        _spawn_task(tasks[i])
+        started = started + [_spawn_task(tasks[i])]
         i = i + 1
     }
-    run_loop()
+    let j = 0
+    while (j < len(started)) {
+        __settle(started[j])
+        j = j + 1
+    }
 }
 
 fn series(tasks) {
     let i = 0
     while (i < len(tasks)) {
-        _spawn_task(tasks[i])
-        run_loop()
+        __settle(_spawn_task(tasks[i]))
         i = i + 1
     }
 }

@@ -108,7 +108,8 @@ class ARebuildSkipsWhatStartsWorkTests(unittest.TestCase):
     def test_each_inert_builtin_does_nothing_that_runs(self):
         """Per name, so a builtin added to the vocabulary and not wrapped, or
         wrapped and not added, shows up here."""
-        self.assertEqual({"spawn", "spawn_after", "__spawn_after", "run_loop", "wait"},
+        self.assertEqual({"spawn", "spawn_after", "__spawn_after", "run_loop", "wait",
+                          "__settle"},
                          set(REBUILD_INERT_BUILTINS))
         for name in REBUILD_INERT_BUILTINS:
             with self.subTest(name):
@@ -119,7 +120,8 @@ class ARebuildSkipsWhatStartsWorkTests(unittest.TestCase):
                         "spawn_after": [1, _closure(vm)],
                         "__spawn_after": [1, _closure(vm)],
                         "run_loop": [],
-                        "wait": [None]}[name]
+                        "wait": [None],
+                        "__settle": [None]}[name]
                 fn(*args)
                 self.assertFalse(vm.scheduler.ready_queue, name)
                 self.assertFalse(vm.scheduler.timers, name)
