@@ -1,14 +1,15 @@
-"""Accumulating what a run hits, for the flip nothing static can find (R2).
+"""Accumulating what a run hits, for a flip nothing static can find (R2).
 
-`nodus check --staged` answers four of the five staged flips from source. Record
-equality (#545) needs the runtime type of both `==` operands, so its only
-answer is to run something and collect what the warning says — and a warning is
-a transient stderr line, so a full test run told you nothing you did not read as
-it scrolled past.
+It was built for record equality (#545), which needed the runtime type of both
+`==` operands, so its only answer was to run something and collect what the
+warning said — and a warning is a transient stderr line, so a full test run
+told you nothing you did not read as it scrolled past. #545 landed in 6.0.0;
+the mechanism stays for the next flip like it, and the tests that need such a
+flip use a synthetic register.
 
 `NODUS_STAGED_FLIP_REPORT=<path>` makes every staged-flip site append a JSON
-Lines record. Re-running `check --staged` then reports #545 as **checked, by a
-run** rather than as unchecked.
+Lines record. Re-running `check --staged` then reports a flip with no scan as
+**checked, by a run** rather than as unchecked.
 
 Two properties are load-bearing:
 
@@ -169,10 +170,13 @@ class SitesRecordTests(_Env):
     """Every flip that can announce itself at run time does."""
 
     # closes: #802
-    def test_record_equality_is_recorded(self):
+    def test_record_equality_records_nothing(self):
+        """record-equality was the flip this report existed for. It landed in
+        6.0.0 (#545): `==` is structural, so there is no divergence to record."""
         self.write("eq.nd", RECORDS)
-        self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
-        self.assertIn("record-equality", self.flips_in_report())
+        result = self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
+        self.assertIn("equal: true", result.stdout)
+        self.assertNotIn("record-equality", self.flips_in_report())
 
     def test_a_landed_flip_records_nothing(self):
         """concurrent-write (#547) and worker-dispatcher (#798) were recorded
@@ -215,11 +219,14 @@ class EmissionIsUnchangedTests(_Env):
     """
 
     def test_the_warnings_still_print_with_a_report_configured(self):
-        self.write("eq.nd", RECORDS)
+        self.write("race.nd", RACE)
+        # The first run leaves a stored run; the default-store notice needs one.
+        self.run_nodus("run", "race.nd", "--time-limit", "20")
         with_report = self.run_nodus(
-            "run", "eq.nd", "--time-limit", "20", report=self.report
+            "run", "race.nd", "--time-limit", "20", report=self.report
         )
-        self.assertIn("two distinct records with equal fields", with_report.stderr)
+        self.assertIn("default workflow store", with_report.stderr)
+        self.assertIn("default-store-sqlite", self.flips_in_report())
 
     def test_the_warnings_are_identical_with_and_without_a_report(self):
         """Each run gets its own directory, or the comparison is not one.
@@ -233,62 +240,77 @@ class EmissionIsUnchangedTests(_Env):
         for name in ("no-report", "with-report"):
             work = os.path.join(self.dir, name)
             os.makedirs(work)
-            with open(os.path.join(work, "eq.nd"), "w", encoding="utf-8") as handle:
-                handle.write(RECORDS)
+            with open(os.path.join(work, "race.nd"), "w", encoding="utf-8") as handle:
+                handle.write(RACE)
             env = dict(os.environ)
             env["PYTHONPATH"] = str(REPO / "src")
             env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
             env.pop(REPORT_ENV, None)
+            command = [PYTHON, "-m", "nodus", "run", "race.nd", "--time-limit", "20"]
+            # Seed a stored run, identically in both directories, so the
+            # second run emits the default-store notice.
+            subprocess.run(command, cwd=work, capture_output=True, text=True,
+                           env=env, timeout=120)
             if name == "with-report":
                 env[REPORT_ENV] = self.report
             outputs.append(subprocess.run(
-                [PYTHON, "-m", "nodus", "run", "eq.nd", "--time-limit", "20"],
-                cwd=work, capture_output=True, text=True, env=env, timeout=120,
+                command, cwd=work, capture_output=True, text=True, env=env, timeout=120,
             ))
         without, with_report = outputs
-        self.assertIn("two distinct records", without.stderr, "setup: the warning must fire")
+        self.assertIn("default workflow store", without.stderr, "setup: the warning must fire")
         self.assertEqual(without.stderr, with_report.stderr)
         self.assertEqual(without.returncode, with_report.returncode)
         self.assertTrue(os.path.exists(self.report), "setup: the report must be written")
 
 
 class CheckStagedMergesTests(_Env):
-    """The two halves join: a run's findings upgrade what source cannot reach."""
+    """The two halves join: a run's findings upgrade what source cannot reach.
+
+    No staged flip is out of reach of a scan since record-equality (#545)
+    landed, so these use a synthetic register: the next flip with no static
+    check takes this path, and it must still work when it arrives.
+    """
+
+    def _register(self) -> Path:
+        register = Path(self.dir) / "staged_flips.json"
+        register.write_text(json.dumps({
+            "target": "7.0.0",
+            "flips": {"no-scan-yet": {"issue": 1, "summary": "s"}},
+        }), encoding="utf-8")
+        return register
 
     # closes: #802
-    def test_record_equality_is_unchecked_with_no_report(self):
-        self.write("eq.nd", RECORDS)
-        result = self.run_nodus("check", "eq.nd", "--staged")
-        self.assertIn("[not checked] record-equality", result.stdout)
-        self.assertIn("could not be checked from source", result.stdout)
-        self.assertIn("NODUS_STAGED_FLIP_REPORT", result.stdout)
+    def test_a_flip_with_no_scan_is_unchecked_with_no_report(self):
+        from nodus.tooling.staged_readiness import scan
+
+        report = scan(sources=[("a.nd", "fn main() {}")],
+                      register_path=self._register(), dynamic_report=self.report)
+        entry = report.flips[0]
+        self.assertFalse(entry.checked)
+        self.assertEqual(entry.observed, 0)
 
     # closes: #802
     def test_a_run_upgrades_it_to_checked(self):
-        self.write("eq.nd", RECORDS)
-        self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
-        result = self.run_nodus("check", "eq.nd", "--staged", report=self.report)
-        self.assertIn("record-equality", result.stdout)
-        self.assertIn("[from a run]", result.stdout)
-        self.assertNotIn("[not checked] record-equality", result.stdout)
-        # The run upgrades *this* flip. Another one may still be unchecked from
-        # source -- `rebuild-effect` (#917) is, in every project -- so the
-        # summary's count is the number of `[not checked]` lines, which no
-        # longer includes record-equality.
-        unchecked = result.stdout.count("[not checked]")
-        if unchecked:
-            self.assertIn(f"{unchecked} could not be checked from source", result.stdout)
-        else:
-            self.assertNotIn("could not be checked from source", result.stdout)
+        from nodus.tooling.staged_readiness import scan
 
-    def test_the_hint_is_not_printed_once_a_report_exists(self):
+        os.environ[REPORT_ENV] = self.report
+        record_staged_flip("no-scan-yet", "seen at run time", where="a.nd:1:1")
+        report = scan(sources=[("a.nd", "fn main() {}")],
+                      register_path=self._register(), dynamic_report=self.report)
+        entry = report.flips[0]
+        self.assertTrue(entry.checked)
+        self.assertEqual(entry.observed, 1)
+        self.assertEqual([f.where for f in entry.findings], ["a.nd:1:1"])
+
+    def test_no_hint_when_every_flip_is_checked_from_source(self):
+        """The real register has no unchecked flip, so the CLI must not tell
+        the user to collect a run report that would add nothing."""
         self.write("eq.nd", RECORDS)
-        self.run_nodus("run", "eq.nd", "--time-limit", "20", report=self.report)
-        result = self.run_nodus("check", "eq.nd", "--staged", report=self.report)
-        self.assertNotIn(
-            "run your program or tests with", result.stdout,
-            "still telling the user to do the thing they have done",
-        )
+        result = self.run_nodus("check", "eq.nd", "--staged")
+        self.assertNotIn("[not checked]", result.stdout)
+        self.assertNotIn("record-equality", result.stdout)
+        self.assertNotIn("could not be checked from source", result.stdout)
+        self.assertNotIn("run your program or tests with", result.stdout)
 
 
 if __name__ == "__main__":

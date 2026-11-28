@@ -427,14 +427,12 @@ def writers_agree(by_task: dict, tasks: list[str]) -> bool:
 # add, so the name is what lets a wrong contribution be rejected instead of
 # quietly doing something.
 #
+# v6-flip: record-equality
 # `union` needed an element-equality story before it could ship, and the story
-# turned out to be one the language already tells: Nodus `==` is structural for
-# numbers, strings, bools, nil, lists and maps, however deeply nested. It is
-# *not* structural for records -- `Record.__eq__` is `self is other`
-# (`vm/types.py`), with `datetime` and `duration` carved out -- so a list of
-# records would dedup nothing and `union` would silently be `append`. Records are
-# therefore refused in a union contribution rather than accepted and ignored
-# (#545).
+# is one the language already tells: Nodus `==` is structural for every value,
+# however deeply nested. Records joined the rest at 6.0.0 (#545); through 5.x
+# they compared by identity, so a list of records would have deduped nothing,
+# and `union` refused them rather than silently behaving as `append`.
 #
 # Dedup keeps the first occurrence, which is what makes it batching-invariant:
 # `dedup(dedup(a) + b) == dedup(a + b)`.
@@ -496,34 +494,12 @@ DEFAULT_STATE_MERGE = "any"
 FOLD_CONTRIBUTION_KINDS = {
     "sum": "a number",
     "append": "a list",
-    "union": "a list of comparable values",
+    "union": "a list",
 }
 
 
 def is_fold_policy(merge: object) -> bool:
     return merge in FOLD_STATE_MERGE_POLICIES
-
-
-def _holds_an_incomparable_record(value) -> bool:
-    """Is there a plain record anywhere in here?
-
-    Records compare by identity (`vm/types.py`), so one inside a union
-    contribution can never equal another and dedup silently does nothing. The
-    check recurses because the record can be nested -- `{"r": record {...}}`
-    compares false for the same reason the record does.
-
-    `datetime` and `duration` records are exempt: `Record.__eq__` compares those
-    two kinds by value, so they dedup correctly.
-    """
-    from nodus.vm.types import Record
-
-    if isinstance(value, Record):
-        return value.kind not in ("datetime", "duration")
-    if isinstance(value, list):
-        return any(_holds_an_incomparable_record(item) for item in value)
-    if isinstance(value, dict):
-        return any(_holds_an_incomparable_record(item) for item in value.values())
-    return False
 
 
 def check_contribution(merge: str, value) -> str | None:
@@ -544,15 +520,6 @@ def check_contribution(merge: str, value) -> str | None:
     if merge == "union":
         if not isinstance(value, list):
             return f"a contribution must be a list; got {_kind_of(value)}"
-        if any(_holds_an_incomparable_record(item) for item in value):
-            # Refused rather than accepted-and-not-deduped: `union` that silently
-            # behaves as `append` is the "declared but not enforced" shape this
-            # policy set exists to avoid.
-            return (
-                "records compare by identity, not by value, so a list containing "
-                "one can never be deduplicated (#545). Use a map instead of a "
-                'record, or `merge: "append"` if duplicates are acceptable'
-            )
         return None
     return None
 

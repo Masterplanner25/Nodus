@@ -4,26 +4,28 @@
 same file `nodus_gate --flips` checks against `src/` -- one list, so the report
 cannot enumerate a different set of flips than the tree promises.
 
-**Four of the five are answerable from source. One is not, and this says so.**
-That is the whole design (`docs/design/v6/01-readiness.md` gate G3): a report
-that looks complete and is not would be the failure #797 already taught this
-project to distrust -- a notice can be careful, correct, and still leave someone
-believing something false. Every flip appears in the output with its status,
-including the one nothing looked at.
+**Every staged flip appears in the output with its status, including any that
+nothing could look at.** That is the design (`docs/design/v6/01-readiness.md`
+gate G3): a report that looks complete and is not would be the failure #797
+already taught this project to distrust -- a notice can be careful, correct,
+and still leave someone believing something false.
+
+One flip is still staged; the rest have landed and left the `flips`
+section of the register. A landed flip whose scan still finds code that now
+fails is reported by plain `nodus check` instead (`landed_findings`).
 
 | flip | how |
 |---|---|
-| `unknown-type-name` | the parser records them; this reads what `check` already produces |
-| `concurrent-write` | which step writes which cell, against the graph's ordering |
-| `worker-dispatcher` | `worker:` declarations, reported rather than judged |
 | `default-store-sqlite` | a filesystem question: does the local store hold runs |
-| `record-equality` | **not checkable from source** -- needs both `==` operands' runtime types |
-| `rebuild-effect` | top-level effects outside `main` in a file that can be rebuilt: builtins, stdlib wrappers, declared `extern` host functions; a run's report adds undeclared host functions |
+| `concurrent-write` (landed) | which step writes which cell, against the graph's ordering |
+| `worker-dispatcher` (landed) | `worker:` declarations, reported rather than judged |
+| `rebuild-effect` (landed) | top-level effects outside `main` in a file that can be rebuilt: builtins, stdlib wrappers, declared `extern` host functions |
+| `library-run-loop` (landed) | `run_loop()` in an imported file |
 
 The concurrent-write check is worth understanding, because its answer is
-*stronger* than the runtime warning's. Which step writes which cell is known at
+*stronger* than the runtime refusal's. Which step writes which cell is known at
 lowering time, and so is the ordering relation, so this reports every pair that
-could race on some interleaving. The runtime warning reports the pair that
+could race on some interleaving. The runtime refusal reports the pair that
 raced on the interleaving that happened. Measured on a three-step probe, this
 found a pair the run did not.
 """
@@ -571,12 +573,4 @@ def landed_findings(sources: list[tuple[str, str]]) -> list[tuple[str, Finding]]
 
 
 def _unchecked_reason(name: str) -> str:
-    if name == "record-equality":
-        return (
-            "not checkable from source: it depends on the runtime type of both "
-            "`==` operands, and annotations are optional and unenforced. Run the "
-            "program or its tests with NODUS_STAGED_FLIP_REPORT=<path> set, then "
-            "re-run this -- the warning fires exactly when a comparison's answer "
-            "will change, and what it finds is reported here"
-        )
     return "no static check is implemented for this flip"

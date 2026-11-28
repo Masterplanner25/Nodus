@@ -586,10 +586,10 @@ def _report_staged(
 ) -> int:
     """`nodus check --staged`: what breaks at the next major (plan gate G3).
 
-    Reports every flip in the register, including the one nothing looked at.
-    That is R4 of `docs/design/v6/01-readiness.md`, and it is the point rather
-    than a caveat: #545 is not answerable from source, so a bare "no issues"
-    would be the comfortable lie #797 already taught this project to distrust.
+    Reports every staged flip in the register, including any that nothing
+    looked at. That is R4 of `docs/design/v6/01-readiness.md`: a bare "no
+    issues" over a flip nobody checked would be the comfortable lie #797
+    already taught this project to distrust.
     """
     from nodus.tooling.staged_readiness import scan
 

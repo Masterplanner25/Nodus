@@ -7,9 +7,6 @@ Closure.  vm.py re-exports all names for backward compatibility.
 
 from __future__ import annotations
 
-import sys
-
-from nodus.support.staging import record_staged_flip
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -74,30 +71,17 @@ class Record:
     def __eq__(self, other):
         if not isinstance(other, Record):
             return NotImplemented
-        if self.kind == "datetime" and other.kind == "datetime":
-            return self.fields["epoch_ms"] == other.fields["epoch_ms"]
-        if self.kind == "duration" and other.kind == "duration":
-            return self.fields["total_ms"] == other.fields["total_ms"]
-        if self is other:
-            return True
         # v6-flip: record-equality
-        # #545 staging: identity today, structural in 6.0.0. The one observable
-        # divergence -- two distinct records that field-by-field comparison
-        # calls equal -- warns once per process, so a program relying on `==`
-        # telling equal-valued records apart gets a release cycle of notice.
-        # The check must never change the program's outcome, so a structure too
-        # deep to inspect is treated as not divergent rather than raised.
-        if not _STRUCTURAL_EQ_CHANGE_WARNED:
-            try:
-                divergent = structural_eq(self, other)
-            except RecursionError:
-                divergent = False
-            if divergent:
-                _warn_structural_eq_change()
-        return False
+        # Structural since 6.0.0 (#545): `kind` and `fields`, like maps and
+        # lists. 5.x compared by identity and warned when the answer would
+        # change. A structure too deep to compare raises RecursionError, as
+        # Python's own list and map equality does.
+        return structural_eq(self, other)
 
-    def __hash__(self):
-        return id(self)
+    # Records are mutable and compare by value, so they cannot be hashed
+    # consistently (#545). The language never needed it: records are not valid
+    # map keys. Python-side code that wants identity uses `id(record)`.
+    __hash__ = None  # type: ignore[assignment]
 
     def _cmp_key(self, other):
         if self.kind == "datetime" and isinstance(other, Record) and other.kind == "datetime":
@@ -123,13 +107,9 @@ class Record:
         return a >= b
 
 
-_STRUCTURAL_EQ_CHANGE_WARNED = False
-
-
-# v6-flip: record-equality
 def structural_eq(a, b, _seen: set | None = None) -> bool:
-    """What `a == b` returns in 6.0.0 (#545): records compare by `kind` and
-    `fields`, recursing with the same equality lists and maps already use.
+    """What `a == b` means for records (#545): they compare by `kind` and
+    `fields`, recursing with the same equality lists and maps use.
 
     Two semantic carve-outs survive the flip, because they are meanings and
     not implementation conveniences: `datetime` compares by instant
@@ -142,9 +122,8 @@ def structural_eq(a, b, _seen: set | None = None) -> bool:
     structure (`r.self = r`) terminates instead of recursing forever -- a pair
     met again is taken as equal, the standard coinductive reading.
 
-    `docs/design/v6/00-record-equality.md` records the decision; until the
-    flip, `Record.__eq__` uses this only to detect a comparison whose answer
-    is about to change.
+    `docs/design/v6/00-record-equality.md` records the decision.
+    `Record.__eq__` delegates here.
     """
     if a is b:
         return True
@@ -172,29 +151,6 @@ def structural_eq(a, b, _seen: set | None = None) -> bool:
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(structural_eq(a[k], b[k], _seen) for k in a)
     return a == b
-
-
-# v6-flip: record-equality
-def _warn_structural_eq_change() -> None:
-    global _STRUCTURAL_EQ_CHANGE_WARNED
-    if _STRUCTURAL_EQ_CHANGE_WARNED:
-        return
-    _STRUCTURAL_EQ_CHANGE_WARNED = True
-    # The only staged flip nothing can find from source, so this record is the
-    # whole of its readiness answer (`nodus check --staged` says so).
-    record_staged_flip(
-        "record-equality",
-        "two distinct records with equal fields compared as not equal; "
-        "`==` becomes structural at 6.0.0 and this comparison returns true",
-    )
-    print(
-        "warning: two distinct records with equal fields compared as not "
-        "equal. Record `==` is identity comparison today; in 6.0.0 it becomes "
-        "structural (field by field, like maps and lists) and this comparison "
-        "returns true. If you rely on `==` telling equal-valued records "
-        "apart, compare a unique field instead. See #545.",
-        file=sys.stderr,
-    )
 
 
 class BuiltinMethod:

@@ -115,12 +115,20 @@ class RegisterCoverageTests(unittest.TestCase):
         )
 
     def test_a_flip_with_no_static_check_is_reported_as_unchecked(self):
-        report = _scan(CLEAN)
+        # No staged flip lacks a check since record-equality (#545) landed, so
+        # a synthetic register stands in for the next one that will.
+        with tempfile.TemporaryDirectory() as tmp:
+            register = Path(tmp) / "staged_flips.json"
+            register.write_text(json.dumps({
+                "target": "7.0.0",
+                "flips": {"no-scan-yet": {"issue": 1, "summary": "s"}},
+            }), encoding="utf-8")
+            report = _scan(CLEAN, register_path=register)
+        self.assertIsNone(report.error, report.error)
         unchecked = {f.name for f in report.unchecked}
-        self.assertIn("record-equality", unchecked)
-        entry = next(f for f in report.flips if f.name == "record-equality")
+        self.assertEqual(unchecked, {"no-scan-yet"})
+        entry = report.flips[0]
         self.assertTrue(entry.reason, "unchecked with no reason given")
-        self.assertIn("runtime type", entry.reason)
 
     def test_an_unreadable_register_is_an_error_not_an_empty_report(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -261,7 +269,6 @@ class CliTests(unittest.TestCase):
         result = self._run("check", "ok.nd", "--staged")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("nothing found in the", result.stdout)
-        self.assertIn("could not be checked from source", result.stdout)
         self.assertNotIn("ready", result.stdout.lower())
 
     def test_findings_do_not_fail_the_command(self):

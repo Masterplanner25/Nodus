@@ -67,17 +67,17 @@
       "check": "none",
       "why_check": "No separate scan: the parser itself refuses the name, so `nodus check`, `nodus run` and the LSP all report it as a syntax error at its token.",
       "sites": 5
+    },
+    "record-equality": {
+      "issue": 545,
+      "summary": "Record `==` compares by value (kind and fields) instead of identity",
+      "landed_in": "6.0.0",
+      "check": "none",
+      "why_check": "No scan: whether a comparison's answer changed depends on the runtime type of both `==` operands, which the source cannot see. The change only makes `==` true where it was false for two distinct records with equal fields.",
+      "sites": 2
     }
   },
   "flips": {
-    "record-equality": {
-      "issue": 545,
-      "summary": "Record `==` becomes structural instead of identity",
-      "warns_since": "5.4.0",
-      "signal": "ok -- stderr, once per process, when a comparison whose answer will change actually happens",
-      "why": "Records are the only non-structural value, and the exception has exceptions (datetime and duration compare by value). The 6.0.0 semantics already exist as `structural_eq`; the flip is to delegate to it. Design: docs/design/v6/00-record-equality.md.",
-      "sites": 4
-    },
     "default-store-sqlite": {
       "issue": 797,
       "summary": "The default workflow store becomes SQLiteWorkflowStore",

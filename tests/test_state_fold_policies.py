@@ -167,9 +167,9 @@ class UnionTests(unittest.TestCase):
     """`union` = append, minus elements already present.
 
     Its blocker was never the fold -- it was knowing when two elements are the
-    same. Nodus `==` answers that structurally for numbers, strings, bools, nil,
-    lists and maps at any depth. It does not for records, which compare by
-    identity (#545), so those are refused rather than silently not deduplicated.
+    same. Nodus `==` answers that structurally for every value at any depth;
+    records joined the rest at 6.0.0 (#545), and until then `union` refused
+    them rather than silently not deduplicating.
     """
 
     def test_overlapping_contributions_deduplicate(self):
@@ -186,21 +186,21 @@ fn main() { let r = run_workflow(tags); print("N=\\(len(r["state"]["seen"]))") }
         )
         self.assertIn("N=3", out)
 
-    def test_a_record_element_is_refused(self):
-        result = _run(
+    def test_record_elements_deduplicate_structurally(self):
+        """#545: records compare by value, so `union` dedupes them. Records
+        cannot be persisted (#498), so the cell is `durable: false`."""
+        out = _out(
             """
-workflow bad {
-    state seen = [] with { merge: "union" }
-    step a { seen += [record {x: 1i}]; return 1i }
+workflow tags {
+    state seen = [] with { merge: "union", durable: false }
+    step a { sleep(10i); seen += [record {id: 1i}]; return 1i }
+    step b { sleep(10i); seen += [record {id: 1i}, record {id: 2i}]; return 2i }
+    step j after a, b { return 0i }
 }
-fn main() { let r = run_workflow(bad); print("F=\\(len(r["failed"]))") }
+fn main() { let r = run_workflow(tags); print("F=\\(len(r["failed"])) N=\\(len(r["state"]["seen"]))") }
 """
         )
-        self.assertTrue(result.get("ok"), result.get("errors"))
-        self.assertIn("F=1", (result.get("stdout") or ""))
-        stderr = result.get("stderr") or ""
-        self.assertIn("compare by identity", stderr)
-        self.assertIn("#545", stderr)
+        self.assertIn("F=0 N=2", out)
 
     def test_a_non_list_contribution_is_refused(self):
         result = _run(
@@ -375,27 +375,23 @@ class FoldPrimitiveTests(unittest.TestCase):
                 self.assertIsNotNone(problem)
                 self.assertIn(expected, problem)
 
-    def test_a_record_element_blocks_a_union_contribution(self):
-        """The element-equality blocker, stated precisely (#545)."""
+    def test_a_record_element_is_a_valid_union_contribution(self):
+        """#545: the element-equality blocker is gone, nested or not."""
         from nodus.vm.types import Record
 
-        problem = check_contribution("union", [Record({"x": 1})])
-        self.assertIsNotNone(problem)
-        self.assertIn("compare by identity", problem)
-
-    def test_a_datetime_record_does_not_block_it(self):
-        """`Record.__eq__` compares datetime and duration by value."""
-        from nodus.vm.types import Record
-
+        self.assertIsNone(check_contribution("union", [Record({"x": 1})]))
+        self.assertIsNone(check_contribution("union", [{"r": Record({"x": 1})}]))
         self.assertIsNone(
             check_contribution("union", [Record({"epoch_ms": 5}, "datetime")])
         )
 
-    def test_a_nested_record_blocks_it_too(self):
-        """A record inside a map makes the map compare false as well."""
+    def test_union_deduplicates_records_by_value(self):
         from nodus.vm.types import Record
 
-        self.assertIsNotNone(check_contribution("union", [{"r": Record({"x": 1})}]))
+        folded = fold_contributions(
+            "union", [Record({"x": 1})], [[Record({"x": 1}), Record({"x": 2})]]
+        )
+        self.assertEqual([r.fields["x"] for r in folded], [1, 2])
 
     def test_union_deduplicates_by_nodus_equality(self):
         self.assertEqual(fold_contributions("union", ["a"], [["b", "a"], ["c"]]),

@@ -39,7 +39,6 @@ from nodus.compiler.compiler import FunctionInfo  # noqa: E402
 from nodus.runtime.diagnostics import LangRuntimeError  # noqa: E402
 from nodus.builtins.nodus_builtins import BuiltinInfo  # noqa: E402
 from nodus.runtime.module import LiveBinding, NodusModule  # noqa: E402
-from nodus.vm import types as vm_types  # noqa: E402
 from nodus.vm.types import Cell, Closure, Frame, Record  # noqa: E402
 from nodus.vm.vm import VM, Iterator  # noqa: E402
 
@@ -909,16 +908,6 @@ class EqNeTests(_SpecCase):
     the second case.
     """
 
-    def setUp(self):
-        # `Record.__eq__` warns once per process when it finds two records that
-        # structural comparison would call equal (#545 staging). Reset the flag
-        # so this module neither depends on nor consumes another test's warning.
-        self._warned = vm_types._STRUCTURAL_EQ_CHANGE_WARNED
-        vm_types._STRUCTURAL_EQ_CHANGE_WARNED = True
-
-    def tearDown(self):
-        vm_types._STRUCTURAL_EQ_CHANGE_WARNED = self._warned
-
     def _eq(self, a, b) -> bool:
         vm = bare_vm()
         vm.stack = [a, b]
@@ -946,10 +935,10 @@ class EqNeTests(_SpecCase):
         self.assertIs(True, self._eq([1, 2], [1, 2]))
         self.assertIs(True, self._eq({"k": 1}, {"k": 1}))
 
-    def test_two_distinct_records_with_equal_fields_are_not_equal(self):
-        """#545, staged to change at 6.0.0. Recorded here as the behaviour the
-        opcode has *today*, so the flip is a deliberate edit to this line."""
-        self.assertIs(False, self._eq(Record({"x": 1}), Record({"x": 1})))
+    def test_two_distinct_records_with_equal_fields_are_equal(self):
+        """#545: records compare structurally since 6.0.0; 5.x answered False."""
+        self.assertIs(True, self._eq(Record({"x": 1}), Record({"x": 1})))
+        self.assertIs(False, self._eq(Record({"x": 1}), Record({"x": 2})))
 
     def test_the_same_record_is_equal_to_itself(self):
         r = Record({"x": 1})

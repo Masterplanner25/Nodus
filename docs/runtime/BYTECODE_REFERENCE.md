@@ -279,9 +279,9 @@ Complete opcode set implemented by VM dispatch (`VM.run`):
   - **Not Python equality.** `VM._nodus_eq` coerces `int` and `float` to each
     other and refuses to coerce `bool` to either, so `1 == 1.0` is **true** and
     `1 == true` is **false** — the opposite of Python in the second case.
-  - Lists and maps compare structurally. **Records compare by identity**: two
-    distinct records with equal fields are not equal (#545, staged to become
-    structural at 6.0.0).
+  - Lists, maps and records compare structurally. Records compare by `kind`
+    and fields, with `datetime` by instant and `duration` by length (#545,
+    structural since 6.0.0; identity through 5.x).
 
 ### NE
 - Category: comparisons

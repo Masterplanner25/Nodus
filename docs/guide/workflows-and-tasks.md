@@ -696,24 +696,13 @@ Output:
 3
 ```
 
-Sameness is ordinary Nodus `==`, which is **structural** for numbers, strings,
-booleans, `nil`, lists and maps, however deeply nested — so `{"id": 1i}`
-contributed twice deduplicates to one.
-
-**Records are refused in a union contribution.** Records compare by *identity*,
-not by value — `record {x: 1i} == record {x: 1i}` is `false` — so a list of them
-would deduplicate nothing and `union` would silently behave as `append`. Rather
-than accept a policy it cannot honour, the contribution fails and says so:
-
-```
-state 'seen' is declared merge: "union", but records compare by identity, not by
-value, so a list containing one can never be deduplicated (#545). Use a map
-instead of a record, or `merge: "append"` if duplicates are acceptable.
-```
-
-Use a map for the element, or `append` if duplicates are fine. The underlying
-record-equality question is
-[#545](https://github.com/Masterplanner25/Nodus/issues/545).
+Sameness is ordinary Nodus `==`, which is **structural** for every value,
+however deeply nested, so `{"id": 1i}` contributed twice deduplicates to one.
+Records included, since 6.0.0
+([#545](https://github.com/Masterplanner25/Nodus/issues/545)): through 5.x
+records compared by identity, so `union` refused them rather than silently
+behaving as `append`. A record in a state cell still cannot be *persisted*, so
+a cell holding records declares `durable: false`.
 
 Note that the *order* of a folded list depends on which branch finished first,
 for `append` and `union` alike. Membership is deterministic; position is not.

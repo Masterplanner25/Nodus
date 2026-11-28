@@ -115,8 +115,8 @@ These burn time when forgotten:
   Two things that mislead in opposite directions. `list_push` **mutates in place** and
   returns the same list; `xs = list_push(xs, v)` reads functional and is not, so use the
   bare form — `tests/test_list_push_idiom.py` fails on the reassignment now (#816), and
-  chaining is what the return value is for. And record `==` becomes **structural** at
-  6.0.0 (#545) while binding stays by reference — so "records became value types" is the wrong reading of that flip;
+  chaining is what the return value is for. And record `==` is **structural** since
+  6.0.0 (#545; identity through 5.x) while binding stays by reference — so "records became value types" is the wrong reading of that flip;
   lists and maps have had that same shape (structural `==`, reference mutation) all along.
 - **A `state` cell cannot hold a record.** The run aborts at persist time with
   `Object of type Record is not JSON serializable`, blamed on the `run_workflow(...)` call

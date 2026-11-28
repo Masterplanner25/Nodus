@@ -477,73 +477,52 @@ Bob
 false
 ```
 
-### Equality: records compare by identity, maps by value
-
-This is the one difference between records and maps that is not about access
-syntax, and it surprises people:
+### Equality: records compare by value, like maps
 
 ```nd-expect=output
 let a = record { x: 1i }
 let b = record { x: 1i }
 print(a == b)          // two records with identical fields
-print(a == a)          // the same record
+print(a == record { x: 2i })
 
 let m1 = { "x": 1i }
 let m2 = { "x": 1i }
 print(m1 == m2)        // two maps with identical entries
 
-print([1i, 2i] == [1i, 2i])
+print({ "r": a } == { "r": b })
 ```
 
 Output:
 
 ```
+true
 false
 true
 true
-true
 ```
 
-**`==` on a record asks "is this the same record", not "do these hold the same
-data".** Maps, lists, numbers, strings and booleans all compare structurally, at
-any depth — records do not.
+**`==` on a record asks "do these hold the same data"**, the way it does for
+maps, lists, numbers, strings and booleans, at any depth. Two records are equal
+when their kind and their fields are, so a map or list holding records compares
+equal when the records do. Changed in 6.0.0
+([#545](https://github.com/Masterplanner25/Nodus/issues/545)); through 5.x,
+records compared by identity, and two distinct records with equal fields were
+not equal.
 
-It propagates outward. A map holding a record compares `false` for the same
-reason the record does:
+Three details:
 
-```nd-no-run
-let m1 = { "r": record { x: 1i } }
-let m2 = { "r": record { x: 1i } }
-print(m1 == m2)        // false — the nested records are different records
-```
+- **`datetime` and `duration` compare by meaning.** A `datetime` compares by
+  instant, ignoring its zone, so the same moment in two zones is equal. A
+  `duration` compares by length.
+- **A function-valued field compares by identity**, like functions everywhere
+  else. A record whose methods are built for each instance is equal only to
+  itself.
+- **A record never equals a map**, even one with the same entries.
 
-Two record kinds the runtime creates for you are exceptions and *do* compare by
-value: `datetime` and `duration` from `std:time`. So `time.from_epoch_ms(5.0) ==
-time.from_epoch_ms(5.0)` is `true` while a record you wrote with the same fields
-is not.
-
-**What to do instead.** If you need value comparison, use a map, or compare the
-fields you care about:
-
-```nd-no-run
-if (a.x == b.x && a.name == b.name) { ... }
-```
-
-This also means a record cannot be deduplicated — which is why
-`state seen = [] with { merge: "union" }` refuses a list of records rather than
-silently keeping duplicates (see
+Equality is not copying: assignment still binds a reference (next section).
+Records can be deduplicated now, so `state seen = [] with { merge: "union" }`
+accepts a list of records (see
 [workflows-and-tasks.md §4.0](workflows-and-tasks.md)).
-
-> **This changes in 6.0.0**
-> ([#545](https://github.com/Masterplanner25/Nodus/issues/545)): record `==`
-> becomes structural — field by field, the way maps and lists already
-> compare — and the `union` refusal above is lifted with it. `datetime` keeps
-> comparing by instant and `duration` by length; a function-valued field
-> compares by identity, like functions everywhere else. Until the flip, a
-> comparison whose answer will change (two distinct records with equal
-> fields) prints a one-time warning. `==` is a **Stable** surface, which is
-> why this waits for a major version. Decision record:
-> `docs/design/v6/00-record-equality.md`.
 
 ### Assignment binds a reference — it does not copy
 
@@ -612,10 +591,10 @@ Note that `list_push` mutates in place and returns the same list, so
 first spelling reads like a functional API and is not one.
 
 **Equality is a different question from binding, and the two answers differ.**
-Maps and lists compare *structurally* while binding by reference — and records
-join them at 6.0.0 (see the previous section). Structural equality does not make
-a container a value: after that flip two records with equal fields will be `==`,
-and two names for one record will still share every mutation.
+Maps, lists and records compare *structurally* while binding by reference
+(records since 6.0.0; see the previous section). Structural equality does not
+make a container a value: two records with equal fields are `==`, and two names
+for one record still share every mutation.
 
 #### Copying a container
 

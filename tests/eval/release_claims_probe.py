@@ -161,21 +161,34 @@ fn main() { run_workflow(bad) }
     return "refused before the program runs"
 
 
-@probe("fold: a record element in a union contribution is refused, citing #545")
+@probe("fold: union deduplicates records by value (#545, 6.0.0)")
 def probe_union_record():
     result = run_nd(
         """
-workflow bad {
-    state seen = [] with { merge: "union" }
-    step a { seen += [record {x: 1i}]; return 1i }
+workflow tags {
+    state seen = [] with { merge: "union", durable: false }
+    step a { sleep(10i); seen += [record {id: 1i}]; return 1i }
+    step b { sleep(10i); seen += [record {id: 1i}, record {id: 2i}]; return 2i }
+    step j after a, b { return 0i }
 }
-fn main() { let r = run_workflow(bad); print("F=\\(len(r["failed"]))") }
+fn main() { let r = run_workflow(tags); print("F=\\(len(r["failed"])) N=\\(len(r["state"]["seen"]))") }
 """
     )
-    stderr = result.get("stderr") or ""
-    assert "compare by identity" in stderr, stderr[:200]
-    assert "#545" in stderr, "the refusal does not name the tracking issue"
-    return "names the workaround and #545"
+    stdout = result.get("stdout") or ""
+    assert "F=0 N=2" in stdout, (stdout + (result.get("stderr") or ""))[:300]
+    assert "compare by identity" not in (result.get("stderr") or "")
+    return "two equal records dedupe to one"
+
+
+@probe("equality: two records with equal fields are == (#545, 6.0.0)")
+def probe_record_equality():
+    result = run_nd(
+        'fn main() { print(record {x: 1i} == record {x: 1i}); '
+        'print({"r": record {x: 1i}} == {"r": record {x: 2i}}) }'
+    )
+    assert result.get("stdout") == "true\nfalse\n", result
+    assert "#545" not in (result.get("stderr") or ""), "the 5.x warning still prints"
+    return "structural, and silent"
 
 
 @probe("conflicts: silent when nothing was lost, loud when something was")
@@ -2685,10 +2698,20 @@ def probe_staged_reports_all_flips():
         f"the report names {named}, the register names {sorted(data['flips'])}"
     )
     unchecked = {f.name for f in report.unchecked}
-    assert "record-equality" in unchecked, (
-        "record-equality is not statically checkable and must be reported as such, "
-        f"got unchecked={unchecked}"
-    )
+    # A flip with no scan is named as unchecked, with a reason. None is left in
+    # the real register since record-equality (#545) landed, so a synthetic one
+    # stands in for the next.
+    import tempfile as _tempfile
+    from pathlib import Path as _Path
+
+    with _tempfile.TemporaryDirectory() as tmp:
+        register = _Path(tmp) / "staged_flips.json"
+        register.write_text(_json.dumps(
+            {"target": "7.0.0", "flips": {"no-scan-yet": {"issue": 1, "summary": "s"}}}
+        ), encoding="utf-8")
+        synthetic = scan(sources=[("probe.nd", "fn main() {}\n")], register_path=register)
+    assert [f.name for f in synthetic.unchecked] == ["no-scan-yet"], synthetic.flips
+    assert synthetic.unchecked[0].reason, "unchecked with no reason given"
     _json.dumps(named)  # the register is data, not prose
     return f"{len(named)} flips reported, {len(unchecked)} named as unchecked"
 
@@ -2699,9 +2722,25 @@ def probe_clean_staged_report_is_honest():
     del code, out
     from nodus.tooling.staged_readiness import scan
 
-    report = scan(sources=[("clean.nd", 'fn main() {\n    print("ok")\n}\n')])
-    assert report.unchecked, "nothing reported as unchecked, so the wording cannot be honest"
-    return "at least one flip is reported as not checkable from source"
+    import os as _os
+    import subprocess as _subprocess
+    import tempfile as _tempfile
+
+    del scan
+    with _tempfile.TemporaryDirectory() as tmp:
+        path = _os.path.join(tmp, "clean.nd")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write('fn main() {\n    print("ok")\n}\n')
+        env = dict(_os.environ)
+        env.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
+        done = _subprocess.run(
+            [sys.executable, "-m", "nodus", "check", "clean.nd", "--staged"],
+            cwd=tmp, capture_output=True, text=True, env=env, timeout=120,
+        )
+    assert done.returncode == 0, done.stderr
+    assert "nothing found in the" in done.stdout, done.stdout
+    assert "ready" not in done.stdout.lower(), done.stdout
+    return "says what it checked, never 'ready'"
 
 
 @probe("concurrent-write is found statically, and ordered pairs are not")

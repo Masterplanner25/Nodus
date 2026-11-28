@@ -178,10 +178,6 @@
       "verdict": "intentional",
       "why": "The counter behind the same published surface."
     },
-    "D:src/nodus/vm/types.py::_STRUCTURAL_EQ_CHANGE_WARNED": {
-      "verdict": "intentional",
-      "why": "A warn-once flag for the #545 record-equality staging. Process-wide is the point: the warning should fire once per process, not once per runtime."
-    },
     "D:src/nodus/builtins/subprocess_module.py::_UNIX_SIGNALS": {
       "verdict": "intentional",
       "why": "A signal-name lookup table populated at import and read thereafter. Flagged because it is built with .update(); it is a constant in everything but syntax."
