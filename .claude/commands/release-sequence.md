@@ -183,6 +183,7 @@ fast: **is this symptom a release, or is it my change?**
 
 | Release | What stopped working | Restore / fix |
 |---|---|---|
+| 5.21.0 | `std:async.parallel` and `series` no longer finish the caller's other coroutines: a coroutine spawned before the call may still be pending when they return (#1021) | intended. They called `run_loop()`, which drained the whole program's queue; they now stop when their own tasks settle. Return value, failure reporting and the running of every task are unchanged. Call `run_loop()` (or `wait(task)`) yourself after them for work of your own. Inside a coroutine they now park instead of re-entering the scheduler |
 | 5.20.0 | `nodus serve`, `nodus test` and the tools layer (`runner.run_source`, which the service's API uses too) compile hot functions to Python by default (#976 follow-up, PR #1013) | intended, and as for 5.19.0 results are unchanged by design; timing differs, and so does `vm._pycompile` on those VMs. `NODUS_COMPILE_FUNCTIONS=0` restores the old behaviour for the whole process. An observer keeps it off: `nodus profile`, and `nodus test --coverage` |
 | 5.19.0 | `nodus run` and `NodusRuntime` compile hot functions to Python by default (#976) | intended, and results are unchanged by design: the same output, errors, stack traces, instruction counts and limits. What can differ is timing, and anything reading `active_vm()._pycompile`, which is now set. To restore the old behaviour: `nodus run --no-compile`, `NodusRuntime(compile_functions=False)`, or `NODUS_COMPILE_FUNCTIONS=0` for the whole process. A suspected compiled-code bug is the case to reach for the variable: if a program behaves differently with it set, that is a defect to report |
 | 5.18.0 | an embedded run with `max_memory_mb` that goes past the ceiling and then ends, or returns from a coroutine or module call, within 256 instructions now fails with kind `sandbox` (#999) | intended: it returned `ok=True` with the oversized value, so the ceiling was not a ceiling. Raise `max_memory_mb` if the run genuinely needs the memory. The CLI has no memory flag, so `nodus run` is unaffected |
@@ -250,7 +251,15 @@ is not even a row in the table.)
 - **#521 changed `run_source` against every prior release**, not just 5.0.x. Full
   account in the embedding section below.
 
-**`[Unreleased]` is empty — 5.20.0 took its two entries** (one change, one
+**`[Unreleased]` is empty — 5.21.0 took its three entries** (one change, two
+fixes). It is the last 5.x release by decision (D4, 2026-11-27): it carries the
+seventh 6.0.0 flip's notice, a `run_loop()` call from library code (#1021),
+and `std:async` stops being an instance of it. `nodus check --staged` scans
+imports (#1022) and coverage stops counting borrowed lines (#1018). It has one
+row above. The library warning is not a row: it is a warning, and nothing stops
+working until 6.0.0. After it, `main` takes the flip PRs and is 6.0.0 only.
+
+5.20.0 took two entries (one change, one
 fix). Compile-to-Python reaches the remaining entry points (`nodus serve`,
 `nodus test`, the shared runner), and `nodus test --coverage` works for the
 first time (#1015): nothing had ever sent the collector a line. It has one row

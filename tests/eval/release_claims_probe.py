@@ -4064,6 +4064,145 @@ def probe_no_stale_5_19_0_current(repo: Path):
     return "no document still calls 5.19.0 the current release"
 
 
+# --- 5.21.0 ---------------------------------------------------------------
+
+
+_LIB_RUN_LOOP = (
+    'print("lib top level")\n'
+    "run_loop()\n"
+    "export fn drive() {\n"
+    "    run_loop()\n"
+    "    return 1\n"
+    "}\n"
+)
+
+
+@probe("5.21.0: run_loop() from library code warns, naming wait(task); the entry file's does not (#1021)")
+def probe_library_run_loop_warns():
+    import tempfile
+    import warnings
+
+    from nodus.runtime.embedding import NodusRuntime
+    from nodus.support.staging import StagedFlipWarning
+
+    with tempfile.TemporaryDirectory() as raw:
+        Path(raw, "nodus.toml").write_text('[project]\nname = "p"\n', encoding="utf-8")
+        Path(raw, "lib.nd").write_text(_LIB_RUN_LOOP, encoding="utf-8")
+        main = Path(raw, "main.nd")
+        main.write_text(
+            'import "./lib.nd" as lib\nrun_loop()\nlib.drive()\n'
+            "spawn(coroutine(fn() { run_loop() }))\nrun_loop()\n", encoding="utf-8")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = NodusRuntime(project_root=raw).run_file(str(main))
+    assert result.get("ok"), result.get("errors")
+    hits = [str(w.message) for w in caught if issubclass(w.category, StagedFlipWarning)
+            and "run_loop() was called from library code" in str(w.message)]
+    assert len(hits) == 2, f"expected the 2 library call sites, got {hits}"
+    assert all("lib.nd" in h and "wait(task)" in h for h in hits), hits
+    return "the import's top level and the module function warn; the entry file's three calls do not"
+
+
+@probe("5.21.0: std:async.parallel keeps its contract and does not warn (#1021)")
+def probe_parallel_keeps_contract():
+    import warnings
+
+    from nodus.support.staging import StagedFlipWarning
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = run_nd(
+            'import "std:async" as async\n'
+            'let r = async.parallel([fn() { print("a") }, fn() { throw "boom" }, fn() { print("c") }])\n'
+            'print("r=\\(r)")\n')
+    out = (result.get("stdout") or "").split()
+    assert result.get("ok"), result.get("errors")
+    assert out == ["a", "c", "r=nil"], f"stdout: {out}"
+    staged = [w for w in caught if issubclass(w.category, StagedFlipWarning)]
+    assert not staged, [str(w.message) for w in staged]
+    return "every task ran, the failure did not stop the rest, nil came back, no warning"
+
+
+@probe("5.21.0: `nodus check --staged` scans the files the entry imports (#1022)")
+def probe_staged_scans_imports():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        Path(raw, "nodus.toml").write_text('[project]\nname = "p"\n', encoding="utf-8")
+        Path(raw, "lib.nd").write_text(_LIB_RUN_LOOP, encoding="utf-8")
+        main = Path(raw, "main.nd")
+        main.write_text('import "./lib.nd" as lib\nprint(lib.drive())\n', encoding="utf-8")
+        code, out = cli(["nodus", "check", "--staged", str(main)])
+    assert code == 0, f"exited {code}: {out}"
+    assert "and 1 file(s) it imports" in out, out
+    assert "[ 2 found]   library-run-loop (#1021)" in out, out
+    return "the imported file is scanned, and both of its run_loop() calls are found"
+
+
+@probe("5.21.0: the register stages seven flips for 6.0.0, library-run-loop among them (#1021)")
+def probe_seven_flips_registered():
+    import json
+
+    import nodus
+
+    register = Path(nodus.__file__).parent / "support" / "staged_flips.json"
+    data = json.loads(register.read_text(encoding="utf-8"))
+    flips = data["flips"]
+    assert data["target"] == "6.0.0", data["target"]
+    assert len(flips) == 7, sorted(flips)
+    assert flips["library-run-loop"]["issue"] == 1021, flips["library-run-loop"]
+    return f"{len(flips)} flips in the packaged register"
+
+
+@probe("5.21.0: the closing HALT and an implicit return borrow no line (#1018)")
+def probe_halt_borrows_no_line():
+    from nodus.compiler.compiler import normalize_bytecode
+    from nodus.runtime.module_loader import ModuleLoader
+
+    source = ("export fn sign(x) {\n    if (x > 0i) {\n        print(\"pos\")\n    }\n}\n"
+              "export fn unused(x) {\n    return \"neg\"\n}\n")
+    bytecode, functions, locs = ModuleLoader(project_root=None).compile_only(
+        source, module_name="calc.nd", optimize=True)
+    _version, code = normalize_bytecode(bytecode)
+    halts = [i for i, instr in enumerate(code) if instr[0] == "HALT"]
+    assert halts and all(locs[i][1] is None for i in halts), [locs[i] for i in halts]
+    info = next(v for k, v in functions.items() if k.endswith("sign"))
+    ret = next(i for i in range(info.addr, len(code)) if code[i][0] == "RETURN")
+    assert locs[ret][1] == 1, f"sign's implicit return is at {locs[ret]}"
+    return "HALT has no line, and the implicit return is on the fn line"
+
+
+@probe("README names the 5.21.0 surface")
+def probe_readme_names_521_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("5.21.0", "run_loop()", "wait(task)", "nodus check --staged")
+               if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 5.21.0 surface appears in the README"
+
+
+@probe("no stale '5.20.0 is current' claim survives")
+def probe_no_stale_5_20_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.20\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.20\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.20.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.20.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -4347,6 +4486,15 @@ def main() -> int:
     probe_coverage_counts_lines()
     probe_readme_names_520_surface(args.repo)
     probe_no_stale_5_19_0_current(args.repo)
+
+    # --- 5.21.0 -------------------------------------------------------------
+    probe_library_run_loop_warns()
+    probe_parallel_keeps_contract()
+    probe_staged_scans_imports()
+    probe_seven_flips_registered()
+    probe_halt_borrows_no_line()
+    probe_readme_names_521_surface(args.repo)
+    probe_no_stale_5_20_0_current(args.repo)
 
     failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:
