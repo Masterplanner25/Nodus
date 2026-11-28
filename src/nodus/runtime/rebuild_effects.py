@@ -1,3 +1,4 @@
+# v6-flip: rebuild-effect
 """What a rebuild does when the program's top level has an effect (#917).
 
 A rebuild -- a workflow resume, a sweep, a durable coroutine's resume -- re-runs
@@ -19,9 +20,10 @@ something at the other end, and a rebuild should not depend on the network.
 Host functions count as effects unless registered `rebuild_safe=True`, because
 only the host knows whether one is a pure lookup.
 
-**Modes.** `"warn"` reports each effect and lets it run (the current default),
-`"refuse"` raises at the call, naming it and its line, and `"allow"` is the
-operator's override for runs whose *stored* source has a top-level effect. A
+**Modes.** `"refuse"`, the default since 6.0.0, raises at the call, naming it
+and its line. `"warn"` reports each effect and lets it run, which was the
+default through 5.x. `"allow"` is the operator's override for runs whose
+*stored* source has a top-level effect. A
 resume rebuilds from the source stored with the run, so fixing the program does
 not fix such a run, and refusing it would strand it.
 """
@@ -45,8 +47,8 @@ from nodus.runtime.capability import (
 REBUILD_EFFECT_MODES: tuple[str, ...] = ("warn", "refuse", "allow")
 
 # v6-flip: rebuild-effect
-#: The mode when nothing chose one. "warn" for now; it becomes "refuse" in 6.0.0.
-DEFAULT_REBUILD_EFFECTS = "warn"
+#: The mode when nothing chose one. "refuse" since 6.0.0 (#917); "warn" in 5.x.
+DEFAULT_REBUILD_EFFECTS = "refuse"
 
 #: Capabilities whose builtins change something outside the program.
 EFFECT_CAPABILITIES = frozenset({
@@ -69,18 +71,35 @@ def is_rebuild_effect(builtin_name: str) -> bool:
     return capability in EFFECT_CAPABILITIES
 
 
+#: The process-wide override (6.0.0, #917). A mode set on the VM -- through
+#: `sweep(rebuild_effects=)`, `new_vm(rebuild_effects=)` or
+#: `nodus workflow sweep --rebuild-effects` -- wins over it.
+REBUILD_EFFECTS_ENV = "NODUS_REBUILD_EFFECTS"
+
+
 def rebuild_mode(vm) -> str | None:
     """The mode in force if `vm` is rebuilding a program, else None.
 
     Read from the root VM: a stdlib wrapper such as `fs.write_file` runs its
     builtin on a per-call child VM, and the rebuild is the root's.
+
+    **The environment variable is the door every resume path shares.** `sweep`
+    takes a mode, but it does not resume a run that is waiting on an event, and
+    `nodus workflow resume`, `deliver`, `resume_workflow()` and `nodus serve`
+    take none. When the default became "refuse", a run stored by 5.x with a
+    top-level effect would have had no way through on those paths. So the
+    override lives here, where all of them already ask, rather than as a flag
+    on each. An unknown value falls back to the default, which refuses.
     """
+    import os
+
     from nodus.vm.vm_chain import root_vm
 
     root = root_vm(vm)
     if not getattr(root, "_suppress_flow_execution", False):
         return None
-    mode = getattr(root, "rebuild_effects", None) or DEFAULT_REBUILD_EFFECTS
+    mode = (getattr(root, "rebuild_effects", None) or os.environ.get(REBUILD_EFFECTS_ENV)
+            or DEFAULT_REBUILD_EFFECTS)
     return mode if mode in REBUILD_EFFECT_MODES else DEFAULT_REBUILD_EFFECTS
 
 
@@ -106,12 +125,12 @@ def handle_rebuild_effect(vm, name: str, kind: str) -> None:
             "sandbox",
             f"a rebuild re-ran {kind} `{name}` at {where}, which reaches outside the "
             f"program, and rebuild effects are refused. To resume a run whose stored "
-            f"source does this, pass rebuild_effects=\"allow\"; to stop doing it, "
-            f"{remedy}.")
-    from nodus.support.staging import record_staged_flip, warn_staged_flip
+            f"source does this, set NODUS_REBUILD_EFFECTS=allow (or pass "
+            f"rebuild_effects=\"allow\"); to stop doing it, {remedy}.")
+    import warnings
 
-    # v6-flip: rebuild-effect
+    # "warn", chosen explicitly: no longer a staged flip, so a plain warning.
     message = (f"a rebuild re-ran {kind} `{name}` at {where}, which reaches outside the "
-               f"program, so it happened again. In 6.0.0 this is refused; {remedy} (#917).")
-    record_staged_flip("rebuild-effect", message, where=where)
-    warn_staged_flip(message, stacklevel=3)
+               f"program, so it happened again (rebuild_effects=\"warn\"). By default "
+               f"this is refused; {remedy} (#917).")
+    warnings.warn(message, RuntimeWarning, stacklevel=3)

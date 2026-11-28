@@ -695,6 +695,25 @@ def check_file(
             f"{os.path.abspath(path)}:{warning['line']}:{warning['column']}: "
             f"warning: {warning['message']}"
         )
+    # A landed flip's scan (the register's `landed` section): code that now
+    # fails at run time, found before it runs, in the entry and its imports.
+    from nodus.tooling.staged_readiness import landed_findings
+
+    sources = [(os.path.abspath(path), code)]
+    for imported in result.get("imports") or []:
+        try:
+            sources.append((imported, _read_file(imported)))
+        except OSError:
+            continue
+    errors = 0
+    for severity, finding in landed_findings(sources):
+        errors += severity == "error"
+        if severity == "warning":
+            warnings.append(finding)
+        _print_stderr(f"{finding.render().replace(': ', f': {severity}: ', 1)}")
+    if errors:
+        _print_stderr(f"{path}: {errors} error(s)")
+        return 1
     stdout_print(f"{path}: OK" + (f" ({len(warnings)} warning(s))" if warnings else ""))
     return 0
 

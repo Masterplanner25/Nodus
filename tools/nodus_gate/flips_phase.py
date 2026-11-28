@@ -81,6 +81,16 @@ _MARKER = re.compile(r"#\s*v6-flip:\s*([a-z0-9-]+)")
 #: function was invisible to the shape detector until it did.
 _REQUIRED = ("issue", "summary", "warns_since", "signal", "why", "sites")
 
+#: Required on every `landed` entry. A flip that has landed leaves `flips`, but
+#: its record stays: the code still says when the behaviour changed ("refused
+#: since 6.0.0"), and those lines are attributed to it like a promise is, so a
+#: real new promise cannot hide among them. `check` is the severity plain
+#: `nodus check` gives the flip's static scan: "error" when the scan is exact,
+#: "warning" when a resume, the deployment or the interleaving decides, and
+#: "none" when there is no scan.
+_LANDED_REQUIRED = ("issue", "summary", "landed_in", "check", "sites")
+_LANDED_CHECKS = ("error", "warning", "none")
+
 
 @dataclass
 class Unattributed:
@@ -129,6 +139,7 @@ class MalformedEntry:
 class FlipsResult:
     target: str = ""
     flips: dict = field(default_factory=dict)
+    landed: dict = field(default_factory=dict)
     marked: dict = field(default_factory=dict)
     mentions: int = 0
     unattributed: list = field(default_factory=list)
@@ -184,6 +195,27 @@ def run_flips_phase(root: Path) -> FlipsResult:
         result.error = "manifest 'flips' is not an object"
         return result
     result.flips = flips
+    landed = data.get("landed") or {}
+    if not isinstance(landed, dict):
+        result.error = "manifest 'landed' is not an object"
+        return result
+    result.landed = landed
+    for name in sorted(set(flips) & set(landed)):
+        result.malformed.append(MalformedEntry(name, "is in both 'flips' and 'landed'"))
+    for name, entry in sorted(landed.items()):
+        if not isinstance(entry, dict):
+            result.malformed.append(MalformedEntry(name, "landed entry is not an object"))
+            continue
+        for field_name in _LANDED_REQUIRED:
+            value = entry.get(field_name)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                result.malformed.append(
+                    MalformedEntry(name, f"landed entry missing or empty '{field_name}'")
+                )
+        if entry.get("check") not in _LANDED_CHECKS:
+            result.malformed.append(
+                MalformedEntry(name, f"landed 'check' must be one of {_LANDED_CHECKS}")
+            )
 
     for name, entry in sorted(flips.items()):
         if not isinstance(entry, dict):
@@ -214,7 +246,7 @@ def run_flips_phase(root: Path) -> FlipsResult:
         ]
         rel = path.relative_to(root).as_posix()
         for i, marker_flip in markers:
-            if marker_flip not in flips:
+            if marker_flip not in flips and marker_flip not in landed:
                 result.unknown.append(UnknownFlag(rel, i + 1, marker_flip))
         for i, line in enumerate(lines):
             if not token.search(line) or _MARKER.search(line):
@@ -251,4 +283,12 @@ def run_flips_phase(root: Path) -> FlipsResult:
             result.counts.append(
                 SiteCountChanged(name, declared, len(found), found)
             )
+    # A landed flip may have no line left that names the version, so absence is
+    # not staleness. A count that moved still is: it is how a new promise
+    # absorbed by a landed marker's window is caught.
+    for name, entry in sorted(landed.items()):
+        declared = (entry or {}).get("sites")
+        found = seen.get(name, [])
+        if isinstance(declared, int) and declared != len(found):
+            result.counts.append(SiteCountChanged(name, declared, len(found), found))
     return result

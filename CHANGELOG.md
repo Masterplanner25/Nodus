@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **#917: a rebuild refuses a top-level effect instead of repeating it.** This is a
+  6.0.0 flip, staged since 5.16.0. When a stored workflow run or durable
+  coroutine is resumed, its program's top level is re-run to re-bind its
+  definitions. A call there that reaches outside the program (a file write, a
+  request, a subprocess, an unmarked host function) used to run again, with a
+  warning. Now the resume fails, naming the call and its line, and the run is
+  left as it was.
+  - **A run stored before its program was fixed** carries the old source. To let
+    it through, set **`NODUS_REBUILD_EFFECTS=allow`** in the resuming process.
+    That works on every path: `nodus workflow resume`, `deliver`,
+    `resume_workflow()`, `nodus serve` and the sweep. It is new, because a run
+    waiting on an event has no other way through: a sweep does not resume it,
+    and the other paths take no mode. A mode passed to `sweep()` or `new_vm()`
+    wins over the variable. `"warn"` keeps the 5.x behaviour, with a plain
+    `RuntimeWarning`.
+  - **`nodus check` reports these calls from source**, as warnings, since a
+    program that is never resumed runs correctly. `nodus check --staged` no
+    longer lists the flip, because it has landed.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §6.
+
 ## [5.21.0] - 2026-11-27
 
 ### Changed

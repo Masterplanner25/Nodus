@@ -628,7 +628,7 @@ def format_flips(result, *, use_color: bool, verbose: bool, quiet: bool) -> str:
         lines.append("")
         lines.append(
             f"{status} — {len(result.flips)} flip(s) staged for {result.target}, "
-            f"{result.mentions} site(s) attributed"
+            f"{len(result.landed)} landed, {result.mentions} site(s) attributed"
         )
         if weak and not result.has_failure:
             lines.append(

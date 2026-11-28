@@ -660,9 +660,11 @@ program do what the runtime would refuse. `runtime.new_vm()` gives that VM for
 the other calls that take a VM factory. A rebuild re-runs a module's top level to
 rebind its definitions. It skips `main` and the scheduling builtins (`spawn`,
 `spawn_after`, `run_loop`, `wait`), but a top-level host call or effectful builtin
-outside `main` runs again and is reported, and is refused at 6.0.0 (#917; reads and
+outside `main` is refused, and the resume fails naming it (#917; reads and
 `rebuild_safe=True` host functions are allowed), so put a program's work
-in `fn main()`.
+in `fn main()`. For a run whose stored source predates that fix, set
+`NODUS_REBUILD_EFFECTS=allow` in the resuming process, or pass
+`rebuild_effects="allow"` to `sweep()` or `new_vm()`.
 
 Pair this with §6.1: rehydration can only replay what the store durably holds, so
 `LocalWorkflowStore` weakens the guarantee this section is about.

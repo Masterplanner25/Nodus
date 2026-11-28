@@ -4147,11 +4147,13 @@ def probe_seven_flips_registered():
 
     register = Path(nodus.__file__).parent / "support" / "staged_flips.json"
     data = json.loads(register.read_text(encoding="utf-8"))
-    flips = data["flips"]
+    # Staged or landed: the cohort is seven, and on 6.0.0's way they move from
+    # `flips` to `landed` one PR at a time.
+    flips = {**data["flips"], **(data.get("landed") or {})}
     assert data["target"] == "6.0.0", data["target"]
     assert len(flips) == 7, sorted(flips)
     assert flips["library-run-loop"]["issue"] == 1021, flips["library-run-loop"]
-    return f"{len(flips)} flips in the packaged register"
+    return f"{len(flips)} flips in the packaged register ({len(data.get('landed') or {})} landed)"
 
 
 @probe("5.21.0: the closing HALT and an implicit return borrow no line (#1018)")

@@ -61,7 +61,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
-| 6 | A rebuild that re-runs a top-level effect refuses it | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
+| 6 | A rebuild that re-runs a top-level effect refuses it (**landed**) | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
 | 7 | `run_loop()` called from library code becomes an error | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |
 
 **#917 was added on 2026-11-11, by decision.** D5 fixed the content at five and
@@ -100,7 +100,17 @@ All but one are small. The exception is #174.
 - **#609** — the parser records `UnknownTypeName` and lets whoever asks report
   it; the flip is to raise instead. The static machinery is already there.
 - **#4 (worker)** — same shape: warn becomes raise, one site.
-- **#917 (rebuild effects)** — one line: `DEFAULT_REBUILD_EFFECTS` in
+- **#917 (rebuild effects): LANDED.** `DEFAULT_REBUILD_EFFECTS` went from `"warn"`
+  to `"refuse"`, and the flip was not one line after all. Run, it showed that
+  the override the migration guide named, `sweep(rebuild_effects="allow")`, cannot
+  reach a run waiting on an event, since a sweep does not resume those, and that
+  `nodus workflow resume`, `deliver` and `resume_workflow()` take no mode. So a
+  run stored by 5.x with a top-level effect would have been stranded.
+  `NODUS_REBUILD_EFFECTS`, read in `rebuild_mode`, is now the one override every
+  path shares. The static scan moved to plain `nodus check`, as a warning, and
+  the register gained a `landed` section that keeps the flip's record and
+  attributes its remaining 6.0.0 lines. Original estimate:
+  `DEFAULT_REBUILD_EFFECTS` in
   `runtime/rebuild_effects.py` goes from `"warn"` to `"refuse"`. The refusal
   path, the override and the opt-out already ship and are tested in refuse mode.
 - **#1021 (library `run_loop`)**: one site, warning becomes raise. The predicate
