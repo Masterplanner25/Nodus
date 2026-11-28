@@ -4269,6 +4269,122 @@ def probe_no_stale_5_20_0_current(repo: Path):
     return "no document still calls 5.20.0 the current release"
 
 
+@probe("6.0.0: every flip has landed, and the register stages none")
+def probe_600_register_all_landed():
+    import json
+
+    import nodus
+
+    register = Path(nodus.__file__).parent / "support" / "staged_flips.json"
+    data = json.loads(register.read_text(encoding="utf-8"))
+    landed = data.get("landed") or {}
+    expected = {"unknown-type-name", "record-equality", "concurrent-write",
+                "worker-dispatcher", "default-store-sqlite", "rebuild-effect",
+                "library-run-loop"}
+    assert data["flips"] == {}, f"still staged: {sorted(data['flips'])}"
+    assert set(landed) == expected, sorted(landed)
+    assert all(entry.get("landed_in") == "6.0.0" for entry in landed.values()), landed
+    return "0 staged, 7 landed in 6.0.0"
+
+
+@probe("6.0.0: a rebuild refuses a top-level effect by default; NODUS_REBUILD_EFFECTS=allow lets it through (#917)")
+def probe_600_rebuild_refuses_by_default():
+    import types
+
+    from nodus.runtime.rebuild_effects import (
+        DEFAULT_REBUILD_EFFECTS,
+        REBUILD_EFFECTS_ENV,
+        rebuild_mode,
+    )
+
+    assert DEFAULT_REBUILD_EFFECTS == "refuse", DEFAULT_REBUILD_EFFECTS
+    rebuilding = types.SimpleNamespace(_suppress_flow_execution=True, rebuild_effects=None)
+    saved = os.environ.pop(REBUILD_EFFECTS_ENV, None)
+    try:
+        assert rebuild_mode(rebuilding) == "refuse", rebuild_mode(rebuilding)
+        os.environ[REBUILD_EFFECTS_ENV] = "allow"
+        assert rebuild_mode(rebuilding) == "allow", "the override no longer applies"
+        running = types.SimpleNamespace(_suppress_flow_execution=False, rebuild_effects=None)
+        assert rebuild_mode(running) is None, "an ordinary run was treated as a rebuild"
+    finally:
+        os.environ.pop(REBUILD_EFFECTS_ENV, None)
+        if saved is not None:
+            os.environ[REBUILD_EFFECTS_ENV] = saved
+    return "refuse by default, allow by override, nothing outside a rebuild"
+
+
+@probe("6.0.0: the D2/D3 surfaces are gone from the installed package")
+def probe_600_removals():
+    import importlib.util
+
+    from nodus.runtime.embedding import NodusRuntime
+
+    for name in ("nodus.tooling.tiny_vm_lang_functions",):
+        assert importlib.util.find_spec(name) is None, f"{name} still ships"
+    import nodus
+
+    main_dir = Path(nodus.__file__).parent / "main"
+    assert not (main_dir / "language.py").exists(), "nodus.main.language still ships"
+    assert not list((Path(nodus.__file__).parent / "stdlib").glob("*.tl")), "stdlib .tl files still ship"
+    assert not hasattr(NodusRuntime, "_last_vm"), "NodusRuntime._last_vm is still there"
+    result = run_nd('import "./old.tl"\n')
+    assert not result.get("ok"), "a .tl import was accepted"
+    message = str(result.get("error"))
+    assert "no longer supported" in message and "old.nd" in message, message
+    rt = NodusRuntime()
+    rt.run_source('print("x")')
+    assert rt.active_vm() is not None, "active_vm() is not the replacement it is documented as"
+    return "shim, launcher, stdlib .tl and _last_vm gone; a .tl import names the rename"
+
+
+@probe("6.0.0 prose: the migration guide has a section for every landed flip")
+def probe_600_migration_covers_landed(repo: Path):
+    import json
+    import re
+
+    data = json.loads((repo / "src" / "nodus" / "support" / "staged_flips.json")
+                      .read_text(encoding="utf-8"))
+    guide = (repo / "docs" / "migration" / "v6.0-staged-flips.md").read_text(encoding="utf-8")
+    headings = "\n".join(line for line in guide.splitlines() if line.startswith("## "))
+    missing = [name for name, entry in data["landed"].items()
+               if not re.search(rf"#{entry['issue']}\b", headings)]
+    assert not missing, f"no migration section names: {missing}"
+    return f"{len(data['landed'])} landed flips, each with a section"
+
+
+@probe("README names the 6.0.0 surface")
+def probe_readme_names_600_surface(repo: Path):
+    text = (repo / "README.md").read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in ("6.0.0", "migrate-store --to sqlite",
+                           "NODUS_WORKFLOW_STORE_BACKEND=local", "v6.0-staged-flips.md",
+                           "active_vm()", "wait(task)")
+               if n not in text]
+    assert not missing, f"README does not mention: {', '.join(missing)}"
+    return "the 6.0.0 surface appears in the README"
+
+
+@probe("no stale '5.21.0 is current' claim survives")
+def probe_no_stale_5_21_0_current(repo: Path):
+    import re
+
+    pattern = re.compile(
+        r"5\.21\.0[^.\n]{0,60}(current|latest|live on PyPI)"
+        r"|(current|latest)[^.\n]{0,40}5\.21\.0"
+    )
+    offenders = []
+    for name in ("README.md", "llms.txt", "llms-full.txt", "CLAUDE.md",
+                 "skills/nodus.skill", "skills/project-CLAUDE.md",
+                 "skills/project-AGENTS.md"):
+        path = repo / name
+        if not path.is_file():
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{i}")
+    assert not offenders, f"still calls 5.21.0 current: {', '.join(offenders)}"
+    return "no document still calls 5.21.0 the current release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -4561,6 +4677,12 @@ def main() -> int:
     probe_halt_borrows_no_line()
     probe_readme_names_521_surface(args.repo)
     probe_no_stale_5_20_0_current(args.repo)
+    probe_600_register_all_landed()
+    probe_600_rebuild_refuses_by_default()
+    probe_600_removals()
+    probe_600_migration_covers_landed(args.repo)
+    probe_readme_names_600_surface(args.repo)
+    probe_no_stale_5_21_0_current(args.repo)
 
     failed =[r for r in RESULTS if not r[0]]
     for ok, name, detail in RESULTS:

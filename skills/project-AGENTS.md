@@ -2,7 +2,7 @@
 
 ## Language
 
-This project uses **Nodus** (`nodus-lang 5.21.0`).
+This project uses **Nodus** (`nodus-lang 6.0.0`).
 
 Install: `pip install nodus-lang`
 
