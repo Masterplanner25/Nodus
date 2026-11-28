@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import os
 import threading
-import warnings
 from typing import Any, Callable
 
 from nodus.builtins.nodus_builtins import BUILTIN_CALL_PREFIX, BUILTIN_NAMES, BuiltinInfo
@@ -265,8 +264,10 @@ class NodusRuntime:
 
     A single ``NodusRuntime`` instance can be reused across multiple script
     executions; each call to ``run_source`` / ``run_file`` creates a fresh VM and
-    module loader so state does not leak between runs.  ``_last_vm`` is overwritten
-    on each call; use ``get_execution_stats()`` for documented post-execution data.
+    module loader so state does not leak between runs.  ``active_vm()`` returns the
+    most recent run's VM; ``get_execution_stats()`` is the documented
+    post-execution data. (``_last_vm``, which warned on every read, was removed
+    in the D3 cleanup.)
     """
 
     def __init__(
@@ -400,8 +401,8 @@ class NodusRuntime:
             or an object implementing ``emit(event)``.  Convenience sink classes
             ``HumanReadableEventSink`` and ``JsonEventSink`` live in
             ``nodus.runtime.runtime_events``.  Sinks are attached before execution
-            begins so they observe all events — unlike ``_last_vm.event_bus`` which
-            is too late.  See #190.
+            begins so they observe all events — unlike ``active_vm().event_bus``
+            after the run, which is too late.  See #190.
 
             Events only fire for operations that cross subsystem boundaries:
             coroutine lifecycle (spawn/resume/complete), workflow/goal steps,
@@ -897,15 +898,6 @@ class NodusRuntime:
         self._pending_trace_id: str | None = trace_id
         if self.__last_vm is not None:
             self.__last_vm.trace_id = trace_id
-
-    @property
-    def _last_vm(self) -> "VM | None":
-        warnings.warn(
-            "_last_vm is a private implementation detail; use get_execution_stats() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.__last_vm
 
     def active_vm(self) -> "VM | None":
         """The VM from the most recent run, or ``None`` before the first one.

@@ -162,9 +162,9 @@ class ShutdownTests(unittest.TestCase):
         rt = NodusRuntime()
         rt.register_function("noop", lambda: None, arity=0)
         rt.run_source("noop()")
-        self.assertIsNotNone(rt._last_vm)
+        self.assertIsNotNone(rt.active_vm())
         rt.shutdown()
-        self.assertIsNone(rt._last_vm)
+        self.assertIsNone(rt.active_vm())
 
     def test_shutdown_clears_host_functions(self):
         rt = NodusRuntime()
@@ -188,11 +188,11 @@ class SpawnThreadLeakTests(unittest.TestCase):
         # tracking, not about the default, so it opts in.
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt._last_vm
+        vm = rt.active_vm()
         self.assertIsNotNone(vm)
         self.assertIsInstance(vm._spawned_handles, list)
         rt.reset()
-        self.assertIsNone(rt._last_vm)
+        self.assertIsNone(rt.active_vm())
         # After reset, handles list on the (now released) vm should be empty
         self.assertEqual(len(vm._spawned_handles), 0)
 
@@ -202,10 +202,10 @@ class SpawnThreadLeakTests(unittest.TestCase):
         # tracking, not about the default, so it opts in.
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt._last_vm
+        vm = rt.active_vm()
         self.assertIsNotNone(vm)
         rt.shutdown()
-        self.assertIsNone(rt._last_vm)
+        self.assertIsNone(rt.active_vm())
         self.assertEqual(len(vm._spawned_handles), 0)
 
     def test_spawned_handles_populated_after_spawn(self):
@@ -214,7 +214,7 @@ class SpawnThreadLeakTests(unittest.TestCase):
         # tracking, not about the default, so it opts in.
         rt = NodusRuntime(timeout_ms=None, allowed_paths=None, allow_subprocess=True)
         rt.run_source(self._spawn_src("echo hello"), filename="inline.nd")
-        vm = rt._last_vm
+        vm = rt.active_vm()
         self.assertIsNotNone(vm)
         # wait() is called in the script, so proc is done — but handle is still tracked
         self.assertGreaterEqual(len(vm._spawned_handles), 1)

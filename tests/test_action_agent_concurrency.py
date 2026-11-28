@@ -163,7 +163,7 @@ let r = run_goal(g)
         with _Sandbox():
             runtime = NodusRuntime(timeout_ms=None)
             runtime.run_source(source, filename="g.nd")
-            vm = runtime._last_vm
+            vm = runtime.active_vm()
         return [
             e.type
             for e in vm.event_bus.events()

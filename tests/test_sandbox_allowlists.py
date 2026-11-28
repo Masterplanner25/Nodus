@@ -55,7 +55,7 @@ class TestAllowedCommands:
         rt = NodusRuntime(timeout_ms=None, allowed_commands=["git", "ls"])
         result = rt.run_source("print(42)")
         assert result["ok"]
-        assert rt._last_vm.allowed_commands == ["git", "ls"]
+        assert rt.active_vm().allowed_commands == ["git", "ls"]
 
     # closes: #209
     def test_blocked_command_via_module_import(self):
@@ -87,7 +87,7 @@ class TestAllowedCommands:
         """Child VM created by invoke_function must inherit allowed_commands from caller."""
         rt = NodusRuntime(timeout_ms=None, allow_subprocess=True, allowed_commands=["python"])
         rt.run_source("print(1)")
-        assert rt._last_vm.allowed_commands == ["python"]
+        assert rt.active_vm().allowed_commands == ["python"]
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ class TestAllowedHosts:
         rt = NodusRuntime(timeout_ms=None, allowed_hosts=["api.example.com"])
         result = rt.run_source("print(42)")
         assert result["ok"]
-        assert rt._last_vm.allowed_hosts == ["api.example.com"]
+        assert rt.active_vm().allowed_hosts == ["api.example.com"]
 
     def test_none_allowed_hosts_does_not_restrict(self):
         rt = NodusRuntime(timeout_ms=None, allowed_hosts=None)

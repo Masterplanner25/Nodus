@@ -4,8 +4,10 @@ This document tracks known deprecation warnings and suggested remediation steps.
 
 ## Product Deprecations
 
-- Legacy `.tl` file extension is supported with warnings. See `docs/governance/COMPATIBILITY.md`.
-- Legacy launchers `language.py` / `language.bat` are supported with warnings. See `docs/governance/COMPATIBILITY.md`.
+- Legacy `.tl` file extension: removed at 6.0.0 (D2). See `docs/migration/v6.0-staged-flips.md`.
+- Legacy launchers `language.py` / `language.bat` (and `nodus.main.language`): removed at 6.0.0 (D2). Use the `nodus` command.
+- `nodus.tooling.tiny_vm_lang_functions`, a re-export shim: removed at 6.0.0 (D2). Import from `nodus`.
+- `NodusRuntime._last_vm`, which warned on every read: removed at 6.0.0 (D3). Use `active_vm()`.
 
 ## Test Runtime Warnings
 

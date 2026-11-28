@@ -58,7 +58,7 @@ def run_embedded_out_of_process(source: str, **runtime_kwargs) -> dict:
         print("__RESULT__" + json.dumps({
             "ok": result["ok"],
             "messages": [e["message"] for e in result["errors"]],
-            "max_frames": rt._last_vm.max_frames,
+            "max_frames": rt.active_vm().max_frames,
         }))
     """)
     proc = subprocess.run(
@@ -79,7 +79,7 @@ class EmbeddedDefaultFrameCapTests(unittest.TestCase):
     def test_default_runtime_installs_max_stack_depth(self):
         rt = NodusRuntime()
         rt.run_source("print(1)")
-        self.assertEqual(MAX_STACK_DEPTH, rt._last_vm.max_frames)
+        self.assertEqual(MAX_STACK_DEPTH, rt.active_vm().max_frames)
 
     def test_runaway_recursion_raises_under_the_recommended_server_config(self):
         # max_steps=None, timeout_ms=None is what EMBEDDING.md recommends for
@@ -122,13 +122,13 @@ class EmbeddedDefaultFrameCapTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Call stack overflow",
                       [e["message"] for e in result["errors"]])
-        self.assertEqual(150, rt._last_vm.max_frames)
+        self.assertEqual(150, rt.active_vm().max_frames)
 
     def test_a_later_default_run_is_not_left_with_the_override(self):
         rt = NodusRuntime(timeout_ms=None, max_steps=None)
         rt.run_source("print(1)", max_frames=150)
         rt.run_source("print(2)")
-        self.assertEqual(MAX_STACK_DEPTH, rt._last_vm.max_frames)
+        self.assertEqual(MAX_STACK_DEPTH, rt.active_vm().max_frames)
 
 
 # closes: #350

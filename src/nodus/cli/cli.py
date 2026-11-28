@@ -118,10 +118,9 @@ def _show_staged_flip_warnings() -> None:
     bury our own notice in theirs -- which is how a warning becomes noise and
     then becomes ignored.
 
-    Rendered as `warning: ...` to match the CLI's other warnings (the `.tl`
-    notice, the concurrent-write conflict) rather than as Python's
-    `file:line: Category: message`, which reads like a crash to someone who did
-    not ask for a stack trace. Everything else keeps the display it had.
+    Rendered as `warning: ...` to match the CLI's other warnings rather than as
+    Python's `file:line: Category: message`, which reads like a crash to
+    someone who did not ask for a stack trace. Everything else keeps the display it had.
     """
     previous = warnings.showwarning
 
@@ -438,9 +437,18 @@ def run_file(
         abs_root = os.path.abspath(project_root)
         _print_stderr(f"Running project from: {abs_root}")
         _print_stderr(f"Entry: {os.path.relpath(path, abs_root)}")
-    code = _read_file(path)
     if path.endswith(".tl"):
-        _print_stderr("Warning: legacy .tl file detected. Consider using .nd.")
+        # D2: `.tl` warned from 1.x and is refused since the major. Refused here,
+        # by name, rather than run as any other file would be: the import
+        # resolver no longer looks for `.tl`, so a `.tl` program that imports
+        # a `.tl` module would fail later with a less useful message.
+        _print_stderr(
+            f"Error: .tl source files are no longer supported. Rename "
+            f"{os.path.basename(path)} to "
+            f"{os.path.splitext(os.path.basename(path))[0]}.nd."
+        )
+        return 1
+    code = _read_file(path)
     # #342: errors that carry their own path already report a resolved one. This
     # is the fallback used by errors that carry none — a sandbox limit, say —
     # and echoing the path as typed there was the last way the same command
@@ -2043,7 +2051,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(argv: list[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv
-    prog = os.path.basename(argv[0]) if argv else "nodus"
     args = argv[1:]
 
     if not args:
@@ -2067,9 +2074,6 @@ def _dispatch(argv: list[str] | None = None) -> int:
     if command not in known_commands:
         # If argv[0] is language, treat the rest as nodus args.
         if command.endswith(".nd") or command.endswith(".tl") or os.path.isfile(command):
-            cmd_args = args
-            command = "run"
-        elif prog == "language":
             cmd_args = args
             command = "run"
         else:

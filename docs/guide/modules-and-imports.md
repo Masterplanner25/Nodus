@@ -179,8 +179,16 @@ Import error: Invalid import: path '../shared' escapes the project root.
 
 ```
 Import error: Import not found: './no_such_file'
-  (tried ./no_such_file.nd, ./no_such_file.tl,
-         ./no_such_file/index.nd, ./no_such_file/index.tl, ...)
+  (tried ./no_such_file.nd, ./no_such_file/index.nd, ...)
+```
+
+Paths are shortened here; the real message prints them absolute, and goes on
+to the `.nodus/modules/` and stdlib candidates. `.tl` files are not searched
+since 6.0.0, and importing one by name says so:
+
+```
+Import error: Import './old.tl': .tl source files are no longer supported.
+Rename the module to ./old.nd and import that.
 ```
 
 ---
@@ -440,7 +448,9 @@ see #342):
 - "Import error at <abs>/a.nd: Circular import detected: <abs>/a.nd ->
    <abs>/b.nd -> <abs>/a.nd"
 - "Import error at <abs>/main.nd:1:1: Import not found: './no_such_file'
-   (tried ...)" — the candidate list includes .nd, .tl, index.nd, index.tl,
+   (tried ...)" — the candidate list includes .nd, index.nd,
    .nodus/modules/, the stdlib dir, and the nodus.nd entry-point
+   (re-checked 2026-11-28 on main for 6.0.0: `.tl` candidates gone, D2; the
+   `.tl` import refusal above was run verbatim)
 - "Key error at <abs>/main.nd:2:7: Missing module export: _internal"
 -->
