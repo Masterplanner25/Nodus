@@ -125,9 +125,15 @@ All but one are small. The exception is #174.
   pre-5.21.0 sweep missed because `--staged` then scanned entry files only
   (#1022). It waits on each task now. Original estimate: one site, warning becomes raise. The predicate
   (`VM.running_library_code`) and the static scan already ship.
-- **D2 and D3 removals**: delete `.tl` acceptance (`cli.py`, `module_loader.py`),
-  `language.py` / `language.bat`, `tooling/tiny_vm_lang_functions.py`, and the
-  `_last_vm` property. Gate 10a answers whether anything downstream used them.
+- **D2 and D3 removals: LANDED.** `.tl` is refused by name, both as a file
+  `nodus run` is given and as an import, and no longer resolved as a fallback.
+  `language.py` / `language.bat`, the `nodus.main.language` module (a third
+  launcher the list had not named) and `tooling/tiny_vm_lang_functions.py` are
+  deleted, and so is the `_last_vm` property; this repo's tests use
+  `active_vm()`. Landing it found that the import error's "tried ..." list was
+  a hand-written copy of the resolver's candidates, and incomplete (it omitted
+  the stdlib `index.nd` the resolver tried); both now come from
+  `source_candidates`. Gate 10a answers whether anything downstream used them.
 - **#797 / #174 (default store): LANDED.** `create_workflow_store` with no backend
   builds SQLite, and is the one place every default path goes through: the default
   runner, `configure_default_workflow_runner`, and a bare `WorkflowFrameworkRunner()`,

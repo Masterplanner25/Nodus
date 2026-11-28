@@ -833,7 +833,7 @@ repo's long-running "a check that cannot fail" theme.
 - **Coverage baseline (pytest-cov 7.1.0, 2026-05-31):** Overall: 76% (19,126 stmts, 1,645 tests). Gate raised to `--cov-fail-under=70` (was 60%; actual coverage 76% makes 70% a meaningful safety net). Coverage run uses `--ignore=tests/test_scheduler_fairness.py` to exclude the timing-sensitive scheduler fairness tests. Known pre-existing flaky test (passes individually, timing-sensitive under full-suite load): `test_scheduler_fairness.py::test_long_running_task_rotates_with_budget`. Modules below 60%:
   - `src/nodus/__main__.py`: 0% (3 stmts — trivial entry point, not exercised by test suite)
   - `src/nodus/tooling/loader.py`: 48% (370 stmts — legacy pipeline; modern tests use ModuleLoader. Needs dedicated test pass.)
-  - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path)
+  - `src/nodus/tooling/tiny_vm_lang_functions.py`: 0% (4 stmts — demo/wildcard re-export helper, not a production code path; deleted at 6.0.0, D2)
 
 - **mypy baseline (mypy 2.1.0, 2026-05-31 — Phase A+B+C+D: ZERO ERRORS):** CI gate is **blocking** (`continue-on-error` removed from ci.yml). Total: **0 errors across 114 source files** (down from 260 over 4 phases). Phase breakdown: A −70 (except-as-err, module-callable), B −42 (task_graph.py), C −60 (AST nodes, formatter, loader, dap, vm), D −88 (scatter across 37 files: scheduler, server/api, repl, lsp, optimizer, module_loader, module, workflow_lowering, testing/cli, ast_printer, 13 small files).
 

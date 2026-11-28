@@ -25,10 +25,10 @@ missing is a way for the **CLI** to say "show me exactly the warnings a user
 must act on before the next major" without unsuppressing every deprecation in
 every library it imports. A category is that handle.
 
-It is deliberately narrower than "a Nodus deprecation". `_last_vm` and
-`nodus.tooling.loader.run_source()` are deprecated too, and they are not staged
-flips: they are surfaces going away, not behaviour changing under a program that
-keeps working. Those stay plain `DeprecationWarning`s.
+It is deliberately narrower than "a Nodus deprecation". A surface going away
+(`nodus.tooling.loader.run_source()`; `_last_vm` until the D3 removal) is
+not a staged flip, since it is not behaviour changing under a program that keeps
+working. Those stay plain `DeprecationWarning`s.
 """
 
 from __future__ import annotations

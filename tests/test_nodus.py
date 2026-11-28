@@ -315,7 +315,8 @@ print(s.repeat("ha", 2))
                 src = f.read()
             self.assertEqual(run_program(src, source_path=main), ["1.0"])
 
-    def test_legacy_tl_fallback_when_nd_missing(self):
+    def test_a_tl_module_is_not_resolved(self):
+        """D2: `.tl` was a fallback when no `.nd` existed; removed at 6.0.0."""
         with tempfile.TemporaryDirectory() as td:
             mod_tl = os.path.join(td, "mod.tl")
             main = os.path.join(td, "main.nd")
@@ -325,7 +326,22 @@ print(s.repeat("ha", 2))
                 f.write('import { v } from "mod"\nprint(v)\n')
             with open(main, "r", encoding="utf-8") as f:
                 src = f.read()
-            self.assertEqual(run_program(src, source_path=main), ["7.0"])
+            with self.assertRaises(lang.LangRuntimeError) as cm:
+                run_program(src, source_path=main)
+            self.assertIn("Import not found", str(cm.exception))
+            self.assertNotIn(".tl", str(cm.exception))
+
+    def test_an_explicit_tl_import_says_what_changed(self):
+        with tempfile.TemporaryDirectory() as td:
+            with open(os.path.join(td, "mod.tl"), "w", encoding="utf-8") as f:
+                f.write('export let v = 7\n')
+            main = os.path.join(td, "main.nd")
+            src = 'import { v } from "./mod.tl"\nprint(v)\n'
+            with self.assertRaises(lang.LangRuntimeError) as cm:
+                run_program(src, source_path=main)
+            message = str(cm.exception)
+            self.assertIn("no longer supported", message)
+            self.assertIn("./mod.nd", message)
 
     def test_duplicate_import_caching_same_file(self):
         with tempfile.TemporaryDirectory() as td:
@@ -648,16 +664,18 @@ print(read_file("{out_path}"))
             self.assertEqual(exit_code, 2)
             self.assertIn("Trace flags", err.getvalue())
 
-    def test_tl_warning_emitted(self):
+    def test_a_tl_file_is_refused(self):
+        """D2: warned from 1.x, refused since 6.0.0, naming the rename."""
         with tempfile.TemporaryDirectory() as td:
             script = os.path.join(td, "x.tl")
             with open(script, "w", encoding="utf-8") as f:
                 f.write("print(1)\n")
-            err = io.StringIO()
-            with redirect_stderr(err):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
                 exit_code = lang.main(["nodus", "run", script])
-            self.assertEqual(exit_code, 0)
-            self.assertIn("legacy .tl", err.getvalue())
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Rename x.tl to x.nd", err.getvalue())
+            self.assertEqual(out.getvalue(), "", "the program ran")
 
     def test_fmt_simple_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -933,7 +951,7 @@ print(read_file("{out_path}"))
                 run_program(src, source_path=main)
             msg = str(cm.exception)
             self.assertIn("index.nd", msg)
-            self.assertIn("index.tl", msg)
+            self.assertNotIn("index.tl", msg)
 
     def test_cross_module_stack_trace_locations(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1005,43 +1005,39 @@ def ensure_project_root(import_state: dict, base_dir: str, source_path: str | No
     import_state["project_root"] = project_root
 
 
-def try_resolve_with_extensions(base_path: str) -> str | None:
-    if base_path.endswith(".nd") or base_path.endswith(".tl"):
-        full = os.path.abspath(base_path)
-        if os.path.exists(full):
-            return full
-        return None
+#: The source suffix an import resolves to. `.tl` was accepted beside it and
+#: warned on since 1.x; removed at the major (D2).
+SOURCE_SUFFIX = ".nd"
 
-    candidates = [
-        os.path.abspath(base_path + ".nd"),
-        os.path.abspath(base_path + ".tl"),
-        os.path.abspath(os.path.join(base_path, "index.nd")),
-        os.path.abspath(os.path.join(base_path, "index.tl")),
+
+def source_candidates(base_path: str) -> list[str]:
+    """The files an import of *base_path* may resolve to, in order.
+
+    One list, used both to resolve and to report what was tried, so the
+    "tried ..." line in an import error cannot name a different set from the
+    one the resolver searched. It did: each was written out by hand, and
+    removing `.tl` would have meant editing both.
+    """
+    if base_path.endswith(SOURCE_SUFFIX):
+        return [os.path.abspath(base_path)]
+    return [
+        os.path.abspath(base_path + SOURCE_SUFFIX),
+        os.path.abspath(os.path.join(base_path, "index" + SOURCE_SUFFIX)),
     ]
-    for candidate in candidates:
+
+
+def try_resolve_with_extensions(base_path: str) -> str | None:
+    for candidate in source_candidates(base_path):
         if os.path.exists(candidate):
             return candidate
     return None
 
 
 def resolve_with_extensions(base_path: str, import_path: str, tok: Tok | None, module_id: str) -> str:
-    if base_path.endswith(".nd") or base_path.endswith(".tl"):
-        full = os.path.abspath(base_path)
-        if os.path.exists(full):
-            return full
-        import_error(f"Import not found: {import_path} (tried {full})", tok, module_id)
-
-    candidates = [
-        os.path.abspath(base_path + ".nd"),
-        os.path.abspath(base_path + ".tl"),
-        os.path.abspath(os.path.join(base_path, "index.nd")),
-        os.path.abspath(os.path.join(base_path, "index.tl")),
-    ]
-
+    candidates = source_candidates(base_path)
     for candidate in candidates:
         if os.path.exists(candidate):
             return candidate
-
     import_error(
         f"Import not found: {import_path} (tried {', '.join(candidates)})",
         tok,
@@ -1068,6 +1064,14 @@ def resolve_import_path(
     }
     if import_path in _BUILTIN_NOT_MODULES:
         import_error(_BUILTIN_NOT_MODULES[import_path], tok, module_id)
+    if import_path.endswith(".tl"):
+        # D2: refused by name, so the error says what changed rather than
+        # listing `.nd` candidates that were never going to match.
+        import_error(
+            f"Import {import_path!r}: .tl source files are no longer supported. "
+            f"Rename the module to {import_path[:-3]}.nd and import that.",
+            tok, module_id,
+        )
 
     if ":" in import_path and not import_path.startswith("std:"):
         package_name, package_path = import_path.split(":", 1)
@@ -1094,15 +1098,10 @@ def resolve_import_path(
                 if resolved is not None:
                     return resolved
         # Build error listing everything tried.
-        _pkg_tried: list[str] = []
-        for _sfx in (".nd", ".tl"):
-            _pkg_tried.append(os.path.abspath(package_base + _sfx))
-        _pkg_tried.append(os.path.abspath(os.path.join(package_base, "index.nd")))
+        _pkg_tried: list[str] = list(source_candidates(package_base))
         if ep_root is not None:
             _ep_base = os.path.normpath(os.path.join(ep_root, package_path_norm))
-            for _sfx in (".nd", ".tl"):
-                _pkg_tried.append(os.path.abspath(_ep_base + _sfx))
-            _pkg_tried.append(os.path.abspath(os.path.join(_ep_base, "index.nd")))
+            _pkg_tried.extend(source_candidates(_ep_base))
         else:
             _pkg_tried.append(f"<no nodus.nd entry-point for '{package_name}'>")
         import_error(
@@ -1166,37 +1165,17 @@ def resolve_import_path(
     # Build a comprehensive error listing every path that was attempted.
     _all_tried: list[str] = []
     # 1. Project-root attempts
-    _base_noext = base
-    if _base_noext.endswith(".nd") or _base_noext.endswith(".tl"):
-        _base_noext = _base_noext[:-3]
-    for _sfx in (".nd", ".tl"):
-        _all_tried.append(os.path.abspath(_base_noext + _sfx))
-    _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.nd")))
-    _all_tried.append(os.path.abspath(os.path.join(_base_noext, "index.tl")))
+    _all_tried.extend(source_candidates(base))
     # 2. .nodus/modules/ attempts (was previously omitted from error output)
-    _modules_noext = os.path.normpath(os.path.join(modules_dir, import_path))
-    if _modules_noext.endswith(".nd") or _modules_noext.endswith(".tl"):
-        _modules_noext = _modules_noext[:-3]
-    for _sfx in (".nd", ".tl"):
-        _all_tried.append(os.path.abspath(_modules_noext + _sfx))
-    _all_tried.append(os.path.abspath(os.path.join(_modules_noext, "index.nd")))
-    _all_tried.append(os.path.abspath(os.path.join(_modules_noext, "index.tl")))
+    _all_tried.extend(source_candidates(os.path.normpath(os.path.join(modules_dir, import_path))))
     # 3. stdlib attempts
     try:
-        _std_b = _resolve_std_base(import_path, tok, module_id)
-        if _std_b.endswith(".nd") or _std_b.endswith(".tl"):
-            _std_b = _std_b[:-3]
-        for _sfx in (".nd", ".tl"):
-            _all_tried.append(os.path.abspath(_std_b + _sfx))
+        _all_tried.extend(source_candidates(_resolve_std_base(import_path, tok, module_id)))
     except Exception:
         pass
     # 4. Entry-point attempts
     if _ep_root is not None:
-        _ep_noext = os.path.normpath(_ep_root)
-        for _sfx in (".nd", ".tl"):
-            _all_tried.append(os.path.abspath(_ep_noext + _sfx))
-        _all_tried.append(os.path.abspath(os.path.join(_ep_noext, "index.nd")))
-        _all_tried.append(os.path.abspath(os.path.join(_ep_noext, "index.tl")))
+        _all_tried.extend(source_candidates(os.path.normpath(_ep_root)))
     else:
         _all_tried.append(f"<no nodus.nd entry-point for '{import_path}'>")
     _line = tok.line if tok is not None else None

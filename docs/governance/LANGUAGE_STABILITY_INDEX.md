@@ -88,7 +88,7 @@ releases are recorded in CHANGELOG.md and the relevant eval reports.
 | `std:utils` | Experimental | `clamp`, `coalesce`, `get` |
 | `std:tools` / `std:agent` | Experimental | Adapters for tools/agents registered by the embedding host; `agent.call_async` added v4.1.0 (#294) |
 | `std:bool` | Experimental | Single export `equal(value, bool_value)` |
-| Legacy `.tl` extension | Deprecated | Warned on use; no removal date set |
+| Legacy `.tl` extension | Removed | Removed at 6.0.0 (D2); warned on use from 1.x. A `.tl` file or import is refused, naming the rename |
 
 ---
 

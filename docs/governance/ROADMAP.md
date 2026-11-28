@@ -138,9 +138,11 @@ sandbox, embedding API (NodusRuntime), and 36 published ecosystem packages. See 
 - ⚠️ Semver parsing and lockfile format groundwork — Groundwork shipped — semver parsing, lockfile format, and local package resolution are implemented and tested (test_packages). Registry-backed remote resolution and publishing remain open. Tracked as primary v0.8 blocker in the v0.8 milestone section.
 
 ## Compatibility / Deprecations
+Removed at 6.0.0 (D2, D3), after warning for years:
 - `.tl` legacy extension (primary is `.nd`).
 - `tiny_vm_lang_functions.py` compatibility shim.
 - `language.py` / `language.bat` legacy launchers.
+- `NodusRuntime._last_vm` (use `active_vm()`).
 - See `COMPATIBILITY.md` for timeline details.
 
 

@@ -254,7 +254,7 @@ Import resolution:
   3. `<stdlib>/<path>` (built-in stdlib modules)
   - If none found: error naming all candidates tried.
   - If no project manifest is found, `<project_root>` falls back to the importing file's directory.
-- If no extension is provided, resolution checks in order: `.nd`, `.tl`, `<path>/index.nd`, `<path>/index.tl`.
+- If no extension is provided, resolution checks in order: `.nd`, then `<path>/index.nd`. `.tl` is not resolved since 6.0.0; an import naming a `.tl` file is an import error.
 - Cyclic imports are detected and reported as `LangSyntaxError`.
 - The import chain depth is limited to 100 levels by default (override with the `NODUS_MAX_IMPORT_DEPTH` environment variable). Exceeding the limit raises a `LangSyntaxError` with a clear message rather than a Python `RecursionError`.
 - `nodus run --trace-imports` prints one `[import] Resolved "path" → /abs/path` line to stderr per resolved import. Failed imports print `[import] Failed "path" — <reason>` before the error.
@@ -904,7 +904,7 @@ Workers are considered dead if they stop heartbeating for longer than the heartb
 
 ## Files and CLI
 - Primary source extension: `.nd`
-- Legacy `.tl` is still supported for compatibility.
+- Legacy `.tl` is not accepted since 6.0.0: `nodus run x.tl` exits 1 asking for the rename to `.nd`.
 - CLI: `nodus run script.nd`, `nodus run`, `nodus repl`, `nodus check script.nd`
 - Dependency graph inspection: `nodus deps`
 - Cache maintenance: `nodus cache clear`

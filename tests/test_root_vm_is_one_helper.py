@@ -116,10 +116,9 @@ class ThereIsExactlyOneImplementationTests(unittest.TestCase):
         for path in sorted((_REPO_ROOT / "src").rglob("*.py")):
             if path.name == "vm_chain.py":
                 continue
-            # utf-8-sig, not utf-8: two files under src/ carry a BOM
-            # (main/language.py and tooling/tiny_vm_lang_functions.py), and
-            # `ast.parse` rejects U+FEFF. The repo's own `_read_file` opens with
-            # this encoding for the same reason.
+            # utf-8-sig, not utf-8: `ast.parse` rejects U+FEFF, and two files
+            # under src/ carried a BOM until the D2 removals deleted them at
+            # 6.0.0. The repo's own `_read_file` opens with this encoding too.
             tree = ast.parse(path.read_text(encoding="utf-8-sig"))
             for loop in ast.walk(tree):
                 if not isinstance(loop, ast.While):

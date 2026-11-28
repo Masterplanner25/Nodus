@@ -122,6 +122,22 @@
   - **Removed:** the 5.x transitional notice, and the `nodus check --staged` scan
     of the JSON store. No staged flips remain, so `--staged` reports none.
   - Migration: `docs/migration/v6.0-staged-flips.md` §1.
+- **Removed: `.tl` source files, the `language` launchers, the
+  `tiny_vm_lang_functions` shim and `NodusRuntime._last_vm`** (D2, D3). Each was
+  deprecated with a warning for years.
+  - **`.tl`:** `nodus run x.tl` exits 1, asking for the rename to `.nd`. An
+    import naming a `.tl` file is an import error that says the same. An
+    extensionless import no longer falls back to `.tl`.
+  - **Launchers:** `language.py`, `language.bat` and `nodus.main.language` are
+    gone. Use the `nodus` command.
+  - **Shim:** `nodus.tooling.tiny_vm_lang_functions` re-exported `nodus`.
+    Import from `nodus`.
+  - **`_last_vm`:** use `active_vm()`, which returns the same VM without a
+    warning.
+  - The import error's "tried ..." list now comes from the same candidate list
+    the resolver searches. It used to be a hand-written copy, and it omitted
+    the stdlib `index.nd` candidate.
+  - Migration: `docs/migration/v6.0-staged-flips.md` "Surfaces removed".
 
 ## [5.21.0] - 2026-11-27
 

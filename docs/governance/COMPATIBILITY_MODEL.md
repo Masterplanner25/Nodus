@@ -223,8 +223,8 @@ are applied as patches regardless of deprecation state).
 See `docs/governance/COMPATIBILITY.md` for the current deprecation timeline.
 
 Checked 2026-09-01 against 5.9.0:
-- `.tl` legacy extension — still accepted, still warns, no removal date set
-- `language.py` / `language.bat` launchers (warned; no removal date set)
+- `.tl` legacy extension — removed at 6.0.0 (D2)
+- `language.py` / `language.bat` launchers — removed at 6.0.0 (D2)
 - `math.log_base` (removed in 3.0.2 — replaced by `math.log(n, base)`)
 
 **Several changes are staged to become errors at 6.0.0** and warn today, which is

@@ -57,7 +57,7 @@ def _run(source, **kwargs):
         runtime = NodusRuntime(timeout_ms=None, **kwargs)
         result = runtime.run_source(source, filename="t.nd")
         events = [
-            e.data for e in runtime._last_vm.event_bus.events()
+            e.data for e in runtime.active_vm().event_bus.events()
             if e.type == "capability_denied"
         ]
         return result, events
@@ -159,7 +159,7 @@ class TheHostFunctionChokepointIsCoveredTests(unittest.TestCase):
             runtime.register_function("fetch", lambda u: "body", arity=1, requires=NETWORK)
             result = runtime.run_source('print(fetch("http://x"))', filename="t.nd")
             denials = [
-                e.data for e in runtime._last_vm.event_bus.events()
+                e.data for e in runtime.active_vm().event_bus.events()
                 if e.type == "capability_denied"
             ]
         self.assertFalse(result.get("ok"), result)

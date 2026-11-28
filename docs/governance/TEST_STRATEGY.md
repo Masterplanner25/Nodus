@@ -138,7 +138,6 @@ current per-module breakdown belongs in `docs/governance/TECH_DEBT.md`.
 |--------|----------|-------|
 | `src/nodus/__main__.py` | 0% | Trivial entry point; not exercised by test suite |
 | `src/nodus/tooling/loader.py` | 48% | Legacy pipeline; needs dedicated test pass |
-| `src/nodus/tooling/tiny_vm_lang_functions.py` | 0% | Demo/wildcard helper; not production code |
 
 The **70%** gate covers the overall package. An individual module below it is tracked in
 `docs/governance/TECH_DEBT.md` and does not block a release as long as the overall gate

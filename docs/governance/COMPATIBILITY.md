@@ -4,6 +4,11 @@
 > For the compatibility policy (what counts as breaking, semver rules, bytecode
 > compatibility, embedding API commitment), see:
 > **`docs/governance/COMPATIBILITY_MODEL.md`**
+>
+> **Frozen (#991); read it as a record.** The legacy items listed below as still
+> supported (`.tl`, the shim, the `language` launchers), and the staged
+> behaviours, were removed or flipped at 6.0.0. That is recorded in
+> `docs/migration/v6.0-staged-flips.md`, not here.
 
 
 
