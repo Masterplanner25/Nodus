@@ -25,7 +25,6 @@ from nodus.support.config import (
 )
 from nodus.orchestration.task_graph import set_default_dispatcher, load_graph_state, get_registered_vm
 from nodus.runtime.runtime_events import RuntimeEventBus, HumanReadableEventSink, JsonEventSink
-from nodus.support.staging import record_staged_flip
 from nodus.tooling.sandbox import capture_output, configure_vm_limits
 from nodus.result import Result, normalize_filename
 from nodus.orchestration.workflow_lowering import find_goal_value, find_workflow_value, goal_name_candidates, workflow_name_candidates
@@ -185,38 +184,6 @@ def _success_result(
     ).to_dict()
 
 
-# v6-flip: unknown-type-name
-def _staged_type_warnings(loader) -> str:
-    """Unrecognised type annotations seen while compiling, as stderr lines.
-
-    #609 stages these to become **errors at 6.0.0**, and until this they were
-    reported by `nodus check` and the LSP only. That is the wrong shape for a
-    staged flip: the command that will start failing is `nodus run`, so the
-    command that says nothing was the one whose behaviour changes. A project
-    that never runs `check` got no notice at all (plan gate G2).
-
-    Covers imported modules too -- they fail at the major on the same terms --
-    and names the module each came from, because the entry file's path would be
-    a lie for an annotation inside an import.
-
-    One function, called from each of `run_source`'s returns, so the *decision*
-    lives in one place even though the text is attached in several.
-    """
-    unknowns = getattr(loader, "unknown_type_names", None) or []
-    lines = []
-    for module_id, item in unknowns:
-        where = module_id or "<memory>"
-        lines.append(
-            f"{where}:{item['line']}:{item['col']}: warning: {item['message']}\n"
-        )
-        record_staged_flip(
-            "unknown-type-name",
-            item["message"],
-            where=f"{where}:{item['line']}:{item['col']}",
-        )
-    return "".join(lines)
-
-
 def run_source(
     code: str,
     filename: str | None = None,
@@ -362,7 +329,7 @@ def run_source(
                         stage=stage,
                         filename=filename,
                         stdout=stdout.getvalue(),
-                        stderr=_staged_type_warnings(loader) + stderr.getvalue(),
+                        stderr=stderr.getvalue(),
                         err=err,
                         extras=extras,
                         code=code,
@@ -382,11 +349,7 @@ def run_source(
             stage="execute",
             filename=filename,
             stdout=stdout.getvalue(),
-            stderr=(
-                _staged_type_warnings(loader)
-                + stderr.getvalue()
-                + (vm.scheduler.unrun_task_warning() or "")
-            ),
+            stderr=stderr.getvalue() + (vm.scheduler.unrun_task_warning() or ""),
             result=None,
             extras=extras,
         ),
@@ -614,13 +577,11 @@ def check_source(
                 err=extern_err, code=code,
             )
         result = _success_result(stage="check", filename=filename, stdout="", stderr="")
-        # v6-flip: unknown-type-name
-        # Warnings, not failures, until 6.0.0 (#609). `ok` stays True so a
-        # project that checks clean today keeps its exit code.
-        result["warnings"] = [
-            {"message": u.message(), "line": u.line, "column": u.col}
-            for u in parser.unknown_type_names
-        ]
+        # Nothing produces a check warning of its own since #609 landed (an
+        # unknown type name is a syntax error now); the key stays, empty, so a
+        # caller reading it keeps working. Landed flips' scans are reported by
+        # `nodus check` itself, from `staged_readiness.landed_findings`.
+        result["warnings"] = []
         result["imports"] = _project_imports(loader, metadata, module_id)
         return result
     except Exception as err:

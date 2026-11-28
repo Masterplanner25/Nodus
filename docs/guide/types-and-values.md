@@ -971,24 +971,18 @@ unannotated.nd: OK
 whichever you mean and the annotation still documents intent. The runtime
 distinction between them is real and is §6 of this page.
 
-### An unknown type name is a warning, and becomes an error in 6.0.0
+### An unknown type name is a syntax error
 
-A name that is not in the table above is **ignored**, which means nothing on
-that annotation is checked. That used to happen in silence — one transposed
-letter disabled checking on a parameter and nothing said so (#609). It is
-reported now:
+A name that is not in the table above is refused where it is written. It used
+to be ignored in silence, so one transposed letter disabled checking on a
+parameter and nothing said so (#609). 5.6.0 through 5.21.0 warned; since 6.0.0
+`nodus run`, `nodus check` and your editor all report it as a syntax error at
+the annotation, naming the near miss (path shortened):
 
 ```
 $ nodus check typo.nd
-typo.nd:2:12: warning: Unknown type name 'strng' — did you mean 'string'? It is
-currently ignored, so nothing on this annotation is checked; in 6.0.0 it becomes
-an error. Known types: any, bool, float, function, int, list, map, nil, record,
-string.
-typo.nd: OK (1 warning(s))
+Syntax error at typo.nd:2:16: Unknown type name 'strng' -- did you mean 'string'? Known types: any, bool, float, function, int, list, map, nil, record, string.
 ```
-
-The check still passes — the exit code does not change until 6.0.0 — and your
-editor shows the same warning inline.
 
 ---
 

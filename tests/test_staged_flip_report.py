@@ -185,10 +185,12 @@ class SitesRecordTests(_Env):
         self.assertNotIn("concurrent-write", found)
         self.assertNotIn("worker-dispatcher", found)
 
-    def test_unknown_type_name_is_recorded(self):
+    def test_an_unknown_type_name_records_nothing(self):
+        """unknown-type-name was recorded here; it landed in 6.0.0 (#609) as a
+        syntax error, so a run of this file stops before anything records."""
         self.write("bad.nd", BAD_TYPE)
         self.run_nodus("run", "bad.nd", "--time-limit", "20", report=self.report)
-        self.assertIn("unknown-type-name", self.flips_in_report())
+        self.assertNotIn("unknown-type-name", self.flips_in_report())
 
     def test_the_default_store_notice_is_recorded(self):
         self.write("race.nd", RACE)

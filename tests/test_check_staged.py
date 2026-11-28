@@ -56,7 +56,7 @@ RACE = """workflow race {
     }
 }
 
-fn helper(v: itn) {
+fn helper(v: int) {
     return v
 }
 
@@ -193,15 +193,6 @@ class WorkerAndTypeNameTests(unittest.TestCase):
         self.assertEqual([f for _, f in landed_findings([("probe.nd", CLEAN)])
                           if f.flip == "worker-dispatcher"], [])
 
-    def test_type_warnings_are_passed_through_not_recomputed(self):
-        report = _scan(
-            CLEAN,
-            type_warnings=[{"message": "Unknown type name 'itn'", "line": 3, "column": 9}],
-        )
-        found = _findings(report, "unknown-type-name")
-        self.assertEqual(len(found), 1)
-        self.assertEqual((found[0].line, found[0].col), (3, 9))
-
 
 class DefaultStoreTests(unittest.TestCase):
     """#174/#797 is a filesystem question, and keeps the runtime's narrowing."""
@@ -274,25 +265,34 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("ready", result.stdout.lower())
 
     def test_findings_do_not_fail_the_command(self):
-        """It reports what is coming; it is not a gate."""
+        """It reports what is coming; it is not a gate.
+
+        The one finding left that needs no source is a JSON store holding runs.
+        """
+        runs = Path(self.dir) / ".nodus" / "workflow_framework" / "runs"
+        runs.mkdir(parents=True)
+        (runs / "g_1.json").write_text("{}", encoding="utf-8")
         self._write("race.nd", RACE)
         result = self._run("check", "race.nd", "--staged")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("thing(s) to fix", result.stdout)
 
-    def test_the_type_warning_is_not_printed_twice(self):
-        self._write("race.nd", RACE)
-        result = self._run("check", "race.nd", "--staged")
+    def test_an_unknown_type_name_fails_staged_like_any_syntax_error(self):
+        """#609 landed in 6.0.0: a syntax error, reported once, before any scan."""
+        self._write("bad.nd", RACE.replace("v: int", "v: itn"))
+        result = self._run("check", "bad.nd", "--staged")
         combined = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, combined)
         self.assertEqual(combined.count("Unknown type name 'itn'"), 1)
+        self.assertNotIn("Staged for", result.stdout)
 
     def test_plain_check_is_unchanged(self):
         self._write("race.nd", RACE)
         result = self._run("check", "race.nd")
         self.assertEqual(result.returncode, 0, result.stderr)
-        # The type name, the worker declaration since #798 landed, and the two
-        # unordered writer pairs (a/b and b/c) since #547 landed.
-        self.assertIn("OK (4 warning(s))", result.stdout)
+        # The worker declaration since #798 landed, and the two unordered
+        # writer pairs (a/b and b/c) since #547 landed.
+        self.assertIn("OK (3 warning(s))", result.stdout)
         self.assertIn("steps 'a' and 'b' both write state 'total'", result.stderr)
         self.assertIn("warning: in workflow 'race', step 'a' declares worker 'remote'",
                       result.stderr)
