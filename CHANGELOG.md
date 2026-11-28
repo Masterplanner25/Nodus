@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **#1018: `nodus test --coverage` no longer counts a line that never ran.**
+  An instruction a statement emits after a nested block (a function's implicit
+  `return nil`, an `if`'s jump, a loop's jump back, the program's closing
+  `HALT`) took the location of the block's last line, and running it reported
+  that line as covered. Two cases showed:
+  - a module ending in an uncalled function had that function's last line
+    covered, because loading the module runs the `HALT`;
+  - `fn sign(x) { if (x > 0i) { print("pos") } }`, called with `0i`, had the
+    `print` line covered, through the implicit return.
+
+  These instructions now carry their own statement's line. The implicit return
+  carries the `fn` line, and `HALT` carries none. Known issue in 5.20.0, the
+  first release where `--coverage` counted anything (#1015).
+
 ## [5.20.0] - 2026-11-27
 
 ### Changed

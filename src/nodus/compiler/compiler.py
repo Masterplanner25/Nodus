@@ -553,6 +553,10 @@ class Compiler:
             if not isinstance(stmt, FnDef):
                 self.compile_stmt(stmt)
 
+        # #1018: the closing HALT is no statement's, so it has no line. It
+        # borrowed the last one emitted, and loading a module that ends in an
+        # uncalled function counted that function's last line as covered.
+        self.current_loc = (self.current_loc[0], None, None)
         self.emit("HALT")
         return self.code, self.functions, self.code_locs
 
@@ -677,6 +681,9 @@ class Compiler:
             fn_info.local_slots = local_slots
             self.patch(frame_size_idx, "FRAME_SIZE", func_scope.local_slot_counter)
         self.symbols.exit_scope()
+        # #1018: the implicit `return nil` is the function's, so it carries
+        # the `fn` line, which ran whenever the function was entered.
+        self.set_current_loc(stmt)
         self.emit("PUSH_CONST", None)
         self.emit("RETURN")
         return fn_name
@@ -684,6 +691,17 @@ class Compiler:
     def compile_stmt(self, stmt):
         self.set_current_module(stmt)
         self.set_current_loc(stmt)
+        loc = self.current_loc
+        self._compile_stmt(stmt)
+        # #1018: what the enclosing statement emits next -- a loop's jump
+        # back, an `if`'s jump past its `else`, a function's implicit
+        # `return nil` -- belongs to that statement, not to the last line of
+        # this one. It used to borrow that line, so coverage counted a line
+        # that never ran: `fn f(x) { if (x) { g() } }` called with false
+        # marked `g()` covered.
+        self.current_loc = loc
+
+    def _compile_stmt(self, stmt):
         if isinstance(stmt, Let):
             self.reject_reserved_name(stmt.name, node=stmt)
             # #957: `let` is lexical. The name means the outer binding until
