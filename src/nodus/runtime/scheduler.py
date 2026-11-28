@@ -37,9 +37,19 @@ class CheckpointRequest:
         self.label = label
 
 
+#: `Scheduler.program_path` before a loader has run a program on it (#1021).
+NO_PROGRAM = object()
+
+
 class Scheduler:
     def __init__(self, vm, *, trace: bool = False, trace_output=print, time_source: TimeSource | None = None):
         self.vm = vm
+        # #1021: whose queue this is, so `run_loop()` can tell the program's own
+        # call from a library's (`VM.running_library_code`). Set by
+        # `ModuleLoader._execute_module`, the one place that knows whether it
+        # is running an import's top level or the entry file's.
+        self.program_path: object = NO_PROGRAM
+        self.running_import: bool = False
         self.ready_queue: deque[Any] = deque()
         self.queue = self.ready_queue
         self.timers: list[tuple[float, int, Coroutine]] = []

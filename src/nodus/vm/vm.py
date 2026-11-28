@@ -178,10 +178,6 @@ def _is_stdlib_path(path: str | None) -> bool:
     return "/stdlib/" in normalized and normalized.endswith(".nd")
 
 
-#: `VM._program_path` before a loader has run a program (#1021).
-_NO_PROGRAM = object()
-
-
 def normalize_program_path(path: str | None) -> str | None:
     """One spelling of a module path, so two routes to one file compare equal (#1021)."""
     if not path or path.startswith("<"):
@@ -271,12 +267,6 @@ class VM:
     # Every read is either `self._caller_vm` or `getattr(self, "_caller_vm",
     # None)`; both resolve through the class.
     _caller_vm: object | None = None
-    # #1021: which code is the program's own, for `running_library_code`. Set
-    # by `ModuleLoader._execute_module`, the one place that knows whether it is
-    # running an import's top level or the entry file's. `_NO_PROGRAM` means no
-    # loader ran a program on this VM, and then nothing is called a library.
-    _program_path: object = _NO_PROGRAM
-    _running_import: bool = False
 
 
     def __init__(
@@ -598,22 +588,26 @@ class VM:
         - one called inside a coroutine runs on this VM, with the module's
           context, `source_path` included, swapped in for the frame;
         - an imported module's top level runs on the loader's VM before the
-          program's own, which the loader marks with `_running_import`.
+          program's own, which the loader marks on the scheduler.
 
-        All three are answered by asking the root VM which file is the program,
-        and comparing it with the code running now. A closure the program
-        handed to a library runs in the program's context on both routes, so a
-        callback is still the program's. A VM no loader ran a program on (a
-        host that built one directly) has no answer, and nothing is a library.
-        A tool handler's child VM has no `source_path`, so it is not one either.
+        All three are answered by asking the scheduler whose queue it is, and
+        comparing that with the code running now. The scheduler is the right
+        thing to ask: it is what `run_loop()` drains, a child VM shares its
+        caller's, and the loader marks it (`Scheduler.program_path`). It is
+        also not the VM, whose instance attributes are budgeted (#702). A
+        closure the program handed to a library runs in the program's context
+        on both routes, so a callback is still the program's. A scheduler no
+        loader marked (a host that built a VM directly) has no answer, and
+        nothing is a library. Nor is a tool handler's child VM, which has no
+        `source_path`.
         """
-        from nodus.vm.vm_chain import root_vm
+        from nodus.runtime.scheduler import NO_PROGRAM
 
-        root = root_vm(self)
-        if root._running_import:
+        scheduler = self.scheduler
+        if scheduler.running_import:
             return True
-        program = root._program_path
-        if program is _NO_PROGRAM or self.source_path is None:
+        program = scheduler.program_path
+        if program is NO_PROGRAM or self.source_path is None:
             return False
         return normalize_program_path(self.source_path) != program
 

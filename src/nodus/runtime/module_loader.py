@@ -465,9 +465,12 @@ class ModuleLoader:
         # #1021: whose code this is. Imports run on this VM first, each from
         # inside the loading of the module that imports it, so a stack deeper
         # than one is an import's top level and the bottom of it is the program.
-        vm._running_import = len(self._loading_stack) > 1
-        if not vm._running_import:
-            vm._program_path = normalize_program_path(source_path)
+        # Marked on the scheduler, which `reset_program` above has just made for
+        # this module and which the program's child VMs share.
+        scheduler = vm.scheduler
+        scheduler.running_import = len(self._loading_stack) > 1
+        if not scheduler.running_import:
+            scheduler.program_path = normalize_program_path(source_path)
         if declared_externs:
             vm.declared_externs.update(declared_externs)
         if self.host_builtins:
