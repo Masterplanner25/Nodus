@@ -75,6 +75,25 @@
     `fan_out` waits on each task now, with the same error contract and the same
     overlap: the judge-panel example ran in 709 ms against 2000 ms serial.
   - Migration: `docs/migration/v6.0-staged-flips.md` §7.
+- **#545: record `==` compares by value.** This is a 6.0.0 flip, staged since
+  5.4.0. Two records are equal when their kind and their fields are, compared
+  the way maps and lists already were, at any depth. So
+  `record {x: 1i} == record {x: 1i}` is `true`, and so is a map or list
+  holding equal records. Through 5.x records compared by identity and a
+  one-time warning fired when the answer was about to change. `datetime` still
+  compares by instant and `duration` by length. A function-valued field
+  compares by identity, and a record never equals a map.
+  - **`merge: "union"` accepts records** and dedupes them by value. Through 5.x
+    it refused them, because identity could not dedupe anything. A record in a
+    state cell still cannot be persisted (#498), so such a cell needs
+    `durable: false`. The persistence error says so now; it used to point at
+    #545, which never covered persisting records.
+  - **Python side:** `Record` is unhashable now (`__hash__ = None`), since a
+    mutable value compared by value cannot keep a consistent hash. Records
+    were never valid map keys. Use `id(record)` for identity.
+  - There is no scan: whether a comparison's answer changed depends on the
+    runtime types of both operands.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §5.
 
 ## [5.21.0] - 2026-11-27
 

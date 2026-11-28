@@ -373,7 +373,9 @@ def _unserializable_persist_error(data: dict, err: TypeError) -> Exception:
         step = task_to_step.get(segments[1], segments[1])
         where = f"step '{step}''s recorded result"
     if type_name == "Record":
-        remedy = "Use a map instead of a record (see #545 for record equality plans)"
+        remedy = "Use a map instead of a record"
+        if where.startswith("state cell"):
+            remedy += ", or declare the cell `with { durable: false }`"
     else:
         remedy = (
             "Live values (closures, channels, connections) belong inside a "

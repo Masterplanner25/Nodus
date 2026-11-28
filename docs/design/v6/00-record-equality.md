@@ -3,6 +3,11 @@
 **Status: decided 2026-08-25. Staged: warning in the next 5.x release, flip at
 6.0.0 alongside #547 (concurrent state writes) and #609 (unknown type names).**
 
+**Landed for 6.0.0 on 2026-11-28.** `Record.__eq__` delegates to
+`structural_eq`; `__hash__` is `None` (no in-tree code hashed a record); the
+`union` refusal is deleted. Records still cannot be persisted in a state cell
+(#498), so `union` over records needs `durable: false`.
+
 *(Corrected 2026-08-26: this line also named #492 (`worker:`), which closed
 during the 5.4.0 cycle. #609 warns as of 5.6.0 and flips with the rest.)*
 

@@ -361,7 +361,8 @@ Phase 3B test cases:
    needs to know when two contributed elements are the same, and a list of
    records deduplicates nothing. Whether records *should* be structural is
    [#545](https://github.com/Masterplanner25/Nodus/issues/545); `==` is Stable,
-   so any change is a major-version one.
+   so any change is a major-version one. *(6.0.0: decided and landed. Record
+   `==` is structural; see `docs/design/v6/00-record-equality.md`.)*
 
 5. **Truthiness unchanged.** Confirm that narrowing `==` does not affect
    the `if` condition evaluation path. `if 0 { ... }` behavior is governed

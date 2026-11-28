@@ -184,7 +184,7 @@ precedence list until 2026-09-01:
 
 | Directory | Role |
 |-----------|------|
-| `docs/design/v6/` | v6.0 proposals — **open**; record equality (#545) is the live one |
+| `docs/design/v6/` | v6.0 designs; record equality (#545) landed for 6.0.0 |
 | `docs/design/throughput/` | Runtime throughput for #173 — **open**; compiling Nodus functions to Python is the live proposal |
 | `docs/design/workflow-dsl/` | The workflow-DSL cluster, decided 2026-08-26 |
 | `docs/design/v5/` | v5 design decisions — **decided and shipped**, not proposals |

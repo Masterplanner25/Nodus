@@ -57,7 +57,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 | # | What changes | Where | Warns since | Warning visible on the path users run? | Open issue |
 |---|---|---|---|---|---|
 | 1 | An unrecognised type name becomes an error (**landed**) | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | yes, since G2 (`nodus run` too, cold and warm) | #609 |
-| 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
+| 2 | Record `==` becomes structural (**landed**) | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error (**landed**) | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error (**landed**) | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
@@ -88,7 +88,13 @@ Reproductions, all at 5.11.0 from a throwaway project:
 
 All but one are small. The exception is #174.
 
-- **#545** is the most nearly done. The 6.0.0 semantics already exist as
+- **#545 (record equality): LANDED.** `Record.__eq__` delegates to
+  `structural_eq`, the warning is gone, and `Record.__hash__` is `None`: nothing
+  in-tree hashed a record, and the language never allowed one as a map key. The
+  `union` refusal and its walker went with it. Running it found that a record
+  still cannot be persisted in a state cell (#498), so `union` over records
+  works only in a `durable: false` cell; the docs say so. No scan, so the
+  register's `check` is `none`. Original estimate: the 6.0.0 semantics already exist as
   `structural_eq` in `vm/types.py`, consulted today only to detect divergence.
   The flip is: delegate `Record.__eq__` to it and delete the warning. It also
   unblocks `merge: "union"` for records, which #485 shipped refusing outright
