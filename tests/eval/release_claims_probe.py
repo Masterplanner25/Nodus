@@ -1358,17 +1358,20 @@ def probe_budget_limits():
     return "`budget { limits: ... }` parses"
 
 
-@probe("5.6.0: an unrecognised type name is reported, not silently `any`")
+@probe("6.0.0: an unrecognised type name is a syntax error, not silently `any` (warned from 5.6.0, #609)")
 def probe_unknown_type_name():
     from nodus.frontend.lexer import tokenize
     from nodus.frontend.parser import Parser
+    from nodus.runtime.diagnostics import LangSyntaxError
 
-    parser = Parser(tokenize("fn f(x: itn) { return x }"))
-    parser.parse()
-    found = [str(d) for d in getattr(parser, "unknown_type_names", [])]
-    assert found, "a misspelled type name must be recorded, not silently accepted"
-    assert any("itn" in f for f in found), found
-    return "misspellings are recorded (a warning until 6.0.0)"
+    try:
+        Parser(tokenize("fn f(x: itn) { return x }")).parse()
+    except LangSyntaxError as err:
+        assert "Unknown type name 'itn'" in str(err), str(err)
+        assert "did you mean 'int'?" in str(err), str(err)
+        assert (err.line, err.col) == (1, 9), (err.line, err.col)
+        return "refused at the annotation, with a suggestion"
+    raise AssertionError("a misspelled type name was accepted")
 
 
 @probe("5.6.0: the agent registry is a published surface")

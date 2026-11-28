@@ -50,7 +50,6 @@ _REGISTER = Path(__file__).resolve().parent.parent / "support" / "staged_flips.j
 #: here is reported as unchecked -- deliberately, so adding a sixth flip to the
 #: register makes the report say "nobody looked at this" rather than omit it.
 _STATIC = {
-    "unknown-type-name",
     "default-store-sqlite",
 }
 
@@ -398,20 +397,14 @@ def _library_run_loop_findings(path: str, tree) -> list:
 def _scan_source(path: str, code: str, *, imported: bool = False) -> dict:
     """Per-flip findings for one file's source.
 
-    `imported` is every file but the entry (#1022). Two things differ for one:
-    its `run_loop()` calls are a library's, and its unknown type names were not
-    reported by `check_source`, which parsed only the entry.
+    `imported` is every file but the entry (#1022): its `run_loop()` calls are a
+    library's.
     """
     findings: dict[str, list] = {"concurrent-write": [], "worker-dispatcher": []}
-    parser = Parser(tokenize(code))
-    ast = parser.parse()
+    ast = Parser(tokenize(code)).parse()
     findings["rebuild-effect"] = _rebuild_effect_findings(path, ast)
     if imported:
         findings["library-run-loop"] = _library_run_loop_findings(path, ast)
-        findings["unknown-type-name"] = [
-            Finding("unknown-type-name", path, u.message(), line=u.line, col=u.col)
-            for u in parser.unknown_type_names
-        ]
     for flow in _flow_defs(ast):
         flow_name = getattr(flow, "name", "?")
         silenced = {
@@ -490,15 +483,13 @@ def _local_store_findings(project_root: str | None) -> list:
 def scan(
     *,
     sources: list[tuple[str, str]],
-    type_warnings: list[dict] | None = None,
     project_root: str | None = None,
     register_path: Path | None = None,
     dynamic_report: str | None = None,
 ) -> ReadinessReport:
     """Build the readiness report.
 
-    `sources` is `(path, code)` for each file walked; `type_warnings` is what
-    `check_source` already produced for #609, passed in rather than recomputed.
+    `sources` is `(path, code)` for each file walked, the entry first.
     `dynamic_report` overrides `NODUS_STAGED_FLIP_REPORT` for tests.
     """
     report = ReadinessReport()
@@ -521,16 +512,6 @@ def scan(
         for flip, items in found.items():
             collected.setdefault(flip, []).extend(items)
 
-    collected["unknown-type-name"] = collected.get("unknown-type-name", []) + [
-        Finding(
-            "unknown-type-name",
-            str(warning.get("file", report.roots[0] if report.roots else "?")),
-            str(warning.get("message", "")),
-            line=warning.get("line"),
-            col=warning.get("column"),
-        )
-        for warning in (type_warnings or [])
-    ]
     collected["default-store-sqlite"] = _local_store_findings(project_root)
 
     # What earlier runs actually hit, if anyone asked for a report. This is the

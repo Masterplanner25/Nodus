@@ -56,7 +56,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 
 | # | What changes | Where | Warns since | Warning visible on the path users run? | Open issue |
 |---|---|---|---|---|---|
-| 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | yes, since G2 (`nodus run` too, cold and warm) | #609 |
+| 1 | An unrecognised type name becomes an error (**landed**) | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | yes, since G2 (`nodus run` too, cold and warm) | #609 |
 | 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error (**landed**) | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error (**landed**) | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |

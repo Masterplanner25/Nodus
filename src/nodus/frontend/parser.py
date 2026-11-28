@@ -1,6 +1,5 @@
 """Parser for Nodus syntax."""
 
-from dataclasses import dataclass
 from typing import NoReturn
 
 from nodus.runtime.diagnostics import LangSyntaxError
@@ -202,30 +201,6 @@ def _predicate_help(clause: str) -> str:
     return message
 
 
-@dataclass(frozen=True)
-class UnknownTypeName:
-    """An annotation naming a type the checker has never heard of (#609).
-
-    Carries the token position, because the AST keeps only the string: a
-    consumer reporting from the node alone could say *which function* but not
-    *which annotation*.
-    """
-
-    name: str
-    suggestion: str | None
-    line: int
-    col: int
-
-    # v6-flip: unknown-type-name
-    def message(self) -> str:
-        hint = f" — did you mean '{self.suggestion}'?" if self.suggestion else "."
-        return (
-            f"Unknown type name '{self.name}'{hint} It is currently ignored, so "
-            f"nothing on this annotation is checked; in 6.0.0 it becomes an "
-            f"error. Known types: {', '.join(sorted(TYPE_NAMES))}."
-        )
-
-
 class Parser:
     def __init__(self, toks: list[Tok]):
         self.toks = toks
@@ -247,7 +222,6 @@ class Parser:
         # #609. Every consumer builds its own Parser (`check_source`, the
         # diagnostics walker, the LSP), so collecting here is what makes them
         # agree without each re-deriving the answer.
-        self.unknown_type_names: list[UnknownTypeName] = []
 
     def error(self, message: str, tok: Tok | None = None) -> NoReturn:
         # Annotated NoReturn so type checking understands that every `self.error()`
@@ -1243,14 +1217,14 @@ class Parser:
 
     # v6-flip: unknown-type-name
     def _extern_type_name(self, extern_name: str, slot: str) -> str:
-        """A type in an `extern`, checked as an **error** rather than a warning.
+        """A type in an `extern`, checked as an **error**.
 
-        #609 stages an unrecognised annotation as a warning until 6.0.0, because
-        code already exists that a sudden error would break. `extern` is new, so
-        nothing can be relying on a misspelling being ignored -- the same reason
-        #479 made `returns:` an error on arrival. A type that silently meant
-        "any" would make the declaration inert, which is the shape this whole
-        cluster has been removing.
+        An `extern` refused an unrecognised type from the day it shipped, while
+        every other annotation only warned (#609) until 6.0.0 made them all
+        errors. Nothing could have relied on an `extern` misspelling being
+        ignored -- the same reason #479 made `returns:` an error on arrival. A
+        type that silently meant "any" would make the declaration inert, which
+        is the shape this whole cluster has been removing.
         """
         tok = self.peek()
         declared = self.parse_type_name()
@@ -1831,16 +1805,17 @@ class Parser:
         if not is_known_type_name(name):
             # v6-flip: unknown-type-name
             # #609: an unrecognised name used to become `any` in silence, so one
-            # transposed letter disabled checking on that parameter forever. It
-            # is recorded here — the only place that sees both the name and the
-            # token — and reported by whoever asks. Warning in 5.x, error at
-            # 6.0.0 alongside #545/#547.
-            self.unknown_type_names.append(UnknownTypeName(
-                name=name,
-                suggestion=suggest_type_name(name),
-                line=tok.line,
-                col=tok.col,
-            ))
+            # transposed letter disabled checking on that parameter forever.
+            # 5.6.0 through 5.x warned; since 6.0.0 it is a syntax error, raised
+            # here because this is the only place that sees both the name and
+            # the token. `extern` types have refused this way since they shipped.
+            hint = suggest_type_name(name)
+            suffix = f" -- did you mean '{hint}'?" if hint else "."
+            self.error(
+                f"Unknown type name '{name}'{suffix} Known types: "
+                f"{', '.join(sorted(TYPE_NAMES))}.",
+                tok,
+            )
         return name
 
     def parse_param(self) -> Param:

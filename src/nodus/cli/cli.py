@@ -582,7 +582,7 @@ def profile_file(
 
 
 def _report_staged(
-    path: str, *, project_root: str | None, warnings: list, imports: list | None = None,
+    path: str, *, project_root: str | None, imports: list | None = None,
 ) -> int:
     """`nodus check --staged`: what breaks at the next major (plan gate G3).
 
@@ -609,7 +609,6 @@ def _report_staged(
 
     report = scan(
         sources=sources,
-        type_warnings=[dict(w, file=os.path.abspath(path)) for w in warnings],
         project_root=project_root,
     )
     # A report from earlier runs upgrades the flips nothing static can reach.
@@ -681,14 +680,11 @@ def check_file(
         _print_error(result, path=os.path.abspath(path))
         return 1
     # v6-flip: unknown-type-name
-    # #609: warnings do not fail the check. An unknown type name is silently
-    # ignored today and becomes an error at 6.0.0, so reporting it now is what
-    # gives a project a release to fix it in.
+    # Warnings do not fail the check. An unknown type name was one (#609) until
+    # 6.0.0 made it a syntax error, which the `ok` check above reports.
     warnings = result.get("warnings") or []
     if staged:
-        # Not printed here as well: `--staged` reports them under their flip,
-        # and a line that appears twice reads like two findings.
-        return _report_staged(path, project_root=project_root, warnings=warnings,
+        return _report_staged(path, project_root=project_root,
                               imports=result.get("imports"))
     for warning in warnings:
         _print_stderr(

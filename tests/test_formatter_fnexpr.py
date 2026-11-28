@@ -34,9 +34,9 @@ class FormatterFnExprTests(unittest.TestCase):
         self.assertEqual(format_source(out), out)
 
     def test_fn_expr_with_return_type(self):
-        src = "let inc = fn(a) -> Int { return a + 1 }"
+        src = "let inc = fn(a) -> int { return a + 1 }"
         out = format_source(src)
-        self.assertIn("fn(a) -> Int { return a + 1 }", out)
+        self.assertIn("fn(a) -> int { return a + 1 }", out)
         self.assertEqual(format_source(out), out)
 
     def test_fn_expr_multi_stmt_body(self):

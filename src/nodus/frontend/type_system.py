@@ -82,9 +82,10 @@ def parse_type_name(name: str | None) -> NodusType:
     if name is None:
         return ANY
     # Still tolerant: an unknown name degrades to ANY rather than crashing the
-    # checker. The *diagnostic* is the parser's job (#609), because only it has
-    # the token to point at. Until 6.0.0 an unknown name is a warning, so this
-    # has to keep producing something.
+    # checker. The parser refuses one (#609, since 6.0.0), because only it has
+    # the token to point at, so a name reaching here unrecognised came from
+    # somewhere other than source -- a hand-built AST -- and is not this
+    # function's to judge.
     return TYPE_NAMES.get(name, ANY)
 
 

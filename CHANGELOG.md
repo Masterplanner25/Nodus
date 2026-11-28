@@ -23,6 +23,19 @@
     program that is never resumed runs correctly. `nodus check --staged` no
     longer lists the flip, because it has landed.
   - Migration: `docs/migration/v6.0-staged-flips.md` §6.
+- **#609: an unrecognised type name is a syntax error.** This is a 6.0.0 flip,
+  staged since 5.6.0. `fn f(a: itn)` used to make the annotation mean `any` in
+  silence, and from 5.6.0 it warned. Now the parser refuses it at the
+  annotation, naming the near miss:
+  `Unknown type name 'itn' -- did you mean 'int'? Known types: ...`.
+  `nodus run`, `nodus check` and the editor all report it as a syntax error,
+  for the entry file and imports alike, and on a warm bytecode cache too.
+  - **Removed with it:** the warning pipeline. That covers the parser's
+    `unknown_type_names` list and `UnknownTypeName`, the cache field that
+    replayed them on a warm run, the loader's recording, the `nodus run`
+    stderr lines, and `scan(type_warnings=)`. `check_source` still returns a
+    `warnings` key, now always empty.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §3.
 - **#547: a concurrent state write that loses an update is refused.** This is a
   6.0.0 flip, staged since 5.2.0. When two steps the graph does not order both
   write one undeclared `state` cell, and either they disagree or one read the

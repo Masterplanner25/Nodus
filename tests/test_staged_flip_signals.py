@@ -181,33 +181,37 @@ class CliDisplayTests(_ProjectCase):
 
 
 class UnknownTypeNameOnRunTests(_ProjectCase):
+    """#609 warned on `nodus run` from G2 through 5.21.0. Since 6.0.0 it is a
+    syntax error, and these hold the refusal to the same paths the warning had
+    to reach: cold and warm, the entry file and an import."""
+
     # closes: #609
-    def test_run_reports_an_unknown_type_name(self):
+    def test_run_refuses_an_unknown_type_name(self):
         self.write("bad.nd", BAD_ANNOTATION)
         result = _run_nodus(self.dir, "run", "bad.nd", "--time-limit", "20")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Unknown type name 'itn'", result.stderr)
-        self.assertIn("6.0.0", result.stderr)
+        self.assertNotIn("ok", result.stdout)
 
-    # closes: #609
-    def test_it_still_reports_on_a_warm_bytecode_cache(self):
+    def test_it_still_refuses_on_a_warm_bytecode_cache(self):
         """The cache is always one of the paths (#521, #400, #394, #348).
 
-        The first version of this fix warned once and then never again, which
-        looks exactly like a bug someone fixed.
+        The first version of the 5.x warning fired once and then never again.
+        A refusal that a warm cache skipped would run the program.
         """
         self.write("bad.nd", BAD_ANNOTATION)
-        counts = []
+        codes = []
         for _ in range(3):
             result = _run_nodus(self.dir, "run", "bad.nd", "--time-limit", "20")
-            counts.append(result.stderr.count("Unknown type name"))
-        self.assertEqual(counts, [1, 1, 1], f"warm runs lost the warning: {counts}")
+            codes.append((result.returncode, result.stderr.count("Unknown type name")))
+        self.assertEqual(codes, [(1, 1)] * 3, f"a warm run went through: {codes}")
 
     def test_an_imported_module_is_covered_and_named(self):
-        """Imports fail at the major on the same terms, so they warn too."""
+        """An import is refused on the same terms, at its own path."""
         self.write("lib/helper.nd", 'export fn helper(v: flaot) {\n    return v\n}\n')
         self.write("main.nd", 'import "./lib/helper.nd" as lib\n\nfn main() {\n    print("\\(lib.helper(1i))")\n}\n')
         result = _run_nodus(self.dir, "run", "main.nd", "--time-limit", "20")
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Unknown type name 'flaot'", result.stderr)
         self.assertIn("helper.nd", result.stderr, "named the entry file, not the import")
 
@@ -219,11 +223,10 @@ class UnknownTypeNameOnRunTests(_ProjectCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("Unknown type name", result.stderr)
 
-    def test_check_still_reports_it_too(self):
-        """`run` gaining the signal must not cost `check` its own."""
+    def test_check_refuses_it_too(self):
         self.write("bad.nd", BAD_ANNOTATION)
         result = _run_nodus(self.dir, "check", "bad.nd")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Unknown type name 'itn'", result.stderr)
 
 

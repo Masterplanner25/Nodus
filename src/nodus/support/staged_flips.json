@@ -59,17 +59,17 @@
       "check": "warning",
       "why_check": "`nodus check` warns rather than errs: the static answer is a superset. It reports every unordered pair of writers, and whether one update is lost depends on the values and the interleaving at run time.",
       "sites": 3
+    },
+    "unknown-type-name": {
+      "issue": 609,
+      "summary": "An unrecognised type name is a syntax error instead of meaning `any`",
+      "landed_in": "6.0.0",
+      "check": "none",
+      "why_check": "No separate scan: the parser itself refuses the name, so `nodus check`, `nodus run` and the LSP all report it as a syntax error at its token.",
+      "sites": 5
     }
   },
   "flips": {
-    "unknown-type-name": {
-      "issue": 609,
-      "summary": "An unrecognised type name becomes an error instead of meaning `any`",
-      "warns_since": "5.6.0",
-      "signal": "ok as of the G2 work -- `nodus check` reports it and `nodus run` now does too, cold and warm, for the entry file and for imports",
-      "why": "One transposed letter disables checking on that annotation forever, and the name is unrecoverable at runtime. Recorded in the parser, which is the only place that sees both the name and the token, and reported by whoever asks.",
-      "sites": 8
-    },
     "record-equality": {
       "issue": 545,
       "summary": "Record `==` becomes structural instead of identity",

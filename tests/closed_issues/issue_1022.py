@@ -28,7 +28,7 @@ _FLOWS = (
     '        return "b"\n'
     "    }\n"
     "}\n"
-    "export fn noop(x: itn) {\n"
+    "export fn noop(x: int) {\n"
     "    return 1\n"
     "}\n"
 )
@@ -57,11 +57,8 @@ class StagedScansImports(unittest.TestCase):
                     cwd=d, env=env, capture_output=True, text=True, timeout=120)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertIn("and 1 file(s) it imports", proc.stdout, f"check {run}")
-                self.assertIn("[ 1 found]   unknown-type-name (#609)", proc.stdout,
-                              f"check {run}: {proc.stdout}")
-                self.assertIn("flows.nd:12", proc.stdout)
-                # The race is a landed flip since 6.0.0 (#547): plain `nodus
-                # check` reports it, and it scans the imports the same way.
+                # Every source-scanned flip has landed in 6.0.0 (#547, #609,
+                # ...): plain `nodus check` reports them, over the same imports.
                 plain = subprocess.run(
                     [sys.executable, "-m", "nodus", "check", "main.nd"],
                     cwd=d, env=env, capture_output=True, text=True, timeout=120)
