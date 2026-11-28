@@ -62,7 +62,7 @@ reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 | 4 | A `worker:` declaration with no dispatcher becomes an error (**landed**) | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
 | 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
 | 6 | A rebuild that re-runs a top-level effect refuses it (**landed**) | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
-| 7 | `run_loop()` called from library code becomes an error | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |
+| 7 | `run_loop()` called from library code becomes an error (**landed**) | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |
 
 **#917 was added on 2026-11-11, by decision.** D5 fixed the content at five and
 sent anything new to 6.1.0. This one was added because it is the same kind of
@@ -113,7 +113,11 @@ All but one are small. The exception is #174.
   `DEFAULT_REBUILD_EFFECTS` in
   `runtime/rebuild_effects.py` goes from `"warn"` to `"refuse"`. The refusal
   path, the override and the opt-out already ship and are tested in refuse mode.
-- **#1021 (library `run_loop`)**: one site, warning becomes raise. The predicate
+- **#1021 (library `run_loop`): LANDED.** Warning became raise, and the scan is
+  a `nodus check` error, the one exact scan. Landing it found a shipped example
+  that did it, `examples/orchestration/agent_typed.nd`'s `fan_out`, which the
+  pre-5.21.0 sweep missed because `--staged` then scanned entry files only
+  (#1022). It waits on each task now. Original estimate: one site, warning becomes raise. The predicate
   (`VM.running_library_code`) and the static scan already ship.
 - **D2 and D3 removals**: delete `.tl` acceptance (`cli.py`, `module_loader.py`),
   `language.py` / `language.bat`, `tooling/tiny_vm_lang_functions.py`, and the

@@ -43,6 +43,14 @@
       "check": "warning",
       "why_check": "`nodus check` warns rather than errs: whether a dispatcher is registered is a deployment fact the source cannot see.",
       "sites": 2
+    },
+    "library-run-loop": {
+      "issue": 1021,
+      "summary": "`run_loop()` called from library code (any module but the program's entry file) is refused",
+      "landed_in": "6.0.0",
+      "check": "error",
+      "why_check": "`nodus check` errs: the scan is exact. A run_loop() call in an imported file is library code wherever it is, and fails whenever it runs.",
+      "sites": 2
     }
   },
   "flips": {
@@ -77,14 +85,6 @@
       "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
       "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. **The flip lands as a refusal, not a silent switch** -- as of the stranded-runs check, opting into SQLite while the JSON store holds unmigrated runs warns and names them, and at 6.0.0 that becomes an error. That is what makes the switch safe to take: the harm this flip needed a long deprecation clock for was that it failed silently.",
       "sites": 11
-    },
-    "library-run-loop": {
-      "issue": 1021,
-      "summary": "`run_loop()` called from library code (any module but the program's entry file) becomes an error",
-      "warns_since": "5.21.0",
-      "signal": "ok -- a StagedFlipWarning per call site, naming `wait(task)` as the replacement, recorded in the staged-flip report; `nodus check --staged` finds every call in the files a program imports (#1022)",
-      "why": "DECIDED 2026-11-27 (D4). `run_loop()` drains the whole ready deque, which the VM chain shares, so a library that calls it runs work its caller spawned and had not chosen to start. docs/design/v5/05-async-library-boundary.md section 10.2 made a warning conditional on a replacement existing, and `wait(task)` is it. The stdlib was an instance: `std:async.parallel` and `series` drive with `__settle` instead since 5.21.0, keeping their contract. Short notice (one minor before the major), taken knowingly: the replacement already ships, so a warned user can fix it the same day.",
-      "sites": 2
     }
   }
 }

@@ -3087,14 +3087,17 @@ def probe_nested_cross_module_fan_out():
     a = """export fn fan_out(items, worker) {
     let n = len(items)
     let bucket = {}
+    let tasks = []
     let i = 0
     while (i < n) {
         let idx = i
         let item = items[i]
-        spawn(coroutine(fn() { bucket[str(idx)] = worker(item) }))
+        list_push(tasks, spawn(coroutine(fn() { bucket[str(idx)] = worker(item) })))
         i = i + 1
     }
-    run_loop()
+    for t in tasks {
+        wait(t)
+    }
     let results = []
     let k = 0
     while (k < n) {
@@ -4070,40 +4073,29 @@ def probe_no_stale_5_19_0_current(repo: Path):
 # --- 5.21.0 ---------------------------------------------------------------
 
 
-_LIB_RUN_LOOP = (
-    'print("lib top level")\n'
-    "run_loop()\n"
-    "export fn drive() {\n"
-    "    run_loop()\n"
-    "    return 1\n"
-    "}\n"
-)
-
-
-@probe("5.21.0: run_loop() from library code warns, naming wait(task); the entry file's does not (#1021)")
+@probe("6.0.0: run_loop() from library code is refused, naming wait(task); the entry file's is not (#1021)")
 def probe_library_run_loop_warns():
     import tempfile
-    import warnings
 
     from nodus.runtime.embedding import NodusRuntime
-    from nodus.support.staging import StagedFlipWarning
 
+    lib = "export fn drive() {\n    run_loop()\n    return 1\n}\n"
     with tempfile.TemporaryDirectory() as raw:
         Path(raw, "nodus.toml").write_text('[project]\nname = "p"\n', encoding="utf-8")
-        Path(raw, "lib.nd").write_text(_LIB_RUN_LOOP, encoding="utf-8")
+        Path(raw, "lib.nd").write_text(lib, encoding="utf-8")
+        own = Path(raw, "own.nd")
+        own.write_text('import "./lib.nd" as lib\nrun_loop()\n'
+                       "spawn(coroutine(fn() { run_loop() }))\nrun_loop()\n", encoding="utf-8")
+        allowed = NodusRuntime(project_root=raw).run_file(str(own))
         main = Path(raw, "main.nd")
-        main.write_text(
-            'import "./lib.nd" as lib\nrun_loop()\nlib.drive()\n'
-            "spawn(coroutine(fn() { run_loop() }))\nrun_loop()\n", encoding="utf-8")
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = NodusRuntime(project_root=raw).run_file(str(main))
-    assert result.get("ok"), result.get("errors")
-    hits = [str(w.message) for w in caught if issubclass(w.category, StagedFlipWarning)
-            and "run_loop() was called from library code" in str(w.message)]
-    assert len(hits) == 2, f"expected the 2 library call sites, got {hits}"
-    assert all("lib.nd" in h and "wait(task)" in h for h in hits), hits
-    return "the import's top level and the module function warn; the entry file's three calls do not"
+        main.write_text('import "./lib.nd" as lib\nlib.drive()\n', encoding="utf-8")
+        refused = NodusRuntime(project_root=raw).run_file(str(main))
+    assert allowed.get("ok"), allowed.get("error")
+    assert not refused.get("ok"), "a library's run_loop() ran"
+    message = (refused.get("error") or {}).get("message", "")
+    assert "run_loop() was called from library code" in message, message
+    assert "lib.nd:2:" in message and "wait(task)" in message, message
+    return "the entry file's three calls run; the library's is refused at lib.nd:2"
 
 
 @probe("5.21.0: std:async.parallel keeps its contract and does not warn (#1021)")
@@ -4130,16 +4122,21 @@ def probe_parallel_keeps_contract():
 def probe_staged_scans_imports():
     import tempfile
 
+    # A race in the imported file: concurrent-write is still a staged flip.
+    flows = ("workflow race {\n    state total = 0i\n"
+             "    step a { total = 1i\n return 1i }\n"
+             "    step b { total = 2i\n return 2i }\n}\n"
+             "export fn noop() {\n    return 1\n}\n")
     with tempfile.TemporaryDirectory() as raw:
         Path(raw, "nodus.toml").write_text('[project]\nname = "p"\n', encoding="utf-8")
-        Path(raw, "lib.nd").write_text(_LIB_RUN_LOOP, encoding="utf-8")
+        Path(raw, "flows.nd").write_text(flows, encoding="utf-8")
         main = Path(raw, "main.nd")
-        main.write_text('import "./lib.nd" as lib\nprint(lib.drive())\n', encoding="utf-8")
+        main.write_text('import "./flows.nd" as f\nprint(f.noop())\n', encoding="utf-8")
         code, out = cli(["nodus", "check", "--staged", str(main)])
     assert code == 0, f"exited {code}: {out}"
     assert "and 1 file(s) it imports" in out, out
-    assert "[ 2 found]   library-run-loop (#1021)" in out, out
-    return "the imported file is scanned, and both of its run_loop() calls are found"
+    assert "[ 1 found]   concurrent-write (#547)" in out, out
+    return "the imported file is scanned, and its race is found"
 
 
 @probe("5.21.0: the register stages seven flips for 6.0.0, library-run-loop among them (#1021)")

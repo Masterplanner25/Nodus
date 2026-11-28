@@ -935,8 +935,9 @@ it to completion. Skip `run_loop()` and the task never runs.
 **But not in a library.** `run_loop()` drains the whole program's queue, so in a
 module someone imports it runs their coroutines too. There, return the task for
 the caller to drive, or use `wait(task)`, which returns the task's value and
-stops when that task settles. Since 5.21.0 a library's `run_loop()` warns, and it
-is an error at 6.0.0 (#1021). In the entry file `run_loop()` is fine.
+stops when that task settles. A library's `run_loop()` is refused since 6.0.0
+(it warned in 5.21.0, #1021), and `nodus check` reports it as an error. In the
+entry file `run_loop()` is fine.
 
 ---
 

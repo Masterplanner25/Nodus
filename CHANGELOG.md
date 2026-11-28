@@ -33,6 +33,20 @@
   - `nodus check` warns about each `worker:` declaration, since whether a
     dispatcher is registered is a deployment fact the source cannot show.
   - Migration: `docs/migration/v6.0-staged-flips.md` §4.
+- **#1021: `run_loop()` called from library code is refused.** This is a 6.0.0
+  flip, staged in 5.21.0. `run_loop()` runs every coroutine the program has
+  spawned, so in a module the program imports it ran the caller's work at a
+  moment the caller did not choose. A call from library code (a module
+  function, inside a coroutine or not, or an imported module's top level) now
+  raises a runtime error naming its line and `wait(task)` as the replacement.
+  Inside a spawned coroutine that fails the coroutine and is reported, as any
+  error a spawned task raises is. `run_loop()` in the entry file is unchanged.
+  - **`nodus check` reports each call in an imported file as an error**, and
+    exits 1. It is the one landed flip whose scan is exact.
+  - **The `examples/orchestration/agent_typed.nd` library did it.** Its
+    `fan_out` waits on each task now, with the same error contract and the same
+    overlap: the judge-panel example ran in 709 ms against 2000 ms serial.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §7.
 
 ## [5.21.0] - 2026-11-27
 

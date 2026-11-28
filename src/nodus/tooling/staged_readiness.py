@@ -53,7 +53,6 @@ _STATIC = {
     "unknown-type-name",
     "concurrent-write",
     "default-store-sqlite",
-    "library-run-loop",
 }
 
 
@@ -389,9 +388,9 @@ def _library_run_loop_findings(path: str, tree) -> list:
             found.append(Finding(
                 "library-run-loop", path,
                 "run_loop() in a module the program imports runs every coroutine "
-                "its caller has spawned, not only its own, which is an error at "
-                "6.0.0. Return the task for the caller to drive, or call "
-                "wait(task), which stops when that task settles.",
+                "its caller has spawned, not only its own, and is refused at run "
+                "time (#1021, since 6.0.0). Return the task for the caller to "
+                "drive, or call wait(task), which stops when that task settles.",
                 line=line, col=col,
             ))
     return found
