@@ -30,7 +30,7 @@ from nodus_lang_workflow.runner import (  # noqa: E402
     retry_sweeper,
     retry_sweeper_active,
 )
-from nodus_lang_workflow.store import LocalWorkflowStore  # noqa: E402
+from nodus_lang_workflow.store import LocalWorkflowStore, create_workflow_store  # noqa: E402
 
 
 # Fails twice, succeeds on the third attempt. With `retries: 2` honoured the
@@ -66,7 +66,7 @@ def _attempts(stdout: str) -> int:
 
 
 def _framework_store(project_root: str) -> LocalWorkflowStore:
-    return LocalWorkflowStore(root=os.path.join(project_root, ".nodus", "workflow_framework"))
+    return create_workflow_store(root=os.path.join(project_root, ".nodus", "workflow_framework"))
 
 
 class _TempProject:

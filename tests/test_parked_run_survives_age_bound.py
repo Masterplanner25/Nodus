@@ -33,7 +33,6 @@ import sys
 import tempfile
 import time
 import unittest
-import warnings
 
 sys.path.insert(0, "C:/dev/Coding Language/src")
 
@@ -41,7 +40,10 @@ from nodus_lang_workflow import runner as runner_module  # noqa: E402
 from nodus_lang_workflow.store import (  # noqa: E402
     LocalWorkflowStore,
     SQLiteWorkflowStore,
+    StrandedRunsError,
+    create_workflow_store,
     migrate_workflow_store,
+    unmigrated_local_runs,
 )
 
 FORTY_DAYS = 40 * 86_400
@@ -96,7 +98,8 @@ class AMigrationCarriesAParkedRun(unittest.TestCase):
         # migration could not carry and could never be cleared.
         with tempfile.TemporaryDirectory() as root:
             source = _parked_store(root)
-            warned = runner_module._unmigrated_local_runs(root)
+            empty = SQLiteWorkflowStore(path=os.path.join(root, "empty.sqlite3"))
+            warned = unmigrated_local_runs(root, empty)
             migrated = [r.run_id for r in source.list_all_runs()]
             self.assertEqual(sorted(warned), sorted(migrated))
 
@@ -119,48 +122,45 @@ class TheSweepCanStillSeeAParkedRun(unittest.TestCase):
 
 
 # closes: #869
-class TheStrandedRunsWarningFires(unittest.TestCase):
-    """The row that matters most: silence on the store about to be stranded."""
+class TheStrandedRunsRefusalFires(unittest.TestCase):
+    """The row that matters most: silence on the store about to be stranded.
 
-    def setUp(self):
-        runner_module._WARNED_DEFAULT_STORE = False
-        runner_module._WARNED_STRANDED_RUNS = False
+    This was a warning through 5.x; since 6.0.0 (#797) the default store
+    refuses instead, so the refusal is what must see an aged parked run.
+    """
 
-    def tearDown(self):
-        runner_module._WARNED_DEFAULT_STORE = False
-        runner_module._WARNED_STRANDED_RUNS = False
+    def _refusal_for(self, root):
+        try:
+            create_workflow_store(root=root)
+        except StrandedRunsError as exc:
+            return exc
+        return None
 
-    def _warnings_for(self, store):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            runner_module._warn_default_store_is_transitional(None, store)
-            return [str(w.message) for w in caught]
-
-    def test_a_store_holding_only_aged_runs_still_warns(self):
-        with tempfile.TemporaryDirectory() as root:
-            store = _parked_store(root)
-            messages = self._warnings_for(store)
-            self.assertTrue(
-                any("LocalWorkflowStore" in m for m in messages),
-                "the store whose parked run the 6.0.0 flip will strand said "
-                f"nothing: {messages}",
+    def test_a_store_holding_only_aged_runs_still_refuses(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            _parked_store(root)
+            refusal = self._refusal_for(root)
+            self.assertIsNotNone(
+                refusal, "the store whose parked run SQLite lacks said nothing"
             )
+            self.assertIn("parked", refusal.run_ids)
 
-    def test_the_control_a_fresh_run_warns_as_it_always_did(self):
+    def test_the_control_a_fresh_run_refuses_as_well(self):
         # Without this the test above passes for any reason at all, including
-        # the warning having become unconditional.
-        with tempfile.TemporaryDirectory() as root:
+        # the refusal having become unconditional.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
             store = LocalWorkflowStore(root=root)
             store.create_run(
                 run_id="fresh", graph_id="fresh", workflow_name="demo",
                 execution_kind="workflow",
             )
-            self.assertTrue(any("LocalWorkflowStore" in m for m in self._warnings_for(store)))
+            self.assertIsNotNone(self._refusal_for(root))
 
-    def test_an_empty_store_stays_quiet(self):
-        # The other direction: the fix must not make the warning unconditional.
-        with tempfile.TemporaryDirectory() as root:
-            self.assertEqual(self._warnings_for(LocalWorkflowStore(root=root)), [])
+    def test_an_empty_store_is_not_refused(self):
+        # The other direction: the fix must not make the refusal unconditional.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            LocalWorkflowStore(root=root)
+            self.assertIsNone(self._refusal_for(root))
 
 
 # closes: #869

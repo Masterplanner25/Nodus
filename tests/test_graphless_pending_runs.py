@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -50,6 +51,11 @@ _THIRTY_ONE_DAYS_MS = 31 * 24 * 3600 * 1000
 
 class _StoreHarness(unittest.TestCase):
     def setUp(self):
+        # These tests read and edit the JSON store's record files, so they pin
+        # it: the default store is SQLite since 6.0.0 (#797).
+        patcher = mock.patch.dict(os.environ, {"NODUS_WORKFLOW_STORE_BACKEND": "local"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self._td = tempfile.TemporaryDirectory()
         self._cwd = os.getcwd()
         os.chdir(self._td.name)

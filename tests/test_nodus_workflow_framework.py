@@ -41,7 +41,7 @@ workflow demo {
 
 
 def framework_store(project_root: str):
-    return LocalWorkflowStore(root=os.path.join(project_root, ".nodus", "workflow_framework"))
+    return create_workflow_store(root=os.path.join(project_root, ".nodus", "workflow_framework"))
 
 
 class LocalWorkflowStoreTests(unittest.TestCase):

@@ -203,42 +203,20 @@ class WorkerAndTypeNameTests(unittest.TestCase):
 
 
 class DefaultStoreTests(unittest.TestCase):
-    """#174/#797 is a filesystem question, and keeps the runtime's narrowing."""
+    """#797 landed in 6.0.0 as a run-time refusal, so `--staged` no longer
+    scans the JSON store, and the register lists no staged flip."""
 
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.root = self._tmp.name
-        self.addCleanup(self._tmp.cleanup)
-        self._backend = os.environ.pop("NODUS_WORKFLOW_STORE_BACKEND", None)
-        if self._backend is not None:
-            self.addCleanup(
-                os.environ.__setitem__, "NODUS_WORKFLOW_STORE_BACKEND", self._backend
-            )
-
-    def _with_runs(self, count: int) -> None:
-        runs = Path(self.root) / ".nodus" / "workflow_framework" / "runs"
-        runs.mkdir(parents=True, exist_ok=True)
-        for i in range(count):
-            (runs / f"g_{i}.json").write_text("{}", encoding="utf-8")
-
-    def test_runs_in_the_json_store_are_reported(self):
-        self._with_runs(3)
-        found = _findings(_scan(CLEAN, project_root=self.root), "default-store-sqlite")
-        self.assertEqual(len(found), 1)
-        self.assertIn("3 run record(s)", found[0].message)
-        self.assertIn("migrate-store", found[0].message)
-
-    def test_a_project_with_no_runs_is_clean(self):
-        found = _findings(_scan(CLEAN, project_root=self.root), "default-store-sqlite")
-        self.assertEqual(found, [])
-
-    def test_choosing_the_backend_silences_it(self):
-        """Saying `local` is an answer, not an oversight -- the runtime's rule."""
-        self._with_runs(3)
-        os.environ["NODUS_WORKFLOW_STORE_BACKEND"] = "local"
-        self.addCleanup(os.environ.pop, "NODUS_WORKFLOW_STORE_BACKEND", None)
-        found = _findings(_scan(CLEAN, project_root=self.root), "default-store-sqlite")
-        self.assertEqual(found, [])
+    def test_the_store_flip_is_landed_and_not_scanned(self):
+        data, error = load_register()
+        self.assertIsNone(error, error)
+        self.assertNotIn("default-store-sqlite", data["flips"])
+        self.assertEqual(data["landed"]["default-store-sqlite"]["check"], "none")
+        with tempfile.TemporaryDirectory() as root:
+            runs = Path(root) / ".nodus" / "workflow_framework" / "runs"
+            runs.mkdir(parents=True)
+            (runs / "g_1.json").write_text("{}", encoding="utf-8")
+            report = _scan(CLEAN, project_root=root)
+        self.assertEqual([f.name for f in report.flips], [])
 
 
 class CliTests(unittest.TestCase):
@@ -268,21 +246,17 @@ class CliTests(unittest.TestCase):
         self._write("ok.nd", CLEAN)
         result = self._run("check", "ok.nd", "--staged")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("nothing found in the", result.stdout)
+        self.assertIn("No behaviour changes are staged", result.stdout)
         self.assertNotIn("ready", result.stdout.lower())
 
     def test_findings_do_not_fail_the_command(self):
-        """It reports what is coming; it is not a gate.
-
-        The one finding left that needs no source is a JSON store holding runs.
-        """
-        runs = Path(self.dir) / ".nodus" / "workflow_framework" / "runs"
-        runs.mkdir(parents=True)
-        (runs / "g_1.json").write_text("{}", encoding="utf-8")
+        """It reports what is coming; it is not a gate. With every flip
+        landed, it reports nothing staged, even over a project plain
+        `nodus check` would warn about, and exits 0."""
         self._write("race.nd", RACE)
         result = self._run("check", "race.nd", "--staged")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("thing(s) to fix", result.stdout)
+        self.assertIn("No behaviour changes are staged", result.stdout)
 
     def test_an_unknown_type_name_fails_staged_like_any_syntax_error(self):
         """#609 landed in 6.0.0: a syntax error, reported once, before any scan."""

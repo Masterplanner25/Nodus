@@ -464,9 +464,11 @@ Before deploying a Nodus-embedded application to production:
 
 ## 6.1 Workflow store durability (#174)
 
-The default workflow runner uses `LocalWorkflowStore` — file-backed JSON at
-`.nodus/workflow_framework/runs/`. It is appropriate for a single process: development,
-and scripts that run one at a time.
+The default workflow runner uses `SQLiteWorkflowStore`, at
+`.nodus/workflow_framework.sqlite3`, since 6.0.0 (#797). Through 5.x it used
+`LocalWorkflowStore`, file-backed JSON at `.nodus/workflow_framework/runs/`, which
+`NODUS_WORKFLOW_STORE_BACKEND=local` still selects. The JSON store is appropriate for a
+single process: development, and scripts that run one at a time.
 
 **What it lacks is a claim that holds across processes, not crash safety** (#937). Every
 record is written atomically: a temp file, `fsync`, then a rename over the old one. So a
@@ -489,7 +491,8 @@ nothing coordinates the two processes. That is the job of SQLite, below. POSIX a
 both operations, so none of this applies there.
 
 For any deployment where more than one process touches the store, which includes any
-host that sweeps while programs run:
+host that sweeps while programs run, use SQLite. It is the default since 6.0.0; to name
+it, or to place the database:
 
 ```python
 from nodus_lang_workflow.runner import configure_default_workflow_runner
@@ -530,11 +533,15 @@ misspelling cannot quietly cost you the durability you asked for.
 > *snapshots* and is a different job. This note previously said no backend
 > migration existed and advised draining first; that was true when written.
 
-> **The default becomes SQLite at 6.0.0.** Until then an unconfigured local store
-> that already holds runs emits a one-shot `DeprecationWarning` naming the
-> migration command above, because after the flip those runs would be invisible
-> rather than moved. Setting `NODUS_WORKFLOW_STORE_BACKEND=local` explicitly is
-> an answer and silences it — a host that means the JSON store keeps it.
+> **The default is SQLite since 6.0.0, and it refuses rather than hiding runs.**
+> With no backend configured, if the JSON store holds runs SQLite lacks, opening
+> the default store raises `StrandedRunsError` (`nodus_lang_workflow.store`),
+> naming them and the migration command above; the CLI prints it and exits 1.
+> `migrate-store` itself is exempt. Setting `NODUS_WORKFLOW_STORE_BACKEND=local`
+> keeps the JSON store. An explicit `sqlite` with stranded runs warns instead,
+> since the host chose the switch. With no backend set, the SQLite file goes
+> beside the JSON store's root, so `NODUS_WORKFLOW_STORE_ROOT` and
+> `configure_default_workflow_runner(root=...)` still move it.
 
 `SQLiteWorkflowStore` uses WAL mode for atomic writes and survives unexpected
 process exits. The default path can be any writable path on a persistent volume.

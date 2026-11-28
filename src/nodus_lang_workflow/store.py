@@ -56,6 +56,11 @@ __all__ = [
     "LocalWorkflowStore",
     "SQLiteWorkflowStore",
     "StoreUnsuitableError",
+    "StrandedRunsError",
+    "StrandedRunsWarning",
+    "DEFAULT_WORKFLOW_STORE_BACKEND",
+    "default_sqlite_path",
+    "unmigrated_local_runs",
     "WorkflowStore",
     "create_workflow_store",
     "require_exclusive_claims",
@@ -1858,6 +1863,93 @@ def migrate_workflow_store(
     }
 
 
+# v6-flip: default-store-sqlite
+#: The backend used when nothing chose one. "sqlite" since 6.0.0 (#797, #174);
+#: "local" (the JSON store) through 5.x. `NODUS_WORKFLOW_STORE_BACKEND=local`
+#: keeps the JSON store, and stays supported.
+DEFAULT_WORKFLOW_STORE_BACKEND = "sqlite"
+
+
+class StrandedRunsWarning(UserWarning):
+    """SQLite was chosen explicitly and the JSON store holds runs it lacks.
+
+    A warning, not `StrandedRunsError`: a host that set the backend itself
+    chose the switch. The CLI renders it as `warning: ...`.
+    """
+
+
+class StrandedRunsError(RuntimeError):
+    """The default store is SQLite and the JSON store holds runs it lacks (#797).
+
+    Raised instead of switching silently, which is the harm the flip was staged
+    for: a parked run in the JSON store is invisible to a SQLite one, so it
+    would stop existing for every command with nothing said.
+    """
+
+    def __init__(self, run_ids: list[str], root: str, sqlite_path: str) -> None:
+        self.run_ids = list(run_ids)
+        self.root = root
+        self.sqlite_path = sqlite_path
+        shown = ", ".join(self.run_ids[:5]) + ("..." if len(self.run_ids) > 5 else "")
+        super().__init__(
+            f"the default workflow store is SQLite ({sqlite_path}), and "
+            f"{len(self.run_ids)} run record(s) in the file-backed JSON store at "
+            f"{root} are not in it, so they would be invisible to every "
+            f"`nodus workflow` command and a parked run among them could not be "
+            f"resumed: {shown}. Copy them with `nodus workflow migrate-store "
+            f"--to sqlite` (non-destructive; supports --dry-run), or set "
+            f"NODUS_WORKFLOW_STORE_BACKEND=local to keep the JSON store. Runs you "
+            f"do not want can be deleted from {os.path.join(root, 'runs')}."
+        )
+
+
+def unmigrated_local_runs(root: str, store: "WorkflowStore") -> list[str]:
+    """Run ids in the JSON store at *root* that *store* does not have.
+
+    Read off the filesystem rather than by constructing a local store: this runs
+    while the SQLite store is being set up, and building a second live store to
+    ask it a question is how two sweepers came to race one directory (#632).
+
+    Only ids *store* lacks count. The migration is non-destructive, and the
+    migration guide tells people to keep the old store until they have checked
+    the new one, so a JSON store that still has records is the expected state
+    after a correct migration.
+    """
+    runs_dir = os.path.join(root, "runs")
+    try:
+        local_ids = {
+            os.path.splitext(name)[0]
+            for name in os.listdir(runs_dir)
+            if name.endswith(".json")
+        }
+    except OSError:
+        return []
+    if not local_ids:
+        return []
+    # `list_all_runs`, not `list_runs`: a run aged out of the listing is still
+    # a run the JSON store holds (#869).
+    try:
+        known = {str(record.run_id) for record in store.list_all_runs()}
+    except OSError:
+        return []
+    return sorted(local_ids - known)
+
+
+def default_sqlite_path(root: str | None) -> str:
+    """Where the SQLite store goes when nothing chose the backend.
+
+    Beside the JSON store's root, which is where the default SQLite file has
+    always been (`<run state>/workflow_framework.sqlite3` next to
+    `<run state>/workflow_framework/`). Deriving it from *root* means a host
+    that moved the JSON store, with `root=` or `NODUS_WORKFLOW_STORE_ROOT`,
+    gets its SQLite store moved with it, instead of one in the working
+    directory beside an argument that silently stopped mattering.
+    """
+    if root is None:
+        return workflow_sqlite_path()
+    return os.path.abspath(root).rstrip("\\/") + ".sqlite3"
+
+
 def create_workflow_store(
     *,
     backend: str | None = None,
@@ -1865,10 +1957,34 @@ def create_workflow_store(
     path: str | None = None,
     claim_ttl_ms: float = 30_000.0,
     terminal_max_age_days: float = 30.0,
+    refuse_stranded: bool = True,
 ) -> WorkflowStore:
-    backend_name = str(backend or "local").strip().lower()
+    """Build the store *backend* names, or the default one.
+
+    With no *backend*, the default is SQLite (#797). Then, and only
+    then, *root* is the JSON store's root: the SQLite file goes beside it, and
+    if that JSON store holds runs SQLite lacks this raises `StrandedRunsError`
+    rather than hiding them. `refuse_stranded=False` is for the migration,
+    which is the remedy and must be able to run.
+
+    An explicit `backend="sqlite"` keeps its 5.x meaning: *root* is ignored and
+    *path* defaults to `workflow_sqlite_path()`, so an existing database does not
+    move.
+    """
+    chosen = backend is not None and str(backend).strip() != ""
+    backend_name = str(backend).strip().lower() if chosen else DEFAULT_WORKFLOW_STORE_BACKEND
     if backend_name == "local":
         return LocalWorkflowStore(root=root, claim_ttl_ms=claim_ttl_ms, terminal_max_age_days=terminal_max_age_days)
     if backend_name == "sqlite":
-        return SQLiteWorkflowStore(path=path, claim_ttl_ms=claim_ttl_ms)
+        if chosen:
+            return SQLiteWorkflowStore(path=path, claim_ttl_ms=claim_ttl_ms)
+        local_root = os.path.abspath(root or workflow_store_root())
+        store = SQLiteWorkflowStore(path=path or default_sqlite_path(root), claim_ttl_ms=claim_ttl_ms)
+        if refuse_stranded:
+            # v6-flip: default-store-sqlite
+            # Refused since 6.0.0 rather than switched silently (#797).
+            stranded = unmigrated_local_runs(local_root, store)
+            if stranded:
+                raise StrandedRunsError(stranded, local_root, store.path)
+        return store
     raise ValueError(f"Unknown workflow store backend: {backend}")

@@ -61,7 +61,16 @@ def _run_files(directory: Path) -> set[str]:
 
 
 def _repo_run_files() -> set[str]:
-    return _run_files(_REPO_RUNS)
+    """The repo's JSON run files, plus a fingerprint of its default SQLite
+    store: since 6.0.0 (#797) a run lands there, as a row, by default."""
+    found = _run_files(_REPO_RUNS)
+    # WAL mode: a write may touch only the -wal file until a checkpoint.
+    for suffix in ("", "-wal"):
+        sqlite_file = _REPO_ROOT / ".nodus" / f"workflow_framework.sqlite3{suffix}"
+        if sqlite_file.is_file():
+            stat = sqlite_file.stat()
+            found.add(f"sqlite{suffix}:{stat.st_size}:{stat.st_mtime_ns}")
+    return found
 
 
 class DefaultStoreRootTests(unittest.TestCase):
@@ -163,8 +172,10 @@ class RunsGoWhereTheOverrideSaysTests(unittest.TestCase):
 
             self.assertEqual(before, _repo_run_files(),
                              "the run wrote into the repo despite the override")
-            self.assertTrue((store / "runs").is_dir(),
-                            f"nothing written to the override root: {store}")
+            # The default store is SQLite since 6.0.0 (#797), and the override
+            # moves it: the file sits beside the root it names.
+            self.assertTrue(Path(str(store) + ".sqlite3").is_file(),
+                            f"nothing written beside the override root: {store}")
 
 
 # closes: #380

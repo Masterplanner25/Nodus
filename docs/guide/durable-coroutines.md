@@ -42,15 +42,14 @@ the code between checkpoints safe to run twice.
 
 A durable coroutine is a run record in the workflow store, and it needs a
 store whose claims are exclusive across processes. Otherwise a restarted
-program and a host that resumes runs could both pick up the same run. Today
-that store is SQLite:
+program and a host that resumes runs could both pick up the same run. That
+store is SQLite, which is the default since 6.0.0 (#797), so there is nothing to
+set up.
 
-```
-$ export NODUS_WORKFLOW_STORE_BACKEND=sqlite
-```
-
-SQLite becomes the default store at 6.0.0, and from then this step is not
-needed. Without it, `durable_spawn` refuses to start and says how to fix it:
+Through 5.x the default was the file-backed JSON store, and this section told
+you to set `NODUS_WORKFLOW_STORE_BACKEND=sqlite`. If you set
+`NODUS_WORKFLOW_STORE_BACKEND=local` to keep the JSON store, `durable_spawn`
+refuses to start and says how to fix it:
 
 ```
 $ nodus run --time-limit 60 ingest.nd
@@ -59,8 +58,8 @@ Stack trace:
   at <main> (/abs/path/ingest.nd:13:14)
 ```
 
-If you already have workflow runs in the JSON store, move them with `nodus
-workflow migrate-store --to sqlite` before switching.
+If you have workflow runs in the JSON store from 5.x, the default store refuses
+to open until they are moved: see `docs/migration/v6.0-staged-flips.md` §1.
 
 ---
 
@@ -545,8 +544,11 @@ absolute directory replaced by /abs/path/ as in debugging.md. The killed run in
 §3.1 was `kill -9` four seconds in. §3.2's second run followed 31 s later. §6's
 sweep ran 31 s after a separate killed run.
 
-The blocks are `nd-no-run` because the gate runs examples against the default
-JSON store, which `durable_spawn` refuses (§2). The same behaviour is pinned by
+The blocks are `nd-no-run` because they kill processes and wait between runs.
+They were written against the JSON store as default, which `durable_spawn`
+refused (§2); 2026-11-28, on the 6.0.0 default, a durable_spawn with one
+checkpoint ran to completion with no store configured, and the §2 refusal text
+was re-checked verbatim under NODUS_WORKFLOW_STORE_BACKEND=local. The same behaviour is pinned by
 tests/test_durable_spawn.py, test_durable_clock.py and test_durable_sweep.py,
 each of which kills a real process.
 

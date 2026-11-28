@@ -75,16 +75,16 @@
       "check": "none",
       "why_check": "No scan: whether a comparison's answer changed depends on the runtime type of both `==` operands, which the source cannot see. The change only makes `==` true where it was false for two distinct records with equal fields.",
       "sites": 2
-    }
-  },
-  "flips": {
+    },
     "default-store-sqlite": {
       "issue": 797,
-      "summary": "The default workflow store becomes SQLiteWorkflowStore",
-      "warns_since": "5.10.0",
-      "signal": "ok as of the G2 work -- a StagedFlipWarning, which the CLI unsuppresses and renders as `warning: ...`; it was a plain DeprecationWarning raised outside __main__ and no CLI user had ever seen it",
-      "why": "The only flip in the cohort that costs state rather than a build: runs in the JSON store are invisible to a SQLite one, so an in-flight waiting run becomes unresumable rather than moving. `nodus workflow migrate-store --to sqlite` is the migration. **The flip lands as a refusal, not a silent switch** -- as of the stranded-runs check, opting into SQLite while the JSON store holds unmigrated runs warns and names them, and at 6.0.0 that becomes an error. That is what makes the switch safe to take: the harm this flip needed a long deprecation clock for was that it failed silently.",
-      "sites": 11
+      "summary": "The default workflow store is SQLite; a JSON store holding runs SQLite lacks is refused instead of hidden",
+      "landed_in": "6.0.0",
+      "check": "none",
+      "why_check": "No source scan: it is a filesystem question about run state, and the run-time refusal names each stranded run and the command that migrates it. `nodus workflow migrate-store --to sqlite` is the remedy and is exempt from the refusal.",
+      "override": "NODUS_WORKFLOW_STORE_BACKEND=local keeps the JSON store",
+      "sites": 4
     }
-  }
+  },
+  "flips": {}
 }
