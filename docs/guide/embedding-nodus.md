@@ -567,8 +567,8 @@ print(r["stdout"])   # alice is admin
 
 When a stored workflow run or durable coroutine is resumed, its program is
 rebuilt by re-running its top level, and a host function called there runs
-again. Each such call is reported now and refused at 6.0.0 (#917), unless the
-function is declared safe to repeat:
+again. Each such call is refused, and the resume fails naming it (#917; in 5.x it
+ran again with a warning), unless the function is declared safe to repeat:
 
 ```python
 runtime.register_function("load_config", read_config, rebuild_safe=True)

@@ -54,16 +54,28 @@ _STATIC = {
     "concurrent-write",
     "worker-dispatcher",
     "default-store-sqlite",
-    "rebuild-effect",
     "library-run-loop",
 }
 
-#: Checked from source *and* merged with what runs observed. A static check
-#: here sees builtins, stdlib wrappers and declared `extern` host functions,
-#: but a host function called without an `extern` declaration is only visible
-#: when it runs, so a run's report adds to the source scan rather than being
-#: discarded by it (#922).
-_STATIC_AND_OBSERVED = {"rebuild-effect"}
+
+def landed_checks(register_path: Path | None = None) -> dict[str, str]:
+    """`{flip: severity}` for every landed flip with a scan, from the register.
+
+    A landed flip leaves `flips`, so `--staged` no longer reports it, but its
+    scan still finds code that now fails at run time, and plain `nodus check`
+    reports that. The severity is the register's `check`: "error" when the scan
+    is exact, "warning" when a resume, the deployment or the interleaving
+    decides, since failing `nodus check` then would reject programs that run.
+    """
+    data, error = load_register(register_path)
+    if error:
+        return {}
+    return {name: entry.get("check") for name, entry in (data.get("landed") or {}).items()
+            if entry.get("check") in ("error", "warning")}
+
+#: Checked from source *and* merged with what runs observed. Empty since
+#: rebuild-effect (#922) landed; kept because the next flip like it needs it.
+_STATIC_AND_OBSERVED: set[str] = set()
 
 # v6-flip: concurrent-write
 #: A cell whose declaration says the author meant it: explicit last-write-wins,
@@ -316,11 +328,11 @@ def _rebuild_effect_findings(path: str, tree) -> list:
                   "function with `rebuild_safe=True` if it only reads"
                   if host else "move the call into `fn main()`, which a rebuild skips")
         kind = "host function" if host else "call to"
-        # v6-flip: rebuild-effect
         found.append(Finding(
             "rebuild-effect", path,
-            f"top-level {kind} {what}{where} runs again each time a stored run of "
-            f"this program is resumed, and is refused at 6.0.0; {remedy}.",
+            f"top-level {kind} {what}{where} would run again each time a stored "
+            f"run of this program is resumed, so a resume refuses it (#917); "
+            f"{remedy}.",
             line=line, col=col,
         ))
 
@@ -559,6 +571,25 @@ def scan(
             )
         )
     return report
+
+
+def landed_findings(sources: list[tuple[str, str]]) -> list[tuple[str, Finding]]:
+    """What the scans of landed flips find, as `(severity, finding)` pairs.
+
+    For plain `nodus check`. `sources` is as for `scan`: the entry file first,
+    then the files it imports. A file that does not parse is skipped, as in
+    `scan`, since `check` has already reported it.
+    """
+    checks = landed_checks()
+    out: list[tuple[str, Finding]] = []
+    for index, (path, code) in enumerate(sources):
+        try:
+            found = _scan_source(path, code, imported=index > 0)
+        except Exception:
+            continue
+        for flip, severity in checks.items():
+            out.extend((severity, finding) for finding in found.get(flip, []))
+    return out
 
 
 def _unchecked_reason(name: str) -> str:

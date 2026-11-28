@@ -53,8 +53,11 @@ class _Harness(unittest.TestCase):
 
     def _runtime(self):
         runtime = NodusRuntime(timeout_ms=None)
+        # rebuild_safe: a resume re-runs the stored top level, which calls this
+        # capture, and since 6.0.0 an unmarked host call there is refused (#917).
         runtime.register_function(
-            "_cap", lambda v: self.captured.__setitem__("r", v), arity=1)
+            "_cap", lambda v: self.captured.__setitem__("r", v), arity=1,
+            rebuild_safe=True)
         return runtime
 
     def _parked_run(self):

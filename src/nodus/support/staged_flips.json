@@ -26,6 +26,17 @@
     "next to the flip."
   ],
   "target": "6.0.0",
+  "landed": {
+    "rebuild-effect": {
+      "issue": 917,
+      "summary": "A rebuild that re-runs a top-level effect refuses it instead of repeating it",
+      "landed_in": "6.0.0",
+      "check": "warning",
+      "why_check": "`nodus check` warns rather than errs: the refusal happens only when a stored run is resumed, so a program that is never resumed runs correctly.",
+      "override": "NODUS_REBUILD_EFFECTS=allow, or rebuild_effects=\"allow\" on sweep/new_vm, for a run whose stored source predates its fix",
+      "sites": 4
+    }
+  },
   "flips": {
     "unknown-type-name": {
       "issue": 609,
@@ -74,14 +85,6 @@
       "signal": "ok -- a StagedFlipWarning per call site, naming `wait(task)` as the replacement, recorded in the staged-flip report; `nodus check --staged` finds every call in the files a program imports (#1022)",
       "why": "DECIDED 2026-11-27 (D4). `run_loop()` drains the whole ready deque, which the VM chain shares, so a library that calls it runs work its caller spawned and had not chosen to start. docs/design/v5/05-async-library-boundary.md section 10.2 made a warning conditional on a replacement existing, and `wait(task)` is it. The stdlib was an instance: `std:async.parallel` and `series` drive with `__settle` instead since 5.21.0, keeping their contract. Short notice (one minor before the major), taken knowingly: the replacement already ships, so a warned user can fix it the same day.",
       "sites": 2
-    },
-    "rebuild-effect": {
-      "issue": 917,
-      "summary": "A rebuild that re-runs a top-level effect (a write, a request, a subprocess, an unmarked host function) refuses it instead of repeating it",
-      "warns_since": "5.16.0",
-      "signal": "ok -- a StagedFlipWarning per effect, naming the call and its line, recorded in the staged-flip report; `nodus check --staged` finds top-level effects from source (#922)",
-      "why": "DECIDED 2026-11-11 (#917): a rebuild exists to re-bind definitions, and an effect it re-runs happens again on every resume, silently. Refusing loudly is the house rule (refuse rather than lie). Staged because it makes some resumable runs unresumable; `rebuild_effects=\"allow\"` (runtime.sweep, nodus workflow sweep --rebuild-effects allow) is the override for runs whose stored source predates the fix. Reads stay allowed; network counts as an effect; host functions opt out with register_function(..., rebuild_safe=True).",
-      "sites": 3
     }
   }
 }

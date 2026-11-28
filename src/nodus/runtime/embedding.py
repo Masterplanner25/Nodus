@@ -1197,6 +1197,7 @@ class NodusRuntime:
             setattr(vm, "rebuild_effects", _check_rebuild_effects(rebuild_effects))
         return vm
 
+    # v6-flip: rebuild-effect
     def sweep(self, *, min_idle_ms: float = 0.0, now_ms: float | None = None,
               rebuild_effects: str | None = None) -> dict:
         """Resume what this runtime's workflow store holds, on VMs it configures (#908).
@@ -1217,8 +1218,8 @@ class NodusRuntime:
         source, so resuming stored runs is a decision the host makes (#176).
 
         ``rebuild_effects`` sets what a rebuild does with a top-level effect in
-        the stored program (#917): ``"warn"`` (the default), ``"refuse"``, or
-        ``"allow"``. "allow" is the override for a run stored before its program
+        the stored program (#917): ``"refuse"`` (the default since 6.0.0),
+        ``"warn"``, or ``"allow"``. "allow" is the override for a run stored before its program
         was fixed: a rebuild uses the stored source, so the fix does not reach it.
         """
         runner = self.workflow_runner

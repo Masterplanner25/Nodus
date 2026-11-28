@@ -35,7 +35,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODUS_PY = os.path.join(REPO_ROOT, "nodus.py")
 
 
-def _cli(argv, cwd) -> tuple[int, str]:
+def _cli(argv, cwd, env_extra=None) -> tuple[int, str]:
     """Run the CLI in a **subprocess**, which is the whole point here.
 
     These defects are cross-process: the run happens in one process and the
@@ -48,6 +48,8 @@ def _cli(argv, cwd) -> tuple[int, str]:
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = os.path.join(REPO_ROOT, "src")
+    env.pop("NODUS_REBUILD_EFFECTS", None)
+    env.update(env_extra or {})
     proc = subprocess.run(
         [sys.executable, NODUS_PY, *argv[1:]],
         cwd=cwd,
@@ -260,14 +262,15 @@ class RebuildFailureIsDiagnosedTests(unittest.TestCase):
 
 # closes: #399
 class WorkflowRebuildTopLevelEffectsTests(unittest.TestCase):
-    """Defect 3 — measured and documented, NOT fixed.
+    """Defect 3, which this file first recorded as measured and not fixed.
 
-    Rebuilding re-executes the module to re-bind its definitions, so every side
-    effect at module top level runs again — once per resume, on completed runs
-    too. `run_workflow`, `run_goal` and `print` are suppressed; nothing else is.
-
-    This is recorded as a test rather than left in prose so that if anyone
-    changes it — in either direction — the suite says so.
+    Rebuilding re-executes the module to re-bind its definitions, so a side
+    effect at module top level ran again once per resume, on completed runs too.
+    5.16.0 warned about it (#917), and since 6.0.0 the rebuild refuses it: the
+    resume fails, naming the call, and does not repeat it. The run is left as it
+    was, so it can still go through once an operator allows it, which a run
+    stored before its program was fixed needs. That is `NODUS_REBUILD_EFFECTS`,
+    the one override every resume path reads.
     """
 
     SIDE_EFFECT = r"""
@@ -283,7 +286,7 @@ let r = run_workflow(w)
 print("graph_id=\(r["graph_id"]) status=\(r["status"])")
 """
 
-    def test_each_resume_re_executes_module_top_level_exactly_once(self):
+    def test_a_resume_refuses_the_top_level_effect_and_leaves_the_run(self):
         with _TempProject() as project:
             path = project.write("eff.nd", self.SIDE_EFFECT)
             rc, out = _cli(["nodus", "run", path], project.root)
@@ -292,19 +295,19 @@ print("graph_id=\(r["graph_id"]) status=\(r["status"])")
             self.assertEqual(project.read("counter.txt"), "X")
 
             rc, out = _cli(["nodus", "workflow", "resume", graph_id], project.root)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("`write_file`", out)
+            self.assertIn("eff.nd:4:", out)
+            self.assertIn("NODUS_REBUILD_EFFECTS=allow", out)
+            self.assertEqual(project.read("counter.txt"), "X", "the refused write ran")
+
+            # The run was left waiting, so the override still reaches it, on a
+            # path that takes no mode of its own.
+            rc, out = _cli(["nodus", "workflow", "resume", graph_id], project.root,
+                           {"NODUS_REBUILD_EFFECTS": "allow"})
             self.assertEqual(rc, 0, out)
             self.assertIn('"b": "done"', out)
-            after_first = project.read("counter.txt")
-
-            _cli(["nodus", "workflow", "resume", graph_id], project.root)
-            after_second = project.read("counter.txt")
-
-        # One extra execution per resume. An `http.post` or `subprocess.run` at
-        # module top level fires this many times, on a run that is already
-        # complete. Keep module top level side-effect-free in a resumable script
-        # (docs/guide/workflows-and-tasks.md).
-        self.assertEqual(after_first, "XX")
-        self.assertEqual(after_second, "XXX")
+            self.assertEqual(project.read("counter.txt"), "XX")
 
 
 if __name__ == "__main__":

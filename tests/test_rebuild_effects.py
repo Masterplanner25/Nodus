@@ -38,7 +38,6 @@ from nodus.runtime.rebuild_effects import (  # noqa: E402
     READ_CAPABILITIES,
     is_rebuild_effect,
 )
-from nodus.support.staging import StagedFlipWarning  # noqa: E402
 from nodus.vm.vm import VM  # noqa: E402
 from nodus_lang_workflow.models import RUN_STATUS_COMPLETED  # noqa: E402
 from nodus_lang_workflow.runner import WorkflowFrameworkRunner  # noqa: E402
@@ -67,8 +66,8 @@ class TheClassificationTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(effect, is_rebuild_effect(name))
 
-    def test_the_default_is_warn_until_the_major(self):
-        self.assertEqual("warn", DEFAULT_REBUILD_EFFECTS)
+    def test_the_default_is_refuse_since_the_major(self):
+        self.assertEqual("refuse", DEFAULT_REBUILD_EFFECTS)
 
 
 def _rebuild(source: str, mode: str | None = None):
@@ -83,7 +82,13 @@ def _rebuild(source: str, mode: str | None = None):
             error = None
         except WorkflowRebuildError as err:
             error = err.describe()
-    return [str(w.message) for w in caught if issubclass(w.category, StagedFlipWarning)], error
+    return _reported(caught), error
+
+
+def _reported(caught) -> list:
+    """The rebuild-effect warnings among `caught` (a plain RuntimeWarning since 6.0.0)."""
+    return [str(w.message) for w in caught
+            if issubclass(w.category, RuntimeWarning) and "a rebuild re-ran" in str(w.message)]
 
 
 class ABuiltinEffectTests(unittest.TestCase):
@@ -107,12 +112,21 @@ class ABuiltinEffectTests(unittest.TestCase):
                 f'main()\n')
 
     # closes: #917
-    def test_warn_reports_the_effect_with_its_line_and_still_runs_it(self):
+    def test_the_default_refuses_at_the_call_and_does_not_run_it(self):
+        """6.0.0: nothing chose a mode, and the effect is refused, not repeated."""
         reported, error = _rebuild(self._program('write_file({out}, "again")'))
+        self.assertIsNotNone(error)
+        self.assertIn("builtin `write_file` at <memory>:3:", error)
+        self.assertIn('rebuild_effects="allow"', error)
+        self.assertEqual([], reported)
+        self.assertFalse((self.dir / "out.txt").exists())
+
+    def test_warn_reports_the_effect_with_its_line_and_still_runs_it(self):
+        reported, error = _rebuild(self._program('write_file({out}, "again")'), "warn")
         self.assertIsNone(error)
         self.assertEqual(1, len(reported), reported)
         self.assertIn("builtin `write_file` at <memory>:3:", reported[0])
-        self.assertIn("In 6.0.0 this is refused", reported[0])
+        self.assertIn("By default this is refused", reported[0])
         self.assertIn("fn main()", reported[0])
         self.assertTrue((self.dir / "out.txt").exists(), "warn changed behaviour")
         # The read was not reported, and `main` was skipped (#909).
@@ -121,7 +135,7 @@ class ABuiltinEffectTests(unittest.TestCase):
     def test_an_effect_through_a_stdlib_wrapper_is_caught_too(self):
         """`fs.write` runs `write_file` on a per-call child VM. The rebuild is
         the root VM's, so the decision reads the root."""
-        reported, error = _rebuild(self._program('fs.write({out}, "again")'))
+        reported, error = _rebuild(self._program('fs.write({out}, "again")'), "warn")
         self.assertIsNone(error)
         self.assertEqual(1, len(reported), reported)
         self.assertIn("`write_file`", reported[0])
@@ -132,6 +146,30 @@ class ABuiltinEffectTests(unittest.TestCase):
         self.assertIn("builtin `write_file` at <memory>:3:", error)
         self.assertIn('rebuild_effects="allow"', error)
         self.assertFalse((self.dir / "out.txt").exists())
+
+    def test_the_environment_variable_overrides_the_default(self):
+        """The one override every resume path reads, including those with no mode
+        of their own (`nodus workflow resume`, `deliver`, `resume_workflow()`)."""
+        previous = os.environ.get("NODUS_REBUILD_EFFECTS")
+        os.environ["NODUS_REBUILD_EFFECTS"] = "allow"
+        try:
+            reported, error = _rebuild(self._program('write_file({out}, "again")'))
+            self.assertIsNone(error)
+            self.assertTrue((self.dir / "out.txt").exists())
+            (self.dir / "out.txt").unlink()
+            # A mode set on the VM wins over the environment.
+            reported, error = _rebuild(self._program('write_file({out}, "again")'), "refuse")
+            self.assertIsNotNone(error)
+            self.assertFalse((self.dir / "out.txt").exists())
+            # An unknown value falls back to the default, which refuses.
+            os.environ["NODUS_REBUILD_EFFECTS"] = "sometimes"
+            reported, error = _rebuild(self._program('write_file({out}, "again")'))
+            self.assertIsNotNone(error)
+        finally:
+            if previous is None:
+                os.environ.pop("NODUS_REBUILD_EFFECTS", None)
+            else:
+                os.environ["NODUS_REBUILD_EFFECTS"] = previous
 
     def test_allow_lets_it_run_silently(self):
         reported, error = _rebuild(self._program('write_file({out}, "again")'), "allow")
@@ -147,7 +185,7 @@ class ABuiltinEffectTests(unittest.TestCase):
                                   allowed_paths=[str(self.dir)]).run_source(
                 f'write_file({out}, "x")\n')
         self.assertTrue(result.get("ok"), result)
-        self.assertEqual([], [w for w in caught if issubclass(w.category, StagedFlipWarning)])
+        self.assertEqual([], _reported(caught))
 
 
 _SIDE = textwrap.dedent("""
@@ -205,9 +243,9 @@ class AHostFunctionEffectTests(unittest.TestCase):
             store = self._crashed(Path(raw))
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                report = self._sweeper(store, visits).sweep()
+                report = self._sweeper(store, visits).sweep(rebuild_effects="warn")
             record = store.get_run(run_id_for("hosted"))
-        reported = [str(w.message) for w in caught if issubclass(w.category, StagedFlipWarning)]
+        reported = _reported(caught)
         self.assertEqual(1, len(reported), reported)
         self.assertIn("host function `record_visit`", reported[0])
         self.assertIn("rebuild_safe=True", reported[0])

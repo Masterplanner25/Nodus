@@ -37,12 +37,16 @@ ENTRY = {
 class _Tree:
     """A throwaway repo root with a manifest and one source file."""
 
-    def __init__(self, flips: dict, source: str, *, filename: str = "mod.py"):
+    def __init__(self, flips: dict, source: str, *, filename: str = "mod.py",
+                 landed: dict | None = None):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         (self.root / "src" / "nodus" / "support").mkdir(parents=True)
+        manifest = {"target": "6.0.0", "flips": flips}
+        if landed is not None:
+            manifest["landed"] = landed
         (self.root / "src" / "nodus" / "support" / "staged_flips.json").write_text(
-            json.dumps({"target": "6.0.0", "flips": flips}), encoding="utf-8"
+            json.dumps(manifest), encoding="utf-8"
         )
         pkg = self.root / "src" / "pkg"
         pkg.mkdir(parents=True)
@@ -134,6 +138,44 @@ class RegisterTests(unittest.TestCase):
                     result = t.run()
                 self.assertTrue(result.has_failure, f"{missing} was not required")
                 self.assertIn(missing, " ".join(m.problem for m in result.malformed))
+
+
+LANDED = {"issue": 2, "summary": "a landed flip", "landed_in": "6.0.0",
+          "check": "warning", "sites": 1}
+
+
+class LandedTests(unittest.TestCase):
+    """A flip that landed leaves `flips` and keeps a record under `landed`."""
+
+    def test_a_landed_flips_marker_attributes_its_lines(self):
+        source = "# v6-flip: done\nX = 1  # refused since 6.0.0\n"
+        with _Tree({}, source, landed={"done": LANDED}) as t:
+            result = t.run()
+        self.assertFalse(result.has_failure, result)
+        self.assertEqual(result.mentions, 1)
+
+    def test_a_new_promise_in_a_landed_window_still_fails(self):
+        source = "# v6-flip: done\nX = 1  # since 6.0.0\nY = 2  # error in 6.0.0\n"
+        with _Tree({}, source, landed={"done": LANDED}) as t:
+            result = t.run()
+        self.assertEqual([(c.flip, c.declared, c.found) for c in result.counts], [("done", 1, 2)])
+
+    def test_a_landed_flip_with_no_line_left_is_not_stale(self):
+        with _Tree({}, "X = 1\n", landed={"done": dict(LANDED, sites=0)}) as t:
+            result = t.run()
+        self.assertFalse(result.has_failure, result)
+
+    def test_landed_fields_and_check_are_validated(self):
+        for broken in ({k: v for k, v in LANDED.items() if k != "check"},
+                       dict(LANDED, check="sometimes")):
+            with self.subTest(broken=broken):
+                with _Tree({}, "# v6-flip: done\nX = 1  # 6.0.0\n", landed={"done": broken}) as t:
+                    self.assertTrue(t.run().has_failure)
+
+    def test_a_flip_cannot_be_staged_and_landed(self):
+        with _Tree({"done": ENTRY}, "# v6-flip: done\nX = 1  # 6.0.0\n",
+                   landed={"done": LANDED}) as t:
+            self.assertTrue(t.run().has_failure)
 
 
 class ManifestTests(unittest.TestCase):
