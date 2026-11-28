@@ -295,11 +295,17 @@ class Scheduler:
         # place a waiter has to be released from (#157/#395).
         self.release_waiters(coroutine)
 
-    def park_waiter(self, waiter, target) -> None:
-        """Suspend *waiter* until *target* settles (#157/#395 D8, inside-a-coroutine case)."""
+    def park_waiter(self, waiter, target, *, takes_outcome: bool = True) -> None:
+        """Suspend *waiter* until *target* settles (#157/#395 D8, inside-a-coroutine case).
+
+        `takes_outcome=False` is `__settle` (#1021): the waiter wants to know
+        *when*, not *what*. It resumes with nil whatever happened, and a failure
+        stays the scheduler's to report, exactly as if nobody had waited.
+        """
         waiter.state = "suspended"
         waiter.blocked_on = target
         waiter.blocked_reason = "task_wait"
+        waiter.wait_takes_outcome = takes_outcome
         self._waiters.setdefault(target.id, []).append(waiter)
 
     def release_waiters(self, target) -> None:
@@ -321,7 +327,11 @@ class Scheduler:
         for waiter in waiters:
             waiter.blocked_on = None
             waiter.blocked_reason = None
-            if failure is not None:
+            takes_outcome = waiter.wait_takes_outcome
+            waiter.wait_takes_outcome = True
+            if not takes_outcome:
+                pass  # `__settle`: resumes with the nil it parked with
+            elif failure is not None:
                 waiter.pending_wait_error = failure
             elif waiter.stack:
                 waiter.stack[-1] = target.last_result

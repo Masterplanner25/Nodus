@@ -333,6 +333,16 @@ today, row 5 works, and code in the wild does it. Deprecating a working pattern
 before its replacement ships is how a convention becomes a broken promise.
 Revisit at 6.0.0, alongside the staging cohort.
 
+> **Decided 2026-11-27 (D4 of `docs/governance/V6_0_PLAN.md`, #1021).** `join`
+> exists (`wait(task)`), so the condition above is met. A call from library code
+> warns from 5.21.0 and is an error at 6.0.0, as the cohort's seventh staged
+> flip. "Library code" is any module but the program's entry file, on all three
+> routes: a module function inside a coroutine or outside one, and an imported
+> module's top level. The stdlib was an instance, and `std:async.parallel` and
+> `series` stopped calling `run_loop()` in 5.21.0, keeping their contract. The
+> reentrancy §4 describes, a nested `run_loop()` in the entry file's own
+> coroutine, is not part of this.
+
 ### 10.3 Does `join` accept a list of handles?
 
 **Recommendation: yes, and it is the shape most callers want** — `join([t1, t2])`

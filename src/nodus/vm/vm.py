@@ -178,6 +178,17 @@ def _is_stdlib_path(path: str | None) -> bool:
     return "/stdlib/" in normalized and normalized.endswith(".nd")
 
 
+#: `VM._program_path` before a loader has run a program (#1021).
+_NO_PROGRAM = object()
+
+
+def normalize_program_path(path: str | None) -> str | None:
+    """One spelling of a module path, so two routes to one file compare equal (#1021)."""
+    if not path or path.startswith("<"):
+        return path
+    return os.path.normcase(os.path.abspath(path))
+
+
 #: Hard cap on a goal loop that declares no iteration or deadline bound (#488).
 #: `limits` alone is a legitimate budget, but it is only a bound while the host's
 #: meter actually moves; a stuck counter would otherwise loop forever, which is
@@ -260,6 +271,12 @@ class VM:
     # Every read is either `self._caller_vm` or `getattr(self, "_caller_vm",
     # None)`; both resolve through the class.
     _caller_vm: object | None = None
+    # #1021: which code is the program's own, for `running_library_code`. Set
+    # by `ModuleLoader._execute_module`, the one place that knows whether it is
+    # running an import's top level or the entry file's. `_NO_PROGRAM` means no
+    # loader ran a program on this VM, and then nothing is called a library.
+    _program_path: object = _NO_PROGRAM
+    _running_import: bool = False
 
 
     def __init__(
@@ -570,6 +587,35 @@ class VM:
         #624 and ASYNC-MOD-003 key on it.
         """
         self.runtime_error("runtime", "Stack underflow")
+
+    def running_library_code(self) -> bool:
+        """Is the code running now an imported module's, not the program's? (#1021)
+
+        Three ways to be in a library, and each looks different from here:
+
+        - a module function called outside a coroutine runs on a detached
+          child VM whose `source_path` is the module's;
+        - one called inside a coroutine runs on this VM, with the module's
+          context, `source_path` included, swapped in for the frame;
+        - an imported module's top level runs on the loader's VM before the
+          program's own, which the loader marks with `_running_import`.
+
+        All three are answered by asking the root VM which file is the program,
+        and comparing it with the code running now. A closure the program
+        handed to a library runs in the program's context on both routes, so a
+        callback is still the program's. A VM no loader ran a program on (a
+        host that built one directly) has no answer, and nothing is a library.
+        A tool handler's child VM has no `source_path`, so it is not one either.
+        """
+        from nodus.vm.vm_chain import root_vm
+
+        root = root_vm(self)
+        if root._running_import:
+            return True
+        program = root._program_path
+        if program is _NO_PROGRAM or self.source_path is None:
+            return False
+        return normalize_program_path(self.source_path) != program
 
     def current_loc(self) -> tuple[str | None, int | None, int | None]:
         if self.ip < 0 or self.ip >= len(self.code_locs):

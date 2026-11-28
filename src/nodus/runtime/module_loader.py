@@ -47,7 +47,7 @@ from nodus.runtime.bytecode_cache import load_cached_bytecode, write_cached_byte
 from nodus.runtime.dependency_graph import DependencyGraph
 from nodus.runtime.module import LiveBinding, ModuleBytecode, NodusModule
 from nodus.tooling.project import NODUS_DIRNAME, MODULES_DIRNAME, find_project_root
-from nodus.vm.vm import VM
+from nodus.vm.vm import VM, normalize_program_path
 from nodus.vm.types import Closure
 
 
@@ -462,6 +462,12 @@ class ModuleLoader:
         # and every module executes on this one VM, so an assignment here would
         # leave only the last module's declarations -- and the root module is
         # executed last, after its imports.
+        # #1021: whose code this is. Imports run on this VM first, each from
+        # inside the loading of the module that imports it, so a stack deeper
+        # than one is an import's top level and the bottom of it is the program.
+        vm._running_import = len(self._loading_stack) > 1
+        if not vm._running_import:
+            vm._program_path = normalize_program_path(source_path)
         if declared_externs:
             vm.declared_externs.update(declared_externs)
         if self.host_builtins:

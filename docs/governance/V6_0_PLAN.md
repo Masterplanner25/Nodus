@@ -1,7 +1,7 @@
 # Nodus v6.0.0 — Scope
 
-**Status:** scoping. Nothing here is scheduled and no date is set.
-**Last reviewed:** 2026-09-06, against 5.11.0.
+**Status:** scope fixed (D1-D5 decided). Next: 5.21.0, then the flip PRs, then the cut. No date is set.
+**Last reviewed:** 2026-11-27, against 5.20.0.
 **The register is `nodus/support/staged_flips.json`**, checked by `nodus_gate --flips`.
 §1 below is a reader's copy; the gate is the authority.
 
@@ -22,14 +22,16 @@ of them agreed, so reading any one of them would have produced a wrong plan
 
 **6.0.0 is flip-only. Decided 2026-09-06 (D5).**
 
-It carries the six staged flips in §1 and nothing else (five when D5 was decided; #917 was added by decision on 2026-11-11, below). Everything that already
-warns starts failing; no feature lands alongside. Features resume at 6.1.0.
+It carries the seven staged flips in §1 and the four removals of D2 and D3, and
+nothing else. Five flips were in it when D5 was decided; #917 was added by
+decision on 2026-11-11 and #1021 (D4) on 2026-11-27, below. Everything that
+already warns starts failing; no feature lands alongside. Features resume at 6.1.0.
 
 Three things follow from that, and they are the reason it is worth stating
 before the list rather than after it:
 
 - **The major's content is already fixed.** Scope creep has nowhere to enter:
-  anything that is not one of the six is, by definition, 6.1.0. `nodus/support/staged_flips.json`
+  anything that is not one of the seven, or a D2/D3 removal, is by definition 6.1.0. `nodus/support/staged_flips.json`
   is the whole scope, and `nodus_gate --flips` fails if that stops being true.
 - **Everything blocking it is 5.x work.** G2 (make the signals visible) and G3
   (let a project enumerate its exposure) both have to ship *before* the major,
@@ -49,17 +51,18 @@ makes eight minors' worth of warnings mean something.
 
 ## 1. The committed flips
 
-Five places in `src/` promise a 6.0.0 behaviour change to a user today. All five
-were reproduced.
+Seven flips are promised to users from `src/` today. The first five were
+reproduced at 5.11.0; #917 and #1021 each shipped with their own tests.
 
 | # | What changes | Where | Warns since | Warning visible on the path users run? | Open issue |
 |---|---|---|---|---|---|
-| 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | **`nodus check` only** — `nodus run` is silent | #609 |
+| 1 | An unrecognised type name becomes an error | `frontend/parser.py`, `frontend/type_system.py` | 5.6.0 | yes, since G2 (`nodus run` too, cold and warm) | #609 |
 | 2 | Record `==` becomes structural | `vm/types.py` | 5.4.0 | yes, once per process | #545 |
 | 3 | A concurrent write that loses an update becomes an error | `orchestration/task_graph.py` | 5.2.0 | yes | #547 |
 | 4 | A `worker:` declaration with no dispatcher becomes an error | `orchestration/task_graph.py` | 5.3.0 | yes | #798 |
-| 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | **no — nobody has seen it** (§3.2) | #797 |
-| 6 | A rebuild that re-runs a top-level effect refuses it | `runtime/rebuild_effects.py` | the next minor after 5.15.1 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
+| 5 | The default workflow store becomes SQLite | `nodus_lang_workflow/runner.py` | 5.10.0 | yes, since G2 (it was a plain `DeprecationWarning` nobody saw, §3.2) | #797 |
+| 6 | A rebuild that re-runs a top-level effect refuses it | `runtime/rebuild_effects.py` | 5.16.0 | yes, a `StagedFlipWarning` per effect, with its line | #917 |
+| 7 | `run_loop()` called from library code becomes an error | `builtins/coroutine.py` | 5.21.0 | yes, a `StagedFlipWarning` per call site, with its line | #1021 |
 
 **#917 was added on 2026-11-11, by decision.** D5 fixed the content at five and
 sent anything new to 6.1.0. This one was added because it is the same kind of
@@ -83,7 +86,7 @@ Reproductions, all at 5.11.0 from a throwaway project:
 
 ## 2. What each flip costs to do
 
-Four of the five are small; the fifth is not.
+All but one are small. The exception is #174.
 
 - **#545** is the most nearly done. The 6.0.0 semantics already exist as
   `structural_eq` in `vm/types.py`, consulted today only to detect divergence.
@@ -100,6 +103,11 @@ Four of the five are small; the fifth is not.
 - **#917 (rebuild effects)** — one line: `DEFAULT_REBUILD_EFFECTS` in
   `runtime/rebuild_effects.py` goes from `"warn"` to `"refuse"`. The refusal
   path, the override and the opt-out already ship and are tested in refuse mode.
+- **#1021 (library `run_loop`)**: one site, warning becomes raise. The predicate
+  (`VM.running_library_code`) and the static scan already ship.
+- **D2 and D3 removals**: delete `.tl` acceptance (`cli.py`, `module_loader.py`),
+  `language.py` / `language.bat`, `tooling/tiny_vm_lang_functions.py`, and the
+  `_last_vm` property. Gate 10a answers whether anything downstream used them.
 - **#174 is the outlier.** It changes a *default that owns state*, not a
   behaviour. Runs recorded in the JSON store are invisible to a SQLite one, so
   an in-flight `waiting` run becomes unresumable rather than moving.
@@ -275,7 +283,7 @@ number the gate prints rather than a paragraph someone has to remember.
 
 ## 5. Checked and clear — do not re-litigate
 
-- **Bytecode stays at 4.** None of the five touches the instruction set; #609
+- **Bytecode stays where it is** (5, since 5.17.0). None of the flips touches the instruction set; #609
   changes what the parser *accepts*, which is a source break, not a format
   break. And the bytecode cache validates `compiler_version == __version__`
   (`runtime/bytecode_cache.py`), so no 5.x cache entry survives the upgrade —
@@ -293,8 +301,7 @@ number the gate prints rather than a paragraph someone has to remember.
 
 ## 6. Decisions
 
-**D1 and D5 are settled** (2026-09-06); the rest are open. Each of the open
-ones changes what 6.0.0 contains or when it can be cut.
+**All five are settled.** D1 and D5 on 2026-09-06; D2, D3 and D4 on 2026-11-27.
 
 - ~~**D1 — Is the `worker:` flip in the cohort?**~~ **Decided 2026-09-06:
   honour it.** It flips with the rest; #798 tracks the work. The design doc's
@@ -304,20 +311,23 @@ ones changes what 6.0.0 contains or when it can be cut.
   in-process while reporting success is the worst available answer — the same
   reasoning that made it a warning rather than a silent no-op in the first
   place. Second-oldest signal in the cohort (5.3.0), so notice is not a blocker.
-- **D2 — Do the v1.0-era deprecations go?** `.tl` (still accepted, still warns),
-  `language.py` / `language.bat`, and `tiny_vm_lang_functions.py` have been
-  *"deprecated, no removal date"* since v1.0 — five majors' worth of notice. A
-  major is the only place they can be removed. `COMPATIBILITY.md` still lists
-  all three under *Deprecated (Still Supported)*, which is accurate.
-- **D3 — Does `_last_vm` go?** Deprecated on the embedding surface with a
-  `DeprecationWarning` pointing at `get_execution_stats()`. Note that downstream
-  pins private names here before (`_get_active_vm` is retained deliberately), so
-  this needs a dependent-suite answer, not a judgement.
-- **D4 — `run_loop()` inside a library.**
-  `docs/design/v5/05-async-library-boundary.md` §10.2 defers this to *"6.0.0,
-  alongside the staging cohort"*. Nothing warns today, so it is a deferred
-  decision, not a staged flip — it cannot flip at 6.0.0 without a warning
-  shipping first.
+- ~~**D2 — Do the v1.0-era deprecations go?**~~ **Decided 2026-11-27: removed at
+  6.0.0.** `.tl` (still accepted, still warns), `language.py` / `language.bat`,
+  and `tiny_vm_lang_functions.py` have been *"deprecated, no removal date"*
+  since v1.0, five majors' worth of notice, and a major is the only place they
+  can go. They are removals, not flips, so they are not in the register.
+- ~~**D3 — Does `_last_vm` go?**~~ **Decided 2026-11-27: removed at 6.0.0.** It
+  warns on every read, pointing at `get_execution_stats()`. On 2026-11-27 no
+  companion's `src/` or tests read it; only this repository's tests do.
+  Downstream has pinned private names before (`_get_active_vm` is retained
+  deliberately), so Gate 10a at the cut is the answer that counts.
+- ~~**D4 — `run_loop()` inside a library.**~~ **Decided 2026-11-27: the seventh
+  flip (#1021).** A warning ships in 5.21.0 and it becomes an error at 6.0.0.
+  §10.2 of `docs/design/v5/05-async-library-boundary.md` made the warning
+  conditional on a replacement, and `wait(task)` is one. The notice is one
+  minor, taken knowingly, because the replacement already ships. The stdlib
+  was an instance: `std:async.parallel` and `series` stop calling `run_loop()`
+  in 5.21.0 and keep their contract.
 - ~~**D5 — Does 6.0.0 carry a feature, or is it flip-only?**~~ **Decided
   2026-09-06: flip-only, feature after.** See §0. The consequence worth
   repeating here: G2 and G3 are 5.x work that gates the major rather than
@@ -372,4 +382,9 @@ The order §3 implies, not a schedule:
    R1 resolved to `nodus check` — the objection to it ("`check` is per-file")
    was mine and did not survive being measured. R2 (the dynamic half, for
    #545) is deferred by decision.
-5. **Then decide D5**, with the cost of 1–4 known.
+5. ~~**Then decide D5**~~ — **done** (2026-09-06), and D2-D4 on 2026-11-27.
+6. **5.21.0**: #1018, the #1021 warning, and #1022, so the last 5.x release
+   carries the seventh flip's notice and no breaking change.
+7. **The flips and removals**, one PR each, on `main` after 5.21.0. From the first
+   one, `main` is 6.0.0 only.
+8. **The cut**, with G6 re-run and Gate 10a answering D3.

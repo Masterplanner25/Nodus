@@ -63,6 +63,8 @@ BUILTIN_NAMES = {
     # compiles as an ordinary name and fails in a way that names nothing.
     "cancel",
     "wait",
+    # #1021: what std:async drives with instead of run_loop().
+    "__settle",
     "run_loop",
     "sleep",
     "sleep_until",

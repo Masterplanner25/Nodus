@@ -581,7 +581,9 @@ def profile_file(
     return 0
 
 
-def _report_staged(path: str, *, project_root: str | None, warnings: list) -> int:
+def _report_staged(
+    path: str, *, project_root: str | None, warnings: list, imports: list | None = None,
+) -> int:
     """`nodus check --staged`: what breaks at the next major (plan gate G3).
 
     Reports every flip in the register, including the one nothing looked at.
@@ -597,6 +599,13 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
     except OSError as exc:
         _print_stderr(f"Could not read {path}: {exc}")
         return 1
+    # #1022: what the entry file imports is scanned too, as the report says.
+    # The entry stays first: `scan` treats every later file as a library.
+    for imported in imports or []:
+        try:
+            sources.append((imported, _read_file(imported)))
+        except OSError:
+            continue
 
     report = scan(
         sources=sources,
@@ -609,7 +618,10 @@ def _report_staged(path: str, *, project_root: str | None, warnings: list) -> in
         _print_stderr(f"Error: {report.error}")
         return 1
 
-    stdout_print(f"Staged for {report.target} — checked {', '.join(report.roots)}")
+    checked = report.roots[0] if report.roots else path
+    if len(report.roots) > 1:
+        checked += f" and {len(report.roots) - 1} file(s) it imports"
+    stdout_print(f"Staged for {report.target} — checked {checked}")
     stdout_print(
         "  (the entry file and what it imports; a file nothing imports is not "
         "compiled, so it cannot fail at the major)"
@@ -676,7 +688,8 @@ def check_file(
     if staged:
         # Not printed here as well: `--staged` reports them under their flip,
         # and a line that appears twice reads like two findings.
-        return _report_staged(path, project_root=project_root, warnings=warnings)
+        return _report_staged(path, project_root=project_root, warnings=warnings,
+                              imports=result.get("imports"))
     for warning in warnings:
         _print_stderr(
             f"{os.path.abspath(path)}:{warning['line']}:{warning['column']}: "

@@ -524,6 +524,33 @@ def debug_source(
     )
 
 
+def _project_imports(loader, metadata, module_id: str) -> list[str]:
+    """The project files a module imports, directly or not (#1022).
+
+    What `nodus check --staged` scans besides the entry file. Walked from each
+    module's recorded import specs, not read off `loader._metadata`: a module
+    whose metadata came from the bytecode cache is returned without its imports
+    being visited, so on a warm cache that table holds the entry file alone.
+    The stdlib is left out, since it is not the user's to fix.
+    """
+    from nodus.vm.vm import _is_stdlib_path
+
+    seen: set[str] = set()
+    pending = [metadata]
+    while pending:
+        meta = pending.pop()
+        for spec in [*meta.import_specs, *meta.export_from_specs]:
+            path = spec.resolved_path
+            if not path or path in seen or path.startswith("<") or _is_stdlib_path(path):
+                continue
+            seen.add(path)
+            dep = loader._metadata.get(path) or loader._build_metadata(
+                path, base_dir=os.path.dirname(path), source_path=path)
+            pending.append(dep)
+    seen.discard(module_id)
+    return sorted(seen)
+
+
 def check_source(
     code: str,
     filename: str | None = None,
@@ -594,6 +621,7 @@ def check_source(
             {"message": u.message(), "line": u.line, "column": u.col}
             for u in parser.unknown_type_names
         ]
+        result["imports"] = _project_imports(loader, metadata, module_id)
         return result
     except Exception as err:
         stage = _compile_stage(err)

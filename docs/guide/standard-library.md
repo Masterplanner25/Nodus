@@ -990,8 +990,8 @@ Coroutine and concurrency primitives.
 | `sleep(ms)` | Suspend current coroutine for `ms` milliseconds. Returns nil. |
 | — | For an *absolute* deadline rather than a relative delay, see `sleep_until` under [std:loop](#stdloop) — a loop of relative sleeps drifts. |
 | `queue()` | Takes **no arguments**; returns a new channel. A thin alias for `channel()`. |
-| `parallel(tasks)` | Spawn every task in `tasks` and drive the scheduler until all finish. Returns nil, *not* a list of results. |
-| `series(tasks)` | Spawn and drain each task in turn, in order. Returns nil, *not* a list of results. |
+| `parallel(tasks)` | Spawn every task in `tasks` and drive until each has settled. Returns nil, *not* a list of results. A failing task is reported and the others still run. |
+| `series(tasks)` | Spawn each task in turn, in order, and drive until it has settled before starting the next. Returns nil, *not* a list of results. |
 | `worker_pool(worker, count)` | Start `count` workers reading from a jobs channel, each calling `worker(item)`. Returns the jobs channel. |
 | `pipeline(stages)` | Chain `stages` through channels, each stage a function of one argument. Returns a record `{input, output}`. |
 | `graph_run(tasks)` | Undocumented; delegates to `run_graph(graph(tasks))`. |
@@ -1004,6 +1004,13 @@ mirror image. `close()` flushes any blocked senders' values into the queue
 (still drainable by `recv` after close) and wakes them. Outside a coroutine
 there is nothing to suspend, so a full-channel `send` at top level raises,
 with guidance to wrap in `spawn(...)` + `run_loop()`.
+
+**`parallel` and `series` drive their own tasks, not your scheduler** (#1021). Until 5.21.0 both
+called `run_loop()`, which also ran every coroutine you had spawned and not yet
+started. Now they stop as soon as their own tasks settle. Other queued coroutines
+may still run in the meantime, since a task can depend on them, but nothing
+guarantees they have finished when `parallel` returns. Drive those with your own
+`run_loop()` or `wait(task)`.
 
 `tasks` may hold either zero-argument functions or pre-built coroutines — both
 forms work, and a task that calls `async.sleep()` suspends rather than blocking,
