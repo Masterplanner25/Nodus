@@ -23,6 +23,21 @@
     program that is never resumed runs correctly. `nodus check --staged` no
     longer lists the flip, because it has landed.
   - Migration: `docs/migration/v6.0-staged-flips.md` §6.
+- **#547: a concurrent state write that loses an update is refused.** This is a
+  6.0.0 flip, staged since 5.2.0. When two steps the graph does not order both
+  write one undeclared `state` cell, and either they disagree or one read the
+  cell before writing it, one update is lost. Through 5.x that warned and the
+  last write won. Now the run fails with `kind: "workflow_error"`, as
+  `merge: "once"` already did, naming both steps and both remedies:
+  `with { merge: "sum" }` (or `"append"`) to combine the writes, or
+  `merge: "any"` for deliberate last-write-wins. Detection is unchanged since
+  #544, so this only rejects a run that really lost an update.
+  - The `workflow_state_write_conflict` event still fires, just before the
+    refusal.
+  - `nodus check` warns about every unordered pair of writers. It is a
+    warning because the static answer is a superset: whether an update is lost
+    depends on the values and the interleaving.
+  - Migration: `docs/migration/v6.0-staged-flips.md` §2.
 - **#798: a `worker:` declaration with no registered dispatcher is refused.** This
   is a 6.0.0 flip, staged since 5.3.0. `step s with { worker: "gpu" }` asks for
   the step to run somewhere else. With no dispatcher it ran in-process, with no

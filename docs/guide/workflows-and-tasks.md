@@ -493,7 +493,7 @@ write the same cell:
 Declaring `"any"` changes no behaviour — it says *I know these branches agree*,
 and silencing the warning by stating that is the point.
 
-An undeclared cell warns only when something was actually lost, which is either:
+An undeclared cell is refused only when something was actually lost, which is either:
 
 - the two branches wrote **different values** — one was overwritten; or
 - a branch **read the cell before writing it** — a read-modify-write, which loses
@@ -502,8 +502,10 @@ An undeclared cell warns only when something was actually lost, which is either:
 Two branches writing the same constant, neither reading first, lose nothing and
 are silent.
 
-> The remaining warning **becomes an error in 6.0.0**. Declare a fold to combine
-> the writes, or `merge: "any"` if last-write-wins is what you meant.
+> The run fails with `kind: "workflow_error"` (#547; through 5.x it warned and
+> the last write won). Declare a fold to combine the writes, or `merge: "any"`
+> if last-write-wins is what you meant. `nodus check` warns about every unordered
+> pair of writers before you run anything.
 
 The read-before-write case is worth understanding, because it is the one that
 looks fine in testing:

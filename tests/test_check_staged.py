@@ -95,6 +95,11 @@ def _scan(code: str, **kwargs):
     return scan(sources=[("probe.nd", code)], **kwargs)
 
 
+def _landed(code: str, flip: str) -> list:
+    """A landed flip's findings: plain `nodus check` reports them, not `--staged`."""
+    return [f for _, f in landed_findings([("probe.nd", code)]) if f.flip == flip]
+
+
 class RegisterCoverageTests(unittest.TestCase):
     """The report is a projection of the register, not a second list."""
 
@@ -131,7 +136,7 @@ class ConcurrentWriteTests(unittest.TestCase):
 
     # closes: #802
     def test_unordered_co_writers_are_found(self):
-        found = _findings(_scan(RACE), "concurrent-write")
+        found = _landed(RACE, "concurrent-write")
         pairs = {(f.message.split("steps ")[1].split(" both")[0]) for f in found}
         self.assertIn("'a' and 'b'", pairs)
 
@@ -141,13 +146,13 @@ class ConcurrentWriteTests(unittest.TestCase):
         The runtime warning reports whichever pair raced on the interleaving
         that happened; this reports every pair that could.
         """
-        found = _findings(_scan(RACE), "concurrent-write")
+        found = _landed(RACE, "concurrent-write")
         pairs = {(f.message.split("steps ")[1].split(" both")[0]) for f in found}
         self.assertIn("'b' and 'c'", pairs)
 
     def test_an_ordered_pair_is_not_reported(self):
         """`c after a` orders them, so it is not merely every pair."""
-        found = _findings(_scan(RACE), "concurrent-write")
+        found = _landed(RACE, "concurrent-write")
         pairs = {(f.message.split("steps ")[1].split(" both")[0]) for f in found}
         self.assertNotIn("'a' and 'c'", pairs)
 
@@ -159,7 +164,7 @@ class ConcurrentWriteTests(unittest.TestCase):
         that had nothing to do with the merge policy. The neuter matrix caught
         it -- emptying `_SILENCING_MERGES` left this test green.
         """
-        found = _findings(_scan(RACE), "concurrent-write")
+        found = _landed(RACE, "concurrent-write")
         self.assertTrue(
             [f for f in found if "'total'" in f.message],
             "the fixture is not exercising co-writers at all",
@@ -170,7 +175,7 @@ class ConcurrentWriteTests(unittest.TestCase):
         )
 
     def test_a_fully_ordered_workflow_is_clean(self):
-        self.assertEqual(_findings(_scan(CLEAN), "concurrent-write"), [])
+        self.assertEqual(_landed(CLEAN, "concurrent-write"), [])
 
 
 class WorkerAndTypeNameTests(unittest.TestCase):
@@ -285,8 +290,10 @@ class CliTests(unittest.TestCase):
         self._write("race.nd", RACE)
         result = self._run("check", "race.nd")
         self.assertEqual(result.returncode, 0, result.stderr)
-        # The type name, and the worker declaration since #798 landed.
-        self.assertIn("OK (2 warning(s))", result.stdout)
+        # The type name, the worker declaration since #798 landed, and the two
+        # unordered writer pairs (a/b and b/c) since #547 landed.
+        self.assertIn("OK (4 warning(s))", result.stdout)
+        self.assertIn("steps 'a' and 'b' both write state 'total'", result.stderr)
         self.assertIn("warning: in workflow 'race', step 'a' declares worker 'remote'",
                       result.stderr)
         self.assertNotIn("Staged for", result.stdout)

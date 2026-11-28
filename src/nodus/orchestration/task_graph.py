@@ -14,12 +14,10 @@ import copy
 import dataclasses
 import hashlib
 import json
-import sys
 import os
 import threading
 import uuid
 
-from nodus.support.staging import record_staged_flip
 from nodus.runtime.runtime_stats import runtime_time_ms, store_time_ms
 from nodus.runtime.state_paths import InvalidStateId, graph_root, safe_state_id
 from nodus.runtime.coroutine import Coroutine
@@ -1911,21 +1909,7 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                 cause = (
                     "with different values, so one was lost"
                 )
-            # v6-flip: concurrent-write
-            message = (
-                f"warning: steps {' and '.join(names)} both wrote state "
-                f"'{conflict['key']}' while running concurrently and {cause}; "
-                f"only {winner}'s write survives. Declare "
-                f"`with {{ merge: \"sum\" }}` (or \"append\") to combine them, "
-                f"or `merge: \"any\"` if you meant last-write-wins. "
-                f"This becomes an error in 6.0.0."
-            )
-            record_staged_flip(
-                "concurrent-write",
-                f"steps {' and '.join(names)} both wrote state "
-                f"'{conflict['key']}' concurrently and one update was lost",
-            )
-            print(message, file=sys.stderr)
+            # The event first, so an embedder watching for it still sees it.
             vm.event_bus.emit_event(
                 "workflow_state_write_conflict",
                 data={
@@ -1935,6 +1919,18 @@ def run_task_graph(vm, graph: TaskGraph, resume_state: dict | None = None) -> di
                     "steps": names,
                     "winner": winner,
                 },
+            )
+            # v6-flip: concurrent-write
+            # Warned through 5.x; refused since 6.0.0 (#547), as `merge: "once"`
+            # already was. The detection fires only when an update was really
+            # lost (#544), so this can only reject a program that is wrong.
+            vm.runtime_error(
+                "workflow_error",
+                f"steps {' and '.join(names)} both wrote state "
+                f"'{conflict['key']}' while running concurrently and {cause}; "
+                f"only {winner}'s write would survive. Declare "
+                f"`with {{ merge: \"sum\" }}` (or \"append\") to combine them, "
+                f"or `merge: \"any\"` if you meant last-write-wins.",
             )
 
     def with_statuses(payload: dict) -> dict:

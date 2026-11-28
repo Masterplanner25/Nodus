@@ -64,12 +64,15 @@ class DeclaringAnySilencesTheWarningTests(unittest.TestCase):
     by a default nobody wrote.
     """
 
-    def test_an_undeclared_cell_still_warns(self):
+    def test_an_undeclared_cell_is_refused(self):
+        """Since 6.0.0 (#547). It warned through 5.x."""
         result, _ = _run(RACE.format(policy=""))
-        self.assertIn("both wrote state 'counter'", result.get("stderr") or "")
+        self.assertFalse(result.get("ok"))
+        self.assertIn("both wrote state 'counter'", result["error"]["message"])
 
     def test_declaring_any_silences_it(self):
         result, _ = _run(RACE.format(policy=' with { merge: "any" }'))
+        self.assertTrue(result.get("ok"), result)
         self.assertNotIn("both wrote state", result.get("stderr") or "")
 
     def test_declaring_any_does_not_change_the_value(self):
